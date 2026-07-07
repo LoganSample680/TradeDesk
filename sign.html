@@ -69,6 +69,10 @@ input[type=text]:focus{border-color:var(--denim)}
 
 /* Done box */
 .done-box{margin-top:20px;background:var(--green-lt);border:1px solid var(--green-border);border-radius:var(--rl);padding:16px;text-align:left}
+/* Peak-end: confirmation badge pops in like a win, not a form submission.
+   Re-triggers automatically when pg-done flips from display:none to visible. */
+@keyframes td-done-pop{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+#pg-done .pg-status-badge{animation:td-done-pop .35s cubic-bezier(.22,1,.36,1) both}
 
 /* Step dots */
 .step-dots{display:flex;gap:5px;margin-bottom:22px}
@@ -228,13 +232,22 @@ input[type=text]:focus{border-color:var(--denim)}
     </div>
 
     <div id="epa-doc1-label" style="display:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Document 1 of 2</div>
-    <div class="step-dots"><div class="dot active" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div><div class="dot" id="d4"></div></div>
+    <!-- Endowed progress: the first dot arrives already done ("proposal prepared
+         for you") — people finish a process they perceive as already started far
+         more often than one starting at zero. Every step-dots row carries it. -->
+    <div class="step-dots"><div class="dot done"></div><div class="dot active" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div><div class="dot" id="d4"></div></div>
 
     <!-- Estimate data nodes kept hidden — JS writes to them, nothing visible -->
     <div style="display:none">
       <div id="amt-total"></div><div id="amt-dep"></div><div id="amt-bal"></div>
       <div id="sum-rows"></div>
     </div>
+
+    <!-- Deadline effect, honestly applied: proposals are already valid 30 days
+         from send (baked into the document terms) — this just surfaces that real
+         deadline where the client reads it BEFORE the price, not buried in the
+         project-details fine print. -->
+    <div id="price-held-chip" style="display:none;align-items:center;gap:6px;justify-content:center;margin:-8px 0 14px;font-size:12px;font-weight:700;color:var(--text2)"></div>
 
     <div class="card"><span class="lbl">Scope &amp; terms</span><div id="prop-html" style="font-size:13px;line-height:1.6;overflow-wrap:anywhere"></div></div>
 
@@ -283,7 +296,7 @@ input[type=text]:focus{border-color:var(--denim)}
   <!-- Step 2: Color selection (painting only) -->
   <div id="pg-color-pick" style="display:none">
     <button onclick="_backFromColorPick()" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back</button>
-    <div class="step-dots"><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
     <div class="card">
       <div style="font-size:20px;font-weight:900;letter-spacing:-.4px;color:var(--ink);margin-bottom:4px;font-family:var(--font-display)">Choose your colors</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:18px;line-height:1.5">Select a Sherwin-Williams color for each area below. Your contractor will order the exact paint before your project starts. You can leave any field blank and decide later.</div>
@@ -295,7 +308,7 @@ input[type=text]:focus{border-color:var(--denim)}
   <!-- Step 3: Sign -->
   <div id="pg-sign-action" style="display:none">
     <button onclick="_backFromSign();scrollTo(0,0)" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back</button>
-    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div></div>
 
     <div class="card" id="sig-card">
       <span class="sig-eyebrow">Agreement</span>
@@ -328,6 +341,16 @@ input[type=text]:focus{border-color:var(--denim)}
         <div id="cancel-notice-body" style="font-size:11px;color:var(--text3);line-height:1.6"></div>
       </div>
 
+      <!-- Risk reversal — signing anxiety is a risk calculation; answer it at the
+           exact moment it spikes. Every line is already true and data-driven
+           (cancel window from state law on the proposal, contract terms as
+           written, ESIGN) — this only surfaces existing protections, no new claims. -->
+      <div id="risk-reversal-strip" style="background:var(--green-lt);border:1px solid var(--green-border);border-radius:var(--r);padding:11px 14px;margin-bottom:14px">
+        <div id="rr-cancel" style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--green-mid);margin-bottom:6px"></div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--green-mid);margin-bottom:6px"><span id="rr-ck2"></span>Price and scope locked exactly as written — changes only with your signed approval</div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--green-mid)"><span id="rr-ck3"></span>Secure, legally binding e-signature</div>
+      </div>
+
       <!-- UETA checkbox -->
       <label class="sig-checkbox">
         <input type="checkbox" id="sig-ueta-ck" onchange="checkReady()">
@@ -345,7 +368,7 @@ input[type=text]:focus{border-color:var(--denim)}
 
   <!-- Step 4: Payment -->
   <div id="pg-pay" style="display:none">
-    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div></div>
     <div class="card">
 
       <!-- Pay amount tiles — "how much" belongs on the payment screen, not the
@@ -378,7 +401,7 @@ input[type=text]:focus{border-color:var(--denim)}
       <div id="sign-pay-btns" style="margin-top:4px"></div>
 
       <div id="sec-cash" style="display:none">
-        <div class="cash-notice"><strong id="cash-confirm-hdr">Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.</span></div>
+        <div class="cash-notice"><strong id="cash-confirm-hdr">Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed — you’re locked in on the schedule. The contractor will collect the deposit when they arrive.</span></div>
         <button class="btn" id="sec-cash-confirm-btn" onclick="submitCash()">Confirm — I'll pay cash in person</button>
         <button class="btn btn-sec" onclick="document.getElementById('sec-cash').style.display='none';document.getElementById('sign-pay-btns').style.display='block'" style="margin-top:8px;font-size:13px">← Choose a different payment method</button>
       </div>
@@ -392,7 +415,7 @@ input[type=text]:focus{border-color:var(--denim)}
   <!-- EPA Pre-Renovation Disclosure — Document 2 of 2 (review before signing) -->
   <div id="pg-epa" style="display:none">
     <button onclick="show('pg-sign');scrollTo(0,0)" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back to proposal</button>
-    <div class="step-dots"><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
     <div class="card">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Document 2 of 2</div>
       <div style="font-size:26px;font-weight:900;margin-bottom:16px;font-family:var(--font-display);letter-spacing:-.4px;line-height:1.1">EPA Pre-Renovation Disclosure</div>
@@ -419,6 +442,10 @@ input[type=text]:focus{border-color:var(--denim)}
       <p id="done-msg">Your proposal has been signed. The contractor will be in touch to confirm your start date.</p>
       <div id="done-stamp" style="display:none;text-align:center;margin-bottom:12px"></div>
       <div class="done-box"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--green-mid);margin-bottom:10px">Confirmation</div><div id="done-rows"></div></div>
+      <!-- Peak-end: the last thing the client sees is forward motion ("here's
+           what happens next"), not a receipt. This moment is what they remember
+           and retell — it drives referrals and change-order goodwill later. -->
+      <div class="done-box" id="done-next" style="display:none;background:var(--bg-card,#fff);border-color:var(--border)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">What happens next</div><div id="done-next-rows"></div></div>
       <a id="done-hub-cta" href="#" style="display:none;margin-top:20px;padding:14px;background:var(--ink);border-radius:12px;font-size:14px;font-weight:700;color:#fff;text-align:center;text-decoration:none">View your project hub →</a>
     </div>
   </div>
@@ -470,6 +497,11 @@ input[type=text]:focus{border-color:var(--denim)}
 <div id="sticky-bar" style="flex-direction:column;gap:6px">
   <!-- sticky-total kept hidden for JS compatibility -->
   <div id="sticky-total" style="display:none"></div>
+  <!-- Deposit-first framing: the action-sized number ($ deposit), not the total,
+       is what the commitment moment leads with — and "locks in" points the verb
+       at the two real things the client loses by waiting (price, schedule slot),
+       never at the client themselves. -->
+  <div id="sticky-deposit-line" style="display:none;text-align:center;font-size:12px;color:var(--text2);font-weight:600;line-height:1.4"></div>
   <button id="approve-btn" onclick="approveAndSign()" style="width:100%;padding:14px 22px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);box-shadow:0 3px 16px rgba(27,22,18,.3);transition:background .3s"><span id="approve-btn-label"></span></button>
   <button onclick="window.print()" class="btn-ghost" style="width:100%;padding:6px;font-size:12px">Download PDF</button>
 </div>
@@ -693,9 +725,38 @@ async function init(){
     document.getElementById('amt-total').textContent=fmt(_prop.amount);
     // Contractor-configurable — Settings → "Show 'Powered by'" (S.poweredBy, default true).
     if(_prop.poweredBy===false){const _pbf=document.getElementById('powered-by-footer');if(_pbf)_pbf.style.display='none';}
+    // Deposit-first framing in the sticky bar — the action-sized number leads.
+    const _sdl=document.getElementById('sticky-deposit-line');
+    if(_sdl&&(_prop.deposit||0)>0){
+      _sdl.innerHTML='<strong style="color:var(--ink)">'+fmt(_prop.deposit)+' today</strong> locks in your price and your spot on the schedule';
+      _sdl.style.display='block';
+    }
+    // Price-held-until chip — surfaces the REAL 30-day validity window the
+    // proposal document already carries (generic-estimate bakes "Valid until:
+    // send date + 30 days" into the terms). Hidden once that window has passed:
+    // never advertise a price hold that's no longer true.
+    const _phc=document.getElementById('price-held-chip');
+    if(_phc&&_prop.createdAt){
+      const _exp=new Date(new Date(_prop.createdAt).getTime()+30*86400000);
+      if(_exp>new Date()){
+        _phc.innerHTML=svgIcon('⏳',{size:13})+' This price is held for you until <strong style="color:var(--ink)">&nbsp;'+_exp.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</strong>';
+        _phc.style.display='flex';
+      }
+    }
+    // Risk-reversal strip — populate the state-specific cancellation window and
+    // the check icons. Cancel row hides if the proposal carries no window.
+    const _rrCancel=document.getElementById('rr-cancel');
+    if(_rrCancel){
+      const _rrDays=_prop.cancelDays!=null?_prop.cancelDays:3;
+      if(_rrDays>0)_rrCancel.innerHTML='<span>'+svgIcon('✓',{size:13})+'</span>'+_rrDays+'-day right to cancel — no questions asked';
+      else _rrCancel.style.display='none';
+    }
+    const _rrCk2=document.getElementById('rr-ck2'),_rrCk3=document.getElementById('rr-ck3');
+    if(_rrCk2)_rrCk2.innerHTML=svgIcon('✓',{size:13});
+    if(_rrCk3)_rrCk3.innerHTML=svgIcon('✓',{size:13});
     // Update cash section with actual business name
     const _cashMsg=document.getElementById('cash-confirm-msg');
-    if(_cashMsg)_cashMsg.textContent=' Your proposal is signed and your spot is reserved. '+_biz+' will collect the deposit when they arrive.';
+    if(_cashMsg)_cashMsg.textContent=' Your proposal is signed — you’re locked in on the schedule. '+_biz+' will collect the deposit when they arrive.';
     document.getElementById('amt-dep').textContent='Deposit to start: '+fmt(_prop.deposit);
     document.getElementById('amt-bal').textContent='Balance on completion: '+fmt(_prop.amount-_prop.deposit);
     const _days=_prop.estDays;
@@ -1092,7 +1153,7 @@ function _updatePayButtons(){
   const pnd=document.getElementById('pay-now-display');
   if(pnd)pnd.textContent=fmt(_payFullAmount?fullAmt:depAmt);
   const cashMsg=document.getElementById('cash-confirm-msg');
-  if(cashMsg)cashMsg.textContent=(_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.');
+  if(cashMsg)cashMsg.textContent=(_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed — you’re locked in on the schedule. The contractor will collect the deposit when they arrive.');
 }
 
 
@@ -1179,6 +1240,17 @@ function showDone(method){
     (_prop?.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
   const _stamp=document.getElementById('done-stamp');
   if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">'+svgIcon('✓',{size:14})+' Signed &amp; Approved</div>';_stamp.style.display='block';}
+  // Peak-end: forward motion, not a receipt — three concrete next steps.
+  const _dNext=document.getElementById('done-next'),_dNextRows=document.getElementById('done-next-rows');
+  if(_dNext&&_dNextRows){
+    const _biz2=escHtmlN(_prop?.businessName||'Your contractor');
+    const _step2=isPaid?'Deposit received — you’re locked in on the schedule'
+      :isCheck?'Deposit collected before work begins'
+      :'Deposit collected on arrival — your spot stays held';
+    const _nextSteps=[_biz2+' reaches out to confirm your start date',_step2,'Work begins — follow progress and photos in your project hub'];
+    _dNextRows.innerHTML=_nextSteps.map((t,i)=>'<div style="display:flex;align-items:flex-start;gap:10px;padding:5px 0;font-size:13px;color:var(--text);line-height:1.5"><span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--bg);border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--text2)">'+(i+1)+'</span><span>'+t+'</span></div>').join('');
+    _dNext.style.display='block';
+  }
   const hubUrl=new URLSearchParams(location.search).get('hub')||'';
   const hubCta=document.getElementById('done-hub-cta');
   if(hubCta&&hubUrl){hubCta.href=hubUrl;hubCta.style.display='block';}
@@ -1303,7 +1375,7 @@ async function _paySign(method){
     const msg=document.getElementById('cash-confirm-msg');
     const confirmBtn=document.getElementById('sec-cash-confirm-btn');
     if(hdr)hdr.textContent=method==='check'?'Check selected.':'Cash selected.';
-    if(msg)msg.textContent=_payFullAmount?(' Your proposal is signed. The contractor will collect the full amount '+(method==='check'?'when work is complete.':'when they arrive.')):(' Your proposal is signed and your spot is reserved. '+(_prop?.businessName||'The contractor')+' will collect the deposit '+(method==='check'?'before work begins.':'when they arrive.'));
+    if(msg)msg.textContent=_payFullAmount?(' Your proposal is signed. The contractor will collect the full amount '+(method==='check'?'when work is complete.':'when they arrive.')):(' Your proposal is signed — you’re locked in on the schedule. '+(_prop?.businessName||'The contractor')+' will collect the deposit '+(method==='check'?'before work begins.':'when they arrive.'));
     if(confirmBtn)confirmBtn.textContent=method==='check'?(_payFullAmount?"Confirm — pay in full by check":"Confirm — I'll pay by check"):(_payFullAmount?"Confirm — pay in full cash in person":"Confirm — I'll pay cash in person");
     return;
   }

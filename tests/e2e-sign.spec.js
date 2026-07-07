@@ -1871,6 +1871,100 @@ test.describe('sign.html — decline reason picker', () => {
   });
 });
 
+// ════════════════════════════════════════════════════════════════════════════
+//  PSYCH/UX CLOSE PASS — deposit-first framing, price-held date, endowed
+//  progress, risk reversal, peak-end confirmation (owner-approved 5)
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('sign.html — close-rate UX pass', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('sticky bar leads with the deposit lock-in line, not the total', async () => {
+    const line = page.locator('#sticky-deposit-line');
+    await expect(line).toBeVisible();
+    const text = await line.textContent();
+    expect(text).toContain('$594'); // MOCK_PROPOSAL.deposit — the action-sized number
+    expect(text).toContain('locks in your price and your spot on the schedule');
+    expect(text).not.toContain('$2,375'); // never the full total at the commitment moment
+  });
+
+  test('price-held chip shows the real 30-day validity date before the scope card', async () => {
+    const chip = page.locator('#price-held-chip');
+    await expect(chip).toBeVisible();
+    const text = await chip.textContent();
+    expect(text).toContain('This price is held for you until');
+    // MOCK_PROPOSAL.createdAt is "now" → +30 days must render a real date
+    const expected = new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    expect(text).toContain(expected);
+  });
+
+  test('endowed progress — every step-dots row starts with a completed first dot', async () => {
+    const rows = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.step-dots')).map(row => {
+        const dots = Array.from(row.querySelectorAll('.dot'));
+        return { count: dots.length, firstDone: dots[0]?.classList.contains('done') || false };
+      })
+    );
+    expect(rows.length).toBeGreaterThanOrEqual(5);
+    rows.forEach(r => {
+      expect(r.count).toBe(5);
+      expect(r.firstDone).toBe(true);
+    });
+  });
+
+  test('risk-reversal strip sits in the sig card with the state cancel window populated', async () => {
+    const r = await page.evaluate(() => {
+      const strip = document.getElementById('risk-reversal-strip');
+      const sigCard = document.getElementById('sig-card');
+      const ueta = document.querySelector('.sig-checkbox');
+      return {
+        inSigCard: !!(strip && sigCard && sigCard.contains(strip)),
+        beforeUeta: !!(strip && ueta && (strip.compareDocumentPosition(ueta) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        cancelText: document.getElementById('rr-cancel')?.textContent || '',
+        hasSvgChecks: (strip?.querySelectorAll('svg').length || 0) >= 3,
+      };
+    });
+    expect(r.inSigCard).toBe(true);
+    expect(r.beforeUeta, 'strip must sit above the agreement checkbox — where signing anxiety spikes').toBe(true);
+    expect(r.cancelText).toContain('3-day right to cancel'); // MOCK_PROPOSAL has no cancelDays → default 3
+    expect(r.hasSvgChecks).toBe(true);
+  });
+
+  test('peak-end — done page shows "What happens next" with three concrete steps', async () => {
+    await page.evaluate(() => showDone('cash'));
+    await expect(page.locator('#done-next')).toBeVisible();
+    const rows = await page.locator('#done-next-rows > div').count();
+    expect(rows).toBe(3);
+    const text = await page.locator('#done-next').textContent();
+    expect(text).toContain('What happens next');
+    expect(text).toContain('confirm your start date');
+    expect(text).toContain('project hub');
+  });
+
+  test('cash confirmation copy uses schedule lock-in framing, not "spot is reserved"', async () => {
+    const html = await page.content();
+    expect(html).not.toContain('your spot is reserved');
+    expect(html).toContain('locked in on the schedule');
+  });
+
+  test('no console errors from the close-rate UX pass', async () => {
+    assertNoErrors(page, 'close-rate UX pass');
+  });
+});
+
 // ── Cancellation clause patch — old proposals upgraded on-the-fly ────────────
 // sign.html patches legacy proposalHtml (old "Buyer has the right to cancel"
 // language) so unsigned in-flight proposals show the updated mutual-obligation
