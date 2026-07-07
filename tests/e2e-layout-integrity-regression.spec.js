@@ -357,18 +357,24 @@ test.describe('layout integrity — mobile', () => {
   // deposit due — never a per-room, per-material, tax/markup, or NTE-cap breakdown.
   // Applies to both BYO and T&M; scope descriptions (room/material names + notes)
   // still show, just without a dollar amount attached to any of them.
-  test('proposal shows only TOTAL + deposit — no per-room, per-material, tax, or NTE-cap price (BYO)', async () => {
+  // Regression: once per-item prices came out, BYO's pricing table was reduced to
+  // repeating the exact same section headers + item names already listed under
+  // "Scope of work" — same names, same section labels, nothing new. Removed the
+  // table entirely for BYO (room/material names now live in Scope of work only);
+  // T&M keeps its item table since materials aren't listed anywhere else.
+  test('proposal shows only TOTAL + deposit — no per-room, per-material, tax, or NTE-cap price, no redundant Description table (BYO)', async () => {
     const r = await page.evaluate(async () => {
       const c = { id: 79107, name: 'Total Only BYO Client', addr: '1 Total Only Rd' };
       clients = clients.filter(x => x.id !== 79107).concat([c]);
       bids = bids.filter(x => x.client_id !== 79107);
       openGenericEstimate(c, null, null, { mode: 'byo' });
       _geiIsFreeForm = true;
-      _geiLines = [
-        { desc: 'Bedroom', qty: 1, rate: 500, total: 500, _byoSection: 'Interior' },
-        { desc: 'Siding', qty: 1, rate: 700, total: 700, _byoSection: 'Exterior' },
-        { desc: 'Paint and primer', qty: 1, rate: 300, total: 300, _byoSection: 'Materials' },
+      _byoItems = [
+        { id: 1, section: 'Interior', label: 'Bedroom', price: 500, on: true },
+        { id: 2, section: 'Exterior', label: 'Siding', price: 700, on: true },
+        { id: 3, section: 'Materials', label: 'Paint and primer', price: 300, on: true },
       ];
+      _byoUpdateRail();
       document.getElementById('gei-tax-pct').value = '8';
       let err = null;
       try { await sendGenericProposal(true); } catch (e) { err = e.message; }
@@ -378,7 +384,9 @@ test.describe('layout integrity — mobile', () => {
         err,
         hasOverlay: !!ov,
         hasRoomNames: html.includes('Bedroom') && html.includes('Siding') && html.includes('Paint and primer'),
+        bedroomOccurrences: (html.match(/Bedroom/g) || []).length,
         hasPerItemPrice: /\$500\.00|\$700\.00|\$300\.00/.test(html),
+        hasDescHeader: html.includes('>Description<'),
         hasQtyHeader: html.includes('>Qty<'),
         hasAmountHeader: html.includes('>Amount<'),
         hasTaxRow: html.includes('Tax / markup') || html.includes('Sales tax') || html.includes('Materials tax'),
@@ -390,8 +398,10 @@ test.describe('layout integrity — mobile', () => {
     });
     expect(r.err).toBe(null);
     expect(r.hasOverlay).toBe(true);
-    expect(r.hasRoomNames, 'room/material names must still show — only the dollar amounts are stripped').toBe(true);
+    expect(r.hasRoomNames, 'room/material names must still show, via Scope of work').toBe(true);
+    expect(r.bedroomOccurrences, 'a BYO item name must appear exactly once — no redundant repeat in a Description table').toBe(1);
     expect(r.hasPerItemPrice, 'no per-room/per-material dollar amount may render').toBe(false);
+    expect(r.hasDescHeader, 'the Description table must be gone entirely for BYO — Scope of work already lists everything').toBe(false);
     expect(r.hasQtyHeader, 'the Qty column must be gone').toBe(false);
     expect(r.hasAmountHeader, 'the Amount column must be gone').toBe(false);
     expect(r.hasTaxRow, 'no separate tax/markup breakdown row may render').toBe(false);
