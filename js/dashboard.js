@@ -1229,6 +1229,8 @@ function renderTodayFeed(){
     if(!_hubTs&&!_clientTs){
       viewedBadge='<div style="font-size:11px;color:var(--text3);margin-top:3px">Client hasn\'t opened yet</div>';
     }
+    // Sign-flow warmth: how far INSIDE the proposal they got (hot-lead signal)
+    if(typeof _signStepBadge==='function')viewedBadge+=_signStepBadge(b.id);
     if(_contractorTs){
       viewedBadge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_localTs(_contractorTs)+'</div>';
     }

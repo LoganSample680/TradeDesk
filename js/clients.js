@@ -1642,6 +1642,8 @@ function renderCDBids(){
               if(!hubTs&&!clientTs){
                 badge+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Client hasn\'t opened yet</div>';
               }
+              // Sign-flow warmth: how far INSIDE the proposal they got (hot-lead signal)
+              if(typeof _signStepBadge==='function')badge+=_signStepBadge(b.id);
               if(contractorTs){
                 badge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_localTs(contractorTs)+'</div>';
               }

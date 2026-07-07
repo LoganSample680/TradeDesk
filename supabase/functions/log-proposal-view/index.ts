@@ -21,10 +21,28 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const { contractorUserId, bidId, clientId, viewerType } = await req.json();
+    const { contractorUserId, bidId, clientId, viewerType, step } = await req.json();
 
     if (!contractorUserId || !bidId) {
       return json({ error: 'contractorUserId and bidId required' }, 400);
+    }
+
+    // Step ping — sign-flow funnel ('approved' | 'signature_ready' |
+    // 'payment_viewed' | 'method_selected' | 'signed'). Monotonic upsert onto
+    // proposal_views.furthest_step + one anonymized analytics_events row; the
+    // RPC ignores unknown step names.
+    if (step) {
+      const { error } = await supa.rpc('log_proposal_step', {
+        p_contractor_user_id: contractorUserId,
+        p_bid_id:             String(bidId),
+        p_step:               String(step),
+      });
+      if (error) {
+        const msg = error.message || error.details || error.hint || JSON.stringify(error);
+        console.error('log_proposal_step error:', JSON.stringify(error));
+        return json({ error: msg, code: error.code, details: error.details }, 500);
+      }
+      return json({ ok: true }, 200);
     }
 
     // Use the atomic Postgres function so view counts are incremented in a single

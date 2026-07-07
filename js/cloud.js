@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.07.26.20';
+const APP_VERSION='07.07.26.21';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1340,6 +1340,9 @@ let _proposalViewsByBidContractor={};  // contractor previewed the proposal
 // View count maps — how many times each event type has occurred per bid
 let _proposalViewsByBidHubCount={};    // number of hub opens
 let _proposalViewsByBidClientCount={}; // number of proposal opens
+// Sign-flow funnel — furthest step the client reached inside sign.html
+let _proposalViewsByBidStep={};        // bid_id → 'approved'|'signature_ready'|'payment_viewed'|'method_selected'|'signed'
+let _proposalViewsByBidStepAt={};      // bid_id → timestamp that step was first reached
 // Expose on window so Playwright E2E tests can inject test data via page.evaluate()
 // (let declarations are not window properties in browser scripts)
 Object.defineProperty(window,'_proposalViewsByBidHubClient',{get:()=>_proposalViewsByBidHubClient,set:v=>{_proposalViewsByBidHubClient=v;},configurable:true});
@@ -1347,6 +1350,8 @@ Object.defineProperty(window,'_proposalViewsByBidClient',{get:()=>_proposalViews
 Object.defineProperty(window,'_proposalViewsByBidContractor',{get:()=>_proposalViewsByBidContractor,set:v=>{_proposalViewsByBidContractor=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidHubCount',{get:()=>_proposalViewsByBidHubCount,set:v=>{_proposalViewsByBidHubCount=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidClientCount',{get:()=>_proposalViewsByBidClientCount,set:v=>{_proposalViewsByBidClientCount=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsByBidStep',{get:()=>_proposalViewsByBidStep,set:v=>{_proposalViewsByBidStep=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsByBidStepAt',{get:()=>_proposalViewsByBidStepAt,set:v=>{_proposalViewsByBidStepAt=v;},configurable:true});
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
@@ -4104,15 +4109,18 @@ async function _fetchProposalViews(){
   try{
     // Edge Function log-proposal-view writes to proposal_views using service key (bypasses RLS).
     // Contractor reads back with their authenticated session — RLS allows SELECT on own rows.
+    // select('*') not an explicit list — furthest_step/_at may not exist yet in
+    // every environment (migration drift), and an explicit list would fail the
+    // whole query; same defensive pattern as checkNewSignatures above.
     const{data,error}=await _supa.from('proposal_views')
-      .select('bid_id,opened_at,hub_opened_at,hub_view_count,client_opened_at,client_view_count,contractor_opened_at')
+      .select('*')
       .eq('contractor_user_id',_supaUser.id)
       .not('bid_id','is',null)
       .order('opened_at',{ascending:false});
     if(data&&!error){
       // Build into temporaries first, then swap atomically — prevents a renderDash()
       // mid-flight from seeing an empty dict during the rebuild window (flicker race).
-      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={};
+      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={};
       data.forEach(v=>{
         if(!v.bid_id)return;
         if(!_pvBid[v.bid_id])_pvBid[v.bid_id]=v.opened_at;
@@ -4121,13 +4129,14 @@ async function _fetchProposalViews(){
         if(v.contractor_opened_at&&!_pvCon[v.bid_id])_pvCon[v.bid_id]=v.contractor_opened_at;
         if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
         if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
+        if(v.furthest_step&&!_pvStep[v.bid_id]){_pvStep[v.bid_id]=v.furthest_step;_pvStepAt[v.bid_id]=v.furthest_step_at||null;}
       });
       // Render ONLY when the view data actually changed. This fetch runs after every
       // load (setTimeout 1500) and on a 30s interval — an unconditional renderDash()
       // here rebuilt the whole dashboard for byte-identical data on every tick, and
       // stacked 2-3 redundant render passes into every reconcile window (named live
       // by the glitch-free budget's caller trace). The maps still swap every time.
-      const _pvSig=JSON.stringify([_pvBid,_pvHub,_pvClient,_pvCon,_pvHubCnt,_pvCliCnt]);
+      const _pvSig=JSON.stringify([_pvBid,_pvHub,_pvClient,_pvCon,_pvHubCnt,_pvCliCnt,_pvStep]);
       const _pvChanged=_pvSig!==window._pvLastSig;
       window._pvLastSig=_pvSig;
       _proposalViewsByBid=_pvBid;
@@ -4136,9 +4145,27 @@ async function _fetchProposalViews(){
       _proposalViewsByBidContractor=_pvCon;
       _proposalViewsByBidHubCount=_pvHubCnt;
       _proposalViewsByBidClientCount=_pvCliCnt;
+      _proposalViewsByBidStep=_pvStep;
+      _proposalViewsByBidStepAt=_pvStepAt;
       if(_pvChanged)renderDash();
     }
   }catch(e){}
+}
+// Sign-flow warmth badge — one line telling the contractor how far the client
+// actually got inside the proposal, rendered wherever a pending bid card shows
+// its viewed state. 'opened' adds nothing beyond the existing viewed badge;
+// 'signed' is redundant with the bid flipping Closed Won — both skipped.
+function _signStepBadge(bidId){
+  const step=(typeof _proposalViewsByBidStep!=='undefined'&&_proposalViewsByBidStep)?_proposalViewsByBidStep[String(bidId)]:null;
+  if(!step)return'';
+  const meta={
+    approved:{label:'Reviewing — tapped Approve & Sign',color:'#0e7490'},
+    signature_ready:{label:'Signature entered — almost there',color:'#7c3aed'},
+    payment_viewed:{label:'Reached payment — hot lead',color:'#b45309'},
+    method_selected:{label:'Chose how to pay — call them now',color:'#A32D2D'},
+  }[step];
+  if(!meta)return'';
+  return'<div style="font-size:11px;font-weight:800;color:'+meta.color+';margin-top:2px">'+svgIcon('⚡',{size:11})+' '+meta.label+'</div>';
 }
 function showScheduleAlerts(){
   let alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');

@@ -697,6 +697,7 @@ async function init(){
         const{data:{session}}=await _supaAuth.auth.getSession();
         if(session?.user?.id&&session.user.id===_prop.contractorUserId)_viewerType='contractor';
       }catch(_){}
+      window._viewerIsContractor=(_viewerType==='contractor');
       fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
@@ -983,7 +984,25 @@ function updateTypedSigPreview(){
   if(metaInitials)metaInitials.textContent=initials||'—';
 }
 
+// ── Sign-flow step funnel ─────────────────────────────────────────────────
+// Fire-and-forget ping per milestone so the contractor sees exactly how far
+// this client got ("reached payment" is a hot lead, "opened once" is not) and
+// the community funnel can time opened→signed. Monotonic server-side; the
+// sent-Set just avoids repeat network calls when a step re-renders. Never
+// fires for contractor previews or the in-app preview iframe.
+const _stepsSent=new Set();
+function _logStep(step){
+  if(_isPreview||window._viewerIsContractor||!_prop?.contractorUserId||!_prop?.id)return;
+  if(_stepsSent.has(step))return;
+  _stepsSent.add(step);
+  fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+    body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),step})
+  }).catch(()=>{});
+}
 function approveAndSign(){
+  _logStep('approved');
   if(_prop?.epaRequired){showEpaPage();return;}
   if(_prop?.trade==='painting'&&_prop?.surfaces?.length){
     _buildColorPickUI();
@@ -1083,6 +1102,7 @@ function checkReady(){
   const hasSig=typedOk||hasInk;
   const btn=document.getElementById('sign-btn');
   if(btn)btn.disabled=!hasSig||!uetaOk;
+  if(hasSig&&uetaOk)_logStep('signature_ready');
   const hint=document.getElementById('sign-ready-hint');
   if(hint){
     if(!hasSig){hint.textContent='Type your name or draw your signature above to continue.';hint.style.display='block';}
@@ -1095,6 +1115,7 @@ function goToPayment(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
   if(!typedOk&&!hasInk){document.getElementById('sign-err').textContent='Type your full name or draw your signature above.';return;}
   _sigData=sigCanvas.toDataURL('image/png');
+  _logStep('payment_viewed');
   show('pg-pay');scrollTo(0,0);
   _renderPayTiles();
   const depAmt2=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
@@ -1219,6 +1240,7 @@ async function submitCash(){
 }
 
 function showDone(method){
+  _logStep('signed'); // terminal step — completes the opened→signed timeline
   const isAch=method==='ach';
   const isCashApp=method==='cashapp';
   const isCheck=method==='check';
@@ -1366,6 +1388,7 @@ function _renderSignPayBtns(){
 }
 async function _paySign(method){
   if(!_prop)return;
+  _logStep('method_selected');
   if(method==='cash'||method==='check'){
     _manualPayMethod=method;
     document.getElementById('sign-pay-btns').style.display='none';

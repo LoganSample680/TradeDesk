@@ -1965,6 +1965,75 @@ test.describe('sign.html — close-rate UX pass', () => {
   });
 });
 
+// ════════════════════════════════════════════════════════════════════════════
+//  SIGN-FLOW STEP FUNNEL — every milestone pings log-proposal-view with a step
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('sign.html — step funnel analytics', () => {
+  let page;
+
+  test.beforeEach(async ({ page: p }) => {
+    page = p;
+    // Record every log-proposal-view body carrying a step. Init script runs
+    // before the Supabase shim wraps fetch, so both wrappers chain and the
+    // ping still reaches mockAllExternal's route.
+    await page.addInitScript(() => {
+      window.__stepPings = [];
+      const of = window.fetch;
+      window.fetch = function (input, init) {
+        try {
+          const u = typeof input === 'string' ? input : (input && input.url) || '';
+          if (u.includes('log-proposal-view') && init && init.body) {
+            const b = JSON.parse(init.body);
+            if (b.step) window.__stepPings.push(b);
+          }
+        } catch (_e) {}
+        return of.apply(this, arguments);
+      };
+    });
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+  });
+
+  test('walking the full flow fires the steps in order: approved → signature_ready → payment_viewed → method_selected → signed', async () => {
+    await page.evaluate(() => {
+      approveAndSign();                                   // painting + surfaces → color pick, still counts as approved
+      if (typeof _goToSignPad === 'function') _goToSignPad(); else _openSignPad();
+    });
+    await page.fill('#sig-name', 'Alice Smith');
+    await page.check('#sig-ueta-ck');
+    await page.waitForTimeout(200);
+    await page.evaluate(() => { goToPayment(); });
+    await page.evaluate(() => { _paySign('cash'); });
+    await page.evaluate(() => { showDone('cash'); });
+    await page.waitForTimeout(300);
+    const pings = await page.evaluate(() => window.__stepPings);
+    expect(pings.map(x => x.step)).toEqual(['approved', 'signature_ready', 'payment_viewed', 'method_selected', 'signed']);
+    pings.forEach(x => {
+      expect(x.contractorUserId).toBe(FAKE_USER_ID);
+      expect(String(x.bidId)).toBe(String(FAKE_BID_ID_1));
+    });
+    assertNoErrors(page, 'step funnel full walk');
+  });
+
+  test('each step fires at most once per page load — re-renders never duplicate pings', async () => {
+    await page.evaluate(() => { approveAndSign(); approveAndSign(); approveAndSign(); });
+    await page.waitForTimeout(200);
+    const pings = await page.evaluate(() => window.__stepPings.map(x => x.step));
+    expect(pings).toEqual(['approved']);
+  });
+
+  test('contractor previews never pollute the funnel', async () => {
+    await page.evaluate(() => { window._viewerIsContractor = true; approveAndSign(); });
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.__stepPings.length)).toBe(0);
+  });
+});
+
 // ── Cancellation clause patch — old proposals upgraded on-the-fly ────────────
 // sign.html patches legacy proposalHtml (old "Buyer has the right to cancel"
 // language) so unsigned in-flight proposals show the updated mutual-obligation

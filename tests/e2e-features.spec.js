@@ -4241,6 +4241,74 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  SIGN-FLOW WARMTH BADGE — contractor-facing furthest-step surfacing
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('_signStepBadge — sign-flow warmth on pending bid cards', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('renders an escalating warmth label per step, empty for opened/signed/unknown/missing', async () => {
+    const r = await page.evaluate(() => {
+      window._proposalViewsByBidStep = {
+        '9001': 'approved', '9002': 'signature_ready', '9003': 'payment_viewed',
+        '9004': 'method_selected', '9005': 'opened', '9006': 'signed', '9007': 'garbage',
+      };
+      return {
+        approved: _signStepBadge(9001),
+        sig: _signStepBadge(9002),
+        pay: _signStepBadge(9003),
+        method: _signStepBadge(9004),
+        opened: _signStepBadge(9005),   // adds nothing beyond the existing viewed badge
+        signed: _signStepBadge(9006),   // redundant with the bid flipping Closed Won
+        unknown: _signStepBadge(9007),
+        missing: _signStepBadge(9999),
+      };
+    });
+    expect(r.approved).toContain('Reviewing');
+    expect(r.sig).toContain('Signature entered');
+    expect(r.pay).toContain('Reached payment — hot lead');
+    expect(r.method).toContain('call them now');
+    expect(r.opened).toBe('');
+    expect(r.signed).toBe('');
+    expect(r.unknown).toBe('');
+    expect(r.missing).toBe('');
+    // Renders a real SVG icon, and escalating steps carry distinct colors
+    expect(r.pay).toContain('<svg');
+    expect(r.pay).not.toBe(r.method);
+    assertNoErrors(page, 'sign step badge');
+  });
+
+  test('dashboard pending-proposal card includes the warmth line when a step exists', async () => {
+    const r = await page.evaluate(() => {
+      const cid = 887001, bid = 887002;
+      clients = clients.filter(c => c.id !== cid);
+      clients.push({ id: cid, name: 'Warmth Client', phone: '3165550777' });
+      bids = bids.filter(b => b.id !== bid);
+      bids.push({ id: bid, client_id: cid, status: 'Pending', amount: 4200, bid_date: todayKey(), signingToken: 'warmtok', type: 'Roof Repair' });
+      window._proposalViewsByBidStep = { [String(bid)]: 'payment_viewed' };
+      window._proposalViewsByBidClient = { [String(bid)]: new Date().toISOString() };
+      // §11.6: Make Money Today sections only render items into innerHTML when
+      // expanded — default (undefined) means collapsed and the count is always 0.
+      window._mmtCol_build = false; window._mmtCol_pending = false; window._mmtCol_collect = false;
+      renderDash();
+      const feed = document.getElementById('dash-money-feed');
+      return { html: feed ? feed.innerHTML : '' };
+    });
+    expect(r.html).toContain('Reached payment — hot lead');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  BUILD FEED — in-progress drafts are user intent and always render
 // ════════════════════════════════════════════════════════════════════════════
 
