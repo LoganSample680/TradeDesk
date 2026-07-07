@@ -2911,7 +2911,7 @@ async function sendGenericProposal(previewOnly){
   const clientPhone=escHtml(_clientRec?.phone||'');
   const jobDesc=escHtml(v('gei-desc'));const duration=escHtml(v('gei-duration'));
   const _tradeM=TRADE_META[trade]||null;
-  const tradeName=(_tradeM&&_tradeM.label)||'Service';const tradeIcon=(_tradeM&&_tradeM.icon)||'🔧';
+  const tradeName=(_tradeM&&_tradeM.label)||'Service';
   const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'—';
   const _geiNow=new Date();
   const dateStr=_geiNow.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
@@ -2926,9 +2926,23 @@ async function sendGenericProposal(previewOnly){
   // MUST be declared before the template literals below that use it — TDZ if declared after
   // Use the client's job address state, not the contractor's home state
   const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
+  // Proposal accent — uses the contractor's own S.brandColor (set in Settings →
+  // Branding) when present, same hex→rgb→lighter-shade treatment as the sign-in
+  // boot overlay, so a branded account's proposal actually looks like THEIRS
+  // instead of generic navy. Falls back to the original navy when unset — zero
+  // visual change for every account that hasn't picked a brand color.
+  let _pAccent='#1a365d',_pAccent2='#2a4a7f';
+  if(S&&S.brandColor){
+    const _bh=S.brandColor.replace('#','');
+    const _br=parseInt(_bh.substr(0,2),16),_bg=parseInt(_bh.substr(2,2),16),_bb=parseInt(_bh.substr(4,2),16);
+    if(!isNaN(_br)&&!isNaN(_bg)&&!isNaN(_bb)){
+      _pAccent='rgb('+_br+','+_bg+','+_bb+')';
+      _pAccent2='rgb('+Math.min(255,_br+42)+','+Math.min(255,_bg+42)+','+Math.min(255,_bb+42)+')';
+    }
+  }
   // One deposit-row template for both modes — only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
-  const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':'#2a4a7f'};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
+  const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
   const _fcPct=(S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
   const _fcApr=Math.round(_fcPct*12*10)/10;
   const _warrantyPeriod=S?.warrantyPeriod||'1 year';
@@ -2976,7 +2990,7 @@ async function sendGenericProposal(previewOnly){
   const _byoTermsEl2=document.getElementById('byo-custom-terms');
   const _byoTermsText=(_byoTermsEl2?_byoTermsEl2.value:(_byoCustomTerms||'')).trim();
   const _customTermsBlock=_byoTermsText
-    ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere">${escHtml(_byoTermsText)}</div></div>`
+    ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere">${escHtml(_byoTermsText)}</div></div>`
     :'';
   // Owner directive: the client-facing proposal shows exactly two dollar figures —
   // the final TOTAL and the deposit due — never a per-room, per-material, or tax/markup
@@ -3010,14 +3024,14 @@ async function sendGenericProposal(previewOnly){
     // T&M and other flows: flat list
     lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>_mkLineRow(l,l._rrp||false)).join('');
   }
-  const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6;overflow-wrap:anywhere"><strong style="color:#1a365d">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
+  const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6;overflow-wrap:anywhere"><strong style="color:${_pAccent}">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
   let _propPanelHtml='';
   if(_panelSched){
     const {l1:_pl1,l2:_pl2,imbalance:_pimb}=_panelCalcBalance();
     const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'—')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
-    _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">📋 Panel Schedule — ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">⚠️ Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:#1a365d;color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
+    _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Panel Schedule — ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:${_pAccent};color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
   }
-  const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Proposal';
+  const _hdrLabel=_geiIsTM?'Time &amp; Materials':tradeName+' Proposal';
   // No standalone NTE pricing row — the cap is already disclosed in the Terms &
   // Conditions "Contract type" clause below, so this isn't a lost disclosure, just
   // one less dollar figure sitting in the pricing table.
@@ -3048,7 +3062,7 @@ async function sendGenericProposal(previewOnly){
     _scopeBlocks.push(_secBlocks2);
   }
   const _scopeSection=_scopeBlocks.length
-    ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
+    ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
     :'';
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   const _geiYearBuilt=_geiEpaClient?_geiEpaClient.yearBuilt||null:null;
@@ -3057,7 +3071,10 @@ async function sendGenericProposal(previewOnly){
   // refactor while line 2677 still referenced it → ReferenceError aborting every send.
   const _geiEpaRequired=!!(_geiYearBuilt&&_geiYearBuilt<1978&&((_geiEpaClient&&_geiEpaClient.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const _rrpSection='';
-  const _totalFooterRows=`<tr style="background:#1a365d;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px;white-space:nowrap">${totalFmt}</td></tr>${_tmDepRow}`;
+  // TOTAL is the one number a client should remember — sized and weighted like a
+  // deliberate focal point (matches the confident-number treatment sign.html's own
+  // amount display uses), not just another table row.
+  const _totalFooterRows=`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${totalFmt}</td></tr>${_tmDepRow}`;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
   // above — once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
@@ -3065,7 +3082,7 @@ async function sendGenericProposal(previewOnly){
   const _lineItemsSection=_geiIsFreeForm
     ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
     :`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
   // Preview-only mode — show proposal in a fullscreen overlay, no upload
   if(previewOnly){_showProposalPreviewOverlay(proposalHtml);return;}
   const bidId=_geiEditBidId;

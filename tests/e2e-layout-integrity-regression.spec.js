@@ -449,6 +449,79 @@ test.describe('layout integrity — mobile', () => {
     expect(r.hasDeposit).toBe(true);
   });
 
+  // Owner directive: proposals should look "damn good, better than the competition."
+  // Decorative emoji (⏱️ in the header, 📋 on the panel schedule, ⚠️ on the rebalance
+  // warning) read as unpolished on a document a client is about to sign — stripped
+  // from the client-facing proposal (the app's own builder UI can keep them, this
+  // only covers the exported proposalHtml). The plain ✓/× glyphs used as functional
+  // status marks are not emoji and are exempt.
+  test('client-facing proposal has no decorative emoji in its header or section labels', async () => {
+    const r = await page.evaluate(async () => {
+      const c = { id: 79109, name: 'No Emoji Client', addr: '1 No Emoji Rd' };
+      clients = clients.filter(x => x.id !== 79109).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79109);
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      _geiIsFreeForm = true;
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Bedroom', price: 500, on: true }];
+      _byoUpdateRail();
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      // Scope to the actual proposal DOCUMENT only (ov's 2nd child) — ov's 1st
+      // child is the preview MODAL's own chrome ("👁 Client preview — how
+      // they'll see it" + Close button), which is internal app UI the client
+      // never sees, not the exported proposalHtml this test is guarding.
+      const html = ov ? (ov.lastElementChild ? ov.lastElementChild.innerHTML : ov.innerHTML) : '';
+      // Decorative pictographic emoji range — excludes the plain ✓ (U+2713) checkmark,
+      // which sits at U+2600-27BF and is used as a functional status glyph, not decoration.
+      const decorativeEmoji = [...html.matchAll(/[\u{1F300}-\u{1FAFF}]/gu)];
+      const res = {
+        err,
+        hasDecorativeEmoji: decorativeEmoji.length > 0,
+        hasServiceProposalHeader: html.includes('Proposal'),
+      };
+      ov?.remove();
+      return res;
+    });
+    expect(r.err).toBe(null);
+    expect(r.hasDecorativeEmoji, 'no pictographic emoji may render in the client-facing proposal').toBe(false);
+    expect(r.hasServiceProposalHeader).toBe(true);
+  });
+
+  // Owner directive: a contractor's own brand color (Settings → Branding,
+  // S.brandColor) should carry into their client-facing proposal instead of every
+  // account seeing generic navy — real per-account differentiation, not a re-skin.
+  // Falls back to the original navy (#1a365d/#2a4a7f) when no brand color is set.
+  test('proposal header + TOTAL use the contractor\'s brand color when set, navy by default', async () => {
+    const r = await page.evaluate(async () => {
+      const c = { id: 79110, name: 'Brand Color Client', addr: '1 Brand Color Rd' };
+      clients = clients.filter(x => x.id !== 79110).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79110);
+      const prevBrand = S.brandColor;
+      S.brandColor = '#166534'; // distinct green, not the navy default
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      _geiIsFreeForm = true;
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Bedroom', price: 500, on: true }];
+      _byoUpdateRail();
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      const html = ov ? ov.innerHTML : '';
+      S.brandColor = prevBrand;
+      const res = {
+        err,
+        hasBrandGradient: html.includes('linear-gradient(135deg,rgb(22,101,52) 0%,rgb(64,143,94) 100%)'),
+        hasBrandTotalBg: html.includes('background:rgb(22,101,52);color:#fff'),
+        hasNavyLeftover: html.includes('#1a365d') || html.includes('#2a4a7f'),
+      };
+      return res;
+    });
+    expect(r.err).toBe(null);
+    expect(r.hasBrandGradient, 'header gradient must use the brand color, not navy').toBe(true);
+    expect(r.hasBrandTotalBg, 'TOTAL row must use the brand color, not navy').toBe(true);
+    expect(r.hasNavyLeftover, 'no hardcoded navy hex may leak through once a brand color is set').toBe(false);
+  });
+
   // Regression (owner-reported): a BYO item's notes printed in full TWICE in one
   // proposal — once under "Scope of work" (added so scope-chip descriptions never
   // get silently dropped when BYO has line items) and again in the pricing table's
