@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.07.26.18';
+const APP_VERSION='07.07.26.19';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -4051,6 +4051,13 @@ async function checkNewSignatures(){
           if(bid.status!=='Closed Lost'){
             bid.status='Closed Lost';bid.draft=false;
             bid.declinedAt=s.signed_at;
+            changed=true;
+          }
+          // Client-picked reason (sign.html's decline modal) — same field a
+          // contractor's own manual "Mark Lost" action populates, so it shows
+          // up in the Declined tab / dashboard with no new UI needed.
+          if(s.decline_reason&&bid.lostReason!==s.decline_reason){
+            bid.lostReason=s.decline_reason;bid.lostAt=bid.lostAt||s.signed_at;
             changed=true;
           }
         } else {

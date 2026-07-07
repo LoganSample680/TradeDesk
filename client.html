@@ -279,6 +279,12 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 /* ── Proposal overlay ── */
 #prop-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
 .prop-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
+/* The proposal card itself carries its own border+shadow (baked into the stored
+   HTML at send time) — the 24px side padding above double-frames it on a phone
+   screen, wasting width on a page a client is reading closely. Tighten to a
+   small gutter (not 0 — keeps the card's rounded corners/shadow from clipping
+   at the viewport edge) so the content actually uses the screen. */
+@media(max-width:640px){.prop-wrap{padding-left:8px;padding-right:8px}}
 .prop-close{position:fixed;top:16px;right:16px;background:var(--ink);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
 
 /* ── Boot overlay ── */

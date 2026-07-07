@@ -1794,6 +1794,83 @@ test.describe('sign.html — "Powered by" respects the contractor\'s Settings to
   });
 });
 
+test.describe('sign.html — decline reason picker', () => {
+  let page;
+
+  test.beforeEach(async ({ page: p }) => {
+    page = p;
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+    // _supa.from(...).upsert(...) runs entirely through the in-memory shim (no real
+    // HTTP request to intercept) — spy on _supa.from directly instead, same pattern
+    // used elsewhere in this file for the mocked Supabase client.
+    await page.evaluate(() => {
+      window.__declineUpserts = [];
+      const origFrom = _supa.from.bind(_supa);
+      _supa.from = function(table) {
+        const q = origFrom(table);
+        if (table === 'signed_proposals') {
+          const origUpsert = q.upsert.bind(q);
+          q.upsert = function(row, opts) { window.__declineUpserts.push(row); return origUpsert(row, opts); };
+        }
+        return q;
+      };
+    });
+  });
+
+  test('decline modal shows the research-backed reason chips', async () => {
+    await page.evaluate(() => declineBid());
+    const labels = await page.locator('#decline-reason-opts .decline-reason-opt').allTextContents();
+    expect(labels).toEqual(['Price', 'Found another contractor', 'Not the right time', 'Doing it myself', 'Changed my mind', 'Other']);
+  });
+
+  test('picking "Other" reveals a free-text field; other reasons keep it hidden', async () => {
+    await page.evaluate(() => declineBid());
+    await page.locator('.decline-reason-opt[data-reason="Price"]').click();
+    await expect(page.locator('#decline-other-wrap')).toBeHidden();
+    await page.locator('.decline-reason-opt[data-reason="Other"]').click();
+    await expect(page.locator('#decline-other-wrap')).toBeVisible();
+  });
+
+  test('picking a reason and declining sends decline_reason on the signed_proposals upsert', async () => {
+    await page.evaluate(() => declineBid());
+    await page.locator('.decline-reason-opt[data-reason="Found another contractor"]').click();
+    await page.click('#decline-confirm-btn');
+    await page.waitForTimeout(500);
+    const rows = await page.evaluate(() => window.__declineUpserts);
+    expect(rows.length, 'no signed_proposals upsert was captured').toBe(1);
+    expect(rows[0].decline_reason).toBe('Found another contractor');
+    expect(rows[0].payment_status).toBe('declined');
+  });
+
+  test('declining with no reason picked still succeeds — reason is never a blocker', async () => {
+    await page.evaluate(() => declineBid());
+    await page.click('#decline-confirm-btn');
+    await page.waitForTimeout(500);
+    await expect(page.locator('#pg-declined')).toBeVisible();
+    assertNoErrors(page, 'decline with no reason picked');
+  });
+
+  test('"Other" reason with typed text is combined as "Other: <text>"', async () => {
+    await page.evaluate(() => declineBid());
+    await page.locator('.decline-reason-opt[data-reason="Other"]').click();
+    await page.fill('#decline-other-text', 'Budget got cut this quarter');
+    await page.click('#decline-confirm-btn');
+    await page.waitForTimeout(500);
+    const rows = await page.evaluate(() => window.__declineUpserts);
+    expect(rows.length).toBe(1);
+    expect(rows[0].decline_reason).toBe('Other: Budget got cut this quarter');
+  });
+
+  test('no console errors from the decline reason picker', async () => {
+    assertNoErrors(page, 'decline reason picker');
+  });
+});
+
 // ── Cancellation clause patch — old proposals upgraded on-the-fly ────────────
 // sign.html patches legacy proposalHtml (old "Buyer has the right to cancel"
 // language) so unsigned in-flight proposals show the updated mutual-obligation

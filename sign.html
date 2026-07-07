@@ -442,13 +442,23 @@ input[type=text]:focus{border-color:var(--denim)}
   <div id="powered-by-footer" style="text-align:center;padding:28px 16px 12px;font-size:11px;color:var(--text3);font-weight:500">Powered by <strong style="font-weight:700;color:var(--text2)">TradeDesk Pro</strong></div>
 </div>
 
-<!-- Decline confirmation modal -->
+<!-- Decline confirmation modal — reason picker before the exit completes, so a
+     lost deal leaves real signal instead of a blank decline. Reason is optional
+     context for the contractor, never a blocker: the Decline button stays
+     enabled with or without a pick, matching this screen's low-friction intent
+     (unlike the post-signing cancellation flow in client.html, which requires
+     one before continuing). -->
 <div id="decline-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:20px">
-  <div style="background:var(--bg);border-radius:16px;padding:24px;width:100%;max-width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.35)">
-    <div class="pg-status-badge neutral"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></div>
-    <div style="font-size:17px;font-weight:800;margin-bottom:8px;color:var(--ink)">Decline this proposal?</div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:20px">This will notify <span class="decline-biz-name">the contractor</span> that you're not moving forward. You can always reach out to them directly.</div>
-    <div style="display:flex;gap:10px">
+  <div style="background:var(--bg);border-radius:16px;padding:24px;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.35)">
+    <div style="text-align:center">
+      <div class="pg-status-badge neutral"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:8px;color:var(--ink)">Decline this proposal?</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px">This will notify <span class="decline-biz-name">the contractor</span> that you're not moving forward. You can always reach out to them directly.</div>
+    </div>
+    <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;text-align:left">Mind sharing why? (optional)</div>
+    <div id="decline-reason-opts" style="margin-bottom:8px"></div>
+    <div id="decline-other-wrap" style="display:none;margin-bottom:8px"><textarea id="decline-other-text" placeholder="Tell us more…" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;font-family:inherit;resize:none;height:56px;color:var(--ink)"></textarea></div>
+    <div style="display:flex;gap:10px;margin-top:12px">
       <button onclick="document.getElementById('decline-modal').style.display='none'" style="flex:1;padding:12px;border:1.5px solid var(--border2);background:var(--bg2);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">Go back</button>
       <button id="decline-confirm-btn" onclick="_confirmDecline()" style="flex:1;padding:12px;border:none;background:#A32D2D;color:#fff;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Decline</button>
     </div>
@@ -1190,9 +1200,33 @@ function showEpaPage(){
   document.getElementById('epa-cert-info').textContent=certLines.join(' · ');
 }
 
+// Research-backed reason list (price/value, competitor, timing, DIY, changed
+// mind, other) — matches the ranked reasons homeowners actually decline home
+// improvement quotes for. Mirrors the post-signing cancellation reason picker
+// in client.html for a consistent pattern, with "Doing it myself" added since
+// it's a distinct, common decline reason that never applies to cancellation.
+const DECLINE_REASONS=['Price','Found another contractor','Not the right time','Doing it myself','Changed my mind','Other'];
+let _declineReason='';
 function declineBid(){
   const modal=document.getElementById('decline-modal');
-  if(modal){modal.style.display='flex';}
+  if(!modal)return;
+  _declineReason='';
+  const opts=document.getElementById('decline-reason-opts');
+  if(opts&&!opts.dataset.built){
+    opts.innerHTML=DECLINE_REASONS.map(r=>'<button class="decline-reason-opt" data-reason="'+r+'" onclick="_declinePickReason(this)" style="display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:6px;border:1.5px solid var(--border2);border-radius:8px;background:#fff;font-size:13px;cursor:pointer;font-family:inherit;color:var(--ink);transition:border-color .15s,background .15s">'+r+'</button>').join('');
+    opts.dataset.built='1';
+  }
+  document.querySelectorAll('#decline-reason-opts .decline-reason-opt').forEach(b=>{b.style.borderColor='var(--border2)';b.style.background='#fff';b.style.fontWeight='';});
+  const ow=document.getElementById('decline-other-wrap');if(ow)ow.style.display='none';
+  const ot=document.getElementById('decline-other-text');if(ot)ot.value='';
+  modal.style.display='flex';
+}
+function _declinePickReason(btn){
+  document.querySelectorAll('#decline-reason-opts .decline-reason-opt').forEach(b=>{b.style.borderColor='var(--border2)';b.style.background='#fff';b.style.fontWeight='';});
+  btn.style.borderColor='var(--ink)';btn.style.background='var(--bg2)';btn.style.fontWeight='800';
+  _declineReason=btn.dataset.reason;
+  const ow=document.getElementById('decline-other-wrap');
+  if(ow)ow.style.display=_declineReason==='Other'?'block':'none';
 }
 async function _confirmDecline(){
   const btn=document.getElementById('decline-confirm-btn');
@@ -1201,9 +1235,15 @@ async function _confirmDecline(){
   let key=params2.get('key');
   if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
   const ts=new Date().toISOString();
+  // Reason is entirely optional — an empty pick just means no signal, never a blocker.
+  let declineReason=_declineReason;
+  if(declineReason==='Other'){
+    const t=(document.getElementById('decline-other-text')?.value||'').trim();
+    declineReason=t?'Other: '+t:'Other';
+  }
   try{
     // Update proposal JSON in storage
-    const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts});
+    const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts,declineReason});
     await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
     // Write to signed_proposals with payment_status:'declined' so the contractor app
     // sees the decline and marks the bid as Closed Lost (not Closed Won)
@@ -1213,7 +1253,7 @@ async function _confirmDecline(){
       amount:_prop.amount,deposit:_prop.deposit,
       payment_method:'declined',payment_status:'declined',
       signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
-      portfolio_accepted:false,
+      portfolio_accepted:false,decline_reason:declineReason||null,
     },{onConflict:'bid_id'});
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');

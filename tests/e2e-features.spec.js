@@ -3996,6 +3996,44 @@ test.describe('client hub — subscribes to and reacts to the live-push channel'
 //  PROGRESS PHOTOS — optional milestone label, threaded through to the snapshot
 // ════════════════════════════════════════════════════════════════════════════
 
+test.describe('checkNewSignatures — client-picked decline reason lands on bid.lostReason', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('a signed_proposals row with decline_reason populates bid.lostReason — same field the Declined tab already reads', async () => {
+    const r = await page.evaluate(async ({ bidId, uid }) => {
+      window._supaUser = window._supaUser || { id: uid, email: 'z@t.com' };
+      bids = bids.filter(b => b.id !== bidId);
+      bids.push({ id: bidId, client_id: 886400, status: 'Pending', amount: 4200, type: 'Roof Repair' });
+      const origFrom = _supa.from.bind(_supa);
+      _supa.from = function(table) {
+        if (table === 'signed_proposals') {
+          const row = [{ bid_id: String(bidId), contractor_user_id: uid, payment_status: 'declined', decline_reason: 'Not the right time', signed_at: new Date().toISOString() }];
+          const q = { select: () => q, eq: () => q, order: () => q, limit: () => q, then: (res) => res({ data: row, error: null }) };
+          return q;
+        }
+        return origFrom(table);
+      };
+      try { await checkNewSignatures(); } catch (e) { return { err: e.message }; }
+      finally { _supa.from = origFrom; }
+      const b = bids.find(x => x.id === bidId);
+      return { status: b.status, lostReason: b.lostReason || '' };
+    }, { bidId: 886401, uid: FAKE_USER_ID });
+    expect(r.status).toBe('Closed Lost');
+    expect(r.lostReason).toBe('Not the right time');
+    assertNoErrors(page, 'decline reason merge onto bid.lostReason');
+  });
+});
+
 test.describe('addJobPhoto — progress type carries an optional milestone caption', () => {
   let page;
 
