@@ -131,6 +131,16 @@ test.describe('Notice of Cancellation — 3-step friction flow', () => {
     assertNoErrors(page, 'step 1 reason picker');
   });
 
+  test('regression: "Cancellation window open" banner renders an SVG icon, not a bare hourglass emoji', async ({ page }) => {
+    // This exact call site was missed by the codebase-wide emoji→SVG icon sweep —
+    // caught by manual audit after the fact. Locking it in so it can't regress.
+    await bootHub(page, hubWith());
+    await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
+    const html = await page.locator('#cancel-notice-ov').innerHTML();
+    expect(html).toContain('<svg');
+    expect(html).not.toContain('⏳');
+  });
+
   test('selecting a reason enables Continue and advances to step 2', async ({ page }) => {
     await bootHub(page, hubWith());
     await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
@@ -210,6 +220,25 @@ test.describe('Notice of Cancellation — 3-step friction flow', () => {
     // No Stripe payment button should appear
     expect(overview).not.toContain('Secured by Stripe');
     assertNoErrors(page, 'cancelled bid clears balance in overview');
+  });
+
+  test('regression: account-menu chevron and invoice "Save as PDF" render SVG icons, not bare glyphs', async ({ page }) => {
+    // Two more call sites the emoji→SVG sweep missed — static topbar markup (▾)
+    // and a JS-built invoice button string (⬇). Both caught by manual audit.
+    await bootHub(page, hubWith());
+    const chevron = page.locator('.acct-chevron');
+    expect(await chevron.innerHTML()).toContain('<svg');
+    // .innerText, not .innerHTML — the chevron hydrates via document.write(), which
+    // leaves the original (inert, never re-run) <script> tag in the DOM afterward
+    // with its JS source as literal child text; innerHTML picks up that source's
+    // '▾' even though the SVG renders correctly on screen. innerText reflects only
+    // what's actually visible, same fix as the nav-icon regression test above.
+    expect(await chevron.innerText()).not.toContain('▾');
+    await page.evaluate(id => openInvoice(id), FAKE_BID_ID_1);
+    const invHtml = await page.locator('#inv-content').innerHTML();
+    expect(invHtml).toContain('Save as PDF');
+    expect(invHtml).not.toContain('⬇');
+    assertNoErrors(page, 'chevron + invoice PDF button icon regression');
   });
 });
 

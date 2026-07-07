@@ -437,7 +437,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
       <button class="acct-chip" id="acct-chip" onclick="toggleAcctMenu(event)" aria-label="Account menu">
         <div class="acct-avatar" id="acct-avatar"></div>
         <span class="acct-chip-name" id="acct-chip-name"></span>
-        <span class="acct-chevron">▾</span>
+        <span class="acct-chevron"><script>document.write(svgIcon('▾',{size:10}))</script></span>
       </button>
       <div class="acct-dropdown" id="acct-dropdown">
         <button class="acct-menu-item" onclick="closeAcctMenu()"><script>document.write(svgIcon('👤'))</script> Profile</button>
@@ -1577,7 +1577,7 @@ function _cancelShowStep1(dl){
   const contractorName=esc((_hub&&_hub.contractorName)||'your contractor');
   const reasons=['Price concerns','Schedule conflict','Found another contractor','Changed my mind','Other'];
   let h=_cancelHdr('Notice of Cancellation');
-  h+='<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:#92400E;font-weight:700">⏳ Cancellation window open — expires '+dl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at midnight</div>';
+  h+='<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:#92400E;font-weight:700">'+svgIcon('⏳',{size:12})+' Cancellation window open — expires '+dl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at midnight</div>';
   h+='<div style="font-size:15px;font-weight:800;color:#1a1a18;margin-bottom:6px">Why are you considering cancelling?</div>';
   h+='<div style="font-size:13px;color:#64748b;margin-bottom:14px">Helps '+contractorName+' improve their service.</div>';
   reasons.forEach(r=>{h+='<button class="cancel-reason-opt" data-reason="'+r+'" onclick="_cancelPickReason(this)" style="display:block;width:100%;text-align:left;padding:11px 14px;margin-bottom:8px;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;font-size:14px;cursor:pointer;font-family:inherit;color:#1a1a18;transition:border-color .15s,background .15s">'+r+'</button>';});
@@ -2321,7 +2321,7 @@ function openInvoice(bidId){
   html+='</div><div style="font-size:28px;font-weight:800;color:'+bdClr+'">'+fmt(balance)+'</div></div>';
   html+='<div class="inv-footer-text">'+esc(h.contractorName)+' · '+(h.contractorPhone?esc(h.contractorPhone)+' · ':'')+'Thank you for choosing us!</div>';
   html+='<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">';
-  html+='<button onclick="window.print()" class="btn" style="width:auto;flex:1;padding:12px">⬇ Save as PDF</button>';
+  html+='<button onclick="window.print()" class="btn" style="width:auto;flex:1;padding:12px">'+svgIcon('⬇',{size:14})+' Save as PDF</button>';
   html+='<button onclick="closeInvoice()" class="btn btn-sec" style="width:auto;flex:1">Close</button></div>';
   document.getElementById('inv-content').innerHTML=html;
   const _invOv=document.getElementById('inv-overlay');
