@@ -3057,7 +3057,10 @@ async function sendGenericProposal(previewOnly){
     const _secBlocks2=_scopeSecs2.map(sec=>{
       const its=_byoWorkItems2.filter(it=>it.section===sec);
       const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}${it.notes?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(it.notes)}</span>`:''}</li>`).join('')+'</ol>';
-      return `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
+      // Sub-section headers match the document's one header style (accent, same
+      // scale as "Scope of work") — the old hardcoded gray read as a different
+      // font family entirely and made the section look mismatched.
+      return `<div style="margin-bottom:10px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
     }).join('');
     _scopeBlocks.push(_secBlocks2);
   }

@@ -4241,6 +4241,59 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  QUICK ACTIONS — accent icon chips + class-driven Collect state
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('dashboard quick actions — accent chips', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('all six actions render an icon chip with an SVG inside; old .qa-emoji is deleted', async () => {
+    const r = await page.evaluate(() => ({
+      chips: document.querySelectorAll('#dash-quick .qa-ico').length,
+      svgs: document.querySelectorAll('#dash-quick .qa-ico svg').length,
+      emojiClass: document.querySelectorAll('.qa-emoji').length, // removed, not renamed-and-left
+    }));
+    expect(r.chips).toBe(6);
+    expect(r.svgs).toBe(6);
+    expect(r.emojiClass).toBe(0);
+  });
+
+  test('Collect state is class-driven: qa-idle with nothing owed, qa-g when money is collectible — no inline background', async () => {
+    const r = await page.evaluate(() => {
+      const btn = document.getElementById('qa-collect-btn');
+      bids = bids.filter(b => b.id !== 886400);
+      renderDash();
+      const idle = { g: btn.classList.contains('qa-g'), idle: btn.classList.contains('qa-idle'), inlineBg: btn.style.background };
+      clients = clients.filter(c => c.id !== 886401);
+      clients.push({ id: 886401, name: 'QA Owing Client', phone: '3165550444' });
+      bids.push({ id: 886400, client_id: 886401, status: 'Closed Won', amount: 900, deposit: 0, bid_date: todayKey(), signingToken: 'qatok' });
+      renderDash();
+      const owed = { g: btn.classList.contains('qa-g'), idle: btn.classList.contains('qa-idle'), inlineBg: btn.style.background };
+      bids = bids.filter(b => b.id !== 886400);
+      renderDash();
+      return { idle, owed };
+    });
+    expect(r.idle.idle).toBe(true);
+    expect(r.idle.g).toBe(false);
+    expect(r.idle.inlineBg).toBe('');
+    expect(r.owed.g).toBe(true);
+    expect(r.owed.idle).toBe(false);
+    expect(r.owed.inlineBg).toBe('');
+    assertNoErrors(page, 'quick action collect states');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  SIGN-FLOW WARMTH BADGE — contractor-facing furthest-step surfacing
 // ════════════════════════════════════════════════════════════════════════════
 

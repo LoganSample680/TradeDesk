@@ -344,11 +344,13 @@ input[type=text]:focus{border-color:var(--denim)}
       <!-- Risk reversal — signing anxiety is a risk calculation; answer it at the
            exact moment it spikes. Every line is already true and data-driven
            (cancel window from state law on the proposal, contract terms as
-           written, ESIGN) — this only surfaces existing protections, no new claims. -->
-      <div id="risk-reversal-strip" style="background:var(--green-lt);border:1px solid var(--green-border);border-radius:var(--r);padding:11px 14px;margin-bottom:14px">
-        <div id="rr-cancel" style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--green-mid);margin-bottom:6px"></div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--green-mid);margin-bottom:6px"><span id="rr-ck2"></span>Price and scope locked exactly as written — changes only with your signed approval</div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--green-mid)"><span id="rr-ck3"></span>Secure, legally binding e-signature</div>
+           written, ESIGN) — this only surfaces existing protections, no new
+           claims. Styled as a quiet hairline list, not a colored callout box —
+           reassurance should read like part of the document, not a sales badge. -->
+      <div id="risk-reversal-strip" style="border-top:1px solid var(--border);padding:12px 2px 4px;margin-bottom:12px">
+        <div id="rr-cancel" style="display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:var(--text2);line-height:1.5;margin-bottom:7px"></div>
+        <div style="display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:var(--text2);line-height:1.5;margin-bottom:7px"><span id="rr-ck2" style="flex-shrink:0;color:var(--green-mid)"></span>Price and scope locked exactly as written — changes only with your signed approval</div>
+        <div style="display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:var(--text2);line-height:1.5"><span id="rr-ck3" style="flex-shrink:0;color:var(--green-mid)"></span>Secure, legally binding e-signature</div>
       </div>
 
       <!-- UETA checkbox -->
@@ -749,7 +751,7 @@ async function init(){
     const _rrCancel=document.getElementById('rr-cancel');
     if(_rrCancel){
       const _rrDays=_prop.cancelDays!=null?_prop.cancelDays:3;
-      if(_rrDays>0)_rrCancel.innerHTML='<span>'+svgIcon('✓',{size:13})+'</span>'+_rrDays+'-day right to cancel — no questions asked';
+      if(_rrDays>0)_rrCancel.innerHTML='<span style="flex-shrink:0;color:var(--green-mid)">'+svgIcon('✓',{size:13})+'</span>'+_rrDays+'-day right to cancel — no questions asked';
       else _rrCancel.style.display='none';
     }
     const _rrCk2=document.getElementById('rr-ck2'),_rrCk3=document.getElementById('rr-ck3');

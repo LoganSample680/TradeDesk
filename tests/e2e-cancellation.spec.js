@@ -242,6 +242,87 @@ test.describe('Notice of Cancellation — 3-step friction flow', () => {
   });
 });
 
+// ── Declined proposals must NEVER render as signed ────────────────────────────
+// Live bug (owner screenshot, 2026-07-07): a client declined a proposal and the
+// hub viewer showed a full "CLIENT SIGNATURE — Signed by <name>" block with a
+// timestamp. Root cause: a decline writes a signed_proposals row too
+// (payment_status='declined', signed_at = decline time — that's how the
+// contractor app learns of it), and _mergeSignedProposals treated EVERY row in
+// that table as a signature — promoting the declined bid to Closed Won and
+// stamping signedAt/signerName from the decline record.
+test.describe('Declined proposal — never rendered as signed', () => {
+  const DECLINED_ROW = {
+    bid_id: String(FAKE_BID_ID_1),
+    client_name: 'Logan Sample',
+    client_signed_name: 'Logan Sample',
+    payment_method: 'declined',
+    payment_status: 'declined',
+    signed_at: '2026-07-07T15:36:00.000Z',
+    decline_reason: 'Price',
+  };
+
+  async function mergeDeclined(page) {
+    await page.evaluate(async (row) => {
+      const origFrom = _supa.from.bind(_supa);
+      _supa.from = (table) => table === 'signed_proposals'
+        ? { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [row] }) }) }) }
+        : origFrom(table);
+      await _mergeSignedProposals(_hub, _hub.contractorUserId);
+      _supa.from = origFrom;
+    }, DECLINED_ROW);
+  }
+
+  test('_mergeSignedProposals: a declined row marks the bid Closed Lost — no signedAt, no signer, no balance', async ({ page }) => {
+    await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
+    await mergeDeclined(page);
+    const bid = await page.evaluate(() => {
+      const b = _hub.bids[0];
+      return { status: b.status, signedAt: b.signedAt || null, signerName: b.signerName || null, declinedAt: b.declinedAt || null, lostReason: b.lostReason || null, balance: b.balance };
+    });
+    expect(bid.status).toBe('Closed Lost');
+    expect(bid.signedAt).toBeNull();
+    expect(bid.signerName).toBeNull();
+    expect(bid.declinedAt).toBe(DECLINED_ROW.signed_at);
+    expect(bid.lostReason).toBe('Price'); // client-picked reason surfaces in Documents immediately
+    expect(bid.balance).toBe(0);
+    assertNoErrors(page, 'declined merge');
+  });
+
+  test('opening a declined proposal shows a Declined notice — never a CLIENT SIGNATURE block', async ({ page }) => {
+    // The stored proposal JSON (MOCK_PROPOSAL, status:'pending') deliberately does
+    // NOT say declined — the decline state arrives via the merged bid, exactly like
+    // the live bug, so this exercises the bid.declinedAt guard in openProposal.
+    await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
+    await mergeDeclined(page);
+    await page.evaluate(id => openProposal(id), FAKE_BID_ID_1);
+    await page.waitForTimeout(600);
+    const html = await page.locator('#prop-content').innerHTML();
+    expect(html).toContain('Declined');
+    expect(html).toContain('not a signed agreement');
+    expect(html).not.toContain('CLIENT SIGNATURE');
+    expect(html).not.toContain('Client Signature');
+    expect(html).not.toContain('Signed By');
+    assertNoErrors(page, 'declined proposal viewer');
+  });
+
+  test('a genuinely signed row still merges as signed — the decline guard is exact', async ({ page }) => {
+    await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
+    await page.evaluate(async () => {
+      const row = { bid_id: String(_hub.bids[0].id), client_signed_name: 'Alice Smith', payment_method: 'cash', payment_status: 'pending', signed_at: '2026-07-06T12:00:00.000Z' };
+      const origFrom = _supa.from.bind(_supa);
+      _supa.from = (table) => table === 'signed_proposals'
+        ? { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [row] }) }) }) }
+        : origFrom(table);
+      await _mergeSignedProposals(_hub, _hub.contractorUserId);
+      _supa.from = origFrom;
+    });
+    const bid = await page.evaluate(() => ({ status: _hub.bids[0].status, signedAt: _hub.bids[0].signedAt || null, signerName: _hub.bids[0].signerName || null }));
+    expect(bid.status).toBe('Closed Won');
+    expect(bid.signedAt).toBe('2026-07-06T12:00:00.000Z');
+    expect(bid.signerName).toBe('Alice Smith');
+  });
+});
+
 // ── Hub snapshot freshness — HTTP cache bypass (stale-balance fix) ────────────
 // The hub snapshot JSON is rewritten in storage whenever the contractor logs a
 // payment, but Supabase storage's default cache-control: max-age=3600 let the

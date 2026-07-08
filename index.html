@@ -374,15 +374,25 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .mmt-sec-badge{font-size:11px;font-weight:700;background:var(--border2);border-radius:10px;padding:1px 8px;color:var(--text2)}
 .mmt-sec-chev{font-size:13px;color:var(--text3);width:14px;text-align:center}
 
-/* ── Quick actions ── */
-.qa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px}
-.qa{padding:14px 8px;border-radius:var(--r-lg);font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:-.05px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;background:var(--bg-card);color:var(--text);box-shadow:var(--shadow-card);transition:box-shadow .12s,transform .08s;width:100%;border:none}
-.qa:hover{box-shadow:var(--shadow-hover)}
-.qa:active{transform:translateY(1px)}
+/* ── Quick actions ──
+   Each action carries its own accent (inline --qa-accent/--qa-tint) rendered as
+   a tinted icon chip — the grid reads as six distinct actions at a glance
+   instead of six identical gray boxes. Primary (New lead) and Collect keep
+   their full-color fills with translucent white chips. */
+.qa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:10px}
+.qa{padding:14px 8px 12px;border-radius:var(--r-lg);font-family:var(--font-ui);font-size:12px;font-weight:800;letter-spacing:-.1px;display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;background:var(--bg-card);color:var(--text);box-shadow:var(--shadow-card);transition:box-shadow .15s,transform .12s;width:100%;border:none}
+.qa:hover{box-shadow:var(--shadow-hover);transform:translateY(-1px)}
+.qa:hover .qa-ico{transform:scale(1.07)}
+.qa:active{transform:translateY(0) scale(.97)}
+.qa-ico{width:42px;height:42px;border-radius:13px;display:flex;align-items:center;justify-content:center;background:var(--qa-tint,var(--bg));color:var(--qa-accent,var(--text-2));transition:transform .15s cubic-bezier(.22,1,.36,1)}
 .qa-p{background:var(--ink);color:#fff;box-shadow:0 1px 0 rgba(0,0,0,.2) inset,0 -1px 0 rgba(255,255,255,.06) inset,0 2px 8px rgba(27,22,18,.18)}
+.qa-p .qa-ico{background:rgba(255,255,255,.14);color:#fff}
 .qa-g{background:var(--c-green);color:#fff;box-shadow:var(--shadow-btn-pop)}
+.qa-g .qa-ico{background:rgba(255,255,255,.18);color:#fff}
+.qa-idle{background:var(--bg-card);color:var(--text-2)}
+.qa-idle .qa-ico{background:var(--bg);color:var(--text-2)}
 .qa-d{background:var(--denim);color:#fff;box-shadow:var(--shadow-btn-pop)}
-.qa-emoji{font-size:22px;line-height:1}
+.qa-d .qa-ico{background:rgba(255,255,255,.16);color:#fff}
 .td-micro{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3)}
 
 /* ── Tables ── */
@@ -1239,22 +1249,22 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="td-micro" style="margin-bottom:10px">Quick actions</div>
         <div class="qa-grid">
           <button class="qa qa-p" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">
-            <span class="qa-emoji" data-ico="👤" data-ico-size="22"></span><span>New lead</span>
+            <span class="qa-ico"><span data-ico="👤" data-ico-size="22"></span></span><span>New lead</span>
           </button>
-          <button class="qa" onclick="quickAction('drive')">
-            <span class="qa-emoji" data-ico="🚗" data-ico-size="22"></span><span>Drive</span>
+          <button class="qa" style="--qa-accent:#2D5DA8;--qa-tint:#E9EFF9" onclick="quickAction('drive')">
+            <span class="qa-ico"><span data-ico="🚗" data-ico-size="22"></span></span><span>Drive</span>
           </button>
-          <button class="qa" id="qa-estimate-btn" onclick="quickAction('estimate')">
-            <span class="qa-emoji" data-ico="📋" data-ico-size="22"></span><span>Estimate</span>
+          <button class="qa" id="qa-estimate-btn" style="--qa-accent:#7C3AED;--qa-tint:#F2ECFD" onclick="quickAction('estimate')">
+            <span class="qa-ico"><span data-ico="📋" data-ico-size="22"></span></span><span>Estimate</span>
           </button>
-          <button class="qa" onclick="quickAction('schedule')">
-            <span class="qa-emoji" data-ico="📅" data-ico-size="22"></span><span>Schedule</span>
+          <button class="qa" style="--qa-accent:#B45309;--qa-tint:#FBF1E2" onclick="quickAction('schedule')">
+            <span class="qa-ico"><span data-ico="📅" data-ico-size="22"></span></span><span>Schedule</span>
           </button>
-          <button class="qa" onclick="quickAction('expense')">
-            <span class="qa-emoji" data-ico="🧾" data-ico-size="22"></span><span>Expense</span>
+          <button class="qa" style="--qa-accent:#A32D2D;--qa-tint:#FBEBEB" onclick="quickAction('expense')">
+            <span class="qa-ico"><span data-ico="🧾" data-ico-size="22"></span></span><span>Expense</span>
           </button>
           <button class="qa qa-g" id="qa-collect-btn" onclick="quickAction('collect')">
-            <span class="qa-emoji" data-ico="💰" data-ico-size="22"></span><span id="qa-collect-label">Collect</span>
+            <span class="qa-ico"><span data-ico="💰" data-ico-size="22"></span></span><span id="qa-collect-label">Collect</span>
           </button>
         </div>
       </div>

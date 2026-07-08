@@ -626,6 +626,19 @@ async function _mergeSignedProposals(hub,u){
     if(sigs)sigs.forEach(sp=>{
       const bid=hub.bids.find(b=>String(b.id)===sp.bid_id);
       if(!bid)return;
+      // A DECLINE also writes a signed_proposals row (payment_status='declined',
+      // signed_at = decline timestamp — that's how the contractor app learns of
+      // it). It is a terminal NO, not a signature: never promote it to Closed
+      // Won or stamp a "Signed by" name/date from it. Live bug: a declined
+      // proposal rendered a full CLIENT SIGNATURE block in the hub viewer.
+      if(sp.payment_status==='declined'||sp.payment_method==='declined'){
+        bid.status='Closed Lost';
+        bid.declinedAt=bid.declinedAt||sp.signed_at;
+        bid.lostAt=bid.lostAt||sp.signed_at; // Documents' declined card reads lostAt/lostReason
+        if(sp.decline_reason){bid.declineReason=sp.decline_reason;bid.lostReason=bid.lostReason||sp.decline_reason;}
+        bid.balance=0; // nothing owed on a declined proposal — no pay CTA
+        return;
+      }
       if(bid.status==='Pending'){
         bid.status='Closed Won';bid.signedAt=sp.signed_at;bid.paymentStatus=sp.payment_status;
       }
@@ -2351,7 +2364,9 @@ async function openProposal(bidId){
     if(error||!propData)throw new Error(error?.message||'document not found in storage');
     // Fall back to the bid's DB-sourced fields when the storage JSON missed the
     // signing update — the signature block must still show name + timestamp.
-    if(propData.status!=='signed'&&bid.signedAt){
+    // Never for a declined proposal: a decline is not a signature.
+    const _isDeclined=propData.status==='declined'||!!bid.declinedAt;
+    if(!_isDeclined&&propData.status!=='signed'&&bid.signedAt){
       propData.status='signed';
       propData.signerName=propData.signerName||bid.signerName||'Client';
       propData.signedAt=propData.signedAt||bid.signedAt;
@@ -2359,7 +2374,14 @@ async function openProposal(bidId){
     // DB-stored signature image fills in when the storage JSON copy is missing
     if(!propData.signatureDataUrl&&bid.signatureData)propData.signatureDataUrl=bid.signatureData;
     let sigBlock='';
-    if(propData.status==='signed'&&propData.signerName){
+    if(_isDeclined){
+      const decDate=(propData.declinedAt||bid.declinedAt)?new Date(propData.declinedAt||bid.declinedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'';
+      sigBlock='<div style="margin-top:32px;border-top:2px solid #e0e0dc;padding-top:20px">'+
+        '<div style="display:inline-flex;align-items:center;gap:8px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:20px;padding:8px 16px;font-size:12px;font-weight:800;color:#475569">Declined'+(decDate?' — '+escHtml(decDate):'')+'</div>'+
+        '<div style="font-size:12px;color:#94a3b8;margin-top:10px;line-height:1.6">This proposal was declined and is not a signed agreement. If you’ve changed your mind, reach out — we’d love to revisit it.</div>'+
+      '</div>';
+    }
+    else if(propData.status==='signed'&&propData.signerName){
       const sigDate=propData.signedAt?new Date(propData.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
       const payLabel=(propData.paymentMethod||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       sigBlock='<div style="margin-top:32px;border-top:2px solid var(--ink,#1a1a18);padding-top:24px">'+

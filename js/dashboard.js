@@ -325,7 +325,14 @@ function renderDash(){
   const _cl=document.getElementById('qa-collect-label');
   if(_cl)_cl.textContent=_owing.length?'Collect ('+_owing.length+')':'Collect';
   const _qb=document.getElementById('qa-collect-btn');
-  if(_qb){_qb.style.background=_owing.length>0?'var(--green)':'var(--border2)';_qb.style.borderColor=_qb.style.background;_qb.style.color=_owing.length>0?'#fff':'var(--text3)';}
+  // Class toggle, not inline styles — the old inline gray killed the tile's icon
+  // chip and read as a dead gray blob. qa-idle keeps the card look with a muted
+  // chip; qa-g lights it green only when there's actually money to collect.
+  if(_qb){
+    const _on=_owing.length>0;
+    _qb.classList.toggle('qa-g',_on);_qb.classList.toggle('qa-idle',!_on);
+    _qb.style.background='';_qb.style.borderColor='';_qb.style.color='';
+  }
   const _licBtn=document.getElementById('mmi-licensing');
   if(_licBtn){const _la=getLicenseAlerts();_licBtn.style.position='relative';const _exBadge=_licBtn.querySelector('._lic-badge');if(_la.length){if(!_exBadge){const b=document.createElement('span');b.className='_lic-badge';b.style.cssText='position:absolute;top:6px;right:calc(50% - 18px);width:8px;height:8px;background:#e53e3e;border-radius:50%;border:2px solid var(--nav-bg)';_licBtn.appendChild(b);}else{_exBadge.style.display='block';}}else{if(_exBadge)_exBadge.style.display='none';}}
   // Only re-render the currently visible workflow page (avoid rebuilding off-screen pages on every renderDash)
