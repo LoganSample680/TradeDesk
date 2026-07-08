@@ -4390,6 +4390,33 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     assertNoErrors(page, 'trust split');
   });
 
+  test('notification panel fits the screen on mobile — no left bleed', async ({ page }) => {
+    // Owner-reported: on mobile the 300px panel anchored to the bell bled off the
+    // left edge. It now spans the viewport with margins below the topbar.
+    const hub = {
+      clientId: 911, contractorUserId: FAKE_USER_ID, contractorName: 'Notif Co', businessName: 'Notif Co',
+      clientName: 'Notif Client', clientAddr: '9 Notif Rd', contractorPhone: '316-555-0120',
+      bids: [], jobs: [], payments: [], messages: [],
+      notifications: [{ id: 1, title: 'Proposal sent', body: 'Ready to review.', ts: '2026-07-08T13:00:00Z', read: false }],
+      invoices: [], photos: [],
+    };
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=911&u=${FAKE_USER_ID}&t=notiftok911`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      try { toggleNotifPanel({ stopPropagation() {}, preventDefault() {} }); } catch (e) {}
+      const p = document.getElementById('notif-panel');
+      const rect = p.getBoundingClientRect();
+      return { display: getComputedStyle(p).display, left: rect.left, right: rect.right, vw: document.documentElement.clientWidth };
+    });
+    expect(r.display).toBe('block');           // panel opened
+    expect(r.left).toBeGreaterThanOrEqual(0);  // no left bleed
+    expect(r.right).toBeLessThanOrEqual(r.vw + 1);  // no right bleed
+    assertNoErrors(page, 'notif panel mobile');
+  });
+
   test('mobile contact strip: Schedule button deleted, Text/Call/Email escape the preview iframe via target="_top"', async ({ page }) => {
     // Two owner-reported bugs: (1) the strip's Schedule button was wired to
     // openHelp() — tapping "Schedule" dumped the client into the FAQs; deleted.
