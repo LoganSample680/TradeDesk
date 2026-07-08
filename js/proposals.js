@@ -196,7 +196,18 @@ function _buildClientHubSnapshot(clientId){
       const _hasInsurance=_all.some(l=>l.cat==='insurance' && _num(l));
       return _hasLicense&&_hasInsurance?'Licensed & Insured':_hasLicense?'Licensed':_hasInsurance?'Insured':'';
     })(),
-    warrantyPeriod:S.warrantyPeriod||'',yearsInBusiness:S.byears||0,reviewUrl:S.reviewUrl||'',
+    warrantyPeriod:S.warrantyPeriod||'',
+    // Years in business computes LIVE from the "in business since" year so it
+    // bumps itself every Jan 1 — never a stale hand-entered number. Falls back to
+    // the legacy manual byears for contractors who set that before this field.
+    // A since-year in the current year → 0 → the hub hides the line (honest: a
+    // <1-year business doesn't claim years).
+    yearsInBusiness:(()=>{
+      const _sy=parseInt(S.sinceYear)||0, _now=new Date().getFullYear();
+      if(_sy>1900 && _sy<=_now) return _now-_sy;
+      return parseInt(S.byears)||0;
+    })(),
+    reviewUrl:S.reviewUrl||'',
     contractorUserId:_snapUserId,notifyEmail:S.bemail||_snapUserEmail,
     stripeEnabled:_snapStripeOn,
     ccSurchargeEnabled:_snapSurchargeOn,

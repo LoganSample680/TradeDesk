@@ -1181,6 +1181,35 @@ test.describe('Proposals — send link, hub snapshot, gallery', () => {
     expect(r.insuranceBlank).toBe('Licensed');      // blank policy # ⇒ not insured
   });
 
+  test('years-in-business computes live from "in business since" year (auto-increments), falls back to legacy number', async () => {
+    // Owner: the manual years number goes stale. Now the hub computes it from a
+    // "since" year so it bumps itself every Jan 1 with no contractor action.
+    const r = await page.evaluate((cid) => {
+      const yrs = () => _buildClientHubSnapshot(cid).yearsInBusiness;
+      const now = new Date().getFullYear();
+      const origSince = S.sinceYear, origByears = S.byears;
+      const out = {};
+      // 1. Since-year set → live computed (current year − since).
+      S.sinceYear = now - 12; S.byears = 0;
+      out.fromSince = yrs();
+      // 2. No since-year, legacy manual number present → fallback to it.
+      S.sinceYear = 0; S.byears = 7;
+      out.legacyFallback = yrs();
+      // 3. Since-year IS the current year (<1 yr in business) → 0 → hub hides the line.
+      S.sinceYear = now; S.byears = 0;
+      out.brandNew = yrs();
+      // 4. Since-year set wins over a stale legacy number.
+      S.sinceYear = now - 5; S.byears = 99;
+      out.sinceWins = yrs();
+      S.sinceYear = origSince; S.byears = origByears;
+      return { ...out, now };
+    }, PROP_CLIENT);
+    expect(r.fromSince).toBe(12);
+    expect(r.legacyFallback).toBe(7);
+    expect(r.brandNew).toBe(0);            // hub gate hides "0 years"
+    expect(r.sinceWins).toBe(5);
+  });
+
   test('renderGallery — renders gallery page without errors', async () => {
     await page.evaluate(() => {
       if (typeof goPg === 'function') goPg('pg-gallery');
