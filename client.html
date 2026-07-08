@@ -59,11 +59,14 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .nav-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0}
 .nav-footer{margin-top:auto;padding:14px 18px;font-size:10px;color:var(--text3)}
 
-/* ── Bottom nav (mobile) ── */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg-card);border-top:1px solid var(--border);display:flex;align-items:stretch;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)}
-.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px;font-weight:700;color:var(--text3);cursor:pointer;border:none;background:none;padding:10px 4px;font-family:inherit;-webkit-tap-highlight-color:transparent;border-top:2px solid transparent;transition:color .15s,border-color .15s}
-.bn-item.active{color:var(--ink);border-top:2px solid var(--ink);padding-top:8px}
-.bn-icon{font-size:22px;line-height:1}
+/* ── Bottom nav (mobile) — same dark-ink tab bar as the TradeDesk app
+   (#mobile-tabbar), not the old white strip with a top border. Active tab gets
+   a soft pill behind the icon. */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--ink);border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:stretch;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px;font-weight:700;color:rgba(255,255,255,.5);cursor:pointer;border:none;background:none;padding:8px 4px 10px;font-family:inherit;-webkit-tap-highlight-color:transparent;min-height:56px;transition:color .15s}
+.bn-item.active{color:#fff}
+.bn-icon{font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;width:40px;height:26px;border-radius:9px;background:transparent;transition:background .15s}
+.bn-item.active .bn-icon{background:rgba(255,255,255,.14)}
 
 @media(min-width:640px){
   .bottom-nav{display:none}
@@ -170,7 +173,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 /* ── Sidebar cards ── */
 .hub-side-card{background:var(--bg-card);border-radius:12px;padding:14px 16px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.05)}
 .hub-side-hd{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px}
-.hub-contact-btn{display:block;padding:10px 14px;border-radius:10px;background:var(--ink);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:8px;font-family:inherit}
+.hub-contact-btn{display:block;padding:10px 14px;border-radius:10px;background:var(--denim);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:8px;font-family:inherit}
 .hub-contact-btn-sec{background:transparent;color:var(--text2);border:1.5px solid var(--border2)}
 .hub-approval-item{padding:8px 0;border-bottom:1px solid var(--border)}
 .hub-approval-item:last-child{border-bottom:none}
@@ -186,7 +189,10 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-bid-amt{font-size:26px;font-weight:900;font-family:var(--font-display);color:var(--denim);letter-spacing:-.7px;flex-shrink:0;margin-left:10px}
 .hub-bid-pending-msg{font-size:12px;color:var(--text3);margin-top:4px}
 .hub-btn{display:block;padding:13px 16px;border-radius:10px;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
-.hub-btn-sign{background:var(--ink);color:#fff;box-shadow:0 2px 10px rgba(27,22,18,.2)}
+/* Primary client actions carry the contractor's brand color (--denim is the
+   ADA-clamped brandColor set by applyBranding) — the hub reads as THEIR
+   contractor's, not a generic black-and-white page. */
+.hub-btn-sign{background:linear-gradient(155deg,var(--denim) 0%,rgba(0,0,0,.25) 340%) var(--denim);color:#fff;box-shadow:0 3px 14px rgba(27,22,18,.22)}
 
 /* ── Project tab ── */
 .hub-photo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:20px}
@@ -287,8 +293,33 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 @media(max-width:640px){.prop-wrap{padding-left:8px;padding-right:8px}}
 .prop-close{position:fixed;top:16px;right:16px;background:var(--ink);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
 
-/* ── Boot overlay ── */
-#boot-overlay{position:fixed;inset:0;background:var(--ink);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity}
+/* ── Boot overlay — same premium treatment as the TradeDesk app boot screen
+   (glow drift, breathing mark, wordmark sheen, progress track + sheen), but
+   client-specific: contractor logo/name center stage, "Loading your client
+   hub…" copy. Element IDs (boot-logo/boot-name/boot-bar) are unchanged — the
+   load-progress JS drives the same widths on the same timings as before. */
+#boot-overlay{position:fixed;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity;overflow:hidden}
+.cbo-glow{position:absolute;width:130vmax;height:130vmax;left:50%;top:55%;background:radial-gradient(closest-side,rgba(45,93,168,.30),transparent 65%);animation:cbo-drift 9s ease-in-out infinite alternate;pointer-events:none}
+@keyframes cbo-drift{from{transform:translate(-56%,-52%) scale(1)}to{transform:translate(-44%,-46%) scale(1.14)}}
+.cbo-center{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:0 24px;position:relative}
+@keyframes cbo-logoin{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
+.cbo-mark{position:relative;width:64px;height:64px;border-radius:16px;background:linear-gradient(155deg,#2D5DA8 0%,#1E3F73 100%);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.4);animation:cbo-logoin .5s cubic-bezier(.22,1,.36,1) both,cbo-breathe 2.8s ease-in-out .6s infinite}
+.cbo-mark svg{width:32px;height:32px;stroke:#FFF1E6;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.cbo-mark::after{content:'';position:absolute;inset:-7px;border-radius:20px;border:1.5px solid rgba(148,185,235,.55);opacity:0;animation:cbo-halo 2.2s cubic-bezier(.22,1,.36,1) 1.1s infinite}
+@keyframes cbo-halo{0%{opacity:.8;transform:scale(1)}70%{opacity:0;transform:scale(1.6)}100%{opacity:0;transform:scale(1.6)}}
+@keyframes cbo-breathe{0%,100%{box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.35);transform:scale(1)}50%{box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 16px 48px rgba(92,143,212,.55);transform:scale(1.045)}}
+.cbo-logo-frame{background:rgba(255,255,255,.97);border-radius:22px;padding:16px 24px;max-width:78vw;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 18px 50px rgba(0,0,0,.5);animation:cbo-logoin .55s cubic-bezier(.22,1,.36,1) both}
+.cbo-name{font-size:clamp(24px,6.4vw,36px);font-weight:900;letter-spacing:-1px;text-align:center;max-width:88vw;line-height:1.1;padding:0 16px;background:linear-gradient(100deg,#fff 42%,#a9c8f2 50%,#fff 58%);background-size:230% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:cbo-textsheen 2.6s ease-in-out 1s infinite}
+@keyframes cbo-textsheen{0%{background-position:125% 0}100%{background-position:-125% 0}}
+.cbo-tag{font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.4);animation:cbo-fadeup .6s .3s cubic-bezier(.22,1,.36,1) both}
+@keyframes cbo-fadeup{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.cbo-foot{width:100%;padding:0 0 44px;display:flex;flex-direction:column;gap:13px}
+.cbo-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:99px;margin:0 40px;overflow:hidden}
+.cbo-bar{height:100%;width:0%;background:linear-gradient(90deg,#2D5DA8,#5C8FD4);border-radius:99px;box-shadow:0 0 12px rgba(92,143,212,.55);transition:width 1.4s cubic-bezier(.4,0,.2,1)}
+.cbo-sheen{position:absolute;inset:0;background:linear-gradient(100deg,transparent 32%,rgba(255,255,255,.32) 50%,transparent 68%);transform:translateX(-100%);animation:cbo-sheen 1.7s ease-in-out .5s infinite}
+@keyframes cbo-sheen{to{transform:translateX(100%)}}
+.cbo-hint{text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,.35);letter-spacing:.02em;animation:cbo-fadeup .5s .55s cubic-bezier(.22,1,.36,1) both}
+@media (prefers-reduced-motion:reduce){.cbo-mark,.cbo-mark::after,.cbo-sheen,.cbo-glow,.cbo-name{animation:none}}
 #inv-overlay,#prop-overlay{transition:opacity .22s ease;will-change:opacity}
 
 /* ── Notification panel ── */
@@ -333,7 +364,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 
 /* ── Mobile contact strip (PR3) ── */
 .hub-mobile-strip{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.hub-mstrip-btn{flex:1;min-width:64px;padding:11px 8px;border-radius:10px;background:var(--ink);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit;white-space:nowrap}
+.hub-mstrip-btn{flex:1;min-width:64px;padding:11px 8px;border-radius:10px;background:var(--denim);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit;white-space:nowrap}
 .hub-mstrip-sec{background:transparent;color:var(--text);border:1.5px solid var(--border2)}
 @media(min-width:640px){.hub-mobile-strip{display:none}}
 
@@ -398,10 +429,17 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
 
 <!-- Boot overlay — covers everything until hub data loads -->
 <div id="boot-overlay">
-  <div id="boot-logo-wrap" style="display:none;margin-bottom:14px"><img id="boot-logo" style="height:54px;max-width:200px;object-fit:contain;border-radius:6px;display:block"></div>
-  <div id="boot-name" style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-.3px;text-align:center;padding:0 32px;line-height:1.25;margin-bottom:5px;max-width:300px"></div>
-  <div style="font-size:11px;color:rgba(255,255,255,.3);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:32px">Loading your client hub…</div>
-  <div style="width:110px;height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden"><div id="boot-bar" style="height:100%;width:0%;background:#2D5DA8;border-radius:2px;transition:width 1.4s cubic-bezier(.4,0,.2,1)"></div></div>
+  <div class="cbo-glow"></div>
+  <div class="cbo-center">
+    <div id="boot-logo-wrap" class="cbo-logo-frame" style="display:none"><img id="boot-logo" style="max-height:96px;max-width:100%;object-fit:contain;display:block"></div>
+    <div id="boot-mark" class="cbo-mark"><svg viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></div>
+    <div id="boot-name" class="cbo-name"></div>
+    <div class="cbo-tag">Client hub</div>
+  </div>
+  <div class="cbo-foot">
+    <div class="cbo-track"><div id="boot-bar" class="cbo-bar"></div><div class="cbo-sheen"></div></div>
+    <div class="cbo-hint">Loading your client hub…</div>
+  </div>
 </div>
 
 <!-- Stripe embedded checkout modal -->
@@ -1039,10 +1077,14 @@ function applyBranding(h){
   const chipName=document.getElementById('acct-chip-name');
   if(avatar)avatar.textContent=fn.charAt(0).toUpperCase();
   if(chipName)chipName.textContent=fn;
-  // Populate + animate boot overlay
+  // Populate + animate boot overlay — a contractor logo replaces the generic
+  // house mark (same swap the app's boot screen does for white-label).
   const bn=document.getElementById('boot-name');if(bn)bn.textContent=h.contractorName||'';
   const bl=document.getElementById('boot-logo'),blw=document.getElementById('boot-logo-wrap');
-  if(bl&&blw&&h.logoData){bl.src=h.logoData;blw.style.display='block';}
+  if(bl&&blw&&h.logoData){
+    bl.src=h.logoData;blw.style.display='flex';
+    const bm=document.getElementById('boot-mark');if(bm)bm.style.display='none';
+  }
   const bb=document.getElementById('boot-bar');
   if(bb){if(h.brandColor)bb.style.background=h.brandColor;setTimeout(()=>bb.style.width='78%',40);}
 }

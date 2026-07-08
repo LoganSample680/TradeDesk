@@ -3148,10 +3148,14 @@ async function sendGenericProposal(previewOnly){
     try{const _hu=await _uploadClientHub(b.client_id);if(_hu)shareUrl=_hu;}catch(e){}
   }
   const _cl=getClientById(b?b.client_id:null);
+  // RAW strings only — this object feeds PLAIN-TEXT surfaces (sms: body, email
+  // body, navigator.share). `bname`/`clientName` above are escHtml'd for the
+  // proposal HTML; reusing them here printed "&amp;" literally in the client's
+  // text message. HTML consumers (compose modal) re-escape at injection.
   _pendingShareData={
     url:shareUrl,
-    cname:clientName,
-    bname,
+    cname:(_cl&&_cl.name)||v('gei-client')||'Client',
+    bname:_bnameRaw,
     cphone:((_cl&&_cl.phone)||'').replace(/\D/g,''),
     cemail:(_cl&&_cl.email)||'',
   };

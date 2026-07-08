@@ -680,6 +680,48 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     }
   });
 
+  test('share data carries the RAW business/client name — "&" never reaches a text message as "&amp;"', async () => {
+    // Owner-reported: the proposal SMS signed off "— ZJ's Painting &amp; Special
+    // Coatings". Root cause: sendGenericProposal escHtml'd bname/clientName for
+    // the proposal HTML and reused the escaped strings in _pendingShareData,
+    // which feeds PLAIN-TEXT surfaces (sms: body, share sheet, email body).
+    const result = await page.evaluate(async () => {
+      if (typeof sendGenericProposal !== 'function') return { skip: true };
+      const origBname = S.bname;
+      S.bname = "ZJ's Painting & Special Coatings";
+      // The shim's storage.upload rejects, which would bail out of the send
+      // BEFORE the share-data assignment (and let this test pass vacuously via
+      // the _proposalShareData() fallback) — stub it to succeed.
+      const origStorageFrom = _supa.storage.from.bind(_supa.storage);
+      _supa.storage.from = () => ({ upload: async () => ({ data: { path: 'x' } }) });
+      const c = { id: 79210, name: 'Smith & Sons Rentals', addr: '1 Amp Rd', phone: '3165550222' };
+      clients = clients.filter(x => x.id !== 79210).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79210);
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      _geiIsFreeForm = true;
+      _byoItems = [
+        { id: 1, section: 'Interior', label: 'Room', price: 500, on: true },
+        { id: 2, section: 'Materials', label: 'Paint', price: 200, on: true },   // BYO send validation requires a Materials line
+      ];
+      _byoUpdateRail();
+      let err = null;
+      try { await sendGenericProposal(false); } catch (e) { err = e.message; }
+      document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      document.getElementById('_gei-send-overlay')?.remove();
+      _supa.storage.from = origStorageFrom;
+      const d = _pendingShareData;   // the seeded object itself — no fallback allowed
+      S.bname = origBname;
+      return { err, seeded: !!d, bname: d ? d.bname : '', cname: d ? d.cname : '' };
+    });
+    if (result.skip) return;
+    expect(result.err).toBe(null);
+    expect(result.seeded, 'send must reach the share-data assignment').toBe(true);
+    expect(result.bname).toBe("ZJ's Painting & Special Coatings");   // raw, not &amp; / &#39;
+    expect(result.cname).toBe('Smith & Sons Rentals');
+    expect(result.bname).not.toContain('&amp;');
+    expect(result.cname).not.toContain('&amp;');
+  });
+
   test('_doGeiSend("sms") — routes to sendProposalViaSms (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _doGeiSend !== 'function') return { skip: true };

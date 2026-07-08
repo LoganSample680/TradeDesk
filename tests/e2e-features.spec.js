@@ -4261,6 +4261,19 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     expect(r.stripLabels.join(' ')).toContain('Text');
     expect(r.smsHref).toContain('sms:3165550100');
     expect(r.badTargets).toBe(0);                          // every protocol link escapes the iframe
+    // Sprucing pass (owner ask): dark TradeDesk-style tab bar, brand color on
+    // primary actions — never the old white strip / black-slab basis.
+    const chrome = await page.evaluate(() => {
+      const nav = getComputedStyle(document.querySelector('.bottom-nav'));
+      const denim = getComputedStyle(document.documentElement).getPropertyValue('--denim').trim();
+      const probe = document.createElement('a'); probe.className = 'hub-mstrip-btn'; document.body.appendChild(probe);
+      const callBg = getComputedStyle(probe).backgroundColor; probe.remove();
+      const pill = document.querySelector('.bn-item.active .bn-icon');
+      return { navBg: nav.backgroundColor, denim, callBg, activePill: pill ? getComputedStyle(pill).backgroundColor : '' };
+    });
+    expect(chrome.navBg).not.toBe('rgb(255, 255, 255)');   // dark bar, not the white strip
+    expect(chrome.activePill).toContain('rgba(255, 255, 255, 0.14)');
+    expect(chrome.callBg).not.toBe('rgb(27, 22, 18)');     // primary action is brand-colored, not ink
     assertNoErrors(page, 'mobile contact strip');
   });
 
@@ -4273,6 +4286,21 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     await page.goto(`/client.html?c=907&u=${FAKE_USER_ID}&t=boottok907`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const bootText = await page.locator('#boot-overlay').textContent();
     expect(bootText).toContain('Loading your client hub');
+    // Premium treatment (owner ask): the hub boot screen carries the same
+    // glow/mark/track construction as the TradeDesk app boot overlay — not the
+    // old bare name + 2px line.
+    const r = await page.evaluate(() => ({
+      glow: !!document.querySelector('#boot-overlay .cbo-glow'),
+      mark: !!document.querySelector('#boot-overlay .cbo-mark svg'),
+      track: !!document.querySelector('#boot-overlay .cbo-track .cbo-sheen'),
+      bar: !!document.querySelector('#boot-overlay #boot-bar.cbo-bar'),
+      tag: (document.querySelector('#boot-overlay .cbo-tag') || {}).textContent || '',
+    }));
+    expect(r.glow).toBe(true);
+    expect(r.mark).toBe(true);
+    expect(r.track).toBe(true);
+    expect(r.bar).toBe(true);
+    expect(r.tag).toBe('Client hub');
   });
 });
 
