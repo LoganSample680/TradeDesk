@@ -4274,6 +4274,19 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     expect(chrome.navBg).not.toBe('rgb(255, 255, 255)');   // dark bar, not the white strip
     expect(chrome.activePill).toContain('rgba(255, 255, 255, 0.14)');
     expect(chrome.callBg).not.toBe('rgb(27, 22, 18)');     // primary action is brand-colored, not ink
+    // Page bg is the deeper neutral (cards must lift off it) and the tertiary
+    // gray text stays AA (≥4.5:1) against BOTH that bg and white cards.
+    const ada = await page.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement);
+      const parse = v => v.trim().replace('#', '').match(/.{2}/g).map(x => parseInt(x, 16));
+      const lum = c => { const s = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return .2126 * s[0] + .7152 * s[1] + .0722 * s[2]; };
+      const ratio = (a, b) => { const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x); return (l1 + .05) / (l2 + .05); };
+      const bg = parse(cs.getPropertyValue('--bg')), t3 = parse(cs.getPropertyValue('--text3'));
+      return { bgIsWhiteish: lum(bg) > 0.87, t3OnBg: ratio(t3, bg), t3OnWhite: ratio(t3, [255, 255, 255]) };
+    });
+    expect(ada.bgIsWhiteish).toBe(false);                  // "too white" fix holds
+    expect(ada.t3OnBg).toBeGreaterThanOrEqual(4.5);
+    expect(ada.t3OnWhite).toBeGreaterThanOrEqual(4.5);
     assertNoErrors(page, 'mobile contact strip');
   });
 
