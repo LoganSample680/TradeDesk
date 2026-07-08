@@ -197,14 +197,18 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-badge-paid{background:var(--green-lt);color:var(--green-mid);border:1px solid var(--green-border)}
 .hub-badge-due{background:#FEF3C7;color:#92400E;border:1px solid #FADF98}
 
-/* ── Trust strip — curated credibility chips banked ABOVE the sign CTA (research:
-   trust clustered near the ask is the top close-rate lever; ≤3 types, not a wall).
-   Icon carries the brand accent; label is neutral-dark → AA on any brand. */
-.hub-trust{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
-.hub-trust-chip{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:12px;background:var(--bg-card);border:1px solid var(--border);font-size:12.5px;font-weight:700;color:var(--text2);box-shadow:0 1px 2px rgba(16,24,40,.05);text-decoration:none;transition:transform .12s cubic-bezier(.22,1,.36,1)}
-.hub-trust-chip:active{transform:scale(.97)}
-.hub-trust-chip svg{width:15px;height:15px;color:var(--denim);flex-shrink:0}
-.hub-trust-chip.is-link{color:var(--denim)}
+/* ── Trust — split, inline sentences, NOT pills (research: decision-point placement
+   beats arrival for conversion; inline reads as fact, a badge/pill grid reads as
+   "trying too hard"). Two instances carry different emphasis so it's reinforcement:
+   credibility (years/reviews) in the hero on arrival; safety (Licensed & Insured ·
+   warranty) right above each Review & Sign button. */
+.hub-hero-trust{display:flex;flex-wrap:wrap;align-items:center;gap:3px 12px;margin-bottom:2px;font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6)}
+.hub-hero-trust span,.hub-hero-trust a{display:inline-flex;align-items:center;gap:5px}
+.hub-hero-trust a{color:rgba(255,255,255,.82);text-decoration:none}
+.hub-hero-trust svg{width:12px;height:12px}
+.hub-cta-trust{display:flex;flex-wrap:wrap;align-items:center;gap:3px 12px;margin-bottom:11px;font-size:11.5px;font-weight:600;color:var(--text2)}
+.hub-cta-trust span{display:inline-flex;align-items:center;gap:5px}
+.hub-cta-trust svg{width:13px;height:13px;color:var(--denim);flex-shrink:0}
 
 /* ── Sidebar cards ── */
 .hub-side-card{background:var(--bg-card);border-radius:12px;padding:14px 16px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.05)}
@@ -1208,6 +1212,13 @@ function renderOverview(){
   html+='<div class="hub-hero-sub">'+esc(h.contractorName||'')+'</div>';
   if(h.contractorPhone)html+='<a class="hub-hero-phone" target="_top" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'">'+svgIcon('📞',{size:12})+esc(h.contractorPhone)+'</a>';
   else html+='<div style="margin-bottom:14px"></div>';
+  // Credibility half of the trust split — light, one line, on arrival (NN/g: bank
+  // baseline trust before the ask). Years in business + a reviews link only.
+  { const _hc=[];
+    if(h.yearsInBusiness&&Number(h.yearsInBusiness)>0)_hc.push('<span>'+svgIcon('⭐',{size:12})+esc(h.yearsInBusiness)+' years in business</span>');
+    if(h.reviewUrl)_hc.push('<a target="_top" href="'+esc(h.reviewUrl)+'">'+svgIcon('★',{size:12})+'Reviews</a>');
+    if(_hc.length)html+='<div class="hub-hero-trust">'+_hc.join('')+'</div>';
+  }
   if(pct!==null){
     html+='<div class="hub-progress-row"><span>Project progress</span><span>'+pct+'%</span></div>';
     html+='<div class="hub-progress-track"><div class="hub-progress-fill" style="width:'+pct+'%"></div></div>';
@@ -1303,14 +1314,17 @@ function renderOverview(){
 
   // Awaiting signature
   if(pendingBids.length){
-    // Trust strip — banked ABOVE the sign CTA so credibility lands before the ask.
-    // Curated to the chips we actually have data for (never a fabricated stat).
-    const _trust=[];
-    if(h.trustLicense)_trust.push('<span class="hub-trust-chip">'+svgIcon('🛡')+esc(h.trustLicense)+'</span>');
-    if(h.warrantyPeriod)_trust.push('<span class="hub-trust-chip">'+svgIcon('✓')+esc(h.warrantyPeriod)+' workmanship warranty</span>');
-    if(h.yearsInBusiness&&Number(h.yearsInBusiness)>0)_trust.push('<span class="hub-trust-chip">'+svgIcon('⭐')+esc(h.yearsInBusiness)+' yrs in business</span>');
-    if(h.reviewUrl)_trust.push('<a class="hub-trust-chip is-link" target="_top" href="'+esc(h.reviewUrl)+'">'+svgIcon('⭐')+'Read our reviews →</a>');
-    if(_trust.length)html+='<div class="hub-trust">'+_trust.slice(0,3).join('')+'</div>';
+    // Trust: split, weighted to the CTA (research: decision-point placement beats
+    // arrival-point for conversion; inline sentence, never a pill/badge wall). The
+    // credibility half (years/reviews) rides in the hero on arrival; the
+    // safety half (Licensed & Insured · warranty) sits right above each
+    // Review & Sign button — built once here, reused per card.
+    let _ctaTrust='';
+    { const _t=[];
+      if(h.trustLicense)_t.push('<span>'+svgIcon('🛡',{size:13})+esc(h.trustLicense)+'</span>');
+      if(h.warrantyPeriod)_t.push('<span>'+svgIcon('✓',{size:13})+esc(h.warrantyPeriod)+' workmanship warranty</span>');
+      if(_t.length)_ctaTrust='<div class="hub-cta-trust">'+_t.slice(0,2).join('')+'</div>';
+    }
     html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';
     pendingBids.slice(0,3).forEach(b=>{
       html+='<div class="hub-bid-row">';
@@ -1325,6 +1339,7 @@ function renderOverview(){
       /* Price intentionally hidden from the card — research shows showing a large
          dollar amount before the client reads the scope triggers loss-aversion and
          kills conversions. Price is revealed inside the proposal after scope context. */
+      html+=_ctaTrust;   // risk-killers immediately above the sign button (thumb zone)
       if(b.signHubUrl){
         html+='<a href="'+esc(_signHref(b.signHubUrl))+'" class="hub-btn hub-btn-sign" style="width:100%">'+svgIcon('✍')+' Review &amp; Sign →</a>';
       }else{

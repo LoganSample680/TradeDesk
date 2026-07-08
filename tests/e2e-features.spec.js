@@ -4269,18 +4269,19 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     expect(r.shadow).toBe(true);
     expect(r.showsPrice).toBe(false);                       // price stays off the card by design
     expect(r.cardRight).toBeLessThanOrEqual(r.docWidth + 1); // long estimate name never bleeds off-screen
-    // Trust strip: no trust data in this fixture → strip is absent (never a
-    // fabricated badge). Presence + curation is covered by its own test below.
-    const noTrust = await page.evaluate(() => document.querySelectorAll('.hub-trust-chip').length);
+    // No trust data in this fixture → no trust lines render (never a fabricated
+    // badge). The trust split is covered by its own test below.
+    const noTrust = await page.evaluate(() => document.querySelectorAll('.hub-cta-trust, .hub-hero-trust').length);
     expect(noTrust).toBe(0);
     assertNoErrors(page, 'elevated proposal cards');
   });
 
-  test('trust strip: renders curated credibility chips above the sign CTA when data exists; ≤3; label AA', async ({ page }) => {
-    // Research: trust clustered above the ask is the #1 close-rate lever, but
-    // Baymard's dose-response says 1–3 types beat a badge wall — so cap at 3.
-    // Only chips with real data render (no fabricated stat). Label is neutral so
-    // any brand color clears AA.
+  test('trust split: credibility line in hero + safety line above each sign CTA, inline (no pills), AA', async ({ page }) => {
+    // Placement research: two-instance split weighted to the CTA, inline
+    // sentences NOT pills. Hero = credibility (years/reviews) on arrival; the
+    // safety line (Licensed & Insured · warranty) sits immediately above the
+    // Review & Sign button (thumb zone / decision point). The old .hub-trust
+    // pill chips must be GONE.
     const hub = {
       clientId: 910, contractorUserId: FAKE_USER_ID, contractorName: 'Trust Co', businessName: 'Trust Co',
       clientName: 'Trust Client', clientAddr: '8 Trust Rd', contractorPhone: '316-555-0110', brandColor: '#FFE44D',
@@ -4294,30 +4295,34 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     await page.goto(`/client.html?c=910&u=${FAKE_USER_ID}&t=trusttok910`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(1500);
     const r = await page.evaluate(() => {
-      const strip = document.querySelector('.hub-trust');
-      const chips = [...document.querySelectorAll('.hub-trust-chip')];
       const parse = v => { const n = (v.match(/[\d.]+/g) || []).map(Number); return /color\(srgb/i.test(v) ? n.slice(0, 3).map(x => x * 255) : n.slice(0, 3); };
       const lum = c => { const s = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return .2126 * s[0] + .7152 * s[1] + .0722 * s[2]; };
       const ratio = (a, b) => { const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x); return (l1 + .05) / (l2 + .05); };
-      // Trust strip must sit ABOVE the sign CTA in DOM order.
-      const stripTop = strip ? strip.getBoundingClientRect().top : 1e9;
+      const hero = document.querySelector('.hub-hero-trust');
+      const cta = document.querySelector('.hub-cta-trust');
       const signBtn = document.querySelector('.hub-btn-sign');
-      const labelChip = chips.find(c => !c.classList.contains('is-link'));
-      const lcs = labelChip ? getComputedStyle(labelChip) : null;
+      // luminance of the hero trust against the (dark) hero it sits on
+      const ctaCs = cta ? getComputedStyle(cta) : null;
       return {
-        count: chips.length,
-        aboveCTA: signBtn ? stripTop < signBtn.getBoundingClientRect().top : false,
-        hasLicensed: chips.some(c => /Licensed/i.test(c.textContent)),
-        hasWarranty: chips.some(c => /warranty/i.test(c.textContent)),
-        labelRatio: lcs ? ratio(parse(lcs.color), parse(lcs.backgroundColor)) : 0,
+        pillsGone: document.querySelectorAll('.hub-trust-chip').length,
+        heroHasYears: hero ? /years in business/i.test(hero.textContent) : false,
+        heroHasReviews: hero ? /reviews/i.test(hero.textContent) : false,
+        ctaHasLicensed: cta ? /Licensed/i.test(cta.textContent) : false,
+        ctaHasWarranty: cta ? /warranty/i.test(cta.textContent) : false,
+        ctaAboveButton: (cta && signBtn) ? cta.getBoundingClientRect().bottom <= signBtn.getBoundingClientRect().top + 1 : false,
+        ctaInlineNotPill: ctaCs ? ctaCs.backgroundColor === 'rgba(0, 0, 0, 0)' : false,  // no chip fill
+        ctaRatio: ctaCs ? ratio(parse(ctaCs.color), [255, 255, 255]) : 0,
       };
     });
-    expect(r.count).toBe(3);                                 // curated cap, not all 4
-    expect(r.aboveCTA).toBe(true);                           // trust banked before the ask
-    expect(r.hasLicensed).toBe(true);
-    expect(r.hasWarranty).toBe(true);
-    expect(r.labelRatio).toBeGreaterThanOrEqual(4.5);
-    assertNoErrors(page, 'trust strip');
+    expect(r.pillsGone).toBe(0);                             // pill chips removed
+    expect(r.heroHasYears).toBe(true);                       // credibility on arrival
+    expect(r.heroHasReviews).toBe(true);
+    expect(r.ctaHasLicensed).toBe(true);                     // safety at the decision point
+    expect(r.ctaHasWarranty).toBe(true);
+    expect(r.ctaAboveButton).toBe(true);                     // immediately above the sign button
+    expect(r.ctaInlineNotPill).toBe(true);                   // inline text, not a filled chip
+    expect(r.ctaRatio).toBeGreaterThanOrEqual(4.5);          // AA on the white card
+    assertNoErrors(page, 'trust split');
   });
 
   test('mobile contact strip: Schedule button deleted, Text/Call/Email escape the preview iframe via target="_top"', async ({ page }) => {
