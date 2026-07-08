@@ -33,9 +33,19 @@
 
   // ── Error capture (flushed immediately, deduped) ─────────────────────────────
   var _seen = {};
+  // Transient THIRD-PARTY outages the app already degrades around — reportable
+  // as app errors they are not: nothing in our code can fix Apple's servers
+  // returning 503, and the hotfix lane paged exactly that (error_log 37).
+  // Geocoding/directions already fall back to Photon when MapKit is down, so
+  // the user experience self-heals. Deliberately narrow: only MapKit's own
+  // init/load failures with a 5xx/network signature — a MapKit auth/token
+  // error (401/invalid) still reports, because THAT one is ours to fix.
+  var _EXTERNAL_TRANSIENT = /^\[MapKit\].*(50[0-9]|Network Unavailable)/i;
+  function _isExternalTransient(msg) { try { return _EXTERNAL_TRANSIENT.test(String(msg || '')); } catch (_e) { return false; } }
   function _logError(kind, message, stack, ctx) {
     try {
       if (!_ready()) return;
+      if (_isExternalTransient(message)) return;
       var key = kind + '|' + String(message || '').slice(0, 120);
       if (_seen[key]) return; _seen[key] = 1;
       _send({ session_id: _sid, app_version: _ver(), errors: [{
@@ -47,6 +57,24 @@
       }] });
     } catch (_e) {}
   }
+  // Serialize one console.error argument into something a human can root-cause.
+  // JSON.stringify alone produced "{}" for Error instances, DOM events, and
+  // anything with only non-enumerable props (error_log 38 was literally "{}") —
+  // an unactionable report that re-pages the hotfix lane forever. Prefer
+  // stack > message > name/type > enumerable JSON > String().
+  function _serializeArg(a) {
+    try {
+      if (a && a.stack) return String(a.stack).slice(0, 500);
+      if (typeof a !== 'object' || a === null) return String(a);
+      if (a.message) return String(a.message).slice(0, 300);
+      if (a.reason && a.reason.message) return String(a.reason.message).slice(0, 300);
+      if (a.type && (a.target || a.currentTarget)) return '[event ' + a.type + ']';
+      var j = JSON.stringify(a);
+      if (j && j !== '{}' && j !== '[]') return j.slice(0, 300);
+      var s = String(a);
+      return s !== '[object Object]' ? s.slice(0, 300) : '[object: no serializable content]';
+    } catch (_e2) { return '?'; }
+  }
   try {
     window.addEventListener('error', function (e) { try { _logError('error', (e && e.message) || 'error', e && e.error && e.error.stack, { file: e && e.filename, line: e && e.lineno }); } catch (_x) {} });
     window.addEventListener('unhandledrejection', function (e) { try { var r = e && e.reason; _logError('unhandledrejection', (r && r.message) || String(r || 'rejection'), r && r.stack); } catch (_x) {} });
@@ -56,10 +84,13 @@
     var _origCErr = console.error;
     console.error = function () {
       try {
-        var msg = Array.prototype.slice.call(arguments).map(function (a) {
-          try { return (a && a.stack) ? String(a.stack).slice(0, 500) : (typeof a === 'object' ? JSON.stringify(a).slice(0, 300) : String(a)); } catch (_e2) { return '?'; }
-        }).join(' ');
-        _logError('console', msg, null, { page: _page() });
+        var msg = Array.prototype.slice.call(arguments).map(_serializeArg).join(' ');
+        // A report with zero content can never be root-caused — it would page
+        // the hotfix lane forever with nothing to fix. The original console.error
+        // below still fires either way, so DevTools loses nothing.
+        if (msg.replace(/[\s?]|\[object: no serializable content\]/g, '') !== '') {
+          _logError('console', msg, null, { page: _page() });
+        }
       } catch (_x) {}
       try { return _origCErr.apply(console, arguments); } catch (_x2) {}
     };

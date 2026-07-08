@@ -37,3 +37,95 @@ test.describe('Telemetry layer', () => {
     assertNoErrors(page, 'goPg with no _obs');
   });
 });
+
+// ════════════════════════════════════════════════════════════════════════════
+//  ERROR-CAPTURE POLICY — regression for live errors 37 + 38 (hotfix lane)
+//
+//  37: "[MapKit] Initialization failed because the server returned error 503"
+//      — Apple's own library logging Apple's own outage. The app already
+//      degrades (Photon geocoding fallback); paging the hotfix lane for a
+//      third-party 503 is a capture-policy bug, not an app bug.
+//  38: "{}" — console.error(object) serialized through bare JSON.stringify,
+//      which yields "{}" for Errors/events/non-enumerable props. A report with
+//      zero content can never be root-caused and re-pages the lane forever.
+//
+//  Observability is deliberately INERT on localhost, so these tests load the
+//  real source into a Node sandbox with a production hostname and drive the
+//  console hook directly. Every capture path is exercised against the actual
+//  shipped file — not a copy of its logic.
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('observability error-capture policy (Node sandbox on real source)', () => {
+  const fs = require('fs');
+  const path = require('path');
+
+  function loadSandbox() {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'observability.js'), 'utf8');
+    const invocations = [];
+    const thenable = { then() { return thenable; } };
+    const consoleObj = { error() {}, log() {}, warn() {} };
+    const windowObj = { addEventListener() {}, open() {} };
+    const documentObj = { addEventListener() {}, querySelector: () => null, body: {}, visibilityState: 'visible' };
+    const locationObj = { hostname: 'tradedeskpro.app', href: 'https://tradedeskpro.app/' };
+    const supa = { functions: { invoke: (name, opts) => { invocations.push({ name, body: opts && opts.body }); return thenable; } } };
+    const run = new Function(
+      'window', 'location', 'document', 'console', 'performance',
+      'setInterval', 'setTimeout', 'MutationObserver', 'XMLHttpRequest',
+      '_supa', '_supaUser',
+      src
+    );
+    run(
+      windowObj, locationObj, documentObj, consoleObj,
+      { now: () => 1234 },
+      () => 0, () => 0,
+      function () { return { observe() {}, disconnect() {} }; },
+      function XMLHttpRequestStub() {},
+      supa, { id: 'obs-test-user' }
+    );
+    return { consoleObj, invocations, windowObj };
+  }
+
+  test('sandbox installs the hooks (console wrapper + _obs) under a production hostname', () => {
+    const { consoleObj, windowObj } = loadSandbox();
+    expect(String(consoleObj.error)).not.toContain('error() {}'); // wrapped, not the stub
+    expect(typeof windowObj._obs).toBe('object');
+    expect(typeof windowObj._obs.error).toBe('function');
+  });
+
+  test('regression #37: MapKit transient 503 outage is NOT reported to error_log', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('[MapKit] Initialization failed because the server returned error 503 (Network Unavailable).');
+    expect(invocations.length).toBe(0);
+  });
+
+  test('MapKit auth/token failures STILL report — the filter is outage-narrow, ours to fix stays ours', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('[MapKit] Initialization failed because the authorization token is invalid.');
+    expect(invocations.length).toBe(1);
+    expect(invocations[0].body.errors[0].message).toContain('authorization token');
+  });
+
+  test('regression #38: contentless "{}" reports are dropped — nothing to root-cause, never page the lane', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error({});
+    expect(invocations.length).toBe(0);
+  });
+
+  test('objects with real content now serialize usefully instead of "{}"', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    const err = new Error('boom in estimate calc');
+    consoleObj.error(err);
+    consoleObj.error({ message: 'nested failure detail' });
+    expect(invocations.length).toBe(2);
+    expect(invocations[0].body.errors[0].message).toContain('boom in estimate calc');
+    expect(invocations[1].body.errors[0].message).toContain('nested failure detail');
+  });
+
+  test('plain string errors still report, and dedup still holds (one report per message)', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('real app failure on pg-est');
+    consoleObj.error('real app failure on pg-est');
+    expect(invocations.length).toBe(1);
+    expect(invocations[0].body.errors[0].message).toContain('real app failure on pg-est');
+  });
+});
