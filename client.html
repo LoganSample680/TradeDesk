@@ -234,16 +234,6 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-bid-date{font-size:12px;color:var(--text3);margin-top:2px}
 .hub-bid-amt{font-size:26px;font-weight:900;font-family:var(--font-display);color:var(--denim);letter-spacing:-.7px;flex-shrink:0;margin-left:10px;font-variant-numeric:tabular-nums lining-nums}
 .hub-bid-pending-msg{font-size:12px;color:var(--text3);margin-top:4px}
-/* Soft-tinted pill status chip — 12% fill / 26% border / solid text (the
-   premium chip triad from the design-system research). */
-.hub-chip{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.01em;white-space:nowrap}
-.hub-chip svg{width:12px;height:12px}
-/* Brand identity comes from the fill + border + icon; the LABEL is neutral-dark
-   so a light brand pick (clamped to a light text value) can never drop the pill
-   text below AA. Icon is non-text (3:1) so brand color there is always fine. */
-.hub-chip-pending{background:color-mix(in srgb,var(--denim) 11%,#fff);color:var(--text2);border:1px solid color-mix(in srgb,var(--denim) 28%,#fff)}
-.hub-chip-pending svg{color:var(--denim)}
-.hub-chip-amber{background:#FEF3C7;color:#92400E;border:1px solid #FADF98}
 .hub-btn{display:block;padding:13px 16px;border-radius:10px;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
 /* Primary client actions carry the contractor's brand color (--denim is the
    ADA-clamped brandColor set by applyBranding) — the hub reads as THEIR
@@ -1324,11 +1314,13 @@ function renderOverview(){
     html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';
     pendingBids.slice(0,3).forEach(b=>{
       html+='<div class="hub-bid-row">';
+      // No per-card status pill — the section header already says "Awaiting your
+      // signature", so a pill on every card was redundant AND fought long
+      // estimate names for width. The name now gets the full row.
       html+='<div class="hub-bid-top">'+
         '<div class="hub-bid-ico">'+svgIcon('📄',{size:20})+'</div>'+
         '<div class="hub-bid-hd"><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div>'+
         '<div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+' · #'+String(b.id).slice(-6)+'</div></div>'+
-        '<span class="hub-chip hub-chip-pending">'+svgIcon('✍',{size:12})+' Awaiting</span>'+
       '</div>';
       /* Price intentionally hidden from the card — research shows showing a large
          dollar amount before the client reads the scope triggers loss-aversion and

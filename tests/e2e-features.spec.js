@@ -4228,16 +4228,17 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     assertNoErrors(page, 'populated daily updates card renders');
   });
 
-  test('elevated proposal cards: doc icon chip + status pill + proposal ref, borderless shadow, AA pill label', async ({ page }) => {
+  test('elevated proposal cards: doc icon + proposal ref, borderless shadow, no status pill, long name never bleeds', async ({ page }) => {
     // Research-informed card redesign (PaintScout/DripJobs/QuoteIQ synthesis):
-    // borderless shadow elevation, brand-tinted doc icon, soft status pill,
-    // proposal-# reference. Price stays OFF the card (loss-aversion). The pill
-    // LABEL must be a neutral-dark color so a light brand pick can't drop it
-    // below AA — brand identity lives in the fill/border/icon only.
+    // borderless shadow elevation, brand-tinted doc icon, proposal-# reference.
+    // Price stays OFF the card (loss-aversion). No per-card status pill — the
+    // section header already says "Awaiting your signature", so a pill was
+    // redundant and fought long estimate names for width. A long name must wrap
+    // cleanly with no horizontal bleed.
     const hub = {
       clientId: 909, contractorUserId: FAKE_USER_ID, contractorName: 'Card Co', businessName: 'Card Co',
       clientName: 'Card Client', clientAddr: '7 Card Rd', contractorPhone: '316-555-0199', brandColor: '#FFE44D',
-      bids: [{ id: 887799, status: 'Pending', type: 'Kitchen Repaint', amount: 4200, deposit: 1050, balance: 4200, bid_date: '2026-07-06', signHubUrl: 'https://example.com/sign' }],
+      bids: [{ id: 887799, status: 'Pending', type: 'Interior & Exterior Full Repaint + Cabinet Refinishing and Deck Staining', amount: 4200, deposit: 1050, balance: 4200, bid_date: '2026-07-06', signHubUrl: 'https://example.com/sign' }],
       jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [],
     };
     await page.setViewportSize({ width: 390, height: 844 });
@@ -4249,35 +4250,25 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
       const card = document.querySelector('.hub-bid-row');
       if (!card) return { noCard: true };
       const cs = getComputedStyle(card);
-      const chip = card.querySelector('.hub-chip-pending');
-      // Chromium serializes color-mix results as `color(srgb 0.94 0.93 0.90)`
-      // (0–1 floats), plain colors as `rgb(95, 94, 90)` (0–255). Normalize both
-      // to 0–255 so the luminance math is correct.
-      const parse = v => {
-        const nums = (v.match(/[\d.]+/g) || []).map(Number);
-        const rgb = /color\(srgb/i.test(v) ? nums.slice(0, 3).map(n => n * 255) : nums.slice(0, 3);
-        return rgb;
-      };
-      const lum = c => { const s = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return .2126 * s[0] + .7152 * s[1] + .0722 * s[2]; };
-      const ratio = (a, b) => { const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x); return (l1 + .05) / (l2 + .05); };
-      const chipCs = chip ? getComputedStyle(chip) : null;
       return {
         hasIcon: !!card.querySelector('.hub-bid-ico svg'),
-        hasChip: !!chip,
+        hasChip: !!card.querySelector('.hub-chip-pending'),  // must be GONE now
         hasRef: /#887799/.test(card.textContent),
         borderless: cs.borderStyle === 'none' || cs.borderTopWidth === '0px',
         shadow: cs.boxShadow !== 'none',
-        pillLabelRatio: chipCs ? ratio(parse(chipCs.color), parse(chipCs.backgroundColor)) : 0,
         showsPrice: /\$4[,.]?200/.test(card.textContent),
+        // long name must not push the card wider than the page
+        cardRight: card.getBoundingClientRect().right,
+        docWidth: document.documentElement.clientWidth,
       };
     });
     expect(r.hasIcon).toBe(true);
-    expect(r.hasChip).toBe(true);
+    expect(r.hasChip).toBe(false);                          // no per-card status pill
     expect(r.hasRef).toBe(true);
     expect(r.borderless).toBe(true);
     expect(r.shadow).toBe(true);
     expect(r.showsPrice).toBe(false);                       // price stays off the card by design
-    expect(r.pillLabelRatio).toBeGreaterThanOrEqual(4.5);   // AA even for the lightest brand (#FFE44D)
+    expect(r.cardRight).toBeLessThanOrEqual(r.docWidth + 1); // long estimate name never bleeds off-screen
     // Trust strip: no trust data in this fixture → strip is absent (never a
     // fabricated badge). Presence + curation is covered by its own test below.
     const noTrust = await page.evaluate(() => document.querySelectorAll('.hub-trust-chip').length);
