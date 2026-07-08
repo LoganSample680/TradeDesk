@@ -105,7 +105,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
    stays coherent. Blobs drift slowly (GPU-composited transform only) and freeze
    under prefers-reduced-motion. Depth = contact + ambient shadow + inset top
    highlight. */
-.hub-hero{position:relative;overflow:hidden;border-radius:22px;padding:24px 22px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;background:linear-gradient(158deg,#171b24 0%,#0b0e14 100%);box-shadow:0 1px 2px rgba(0,0,0,.34),0 18px 42px rgba(11,14,20,.42),inset 0 1px 0 rgba(255,255,255,.08)}
+.hub-hero{position:relative;overflow:hidden;border-radius:22px;padding:24px 22px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;background:linear-gradient(158deg,#171b24 0%,#0b0e14 100%);box-shadow:0 1px 2px rgba(0,0,0,.18),0 10px 26px rgba(11,14,20,.24),inset 0 1px 0 rgba(255,255,255,.07)}
 .hub-hero::before{content:'';position:absolute;inset:-30%;z-index:0;pointer-events:none;filter:blur(34px);background:
   radial-gradient(42% 50% at 14% 6%,color-mix(in srgb,var(--denim) 82%,transparent) 0%,transparent 62%),
   radial-gradient(30% 38% at 95% 4%,rgba(255,255,255,.14) 0%,transparent 55%),
@@ -114,7 +114,8 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 @keyframes hub-aurora{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-5%,3%,0) scale(1.12)}}
 .hub-hero::after{content:'';position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.07;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
 @media(prefers-reduced-motion:reduce){.hub-hero::before{animation:none}}
-.hub-hero-l{flex:1;min-width:0;position:relative;z-index:1;padding-right:64px}
+.hub-hero-l{flex:1;min-width:0;position:relative;z-index:1}
+.hub-hero.has-badge .hub-hero-l{padding-right:64px}
 .hub-hero-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.5);margin-bottom:5px}
 .hub-hero-greeting{font-size:38px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-.8px;line-height:1;margin-bottom:6px}
 .hub-hero-sub{font-size:13px;color:rgba(255,255,255,.62);font-weight:600;margin-bottom:10px}
@@ -122,12 +123,10 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-hero-phone{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:rgba(255,255,255,.82);text-decoration:none;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);padding:5px 11px;border-radius:999px;margin-bottom:14px;transition:transform .12s cubic-bezier(.22,1,.36,1),background .15s}
 .hub-hero-phone svg{width:12px;height:12px}
 .hub-hero-phone:active{transform:scale(.96)}
-/* Contractor logo/monogram fills the hero's right side — reinforces THEIR brand
-   (not dead space), glass-framed to sit on the aurora. */
-.hub-hero-badge{position:absolute;top:22px;right:20px;z-index:1;width:54px;height:54px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:linear-gradient(155deg,color-mix(in srgb,var(--denim) 46%,rgba(255,255,255,.06)),color-mix(in srgb,var(--denim) 20%,rgba(255,255,255,.04)));border:1px solid rgba(255,255,255,.2);overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 6px 18px rgba(0,0,0,.3)}
-.hub-hero-badge.has-logo{background:rgba(255,255,255,.95)}
+/* Contractor LOGO fills the hero's right side when they have one. No generic
+   letter-monogram fallback — an initial in a box read as filler, not brand. */
+.hub-hero-badge{position:absolute;top:22px;right:20px;z-index:1;width:54px;height:54px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.95);overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.2)}
 .hub-hero-badge img{width:100%;height:100%;object-fit:contain;padding:6px;box-sizing:border-box}
-.hub-hero-monogram{font-family:var(--font-display);font-weight:900;font-size:25px;color:#fff;letter-spacing:-1px}
 .hub-progress-row{display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.45);margin-bottom:5px;font-weight:600}
 .hub-progress-track{height:6px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
 .hub-progress-fill{height:100%;background:var(--denim);border-radius:3px;box-shadow:0 0 10px rgba(45,93,168,.8)}
@@ -376,6 +375,11 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .notif-wrap{position:relative;display:flex}
 .notif-unread-dot{position:absolute;top:5px;right:5px;width:8px;height:8px;background:#ef4444;border-radius:50%;border:1.5px solid var(--ink);display:none;pointer-events:none}
 .notif-panel{position:absolute;right:-6px;top:calc(100% + 8px);width:300px;background:var(--bg-card);border-radius:14px;box-shadow:0 8px 30px rgba(27,22,18,.18),0 0 0 1px rgba(27,22,18,.06);z-index:300;overflow:hidden;display:none}
+/* On mobile a 300px panel anchored to the bell bled off the left edge. Span the
+   viewport with margins instead so it's always fully visible below the topbar. */
+@media(max-width:520px){
+  .notif-panel{position:fixed;top:58px;left:10px;right:10px;width:auto;max-height:calc(100vh - 74px);overflow-y:auto}
+}
 .notif-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px;border-bottom:1px solid var(--border)}
 .notif-hd-title{font-size:13px;font-weight:800}
 .notif-mark-read{font-size:11px;color:var(--denim);cursor:pointer;font-weight:600;background:none;border:none;font-family:inherit;padding:0}
@@ -1203,9 +1207,8 @@ function renderOverview(){
   ];
 
   // Hero
-  let html='<div class="hub-hero">';
-  const _heroBadge=h.logoData?'<img src="'+esc(h.logoData)+'" alt="">':'<span class="hub-hero-monogram">'+esc((h.contractorName||'?').trim().charAt(0).toUpperCase()||'?')+'</span>';
-  html+='<div class="hub-hero-badge'+(h.logoData?' has-logo':'')+'">'+_heroBadge+'</div>';
+  let html='<div class="hub-hero'+(h.logoData?' has-badge':'')+'">';
+  if(h.logoData)html+='<div class="hub-hero-badge"><img src="'+esc(h.logoData)+'" alt=""></div>';
   html+='<div class="hub-hero-l">';
   html+='<div class="hub-hero-eyebrow">Your project hub</div>';
   html+='<div class="hub-hero-greeting">'+esc(firstName)+'</div>';
@@ -1319,10 +1322,13 @@ function renderOverview(){
     // credibility half (years/reviews) rides in the hero on arrival; the
     // safety half (Licensed & Insured · warranty) sits right above each
     // Review & Sign button — built once here, reused per card.
+    // Warranty period → adjective form so it reads right: "1 year" → "1-year",
+    // "6 months" → "6-month". Result: "1-year workmanship warranty".
+    const _warrAdj=String(h.warrantyPeriod||'').trim().replace(/^(\d+)\s+(year|month|day)s?$/i,'$1-$2');
     let _ctaTrust='';
     { const _t=[];
       if(h.trustLicense)_t.push('<span>'+svgIcon('🛡',{size:13})+esc(h.trustLicense)+'</span>');
-      if(h.warrantyPeriod)_t.push('<span>'+svgIcon('✓',{size:13})+esc(h.warrantyPeriod)+' workmanship warranty</span>');
+      if(_warrAdj)_t.push('<span>'+svgIcon('✓',{size:13})+esc(_warrAdj)+' workmanship warranty</span>');
       if(_t.length)_ctaTrust='<div class="hub-cta-trust">'+_t.slice(0,2).join('')+'</div>';
     }
     html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';

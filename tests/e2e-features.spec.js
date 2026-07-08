@@ -4343,6 +4343,7 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
         heroHasReviews: hero ? /reviews/i.test(hero.textContent) : false,
         ctaHasLicensed: cta ? /Licensed/i.test(cta.textContent) : false,
         ctaHasWarranty: cta ? /warranty/i.test(cta.textContent) : false,
+        warrantyHyphenated: cta ? /2-year workmanship warranty/i.test(cta.textContent) : false,  // "2 years" → "2-year"
         ctaAboveButton: (cta && signBtn) ? cta.getBoundingClientRect().bottom <= signBtn.getBoundingClientRect().top + 1 : false,
         ctaInlineNotPill: ctaCs ? ctaCs.backgroundColor === 'rgba(0, 0, 0, 0)' : false,  // no chip fill
         ctaRatio: ctaCs ? ratio(parse(ctaCs.color), [255, 255, 255]) : 0,
@@ -4353,6 +4354,7 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     expect(r.heroHasReviews).toBe(true);
     expect(r.ctaHasLicensed).toBe(true);                     // safety at the decision point
     expect(r.ctaHasWarranty).toBe(true);
+    expect(r.warrantyHyphenated).toBe(true);                 // adjective form reads right
     expect(r.ctaAboveButton).toBe(true);                     // immediately above the sign button
     expect(r.ctaInlineNotPill).toBe(true);                   // inline text, not a filled chip
     expect(r.ctaRatio).toBeGreaterThanOrEqual(4.5);          // AA on the white card
@@ -4424,20 +4426,19 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     expect(hero.textH).toBeGreaterThanOrEqual(48);
     expect(hero.textTonal).not.toBe('rgba(0, 0, 0, 0)');     // Text is tonal-filled, not a thin outline
     expect(hero.pressEase).toContain('transform');           // press micro-interaction wired
-    // Hero polish: brand monogram badge fills the right side (no logo → initial),
-    // phone renders as a tappable chip not dim text.
+    // Hero polish: NO badge when the contractor has no logo (owner: the generic
+    // letter monogram read as filler — a badge only renders for a real logo).
+    // Phone renders as a tappable chip not dim text.
     const heroPolish = await page.evaluate(() => {
-      const badge = document.querySelector('.hub-hero-badge');
-      const mono = document.querySelector('.hub-hero-monogram');
       const phone = document.querySelector('.hub-hero-phone');
       return {
-        hasBadge: !!badge,
-        monogram: mono ? mono.textContent : '',
+        hasBadge: !!document.querySelector('.hub-hero-badge'),
+        hasMonogram: !!document.querySelector('.hub-hero-monogram'),
         phoneChip: phone ? getComputedStyle(phone).backgroundColor !== 'rgba(0, 0, 0, 0)' : false,
       };
     });
-    expect(heroPolish.hasBadge).toBe(true);
-    expect(heroPolish.monogram).toBe('S');                   // "Strip Co" → S monogram (no logo in fixture)
+    expect(heroPolish.hasBadge).toBe(false);                 // no logo in fixture → no badge
+    expect(heroPolish.hasMonogram).toBe(false);              // letter monogram removed entirely
     expect(heroPolish.phoneChip).toBe(true);                 // phone is a filled chip, not bare text
     // Page bg is the deeper neutral (cards must lift off it) and the tertiary
     // gray text stays AA (≥4.5:1) against BOTH that bg and white cards.
