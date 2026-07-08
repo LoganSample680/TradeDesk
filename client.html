@@ -65,8 +65,9 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--ink);border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:stretch;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)}
 .bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px;font-weight:700;color:rgba(255,255,255,.5);cursor:pointer;border:none;background:none;padding:8px 4px 10px;font-family:inherit;-webkit-tap-highlight-color:transparent;min-height:56px;transition:color .15s}
 .bn-item.active{color:#fff}
-.bn-icon{font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;width:40px;height:26px;border-radius:9px;background:transparent;transition:background .15s}
-.bn-item.active .bn-icon{background:rgba(255,255,255,.14)}
+.bn-item:active .bn-icon{transform:scale(.9)}
+.bn-icon{font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;width:40px;height:26px;border-radius:9px;background:transparent;transition:background .18s,transform .12s cubic-bezier(.22,1,.36,1)}
+.bn-item.active .bn-icon{background:color-mix(in srgb,var(--denim) 40%,rgba(255,255,255,.14))}
 
 @media(min-width:640px){
   .bottom-nav{display:none}
@@ -95,9 +96,24 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .pg-status h2{font-size:26px;font-weight:900;margin-bottom:10px;font-family:var(--font-display);letter-spacing:-.4px}
 .pg-status p{font-size:14px;color:var(--text2);line-height:1.7;max-width:380px;margin:0 auto}
 
-/* ── Hero ── */
-.hub-hero{background:radial-gradient(120% 80% at 0% 100%, rgba(45,93,168,.36) 0%, transparent 55%), linear-gradient(155deg, #1B1612 0%, #1F2230 100%);border-radius:16px;padding:22px 20px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;position:relative;overflow:hidden}
-.hub-hero::before{content:'';position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.04)}
+/* ── Hero — photoless "aurora" premium card ──────────────────────────────────
+   Research (2026 SaaS-premium default): a multi-blob radial mesh over a dark
+   base + a faint grain overlay reads richer than a photo, works for a client
+   who owns MANY properties (no single subject to show), is resolution-free, and
+   re-skins per contractor from one --denim variable. The single saturated hue
+   is the brand; the other blobs are neutral white-alpha, so any brand color
+   stays coherent. Blobs drift slowly (GPU-composited transform only) and freeze
+   under prefers-reduced-motion. Depth = contact + ambient shadow + inset top
+   highlight. */
+.hub-hero{position:relative;overflow:hidden;border-radius:22px;padding:24px 22px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;background:linear-gradient(158deg,#171b24 0%,#0b0e14 100%);box-shadow:0 1px 2px rgba(0,0,0,.34),0 18px 42px rgba(11,14,20,.42),inset 0 1px 0 rgba(255,255,255,.08)}
+.hub-hero::before{content:'';position:absolute;inset:-30%;z-index:0;pointer-events:none;filter:blur(36px);background:
+  radial-gradient(38% 46% at 15% 12%,color-mix(in srgb,var(--denim) 66%,transparent) 0%,transparent 60%),
+  radial-gradient(30% 38% at 93% 2%,rgba(255,255,255,.12) 0%,transparent 55%),
+  radial-gradient(48% 54% at 86% 118%,color-mix(in srgb,var(--denim) 36%,transparent) 0%,transparent 60%);
+  animation:hub-aurora 22s ease-in-out infinite alternate}
+@keyframes hub-aurora{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-5%,3%,0) scale(1.12)}}
+.hub-hero::after{content:'';position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.07;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+@media(prefers-reduced-motion:reduce){.hub-hero::before{animation:none}}
 .hub-hero-l{flex:1;min-width:0;position:relative;z-index:1}
 .hub-hero-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px}
 .hub-hero-greeting{font-size:38px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-.8px;line-height:1;margin-bottom:4px}
@@ -385,9 +401,18 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .acct-menu-item:not(:last-child){border-bottom:1px solid var(--border)}
 
 /* ── Mobile contact strip (PR3) ── */
-.hub-mobile-strip{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.hub-mstrip-btn{flex:1;min-width:64px;padding:11px 8px;border-radius:10px;background:var(--denim);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit;white-space:nowrap}
-.hub-mstrip-sec{background:transparent;color:var(--text);border:1.5px solid var(--border2)}
+/* Contact pair — Call (filled brand) + Text (warm brand-tonal). Research: 66% of
+   clients prefer messaging (+40% reply), so Text gets an inviting tonal fill, not
+   a thin outline; both are ≥48px tap targets with icon+label and a press-scale
+   micro-interaction so every tap is acknowledged. Real tel:/sms: hrefs (dead-
+   button-safe). ADA: the tonal Text label stays neutral-dark on a light brand
+   tint so any brand color clears AA. */
+.hub-mobile-strip{display:flex;gap:10px;margin-bottom:14px}
+.hub-mstrip-btn{flex:1;min-width:0;min-height:50px;display:flex;align-items:center;justify-content:center;gap:7px;padding:12px 10px;border-radius:14px;background:var(--denim);color:#fff;font-size:14px;font-weight:800;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit;white-space:nowrap;box-shadow:0 3px 12px color-mix(in srgb,var(--denim) 32%,transparent);transition:transform .12s cubic-bezier(.22,1,.36,1),box-shadow .12s ease}
+.hub-mstrip-btn svg{width:17px;height:17px}
+.hub-mstrip-btn:active{transform:scale(.97)}
+.hub-mstrip-sec{background:color-mix(in srgb,var(--denim) 12%,#fff);color:var(--text);border:1px solid color-mix(in srgb,var(--denim) 26%,#fff);box-shadow:none}
+.hub-mstrip-sec svg{color:var(--denim)}
 @media(min-width:640px){.hub-mobile-strip{display:none}}
 
 /* ── Approvals card (PR4) ── */

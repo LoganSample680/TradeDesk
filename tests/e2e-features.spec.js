@@ -4325,8 +4325,27 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
       return { navBg: nav.backgroundColor, denim, callBg, activePill: pill ? getComputedStyle(pill).backgroundColor : '' };
     });
     expect(chrome.navBg).not.toBe('rgb(255, 255, 255)');   // dark bar, not the white strip
-    expect(chrome.activePill).toContain('rgba(255, 255, 255, 0.14)');
     expect(chrome.callBg).not.toBe('rgb(27, 22, 18)');     // primary action is brand-colored, not ink
+    // Hero + contact-pair + navbar close-rate redesign (research-informed):
+    const hero = await page.evaluate(() => {
+      const h = document.querySelector('.hub-hero');
+      const before = h ? getComputedStyle(h, '::before') : null;
+      const strip = document.querySelectorAll('.hub-mstrip-btn');
+      const call = strip[0] ? getComputedStyle(strip[0]) : null;
+      const text = strip[1] ? getComputedStyle(strip[1]) : null;
+      return {
+        heroAnim: before ? before.animationName : '',                 // aurora drift present
+        callH: call ? parseFloat(call.minHeight) : 0,
+        textH: text ? parseFloat(text.minHeight) : 0,
+        textTonal: text ? text.backgroundColor : '',                  // Text is a filled tonal, not transparent
+        pressEase: call ? call.transitionProperty : '',
+      };
+    });
+    expect(hero.heroAnim).toBe('hub-aurora');                // living aurora background
+    expect(hero.callH).toBeGreaterThanOrEqual(48);           // ≥48px tap target
+    expect(hero.textH).toBeGreaterThanOrEqual(48);
+    expect(hero.textTonal).not.toBe('rgba(0, 0, 0, 0)');     // Text is tonal-filled, not a thin outline
+    expect(hero.pressEase).toContain('transform');           // press micro-interaction wired
     // Page bg is the deeper neutral (cards must lift off it) and the tertiary
     // gray text stays AA (≥4.5:1) against BOTH that bg and white cards.
     const ada = await page.evaluate(() => {
