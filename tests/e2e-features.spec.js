@@ -4346,6 +4346,21 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     expect(hero.textH).toBeGreaterThanOrEqual(48);
     expect(hero.textTonal).not.toBe('rgba(0, 0, 0, 0)');     // Text is tonal-filled, not a thin outline
     expect(hero.pressEase).toContain('transform');           // press micro-interaction wired
+    // Hero polish: brand monogram badge fills the right side (no logo → initial),
+    // phone renders as a tappable chip not dim text.
+    const heroPolish = await page.evaluate(() => {
+      const badge = document.querySelector('.hub-hero-badge');
+      const mono = document.querySelector('.hub-hero-monogram');
+      const phone = document.querySelector('.hub-hero-phone');
+      return {
+        hasBadge: !!badge,
+        monogram: mono ? mono.textContent : '',
+        phoneChip: phone ? getComputedStyle(phone).backgroundColor !== 'rgba(0, 0, 0, 0)' : false,
+      };
+    });
+    expect(heroPolish.hasBadge).toBe(true);
+    expect(heroPolish.monogram).toBe('S');                   // "Strip Co" → S monogram (no logo in fixture)
+    expect(heroPolish.phoneChip).toBe(true);                 // phone is a filled chip, not bare text
     // Page bg is the deeper neutral (cards must lift off it) and the tertiary
     // gray text stays AA (≥4.5:1) against BOTH that bg and white cards.
     const ada = await page.evaluate(() => {
