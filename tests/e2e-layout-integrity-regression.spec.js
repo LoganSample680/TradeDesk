@@ -409,6 +409,44 @@ test.describe('layout integrity — mobile', () => {
     expect(r.hasDeposit).toBe(true);
   });
 
+  // Owner-reported: a BYO item with no notes printed as a bare one-word line
+  // ("1. Room") next to fully-described scope items — read as an unfinished
+  // document. Notes-less items now get a quiet section-appropriate descriptor;
+  // items WITH notes keep their own notes untouched.
+  test('BYO item without notes gets a section descriptor in the proposal — never a bare one-word line', async () => {
+    const r = await page.evaluate(async () => {
+      const c = { id: 79109, name: 'Bare Room Client', addr: '2 Bare Room Rd' };
+      clients = clients.filter(x => x.id !== 79109).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79109);
+      openGenericEstimate(c, null, null, { mode: 'byo' });
+      _geiIsFreeForm = true;
+      _byoItems = [
+        { id: 1, section: 'Interior', label: 'Room', price: 500, on: true },                          // no notes
+        { id: 2, section: 'Interior', label: 'Kitchen', price: 400, on: true, notes: 'Two coats, ceilings included' },
+        { id: 3, section: 'Materials', label: 'Paint', price: 300, on: true },                        // no notes
+      ];
+      _byoUpdateRail();
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      const html = ov ? ov.innerHTML : '';
+      const res = {
+        err,
+        workFallback: html.includes('Labor and materials per agreed scope'),
+        matFallback: html.includes('Included in project total'),
+        ownNotesKept: html.includes('Two coats, ceilings included'),
+        kitchenNotDoubled: !html.includes('Kitchen<span') || !/Kitchen<span[^>]*> — Labor and materials/.test(html),
+      };
+      ov?.remove();
+      return res;
+    });
+    expect(r.err).toBe(null);
+    expect(r.workFallback, 'notes-less work item must carry the work descriptor').toBe(true);
+    expect(r.matFallback, 'notes-less Materials item must carry the materials descriptor').toBe(true);
+    expect(r.ownNotesKept, 'an item WITH notes keeps its own notes').toBe(true);
+    expect(r.kitchenNotDoubled, 'fallback must not replace or double real notes').toBe(true);
+  });
+
   test('proposal shows only TOTAL + deposit — no per-material or NTE-cap price (T&M)', async () => {
     const r = await page.evaluate(async () => {
       const c = { id: 79108, name: 'Total Only TM Client', addr: '1 Total Only TM Rd' };

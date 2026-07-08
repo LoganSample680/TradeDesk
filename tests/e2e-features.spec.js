@@ -4228,6 +4228,42 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     assertNoErrors(page, 'populated daily updates card renders');
   });
 
+  test('mobile contact strip: Schedule button deleted, Text/Call/Email escape the preview iframe via target="_top"', async ({ page }) => {
+    // Two owner-reported bugs: (1) the strip's Schedule button was wired to
+    // openHelp() — tapping "Schedule" dumped the client into the FAQs; deleted.
+    // (2) sms:/tel:/mailto: taps died silently inside the in-app hub preview,
+    // which renders client.html in an iframe — subframes can't navigate to
+    // external protocols on iOS. target="_top" makes them open at top level
+    // (harmless in a normal tab, where top === self).
+    const hub = {
+      clientId: 908, contractorUserId: FAKE_USER_ID, contractorName: 'Strip Co', businessName: 'Strip Co',
+      clientName: 'Strip Client', clientAddr: '6 Strip Rd', contractorPhone: '316-555-0100', contractorEmail: 'strip@co.com',
+      bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [],
+    };
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=908&u=${FAKE_USER_ID}&t=striptok908`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const strip = document.querySelector('.hub-mobile-strip');
+      const btns = strip ? [...strip.querySelectorAll('a,button')] : [];
+      const badTargets = [...document.querySelectorAll('a[href^="sms:"],a[href^="tel:"],a[href^="mailto:"]')]
+        .filter(a => a.getAttribute('target') !== '_top').length;
+      return {
+        stripLabels: btns.map(b => b.textContent.trim()),
+        scheduleCount: btns.filter(b => /schedule/i.test(b.textContent)).length,
+        smsHref: strip ? (strip.querySelector('a[href^="sms:"]') || {}).href || '' : '',
+        badTargets,
+      };
+    });
+    expect(r.scheduleCount).toBe(0);                       // §7.1 — old entry point is GONE
+    expect(r.stripLabels.join(' ')).toContain('Text');
+    expect(r.smsHref).toContain('sms:3165550100');
+    expect(r.badTargets).toBe(0);                          // every protocol link escapes the iframe
+    assertNoErrors(page, 'mobile contact strip');
+  });
+
   test('boot overlay shows client-facing loading copy', async ({ page }) => {
     // Regression guard for the boot-overlay label — must read as addressed to the
     // client ("Loading your client hub…"), not a generic unlabeled "Project Hub" tag.
@@ -4290,6 +4326,33 @@ test.describe('dashboard quick actions — accent chips', () => {
     expect(r.owed.idle).toBe(false);
     expect(r.owed.inlineBg).toBe('');
     assertNoErrors(page, 'quick action collect states');
+  });
+
+  test('launcher layout on a phone: 3 columns, no tile card chrome — the chip is the button', async () => {
+    // Regression guard for the nested-card look: white .qa tiles inside the white
+    // #dash-quick card rendered as giant empty slabs (2-across on ≤380px phones).
+    // The redesign removes ALL tile chrome and guarantees 3 columns on phones.
+    const r = await page.evaluate(() => {
+      const grid = document.querySelector('#dash-quick .qa-grid');
+      const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+      const qa = document.querySelector('#dash-quick .qa:not(.qa-p):not(.qa-g):not(.qa-idle)');
+      const qs = getComputedStyle(qa);
+      const chip = qa.querySelector('.qa-ico');
+      const cs = getComputedStyle(chip);
+      return {
+        cols,
+        tileBg: qs.backgroundColor,
+        tileShadow: qs.boxShadow,
+        chipW: chip.getBoundingClientRect().width,
+        chipPainted: cs.backgroundColor !== 'rgba(0, 0, 0, 0)' || cs.backgroundImage.includes('gradient'),
+      };
+    });
+    expect(r.cols).toBe(3);                                  // 390px phone → 3-across, never 2 giant slabs
+    expect(r.tileBg).toBe('rgba(0, 0, 0, 0)');               // tile itself is chromeless
+    expect(r.tileShadow).toBe('none');                       // no card shadow around the tile
+    expect(Math.abs(r.chipW - 48)).toBeLessThan(1);          // the icon chip is the visual button (subpixel-safe)
+    expect(r.chipPainted).toBe(true);                        // and it carries the accent fill (solid or gradient)
+    assertNoErrors(page, 'quick action launcher layout');
   });
 });
 

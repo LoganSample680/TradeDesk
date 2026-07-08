@@ -241,7 +241,15 @@ function _autoCapEligible(el){
 function _applyAutoCapAttrs(root){
   try {
     (root || document).querySelectorAll('input:not([type]), input[type="text"], textarea').forEach(function(el){
-      if (!el.hasAttribute('autocapitalize') && _autoCapEligible(el)) el.setAttribute('autocapitalize', 'words');
+      if (!_autoCapEligible(el)) return;
+      if (!el.hasAttribute('autocapitalize')) el.setAttribute('autocapitalize', 'words');
+      // iOS/Safari silently disable autocorrect on fields they can't classify
+      // (most of ours carry autocomplete="off"). Explicit autocorrect="on" +
+      // spellcheck restore native as-you-type correction on every free-text
+      // field. Same eligibility gate as autocapitalize, and a field can opt out
+      // by setting its own autocorrect/spellcheck attribute.
+      if (!el.hasAttribute('autocorrect')) el.setAttribute('autocorrect', 'on');
+      if (!el.hasAttribute('spellcheck')) el.setAttribute('spellcheck', 'true');
     });
   } catch (_e) {}
 }

@@ -325,9 +325,9 @@ function renderDash(){
   const _cl=document.getElementById('qa-collect-label');
   if(_cl)_cl.textContent=_owing.length?'Collect ('+_owing.length+')':'Collect';
   const _qb=document.getElementById('qa-collect-btn');
-  // Class toggle, not inline styles — the old inline gray killed the tile's icon
-  // chip and read as a dead gray blob. qa-idle keeps the card look with a muted
-  // chip; qa-g lights it green only when there's actually money to collect.
+  // Class toggle, not inline styles — the old inline gray killed the icon chip
+  // and read as a dead gray blob. qa-idle mutes the chip; qa-g lights it green
+  // only when there's actually money to collect.
   if(_qb){
     const _on=_owing.length>0;
     _qb.classList.toggle('qa-g',_on);_qb.classList.toggle('qa-idle',!_on);
