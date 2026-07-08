@@ -6,6 +6,7 @@
 <title>Get a Free Quote</title>
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="js/icons.js"></script>
 <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin async onload="_intakeInitMapKit()"></script>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -113,7 +114,7 @@ textarea.input{resize:vertical;min-height:90px}
 
   <div id="pg-confirm" style="display:none">
     <div class="confirm-wrap">
-      <div class="confirm-icon">✅</div>
+      <div class="confirm-icon" id="confirm-icon-el"></div>
       <div class="confirm-hdr">You're all set!</div>
       <div class="confirm-msg" id="confirm-msg">We got your info and will be in touch soon.</div>
       <div id="confirm-phone-wrap" style="display:none;margin-top:16px">
@@ -124,7 +125,7 @@ textarea.input{resize:vertical;min-height:90px}
 
   <div id="pg-err" style="display:none">
     <div class="state-wrap">
-      <div class="state-icon">⚠️</div>
+      <div class="state-icon" id="pg-err-icon-el"></div>
       <div class="state-hdr" id="pg-err-hdr">Something went wrong</div>
       <div class="state-msg" id="pg-err-msg">This link may be invalid or expired.</div>
     </div>
@@ -149,6 +150,8 @@ function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace
 function v(id){return(document.getElementById(id)||{}).value||''}
 function show(id){document.getElementById(id).style.display=''}
 function hide(id){document.getElementById(id).style.display='none'}
+document.getElementById('confirm-icon-el').innerHTML=svgIcon('✅',{size:54});
+document.getElementById('pg-err-icon-el').innerHTML=svgIcon('⚠',{size:48});
 
 // MapKit tokens are domain-locked with no expiry (see CLAUDE.md §10.1)
 const _MAPKIT_TOKEN=location.hostname.includes('pages.dev')

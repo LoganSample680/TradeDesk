@@ -57,15 +57,15 @@ function renderFleetVehicles() {
   if(!vehs.length) {
     el.innerHTML =
       '<div style="padding:28px 20px 24px;text-align:center">' +
-        '<div style="font-size:40px;margin-bottom:10px">🚛</div>' +
+        '<div style="font-size:40px;margin-bottom:10px">'+svgIcon('🚛',{size:40})+'</div>' +
         '<div style="font-size:18px;font-weight:800;margin-bottom:6px;color:var(--text)">Set up your first vehicle</div>' +
         '<div style="font-size:13px;color:var(--text3);margin-bottom:20px;line-height:1.5;max-width:300px;margin-left:auto;margin-right:auto">The IRS requires a vehicle description on every business trip log. Add one here to unlock mileage tracking, maintenance records, and tax deductions.</div>' +
         '<button class="btn btn-p" onclick="openAddVehicleModal(-1)" style="font-size:15px;padding:13px 28px;margin-bottom:24px">+ Add your first vehicle</button>' +
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:left;max-width:340px;margin:0 auto">' +
-          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">🗺️</div><div style="font-size:12px;font-weight:700;color:var(--text)">IRS mileage log</div><div style="font-size:11px;color:var(--text3)">Per-vehicle trip log the IRS requires</div></div>' +
-          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">🔧</div><div style="font-size:12px;font-weight:700;color:var(--text)">Maintenance records</div><div style="font-size:11px;color:var(--text3)">Service log + cost per mile</div></div>' +
-          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">📊</div><div style="font-size:12px;font-weight:700;color:var(--text)">Business use %</div><div style="font-size:11px;color:var(--text3)">Auto-calculated from odometer</div></div>' +
-          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">💰</div><div style="font-size:12px;font-weight:700;color:var(--text)">P&L per vehicle</div><div style="font-size:11px;color:var(--text3)">Deductions vs. actual costs</div></div>' +
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">'+svgIcon('🗺',{size:15})+'</div><div style="font-size:12px;font-weight:700;color:var(--text)">IRS mileage log</div><div style="font-size:11px;color:var(--text3)">Per-vehicle trip log the IRS requires</div></div>' +
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">'+svgIcon('🔧',{size:15})+'</div><div style="font-size:12px;font-weight:700;color:var(--text)">Maintenance records</div><div style="font-size:11px;color:var(--text3)">Service log + cost per mile</div></div>' +
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">'+svgIcon('📊',{size:15})+'</div><div style="font-size:12px;font-weight:700;color:var(--text)">Business use %</div><div style="font-size:11px;color:var(--text3)">Auto-calculated from odometer</div></div>' +
+          '<div style="background:var(--bg2);border-radius:var(--r);padding:10px 12px"><div style="font-size:15px;margin-bottom:3px">'+svgIcon('💰',{size:15})+'</div><div style="font-size:12px;font-weight:700;color:var(--text)">P&L per vehicle</div><div style="font-size:11px;color:var(--text3)">Deductions vs. actual costs</div></div>' +
         '</div>' +
       '</div>';
     return;
@@ -100,7 +100,7 @@ function renderFleetVehicles() {
 function _fleetCard(v, idx) {
   const status = v.status || 'active';
   const statusColors = {active:'var(--green)',down:'var(--red)',sold:'var(--text3)'};
-  const statusLabels = {active:'● Active',down:'🔴 Down',sold:'📦 Sold'};
+  const statusLabels = {active:'● Active',down:svgIcon('🔴',{size:12})+' Down',sold:svgIcon('📦',{size:12})+' Sold'};
   const statusColor = statusColors[status] || statusColors.active;
   const yr = new Date().getFullYear().toString();
   const trips = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr));
@@ -123,7 +123,7 @@ function _fleetCard(v, idx) {
       </div>
       <button onclick="event.stopPropagation();openAddVehicleModal(${idx})" class="btn btn-sm" style="font-size:11px;padding:3px 8px;flex-shrink:0">Edit</button>
     </div>
-    ${due.length?`<div style="margin-top:8px">${due.map(d=>`<div style="font-size:11px;background:var(--amber-lt);color:#92400E;border-radius:4px;padding:3px 8px;margin-bottom:3px;display:inline-block;margin-right:4px">⚠️ ${d}</div>`).join('')}</div>`:''}
+    ${due.length?`<div style="margin-top:8px">${due.map(d=>`<div style="font-size:11px;background:var(--amber-lt);color:#92400E;border-radius:4px;padding:3px 8px;margin-bottom:3px;display:inline-block;margin-right:4px">${svgIcon('⚠',{size:11})} ${d}</div>`).join('')}</div>`:''}
     <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
       <div style="background:var(--bg2);border-radius:var(--r);padding:6px 8px;text-align:center">
         <div style="font-size:15px;font-weight:800;color:var(--text)">${ytdMi>0?ytdMi.toLocaleString():'—'}</div>
@@ -138,10 +138,10 @@ function _fleetCard(v, idx) {
         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Cost/mile</div>
       </div>
     </div>
-    ${downDays>0?`<div style="margin-top:8px;font-size:11px;color:var(--red)">⏱ Down ${downDays} day${downDays===1?'':'s'} this year</div>`:''}
+    ${downDays>0?`<div style="margin-top:8px;font-size:11px;color:var(--red)">${svgIcon('⏱',{size:11})} Down ${downDays} day${downDays===1?'':'s'} this year</div>`:''}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px;gap:8px">
       <button onclick="event.stopPropagation();openFleetVehicleDetail(${idx});setTimeout(()=>setFleetDetailTab('service'),80)" style="background:none;border:none;padding:0;cursor:pointer;text-align:left;font-size:11px;color:var(--blue);font-family:inherit;flex:1;min-width:0">
-        ${lastMaint?`🔧 ${escHtml(lastMaint.typeLabel||lastMaint.type||'')} <span style="color:var(--text3)">${_fleetFmtDate(lastMaint.date)}</span> <span style="color:var(--text3)">›</span>`:'<span style="color:var(--text3)">No service records</span>'}
+        ${lastMaint?`${svgIcon('🔧',{size:11})} ${escHtml(lastMaint.typeLabel||lastMaint.type||'')} <span style="color:var(--text3)">${_fleetFmtDate(lastMaint.date)}</span> <span style="color:var(--text3)">›</span>`:'<span style="color:var(--text3)">No service records</span>'}
       </button>
       <button onclick="event.stopPropagation();openAddMaintenanceModal(${idx})" class="btn btn-sm" style="font-size:11px;padding:3px 10px;flex-shrink:0">+ Log service</button>
     </div>
@@ -333,10 +333,10 @@ function _vehWinnerAlert(yr){
     const vd=_vehSchedC(yr);
     if(!vd.hasVehicles)return;
     const parts=vd.perVehicle.filter(p=>p.miles>0||p.costTotal>0).map(p=>{
-      if(p.miles>0&&p.costTotal===0)return '🚗 '+escHtml(p.label)+': mileage '+fmt(p.mileDed)+' — but NO vehicle costs logged this year. Log gas, parts, and service too so next year we can prove which method wins.';
-      if(p.costTotal>0&&p.miles===0)return '🚗 '+escHtml(p.label)+': actual costs '+fmt(p.actualCmp)+' — but NO trips logged. Track your drives so the mileage side is real.';
+      if(p.miles>0&&p.costTotal===0)return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+': mileage '+fmt(p.mileDed)+' — but NO vehicle costs logged this year. Log gas, parts, and service too so next year we can prove which method wins.';
+      if(p.costTotal>0&&p.miles===0)return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+': actual costs '+fmt(p.actualCmp)+' — but NO trips logged. Track your drives so the mileage side is real.';
       const winLbl=p.winner==='mileage'?'Standard mileage':'Actual expenses';
-      return '🚗 '+escHtml(p.label)+' ('+p.bizUse+'% business): mileage '+fmt(p.mileDed)+' vs actual '+fmt(p.actualCmp)+' → <strong>'+winLbl+' wins by '+fmt(p.delta)+'</strong>'+(p.winner===p.method?' — you\'re already on the winning method ✓':' — you\'re set to '+p.method+'; switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply — confirm with your tax pro).');
+      return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+' ('+p.bizUse+'% business): mileage '+fmt(p.mileDed)+' vs actual '+fmt(p.actualCmp)+' → <strong>'+winLbl+' wins by '+fmt(p.delta)+'</strong>'+(p.winner===p.method?' — you\'re already on the winning method '+svgIcon('✓',{size:13}):' — you\'re set to '+p.method+'; switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply — confirm with your tax pro).');
     });
     if(!parts.length)return;
     zAlert(parts.join('<br><br>')+'<br><br><span style="font-size:10px;color:var(--text3)">Not tax advice — verify with your tax professional.</span>',{title:(vd.yr)+' vehicle deduction — which method won'});
@@ -373,7 +373,7 @@ function _renderFleetDetailModal() {
   const allDownDays = _fleetTotalDownDays(v);
   const status = v.status||'active';
   const statusColors = {active:'var(--green)',down:'var(--red)',sold:'var(--text3)'};
-  const statusLabels = {active:'● Active',down:'🔴 Down',sold:'📦 Sold'};
+  const statusLabels = {active:'● Active',down:svgIcon('🔴',{size:12})+' Down',sold:svgIcon('📦',{size:12})+' Sold'};
 
   const tabs = ['overview','service','pl'];
   const tabLabels = {overview:'Overview',service:'Service Log',pl:'P&L'};
@@ -430,7 +430,7 @@ function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
   const bizPct = v.bizUse||100;
 
   return `
-    ${due.length?`<div style="background:var(--amber-lt);border:1px solid #F59E0B;border-radius:var(--r);padding:10px 12px;margin-bottom:12px">${due.map(d=>`<div style="font-size:12px;color:#92400E;font-weight:600">⚠️ ${d}</div>`).join('')}</div>`:''}
+    ${due.length?`<div style="background:var(--amber-lt);border:1px solid #F59E0B;border-radius:var(--r);padding:10px 12px;margin-bottom:12px">${due.map(d=>`<div style="font-size:12px;color:#92400E;font-weight:600">${svgIcon('⚠',{size:12})} ${d}</div>`).join('')}</div>`:''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
       <div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
         <div style="font-size:20px;font-weight:800">${pnl.totalMiles>0?Math.round(pnl.totalMiles).toLocaleString():'—'}</div>
@@ -450,7 +450,7 @@ function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
       </div>
     </div>
     <button onclick="openOdometerReport(${_fleetDetailIdx})" class="btn" style="width:100%;margin-bottom:12px;background:var(--bg2);border-color:var(--border2);font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px">
-      📊 Year-end mileage report
+      ${svgIcon('📊',{size:13})} Year-end mileage report
       ${bizPct<100?`<span style="font-size:10px;background:var(--blue);color:#fff;border-radius:99px;padding:1px 7px;font-weight:700">${bizPct}% biz</span>`:''}
     </button>
 
@@ -489,9 +489,9 @@ function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
 
     <div style="display:grid;gap:8px">
       <button class="btn btn-p" onclick="openAddMaintenanceModal(${_fleetDetailIdx})" style="font-size:15px;padding:14px">+ Log service</button>
-      ${status==='active'?`<button class="btn" onclick="openFleetStatusModal(${_fleetDetailIdx},'down')" style="background:var(--bg2);border-color:var(--border2);color:var(--red);font-weight:700">🔴 Mark as down / in shop</button>`:''}
-      ${status==='down'?`<button class="btn" onclick="openFleetStatusModal(${_fleetDetailIdx},'active')" style="background:var(--green-lt);border-color:var(--green);color:var(--green)">✅ Back in service</button>`:''}
-      ${status!=='sold'?`<button class="btn" onclick="openFleetSaleModal(${_fleetDetailIdx})" style="background:var(--bg2);border-color:var(--border2);font-size:13px">📦 Record sale</button>`:''}
+      ${status==='active'?`<button class="btn" onclick="openFleetStatusModal(${_fleetDetailIdx},'down')" style="background:var(--bg2);border-color:var(--border2);color:var(--red);font-weight:700">${svgIcon('🔴',{size:14})} Mark as down / in shop</button>`:''}
+      ${status==='down'?`<button class="btn" onclick="openFleetStatusModal(${_fleetDetailIdx},'active')" style="background:var(--green-lt);border-color:var(--green);color:var(--green)">${svgIcon('✅',{size:14})} Back in service</button>`:''}
+      ${status!=='sold'?`<button class="btn" onclick="openFleetSaleModal(${_fleetDetailIdx})" style="background:var(--bg2);border-color:var(--border2);font-size:13px">${svgIcon('📦',{size:13})} Record sale</button>`:''}
     </div>
   `;
 }
@@ -499,7 +499,7 @@ function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
 function _fleetDetailServiceHtml(v, maint) {
   if(!maint.length) return `
     <div style="text-align:center;padding:24px 0;color:var(--text3)">
-      <div style="font-size:28px;margin-bottom:8px">🔧</div>
+      <div style="font-size:28px;margin-bottom:8px">${svgIcon('🔧',{size:28})}</div>
       <div style="font-size:13px;margin-bottom:12px">No service records yet</div>
       <button class="btn btn-p" onclick="openAddMaintenanceModal(${_fleetDetailIdx})" style="font-size:14px;padding:12px 24px">+ Log first service</button>
     </div>`;
@@ -525,7 +525,7 @@ function _fleetDetailServiceHtml(v, maint) {
       </div>
       ${maint.map((m,i)=>{
         const parts=_svcParts(m);
-        const icon=MAINT_TYPES[m.type]?MAINT_TYPES[m.type].icon:'🔧';
+        const icon=svgIcon(MAINT_TYPES[m.type]?MAINT_TYPES[m.type].icon:'🔧',{size:12});
         const dateShort=m.date?new Date(m.date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
         const nextInfo=m.nextOilMiles?`<div style="font-size:10px;color:var(--text3);margin-top:1px">Next: ${m.nextOilMiles.toLocaleString()} mi</div>`:'';
         const notesInfo=m.notes?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:1px">${escHtml(m.notes)}</div>`:'';
@@ -536,7 +536,7 @@ function _fleetDetailServiceHtml(v, maint) {
             ${parts?`<div style="font-size:11px;color:var(--text3);margin-top:1px;word-break:break-word">${parts}</div>`:''}
             ${nextInfo}${notesInfo}
             <div style="margin-top:4px;display:flex;gap:10px">
-              ${m.photo?`<span style="font-size:10px;color:var(--blue);cursor:pointer" onclick="_showMaintPhoto('${m.id}')">📷 Receipt</span>`:''}
+              ${m.photo?`<span style="font-size:10px;color:var(--blue);cursor:pointer" onclick="_showMaintPhoto('${m.id}')">${svgIcon('📷',{size:10})} Receipt</span>`:''}
               <span style="font-size:10px;color:var(--text3);cursor:pointer" onclick="openAddMaintenanceModal(${_fleetDetailIdx},${m.id})">Edit</span>
             </div>
           </div>
@@ -592,7 +592,7 @@ function _fleetDetailPnLHtml(v, pnl, maint, trips) {
           <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">IRS rate (${((S.irsRate||0.67)*100).toFixed(0)}¢/mi × ${v.bizUse||100}% biz)</span><span style="font-size:12px;font-weight:600;color:var(--green)">$${p.irsDeduction.toLocaleString()}</span></div>
           <div style="border-top:1px solid var(--border);margin:6px 0"></div>
           <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:8px">
-            <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:3px">📋 Maintenance — records only</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:3px">${svgIcon('📋',{size:11})} Maintenance — records only</div>
             <div style="font-size:11px;color:var(--text3)">Under the standard mileage method, maintenance costs are included in the IRS rate — they are not deducted separately.</div>
             <div style="display:flex;justify-content:space-between;margin-top:6px"><span style="font-size:12px;color:var(--text3)">Actual maintenance spend</span><span style="font-size:12px;color:var(--text3)">$${p.maintCostYTD.toLocaleString()}</span></div>
           </div>
@@ -660,7 +660,7 @@ function _renderOdometerReport() {
   ov.innerHTML = `
     <div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px">
       <div style="display:flex;align-items:center;justify-content:space-between;padding:16px 16px 14px;border-bottom:1px solid var(--border)">
-        <div style="font-size:20px;font-weight:800">📊 Mileage report</div>
+        <div style="font-size:20px;font-weight:800">${svgIcon('📊',{size:20})} Mileage report</div>
         <button onclick="document.getElementById('odo-report-overlay').remove()" style="font-size:22px;background:none;border:none;color:var(--text3);cursor:pointer;padding:4px">×</button>
       </div>
       <div style="padding:14px 16px 40px;overflow-y:auto;max-height:75vh">
@@ -777,7 +777,7 @@ function openAddVehicleModal(idx) {
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Purchase info</div>
         <div class="fg fg2">
           <div class="f"><label>Purchase date</label><input type="text" id="fv-pdate" inputmode="numeric" placeholder="MM/DD/YYYY" maxlength="10" value="${v.purchaseDate?_ymdToMdY(v.purchaseDate):''}" oninput="_fmtExpDate(this)"></div>
-          <div class="f"><label>Purchase price ($)</label><input type="number" id="fv-pprice" min="0" step="100" placeholder="Optional" value="${v.purchasePrice>0?v.purchasePrice:''}"></div>
+          <div class="f"><label>Purchase price ($)</label><input type="text" inputmode="numeric" id="fv-pprice" placeholder="Optional" oninput="_fmtMoneyInput(this)" value="${v.purchasePrice>0?_moneyStr(v.purchasePrice).replace(/\.00$/,''):''}"></div>
         </div>
         <div class="f"><label>Odometer at purchase (mi)</label>
           <input type="number" id="fv-podo" min="0" step="1" placeholder="Optional" value="${v.purchaseOdo>0?v.purchaseOdo:''}">
@@ -786,7 +786,7 @@ function openAddVehicleModal(idx) {
       </div>
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">IRS settings</div>
-        <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--text3)">💡 Business use % is calculated automatically from your year-end odometer report — no manual entry needed.</div>
+        <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--text3)">${svgIcon('💡',{size:11})} Business use % is calculated automatically from your year-end odometer report — no manual entry needed.</div>
         <div class="f"><label>IRS weight class (GVWR)</label>
           <select id="fv-gvwr" onchange="_renderGvwrNote(this.value)">
             <option value="">— Select —</option>
@@ -818,7 +818,7 @@ function openAddVehicleModal(idx) {
         </div>
       </div>
       <button class="btn btn-p" onclick="saveFleetVehicle()" style="width:100%;padding:14px;font-size:16px;font-weight:700">${isEdit?'Save changes':'Add vehicle'}</button>
-      ${isEdit&&(v.status||'active')!=='sold'?`<button class="btn" onclick="openFleetSaleModal(${_fleetEditIdx})" style="width:100%;margin-top:8px;background:var(--bg2);border-color:var(--border2);font-size:13px">📦 Record sale of this vehicle</button>`:''}
+      ${isEdit&&(v.status||'active')!=='sold'?`<button class="btn" onclick="openFleetSaleModal(${_fleetEditIdx})" style="width:100%;margin-top:8px;background:var(--bg2);border-color:var(--border2);font-size:13px">${svgIcon('📦',{size:13})} Record sale of this vehicle</button>`:''}
       ${isEdit?`<button class="btn" onclick="_confirmRemoveVehicle(${_fleetEditIdx})" style="width:100%;margin-top:8px;background:none;border:none;color:var(--red);font-size:13px">Remove vehicle</button>`:''}
     </div>
   `;
@@ -862,7 +862,7 @@ function saveFleetVehicle() {
     gvwr:     document.getElementById('fv-gvwr')?document.getElementById('fv-gvwr').value:'',
     deductionMethod: deductEl ? deductEl.value : (oldV.deductionMethod||'mileage'),
     purchaseDate:  _mdYToYmd(document.getElementById('fv-pdate')?document.getElementById('fv-pdate').value:'')||'',
-    purchasePrice: parseFloat(document.getElementById('fv-pprice')?document.getElementById('fv-pprice').value:0)||0,
+    purchasePrice: _moneyVal('fv-pprice'),
     purchaseOdo:   parseInt(document.getElementById('fv-podo')?document.getElementById('fv-podo').value:0)||0,
     status: oldV.status||'active',
     downtimeLog: oldV.downtimeLog||[],
@@ -903,10 +903,10 @@ function saveFleetVehicle() {
 }
 
 function _gvwrNote(gvwr){
-  if(gvwr==='light')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;color:#92400E">⚠️ <strong>Section 280F applies:</strong> first-year depreciation capped ~$12,200. Standard mileage rate often beats actual expenses for these vehicles.</div>';
-  if(gvwr==='heavy_truck')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;color:#166534">✓ <strong>No 280F limits.</strong> Full Section 179 or bonus depreciation (up to $70,000). Keep mileage log proving &gt;50% business use every year.</div>';
-  if(gvwr==='heavy_suv')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;color:#92400E">⚠️ <strong>Section 179 SUV cap:</strong> max $31,300 in 2025. A pickup truck with a bed doesn\'t have this cap.</div>';
-  if(gvwr==='commercial')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;color:#166534">✓ <strong>Commercial vehicle:</strong> no Section 280F limits. Full Section 179 deductible. Maintain &gt;50% business use documentation.</div>';
+  if(gvwr==='light')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;color:#92400E">'+svgIcon('⚠',{size:11})+' <strong>Section 280F applies:</strong> first-year depreciation capped ~$12,200. Standard mileage rate often beats actual expenses for these vehicles.</div>';
+  if(gvwr==='heavy_truck')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;color:#166534">'+svgIcon('✓',{size:11})+' <strong>No 280F limits.</strong> Full Section 179 or bonus depreciation (up to $70,000). Keep mileage log proving &gt;50% business use every year.</div>';
+  if(gvwr==='heavy_suv')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;color:#92400E">'+svgIcon('⚠',{size:11})+' <strong>Section 179 SUV cap:</strong> max $31,300 in 2025. A pickup truck with a bed doesn\'t have this cap.</div>';
+  if(gvwr==='commercial')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;color:#166534">'+svgIcon('✓',{size:11})+' <strong>Commercial vehicle:</strong> no Section 280F limits. Full Section 179 deductible. Maintain &gt;50% business use documentation.</div>';
   return '<div style="font-size:10px;color:var(--text3)">Set weight class above — determines how much depreciation you can deduct (IRS §280F).</div>';
 }
 function _renderGvwrNote(val) {
@@ -972,11 +972,11 @@ function openFleetSaleModal(idx) {
   ov.id = 'fleet-sale-overlay';
   ov.innerHTML = `
     <div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px;padding:20px 16px 60px">
-      <div style="font-size:18px;font-weight:800;margin-bottom:16px">📦 Record vehicle sale</div>
+      <div style="font-size:18px;font-weight:800;margin-bottom:16px">${svgIcon('📦',{size:18})} Record vehicle sale</div>
       <div style="font-size:14px;font-weight:600;color:var(--text3);margin-bottom:14px">${escHtml(v.nickname||v.name||'')}</div>
       <div class="fg fg2">
         <div class="f"><label>Sale date</label><input type="date" id="fs-date" value="${todayKey()}"></div>
-        <div class="f"><label>Sale price ($)</label><input type="number" id="fs-price" min="0" step="100" placeholder="0"></div>
+        <div class="f"><label>Sale price ($)</label><input type="text" inputmode="numeric" id="fs-price" placeholder="0" oninput="_fmtMoneyInput(this)"></div>
       </div>
       <div class="f"><label>Odometer at sale (mi)</label><input type="number" id="fs-odo" min="0" step="100" placeholder="0"></div>
       ${v.purchasePrice?`<div style="margin-top:8px;padding:8px 10px;background:var(--bg2);border-radius:var(--r);font-size:12px;color:var(--text3)">Purchase price: $${v.purchasePrice.toLocaleString()} — enter sale price to see gain/loss</div>`:''}
@@ -995,7 +995,7 @@ function saveFleetSale(idx) {
   const v = vehs[idx];
   if(!v) return;
   const saleDate = document.getElementById('fs-date')?document.getElementById('fs-date').value||todayKey():todayKey();
-  const salePrice = parseFloat(document.getElementById('fs-price')?document.getElementById('fs-price').value||0:0)||0;
+  const salePrice = _moneyVal('fs-price');
   const saleOdo = parseInt(document.getElementById('fs-odo')?document.getElementById('fs-odo').value||0:0)||0;
 
   v.status = 'sold';
@@ -1094,7 +1094,7 @@ function _renderMaintModal(savedType) {
                Log cost as a deductible expense
              </label>`
           : `<div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-top:8px">
-               <div style="font-size:11px;font-weight:700;color:var(--text3)">📋 Records only — standard mileage method</div>
+               <div style="font-size:11px;font-weight:700;color:var(--text3)">${svgIcon('📋',{size:11})} Records only — standard mileage method</div>
                <div style="font-size:11px;color:var(--text3);margin-top:2px">Maintenance costs are not deducted separately. The IRS mileage rate already covers them. Switch to actual expenses in vehicle settings to deduct real costs.</div>
              </div>`
         }
@@ -1105,7 +1105,7 @@ function _renderMaintModal(savedType) {
             <button onclick="_clearMaintPhoto()" style="width:100%;margin-top:4px;padding:6px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--red);font-size:12px;cursor:pointer;font-family:inherit">Remove photo</button>
           </div>
           <label style="display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 12px;border:1.5px dashed var(--border2);border-radius:var(--r);cursor:pointer;font-size:13px;font-weight:600;color:var(--blue)">
-            📷 Scan receipt
+            ${svgIcon('📷',{size:13})} Scan receipt
             <input type="file" accept="image/*" capture="environment" style="display:none" onchange="_handleMaintPhoto(this)">
           </label>
         </div>
@@ -1185,7 +1185,7 @@ function _renderMaintTypeFields(type, rec) {
     const defaultNextDate = _fleetAddMonths(todayKey(), 6);
     el.innerHTML = `
       <div class="card">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">🛢️ Oil change details</div>
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">${svgIcon('🛢',{size:11})} Oil change details</div>
         <div class="fg fg2">
           <div class="f"><label>Oil type</label>
             <select id="m-oil-type">
@@ -1205,7 +1205,7 @@ function _renderMaintTypeFields(type, rec) {
       </div>`;
   } else if(type === 'brakes') {
     el.innerHTML = `<div class="card">
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">🔴 Brake details</div>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">${svgIcon('🔴',{size:11})} Brake details</div>
       <div class="fg fg2">
         <div class="f"><label>Axle</label>
           <select id="m-brake-axle">
@@ -1221,7 +1221,7 @@ function _renderMaintTypeFields(type, rec) {
     </div>`;
   } else if(type === 'tires') {
     el.innerHTML = `<div class="card">
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">⭕ Tire details</div>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">${svgIcon('⭕',{size:11})} Tire details</div>
       <div class="fg fg2">
         <div class="f"><label>Tire brand</label><input id="m-tire-brand" placeholder="Michelin, BFG..." value="${(rec&&rec.tireBrand)||''}"></div>
         <div class="f"><label>Tire size</label><input id="m-tire-size" placeholder="265/70R17" value="${(rec&&rec.tireSize)||''}"></div>
@@ -1234,7 +1234,7 @@ function _renderMaintTypeFields(type, rec) {
     </div>`;
   } else if(type === 'battery') {
     el.innerHTML = `<div class="card">
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">🔋 Battery details</div>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">${svgIcon('🔋',{size:11})} Battery details</div>
       <div class="fg fg2">
         <div class="f"><label>Brand</label><input id="m-bat-brand" placeholder="Optima, Interstate..." value="${(rec&&rec.batteryBrand)||''}"></div>
         <div class="f"><label>Part #</label><input id="m-bat-part" placeholder="Part number" value="${(rec&&rec.batteryPart)||''}"></div>
@@ -1244,7 +1244,7 @@ function _renderMaintTypeFields(type, rec) {
   } else if(type === 'fuel_filter' || type === 'air_filter' || type === 'belt') {
     const def = MAINT_TYPES[type];
     el.innerHTML = `<div class="card">
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">${def.icon} ${def.label} details</div>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">${svgIcon(def.icon,{size:11})} ${def.label} details</div>
       <div class="fg fg2">
         <div class="f"><label>Brand</label><input id="m-part-brand" placeholder="Brand name" value="${(rec&&rec.partBrand)||''}"></div>
         <div class="f"><label>Part #</label><input id="m-part-num" placeholder="Part number" value="${(rec&&rec.partNum)||''}"></div>

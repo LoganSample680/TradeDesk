@@ -1,4 +1,34 @@
-function openBidNotes(bidId){editingBidId=bidId;lastCreatedBidId=bidId;}
+function openBidNotes(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  editingBidId=bidId;lastCreatedBidId=bidId;
+  document.getElementById('_bid-notes-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_bid-notes-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  box.style.maxWidth='480px';
+  box.innerHTML=
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
+      '<div style="font-size:16px;font-weight:800">Bid notes</div>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:16})+'</button>'+
+    '</div>'+
+    '<textarea id="_bid-notes-ta" rows="8" placeholder="Add notes about this bid..." style="width:100%;box-sizing:border-box;padding:12px;font-size:14px;line-height:1.5;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:14px">'+escHtml(b.notes||'')+'</textarea>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+      '<button onclick="_saveBidNotes('+bidId+')" style="flex:2;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>{const ta=document.getElementById('_bid-notes-ta');if(ta){ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);}},50);
+}
+function _saveBidNotes(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const ta=document.getElementById('_bid-notes-ta');
+  b.notes=(ta?ta.value:'').trim();
+  saveAll();
+  document.getElementById('_bid-notes-ov')?.remove();
+  if(typeof renderClientDetail==='function')try{renderClientDetail();}catch(e){}
+  if(typeof renderDash==='function')try{renderDash();}catch(e){}
+  showToast('Notes saved','✓');
+}
 function showNotesFab(){}
 function hideNotesFab(){}
 
@@ -71,8 +101,8 @@ function renderHittersList(){
           '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px;flex-wrap:wrap">'+
             '<div style="font-size:14px;font-weight:700">'+escHtml(c.name)+'</div>'+
             '<span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:10px;background:'+tierColor+'22;color:'+tierColor+'">'+tier+'-tier</span>'+
-            (isRealtor?'<span style="font-size:10px;font-weight:700;color:var(--amber)">🏡 Realtor</span>':'')+ 
-            (isPM?'<span style="font-size:10px;font-weight:700;color:var(--blue)">🏢 PM</span>':'')+
+            (isRealtor?'<span style="font-size:10px;font-weight:700;color:var(--amber)">'+svgIcon('🏡',{size:10})+' Realtor</span>':'')+ 
+            (isPM?'<span style="font-size:10px;font-weight:700;color:var(--blue)">'+svgIcon('🏢',{size:10})+' PM</span>':'')+
           '</div>'+
           (c.occupation?'<div style="font-size:11px;color:var(--text2);margin-bottom:2px">'+c.occupation+'</div>':'')+
           '<div style="font-size:11px;color:var(--text3)">Last contact: '+daysLabel+
@@ -87,12 +117,12 @@ function renderHittersList(){
       '</div>'+
       (hasEmail?
         '<div style="margin-top:8px;display:flex;gap:6px">'+
-          '<a href="mailto:'+escHtml(c.email)+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">📧 Email</a>'+
-          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">💬 Text</a>':'')+ 
+          '<a href="mailto:'+escHtml(c.email)+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">'+svgIcon('📧',{size:11})+' Email</a>'+
+          (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">'+svgIcon('💬',{size:11})+' Text</a>':'')+ 
         '</div>':
         (c.phone?
           '<div style="margin-top:8px">'+
-            '<a href="sms:'+c.phone.replace(/\D/g,'')+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">💬 Text</a>'+
+            '<a href="sms:'+c.phone.replace(/\D/g,'')+'" onclick="event.stopPropagation()" class="btn btn-sm" style="font-size:11px;text-decoration:none">'+svgIcon('💬',{size:11})+' Text</a>'+
           '</div>':'')
       )+
     '</div>';
@@ -106,15 +136,13 @@ function renderHittersList(){
 function applyPermissions(){
   const taxNav=document.getElementById('nb-taxes');
   if(taxNav)taxNav.style.display=canSeeTaxes()?'':'none';
-  // Hide restricted nav items for employees
-  if(_isEmployee){
-    ['nb-leads','nb-tracker','nb-team','nb-settings',
-     'mtb-leads','mmi-tracker','mmi-taxes','mmi-team','mmi-settings','mmi-money'].forEach(id=>{
-      const el=document.getElementById(id);if(el)el.style.display='none';
-    });
-    // Also hide taxes nav button (already hidden by canSeeTaxes but be explicit)
-    if(taxNav)taxNav.style.display='none';
-  }
+  const mmiTax=document.getElementById('mmi-taxes');
+  if(mmiTax)mmiTax.style.display=canSeeTaxes()?'':'none';
+  // Every other contractor-only nav item (symmetric hide-for-employee/restore-for-owner) —
+  // always run so a stale gate from an earlier account in the same tab can't survive a
+  // switch to a different account (see _applyEmployeeNavGating for why this must be
+  // unconditional, not just called when the incoming account happens to be an employee).
+  _applyEmployeeNavGating();
   _renderDevTradeCard();
   // Update nav user section
   const nameEl=document.getElementById('nav-user-name');
@@ -127,7 +155,7 @@ function applyPermissions(){
   const name=(_rawName&&!_rawName.includes('@'))?_rawName:(S.bname||'My Account');
   if(nameEl)nameEl.textContent=name;
   if(roleEl)roleEl.textContent=_isEmployee?'Employee':getRole().charAt(0).toUpperCase()+getRole().slice(1);
-  if(avatarEl)avatarEl.textContent=(name==='My Account'?'👤':name.charAt(0).toUpperCase());
+  if(avatarEl)avatarEl.innerHTML=(name==='My Account'?svgIcon('👤',{size:18}):escHtml(name.charAt(0).toUpperCase()));
 }
 
 // ── Multi-trade support ───────────────────────────────────────────────
@@ -265,7 +293,7 @@ function _renderNavTradeSwitcher(){
   pills.innerHTML=lines.map(t=>{
     const m=TRADE_META[t]||{icon:'🔧',label:t};
     const sel=t===active;
-    return`<button onclick="setActiveTrade('${t}')" style="padding:4px 8px;border-radius:20px;border:1px solid ${sel?'var(--blue)':'rgba(255,255,255,.15)'};background:${sel?'var(--blue)':'rgba(255,255,255,.06)'};color:${sel?'#fff':'rgba(255,255,255,.55)'};font-size:11px;font-weight:${sel?700:400};cursor:pointer;font-family:inherit">${m.icon} ${m.label}</button>`;
+    return`<button onclick="setActiveTrade('${t}')" style="padding:4px 8px;border-radius:20px;border:1px solid ${sel?'var(--blue)':'rgba(255,255,255,.15)'};background:${sel?'var(--blue)':'rgba(255,255,255,.06)'};color:${sel?'#fff':'rgba(255,255,255,.55)'};font-size:11px;font-weight:${sel?700:400};cursor:pointer;font-family:inherit">${svgIcon(m.icon,{size:11})} ${m.label}</button>`;
   }).join('');
 }
 
@@ -289,7 +317,7 @@ Object.defineProperty(window,'_tmCrewCount',{get:()=>_tmCrewCount,set:v=>{_tmCre
 Object.defineProperty(window,'_tmRatePerMan',{get:()=>_tmRatePerMan,set:v=>{_tmRatePerMan=v;},configurable:true});
 Object.defineProperty(window,'_tmEstHours',{get:()=>_tmEstHours,set:v=>{_tmEstHours=v;},configurable:true});
 Object.defineProperty(window,'_tmBillingCycle',{get:()=>_tmBillingCycle,set:v=>{_tmBillingCycle=v;},configurable:true});
-let _tmMatMarkup=0,_tmCapAction='Stop & get re-approval';
+let _tmCapAction='Stop & get re-approval';
 let _geiIsFreeForm=false;
 Object.defineProperty(window,'_geiIsFreeForm',{get:()=>_geiIsFreeForm,set:v=>{_geiIsFreeForm=v;},configurable:true});
 let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
@@ -312,29 +340,138 @@ async function _geiLookupClientTaxRate(){
   }
 }
 
-function openTMEstimate(c,bidId){
-  _geiIsTM=true;_geiIsFreeForm=false;
-  openGenericEstimate(c,bidId,null);
-  _geiIsFreeForm=false;
+function openTMEstimate(c,bidId){_geiOpenModeEstimate(c,bidId,'tm');}
+function openFreeFormEstimate(c,bidId){_geiOpenModeEstimate(c,bidId,'byo');}
+
+// Unsent estimate-builder drafts for a client, filtered by estimate type.
+// 'tm' matches only Time & Materials drafts; 'byo' matches everything else
+// (legacy scope drafts auto-migrate to Build Your Own on resume, so they
+// count as BYO). This is THE draft-matching rule — the resume chooser and
+// openGenericEstimate's silent-reuse both use it, so they can never disagree.
+function _geiFindDraftsFor(clientId,mode){
+  return bids.filter(b=>b.client_id===clientId&&!b.signingToken&&b.geiLines!==undefined
+    &&(b.status==='Draft'||b.status==='Pending')
+    &&(mode==='tm'?!!b.isTM:mode==='byo'?!b.isTM:true));
 }
-function openFreeFormEstimate(c,bidId){
-  _geiIsFreeForm=true;_geiIsTM=false;
-  openGenericEstimate(c,bidId,null);
+function _geiDraftIsEmpty(b){return !b.amount&&!(b.geiLines||[]).length&&!(b.byoItems||[]).length;}
+// Plain-English estimate-type label for a bid — spelled out, never an acronym.
+// Used anywhere a bid surfaces outside the estimate builder (Make Money Today
+// feed, pickers) so the contractor can always tell which type they chose.
+function _estimateTypeLabel(b){
+  if(!b)return'';
+  if(b.isTM)return'Time & Materials';
+  if(b.isFreeForm)return'Build Your Own';
+  return'';
 }
 
-function openGenericEstimate(c,bidId,_tradePick){
+// ── Active-estimate marker — auto-resume after a tab switch/app reopen ───────
+// While an estimate is open, a marker records where the contractor is. If the
+// app reloads (phone tab switch, accidental close), boot jumps straight back
+// into that estimate — it's the thing they were most likely coming back to
+// finish. The marker clears when they LEAVE the estimate on purpose (bottom
+// nav, back to the type picker), so deliberate exits never bounce them back.
+function _geiMarkActive(){
+  try{
+    if(!_geiEditBidId)return;
+    localStorage.setItem('zp3_active_estimate',JSON.stringify({
+      bidId:_geiEditBidId,clientId:_geiClientId,
+      uid:(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null,
+      ts:Date.now(),
+    }));
+  }catch(_e){}
+}
+function _geiClearActive(){try{localStorage.removeItem('zp3_active_estimate');}catch(_e){}}
+// Called once from the boot reveal chain. Every guard is a reason NOT to hijack
+// the open: stale marker (>12h), different account, employee account, bid gone,
+// or bid already sent/decided — in all of those, boot lands on the dashboard.
+function _maybeResumeActiveEstimate(){
+  let m=null;
+  try{m=JSON.parse(localStorage.getItem('zp3_active_estimate')||'null');}catch(_e){}
+  if(!m||!m.bidId)return false;
+  if(Date.now()-(m.ts||0)>12*3600*1000){_geiClearActive();return false;}
+  if(typeof _isEmployee!=='undefined'&&_isEmployee){_geiClearActive();return false;}
+  const uid=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  if((m.uid||null)!==(uid||null)){_geiClearActive();return false;}
+  const b=bids.find(x=>String(x.id)===String(m.bidId));
+  if(!b||b.signingToken||!(b.status==='Draft'||b.status==='Pending')){_geiClearActive();return false;}
+  const c=getClientById(m.clientId)||getClientById(b.client_id);
+  if(!c){_geiClearActive();return false;}
+  openGenericEstimate(c,b.id,b.trade_type||'general');
+  return true;
+}
+
+// UI entry point for both estimate types. The rule the owner set: never
+// silently resume a draft that has real content, never create junk duplicates.
+//  • explicit bidId → open that bid (resume buttons, revise flows)
+//  • non-empty unsent draft(s) of the SAME type exist → chooser: resume one
+//    of them, or deliberately start a fresh version alongside them
+//  • only empty stubs (or nothing) → open directly; empty stubs are reused
+//    silently so abandoning the type picker twice never piles up blank drafts
+function _geiOpenModeEstimate(c,bidId,mode){
+  if(bidId){openGenericEstimate(c,bidId,null,{mode});return;}
+  const drafts=c?_geiFindDraftsFor(c.id,mode).filter(b=>!_geiDraftIsEmpty(b)):[];
+  if(!drafts.length){openGenericEstimate(c,null,null,{mode});return;}
+  _geiShowDraftChooser(c,mode,drafts);
+}
+function _geiShowDraftChooser(c,mode,drafts){
+  document.getElementById('_gei-draft-chooser')?.remove();
+  const modeLabel=mode==='tm'?'Time & Materials':'Build Your Own';
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_gei-draft-chooser';
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='440px';
+  const rows=drafts.map(b=>{
+    const items=(b.byoItems||[]).length||(b.geiLines||[]).length;
+    const parts=[];
+    if(b.amount)parts.push('$'+Number(b.amount).toLocaleString());
+    if(items)parts.push(items+' item'+(items>1?'s':''));
+    if(b.bid_date)parts.push('started '+b.bid_date);
+    return '<button data-bid="'+b.id+'" onclick="_geiResumeChosenDraft(this.dataset.bid)" style="display:block;width:100%;text-align:left;padding:12px 14px;border:1.5px solid var(--border2);border-radius:10px;background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:8px">'+
+      '<span style="font-size:14px;font-weight:700;color:var(--text);display:block">'+escHtml(b.type||modeLabel+' draft')+'</span>'+
+      '<span style="font-size:12px;color:var(--text3)">'+escHtml(parts.join(' · ')||'No details yet')+'</span>'+
+    '</button>';
+  }).join('');
+  box.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">Unsent '+modeLabel+' draft'+(drafts.length>1?'s':'')+'</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(c?.name||'This client')+' already has '+(drafts.length>1?drafts.length+' unsent drafts':'an unsent draft')+' of this type. Pick one to keep working on it, or start a fresh version to send alongside it.</div>'+
+    rows+
+    '<button onclick="_geiStartFreshDraft()" style="display:block;width:100%;padding:13px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">'+svgIcon('➕',{size:14})+' Start a fresh '+modeLabel+' estimate</button>'+
+    '<button onclick="document.getElementById(\'_gei-draft-chooser\')?.remove()" style="display:block;width:100%;padding:11px;border-radius:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  ov.dataset.mode=mode;ov.dataset.clientId=c?.id||'';
+}
+function _geiResumeChosenDraft(bidId){
+  const ov=document.getElementById('_gei-draft-chooser');
+  const mode=ov?.dataset.mode;const clientId=Number(ov?.dataset.clientId);
+  ov?.remove();
+  const c=getClientById(clientId);if(!c)return;
+  openGenericEstimate(c,Number(bidId)||bidId,null,{mode});
+}
+function _geiStartFreshDraft(){
+  const ov=document.getElementById('_gei-draft-chooser');
+  const mode=ov?.dataset.mode;const clientId=Number(ov?.dataset.clientId);
+  ov?.remove();
+  const c=getClientById(clientId);if(!c)return;
+  openGenericEstimate(c,null,null,{mode,forceNew:true});
+}
+
+function openGenericEstimate(c,bidId,_tradePick,opts){
+  // Mode comes in explicitly (never inherited from whatever estimate was open
+  // last) — stale _geiIsTM/_geiIsFreeForm from a previous estimate was how a
+  // Time & Materials resume could open with Build Your Own state mixed in.
+  _geiIsTM=opts?.mode==='tm';
+  _geiIsFreeForm=opts?.mode==='byo';
   _geiClientId=c?.id||null;
   _geiEditBidId=bidId||null;
   _geiClientTaxRate=null;
   _geiLines=[];_byoItems=[];_byoCustomSections=[];_byoCustomTerms='';_geiIsCommercial=false;_geiEmergency=false;_panelSched=null;_geiStep=1;_geiNewWork=false;_geiJobScope='repair';_geiScopeChips=[];_geiScopeNoScope=false;_estCrew=[];
-  _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmMatMarkup=0;_tmCapAction='Stop & get re-approval';
+  _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
   document.getElementById('gei-cart-bar')?.remove();
   if(_tradePick)_activeTrade=_tradePick;
   _geiTrade=_tradePick||getActiveTrade();
   const trade=_geiTrade;
   const m=TRADE_META[trade]||{icon:'🔧',label:trade.charAt(0).toUpperCase()+trade.slice(1)};
   const titleEl=document.getElementById('gei-trade-title');
-  if(titleEl)titleEl.textContent=m.icon+' '+m.label+' Proposal';
+  if(titleEl)titleEl.innerHTML=svgIcon(m.icon,{size:24})+' '+m.label+' Proposal';
   const eyebrowEl=document.getElementById('gei-tbar-eyebrow');
   if(eyebrowEl)eyebrowEl.textContent=m.label+' proposal';
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
@@ -361,31 +498,44 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
       if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
-      if(b.isTM&&!_geiIsFreeForm){
-        _geiIsTM=true;
+      // An explicitly-resumed bid's OWN type wins — the record knows what it is,
+      // regardless of which button or stale state got us here. isTM takes
+      // precedence: bids autosaved before the dual-flag fix carry BOTH flags,
+      // and letting isFreeForm win resumed T&M drafts as empty BYO estimates.
+      if(b.isTM){
+        _geiIsTM=true;_geiIsFreeForm=false;
         _tmCrewCount=b.tmCrewCount||1;_tmRatePerMan=b.tmRatePerMan||0;
         _tmEstHours=b.tmEstHours||0;_tmBillingCycle=b.tmBillingCycle||'weekly';
-        _tmMatMarkup=b.tmMatMarkup||b.geiTaxPct||0;
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
       }
-      if(b.isFreeForm)_geiIsFreeForm=true;
-      // Restore deposit pct from saved bid (back-calculate from deposit/amount)
-      if(!b.isTM&&b.amount>0&&b.deposit>0){
-        const _storedPct=Math.round((b.deposit/b.amount)*100);
-        const _depEl=document.getElementById('byo-deposit-pct');
-        if(_depEl)_depEl.value=_storedPct;
-      }
+      else if(b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
+      // Deposit % is restored in _tmShowPage/_byoShowPage instead — the field
+      // doesn't exist in the DOM yet at this point (rendered lazily on page show).
       _resumingExisting=true;
     }
   }
-  if(!_geiEditBidId){
-    // Reuse any existing GEI draft or unsent bid for this client+trade (prevents duplicates).
-    // Two-pass: exact trade match first; then heal old bids with undefined trade_type.
-    const _tMatch=b=>b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending');
+  if(!_geiEditBidId&&!opts?.forceNew){
+    // Reuse an existing unsent draft for this client (prevents duplicates).
+    // When a mode was picked (tm/byo), only drafts of that SAME type are
+    // candidates — picking Time & Materials must never silently resume a
+    // Build Your Own draft and drag its items along (the cross-type "bleed"
+    // the owner hit). Two-pass within candidates: exact trade match first,
+    // then heal old bids that predate the trade_type field.
+    // Non-empty candidates only reach here via the resume chooser
+    // (_geiOpenModeEstimate) when a mode is set; direct legacy calls keep the
+    // old silent-resume behavior unchanged.
+    const _mode=opts?.mode;
+    const _typeOk=b=>_mode==='tm'?!!b.isTM:_mode==='byo'?!b.isTM:true;
+    const _tMatch=b=>b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending')&&_typeOk(b);
     let _existingGei=bids.find(b=>_tMatch(b)&&b.trade_type===_geiTrade);
     if(!_existingGei){
       // Fallback: pick up old bids that predate the trade_type field
       _existingGei=bids.find(b=>_tMatch(b)&&(b.trade_type===undefined||b.trade_type===null||b.trade_type===''));
+    }
+    if(!_existingGei&&_mode){
+      // Mode flows aren't trade-scoped — the chooser found drafts by type only,
+      // so match by type across trades too rather than spawning a duplicate.
+      _existingGei=bids.find(_tMatch);
     }
     if(_existingGei){
       _existingGei.trade_type=_geiTrade; // heal legacy bids
@@ -397,11 +547,14 @@ function openGenericEstimate(c,bidId,_tradePick){
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
-      if(_b.isFreeForm)_geiIsFreeForm=true;
+      // isTM precedence — legacy dual-flag rows (see _byoAutosave note) must
+      // resume as T&M, never as an empty BYO.
+      if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
+      else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       _geiScopeNoScope=!!(_b.scopeNoScope);
-      if(_b.isTM&&!_geiIsFreeForm){_geiIsTM=true;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmMatMarkup=_b.tmMatMarkup||_b.geiTaxPct||20;_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
-      if(!_b.isTM&&_b.amount>0&&_b.deposit>0){const _storedPct=Math.round((_b.deposit/_b.amount)*100);const _depEl=document.getElementById('byo-deposit-pct');if(_depEl)_depEl.value=_storedPct;}
+      // Deposit % is restored in _tmShowPage/_byoShowPage instead — the field
+      // doesn't exist in the DOM yet at this point (rendered lazily on page show).
       // Purge other empty duplicates for this client+trade now that we have the right
       // one — through _userDelete so the delete-intent is RECORDED and the next save's
       // sweep soft-deletes them server-side too. A bare array filter only hid them in
@@ -416,8 +569,12 @@ function openGenericEstimate(c,bidId,_tradePick){
   }
   if(!_geiEditBidId){
     const _draftClientName=c?c.name||'':'';
-    const _draftTypeLabel=(TRADE_META&&TRADE_META[_geiTrade])?TRADE_META[_geiTrade].label||'Trade':'Trade';
-    const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0};
+    const _draftTypeLabel=_geiIsTM?'Time & Materials':_geiIsFreeForm?'Build Your Own':((TRADE_META&&TRADE_META[_geiTrade])?TRADE_META[_geiTrade].label||'Trade':'Trade');
+    // Stamp the picked type on the stub immediately — a typeless stub can't be
+    // found by the type-aware reuse above, so backing out and re-picking the
+    // same type would spawn a duplicate blank draft every time.
+    const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0,
+      ...(_geiIsTM?{isTM:true}:{}),...(_geiIsFreeForm?{isFreeForm:true}:{})};
     bids.unshift(draftBid);_geiEditBidId=draftBid.id;saveAll();
   }
   // Auto-migrate old step-based estimates to BYO freeform when resumed
@@ -560,47 +717,208 @@ function _tmSyncCycleButtons(){
   });
 }
 
-// ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
-function _tmShowPage(){
-  // Hide legacy wizard UI inside pg-est-generic
+// ── T&M / BYO shared markup — one template, rendered per-prefix ─────────────
+// The two single-page layouts (EstimateTM.jsx / EstimateBYO.jsx equivalents) share
+// identical structure for the top bar, the profit gauge, and the Send/Preview/
+// Sign-in-person action row — only ids and a handful of parameters differ per mode.
+// Rendering from one function means a future change to any of these can never
+// silently apply to only one of the two modes (see the _tmPreviewClient regression
+// this consolidation followed).
+function _geiRenderTopBar(prefix,defaultTitle,editFnName){
+  const wrap=document.getElementById(prefix+'-topbar-wrap');if(!wrap)return;
+  wrap.innerHTML=
+    '<div class="tbar-l">'+
+      '<button class="link-back" onclick="_geiBack()">← Job type</button>'+
+      '<div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">'+
+        '<span id="'+prefix+'-tbar-title">'+defaultTitle+'</span>'+
+        '<button onclick="'+editFnName+'()" id="'+prefix+'-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">'+svgIcon('✏',{size:16})+'</button>'+
+      '</div>'+
+      '<div class="tbar-sub" id="'+prefix+'-page-sub">—</div>'+
+    '</div>'+
+    '<div class="tbar-r">'+
+      '<button class="btn" onclick="saveGenericEstimate(true)">'+svgIcon('💾',{size:14})+' Save draft</button>'+
+      '<button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>'+
+    '</div>';
+}
+function _geiRenderScopeCard(prefix){
+  const wrap=document.getElementById(prefix+'-scopecard-wrap');if(!wrap)return;
+  wrap.innerHTML=
+    '<div class="card-hd">'+
+      '<div class="card-hd-title">Scope of work</div>'+
+      '<div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet(\''+prefix+'-scope-wrap\')">+ Add scope</button></div>'+
+    '</div>'+
+    '<div id="'+prefix+'-scope-wrap"></div>';
+}
+function _geiRenderProfitGauge(prefix,costOninput){
+  const wrap=document.getElementById(prefix+'-gauge-wrap');
+  if(!wrap||wrap.children.length)return; // idempotent — preserve gauge/animation state across repeat page shows
+  wrap.innerHTML=
+    '<input type="number" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
+    '<div id="'+prefix+'-gauge-hint" style="display:none"></div>'+
+    '<div id="'+prefix+'-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
+      '<div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 58%,#F59E0B 72%,#EF4444 100%);margin:14px 10px 26px">'+
+        '<div id="'+prefix+'-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>'+
+      '</div>'+
+      '<div style="text-align:center;padding-bottom:12px">'+
+        '<div id="'+prefix+'-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>'+
+        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>'+
+        '<div id="'+prefix+'-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>'+
+        '<div id="'+prefix+'-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>'+
+      '</div>'+
+    '</div>';
+}
+function _geiRenderActionButtons(prefix,opts){
+  const wrap=document.getElementById(prefix+'-actions-wrap');if(!wrap)return;
+  const o=opts||{};
+  const cols=o.extraButtons?o.extraButtons.length+2:2;
+  const extra=(o.extraButtons||[]).map(b=>'<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+b.onclick+'">'+b.label+'</button>').join('');
+  wrap.innerHTML=
+    '<button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">'+svgIcon('📨',{size:16})+' '+(o.sendLabel||'Send proposal')+'</button>'+
+    '<button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">'+svgIcon('✍',{size:16})+' Sign in person</button>'+
+    '<div style="display:grid;grid-template-columns:repeat('+cols+',1fr);gap:6px;margin-top:8px">'+
+      '<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="'+(o.previewOnclick||'_geiPreviewClient()')+'">'+svgIcon('👁',{size:11})+' Preview</button>'+
+      extra+
+      '<button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">'+svgIcon('📊',{size:11})+' Compare</button>'+
+    '</div>';
+}
+function _geiPreviewClient(){sendGenericProposal(true);}
+function _geiRenderDepositField(prefix,onInputExpr){
+  const wrap=document.getElementById(prefix+'-deposit-wrap');
+  if(!wrap||wrap.children.length)return;
+  wrap.innerHTML=
+    '<div class="summary-row" style="align-items:center">'+
+      '<span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600">Deposit %</span>'+
+      '<span style="display:flex;align-items:center;gap:4px">'+
+        '<input type="number" id="'+prefix+'-deposit-pct" value="25" min="0" max="100" step="5"'+
+          ' oninput="'+onInputExpr+'"'+
+          ' style="width:68px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">'+
+        '<span style="font-size:15px;font-weight:700">%</span>'+
+      '</span>'+
+    '</div>'+
+    '<div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="'+prefix+'-rail-balance">$0</span></div>';
+}
+// Single source of truth for "what % deposit does this estimate use" — read by
+// _byoAutosave, saveGenericEstimate, sendGenericProposal, _geiSignInPerson, and
+// _geiConfirmInPerson so T&M and BYO can never drift onto different formulas.
+function _geiDepositPct(){
+  const el=document.getElementById(_geiIsTM?'tm-deposit-pct':'byo-deposit-pct');
+  return parseFloat(el?.value)||25;
+}
+
+// ── Estimate mode registry ────────────────────────────────────────────────────
+// The DIFFERENCES between T&M and BYO live here as data. The behavior that uses
+// them (_geiShowSharedChrome and the shared render functions above) is one code
+// path — a change to how either page looks or boots automatically hits both.
+//
+// SHARED KERNEL — the constant baseline every estimate type builds on. A new
+// estimate type (fixed-price, subscription, whatever comes next) is a new entry
+// in _GEI_MODES plus its own genuinely-unique fields (like T&M's crew/rate/days
+// inputs or BYO's line-item sections) — it reuses everything below, it never
+// re-implements it:
+//   • Page chrome:        _geiShowSharedChrome / _geiHidePage
+//   • Rendered components: _geiRenderTopBar, _geiRenderScopeCard,
+//                          _geiRenderProfitGauge, _geiRenderActionButtons,
+//                          _geiRenderDepositField
+//   • Deposit math:        _geiDepositPct (single source of truth, used by
+//                          saveGenericEstimate, sendGenericProposal,
+//                          _byoAutosave, _geiSignInPerson, _geiConfirmInPerson)
+//   • Scope-of-work:       TRADE_SCOPE_CHIPS / _GEN_SCOPE, _toggleScopeChip,
+//                          _renderScopeChips, _openScopeSheet — the one
+//                          "what's included" definition every mode shares;
+//                          it always carries into the sent proposal
+//                          (see the _scopeBlocks assembly in sendGenericProposal)
+//   • Save/send/sign:      saveGenericEstimate, sendGenericProposal,
+//                          _geiSignInPerson, _geiConfirmInPerson
+//   • Proposal T&C:        the single clause array in sendGenericProposal —
+//                          shared legal clauses exist once; a mode only
+//                          supplies its own payment-terms clauses at the top
+// If a change only touches one mode's genuinely-unique behavior, it belongs in
+// that mode's own function (_tmInputChange, _byoUpdateRail, etc.) — not here.
+const _GEI_MODES={
+  tm:{
+    pageId:'gei-tm-page',
+    defaultTitle:'Time &amp; Materials proposal',
+    editFnName:'_editTMTitle',
+    titleSuffix:'Time & Materials',
+    gaugeOninput:'_tmInputChange()',
+    depositOninput:'_tmInputChange()',
+    actionOpts:{sendLabel:'Send T&amp;M proposal'},
+  },
+  byo:{
+    pageId:'gei-byo-page',
+    defaultTitle:'Build Your Own proposal',
+    editFnName:'_editByoTitle',
+    titleSuffix:'Build Your Own',
+    gaugeOninput:"this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()",
+    depositOninput:'_byoUpdateRail();_byoAutosave()',
+    actionOpts:{extraButtons:[{label:svgIcon('📋',{size:11})+' Option B',onclick:'_byoDuplicateBid()'}]},
+  },
+};
+// Shared page chrome for both single-page estimate layouts: hide the legacy
+// wizard, show the page, render the shared components, brand the title, fill the
+// client sub-header, and restore the saved deposit %. Returns the saved bid (or
+// undefined) so each mode's show-page can do its own field restores from it.
+function _geiShowSharedChrome(prefix){
+  const m=_GEI_MODES[prefix];if(!m)return;
   ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
     const el=document.getElementById(id);if(el)el.style.display='none';
   });
-  const p=document.getElementById('gei-tm-page');if(p)p.style.display='';
+  const p=document.getElementById(m.pageId);if(p)p.style.display='';
+  _geiRenderTopBar(prefix,m.defaultTitle,m.editFnName);
+  _geiRenderScopeCard(prefix);
+  _geiRenderProfitGauge(prefix,m.gaugeOninput);
+  _geiRenderActionButtons(prefix,m.actionOpts);
+  _geiRenderDepositField(prefix,m.depositOninput);
   // Trade branding in title
-  const _tm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
-  const titleEl=document.getElementById('tm-tbar-title');if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.textContent=_customName||(_tm.icon+' '+_tm.label+' · Time & Materials');}
+  const tmMeta=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
+  const titleEl=document.getElementById(prefix+'-tbar-title');
+  if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.innerHTML=_customName?escHtml(_customName):(svgIcon(tmMeta.icon,{size:24})+' '+tmMeta.label+' · '+m.titleSuffix);}
   // Sub-header: client name · address
   const c=getClientById(_geiClientId);
-  const sub=document.getElementById('tm-page-sub');
+  const sub=document.getElementById(prefix+'-page-sub');
   if(sub){
     const parts=[];
     if(c?.name)parts.push(c.name);
     if(c?.addr)parts.push(c.addr.split(',')[0]);
     sub.textContent=parts.join(' · ')||'New estimate';
   }
-  // Populate inputs from current state
-  const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v===0||v)?v:''};
+  // Restore deposit % from saved bid (back-calculate from deposit/amount) — the
+  // field was rendered fresh above, so this must come after _geiRenderDepositField.
+  const b=bids.find(x=>x.id===_geiEditBidId);
+  if(b?.amount>0&&b?.deposit>0){
+    const depEl=document.getElementById(prefix+'-deposit-pct');
+    if(depEl)depEl.value=Math.round((b.deposit/b.amount)*100);
+  }
+  _geiMarkActive(); // estimate is open — a reload should come straight back here
+  return b;
+}
+function _geiHidePage(pageId){
+  const p=document.getElementById(pageId);if(p)p.style.display='none';
+  ['gei-old-tbar','gei-step-bar'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
+}
+
+// ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
+function _tmShowPage(){
+  const b=_geiShowSharedChrome('tm');
+  // Populate inputs from current state — comma-formatted like the price fields
+  // elsewhere (_fmtMoneyInput/_moneyVal), so a restored value displays the same
+  // way it would after the contractor typed it.
+  const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v===0||v)?Number(v).toLocaleString('en-US'):''};
   setV('tm-i-rate',_tmRatePerMan||'');
-  setV('tm-i-hours',_tmEstHours||'');
+  setV('tm-i-days',_tmEstHours?Math.round(_tmEstHours/8):'');
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)crewDisp.textContent=Math.max(1,_tmCrewCount||1);
-  setV('tm-i-markup',_tmMatMarkup||'');
-  const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
+  // Restore who's on the job — drives the true-cost gauge via the shared crew picker.
+  _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
   _injectRrpItems();
   _tmRenderMatList();
   _tmInputChange();
   _tmSyncCadence();
   _renderScopeChips('tm-scope-wrap');
 }
-function _tmHidePage(){
-  const p=document.getElementById('gei-tm-page');if(p)p.style.display='none';
-  ['gei-old-tbar','gei-step-bar'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.style.display='';
-  });
-}
+function _tmHidePage(){_geiHidePage('gei-tm-page');}
 
 // ── Build Your Own single-page layout ────────────────────────────────────────
 let _byoItems=[],_byoCustomSections=[],_byoCustomTerms='';
@@ -624,20 +942,9 @@ const _RRP_PROPOSAL_LINES=[
   'Documentation — Signed work plan, Renovate Right pamphlet, and post-job verification record.',
 ];
 function _byoShowPage(){
-  _tmHidePage(); // must run first — _tmHidePage re-shows gei-old-tbar, then we hide it below
-  ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
-    const el=document.getElementById(id);if(el)el.style.display='none';
-  });
-  const p=document.getElementById('gei-byo-page');if(p)p.style.display='';
-  // Trade branding in title
-  const _bm=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
-  const byoTitle=document.getElementById('byo-tbar-title');
-  if(byoTitle){const _customName=document.getElementById('gei-desc')?.value?.trim();byoTitle.textContent=_customName||(_bm.icon+' '+_bm.label+' · Build Your Own');}
-  const c=getClientById(_geiClientId);
-  const sub=document.getElementById('byo-page-sub');
-  if(sub){const parts=[];if(c?.name)parts.push(c.name);if(c?.addr)parts.push(c.addr.split(',')[0]);sub.textContent=parts.join(' · ')||'New estimate';}
+  _tmHidePage(); // must run first — it re-shows gei-old-tbar; the shared chrome re-hides it
+  const b=_geiShowSharedChrome('byo');
   // Load items from saved bid, otherwise start blank
-  const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.byoItems&&b.byoItems.length){_byoItems=b.byoItems.map(x=>({...x}));}
   else{_byoItems=[];}
   _byoCustomSections=b?.byoCustomSections?[...b.byoCustomSections]:[];
@@ -648,10 +955,7 @@ function _byoShowPage(){
   _byoUpdateRail(); // also renders the auto crew-labor cost line
   _renderScopeChips('byo-scope-wrap');
 }
-function _byoHidePage(){
-  const p=document.getElementById('gei-byo-page');if(p)p.style.display='none';
-  ['gei-old-tbar','gei-step-bar'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display='';});
-}
+function _byoHidePage(){_geiHidePage('gei-byo-page');}
 function _toggleScopeChip(label){
   _geiScopeNoScope=false;
   const idx=_geiScopeChips.indexOf(label);
@@ -677,7 +981,7 @@ function _updateScopeSheetBtn(label){
   btn.style.background=on?'var(--blue-lt,#e6f0fb)':'var(--bg-card,var(--bg2))';
   const lbl=btn.querySelector('._sc-lbl');if(lbl)lbl.style.color=on?'var(--blue)':'var(--text)';
   const ck=btn.querySelector('._sc-ck');
-  if(ck){ck.style.background=on?'var(--blue)':'transparent';ck.style.borderColor=on?'var(--blue)':'var(--border2)';ck.textContent=on?'✓':'';}
+  if(ck){ck.style.background=on?'var(--blue)':'transparent';ck.style.borderColor=on?'var(--blue)':'var(--border2)';ck.innerHTML=on?svgIcon('✓',{size:9,color:'#fff'}):'';}
 }
 function _renderScopeChips(containerId){
   const wrap=document.getElementById(containerId);if(!wrap)return;
@@ -704,7 +1008,7 @@ function _renderScopeChips(containerId){
     const c=allItems.find(x=>x.label===l)||{icon:'✓',label:l};
     const border=i<_geiScopeChips.length-1?'border-bottom:1px solid var(--border)':'';
     html+='<div style="display:flex;align-items:center;gap:11px;padding:11px 16px;'+border+'">'+
-      '<span style="font-size:17px;line-height:1;flex-shrink:0">'+escHtml(c.icon||'✓')+'</span>'+
+      '<span style="font-size:17px;line-height:1;flex-shrink:0">'+svgIcon(c.icon||'✓',{size:17})+'</span>'+
       '<span style="flex:1;min-width:0;font-size:13px;font-weight:700;color:var(--text);line-height:1.35">'+escHtml(c.label)+'</span>'+
       '<button type="button" onclick="_toggleScopeChip('+escHtml(JSON.stringify(l))+')" aria-label="Remove '+escHtml(c.label)+'" style="flex-shrink:0;border:none;background:none;color:var(--text3);font-size:18px;font-weight:700;cursor:pointer;padding:2px 6px;line-height:1;font-family:inherit">×</button>'+
     '</div>';
@@ -718,8 +1022,13 @@ function _openScopeSheet(containerId){
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const trade=_geiTrade||getActiveTrade();
   const tradeItems=(typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade]);
+  // Centered like every other modal in the app (.zmodal — fade+slide+scale via
+  // the shared td-modal-in keyframe, §8.4) — this used to hardcode
+  // position:fixed;bottom:0, pinning it to the viewport bottom and overriding
+  // .zmodal-overlay's centering instead of using the shared modal pattern.
   const sheet=document.createElement('div');
-  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;max-height:80vh;overflow-y:auto;background:var(--bg);border-radius:16px 16px 0 0;padding:16px 16px 40px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  sheet.className='zmodal';
+  sheet.style.cssText='max-width:480px;max-height:80vh;overflow-y:auto';
   let itemsHtml;
   if(tradeItems&&tradeItems.length){
     const allItems=[..._GEN_SCOPE,...tradeItems];
@@ -728,9 +1037,9 @@ function _openScopeSheet(containerId){
         const on=_geiScopeChips.includes(s.label);
         const sid='_scb-'+s.label.replace(/[^a-z0-9]/gi,'_');
         return '<div id="'+sid+'" onclick="_toggleScopeChip('+escHtml(JSON.stringify(s.label))+')" style="display:flex;align-items:center;gap:10px;padding:12px 13px;border-radius:14px;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt,#e6f0fb)':'var(--bg-card,var(--bg2))')+';cursor:pointer;-webkit-tap-highlight-color:transparent;transition:background .14s,border-color .14s;min-height:52px">'+
-          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+(s.icon||'✓')+'</span>'+
+          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+svgIcon(s.icon||'✓',{size:19})+'</span>'+
           '<span class="_sc-lbl" style="font-size:13px;font-weight:700;color:'+(on?'var(--blue)':'var(--text)')+';flex:1;line-height:1.25">'+escHtml(s.label)+'</span>'+
-          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?'✓':'')+'</span>'+
+          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?svgIcon('✓',{size:9,color:'#fff'}):'')+'</span>'+
         '</div>';
       }).join('')+
     '</div>';
@@ -741,9 +1050,9 @@ function _openScopeSheet(containerId){
         const on=_geiScopeChips.includes(c.label);
         const sid='_scb-'+c.label.replace(/[^a-z0-9]/gi,'_');
         return '<button type="button" id="'+sid+'" onclick="_toggleScopeChip('+escHtml(JSON.stringify(c.label))+')" style="display:flex;align-items:center;gap:10px;text-align:left;padding:11px 12px;border-radius:14px;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue-lt,#e6f0fb)':'var(--bg-card,var(--bg2))')+';cursor:pointer;font-family:inherit;min-height:52px;-webkit-tap-highlight-color:transparent;transition:background .14s,border-color .14s">'+
-          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+escHtml(c.icon)+'</span>'+
+          '<span style="font-size:19px;line-height:1;flex-shrink:0">'+svgIcon(c.icon,{size:19})+'</span>'+
           '<span class="_sc-lbl" style="font-size:13px;font-weight:600;color:'+(on?'var(--blue)':'var(--text)')+';flex:1;line-height:1.25">'+escHtml(c.label)+'</span>'+
-          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?'✓':'')+'</span>'+
+          '<span class="_sc-ck" style="flex-shrink:0;width:20px;height:20px;border-radius:50%;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';background:'+(on?'var(--blue)':'transparent')+';display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:900;color:#fff">'+(on?svgIcon('✓',{size:9,color:'#fff'}):'')+'</span>'+
         '</button>';
       }).join('')+
     '</div>';
@@ -754,7 +1063,14 @@ function _openScopeSheet(containerId){
     '<button onclick="document.getElementById(\'_scope-sheet-ov\').remove()" style="padding:6px 18px;border-radius:20px;border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Done</button>'+
     '</div>'+itemsHtml;
   ov.appendChild(sheet);document.body.appendChild(ov);
-  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+}
+// Shared Edit/Remove button pair for a line-item row — used by both BYO's
+// item rows and T&M's material category rows so the two lists look and
+// behave identically. event.stopPropagation() keeps a wrapping row-level
+// onclick (BYO toggles on/off; T&M opens edit) from also firing.
+function _geiRowActionBtns(editCall,delCall,delTitle){
+  return '<button onclick="event.stopPropagation();'+editCall+'" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);touch-action:manipulation">Edit</button>'+
+    '<button onclick="event.stopPropagation();'+delCall+'" title="'+(delTitle||'Remove')+'" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D;touch-action:manipulation">'+svgIcon('✕',{size:12})+'</button>';
 }
 function _editEstTitle(titleId,btnId){
   const titleEl=document.getElementById(titleId);
@@ -789,6 +1105,26 @@ function _editEstTitle(titleId,btnId){
 function _editByoTitle(){_editEstTitle('byo-tbar-title','byo-edit-title-btn');}
 function _editTMTitle(){_editEstTitle('tm-tbar-title','tm-edit-title-btn');}
 function _editScopeTitle(){_editEstTitle('gei-trade-title','scope-edit-title-btn');}
+// Shared item-row renderer — one row shape for BYO items (checkbox toggle +
+// edit/delete) and T&M material categories (no checkbox, add/edit/delete only):
+// title + price + actions on one header line; notes (if present) run full-width
+// below that line instead of being squeezed into a narrow left column next to
+// empty grey space under the price/action buttons.
+function _geiItemRowHtml(opts){
+  const{label,notes,price,editFn,delFn,delTitle,checked,rowOnclick,extraClass}=opts;
+  const checkHtml=checked!==undefined?'<div class="byo-check'+(checked?' on':'')+'">'+(checked?svgIcon('✓',{size:14}):'')+'</div>':'';
+  return '<div class="byo-row'+(checked?' on':'')+(extraClass?' '+extraClass:'')+'"'+(rowOnclick?' onclick="'+rowOnclick+'"':'')+'>'+
+    '<div class="byo-row-hd">'+
+      checkHtml+
+      '<div class="byo-label">'+escHtml(label)+'</div>'+
+      '<div class="byo-price">$'+price.toLocaleString()+'</div>'+
+      '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
+        _geiRowActionBtns(editFn,delFn,delTitle)+
+      '</div>'+
+    '</div>'+
+    (notes?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(notes)+'</div>':'')+
+  '</div>';
+}
 function _byoRenderSections(){
   _injectRrpItems();
   const wrap=document.getElementById('byo-sections');if(!wrap)return;
@@ -800,24 +1136,17 @@ function _byoRenderSections(){
     const isCustom=!_BYO_DEFAULT_SECTIONS.includes(sec);
     const rowHtml=rows.length?rows.map(it=>{
       const idx=_byoItems.indexOf(it);
-      return '<div class="byo-row'+(it.on?' on':'')+'" onclick="_byoToggle('+idx+')">'+
-        '<div class="byo-check'+(it.on?' on':'')+'">'+( it.on?'✓':''  )+'</div>'+
-        '<div class="byo-body">'+
-          '<div class="byo-label">'+escHtml(it.label)+'</div>'+
-          (it.notes&&!it._rrp?'<div class="byo-meta" style="font-size:11px;color:var(--text-3)">'+escHtml(it.notes)+'</div>':'')+
-        '</div>'+
-        '<div class="byo-price">$'+it.price.toLocaleString()+'</div>'+
-        '<div style="display:flex;gap:4px;flex-shrink:0;margin-left:6px">'+
-          '<button onclick="event.stopPropagation();_byoEditItem('+idx+')" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);touch-action:manipulation">Edit</button>'+
-          '<button onclick="event.stopPropagation();_byoDelItem('+idx+')" title="Remove" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D;touch-action:manipulation">✕</button>'+
-        '</div>'+
-      '</div>';
+      return _geiItemRowHtml({
+        checked:it.on,rowOnclick:'_byoToggle('+idx+')',
+        label:it.label,notes:(it.notes&&!it._rrp)?it.notes:'',price:it.price,
+        editFn:'_byoEditItem('+idx+')',delFn:'_byoDelItem('+idx+')'
+      });
     }).join(''):
     '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet — tap + Add item</div>';
     return '<div class="card card-pad-0" style="margin-bottom:12px">'+
       '<div class="card-hd"><div class="card-hd-title">'+escHtml(sec)+'</div>'+
       '<div style="display:flex;gap:6px">'+
-        (isCustom?'<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)" style="color:#A32D2D;border-color:#A32D2D" title="Remove section">✕</button>':'')+
+        (isCustom?'<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoDeleteSection(this.dataset.sec)" style="color:#A32D2D;border-color:#A32D2D" title="Remove section">'+svgIcon('✕',{size:12})+'</button>':'')+
         '<button class="btn btn-sm" data-sec="'+escHtml(sec)+'" onclick="_byoAddItem(this.dataset.sec)">+ Add item</button>'+
       '</div></div>'+
       '<div>'+rowHtml+'</div>'+
@@ -827,7 +1156,7 @@ function _byoRenderSections(){
     '<button class="btn btn-ghost btn-full" onclick="_byoAddSection()" style="border:1.5px dashed var(--border2)">+ Add section</button>'+
   '</div>';
   const tcCard='<div class="card card-pad-0" style="margin-bottom:12px">'+
-    '<div class="card-hd"><div class="card-hd-title">📋 Terms &amp; Conditions</div></div>'+
+    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Terms &amp; Conditions</div></div>'+
     '<div style="padding:12px 14px">'+
       '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Custom terms print on the proposal below the standard payment terms.</div>'+
       '<textarea id="byo-custom-terms" rows="5" placeholder="e.g. All paint supplied by client. Contractor not responsible for pre-existing damage to surfaces..." '+
@@ -844,34 +1173,48 @@ function _byoAutosave(){
   if(!_geiEditBidId)return;
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(!b)return;
+  // "Name your proposal" (#gei-desc) used to only get captured by the explicit Save
+  // button (saveGenericEstimate) — every autosave silently dropped a name edit until
+  // the user hit Save, so backing out mid-edit lost the new name.
+  const _trade=_geiTrade||getActiveTrade();
+  const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[_trade]?.label||'Trade')+' Proposal';
+  const _descVal=document.getElementById('gei-desc')?.value||'';
+  b.type=_descVal||_typeLabel;
+  b.geiDesc=_descVal;
   b.byoItems=JSON.parse(JSON.stringify(_byoItems));
   b.byoCustomSections=[..._byoCustomSections];
-  b.isFreeForm=true;
+  // Stamp the bid's REAL type — this used to write isFreeForm=true on every
+  // autosave, so a Time & Materials draft carried BOTH flags and resumed as
+  // Build Your Own with empty items (the "my work disappeared" bug).
+  b.isFreeForm=_geiIsFreeForm&&!_geiIsTM;
   b.estCrew=[..._estCrew];
   b.scopeChips=[..._geiScopeChips];
   b.scopeNoScope=_geiScopeNoScope||false;
   const _termsEl=document.getElementById('byo-custom-terms');
   if(_termsEl)b.byoCustomTerms=_termsEl.value;
-  const {total,sub}=calcGeiTotal();
+  const {total}=calcGeiTotal();
   if(total>0){
     b.amount=total;
-    if(_geiIsTM){
-      const _tmDep=parseFloat(document.getElementById('tm-dep-pct')?.value)||20;
-      b.deposit=Math.round(sub*_tmDep/100);
-    } else {
-      const _byoDep=parseFloat(document.getElementById('byo-deposit-pct')?.value)||25;
-      b.deposit=Math.round(total*_byoDep/100);
-    }
+    b.deposit=Math.round(total*_geiDepositPct()/100);
   }
   if(_geiIsTM){
     b.isTM=true;
+    b.isFreeForm=false;
     b.tmCrewCount=_tmCrewCount;
     b.tmRatePerMan=_tmRatePerMan;
     b.tmEstHours=_tmEstHours;
     b.tmBillingCycle=_tmBillingCycle;
-    b.tmMatMarkup=_tmMatMarkup;
+    // T&M's actual content lives in _geiLines (labor line + material categories)
+    // — without this, autosave captured the rate/crew numbers but silently
+    // dropped every material category until the user hit "Save draft".
+    b.geiLines=JSON.parse(JSON.stringify(_geiLines));
+    const _nteCap=(typeof _moneyVal==='function'?_moneyVal('tm-i-nte'):0)||0;
+    b.tmNteCap=_nteCap;
+    b.tmNteEnabled=_nteCap>0;
+    b.tmCapAction=document.getElementById('tm-i-cap-action')?.value||_tmCapAction||'';
   }
   saveAll();
+  _geiMarkActive(); // keep the auto-resume marker fresh on every save
 }
 function _injectRrpItems(){
   const _rrpC=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
@@ -918,6 +1261,11 @@ function _scopeHistoryHrs(id){
 // the contractor's own debrief history first, then the crowdsourced benchmark median.
 // Returns 0 when no scope has time data yet (the gauge stays materials-only until it does).
 function _estLaborHours(){
+  // T&M knows its hours exactly (days × 8 × the contractor's own entry) — no
+  // scope-history estimation needed. This one branch makes the entire crew
+  // picker + payroll-cost stack (_estLaborCost, _renderLaborPicker) work for
+  // both estimate types without duplicating any of it.
+  if(_geiIsTM)return _tmEstHours||0;
   const trade=_geiTrade||(typeof getActiveTrade==='function'?getActiveTrade():'painting');
   const allItems=[..._GEN_SCOPE,...((typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade])||[])];
   let hrs=0;
@@ -986,12 +1334,14 @@ function _estLaborCost(){
   return Math.round(hrs*crewRate);
 }
 // Toggle an employee on/off this job's crew, then refresh the expense + gauge.
+// Mode-aware: T&M refreshes through _tmInputChange, BYO through _byoUpdateRail.
 function _toggleCrewMember(email){
   email=(email||'').toLowerCase();
   const i=_estCrew.indexOf(email);
   if(i>=0)_estCrew.splice(i,1);else _estCrew.push(email);
-  const costEl=document.getElementById('byo-expected-cost');
+  const costEl=document.getElementById(_geiIsTM?'tm-expected-cost':'byo-expected-cost');
   if(costEl)delete costEl.dataset.userSet; // crew payroll drives the cost now
+  if(_geiIsTM){if(typeof _tmInputChange==='function')_tmInputChange();return;} // _tmInputChange autosaves
   if(typeof _byoUpdateRail==='function')_byoUpdateRail();
   if(typeof _byoAutosave==='function')_byoAutosave();
 }
@@ -1013,7 +1363,7 @@ function _renderLaborPicker(type){
     const on=_estCrew.indexOf(email)>=0;
     const first=(e.name||'').split(' ')[0]||e.name;
     const t=_employeeTrust(e);
-    const star=i===0&&t.count>0?'★ ':''; // top-ranked, proven crew
+    const star=i===0&&t.count>0?svgIcon('★',{size:11})+' ':''; // top-ranked, proven crew
     const jobsTag=t.count>0?'<span style="opacity:.6;font-weight:600"> · '+t.count+'</span>':'';
     const nj=_empNextJob(e);
     const bookedTag=nj?'<span style="opacity:.75;font-weight:600;color:#B45309"> · '+_shortDate(nj.start)+'</span>':'';
@@ -1034,7 +1384,7 @@ function _renderLaborPicker(type){
     body='<span style="color:var(--c-amber)">Set pay rates on the Team page (or build job-time history) to price this crew.</span>';
   }else{
     const ppl=_estCrew.length;
-    const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">⚠ '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+_shortDate(_empNextJob(e).start)).join(' · ')+'</div>':'';
+    const conflictNote=bookedSelected.length?'<div style="margin-top:4px;font-size:10px;color:#B45309">'+svgIcon('⚠',{size:10})+' '+bookedSelected.map(e=>(e.name||'').split(' ')[0]+' has a job '+_shortDate(_empNextJob(e).start)).join(' · ')+'</div>':'';
     body='<span style="color:#A32D2D;font-weight:800;font-size:14px">− '+fmt(cost)+'</span>'+
       '<span style="color:var(--text3)"> crew payroll · '+ppl+' '+(ppl>1?'people':'person')+' · ~'+hrs+' hrs · incl. benefits</span>'+conflictNote;
   }
@@ -1074,7 +1424,9 @@ function _updateMarginGauge(type,total){
   else if(margin<22){color='#EF4444';msg='Underpriced — consider raising your rate';}
   else if(margin<35){color='#F59E0B';msg='Below target — a bit of room to grow';}
   else if(margin<55){color='#22C55E';msg='Priced right — solid margin for this job';}
-  else if(margin<75){color='#22C55E';msg='Strong margin — you\'re building real profit here';}
+  // Owner call (2026-07-06): green ending at 75% read as "everything's fine" on
+  // margins that usually mean a cost got missed — green now tops out at 55%.
+  else if(margin<75){color='#F59E0B';msg='High margin — double-check your cost numbers';}
   else{color='#F59E0B';msg='Very high margin — double-check your numbers';}
   const dot=document.getElementById(type+'-gauge-dot');
   const pct=document.getElementById(type+'-gauge-pct');
@@ -1146,7 +1498,7 @@ function _byoUpdateRail(){
   }
 
   const total=sub+salesTax;
-  const depPct=(parseFloat(document.getElementById('byo-deposit-pct')?.value)||30)/100;
+  const depPct=_geiDepositPct()/100;
   const deposit=Math.round(total*depPct);
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v;};
   const fmt=n=>'$'+n.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1169,6 +1521,16 @@ function _byoUpdateRail(){
   // government and not the contractor's earnings, so including it inflates the margin.
   _updateMarginGauge('byo',sub);
 }
+// Comma-formats a BYO price field as the contractor types — native type="number"
+// inputs reject commas outright in every browser, so this field is plain text
+// with a digits-only filter + live thousands-grouping instead.
+function _byaFormatPriceInput(el){
+  const raw=(el.value||'').replace(/[^\d]/g,'');
+  el.value=raw?Number(raw).toLocaleString('en-US'):'';
+}
+function _byaPriceValue(id){
+  return parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
+}
 function _byoAddItem(sec){
   document.getElementById('_byo-add-modal')?.remove();
   const ov=document.createElement('div');ov.id='_byo-add-modal';
@@ -1176,9 +1538,9 @@ function _byoAddItem(sec){
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Add to '+escHtml(sec)+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3 — walls only"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="number" id="_bya-price" placeholder="0" min="0" step="50"></div></div>'+
-    '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" placeholder="e.g. Two coats, ceilings included"></div>'+
-    '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Tab or Enter from Notes to save &amp; add another</div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
+    '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><textarea id="_bya-notes" rows="3" placeholder="e.g. Two coats, ceilings included" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea></div>'+
+    '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Tab from Notes to save &amp; add another</div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button data-sec="'+escHtml(sec)+'" onclick="_byaConfirm(this.dataset.sec)" class="btn btn-p" style="flex:2">Add item</button>'+
@@ -1193,8 +1555,9 @@ function _byoAddItem(sec){
     // Tab from label → price (default), Tab from price → notes (default)
     // Tab or Enter from notes → save + open next
     if(notesEl){
+      // Enter now makes a newline in the notes textarea — only Tab saves & advances.
       notesEl.addEventListener('keydown',e=>{
-        if(e.key==='Enter'||(e.key==='Tab'&&!e.shiftKey)){
+        if(e.key==='Tab'&&!e.shiftKey){
           e.preventDefault();
           _byaConfirmAndNext(sec);
         }
@@ -1215,7 +1578,7 @@ function _byoAddItem(sec){
 }
 function _byaConfirm(sec){
   const label=(document.getElementById('_bya-label')?.value||'').trim();
-  const price=parseFloat(document.getElementById('_bya-price')?.value)||0;
+  const price=_byaPriceValue('_bya-price');
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
   const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
@@ -1226,7 +1589,7 @@ function _byaConfirm(sec){
 function _byaConfirmAndNext(sec){
   // Save current item (if label is filled) then immediately open a fresh modal for same section
   const label=(document.getElementById('_bya-label')?.value||'').trim();
-  const price=parseFloat(document.getElementById('_bya-price')?.value)||0;
+  const price=_byaPriceValue('_bya-price');
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(label){
     const nextId=(_byoItems.reduce((m,x)=>Math.max(m,x.id),0))+1;
@@ -1244,8 +1607,8 @@ function _byoEditItem(idx){
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Edit item</div>'+
     '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="e.g. Bedroom 3 — walls only"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="number" id="_bya-price" value="'+it.price+'" placeholder="0" min="0" step="50"></div></div>'+
-    '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><input type="text" id="_bya-notes" value="'+escHtml(it.notes||'')+'" placeholder="e.g. Two coats, ceilings included"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" value="'+(it.price?Number(it.price).toLocaleString('en-US'):'')+'" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
+    '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><textarea id="_bya-notes" rows="4" placeholder="e.g. Two coats, ceilings included" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(it.notes||'')+'</textarea></div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_byo-add-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_byaEditConfirm('+idx+')" class="btn btn-p" style="flex:2">Save changes</button>'+
@@ -1261,13 +1624,13 @@ function _byoEditItem(idx){
       labelEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();priceEl?.focus();}});
     }
     if(priceEl){priceEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}});}
-    if(notesEl){notesEl.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();_byaEditConfirm(idx);}});}
+    // Enter makes a newline in the notes textarea — Save changes button submits.
   },50);
 }
 function _byaEditConfirm(idx){
   const it=_byoItems[idx];if(!it)return;
   const label=(document.getElementById('_bya-label')?.value||'').trim();
-  const price=parseFloat(document.getElementById('_bya-price')?.value)||0;
+  const price=_byaPriceValue('_bya-price');
   const notes=(document.getElementById('_bya-notes')?.value||'').trim();
   if(!label)return;
   it.label=label;it.price=price;it.notes=notes;
@@ -1314,7 +1677,7 @@ function _byoDeleteSection(sec){
   if(hasItems){zConfirm('Remove the "'+sec+'" section and all its items?',doDelete,{title:'Remove section',yes:'Remove',danger:true});}
   else doDelete();
 }
-function _byoPreviewClient(){sendGenericProposal(true);}
+function _byoPreviewClient(){_geiPreviewClient();}
 function _byoDuplicateBid(){
   if(!_geiEditBidId){showToast('Save your draft first, then duplicate','⚠️');return;}
   saveGenericEstimate(true);
@@ -1346,10 +1709,14 @@ function _showProposalPreviewOverlay(proposalHtml){
   ov.style.cssText='position:fixed;inset:0;z-index:9500;background:#0007;display:flex;flex-direction:column';
   const hdr=document.createElement('div');
   hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0';
-  hdr.innerHTML='<span style="font-size:15px;font-weight:800">👁 Client preview — how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">✕ Close</button>';
+  hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview — how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
   const body=document.createElement('div');
-  body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8';
+  body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
   body.innerHTML=proposalHtml;
+  // Same accordion sign.html applies to the real client-facing page (js/legal.js)
+  // — without this the preview showed the full uncollapsed T&C wall of text,
+  // which isn't actually "how they'll see it" per the header above.
+  if(typeof _applyTermsAccordion==='function')_applyTermsAccordion(body);
   ov.appendChild(hdr);ov.appendChild(body);
   document.body.appendChild(ov);
 }
@@ -1371,7 +1738,7 @@ function _openComparisonPicker(){
     const label=b.type||('Bid '+(i+1));
     return `<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border2);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" name="cmp-bid" value="${b.id}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0"><span style="flex:1"><span style="font-size:14px;font-weight:700;display:block">${escHtml(label)}</span><span style="font-size:12px;color:var(--text-3)">$${total.toLocaleString()} · ${b.status||'Draft'}</span></span></label>`;
   }).join('');
-  box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">📊 Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 bids — your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">👁 Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
+  box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">${svgIcon('📊',{size:17})} Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 bids — your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">${svgIcon('👁',{size:16,color:'#fff'})} Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
@@ -1383,9 +1750,9 @@ function _buildComparisonPreview(){
   if(!bidA||!bidB){showToast('Bids not found','⚠️');return;}
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const makeCard=(b,label,accentColor)=>{
-    const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
-    const notes=b.notes?`<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.5"><strong>Notes:</strong> ${escHtml(b.notes)}</div>`:'';
-    return `<div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:16px"><div style="background:${accentColor};color:#fff;padding:14px 16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.85">Option</div><div style="font-size:20px;font-weight:800;margin-top:2px">${label}</div><div style="font-size:13px;opacity:.85;margin-top:4px">${escHtml(b.type||'Proposal')}</div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${lineRows}</tbody><tfoot><tr style="background:${accentColor};color:#fff"><td style="padding:10px 14px;font-weight:800;font-size:14px">TOTAL</td><td style="padding:10px 14px;text-align:right;font-weight:800;font-size:14px">${fmt(b.amount)}</td></tr></tfoot></table>${notes}<div style="padding:12px 14px;background:#f8fafc;text-align:center"><button style="width:100%;padding:12px;border-radius:10px;border:2px solid ${accentColor};background:#fff;color:${accentColor};font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;touch-action:manipulation">✓ I choose this option</button></div></div>`;
+    const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
+    const notes=b.notes?`<div style="padding:10px 14px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.5;overflow-wrap:anywhere"><strong>Notes:</strong> ${escHtml(b.notes)}</div>`:'';
+    return `<div style="background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(0,0,0,.08);margin-bottom:16px"><div style="background:${accentColor};color:#fff;padding:14px 16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.85">Option</div><div style="font-size:20px;font-weight:800;margin-top:2px">${label}</div><div style="font-size:13px;opacity:.85;margin-top:4px">${escHtml(b.type||'Proposal')}</div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><tbody>${lineRows}</tbody><tfoot><tr style="background:${accentColor};color:#fff"><td style="padding:10px 14px;font-weight:800;font-size:14px">TOTAL</td><td style="padding:10px 14px;text-align:right;font-weight:800;font-size:14px">${fmt(b.amount)}</td></tr></tfoot></table>${notes}<div style="padding:12px 14px;background:#f8fafc;text-align:center"><button style="width:100%;padding:12px;border-radius:10px;border:2px solid ${accentColor};background:#fff;color:${accentColor};font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;touch-action:manipulation">${svgIcon('✓',{size:15,color:accentColor})} I choose this option</button></div></div>`;
   };
   const compHtml=`<div style="max-width:560px;margin:0 auto;padding:16px 0"><div style="text-align:center;padding:16px 0 20px"><div style="font-size:18px;font-weight:800;color:#1a365d">Choose your option</div><div style="font-size:13px;color:#718096;margin-top:4px">Both options are from the same contractor. Review each and tap to accept the one that works best for you.</div></div>${makeCard(bidA,'A','#1a365d')}${makeCard(bidB,'B','#2a4a7f')}</div>`;
   document.getElementById('_cmp-picker-ov')?.remove();
@@ -1400,12 +1767,14 @@ function _tmCrewStep(delta){
   _tmInputChange();
 }
 function _tmInputChange(){
-  _tmRatePerMan=parseFloat(document.getElementById('tm-i-rate')?.value)||0;
+  _tmRatePerMan=_moneyVal('tm-i-rate');
   // Crew count driven by stepper; read stepper display, not a select
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)_tmCrewCount=parseInt(crewDisp.textContent)||_tmCrewCount||1;
-  _tmEstHours=parseFloat(document.getElementById('tm-i-hours')?.value)||0;
-  _tmMatMarkup=parseFloat(document.getElementById('tm-i-markup')?.value)||0;
+  // The field is "Estimated days" — _tmEstHours (shared with save/resume/the legacy
+  // wizard) stays a real hour count internally, just derived from days×8 now.
+  const daysInput=_moneyVal('tm-i-days');
+  _tmEstHours=daysInput*8;
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
   // Upsert labor line in _geiLines (same shape the rest of the app expects)
   const idx=_geiLines.findIndex(l=>l._tmLabor);
@@ -1415,23 +1784,22 @@ function _tmInputChange(){
   else if(labor>0)_geiLines.unshift(line);
   // Stat tiles
   const dayRate=_tmCrewCount*_tmRatePerMan*8;
-  const days=_tmEstHours>0?Math.ceil(_tmEstHours/8):0;
   const setT=(id,v)=>{const e=document.getElementById(id);if(e)e.textContent=v};
   setT('tm-stat-day','$'+dayRate.toLocaleString());
   setT('tm-stat-day-s',_tmRatePerMan&&_tmCrewCount?_tmCrewCount+'-person crew · 8hr day':'enter rate & crew');
   setT('tm-stat-labor','$'+labor.toLocaleString());
-  setT('tm-stat-labor-s',(_tmRatePerMan&&_tmEstHours)?_tmEstHours+'hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'—');
-  setT('tm-stat-days',days);
-  // Materials subtotal — markup baked in, invisible to client
+  setT('tm-stat-labor-s',(_tmRatePerMan&&daysInput)?daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'—');
+  setT('tm-stat-days',_tmEstHours);
+  // Materials subtotal — shown at raw cost, no markup applied
   const matRaw=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
-  const markupMult=_tmMatMarkup>0?(1+_tmMatMarkup/100):1;
-  const markedUpMat=Math.round(matRaw*markupMult);
-  const total=labor+markedUpMat;
+  const total=labor+matRaw;
   // Rail breakdown
   setT('tm-rail-total','$'+total.toLocaleString());
   setT('tm-rail-labor','$'+labor.toLocaleString());
-  setT('tm-rail-mat','$'+markedUpMat.toLocaleString());
-  let nte=parseFloat(document.getElementById('tm-i-nte')?.value)||0;
+  setT('tm-rail-mat','$'+matRaw.toLocaleString());
+  const _tmDeposit=Math.round(total*_geiDepositPct())/100;
+  setT('tm-rail-balance','$'+(total-_tmDeposit).toLocaleString());
+  let nte=_moneyVal('tm-i-nte');
   const nteInp=document.getElementById('tm-i-nte');
   if(nteInp&&nte>0&&nte<total){
     nteInp.style.borderColor='var(--red)';
@@ -1446,15 +1814,22 @@ function _tmInputChange(){
   setV('tm-hours',_tmEstHours);
   const cd=document.getElementById('tm-crew-display');if(cd)cd.textContent=_tmCrewCount;
   setV('tm-nte-cap',nte||'');
-  setV('tm-dep-pct',20);
   const nteOn=document.getElementById('tm-nte-on');if(nteOn)nteOn.checked=nte>0;
-  setV('gei-tax-pct',_tmMatMarkup); // materials markup folds into the existing tax/markup field
   // Keep the legacy line items + totals in sync (used by save/proposal)
   if(typeof renderGeiLines==='function')renderGeiLines();
   if(typeof calcGeiTotal==='function')calcGeiTotal();
-  // Auto-populate hidden cost field from crew labor so gauge shows without user input
+  // Crew picker (shared with BYO) — who's actually on this job drives true labor cost.
+  if(typeof _renderLaborPicker==='function')_renderLaborPicker('tm');
+  // TRUE cost feeds the gauge: materials at raw cost + what the selected crew
+  // actually costs the business (loaded pay rates × the T&M hours). No employees
+  // — or none selected — means the OWNER is doing the work: their labor costs
+  // the business $0 and the labor revenue correctly reads as profit. The old
+  // code fed the labor BILLING amount as "cost", which hid all labor profit and
+  // made every T&M job read as underpriced.
+  const _tmCrewCost=(typeof _estLaborCost==='function')?_estLaborCost():0;
+  const _tmTrueCost=Math.round(matRaw+_tmCrewCost);
   const _tmCostEl=document.getElementById('tm-expected-cost');
-  if(_tmCostEl&&labor>0){_tmCostEl.value=labor;}
+  if(_tmCostEl&&!_tmCostEl.dataset.userSet){_tmCostEl.value=_tmTrueCost>0?_tmTrueCost:'';}
   _updateMarginGauge('tm',total);
   _byoAutosave();
 }
@@ -1465,20 +1840,12 @@ function _tmRenderMatList(){
     el.innerHTML='<div class="tm-mat-empty">No material categories yet — tap "+ Add category" to start.</div>';
     return;
   }
-  const mm=_tmMatMarkup>0?(1+_tmMatMarkup/100):1;
   el.innerHTML=mats.map(({l,i})=>{
     const rawTotal=l.total||((l.qty||0)*(l.rate||0));
-    const dispTotal=Math.round(rawTotal*mm);
-    return '<div class="tm-mat-row">'+
-      '<div style="flex:1;cursor:pointer;min-width:0" onclick="_tmEditMatCat('+i+')">'+
-        '<div class="tm-mat-cat">'+escHtml(l.desc||'Untitled')+'</div>'+
-        (l.notes?'<div class="tm-mat-notes">'+escHtml(l.notes)+'</div>':'')+
-      '</div>'+
-      '<div style="display:flex;align-items:flex-start;gap:0">'+
-        '<div class="tm-mat-est">$'+(dispTotal||0).toLocaleString()+'</div>'+
-        '<button class="tm-mat-del" onclick="_tmDelMatCat('+i+')" title="Remove category">×</button>'+
-      '</div>'+
-    '</div>';
+    return _geiItemRowHtml({
+      label:l.desc||'Untitled',notes:l.notes||'',price:rawTotal||0,
+      editFn:'_tmEditMatCat('+i+')',delFn:'_tmDelMatCat('+i+')',delTitle:'Remove category'
+    });
   }).join('');
 }
 function _tmAddMatCat(){ _tmMatCatModal(-1); }
@@ -1495,8 +1862,9 @@ function _tmMatCatModal(idx){
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;color:var(--text);margin-bottom:16px">'+(isEdit?'Edit category':'Add material category')+'</div>'+
     '<div class="f" style="margin-bottom:10px"><label>Category name</label><input type="text" id="tcm-name" placeholder="e.g. Paint &amp; primer" value="'+escHtml(l?.desc||'')+'" style="font-size:15px"></div>'+
-    '<div class="f" style="margin-bottom:10px"><label>Notes <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input type="text" id="tcm-notes" placeholder="Brand, product type, etc." value="'+escHtml(l?.notes||'')+'"></div>'+
-    '<div class="f" style="margin-bottom:16px"><label>Estimated cost ($)</label><div class="input-prefix"><span>$</span><input type="number" id="tcm-cost" min="0" step="10" placeholder="0" value="'+(cur||'')+'" inputmode="decimal"></div></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>Estimated cost ($)</label><div class="input-prefix"><span>$</span><input type="number" id="tcm-cost" min="0" step="10" placeholder="0" value="'+(cur||'')+'" inputmode="decimal"></div></div>'+
+    '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text3)">(optional)</span></label><textarea id="tcm-notes" rows="3" placeholder="Brand, product type, etc." style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(l?.notes||'')+'</textarea></div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Tab from Notes to save</div>'+
     '<div style="display:flex;gap:10px">'+
       '<button onclick="document.getElementById(\'_tm-mat-modal\')?.remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_tmMatCatSave('+idx+')" class="btn btn-p" style="flex:2">'+(isEdit?'Save changes':'Add category')+'</button>'+
@@ -1504,7 +1872,29 @@ function _tmMatCatModal(idx){
   '</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  setTimeout(()=>document.getElementById('tcm-name')?.focus(),50);
+  setTimeout(()=>{
+    const nameEl=document.getElementById('tcm-name');
+    const costEl=document.getElementById('tcm-cost');
+    const notesEl=document.getElementById('tcm-notes');
+    if(nameEl)nameEl.focus();
+    // Same tab-chain as BYO's "Add item" modal (§ notes structure must match): Name → Cost
+    // → Notes, Tab from Notes saves. Enter now makes a newline in the notes textarea.
+    if(notesEl){
+      notesEl.addEventListener('keydown',e=>{
+        if(e.key==='Tab'&&!e.shiftKey){e.preventDefault();_tmMatCatSave(idx);}
+      });
+    }
+    if(nameEl){
+      nameEl.addEventListener('keydown',e=>{
+        if(e.key==='Enter'){e.preventDefault();costEl?.focus();}
+      });
+    }
+    if(costEl){
+      costEl.addEventListener('keydown',e=>{
+        if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}
+      });
+    }
+  },50);
 }
 function _tmMatCatSave(idx){
   const name=(document.getElementById('tcm-name')?.value||'').trim();
@@ -1526,20 +1916,14 @@ function _tmDelMatCat(idx){
   _geiLines.splice(idx,1);
   _tmRenderMatList();_tmInputChange();
 }
-function _tmCadence(v){_tmBillingCycle=v;_tmSyncCadence();}
+function _tmCadence(v){_tmBillingCycle=v;_tmSyncCadence();_byoAutosave();}
 function _tmSyncCadence(){
   ['weekly','milestone','completion'].forEach(c=>{
     const el=document.getElementById('tm-cad-'+c);if(!el)return;
     if(_tmBillingCycle===c)el.classList.add('on');else el.classList.remove('on');
   });
 }
-function _tmPreviewClient(){
-  // Save draft first so the latest data is persisted, then open the existing proposal preview flow
-  saveGenericEstimate(true);
-  // Fall back to sending if no dedicated preview exists yet
-  showToast('Preview as client — sending proposal flow opens for review','👁');
-  if(typeof sendGenericProposal==='function')sendGenericProposal();
-}
+function _tmPreviewClient(){_geiPreviewClient();}
 
 function _geiBack(){
   if(_geiStep>1){goGeiStep(_geiStep-1);return;}
@@ -1768,8 +2152,8 @@ function _geiOpenCatSheet(catLabel){
     const isCustomRate=p.isCustom;
     const gasTag=job.gasLic?`<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:3px;padding:1px 5px;margin-left:6px">GAS LIC</span>`:'';
     const rateLabel=isCustomRate
-      ?`<span style="color:#16a34a;font-size:10px;margin-top:2px">✓ your rate</span>`
-      :`<span style="color:var(--text3);font-size:10px;margin-top:2px">📍 ${S.state||'US'} avg${_geiNewWork&&(job.nw||1)<1?' · new work':''}</span>`;
+      ?`<span style="color:#16a34a;font-size:10px;margin-top:2px">${svgIcon('✓',{size:10,color:'#16a34a'})} your rate</span>`
+      :`<span style="color:var(--text3);font-size:10px;margin-top:2px">${svgIcon('📍',{size:10})} ${S.state||'US'} avg${_geiNewWork&&(job.nw||1)<1?' · new work':''}</span>`;
     const inputBorder=isCustomRate?'border:1.5px solid #16a34a':'border:1.5px solid var(--border2)';
     const inputColor=isCustomRate?'color:#16a34a':'color:var(--blue)';
     const inputId='_gei-rate-'+job.id;
@@ -1789,8 +2173,8 @@ function _geiOpenCatSheet(catLabel){
     </div>`;
   }).join('');
 
-  const firstTimeBanner=(!S.myRates||!Object.keys(S.myRates).length)?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:12px;color:#1e40af;line-height:1.5">📍 Showing <strong>${S.state||'US'} market averages</strong> (BLS labor data). Edit any price to set your own rate — saves automatically.</div>`:'';
-  const newWorkBadge=_geiNewWork?`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:6px 12px;margin-bottom:10px;font-size:12px;color:#15803d;font-weight:600">🏗️ New construction rates active — lower labor</div>`:'';
+  const firstTimeBanner=(!S.myRates||!Object.keys(S.myRates).length)?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:12px;color:#1e40af;line-height:1.5">${svgIcon('📍',{size:12,color:'#1e40af'})} Showing <strong>${S.state||'US'} market averages</strong> (BLS labor data). Edit any price to set your own rate — saves automatically.</div>`:'';
+  const newWorkBadge=_geiNewWork?`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:6px 12px;margin-bottom:10px;font-size:12px;color:#15803d;font-weight:600">${svgIcon('🏗',{size:12,color:'#15803d'})} New construction rates active — lower labor</div>`:'';
   sheet.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:16px;font-weight:800;color:var(--text)">${catLabel}</div>
@@ -1827,8 +2211,8 @@ function _geiRenderTemplates(){
   const visibleIds=_geiVisibleJobIds();
 
   let html='';
-  if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">🚨 Emergency mode — labor rates ×1.5 · after-hours surcharge added</div>`;
-  if(_geiNewWork)html+=`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:7px 12px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600">🏗️ New construction rates active — lower labor</div>`;
+  if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">${svgIcon('🚨',{size:12,color:'#b91c1c'})} Emergency mode — labor rates ×1.5 · after-hours surcharge added</div>`;
+  if(_geiNewWork)html+=`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:7px 12px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600">${svgIcon('🏗',{size:12,color:'#15803d'})} New construction rates active — lower labor</div>`;
 
   // Category tile grid for trades with categories
   const cats=TRADE_JOB_CATS[trade];
@@ -1844,7 +2228,7 @@ function _geiRenderTemplates(){
       const safeLabel=escHtml(catLabel);
       html+=`<button data-cat="${escHtml(catLabel)}" onclick="_geiOpenCatSheet(this.dataset.cat)"
         style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;gap:5px;min-height:85px;text-align:center">
-        <span style="font-size:28px;line-height:1">${emoji}</span>
+        <span style="font-size:28px;line-height:1">${svgIcon(emoji,{size:28})}</span>
         <span style="font-size:12px;font-weight:700;color:var(--text)">${escHtml(name)}</span>
         <span style="font-size:10px;color:var(--text3)">${catJobs.length} service${catJobs.length!==1?'s':''}</span>
       </button>`;
@@ -1895,10 +2279,10 @@ function showGeiOnboarding(opts){
     const mult=STATE_LABOR_MULT[S.state]||1.0;
     const multNote=mult!==1.0?` (${mult>1?'+':''}${Math.round((mult-1)*100)}% vs national avg)`:'';
     ov.innerHTML=`<div style="background:var(--bg);border-radius:var(--rl);width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-sizing:border-box;padding:22px 18px 28px">
-      <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">⚡ Set up your services</div>
+      <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">${svgIcon('⚡',{size:20})} Set up your services</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Takes about 30 seconds · you can change this anytime</div>
       <div style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--blue-dk)">
-        📍 You're in <strong>${stateStr}</strong> — market rates loaded${multNote}
+        ${svgIcon('📍',{size:12,color:'var(--blue-dk)'})} You're in <strong>${stateStr}</strong> — market rates loaded${multNote}
         <button onclick="document.getElementById('_gei-state-sel')?.classList.toggle('show')" style="margin-left:8px;background:none;border:none;color:var(--blue);font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">Change</button>
         <select id="_gei-state-sel" class="show" onchange="S.state=this.value;_settingsChanged();showGeiOnboarding()" style="display:block;margin-top:8px;padding:6px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg);color:var(--text);width:100%">
           ${['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'].map(st=>`<option value="${st}"${S.state===st?' selected':''}>${st}</option>`).join('')}
@@ -1909,9 +2293,9 @@ function showGeiOnboarding(opts){
         ${BUNDLE_CARDS.map(b=>{
           const on=selected.has(b.id);
           return `<button onclick="_geiOnboardToggle('${b.id}')" data-bid="${b.id}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px 8px;border-radius:var(--rl);border:2px solid ${on?'var(--blue)':'var(--border2)'};background:${on?'var(--blue-lt)':'var(--bg2)'};cursor:pointer;font-family:inherit;gap:5px;min-height:80px;text-align:center;box-sizing:border-box">
-            <span style="font-size:26px;line-height:1">${b.emoji}</span>
+            <span style="font-size:26px;line-height:1">${svgIcon(b.emoji,{size:26})}</span>
             <span style="font-size:11px;font-weight:700;color:${on?'var(--blue-dk)':'var(--text)'};white-space:pre-line;line-height:1.3">${b.label}</span>
-            ${on?'<span style="font-size:10px;color:var(--blue);font-weight:700">✓</span>':''}
+            ${on?'<span style="font-size:10px;color:var(--blue);font-weight:700">'+svgIcon('✓',{size:10,color:'var(--blue)'})+'</span>':''}
           </button>`;
         }).join('')}
       </div>
@@ -1980,7 +2364,7 @@ function _geiSyncJobTypeButtons(){
   if(_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
     const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
     const t=getJobTaxTreatment(st,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'New construction: no tax';
+    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required — client must sign before work begins.':'New construction: no tax';
     noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
   } else {
     noteEl.textContent='';
@@ -2007,7 +2391,7 @@ function _geiSyncJobScopeButtons(){
   if(noteEl&&_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
     const stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
     const t=getJobTaxTreatment(stateKey,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.textContent=t.certificate?'⚠ '+t.certificate.form+' required — client must sign before work begins.':'New construction: no tax';
+    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required — client must sign before work begins.':'New construction: no tax';
     noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
   } else if(noteEl){
     noteEl.textContent='';
@@ -2143,7 +2527,7 @@ function renderGeiLines(){
           <div id="gei-line-total-${i}" style="font-size:18px;font-weight:800;color:var(--blue);line-height:1.2">${totalFmt}</div>
         </div>
       </div>
-      ${isLabor?'':`<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="_geiSaveToPriceBook(${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;font-weight:600;font-family:inherit;padding:0;display:flex;align-items:center;gap:3px">🔖 Save to price book</button></div>`}
+      ${isLabor?'':`<div style="display:flex;justify-content:flex-end;margin-top:8px"><button onclick="_geiSaveToPriceBook(${i})" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:11px;font-weight:600;font-family:inherit;padding:0;display:flex;align-items:center;gap:3px">${svgIcon('🔖',{size:11})} Save to price book</button></div>`}
     </div>`;
   }).join('');
 }
@@ -2208,12 +2592,12 @@ function _panelRenderSection(){
   const el=document.getElementById('gei-panel-section');if(!el)return;
   if(_geiTrade!=='electrical'){el.innerHTML='';return;}
   if(!_panelSched){
-    el.innerHTML=`<button onclick="_panelOpen()" style="width:100%;padding:12px;border-radius:var(--r);border:1.5px dashed var(--border2);background:var(--bg2);color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">📋 Add panel schedule <span style="font-size:11px;font-weight:400">(optional — leave with the panel)</span></button>`;
+    el.innerHTML=`<button onclick="_panelOpen()" style="width:100%;padding:12px;border-radius:var(--r);border:1.5px dashed var(--border2);background:var(--bg2);color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">${svgIcon('📋',{size:13})} Add panel schedule <span style="font-size:11px;font-weight:400">(optional — leave with the panel)</span></button>`;
     return;
   }
   const {l1,l2,slots,used,imbalance,spare}=_panelCalcBalance();
   const pa=_panelSched.panelAmps||200;
-  const imbalBadge=imbalance>0.10?`<span style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:8px">⚠️ ${(imbalance*100).toFixed(0)}% imbalance</span>`:'<span style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:8px">✓ balanced</span>';
+  const imbalBadge=imbalance>0.10?`<span style="background:#fef2f2;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:8px">${svgIcon('⚠',{size:11,color:'#dc2626'})} ${(imbalance*100).toFixed(0)}% imbalance</span>`:`<span style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;border-radius:4px;padding:2px 7px;font-size:11px;font-weight:700;margin-left:8px">${svgIcon('✓',{size:11,color:'#16a34a'})} balanced</span>`;
   const circuits=_panelSched.circuits||[];
   const rowStyle='display:grid;grid-template-columns:1fr 52px 70px 60px 34px 34px 20px;gap:4px;align-items:center;margin-bottom:5px';
   const hdStyle='font-size:10px;font-weight:700;color:var(--text3);text-align:center';
@@ -2242,9 +2626,9 @@ function _panelRenderSection(){
   const l2Pct=Math.max(l1,l2)>0?Math.round(l2/Math.max(l1,l2)*100):50;
   el.innerHTML=`<div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">📋 Panel schedule</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">${svgIcon('📋',{size:11})} Panel schedule</div>
       <div style="display:flex;gap:6px">
-        <button onclick="_panelPrint()" style="padding:5px 11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">🖨️ Print</button>
+        <button onclick="_panelPrint()" style="padding:5px 11px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">${svgIcon('🖨',{size:12})} Print</button>
         <button onclick="_panelClose()" style="padding:5px 11px;border-radius:var(--r);border:1.5px solid #fca5a5;background:#fef2f2;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:#dc2626">Remove</button>
       </div>
     </div>
@@ -2298,15 +2682,15 @@ function _panelPrint(){
   const addr=document.getElementById('gei-addr')?.value||'';
   const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
   const biz=S.bname||getBusinessName()||'';
-  const imbalTxt=imbalance>0.10?`<span style="color:#dc2626;font-weight:700">⚠️ ${(imbalance*100).toFixed(0)}% imbalance — rebalance recommended</span>`:`<span style="color:#16a34a;font-weight:700">✓ Balanced (${(imbalance*100).toFixed(0)}% difference)</span>`;
+  const imbalTxt=imbalance>0.10?`<span style="color:#dc2626;font-weight:700">${svgIcon('⚠',{size:13,color:'#dc2626'})} ${(imbalance*100).toFixed(0)}% imbalance — rebalance recommended</span>`:`<span style="color:#16a34a;font-weight:700">${svgIcon('✓',{size:13,color:'#16a34a'})} Balanced (${(imbalance*100).toFixed(0)}% difference)</span>`;
   const rows=circuits.map((c,i)=>`<tr>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${i+1}</td>
     <td style="padding:4px 8px;border:1px solid #ccc">${escHtml(c.desc||'—')}</td>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc;font-weight:700">${c.amps||''}A</td>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.phase==='2pole'?'2-pole':c.phase}</td>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${escHtml(c.gauge||'')}</td>
-    <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.afci?'✓':''}</td>
-    <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.gfci?'✓':''}</td>
+    <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.afci?svgIcon('✓',{size:12}):''}</td>
+    <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.gfci?svgIcon('✓',{size:12}):''}</td>
   </tr>`).join('');
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Panel Schedule</title>
   <style>
@@ -2320,7 +2704,7 @@ function _panelPrint(){
     @media print{button{display:none!important}}
   </style></head><body>
   <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">
-    <div><h1>⚡ Panel Schedule</h1><div class="meta">${escHtml(biz)}${client?' · '+escHtml(client):''}${addr?' · '+escHtml(addr):''}<br>Date: ${dateStr}</div></div>
+    <div><h1>${svgIcon('⚡',{size:18})} Panel Schedule</h1><div class="meta">${escHtml(biz)}${client?' · '+escHtml(client):''}${addr?' · '+escHtml(addr):''}<br>Date: ${dateStr}</div></div>
     <div style="text-align:right;font-size:13px"><strong>${pa}A Main Panel</strong><br>${used} of ${slots} slots used · ${spare} spare<br>${imbalTxt}</div>
   </div>
   <div class="stats">
@@ -2333,7 +2717,7 @@ function _panelPrint(){
     <th>#</th><th style="text-align:left">Circuit description</th><th>Amps</th><th>Phase</th><th>Wire gauge</th><th>AFCI</th><th>GFCI</th>
   </tr></thead><tbody>${rows}</tbody></table>
   <div style="margin-top:16px;font-size:10px;color:#888;border-top:1px solid #ddd;padding-top:8px">Generated by TradeDesk · ${escHtml(biz)} · ${dateStr}</div>
-  <button onclick="window.print()" style="margin-top:16px;padding:10px 24px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer">🖨️ Print / Save PDF</button>
+  <button onclick="window.print()" style="margin-top:16px;padding:10px 24px;background:#1a1a2e;color:#fff;border:none;border-radius:6px;font-size:14px;font-weight:700;cursor:pointer">${svgIcon('🖨',{size:14,color:'#fff'})} Print / Save PDF</button>
   </body></html>`;
   const win=window.open('','_blank');
   if(win){win.document.write(html);win.document.close();}
@@ -2401,7 +2785,7 @@ function calcGeiTotal(){
   const rateNote=document.getElementById('gei-tax-rate-note');
   if(rateNote){
     if(_geiClientTaxRate?.warning&&sub>0&&_stScope!=='improvement'){
-      rateNote.textContent='⚠ '+_geiClientTaxRate.warning;rateNote.style.color='var(--amber-dk,#b45309)';rateNote.style.display='block';
+      rateNote.innerHTML=svgIcon('⚠',{size:11})+' '+escHtml(_geiClientTaxRate.warning);rateNote.style.color='var(--amber-dk,#b45309)';rateNote.style.display='block';
     } else if(_geiClientTaxRate?.source==='db_zip'&&_stRate>0){
       rateNote.textContent='Rate: '+_stRate+'% (client address ZIP)';rateNote.style.color='var(--text3)';rateNote.style.display='block';
     } else {
@@ -2416,7 +2800,7 @@ function calcGeiTotal(){
 
 function saveGenericEstimate(draft){
   const v=id=>document.getElementById(id)?.value||'';
-  const{total,sub}=calcGeiTotal();
+  const{total}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
   // T&M extra fields
@@ -2428,15 +2812,13 @@ function saveGenericEstimate(draft){
     tmReason:v('tm-reason'),tmReasonNote:v('tm-reason-note'),
     tmCrewCount:_tmCrewCount,tmRatePerMan:_tmRatePerMan,tmEstHours:_tmEstHours,
     tmBillingCycle:_tmBillingCycle||'weekly',
-    tmMatMarkup:_tmMatMarkup,
     tmCapAction:v('tm-i-cap-action')||_tmCapAction||'',
-    tmDepositPct:parseFloat(v('tm-dep-pct'))||20,
-    tmDepositAmt:Math.round(sub*(parseFloat(v('tm-dep-pct'))||20)/100),
+    tmDepositPct:_geiDepositPct(),
+    tmDepositAmt:Math.round(total*_geiDepositPct()/100),
     tmNteEnabled:(_tmNteFromNew>0)||_tmNteOnChecked,
     tmNteCap:_tmNteFromNew||parseFloat(v('tm-nte-cap'))||0,
   }:{isTM:false};
-  const _byoDepPct=_geiIsTM?null:(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25)/100;
-  let _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_byoDepPct*100)/100;
+  let _deposit=_geiIsTM?(_tmFields.tmDepositAmt||0):Math.round(total*_geiDepositPct()/100);
   // State max-deposit cap (home-improvement compliance). Parse state from client
   // address like proposals.js _buildClientHubSnapshot, fall back to S.state then KS.
   if(typeof _maxDeposit==='function'){
@@ -2506,7 +2888,7 @@ async function sendGenericProposal(previewOnly){
     const _hasLineItems=_geiIsFreeForm?_byoItems.some(it=>it.on):_geiLines.length>0;
     if(!_geiScopeChips.length&&!_geiScopeNoScope&&!_hasLineItems){zAlert('Add scope items or tap "None" to skip scope on this proposal.',{title:'Scope required'});return;}
     if(_geiIsTM){
-      if(!_tmRatePerMan||!_tmEstHours){zAlert('Enter your hourly rate and estimated hours in the Time section.',{title:'Time & labor required'});return;}
+      if(!_tmRatePerMan||!_tmEstHours){zAlert('Enter your hourly rate and estimated days in the Rates & crew section.',{title:'Time & labor required'});return;}
       if(!_geiLines.some(l=>!l._tmLabor&&l.desc)){zAlert('Add at least one material or cost item in the Materials section.',{title:'Materials required'});return;}
     }else if(_geiIsFreeForm){
       const _byoOn=_byoItems.filter(it=>it.on);
@@ -2519,9 +2901,8 @@ async function sendGenericProposal(previewOnly){
   }
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const v=id=>{const _e=document.getElementById(id);return _e?(_e.value||''):'';};
-  const{total,sub}=calcGeiTotal();
+  const{total}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
-  const taxPct=parseFloat(v('gei-tax-pct'))||0;
   const bname=escHtml(S.bname||getBusinessName()||'');
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
   const _bnameRaw=S.bname||getBusinessName()||'';const _bphoneRaw=S.bphone||'';const _blicRaw=S.blic||'';
@@ -2530,27 +2911,41 @@ async function sendGenericProposal(previewOnly){
   const clientPhone=escHtml(_clientRec?.phone||'');
   const jobDesc=escHtml(v('gei-desc'));const duration=escHtml(v('gei-duration'));
   const _tradeM=TRADE_META[trade]||null;
-  const tradeName=(_tradeM&&_tradeM.label)||'Service';const tradeIcon=(_tradeM&&_tradeM.icon)||'🔧';
+  const tradeName=(_tradeM&&_tradeM.label)||'Service';
   const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'—';
   const _geiNow=new Date();
   const dateStr=_geiNow.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const _geiExpD=new Date(_geiNow.getTime()+30*86400000).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'});
   const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const _tmDepPct=parseFloat(v('tm-dep-pct'))||20;
-  const _byoDepPctEl=document.getElementById('byo-deposit-pct');
-  const _sendByoDepPct=_geiIsTM?null:(parseFloat(_byoDepPctEl?_byoDepPctEl.value:null)||25)/100;
-  const _sendByoDepPctLabel=_geiIsTM?null:Math.round(_sendByoDepPct*100);
+  const _tmDepPct=_geiDepositPct();
   // Deposit is a % of the client-facing TOTAL (incl. tax) — the label says "(N%)" next
   // to the estimated total, so computing from the pre-tax subtotal reads as a math error.
-  const _tmDepAmt=_geiIsTM?Math.round(total*_tmDepPct)/100:Math.round(total*_sendByoDepPct*100)/100;
+  const _tmDepAmt=Math.round(total*_tmDepPct)/100;
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
   const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   // MUST be declared before the template literals below that use it — TDZ if declared after
   // Use the client's job address state, not the contractor's home state
   const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
-  const _tmDepRow=_geiIsTM
-    ?`<tr style="background:#0369a1;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">Mobilization Deposit (${_tmDepPct}%) Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`
-    :`<tr style="background:#2a4a7f;color:rgba(255,255,255,.88)"><td colspan="2" style="padding:6px 18px;font-size:11px;font-weight:600">${_sendByoDepPctLabel}% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr>`;
+  // Proposal accent — uses the contractor's own S.brandColor (set in Settings →
+  // Branding) when present, same hex→rgb→lighter-shade treatment as the sign-in
+  // boot overlay, so a branded account's proposal actually looks like THEIRS
+  // instead of generic navy. Falls back to the original navy when unset — zero
+  // visual change for every account that hasn't picked a brand color.
+  let _pAccent='#1a365d',_pAccent2='#2a4a7f';
+  if(S&&S.brandColor){
+    // adaBrand clamp: the accent renders as text on white AND as a bg under
+    // white text — a light brand pick would fail WCAG both ways. Belt for
+    // legacy stored values; settings.js also clamps at save time now.
+    const _bh=(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor).replace('#','');
+    const _br=parseInt(_bh.substr(0,2),16),_bg=parseInt(_bh.substr(2,2),16),_bb=parseInt(_bh.substr(4,2),16);
+    if(!isNaN(_br)&&!isNaN(_bg)&&!isNaN(_bb)){
+      _pAccent='rgb('+_br+','+_bg+','+_bb+')';
+      _pAccent2='rgb('+Math.min(255,_br+42)+','+Math.min(255,_bg+42)+','+Math.min(255,_bb+42)+')';
+    }
+  }
+  // One deposit-row template for both modes — only the label wording and accent
+  // color differ (T&M calls it a mobilization deposit).
+  const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
   const _fcPct=(S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
   const _fcApr=Math.round(_fcPct*12*10)/10;
   const _warrantyPeriod=S?.warrantyPeriod||'1 year';
@@ -2564,21 +2959,54 @@ async function sendGenericProposal(previewOnly){
   const _permitClause=_geiTrade==='painting'
     ?`Painting and surface work does not typically require permits for standard residential repainting. If your municipality requires a permit for your specific project, ${_party} will notify you in advance. Any permit fees will be billed at cost with prior approval.`
     :`${_party} shall obtain all permits and inspections required for this scope of work in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
-  const _tmPayTerms=_geiIsTM
-    ?`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Contract type:</strong> Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}</div><div>2. <strong>Mobilization deposit:</strong> ${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.</div><div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>4. <strong>Billing:</strong> ${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.</div><div>5. <strong>Change Orders:</strong> Any additional scope not described herein requires a written change order approved and signed by the client.</div><div>6. <strong>Limitation of Liability:</strong> ${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>7. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey,_party)}</div><div>8. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div><div>9. <strong>Workmanship Warranty:</strong> ${_warrantyClause}</div><div>10. <strong>Permits &amp; Inspections:</strong> ${_permitClause}</div><div>11. <strong>Schedule &amp; Delays:</strong> Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.</div><div>12. <strong>Insurance:</strong> ${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.</div><div>13. <strong>Dispute Resolution:</strong> In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.</div></div>`
-    :`<div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> ${_sendByoDepPctLabel}% due before work begins and before a start date is scheduled. Balance due upon completion.</div><div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div><div>3. <strong>Change Orders:</strong> Any additional work not described herein requires a written change order approved and signed by the client.</div><div>4. <strong>Limitation of Liability:</strong> ${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.</div><div>5. <strong>Mechanic&#39;s Lien:</strong> ${_lienNotice(_stateKey,_party)}</div><div>6. <strong>Finance Charges:</strong> Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.</div><div>7. <strong>Workmanship Warranty:</strong> ${_warrantyClause}</div><div>8. <strong>Permits &amp; Inspections:</strong> ${_permitClause}</div><div>9. <strong>Schedule &amp; Delays:</strong> Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.</div><div>10. <strong>Insurance:</strong> ${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.</div><div>11. <strong>Dispute Resolution:</strong> In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.</div></div>`;
-  const _tmPropMarkupMult=(_geiIsTM&&_tmMatMarkup>0)?(1+_tmMatMarkup/100):1;
+  // Terms & Conditions — ONE clause list for both modes. Every clause shared by
+  // T&M and BYO exists exactly once below; only the payment terms at the top
+  // genuinely differ (contract type + mobilization deposit + billing cadence for
+  // T&M vs a simple deposit for BYO). Numbering is generated from array order,
+  // so adding/removing a clause can never desync the two modes again.
+  // sign.html's legacy-proposal patcher keys on the "<div>N. <strong>Title:"
+  // shape — preserved verbatim by the renderer below.
+  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
+  const _modeTerms=_geiIsTM?[
+    ['Contract type',`Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
+    ['Mobilization deposit',`${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.`],
+    ['Cancellation &amp; Deposits',_cancelClause],
+    ['Billing',`${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.`],
+  ]:[
+    ['Deposit',`${_tmDepPct}% due before work begins and before a start date is scheduled. Balance due upon completion.`],
+    ['Cancellation &amp; Deposits',_cancelClause],
+  ];
+  const _termsClauses=[
+    ..._modeTerms,
+    ['Change Orders','Any additional work not described herein requires a written change order approved and signed by the client.'],
+    ['Limitation of Liability',`${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.`],
+    ['Mechanic&#39;s Lien',_lienNotice(_stateKey,_party)],
+    ['Finance Charges',`Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.`],
+    ['Workmanship Warranty',_warrantyClause],
+    ['Permits &amp; Inspections',_permitClause],
+    ['Schedule &amp; Delays',`Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.`],
+    ['Insurance',`${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.`],
+    ['Dispute Resolution','In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.'],
+  ];
+  const _tmPayTerms='<div style="font-size:11px;color:#2d3748;line-height:2">'+_termsClauses.map((c,i)=>`<div>${i+1}. <strong>${c[0]}:</strong> ${c[1]}</div>`).join('')+'</div>';
   // Safari lazy-parses function bodies on first call — extract ?.?? to plain variables
   const _byoTermsEl2=document.getElementById('byo-custom-terms');
   const _byoTermsText=(_byoTermsEl2?_byoTermsEl2.value:(_byoCustomTerms||'')).trim();
   const _customTermsBlock=_byoTermsText
-    ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap">${escHtml(_byoTermsText)}</div></div>`
+    ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere">${escHtml(_byoTermsText)}</div></div>`
     :'';
-  const _mkLineRow=(l,amt,isRrp)=>{
-    const amtStr=isRrp&&amt===0?'<span style="font-size:11px;font-style:italic;color:#92400e">Included</span>':'$'+amt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-    const notesHtml=l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:'';
-    const amtColor=isRrp&&amt===0?'#92400e':'#1a365d';
-    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 18px;font-size:12px;color:#2d3748"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${notesHtml}</td><td style="padding:9px 6px;text-align:center;font-size:12px;color:#64748b">${l.qty||1}</td><td style="padding:9px 18px 9px 4px;text-align:right;font-size:12px;font-weight:600;color:${amtColor}">${amtStr}</td></tr>`;
+  // Owner directive: the client-facing proposal shows exactly two dollar figures —
+  // the final TOTAL and the deposit due — never a per-room, per-material, or tax/markup
+  // breakdown. Research on painting/remodeling proposals backs this: a visible price per
+  // line lets clients cherry-pick or self-supply materials/labor against the number they
+  // see. Line items below carry scope description only, no qty/amount columns.
+  const _mkLineRow=(l,isRrp,suppressNotes)=>{
+    // BYO's own notes already print in full under "Scope of work" above (_scopeBlocks) —
+    // repeating them again here doubled the same paragraph within one proposal and ate
+    // up a lot of extra room. Suppressed for regular BYO lines; RRP and T&M lines have
+    // no scope-of-work duplicate, so their notes still need to show here.
+    const notesHtml=(l.notes&&!suppressNotes)?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:'';
+    return `<tr style="border-bottom:1px solid #e2e8f0"><td colspan="2" style="padding:9px 18px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${notesHtml}</td></tr>`;
   };
   let lineRows;
   if(_geiIsFreeForm){
@@ -2589,71 +3017,63 @@ async function sendGenericProposal(previewOnly){
       const sLines=_allPropLines.filter(l=>(l._byoSection||'')=== sec);
       if(!sLines.length)return '';
       const isRrpSec=sec===_RRP_BYO_SECTION;
-      const secHeader=sec?`<tr><td colspan="3" style="padding:5px 18px 4px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:${isRrpSec?'#92400e':'#64748b'};background:${isRrpSec?'#fffbeb':'#f8fafc'};border-bottom:1px solid #e2e8f0">${escHtml(sec)}</td></tr>`:'';
-      return secHeader+sLines.map(l=>_mkLineRow(l,(l.qty||1)*(l.rate||0),l._rrp||isRrpSec)).join('');
+      const secHeader=sec?`<tr><td colspan="2" style="padding:5px 18px 4px;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:${isRrpSec?'#92400e':'#64748b'};background:${isRrpSec?'#fffbeb':'#f8fafc'};border-bottom:1px solid #e2e8f0">${escHtml(sec)}</td></tr>`:'';
+      return secHeader+sLines.map(l=>{
+        const isRrp=l._rrp||isRrpSec;
+        return _mkLineRow(l,isRrp,!isRrp);
+      }).join('');
     }).join('');
   }else{
     // T&M and other flows: flat list
-    lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>{
-      let amt=(l.qty||1)*(l.rate||0);
-      if(_geiIsTM&&!l._tmLabor)amt=Math.round(amt*_tmPropMarkupMult);
-      return _mkLineRow(l,amt,l._rrp||false);
-    }).join('');
+    lineRows=_geiLines.filter(l=>l.desc||l.rate).map(l=>_mkLineRow(l,l._rrp||false)).join('');
   }
-  // Suppress markup/tax row for T&M — markup is already in the line prices
-  const taxRow=(!_geiIsTM&&taxPct)?`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">Tax / markup (${taxPct}%)</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${(total*(taxPct/(100+taxPct))).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`:'';
-  // Sales tax row — shown on proposal when applicable
-  const _stRateP=_geiClientTaxRate!==null?(_geiClientTaxRate.rate??0):(parseFloat(S.salesTaxRate)||0);
-  const _stScopeP=_geiJobScope||'repair';
-  const _stStateP=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
-  let _stRowHtml='';
-  if(typeof calcSalesTax==='function'&&_stRateP>0){
-    const _stLiP=_geiLines.map(l=>{
-      if(l._tmLabor)return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType:'labor'};
-      const sec=(l._byoSection||'').toLowerCase();
-      const lineType=sec==='materials'?'materials':(sec==='interior'||sec==='exterior')?'labor':null;
-      return{desc:l.desc||'',total:(l.qty||1)*(l.rate||0),lineType};
-    });
-    const _stRes=calcSalesTax({state:_stStateP,tradeType:_geiTrade||'general',scope:_stScopeP,
-      propertyType:_geiIsCommercial?'commercial':'residential',taxRate:_stRateP,lineItems:_stLiP});
-    if(_stRes.treatment.customerTax&&_stRes.taxAmount>0){
-      const _stIsFull=_stRes.treatment.laborTaxable||_stRes.treatment.type==='service';
-      const _stLblP=(_stRes.treatment.type==='gross_receipts'?(_stRes.treatment.label||'Tax'):
-        (_stIsFull?'Sales tax':'Materials tax'))+' ('+_stRateP+'%)';
-      _stRowHtml=`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">${_stLblP}</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$${_stRes.taxAmount.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</td></tr>`;
-    } else if(_stScopeP==='improvement'&&!_stRes.treatment.customerTax){
-      _stRowHtml=`<tr style="border-bottom:1px solid #e2e8f0;background:#f8fafc"><td colspan="2" style="padding:8px 18px;font-size:12px;color:#64748b">New construction: no tax</td><td style="padding:8px 18px;text-align:right;font-size:12px;color:#64748b">$0.00</td></tr>`;
-    }
-  }
-  const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#1a365d">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
+  const notesHtml=v('gei-notes')?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6;overflow-wrap:anywhere"><strong style="color:${_pAccent}">Notes:</strong> ${escHtml(v('gei-notes'))}</div>`:'';
   let _propPanelHtml='';
   if(_panelSched){
     const {l1:_pl1,l2:_pl2,imbalance:_pimb}=_panelCalcBalance();
     const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'—')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
-    _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">📋 Panel Schedule — ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">⚠️ Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:#1a365d;color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:#1a365d;color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
+    _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Panel Schedule — ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:${_pAccent};color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
   }
-  const _hdrLabel=_geiIsTM?'⏱️ Time &amp; Materials':tradeIcon+' Service Proposal';
-  const _nteRow=(_geiIsTM&&_tmNteCap)?`<tr style="background:#075985;color:rgba(255,255,255,.8)"><td colspan="2" style="padding:5px 18px;font-size:11px">Not-to-exceed cap</td><td style="padding:5px 18px;text-align:right;font-size:11px;font-weight:700">$${_tmNteCap.toLocaleString()}</td></tr>`:'';
-  // Scope section — BYO shows structured section/item list matching paint estimate style; others use chip pills
-  let _scopeSection='';
+  const _hdrLabel=_geiIsTM?'Time &amp; Materials':tradeName+' Proposal';
+  // No standalone NTE pricing row — the cap is already disclosed in the Terms &
+  // Conditions "Contract type" clause below, so this isn't a lost disclosure, just
+  // one less dollar figure sitting in the pricing table.
+  // Scope section — the scope-CHIP picker (with its plain-English clientDesc
+  // explanations) is the one shared, cross-mode "what's included" definition, so
+  // it renders whenever any chips are selected, in EVERY estimate type. BYO's
+  // own line-item section list is additional structured detail specific to BYO
+  // and renders alongside it, not instead of it (previously an if/else silently
+  // dropped the selected scope chips whenever BYO had any line items on).
+  const _scopeBlocks=[];
+  if(_geiScopeChips.length&&!_geiScopeNoScope){
+    const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
+    const _listItems=_geiScopeChips.map(l=>{
+      const chip=_allChipDefs.find(c=>c.label===l);
+      const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(chip.clientDesc)}</span>`:'';
+      return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l)}${desc}</li>`;
+    }).join('');
+    _scopeBlocks.push(`<ol style="margin:0 0 10px;padding-left:18px">${_listItems}</ol>`);
+  }
   const _byoWorkItems2=_geiIsFreeForm?_byoItems.filter(it=>it.on&&!it._rrp):[];
   if(_geiIsFreeForm&&_byoWorkItems2.length>0&&!_geiScopeNoScope){
     const _scopeSecs2=[...(new Set(_byoWorkItems2.map(it=>it.section)))].filter(Boolean);
     const _secBlocks2=_scopeSecs2.map(sec=>{
       const its=_byoWorkItems2.filter(it=>it.section===sec);
-      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7">${escHtml(it.label)}${it.notes?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(it.notes)}</span>`:''}</li>`).join('')+'</ol>';
-      return `<div style="margin-bottom:10px"><div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#64748b;margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
+      // Items without notes get a quiet section-appropriate descriptor — a bare
+      // one-word line ("1. Room") next to fully-described scope items reads as an
+      // unfinished document to the client.
+      const _fallbackDesc=/material/i.test(sec)?'Included in project total':'Labor and materials per agreed scope';
+      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}<span style="font-size:10.5px;color:#718096"> — ${escHtml(it.notes||_fallbackDesc)}</span></li>`).join('')+'</ol>';
+      // Sub-section headers match the document's one header style (accent, same
+      // scale as "Scope of work") — the old hardcoded gray read as a different
+      // font family entirely and made the section look mismatched.
+      return `<div style="margin-bottom:10px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
     }).join('');
-    _scopeSection=`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">Scope of work</div>${_secBlocks2}</div>`;
-  }else if(_geiScopeChips.length&&!_geiScopeNoScope){
-    const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
-    const _listItems=_geiScopeChips.map(l=>{
-      const chip=_allChipDefs.find(c=>c.label===l);
-      const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(chip.clientDesc)}</span>`:'';
-      return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7">${escHtml(l)}${desc}</li>`;
-    }).join('');
-    _scopeSection=`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:10px">Scope of work</div><ol style="margin:0;padding-left:18px">${_listItems}</ol></div>`;
+    _scopeBlocks.push(_secBlocks2);
   }
+  const _scopeSection=_scopeBlocks.length
+    ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
+    :'';
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
   const _geiYearBuilt=_geiEpaClient?_geiEpaClient.yearBuilt||null:null;
   // EPA RRP (lead-safe) applies to pre-1978 homes where paint will be disturbed.
@@ -2661,7 +3081,18 @@ async function sendGenericProposal(previewOnly){
   // refactor while line 2677 still referenced it → ReferenceError aborting every send.
   const _geiEpaRequired=!!(_geiYearBuilt&&_geiYearBuilt<1978&&((_geiEpaClient&&_geiEpaClient.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const _rrpSection='';
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#1a365d">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#1a365d">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th><th style="padding:8px 6px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:40px">Qty</th><th style="padding:8px 18px 8px 4px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em;width:90px">Amount</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${taxRow}${_stRowHtml}<tr style="background:#1a365d;color:#fff"><td colspan="2" style="padding:12px 18px;font-weight:800;font-size:15px">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:15px">${totalFmt}</td></tr>${_tmDepRow}${_nteRow}</tfoot></table>${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
+  // TOTAL is the one number a client should remember — sized and weighted like a
+  // deliberate focal point (matches the confident-number treatment sign.html's own
+  // amount display uses), not just another table row.
+  const _totalFooterRows=`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${totalFmt}</td></tr>${_tmDepRow}`;
+  // BYO's line items are already fully listed (name + notes) under "Scope of work"
+  // above — once per-item prices came out, this table would just repeat the same
+  // section headers and names a second time with nothing new to show. T&M doesn't
+  // list materials anywhere else, so it keeps the full item table.
+  const _lineItemsSection=_geiIsFreeForm
+    ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
+    :`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
   // Preview-only mode — show proposal in a fullscreen overlay, no upload
   if(previewOnly){_showProposalPreviewOverlay(proposalHtml);return;}
   const bidId=_geiEditBidId;
@@ -2690,6 +3121,7 @@ async function sendGenericProposal(previewOnly){
     rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
     bwebsite:S.bwebsite||'',
     baddr:S.baddr||'',
+    poweredBy:S.poweredBy!==false,
   };
   const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>({error:e}));
   if(_uploadRes&&_uploadRes.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
@@ -2715,18 +3147,18 @@ async function sendGenericProposal(previewOnly){
   if(b&&b.client_id){
     try{const _hu=await _uploadClientHub(b.client_id);if(_hu)shareUrl=_hu;}catch(e){}
   }
-  const bar=document.getElementById('proposal-link-bar');
-  const input=document.getElementById('proposal-link-input');
   const _cl=getClientById(b?b.client_id:null);
-  if(bar){
-    bar.dataset.signingUrl=shareUrl;
-    bar.dataset.signingDirectUrl=signingDirectUrl;
-    bar.dataset.cname=clientName;
-    bar.dataset.bname=bname;
-    bar.dataset.cphone=((_cl&&_cl.phone)||'').replace(/\D/g,'');
-    bar.dataset.cemail=(_cl&&_cl.email)||'';
-  }
-  if(input)input.value=shareUrl;
+  // RAW strings only — this object feeds PLAIN-TEXT surfaces (sms: body, email
+  // body, navigator.share). `bname`/`clientName` above are escHtml'd for the
+  // proposal HTML; reusing them here printed "&amp;" literally in the client's
+  // text message. HTML consumers (compose modal) re-escape at injection.
+  _pendingShareData={
+    url:shareUrl,
+    cname:(_cl&&_cl.name)||v('gei-client')||'Client',
+    bname:_bnameRaw,
+    cphone:((_cl&&_cl.phone)||'').replace(/\D/g,''),
+    cemail:(_cl&&_cl.email)||'',
+  };
   _pendingSignToken={bidId,token,proposalKey};
   // Show send overlay (centered modal) — lets user choose Text / Email / Other app
   _showGeiSendOverlay();
@@ -2738,7 +3170,7 @@ function _geiCopyShareLink(btn){
   const url=_proposalShareData().url;
   if(!url)return;
   navigator.clipboard.writeText(url).catch(()=>{});
-  if(btn){btn.textContent='✓ Copied!';setTimeout(()=>btn.textContent='📋 Copy link',2000);}
+  if(btn){btn.innerHTML=svgIcon('✓',{size:14})+' Copied!';setTimeout(()=>{btn.innerHTML=svgIcon('📋',{size:14})+' Copy link';},2000);}
 }
 
 // ─── Industrial Equipment Estimate ──────────────────────────────────────────
@@ -2762,7 +3194,7 @@ function _renderIndModal(){
   const tierHtml=Object.keys(IND_TIERS).map(k=>{
     const t=IND_TIERS[k];const sel=k===_indTier;
     return '<button onclick="_setIndTier(\''+k+'\')" style="padding:10px 8px;border-radius:var(--r);border:2px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;text-align:left;width:100%">'+
-      '<div style="font-size:12px;font-weight:700;color:'+(sel?'var(--blue-dk)':'var(--text)')+'">'+(sel?'✓ ':'')+t.badge+' '+t.name+'</div>'+
+      '<div style="font-size:12px;font-weight:700;color:'+(sel?'var(--blue-dk)':'var(--text)')+'">'+(sel?svgIcon('✓',{size:12,color:'var(--blue-dk)'})+' ':'')+t.badge+' '+t.name+'</div>'+
       '<div style="font-size:10px;color:var(--text3);margin-top:2px;line-height:1.4">'+t.desc+'</div></button>';
   }).join('');
   const typeOpts=Object.keys(IND_EQUIP_TYPES).map(k=>'<option value="'+k+'">'+IND_EQUIP_TYPES[k].name+'</option>').join('');
@@ -2774,7 +3206,7 @@ function _renderIndModal(){
   box.innerHTML=
     '<div style="position:sticky;top:0;background:var(--bg);z-index:10;padding:16px 16px 12px;border-bottom:1px solid var(--border)">'+
       '<div style="display:flex;align-items:center;justify-content:space-between">'+
-        '<div><div style="font-size:17px;font-weight:800">🏗️ Industrial Equipment</div>'+
+        '<div><div style="font-size:17px;font-weight:800">'+svgIcon('🏗',{size:17})+' Industrial Equipment</div>'+
           '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+(c?escHtml(c.name):'No client')+'</div></div>'+
         '<button onclick="document.getElementById(\'ind-equip-ov\').remove()" style="width:30px;height:30px;border-radius:50%;border:none;background:var(--bg2);color:var(--text2);font-size:18px;cursor:pointer;font-family:inherit">×</button>'+
       '</div>'+
@@ -2784,7 +3216,7 @@ function _renderIndModal(){
     // ── AI Scope Helper ──
     '<div style="margin-bottom:14px;padding:12px;background:linear-gradient(135deg,#fffbeb,#fff7ed);border-radius:var(--r);border:1.5px solid #fed7aa">'+
       '<div style="font-size:11px;font-weight:800;color:#c2410c;margin-bottom:8px;display:flex;align-items:center;gap:6px">'+
-        '<span>✨</span> AI Scope Helper'+
+        '<span>'+svgIcon('✨',{size:12,color:'#c2410c'})+'</span> AI Scope Helper'+
         '<span style="font-size:10px;font-weight:500;color:#9a3412;margin-left:4px">— describe what you see, we\'ll suggest the equipment</span>'+
       '</div>'+
       '<textarea id="ind-desc-inp" rows="2" placeholder="e.g. Two small drum dryers, a baghouse, and the control house — heavy rust on dryers, last painted 5+ years ago" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid #fed7aa;border-radius:var(--r);background:#fff;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:8px"></textarea>'+
@@ -2821,7 +3253,7 @@ function _renderIndModal(){
 
     // ── Paint & Color Specs ──
     '<div style="margin-top:14px;padding:12px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border2)">'+
-      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">🎨 Paint & Color Specs</div>'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">'+svgIcon('🎨',{size:10})+' Paint & Color Specs</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
         '<div>'+
           '<div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px">Topcoat color</div>'+
@@ -2846,8 +3278,8 @@ function _renderIndModal(){
 
     // ── Actions ──
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px">'+
-      '<button onclick="_saveIndBid()" style="padding:14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">💾 Save Draft</button>'+
-      '<button onclick="_sendIndProposal()" style="padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">🔗 Save & Send to Client</button>'+
+      '<button onclick="_saveIndBid()" style="padding:14px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💾',{size:14})+' Save Draft</button>'+
+      '<button onclick="_sendIndProposal()" style="padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('🔗',{size:14,color:'#fff'})+' Save & Send to Client</button>'+
     '</div>'+
     '</div>';
   _renderIndPieces();_renderIndResult();
@@ -2902,7 +3334,7 @@ function _renderIndPieces(){
           '<div style="font-size:12px;font-weight:700;color:var(--text)">'+(p.qty>1?p.qty+'× ':'')+p.name+'</div>'+
           '<div style="font-size:10px;color:var(--text3);margin-top:1px">'+
             (totalSqft?'~'+totalSqft.toLocaleString()+' sq ft':'custom sq ft')+
-            (p.lift?' · <span style="color:#c2410c;font-weight:600">⚠️ Lift needed</span>':'')+
+            (p.lift?' · <span style="color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:10,color:'#c2410c'})+' Lift needed</span>':'')+
             (p.note?' · '+escHtml(p.note):'')+
           '</div>'+
         '</div>'+
@@ -2940,8 +3372,8 @@ function _renderIndResult(){
   }
   const crewLabel=r.crew===1?'Solo — you handle it':r.crew===2?'You + 1 helper needed':r.crew===3?'3-person crew needed':'Full 4-person crew';
   const crewColor=r.crew===1?'#16a34a':r.crew===2?'#2563eb':r.crew>=3?'#d97706':'#1a1a1a';
-  const liftLine=r.liftNeeded?'<div style="margin-top:6px;padding:7px 10px;background:#fff7ed;border-radius:var(--r);font-size:11px;color:#c2410c;font-weight:600">⚠️ Man-lift rental likely needed (~$350/day) — add as line item if not on site</div>':'';
-  const scaffLine=r.flags.some(f=>f&&f.includes('Scaffolding'))?'<div style="margin-top:6px;padding:7px 10px;background:#fef9c3;border-radius:var(--r);font-size:11px;color:#854d0e;font-weight:600">🏗️ Scaffolding may be needed on one or more pieces — verify on-site</div>':'';
+  const liftLine=r.liftNeeded?'<div style="margin-top:6px;padding:7px 10px;background:#fff7ed;border-radius:var(--r);font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely needed (~$350/day) — add as line item if not on site</div>':'';
+  const scaffLine=r.flags.some(f=>f&&f.includes('Scaffolding'))?'<div style="margin-top:6px;padding:7px 10px;background:#fef9c3;border-radius:var(--r);font-size:11px;color:#854d0e;font-weight:600">'+svgIcon('🏗',{size:11,color:'#854d0e'})+' Scaffolding may be needed on one or more pieces — verify on-site</div>':'';
   el.innerHTML=
     '<div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);border-radius:var(--r);padding:16px;color:#fff">'+
       '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-bottom:10px">Estimate Summary</div>'+
@@ -3017,11 +3449,11 @@ async function _sendIndProposal(){
   const resolvedTopcoat=color||(tier.products.split('→')[1]?.trim()||'Per spec');
   const equipRows=_indPieces.map(p=>{
     const totalSqft=p.qty*p.sqft;
-    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 14px;font-size:12px;font-weight:600;color:#2d3748">${escHtml(p.name)}</td><td style="padding:9px 8px;text-align:center;font-size:12px;color:#64748b">${p.qty}</td><td style="padding:9px 8px;text-align:right;font-size:12px;color:#64748b">${totalSqft?totalSqft.toLocaleString():'-'}</td><td style="padding:9px 14px;font-size:11px;color:#94a3b8">${escHtml(p.note||'')}${p.lift?' ⚠️ Lift':''}${p.note&&p.lift?' / ':''}</td></tr>`;
+    return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 14px;font-size:12px;font-weight:600;color:#2d3748">${escHtml(p.name)}</td><td style="padding:9px 8px;text-align:center;font-size:12px;color:#64748b">${p.qty}</td><td style="padding:9px 8px;text-align:right;font-size:12px;color:#64748b">${totalSqft?totalSqft.toLocaleString():'-'}</td><td style="padding:9px 14px;font-size:11px;color:#94a3b8">${escHtml(p.note||'')}${p.lift?' '+svgIcon('⚠',{size:11,color:'#94a3b8'})+' Lift':''}${p.note&&p.lift?' / ':''}</td></tr>`;
   }).join('');
-  const liftWarning=r.liftNeeded?'<div style="padding:10px 18px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:11px;color:#c2410c;font-weight:600">⚠️ Man-lift rental likely required (~$350/day) — verify availability before scheduling</div>':'';
+  const liftWarning=r.liftNeeded?'<div style="padding:10px 18px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely required (~$350/day) — verify availability before scheduling</div>':'';
   const notesSection=notes?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#7c2d12">Site Notes:</strong> ${escHtml(notes)}</div>`:'';
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">🏗️ Industrial Coating Estimate</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT BID</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr><tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${svgIcon('🏗',{size:11,color:'#fff'})} Industrial Coating Estimate</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT BID</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr><tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   const proposalKey=`proposals/${_supaUser.id}/${_indBidId}_${token}.json`;
   const _indYearBuilt=c?c.yearBuilt||null:null;
@@ -3038,6 +3470,7 @@ async function _sendIndProposal(){
     rrpFirmCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_firm'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
     rrpRenovatorName:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.holderName||'';})(),
     rrpRenovatorCertNum:(()=>{const l=(typeof licenses!=='undefined'?licenses:[]).find(x=>x.typeId==='epa_renovator'&&(!x.expiryDate||x.expiryDate>=todayKey()));return l?.licenseNumber||'';})(),
+    poweredBy:S.poweredBy!==false,
   };
   showToast('Uploading proposal…','⏳');
   await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>console.error('[ind proposal upload]',e));
@@ -3121,9 +3554,7 @@ function _geiSignInPerson(){
   const{total}=calcGeiTotal();
   if(!total){showToast('Add items to your estimate before signing','⚠️');return;}
   const cname=document.getElementById('gei-client')?.value||bid.client_name||'Client';
-  const depPct=_geiIsTM
-    ?(parseFloat(document.getElementById('tm-dep-pct')?.value)||20)
-    :(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25);
+  const depPct=_geiDepositPct();
   const depAmt=Math.round(total*depPct/100*100)/100;
   const bal=Math.round((total-depAmt)*100)/100;
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3135,7 +3566,7 @@ function _geiSignInPerson(){
   ov.innerHTML=
     '<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-sizing:border-box">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:17px;font-weight:800">✍️ Sign in person</div>'+
+        '<div style="font-size:17px;font-weight:800">'+svgIcon('✍',{size:17})+' Sign in person</div>'+
         '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0;line-height:1">×</button>'+
       '</div>'+
       '<div style="padding:14px 18px 28px">'+
@@ -3212,9 +3643,7 @@ async function _geiConfirmInPerson(){
   const bid=bids.find(x=>x.id===_geiEditBidId);
   if(!bid){showToast('Bid not found','⚠️');return;}
   const{total}=calcGeiTotal();
-  const depPct=_geiIsTM
-    ?(parseFloat(document.getElementById('tm-dep-pct')?.value)||20)
-    :(parseFloat(document.getElementById('byo-deposit-pct')?.value)||25);
+  const depPct=_geiDepositPct();
   const depAmt=Math.round(total*depPct/100*100)/100;
   const ts=new Date().toISOString();
   bid.amount=total;bid.deposit=depAmt;bid.status='Closed Won';bid.draft=false;
@@ -3242,7 +3671,7 @@ async function _geiConfirmInPerson(){
   const dtFmt=new Date(ts).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
   if(ov){
     ov.innerHTML='<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;padding:32px 24px 40px;box-sizing:border-box;text-align:center">'+
-      '<div style="font-size:48px;margin-bottom:12px">✅</div>'+
+      '<div style="font-size:48px;margin-bottom:12px">'+svgIcon('✅',{size:48,color:'#16a34a'})+'</div>'+
       '<div style="font-size:20px;font-weight:900;color:var(--text);margin-bottom:8px">You\'re all set!</div>'+
       '<div style="font-size:14px;color:var(--text3);margin-bottom:24px">The contract has been signed.</div>'+
       '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:16px;margin-bottom:24px;text-align:left">'+
@@ -3252,7 +3681,7 @@ async function _geiConfirmInPerson(){
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Signed by</span><strong>'+escHtml(pname)+'</strong></div>'+
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0"><span style="color:#374151">Date &amp; time</span><span>'+dtFmt+'</span></div>'+
       '</div>'+
-      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null;goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">🏠 Back to home</button>'+
+      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null;goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('🏠',{size:16,color:'#fff'})+' Back to home</button>'+
     '</div>';
   }
   // Background: write to signed_proposals + upload client hub

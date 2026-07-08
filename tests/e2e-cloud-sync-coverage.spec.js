@@ -1698,4 +1698,42 @@ test.describe('100-writer op channel + rebase', () => {
     }
     expect(r.pendingCleared).toBe(true);
   });
+
+  test('signing into a different account lands on the dashboard immediately, not whatever page was active (regression)', async () => {
+    // Real bug report: "Sign out of cloud sync" only lives on the Settings page, so
+    // that's always the active page when a user signs out. The onAuthStateChange
+    // SIGNED_IN handler used to remove the login overlay and THEN await
+    // loadAccountData() (several sequential Supabase queries) before finally calling
+    // goPg('pg-dash') — so every account switch on the same device (no page reload)
+    // exposed the stale Settings page underneath for that entire load. The fix
+    // navigates to the dashboard synchronously, before any of that awaited work.
+    const r = await page.evaluate(async () => {
+      if (typeof window.__capturedAuthCallback !== 'function') return { skip: true };
+      const saved = {
+        supaUser: window._supaUser, cloudLoaded: _supaCloudLoaded, loadedOwner: _loadedDataOwner,
+        activePgId: document.querySelector('.pg.active')?.id,
+      };
+      // Simulate: was on Settings (where sign-out lives) when the account switch began.
+      document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+      document.getElementById('pg-settings')?.classList.add('active');
+      window._supaUser = null;
+      _supaCloudLoaded = false;
+      _loadedDataOwner = null;
+      let threw = null;
+      try {
+        // Deliberately NOT awaited — the fix must navigate synchronously, before any
+        // of the callback's awaited Supabase queries have a chance to resolve.
+        window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'new-account-test-uid' } });
+      } catch (e) { threw = e.message; }
+      const activeRightAfterCall = document.querySelector('.pg.active')?.id;
+      // Restore
+      document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+      document.getElementById(saved.activePgId || 'pg-dash')?.classList.add('active');
+      window._supaUser = saved.supaUser; _supaCloudLoaded = saved.cloudLoaded; _loadedDataOwner = saved.loadedOwner;
+      return { skip: false, threw, activeRightAfterCall };
+    });
+    if (r.skip) return;
+    expect(r.threw).toBe(null);
+    expect(r.activeRightAfterCall).toBe('pg-dash');
+  });
 });

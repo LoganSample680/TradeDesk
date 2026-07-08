@@ -44,101 +44,22 @@ test.describe('TradeDesk main app', () => {
 
   // ── Phase 3: Estimate creation — Alice Smith ────────────────────────────
   test('Phase 3 — estimate creation (Alice Smith)', async () => {
-    await goPg(page, 'pg-est');
+    // The paint interior/exterior estimator (pg-est) was removed — every trade now
+    // uses the generic estimator (pg-est-generic: Scope & Price / T&M / BYO).
+    await page.evaluate(() => {
+      if (typeof openGenericEstimate === 'function') openGenericEstimate(null, null, 'general');
+    });
     const isActive = await page.evaluate(() =>
-      document.getElementById('pg-est')?.classList.contains('active')
+      document.getElementById('pg-est-generic')?.classList.contains('active')
     );
     expect(isActive).toBe(true);
 
     // Fill client name
-    const cnameEl = page.locator('#e-cname');
+    const cnameEl = page.locator('#gei-client');
     await cnameEl.waitFor({ timeout: 5000 });
-    await cnameEl.triple_click ? cnameEl.click({ clickCount: 3 }) : await cnameEl.fill('');
+    await cnameEl.fill('');
     await cnameEl.fill('Alice Smith');
     expect(await cnameEl.inputValue()).toBe('Alice Smith');
-
-    // Advance to step 2
-    await page.evaluate(() => typeof goEstStep === 'function' && goEstStep(2));
-    await page.waitForTimeout(300);
-
-    // Try to open laser room form
-    await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('button')];
-      const addBtn = btns.find(b =>
-        b.textContent.trim().startsWith('+') ||
-        b.textContent.includes('Add room') ||
-        b.textContent.includes('New room')
-      );
-      if (addBtn) addBtn.click();
-    });
-    await page.waitForTimeout(300);
-
-    const laserVisible = await page.locator('#laser-room-name').isVisible().catch(() => false);
-    if (laserVisible) {
-      await page.locator('#laser-room-name').fill('Living Room');
-      await page.evaluate(() => {
-        const set = (id, val) => {
-          const el = document.getElementById(id);
-          if (el) { el.value = val; el.dispatchEvent(new Event('input', { bubbles: true })); }
-        };
-        set('laser-length', '16');
-        set('laser-width', '14');
-        set('laser-height', '9');
-        ['surf-walls', 'surf-ceiling'].forEach(id => {
-          const cb = document.getElementById(id);
-          if (cb && !cb.checked) cb.click();
-        });
-      });
-      // Save room
-      await page.evaluate(() => {
-        const btns = [...document.querySelectorAll('button')];
-        const save = btns.find(b => b.textContent.includes('Save') || b.textContent.includes('Add') || b.textContent.includes('Done'));
-        if (save) save.click();
-        else if (typeof saveLaserRoom === 'function') saveLaserRoom();
-      });
-      await page.waitForTimeout(400);
-    }
-
-    // Step 3 — pricing
-    await page.evaluate(() => typeof goEstStep === 'function' && goEstStep(3));
-    await page.waitForTimeout(300);
-
-    // Step 4 — adjustments / price override
-    await page.evaluate(() => {
-      typeof goEstStep === 'function' && goEstStep(4);
-      const inp = document.getElementById('est-override') ||
-                  document.getElementById('manual-price') ||
-                  document.getElementById('price-override');
-      if (inp) { inp.value = '2375'; inp.dispatchEvent(new Event('input', { bubbles: true })); }
-    });
-    await page.waitForTimeout(200);
-
-    // Step 5 — preview/send
-    // buildProposal() references global _propFinal which may not be set in test env;
-    // pre-set it from calcEst() so the function doesn't throw ReferenceError.
-    await page.evaluate(() => {
-      if (!window._propFinal) {
-        try {
-          if (typeof calcEst === 'function') {
-            const { final } = calcEst();
-            window._propFinal = final || 2375;
-          }
-        } catch (_) {}
-        if (!window._propFinal) window._propFinal = 2375;
-      }
-      try {
-        if (typeof goEstStep === 'function') goEstStep(5);
-      } catch (_) {}
-    });
-    await page.waitForTimeout(300);
-
-    // Render proposal
-    await page.evaluate(() => {
-      try {
-        if (typeof renderProposal === 'function') renderProposal();
-      } catch (_) {}
-    });
-    await page.waitForTimeout(500);
 
     // Inject Alice bid with known ID
     const savedId = await page.evaluate(([bidId, fakeName]) => {
@@ -383,14 +304,15 @@ test.describe('TradeDesk main app', () => {
 
   // pg-est (interior/exterior estimate) must suppress overscroll so scrolling
   // never triggers native pull-to-refresh / scroll-chaining.
-  test('Phase 10b — #pg-est.active has overscroll-behavior:none', async () => {
-    const ok = await page.evaluate(() => {
+  test('Phase 10b — #pg-est and its overscroll-behavior CSS rule were removed with the paint estimator', async () => {
+    const r = await page.evaluate(() => {
       const css = Array.from(document.styleSheets).flatMap(s => {
         try { return Array.from(s.cssRules); } catch (e) { return []; }
-      }).map(r => r.cssText).join('\n');
-      return /#pg-est\.active\s*\{[^}]*overscroll-behavior:\s*none/.test(css);
+      }).map(rule => rule.cssText).join('\n');
+      return { pgEst: !!document.getElementById('pg-est'), hasRule: /#pg-est\.active\s*\{/.test(css) };
     });
-    expect(ok).toBe(true);
+    expect(r.pgEst).toBe(false);
+    expect(r.hasRule).toBe(false);
   });
 
   // ── Phase 11: Books tabs → stat cards ────────────────────────────────────

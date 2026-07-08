@@ -1781,16 +1781,24 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
 
     test('hides legacy wizard elements', async () => {
+      // gei-tm-page is the REAL app page (index.html) — creating a second element with
+      // the same id and then unconditionally removing "gei-tm-page" in cleanup deletes
+      // whichever one getElementById finds first, which is the real one, permanently
+      // wiping it (and its render-target children) for every later test in this file.
       const r = await page.evaluate(() => {
+        const created = [];
         ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id => {
           let el = document.getElementById(id);
-          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); }
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); created.push(id); }
         });
-        const p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-tm-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p); }
         try { _tmShowPage(); }
         catch (_) {}
         const hidden = ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].every(id => document.getElementById(id)?.style.display === 'none');
-        ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3','gei-tm-page'].forEach(id => document.getElementById(id)?.remove());
+        created.forEach(id => document.getElementById(id)?.remove());
+        if (pCreated) p.remove();
         return { hidden };
       });
       expect(r.hidden).toBe(true);
@@ -1831,16 +1839,20 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
 
     test('restores gei-old-tbar and gei-step-bar', async () => {
       const r = await page.evaluate(() => {
+        const created = [];
         ['gei-old-tbar','gei-step-bar'].forEach(id => {
           let el = document.getElementById(id);
-          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); }
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); created.push(id); }
           else { el.style.display = 'none'; }
         });
-        const p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-tm-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-tm-page'; document.body.appendChild(p); }
         try { _tmHidePage(); }
         catch (_) {}
         const restored = ['gei-old-tbar','gei-step-bar'].every(id => document.getElementById(id)?.style.display === '');
-        ['gei-old-tbar','gei-step-bar','gei-tm-page'].forEach(id => document.getElementById(id)?.remove());
+        created.forEach(id => document.getElementById(id)?.remove());
+        if (pCreated) p.remove();
         return { restored };
       });
       expect(r.restored).toBe(true);
@@ -1881,16 +1893,21 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
 
     test('hides legacy wizard elements', async () => {
+      // gei-byo-page is the REAL app page — see the equivalent _tmShowPage test's comment.
       const r = await page.evaluate(() => {
+        const created = [];
         ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id => {
           let el = document.getElementById(id);
-          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); }
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'block'; document.body.appendChild(el); created.push(id); }
         });
-        const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-byo-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p); }
         try { _byoShowPage(); }
         catch (_) {}
         const hidden = ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].every(id => document.getElementById(id)?.style.display === 'none');
-        ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3','gei-byo-page'].forEach(id => document.getElementById(id)?.remove());
+        created.forEach(id => document.getElementById(id)?.remove());
+        if (pCreated) p.remove();
         return { hidden };
       });
       expect(r.hidden).toBe(true);
@@ -1898,12 +1915,14 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
 
     test('with valid bid — loads byoItems from bid', async () => {
       const r = await page.evaluate(() => {
-        const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-byo-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p); }
         _geiEditBidId = 44401;
         _byoItems = [];
         try { _byoShowPage(); return { ok: true, items: _byoItems.length }; }
         catch (e) { return { ok: false, err: e.message }; }
-        finally { p.remove(); }
+        finally { if (pCreated) p.remove(); }
       });
       expect(r.ok).toBe(true);
       expect(r.items).toBeGreaterThanOrEqual(0);
@@ -1944,16 +1963,20 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
 
     test('restores gei-old-tbar and gei-step-bar', async () => {
       const r = await page.evaluate(() => {
+        const created = [];
         ['gei-old-tbar','gei-step-bar'].forEach(id => {
           let el = document.getElementById(id);
-          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); }
+          if (!el) { el = document.createElement('div'); el.id = id; el.style.display = 'none'; document.body.appendChild(el); created.push(id); }
           else { el.style.display = 'none'; }
         });
-        const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
+        let p = document.getElementById('gei-byo-page');
+        const pCreated = !p;
+        if (!p) { p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p); }
         try { _byoHidePage(); }
         catch (_) {}
         const restored = ['gei-old-tbar','gei-step-bar'].every(id => document.getElementById(id)?.style.display === '');
-        ['gei-old-tbar','gei-step-bar','gei-byo-page'].forEach(id => document.getElementById(id)?.remove());
+        created.forEach(id => document.getElementById(id)?.remove());
+        if (pCreated) p.remove();
         return { restored };
       });
       expect(r.restored).toBe(true);
@@ -1962,6 +1985,820 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     test('concurrent calls (5x) — no crash', async () => {
       const ok = await concurrent('_byoHidePage()');
       expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // T&M/BYO shared render functions — one template, both modes (consolidation)
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_geiRenderTopBar / _geiRenderScopeCard / _geiRenderProfitGauge / _geiRenderActionButtons', () => {
+    test('_geiRenderTopBar — missing container does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _geiRenderTopBar('nope', 'X', '_editTMTitle'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('_geiRenderTopBar — golden path builds title, edit button, sub, save/cancel', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt-topbar-wrap'; document.body.appendChild(wrap);
+        _geiRenderTopBar('rt', 'My Title', '_editTMTitle');
+        const title = document.getElementById('rt-tbar-title');
+        const editBtn = document.getElementById('rt-edit-title-btn');
+        const sub = document.getElementById('rt-page-sub');
+        const res = {
+          titleText: title?.textContent,
+          editOnclick: editBtn?.getAttribute('onclick'),
+          hasSub: !!sub,
+          hasSaveDraft: wrap.innerHTML.includes('saveGenericEstimate(true)'),
+          hasCancel: wrap.innerHTML.includes('_geiBack()'),
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.titleText).toBe('My Title');
+      expect(r.editOnclick).toBe('_editTMTitle()');
+      expect(r.hasSub).toBe(true);
+      expect(r.hasSaveDraft).toBe(true);
+      expect(r.hasCancel).toBe(true);
+    });
+
+    test('_geiRenderScopeCard — golden path wires +Add scope to the right container id', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt2-scopecard-wrap'; document.body.appendChild(wrap);
+        _geiRenderScopeCard('rt2');
+        const hasWrap = !!document.getElementById('rt2-scope-wrap');
+        const addBtnOnclick = wrap.querySelector('button')?.getAttribute('onclick');
+        wrap.remove();
+        return { hasWrap, addBtnOnclick };
+      });
+      expect(r.hasWrap).toBe(true);
+      expect(r.addBtnOnclick).toBe("_openScopeSheet('rt2-scope-wrap')");
+    });
+
+    test('_geiRenderProfitGauge — golden path builds gauge ids and wires the given oninput', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt3-gauge-wrap'; document.body.appendChild(wrap);
+        _geiRenderProfitGauge('rt3', '_tmInputChange()');
+        const costEl = document.getElementById('rt3-expected-cost');
+        const res = {
+          costOninput: costEl?.getAttribute('oninput'),
+          hasDot: !!document.getElementById('rt3-gauge-dot'),
+          hasPct: !!document.getElementById('rt3-gauge-pct'),
+          hasMsg: !!document.getElementById('rt3-gauge-msg'),
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.costOninput).toBe('_tmInputChange()');
+      expect(r.hasDot).toBe(true);
+      expect(r.hasPct).toBe(true);
+      expect(r.hasMsg).toBe(true);
+    });
+
+    test('_geiRenderProfitGauge — idempotent: a second call does not rebuild/lose gauge state', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt4-gauge-wrap'; document.body.appendChild(wrap);
+        _geiRenderProfitGauge('rt4', '_tmInputChange()');
+        const dot = document.getElementById('rt4-gauge-dot');
+        dot.dataset.marker = 'still-here';
+        _geiRenderProfitGauge('rt4', '_tmInputChange()'); // second call — must be a no-op
+        const survived = document.getElementById('rt4-gauge-dot')?.dataset.marker === 'still-here';
+        wrap.remove();
+        return { survived };
+      });
+      expect(r.survived).toBe(true);
+    });
+
+    test('_geiRenderActionButtons — default (T&M-style): 2-column grid, "Send proposal", Preview via _geiPreviewClient', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt5-actions-wrap'; document.body.appendChild(wrap);
+        _geiRenderActionButtons('rt5', {});
+        const html = wrap.innerHTML;
+        const res = {
+          hasSendDefault: html.includes('Send proposal'),
+          hasSignInPerson: html.includes('_geiSignInPerson()'),
+          hasPreviewDefault: html.includes('_geiPreviewClient()'),
+          cols: wrap.querySelector('div[style*="grid-template-columns"]')?.style.gridTemplateColumns,
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.hasSendDefault).toBe(true);
+      expect(r.hasSignInPerson).toBe(true);
+      expect(r.hasPreviewDefault).toBe(true);
+      expect(r.cols).toBe('repeat(2, 1fr)');
+    });
+
+    test('_geiRenderActionButtons — BYO-style options: custom send label + extra button widens the grid to 3 columns', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rt6-actions-wrap'; document.body.appendChild(wrap);
+        _geiRenderActionButtons('rt6', { extraButtons: [{ label: '📋 Option B', onclick: '_byoDuplicateBid()' }] });
+        const html = wrap.innerHTML;
+        const res = {
+          hasOptionB: html.includes('_byoDuplicateBid()') && html.includes('Option B'),
+          cols: wrap.querySelector('div[style*="grid-template-columns"]')?.style.gridTemplateColumns,
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.hasOptionB).toBe(true);
+      expect(r.cols).toBe('repeat(3, 1fr)');
+    });
+
+    test('_tmShowPage renders "Send T&M proposal" with a 2-column action grid (no Option B)', async () => {
+      // The real app page (index.html) already has gei-tm-page + its wrap containers —
+      // creating a second element with the same id would just orphan a duplicate in the
+      // DOM (getElementById always resolves the first match), so reuse the real ones.
+      const r = await page.evaluate(() => {
+        try { _tmShowPage(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      const r2 = await page.evaluate(() => {
+        const html = document.getElementById('tm-actions-wrap')?.innerHTML || '';
+        return { hasSend: html.includes('Send T&amp;M proposal') || html.includes('Send T&M proposal'), hasOptionB: html.includes('Option B') };
+      });
+      expect(r2.hasSend).toBe(true);
+      expect(r2.hasOptionB).toBe(false);
+    });
+
+    test('_byoShowPage renders "Send proposal" with Option B in a 3-column action grid', async () => {
+      const r = await page.evaluate(() => {
+        try { _byoShowPage(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      const r2 = await page.evaluate(() => {
+        const html = document.getElementById('byo-actions-wrap')?.innerHTML || '';
+        return { hasSend: html.includes('Send proposal') && !html.includes('Send T&amp;M'), hasOptionB: html.includes('Option B') };
+      });
+      expect(r2.hasSend).toBe(true);
+      expect(r2.hasOptionB).toBe(true);
+    });
+  });
+
+  test.describe('_geiRenderDepositField / _geiDepositPct — shared deposit % (T&M mirrors BYO)', () => {
+    test('_geiRenderDepositField — missing container does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _geiRenderDepositField('nope', 'x()'); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('_geiRenderDepositField — golden path builds a 25-default pct input + balance row, wires oninput', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rd1-deposit-wrap'; document.body.appendChild(wrap);
+        _geiRenderDepositField('rd1', '_tmInputChange()');
+        const pctEl = document.getElementById('rd1-deposit-pct');
+        const res = {
+          defaultVal: pctEl?.value,
+          oninput: pctEl?.getAttribute('oninput'),
+          hasBalance: !!document.getElementById('rd1-rail-balance'),
+        };
+        wrap.remove();
+        return res;
+      });
+      expect(r.defaultVal).toBe('25');
+      expect(r.oninput).toBe('_tmInputChange()');
+      expect(r.hasBalance).toBe(true);
+    });
+
+    test('_geiRenderDepositField — idempotent: a second call does not reset a user-edited value', async () => {
+      const r = await page.evaluate(() => {
+        const wrap = document.createElement('div'); wrap.id = 'rd2-deposit-wrap'; document.body.appendChild(wrap);
+        _geiRenderDepositField('rd2', '_tmInputChange()');
+        document.getElementById('rd2-deposit-pct').value = '40';
+        _geiRenderDepositField('rd2', '_tmInputChange()'); // second call — must be a no-op
+        const survived = document.getElementById('rd2-deposit-pct')?.value === '40';
+        wrap.remove();
+        return { survived };
+      });
+      expect(r.survived).toBe(true);
+    });
+
+    test('tm-deposit-wrap and byo-deposit-wrap both render a live deposit-pct field on page show', async () => {
+      const r = await page.evaluate(() => {
+        _tmShowPage();
+        _byoShowPage();
+        return {
+          tmDep: !!document.getElementById('tm-deposit-pct'),
+          byoDep: !!document.getElementById('byo-deposit-pct'),
+        };
+      });
+      expect(r.tmDep).toBe(true);
+      expect(r.byoDep).toBe(true);
+    });
+
+    test('_geiDepositPct — reads tm-deposit-pct when in T&M mode', async () => {
+      const r = await page.evaluate(() => {
+        _tmShowPage();
+        document.getElementById('tm-deposit-pct').value = '35';
+        _geiIsTM = true;
+        const pct = _geiDepositPct();
+        _geiIsTM = false;
+        return { pct };
+      });
+      expect(r.pct).toBe(35);
+    });
+
+    test('_geiDepositPct — reads byo-deposit-pct when not in T&M mode', async () => {
+      const r = await page.evaluate(() => {
+        _byoShowPage();
+        document.getElementById('byo-deposit-pct').value = '10';
+        _geiIsTM = false;
+        const pct = _geiDepositPct();
+        return { pct };
+      });
+      expect(r.pct).toBe(10);
+    });
+
+    test('_geiDepositPct — defaults to 25 when the field is missing from the DOM', async () => {
+      const r = await page.evaluate(() => {
+        // Clear the whole wrap (not just the input) — _geiRenderDepositField is
+        // idempotent on wrap.children.length, so a partial removal would leave it
+        // permanently unable to rebuild the field for later tests.
+        const wrap = document.getElementById('tm-deposit-wrap');
+        if (wrap) wrap.innerHTML = '';
+        _geiIsTM = true;
+        const pct = _geiDepositPct();
+        _geiIsTM = false;
+        return { pct };
+      });
+      expect(r.pct).toBe(25);
+      // restore the real page's deposit field for later tests in this file
+      await page.evaluate(() => { _tmShowPage(); });
+    });
+
+    test('regression: saveGenericEstimate computes T&M deposit from the live tm-deposit-pct field (was always defaulting to 20% of subtotal via a dead tm-dep-pct id)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88801, name: 'TM Deposit Client', addr: '1 Deposit Rd' };
+        clients = clients.filter(x => x.id !== 88801).concat([c]);
+        bids = bids.filter(x => x.client_id !== 88801);
+        openGenericEstimate(c, null, 'general');
+        _geiIsTM = true;
+        _geiIsFreeForm = false;
+        goGeiStep(2); // renders gei-tm-page + tm-deposit-wrap via _tmShowPage
+        document.getElementById('tm-deposit-pct').value = '40';
+        _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 1000, total: 1000, _tmLabor: false }];
+        saveGenericEstimate(true);
+        const bid = bids.find(x => x.client_id === 88801);
+        return { deposit: bid?.deposit, amount: bid?.amount, tmDepositPct: bid?.tmDepositPct };
+      });
+      expect(r.tmDepositPct).toBe(40);
+      expect(r.deposit).toBe(Math.round(r.amount * 0.4));
+    });
+
+    test('regression: reopening a saved T&M bid restores its deposit % into the live field (back-calculated from deposit/amount)', async () => {
+      const r = await page.evaluate(() => {
+        const bid = bids.find(x => x.client_id === 88801);
+        _geiEditBidId = bid.id;
+        _geiIsTM = true;
+        _tmShowPage();
+        return { restoredPct: document.getElementById('tm-deposit-pct')?.value };
+      });
+      expect(r.restoredPct).toBe('40');
+    });
+  });
+
+  test.describe('_GEI_MODES / _geiShowSharedChrome — one code path for both estimate pages', () => {
+    test('_GEI_MODES registry has tm and byo entries with all keys the shared chrome needs', async () => {
+      const r = await page.evaluate(() => {
+        const need = ['pageId', 'defaultTitle', 'editFnName', 'titleSuffix', 'gaugeOninput', 'depositOninput', 'actionOpts'];
+        const check = m => m && need.every(k => m[k] !== undefined);
+        return { tm: check(_GEI_MODES.tm), byo: check(_GEI_MODES.byo), unknownSafe: (() => { try { _geiShowSharedChrome('nope'); return true; } catch (e) { return false; } })() };
+      });
+      expect(r.tm).toBe(true);
+      expect(r.byo).toBe(true);
+      expect(r.unknownSafe).toBe(true);
+    });
+
+    test('_geiShowSharedChrome renders the full chrome for BOTH modes from the one function', async () => {
+      const r = await page.evaluate(() => {
+        const probe = prefix => {
+          _geiShowSharedChrome(prefix);
+          return {
+            title: !!document.getElementById(prefix + '-tbar-title'),
+            scope: !!document.getElementById(prefix + '-scope-wrap'),
+            gauge: !!document.getElementById(prefix + '-profit-gauge'),
+            deposit: !!document.getElementById(prefix + '-deposit-pct'),
+            actions: (document.getElementById(prefix + '-actions-wrap')?.innerHTML || '').includes('_geiSignInPerson()'),
+            sub: (document.getElementById(prefix + '-page-sub')?.textContent || '') !== '—',
+          };
+        };
+        return { tm: probe('tm'), byo: probe('byo') };
+      });
+      for (const mode of ['tm', 'byo']) {
+        for (const part of ['title', 'scope', 'gauge', 'deposit', 'actions', 'sub']) {
+          expect(r[mode][part], `${mode} ${part}`).toBe(true);
+        }
+      }
+    });
+
+    test('_tmHidePage/_byoHidePage still hide their page and restore the legacy toolbar (shared _geiHidePage)', async () => {
+      const r = await page.evaluate(() => {
+        const probe = (showFn, hideFn, pageId) => {
+          showFn();
+          hideFn();
+          return {
+            pageHidden: document.getElementById(pageId)?.style.display === 'none',
+            tbarRestored: document.getElementById('gei-old-tbar')?.style.display === '',
+          };
+        };
+        return {
+          tm: probe(_tmShowPage, _tmHidePage, 'gei-tm-page'),
+          byo: probe(_byoShowPage, _byoHidePage, 'gei-byo-page'),
+        };
+      });
+      expect(r.tm.pageHidden).toBe(true);
+      expect(r.tm.tbarRestored).toBe(true);
+      expect(r.byo.pageHidden).toBe(true);
+      expect(r.byo.tbarRestored).toBe(true);
+    });
+  });
+
+  test.describe('Draft handling — type-aware reuse, resume chooser, fresh versions', () => {
+    test('regression: picking Time & Materials never resumes a Build Your Own draft (cross-type bleed)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90101, name: 'TypeGuard Client', addr: '1 Guard Rd' };
+        clients = clients.filter(x => x.id !== 90101).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90101);
+        const byoDraft = { id: 901011, client_id: 90101, client_name: c.name, amount: 500, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'painting', isFreeForm: true, geiLines: [], geiTaxPct: 0, byoItems: [{ id: 1, section: 'Interior', label: 'Old BYO Item', price: 500, on: true }] };
+        bids.unshift(byoDraft);
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        return {
+          resumedTheByoDraft: _geiEditBidId === 901011,
+          isTM: _geiIsTM, isFreeForm: _geiIsFreeForm,
+          byoItemsLeaked: _byoItems.length > 0,
+          newDraftIsTypeStamped: !!bids.find(x => x.id === _geiEditBidId)?.isTM,
+        };
+      });
+      expect(r.resumedTheByoDraft, 'a T&M open must never resume a BYO draft').toBe(false);
+      expect(r.isTM).toBe(true);
+      expect(r.isFreeForm).toBe(false);
+      expect(r.byoItemsLeaked, 'no BYO items may leak into the T&M estimate').toBe(false);
+      expect(r.newDraftIsTypeStamped, 'the fresh stub must be type-stamped so re-picking T&M finds it').toBe(true);
+    });
+
+    test('_geiOpenModeEstimate shows the resume-or-fresh chooser for a non-empty same-type draft; "start fresh" creates a second version', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90102, name: 'Chooser Client', addr: '2 Chooser Rd' };
+        clients = clients.filter(x => x.id !== 90102).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90102);
+        const byoDraft = { id: 901021, client_id: 90102, client_name: c.name, amount: 750, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'painting', isFreeForm: true, geiLines: [], geiTaxPct: 0, byoItems: [{ id: 1, section: 'Interior', label: 'V1 Item', price: 750, on: true }] };
+        bids.unshift(byoDraft);
+        _geiOpenModeEstimate(c, null, 'byo');
+        const chooser = document.getElementById('_gei-draft-chooser');
+        const chooserShown = !!chooser;
+        const listsDraft = (chooser?.textContent || '').includes('750');
+        // Take the "start fresh" path
+        _geiStartFreshDraft();
+        const freshId = _geiEditBidId;
+        const chooserGone = !document.getElementById('_gei-draft-chooser');
+        const bothVersionsExist = !!bids.find(x => x.id === 901021) && !!bids.find(x => x.id === freshId) && freshId !== 901021;
+        const freshIsEmptyByo = !!bids.find(x => x.id === freshId)?.isFreeForm && _byoItems.length === 0;
+        return { chooserShown, listsDraft, chooserGone, bothVersionsExist, freshIsEmptyByo };
+      });
+      expect(r.chooserShown, 'non-empty same-type draft must trigger the chooser, not a silent resume').toBe(true);
+      expect(r.listsDraft).toBe(true);
+      expect(r.chooserGone).toBe(true);
+      expect(r.bothVersionsExist, 'start fresh must create a second version alongside the old draft').toBe(true);
+      expect(r.freshIsEmptyByo).toBe(true);
+    });
+
+    test('empty stubs are reused silently — no chooser, no duplicate blanks', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90103, name: 'Stub Client', addr: '3 Stub Rd' };
+        clients = clients.filter(x => x.id !== 90103).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90103);
+        _geiOpenModeEstimate(c, null, 'tm');
+        const firstId = _geiEditBidId;
+        _geiOpenModeEstimate(c, null, 'tm');
+        const secondId = _geiEditBidId;
+        const chooserShown = !!document.getElementById('_gei-draft-chooser');
+        document.getElementById('_gei-draft-chooser')?.remove();
+        const stubCount = bids.filter(x => x.client_id === 90103).length;
+        return { sameStubReused: firstId === secondId, chooserShown, stubCount };
+      });
+      expect(r.chooserShown, 'empty stubs must not trigger the chooser').toBe(false);
+      expect(r.sameStubReused, 'reopening the same type must reuse the empty stub, not spawn another').toBe(true);
+      expect(r.stubCount).toBe(1);
+    });
+
+    test('deletion-verification: materials markup was removed from T&M — no UI field, no hidden multiplier on displayed prices', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90109, name: 'No Markup Client', addr: '9 No Markup Rd' };
+        clients = clients.filter(x => x.id !== 90109).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90109);
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        goGeiStep(2);
+        _tmRatePerMan = 0; _tmEstHours = 0; _tmCrewCount = 1;
+        _geiLines = [{ desc: 'Fixtures', qty: 1, rate: 500, total: 500 }];
+        if (typeof _tmRenderMatList === 'function') _tmRenderMatList();
+        if (typeof _tmInputChange === 'function') _tmInputChange();
+        const matListText = document.getElementById('tm-mat-list')?.innerHTML || '';
+        const railMat = document.getElementById('tm-rail-mat')?.textContent || '';
+        return {
+          markupInputExists: !!document.getElementById('tm-i-markup'),
+          markupVarExists: typeof _tmMatMarkup !== 'undefined',
+          matListShowsRaw: matListText.includes('$500'),
+          railShowsRaw: railMat.includes('500'),
+        };
+      });
+      expect(r.markupInputExists, 'the "Materials markup %" input must be gone').toBe(false);
+      expect(r.markupVarExists, '_tmMatMarkup must no longer exist').toBe(false);
+      expect(r.matListShowsRaw, 'material row must show the raw $500 cost, no hidden markup applied').toBe(true);
+      expect(r.railShowsRaw, 'rail materials total must show the raw cost, no hidden markup applied').toBe(true);
+    });
+
+    test('regression: an autosaved T&M draft round-trips — resumes as T&M with materials, NTE cap, cadence, and cap action intact', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90106, name: 'TM Roundtrip Client', addr: '6 Roundtrip Rd' };
+        clients = clients.filter(x => x.id !== 90106).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90106);
+        // Build a T&M estimate the way a user would
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        goGeiStep(2);
+        _tmRatePerMan = 75; _tmEstHours = 24; _tmCrewCount = 3; _tmBillingCycle = 'milestone';
+        _geiLines = [{ desc: 'Paint & primer', qty: 1, rate: 800, total: 800, notes: 'SW Duration' }];
+        const nteEl = document.getElementById('tm-i-nte'); if (nteEl) nteEl.value = '12,000';
+        const capEl = document.getElementById('tm-i-cap-action'); if (capEl) capEl.value = 'Continue at agreed rate';
+        _byoAutosave(); // what every keystroke triggers — NOT the explicit Save draft button
+        const bidId = _geiEditBidId;
+        const saved = bids.find(x => x.id === bidId);
+        const savedShape = {
+          isTM: !!saved.isTM, isFreeForm: !!saved.isFreeForm,
+          matCount: (saved.geiLines || []).length,
+          nteCap: saved.tmNteCap, capAction: saved.tmCapAction, cadence: saved.tmBillingCycle,
+        };
+        // Simulate leaving and coming back via the feed's Resume button
+        _geiLines = []; _tmRatePerMan = 0; _tmEstHours = 0; _geiIsFreeForm = true; _geiIsTM = false;
+        openGenericEstimate(getClientById(90106), bidId, 'general');
+        return {
+          savedShape,
+          resumedAsTM: _geiIsTM, resumedAsByo: _geiIsFreeForm,
+          rate: _tmRatePerMan, hours: _tmEstHours, crew: _tmCrewCount, cadence: _tmBillingCycle,
+          // _tmInputChange legitimately re-adds the synthetic labor line on
+          // resume (rate×crew×hours) — the material categories are what must survive.
+          matsRestored: _geiLines.filter(l => !l._tmLabor).length,
+        };
+      });
+      expect(r.savedShape.isTM).toBe(true);
+      expect(r.savedShape.isFreeForm, 'autosave must never stamp isFreeForm on a T&M bid').toBe(false);
+      expect(r.savedShape.matCount, 'autosave must capture material categories, not just rate numbers').toBe(1);
+      expect(r.savedShape.nteCap).toBe(12000);
+      expect(r.savedShape.capAction).toBe('Continue at agreed rate');
+      expect(r.savedShape.cadence).toBe('milestone');
+      expect(r.resumedAsTM, 'the autosaved draft must resume as T&M').toBe(true);
+      expect(r.resumedAsByo).toBe(false);
+      expect(r.rate).toBe(75);
+      expect(r.hours).toBe(24);
+      expect(r.crew).toBe(3);
+      expect(r.cadence).toBe('milestone');
+      expect(r.matsRestored).toBe(1);
+    });
+
+    test('regression: leaving the "Name your proposal" field autosaves the name — no explicit Save needed to survive a back-out', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90108, name: 'Name Autosave Client', addr: '8 Name Rd' };
+        clients = clients.filter(x => x.id !== 90108).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90108);
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        const bidId = _geiEditBidId;
+        const descEl = document.getElementById('gei-desc');
+        descEl.value = 'Kitchen Remodel Quote';
+        descEl.dispatchEvent(new Event('blur')); // simulate the user clicking out — no Save click
+        const saved = bids.find(x => x.id === bidId);
+        return { type: saved?.type, geiDesc: saved?.geiDesc };
+      });
+      expect(r.type).toBe('Kitchen Remodel Quote');
+      expect(r.geiDesc).toBe('Kitchen Remodel Quote');
+    });
+
+    test('regression: a legacy dual-flag record (isTM + isFreeForm, from the old autosave) resumes as T&M, not empty BYO', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90107, name: 'Dual Flag Client', addr: '7 Dual Rd' };
+        clients = clients.filter(x => x.id !== 90107).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90107);
+        bids.unshift({ id: 901071, client_id: 90107, client_name: c.name, amount: 2000, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'general', isTM: true, isFreeForm: true, tmRatePerMan: 50, tmEstHours: 40, tmCrewCount: 1, geiLines: [{ desc: 'Materials', qty: 1, rate: 500, total: 500 }], geiTaxPct: 0 });
+        openGenericEstimate(getClientById(90107), 901071, 'general');
+        return { isTM: _geiIsTM, isFreeForm: _geiIsFreeForm, rate: _tmRatePerMan };
+      });
+      expect(r.isTM, 'isTM must take precedence over a stray isFreeForm flag').toBe(true);
+      expect(r.isFreeForm).toBe(false);
+      expect(r.rate).toBe(50);
+    });
+
+    test('regression: explicit bid resume derives type from the bid record — stale mode flags cannot corrupt it (feed Resume button)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90104, name: 'Stale Flag Client', addr: '4 Stale Rd' };
+        clients = clients.filter(x => x.id !== 90104).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90104);
+        const tmDraft = { id: 901041, client_id: 90104, client_name: c.name, amount: 1200, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'general', isTM: true, tmRatePerMan: 60, tmEstHours: 16, tmCrewCount: 2, geiLines: [], geiTaxPct: 0 };
+        bids.unshift(tmDraft);
+        // Simulate having just been inside a BYO estimate (the stale-state bug)
+        _geiIsFreeForm = true; _geiIsTM = false;
+        openGenericEstimate(getClientById(90104), 901041, 'general');
+        return { isTM: _geiIsTM, isFreeForm: _geiIsFreeForm, rate: _tmRatePerMan };
+      });
+      expect(r.isTM, 'resuming a T&M bid must open as T&M regardless of stale flags').toBe(true);
+      expect(r.isFreeForm).toBe(false);
+      expect(r.rate).toBe(60);
+    });
+
+    test('T&M gauge feeds TRUE cost — owner-only crew costs $0 labor; materials at raw cost (not the billed labor)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90108, name: 'TrueCost Client', addr: '8 TrueCost Rd' };
+        clients = clients.filter(x => x.id !== 90108).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90108);
+        const _savedEmps = S.employees; S.employees = []; // solo operator — the owner IS the crew
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        goGeiStep(2);
+        _tmRatePerMan = 50; _tmEstHours = 40; _tmCrewCount = 2;
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 1000, total: 1000, _tmLabor: false }];
+        const costEl = document.getElementById('tm-expected-cost');
+        if (costEl) { costEl.value = ''; delete costEl.dataset.userSet; }
+        _tmInputChange();
+        const fedCost = parseFloat(costEl?.value) || 0;
+        S.employees = _savedEmps;
+        return { fedCost };
+      });
+      // Solo owner: labor costs the business $0 — cost is materials at raw cost only.
+      // The old code fed $4,000 (2 crew × $50 × 40h of BILLED labor) as "cost".
+      expect(r.fedCost).toBe(1000);
+    });
+
+    test('T&M gauge cost includes selected crew payroll when employees are on the job (employee vs owner distinction)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90109, name: 'CrewCost Client', addr: '9 CrewCost Rd' };
+        clients = clients.filter(x => x.id !== 90109).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90109);
+        const _saved = { emps: S.employees, comp: typeof _teamComp !== 'undefined' ? _teamComp : undefined, loaded: typeof _teamCompLoaded !== 'undefined' ? _teamCompLoaded : undefined, burden: S.laborBurden };
+        S.employees = [{ id: 1, name: 'Joe Crew', email: 'joe@crew.com' }];
+        S.laborBurden = 1.3;
+        _teamComp = { 'joe@crew.com': { pay_type: 'hourly', pay_rate: 30 } }; // $39/hr loaded
+        _teamCompLoaded = true;
+        openGenericEstimate(c, null, null, { mode: 'tm' });
+        goGeiStep(2);
+        // Drive the DOM the way a user does — _tmInputChange derives hours from
+        // the days input, so setting the module variable alone gets overwritten.
+        const rateEl = document.getElementById('tm-i-rate'); if (rateEl) rateEl.value = '60';
+        const daysEl = document.getElementById('tm-i-days'); if (daysEl) daysEl.value = '2'; // 16h
+        _estCrew = ['joe@crew.com']; // Joe is on the job — his real wage is a cost
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
+        const costEl = document.getElementById('tm-expected-cost');
+        if (costEl) { costEl.value = ''; delete costEl.dataset.userSet; }
+        _tmInputChange();
+        const fedCost = parseFloat(costEl?.value) || 0;
+        const pickerVisible = (document.getElementById('tm-labor-cost-wrap')?.style.display) !== 'none';
+        S.employees = _saved.emps; if (_saved.comp !== undefined) _teamComp = _saved.comp; if (_saved.loaded !== undefined) _teamCompLoaded = _saved.loaded; S.laborBurden = _saved.burden;
+        _estCrew = [];
+        return { fedCost, pickerVisible };
+      });
+      // $500 materials + 16h × $39 loaded (Joe) = $1,124 true cost
+      expect(r.fedCost).toBe(1124);
+      expect(r.pickerVisible, 'the shared crew picker must render on the T&M rail when employees exist').toBe(true);
+    });
+
+    test('gauge bands: 68% margin is now amber (owner tightened green to top out at 55%)', async () => {
+      const r = await page.evaluate(() => {
+        if (!document.getElementById('gb1-gauge-wrap')) { const w = document.createElement('div'); w.id = 'gb1-gauge-wrap'; document.body.appendChild(w); }
+        _geiRenderProfitGauge('gb1', 'void(0)');
+        const costEl = document.getElementById('gb1-expected-cost');
+        costEl.value = '3200';
+        const gWrap = document.getElementById('gb1-profit-gauge');
+        gWrap.style.display = ''; gWrap.style.opacity = '1';
+        _updateMarginGauge('gb1', 10000); // 68% margin
+        const amber = document.getElementById('gb1-gauge-pct')?.style.color;
+        _updateMarginGauge('gb1', 5000); // (5000-3200)/5000 = 36% margin
+        const green = document.getElementById('gb1-gauge-pct')?.style.color;
+        document.getElementById('gb1-gauge-wrap')?.remove();
+        return { amber, green };
+      });
+      expect(r.amber).toBe('rgb(245, 158, 11)');
+      expect(r.green).toBe('rgb(34, 197, 94)');
+    });
+
+    test('auto-resume: marker set while estimating, cleared by deliberate nav away, boot resume honors and rejects correctly', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90110, name: 'AutoResume Client', addr: '10 Resume Rd' };
+        clients = clients.filter(x => x.id !== 90110).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90110);
+        localStorage.removeItem('zp3_active_estimate');
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2); // shows the page → marker written
+        const markerAfterOpen = JSON.parse(localStorage.getItem('zp3_active_estimate') || 'null');
+        const bidId = _geiEditBidId;
+        // Simulate reload: land on dashboard, then run the boot hook
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-dash')?.classList.add('active');
+        const resumed = _maybeResumeActiveEstimate();
+        const backOnEstimate = document.querySelector('.pg.active')?.id === 'pg-est-generic';
+        const resumedSameBid = _geiEditBidId === bidId;
+        // Deliberate exit via bottom nav must clear the marker
+        goPg('pg-dash');
+        const markerAfterNavAway = localStorage.getItem('zp3_active_estimate');
+        // With no marker, boot resume must do nothing
+        const resumedAgain = _maybeResumeActiveEstimate();
+        return { markerSet: !!markerAfterOpen && String(markerAfterOpen.bidId) === String(bidId), resumed, backOnEstimate, resumedSameBid, markerAfterNavAway, resumedAgain };
+      });
+      expect(r.markerSet, 'opening an estimate must write the auto-resume marker').toBe(true);
+      expect(r.resumed, 'boot must jump back into the open estimate').toBe(true);
+      expect(r.backOnEstimate).toBe(true);
+      expect(r.resumedSameBid).toBe(true);
+      expect(r.markerAfterNavAway, 'deliberately leaving the estimate must clear the marker').toBe(null);
+      expect(r.resumedAgain).toBe(false);
+    });
+
+    test('auto-resume: refuses a different account\'s marker and a sent bid', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90111, name: 'Guard Client', addr: '11 Guard Rd' };
+        clients = clients.filter(x => x.id !== 90111).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90111);
+        bids.unshift({ id: 901111, client_id: 90111, client_name: c.name, amount: 100, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'general', isFreeForm: true, geiLines: [], geiTaxPct: 0 });
+        // Marker stamped by a DIFFERENT account
+        localStorage.setItem('zp3_active_estimate', JSON.stringify({ bidId: 901111, clientId: 90111, uid: 'someone-else', ts: Date.now() }));
+        const otherAccount = _maybeResumeActiveEstimate();
+        const clearedAfterReject = localStorage.getItem('zp3_active_estimate');
+        // Marker for a bid that's already been SENT (signingToken) — never hijack into it
+        bids.find(x => x.id === 901111).signingToken = 'tok123';
+        localStorage.setItem('zp3_active_estimate', JSON.stringify({ bidId: 901111, clientId: 90111, uid: (typeof _supaUser !== 'undefined' && _supaUser) ? _supaUser.id : null, ts: Date.now() }));
+        const sentBid = _maybeResumeActiveEstimate();
+        return { otherAccount, clearedAfterReject, sentBid };
+      });
+      expect(r.otherAccount, 'a marker from another account must be rejected').toBe(false);
+      expect(r.clearedAfterReject).toBe(null);
+      expect(r.sentBid, 'a sent bid must never be auto-resumed into').toBe(false);
+    });
+
+    test('_estimateTypeLabel — spelled out, never an acronym', async () => {
+      const r = await page.evaluate(() => ({
+        tm: _estimateTypeLabel({ isTM: true }),
+        byo: _estimateTypeLabel({ isFreeForm: true }),
+        legacy: _estimateTypeLabel({}),
+        nul: _estimateTypeLabel(null),
+      }));
+      expect(r.tm).toBe('Time & Materials');
+      expect(r.byo).toBe('Build Your Own');
+      expect(r.legacy).toBe('');
+      expect(r.nul).toBe('');
+    });
+
+    test('Make Money Today build section shows the spelled-out estimate type on draft cards', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90105, name: 'Feed Label Client', addr: '5 Feed Rd' };
+        clients = clients.filter(x => x.id !== 90105).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90105);
+        bids.unshift({ id: 901051, client_id: 90105, client_name: c.name, amount: 900, deposit: 0, status: 'Draft', draft: true, bid_date: todayKey(), trade_type: 'general', isTM: true, geiLines: [], geiTaxPct: 0 });
+        // §11.6: sections render items into innerHTML only when expanded
+        window._mmtCol_build = false;
+        renderTodayFeed();
+        // Scope assertions to THIS bid's card — the shared feed contains cards
+        // for other tests' fixtures (including a client literally named
+        // "TM Deposit Client"), so a feed-wide acronym scan false-positives.
+        const card = [...document.querySelectorAll('#dash-money-feed .tf-card')].find(el => el.textContent.includes('Feed Label Client'));
+        const cardText = card?.textContent || '';
+        return {
+          cardFound: !!card,
+          hasSpelledOut: cardText.includes('Time & Materials'),
+          hasAcronym: /T&M|BYO/.test(cardText.replace(/Time & Materials|Build Your Own/g, '')),
+        };
+      });
+      expect(r.cardFound, 'the draft card must be in the feed for this test to mean anything').toBe(true);
+      expect(r.hasSpelledOut, 'the card must show the spelled-out estimate type').toBe(true);
+      expect(r.hasAcronym, 'no acronyms on the card').toBe(false);
+    });
+  });
+
+  test.describe('Proposal T&C — single clause list drives both modes (parity regression)', () => {
+    // Captures the generated T&C section for one mode via the preview overlay.
+    const captureTerms = (page, isTM, clientId) => page.evaluate(async ({ isTM, clientId }) => {
+      const c = { id: clientId, name: 'Parity Client', addr: '1 Parity Rd, Wichita KS 67202' };
+      clients = clients.filter(x => x.id !== clientId).concat([c]);
+      bids = bids.filter(x => x.client_id !== clientId);
+      openGenericEstimate(c, null, 'general');
+      if (isTM) {
+        _geiIsTM = true; _geiIsFreeForm = false;
+        _tmRatePerMan = 50; _tmEstHours = 16; _tmCrewCount = 1;
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
+      } else {
+        _geiIsTM = false; _geiIsFreeForm = true;
+        _byoItems = [
+          { id: 1, section: 'Interior', label: 'Work', price: 400, on: true },
+          { id: 2, section: 'Materials', label: 'Supplies', price: 100, on: true },
+        ];
+      }
+      let captured = '';
+      const orig = window._showProposalPreviewOverlay;
+      window._showProposalPreviewOverlay = html => { captured = html; };
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      window._showProposalPreviewOverlay = orig;
+      _geiIsTM = false;
+      const clauses = [];
+      const re = /<div>(\d+)\. <strong>(.*?):<\/strong> ([\s\S]*?)<\/div>/g;
+      let m;
+      while ((m = re.exec(captured)) !== null) clauses.push({ n: +m[1], title: m[2], body: m[3] });
+      return { err, clauses, hasDepRow: captured.includes('Due Before Work Begins') };
+    }, { isTM, clientId });
+
+    test('T&M and BYO T&C come from the same clause list — shared clauses are byte-identical, mode clauses differ, numbering intact', async () => {
+      const tm = await captureTerms(page, true, 88901);
+      const byo = await captureTerms(page, false, 88902);
+      expect(tm.err).toBe(null);
+      expect(byo.err).toBe(null);
+      expect(tm.hasDepRow).toBe(true);
+      expect(byo.hasDepRow).toBe(true);
+
+      // Numbering: generated from array order, sequential from 1 in both modes.
+      expect(tm.clauses.length).toBe(13);
+      expect(byo.clauses.length).toBe(11);
+      tm.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
+      byo.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
+
+      // Mode-specific heads (sign.html's legacy patcher depends on these shapes).
+      expect(tm.clauses[0].title).toBe('Contract type');
+      expect(tm.clauses[1].title).toBe('Mobilization deposit');
+      expect(tm.clauses[3].title).toBe('Billing');
+      expect(byo.clauses[0].title).toBe('Deposit');
+
+      // Shared tail: same titles in the same order in both modes...
+      const sharedTitles = ['Cancellation &amp; Deposits', 'Change Orders', 'Limitation of Liability', 'Mechanic&#39;s Lien', 'Finance Charges', 'Workmanship Warranty', 'Permits &amp; Inspections', 'Schedule &amp; Delays', 'Insurance', 'Dispute Resolution'];
+      const tailOf = clauses => clauses.filter(c => sharedTitles.includes(c.title));
+      const tmTail = tailOf(tm.clauses), byoTail = tailOf(byo.clauses);
+      expect(tmTail.map(c => c.title)).toEqual(sharedTitles);
+      expect(byoTail.map(c => c.title)).toEqual(sharedTitles);
+
+      // ...and BYTE-IDENTICAL bodies — the whole point of the single clause list.
+      // Same trade + same client state, so every shared clause must match exactly.
+      for (let i = 0; i < sharedTitles.length; i++) {
+        expect(tmTail[i].body, `shared clause "${sharedTitles[i]}" must be identical in both modes`).toBe(byoTail[i].body);
+      }
+    });
+
+    test('regression: preview overlay applies the same T&C accordion as sign.html (was a raw uncollapsed dump — not actually "how they\'ll see it")', async () => {
+      const r = await page.evaluate(async () => {
+        const c = { id: 88904, name: 'Accordion Client', addr: '1 Accordion Rd' };
+        clients = clients.filter(x => x.id !== 88904).concat([c]);
+        bids = bids.filter(x => x.client_id !== 88904);
+        openGenericEstimate(c, null, 'general');
+        _geiIsTM = true; _geiIsFreeForm = false;
+        _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
+        _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
+        await sendGenericProposal(true); // real _showProposalPreviewOverlay runs — no interception this time
+        const ov = document.getElementById('_prop-preview-ov');
+        const res = {
+          isFn: typeof _applyTermsAccordion === 'function',
+          hasToggleBtn: !!ov?.querySelector('[data-terms-toggle]'),
+          termsHeaderHidden: (() => {
+            const hdr = [...(ov?.querySelectorAll('div') || [])].find(d => d.dataset.termsHdr === '1');
+            return hdr ? hdr.style.display === 'none' : false;
+          })(),
+        };
+        ov?.remove();
+        _geiIsTM = false;
+        return res;
+      });
+      expect(r.isFn).toBe(true);
+      expect(r.hasToggleBtn).toBe(true);
+      expect(r.termsHeaderHidden).toBe(true);
+    });
+
+    test('regression: selected scope-chip descriptions carry into the proposal even when BYO has line items (was silently dropped by an if/else)', async () => {
+      const r = await page.evaluate(async () => {
+        const c = { id: 88903, name: 'Scope Carry Client', addr: '1 Scope Rd' };
+        clients = clients.filter(x => x.id !== 88903).concat([c]);
+        bids = bids.filter(x => x.client_id !== 88903);
+        openGenericEstimate(c, null, 'painting');
+        _geiIsFreeForm = true;
+        _geiIsTM = false;
+        _geiScopeNoScope = false;
+        // A chip WITH a clientDesc, per TRADE_SCOPE_CHIPS.painting.
+        _geiScopeChips = ['Interior painting'];
+        // BYO also has line items on — this used to make the code take the
+        // byoItems branch and skip the scope-chip section entirely.
+        _byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 300, on: true }];
+        let captured = '';
+        const orig = window._showProposalPreviewOverlay;
+        window._showProposalPreviewOverlay = html => { captured = html; };
+        let err = null;
+        try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+        window._showProposalPreviewOverlay = orig;
+        return {
+          err,
+          hasChipLabel: captured.includes('Interior painting'),
+          hasChipDesc: captured.includes('Walls, ceilings, and trim in agreed rooms'),
+          hasByoItem: captured.includes('>Walls<') || captured.includes('Walls</li>') || captured.includes('Walls<span'),
+        };
+      });
+      expect(r.err).toBe(null);
+      expect(r.hasChipLabel).toBe(true);
+      expect(r.hasChipDesc).toBe(true);
+      // BYO's own line-item detail must still show too — this is additive, not a replacement.
+      expect(r.hasByoItem).toBe(true);
     });
   });
 
@@ -2456,6 +3293,27 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         finally { document.getElementById('_scope-sheet-ov')?.remove(); localStorage.removeItem('zp3_scope_sheet_data'); }
       });
       expect(r.ok).toBe(true);
+    });
+
+    test('regression: sheet is a centered .zmodal, not a bottom-pinned sheet (was position:fixed;bottom:0, overriding the overlay\'s centering)', async () => {
+      const r = await page.evaluate(() => {
+        _geiTrade = 'painting'; _geiScopeChips = [];
+        _openScopeSheet('byo-scope-wrap');
+        const ov = document.getElementById('_scope-sheet-ov');
+        const sheet = ov?.firstElementChild;
+        const res = {
+          overlayCenters: getComputedStyle(ov).alignItems === 'center' && getComputedStyle(ov).justifyContent === 'center',
+          sheetIsZmodal: sheet?.classList.contains('zmodal'),
+          sheetPosition: sheet ? getComputedStyle(sheet).position : null,
+        };
+        ov?.remove();
+        return res;
+      });
+      expect(r.overlayCenters).toBe(true);
+      expect(r.sheetIsZmodal).toBe(true);
+      // A real .zmodal participates in the overlay's flexbox centering (static
+      // position) — the old bottom-sheet hardcoded position:fixed to escape it.
+      expect(r.sheetPosition).not.toBe('fixed');
     });
   });
 

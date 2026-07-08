@@ -163,6 +163,8 @@ test.describe('Lien management lifecycle', () => {
       try { openLienPanel(bidId); } catch(e) { return { error: e.message }; }
       return {
         visible:  panelEl.style.display !== 'none',
+        // Comma-formatted now ("5,000.00") — strip commas before parsing, same
+        // as the app's own _moneyVal read helper.
         amount:   (document.getElementById('lien-amount') || {}).value || null,
         status:   (document.getElementById('lien-status') || {}).value || null,
         county:   (document.getElementById('lien-county') || {}).value || null,
@@ -171,7 +173,7 @@ test.describe('Lien management lifecycle', () => {
     }, [LIEN_BID_ID]);
     if (result && !result.error) {
       expect(result.visible).toBe(true);
-      if (result.amount !== null) expect(parseFloat(result.amount)).toBeCloseTo(5000, 0);
+      if (result.amount !== null) expect(parseFloat(result.amount.replace(/,/g, ''))).toBeCloseTo(5000, 0);
       if (result.status !== null) expect(result.status).toBe('intent');
       expect(result.dateSet).toBe(true);
     }
@@ -180,13 +182,21 @@ test.describe('Lien management lifecycle', () => {
   test('saveLien — adds lien record to liens array', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof saveLien !== 'function' || typeof liens === 'undefined') return null;
+      // Route through the real openLienPanel(bidId) to set activeLienBidId —
+      // it's a plain module-scope `let`, not a window property, so
+      // `window.activeLienBidId = bidId` (the old pattern here) never actually
+      // reached it. That made this test silently depend on the PRIOR test
+      // ("openLienPanel — populates fields") having already run successfully
+      // to set the real variable as a side effect — if that test ever failed
+      // for any reason, this one broke too, with a confusing unrelated error.
+      // Self-contained now: sets its own state instead of inheriting it.
+      if (typeof openLienPanel === 'function') openLienPanel(bidId);
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('lien-date',   '2026-05-20');
       set('lien-status', 'intent');
       set('lien-amount', '5000');
       set('lien-county', 'Sedgwick County');
       set('lien-notes',  'E2E test lien');
-      window.activeLienBidId = bidId;
       // Stub side effects
       const _save = window.saveAll; const _close = window.closeLienPanel;
       const _render1 = window.renderCDBids; const _render2 = window.renderDashActiveLiens;
@@ -224,10 +234,11 @@ test.describe('Lien management lifecycle', () => {
   test('saveLien with filed status — triggers high_risk on client', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof saveLien !== 'function') return null;
+      // Real call, not window.activeLienBidId= — see the note in the previous test.
+      if (typeof openLienPanel === 'function') openLienPanel(bidId);
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('lien-date', '2026-05-21'); set('lien-status', 'filed');
       set('lien-amount', '5000');     set('lien-county', 'Sedgwick County');
-      window.activeLienBidId = bidId;
       const _save = window.saveAll; const _close = window.closeLienPanel;
       const _r1 = window.renderCDBids; const _r2 = window.renderDashActiveLiens;
       const _print = window.printKansasLien;
@@ -261,10 +272,11 @@ test.describe('Lien management lifecycle', () => {
   test('saveLien awaits the cloud write (_flushSaveNow) before resolving — does not just schedule it', async () => {
     const result = await page.evaluate(async ([bidId]) => {
       if (typeof saveLien !== 'function') return null;
+      // Real call, not window.activeLienBidId= — see the note two tests up.
+      if (typeof openLienPanel === 'function') openLienPanel(bidId);
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('lien-date', '2026-05-22'); set('lien-status', 'intent');
       set('lien-amount', '2500'); set('lien-county', 'Sedgwick County');
-      window.activeLienBidId = bidId;
       const _save = window.saveAll; const _close = window.closeLienPanel;
       const _r1 = window.renderCDBids; const _r2 = window.renderDashActiveLiens;
       const _flush = window._flushSaveNow;
@@ -631,6 +643,34 @@ test.describe('Pending bid delete confirmation', () => {
       window.saveAll = _save; window.renderDash = _render;
       return { before, after };
     }, [DEL_BID_ID]);
+    if (result !== null) {
+      expect(result.before).toBe(1);
+      expect(result.after).toBe(0);
+    }
+  });
+
+  test('discardInProgressBid — regression: still deletes when the bid carries a STRING id (realtime-delivered rows can have one, while this button\'s onclick always embeds a bare numeric literal)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof discardInProgressBid !== 'function') return null;
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      const _save = window.saveAll; const _render = window.renderDash;
+      window.saveAll = () => {}; window.renderDash = () => {};
+      window._uploadClientHub = () => Promise.resolve();
+      const stringId = String(Date.now());
+      const cid = Date.now() + 1;
+      clients.push({ id: cid, name: 'String Id Regression Client', addr: '1 Str St' });
+      bids.push({ id: stringId, client_id: cid, status: 'Draft', draft: true, geiLines: [] });
+      const before = bids.filter(b => String(b.id) === stringId).length;
+      // Same as the real card's onclick: a bare unquoted numeric literal, so the argument
+      // discardInProgressBid actually receives here is a NUMBER, not the original string.
+      discardInProgressBid(Number(stringId));
+      const yes = document.querySelector('#zmodal-yes');
+      if (yes) yes.click();
+      const after = bids.filter(b => String(b.id) === stringId).length;
+      clients = clients.filter(c => c.id !== cid);
+      window.saveAll = _save; window.renderDash = _render;
+      return { before, after };
+    });
     if (result !== null) {
       expect(result.before).toBe(1);
       expect(result.after).toBe(0);
@@ -1050,6 +1090,24 @@ test.describe('sign.html — portfolio discount offer', () => {
     });
     expect(accepted).toBe(false);
   });
+
+  // Owner directive: the offer sat above the scope/terms card (first thing a
+  // client saw, before reading what they're buying) — moved below it so the
+  // client reads the scope first, and the offer no longer uses a competing
+  // gradient hero banner (.po-hdr/.po-body) — it's a plain card like the rest
+  // of the page now.
+  test('portfolio card appears AFTER Scope & terms in DOM order, as a plain card (no gradient hero banner)', async () => {
+    const r = await page.evaluate(() => {
+      const scope = document.getElementById('prop-html');
+      const offer = document.getElementById('portfolio-offer-card');
+      return {
+        scopeBeforeOffer: !!(scope && offer && (scope.compareDocumentPosition(offer) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        isPlainCard: !!(offer && offer.classList.contains('card')),
+      };
+    });
+    expect(r.scopeBeforeOffer, 'client should read the scope of work before seeing the optional photo-discount pitch').toBe(true);
+    expect(r.isPlainCard).toBe(true);
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1365,6 +1423,21 @@ test.describe('client.html — all 5 tabs', () => {
     const html = await page.evaluate(() => document.getElementById('view-payments')?.innerHTML || '');
     expect(html.length).toBeGreaterThan(10);
   });
+
+  // Owner directive: the client hub's loading moments were plain gray "Loading…"
+  // text with no animation — choppy/dead compared to the polish just added to
+  // sign.html. _launchCheckout writes its loading state synchronously before
+  // its first await, so it's already in the DOM the instant the call returns.
+  test('payment checkout modal shows an animated spinner while loading, not just static text', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _launchCheckout !== 'function' || typeof _hub === 'undefined') return null;
+      const bid = _hub.bids && _hub.bids[0];
+      if (!bid) return null;
+      _launchCheckout(bid.id, 100000, 'Pay').catch(() => {});
+      return document.getElementById('checkout-embed-container')?.innerHTML || '';
+    });
+    if (r !== null) expect(r).toContain('hub-spinner');
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1617,6 +1690,347 @@ test.describe('sign.html — proposal layout', () => {
 
   test('no console errors on sign page layout', async () => {
     assertNoErrors(page, 'sign page layout');
+  });
+});
+
+// ── Owner directive: audit + simplify sign.html (the actual signing/payment
+// screen — the most important one a client touches) — same "no decorative
+// emoji" pass already applied to the proposal document, plus real friction
+// fixes: the "how much to pay" decision used to be picked on the sign screen
+// AND restated on the payment screen; the meta grid (Signed by/Initials/Date/
+// Method) was pure filler; the portfolio upsell card sat above the scope/terms
+// a client hadn't read yet. Locked in here so none of it creeps back.
+test.describe('sign.html — audit/simplify pass (emoji, pay-tile placement, dead code)', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('no decorative pictographic emoji anywhere on the page', async () => {
+    const hasEmoji = await page.evaluate(() => {
+      const re = /[\u{1F300}-\u{1FAFF}]/u;
+      return re.test(document.documentElement.innerHTML);
+    });
+    expect(hasEmoji, 'sign.html must carry no decorative emoji — this is the most important screen a client touches').toBe(false);
+  });
+
+  test('dead CSS/markup from the pre-audit page is gone', async () => {
+    const r = await page.evaluate(() => ({
+      sigMetaCount: document.querySelectorAll('.sig-meta').length,
+      optCashCount: document.querySelectorAll('#opt-cash').length,
+    }));
+    expect(r.sigMetaCount, 'the Signed-by/Initials/Date/Method filler grid must be removed, not just hidden').toBe(0);
+    expect(r.optCashCount, '#opt-cash never existed in the current markup — confirms the dead querySelector reference was deleted, not just made to fail silently forever').toBe(0);
+  });
+
+  test('pay-amount tiles live on the payment screen (pg-pay), not the sign screen (pg-sign-action)', async () => {
+    const r = await page.evaluate(() => {
+      const tile = document.getElementById('pay-tile-dep');
+      const signAction = document.getElementById('pg-sign-action');
+      const pay = document.getElementById('pg-pay');
+      return {
+        tileExists: !!tile,
+        tileInSignAction: !!(tile && signAction && signAction.contains(tile)),
+        tileInPay: !!(tile && pay && pay.contains(tile)),
+      };
+    });
+    expect(r.tileExists).toBe(true);
+    expect(r.tileInSignAction, '"how much to pay" must not be decided a second time on the sign screen').toBe(false);
+    expect(r.tileInPay, 'the pay-amount choice belongs directly above the amount it produces, on the payment screen').toBe(true);
+  });
+
+  test('sticky bar: Approve & Sign is the first/primary button, Download PDF is a secondary link beneath it', async () => {
+    const r = await page.evaluate(() => {
+      const bar = document.getElementById('sticky-bar');
+      if (!bar) return null;
+      const buttons = Array.from(bar.querySelectorAll('button'));
+      return buttons.map(b => b.textContent.trim());
+    });
+    expect(r).not.toBeNull();
+    expect(r[0]).toContain('Approve');
+    expect(r.some(t => t.includes('Download PDF'))).toBe(true);
+    expect(r.indexOf(r.find(t => t.includes('Approve')))).toBeLessThan(r.indexOf(r.find(t => t.includes('Download PDF'))));
+  });
+
+  test('no console errors on the audit/simplify pass', async () => {
+    assertNoErrors(page, 'sign.html audit/simplify pass');
+  });
+
+  test('floating green call button is gone — contact is already covered by the "Questions?" row', async () => {
+    const r = await page.evaluate(() => ({
+      elCount: document.querySelectorAll('#float-call').length,
+      cssHasRule: document.documentElement.innerHTML.includes('float-call'),
+    }));
+    expect(r.elCount, '#float-call element must be deleted, not just hidden').toBe(0);
+    expect(r.cssHasRule, 'no stray #float-call reference should remain in markup/CSS').toBe(false);
+  });
+
+  test('"Powered by TradeDesk Pro" shows by default (poweredBy unset on this mock proposal)', async () => {
+    const footer = page.locator('#powered-by-footer');
+    await expect(footer).toBeVisible();
+  });
+});
+
+test.describe('sign.html — "Powered by" respects the contractor\'s Settings toggle', () => {
+  test('poweredBy:false on the proposal snapshot hides the footer', async ({ page }) => {
+    await mockAllExternal(page, { alreadySigned: false, proposalData: { ...MOCK_PROPOSAL, poweredBy: false }, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+    await expect(page.locator('#powered-by-footer')).toBeHidden();
+    assertNoErrors(page, 'poweredBy:false hides footer');
+  });
+});
+
+test.describe('sign.html — decline reason picker', () => {
+  let page;
+
+  test.beforeEach(async ({ page: p }) => {
+    page = p;
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+    // _supa.from(...).upsert(...) runs entirely through the in-memory shim (no real
+    // HTTP request to intercept) — spy on _supa.from directly instead, same pattern
+    // used elsewhere in this file for the mocked Supabase client.
+    await page.evaluate(() => {
+      window.__declineUpserts = [];
+      const origFrom = _supa.from.bind(_supa);
+      _supa.from = function(table) {
+        const q = origFrom(table);
+        if (table === 'signed_proposals') {
+          const origUpsert = q.upsert.bind(q);
+          q.upsert = function(row, opts) { window.__declineUpserts.push(row); return origUpsert(row, opts); };
+        }
+        return q;
+      };
+    });
+  });
+
+  test('decline modal shows the research-backed reason chips', async () => {
+    await page.evaluate(() => declineBid());
+    const labels = await page.locator('#decline-reason-opts .decline-reason-opt').allTextContents();
+    expect(labels).toEqual(['Price', 'Found another contractor', 'Not the right time', 'Doing it myself', 'Changed my mind', 'Other']);
+  });
+
+  test('picking "Other" reveals a free-text field; other reasons keep it hidden', async () => {
+    await page.evaluate(() => declineBid());
+    await page.locator('.decline-reason-opt[data-reason="Price"]').click();
+    await expect(page.locator('#decline-other-wrap')).toBeHidden();
+    await page.locator('.decline-reason-opt[data-reason="Other"]').click();
+    await expect(page.locator('#decline-other-wrap')).toBeVisible();
+  });
+
+  test('picking a reason and declining sends decline_reason on the signed_proposals upsert', async () => {
+    await page.evaluate(() => declineBid());
+    await page.locator('.decline-reason-opt[data-reason="Found another contractor"]').click();
+    await page.click('#decline-confirm-btn');
+    await page.waitForTimeout(500);
+    const rows = await page.evaluate(() => window.__declineUpserts);
+    expect(rows.length, 'no signed_proposals upsert was captured').toBe(1);
+    expect(rows[0].decline_reason).toBe('Found another contractor');
+    expect(rows[0].payment_status).toBe('declined');
+  });
+
+  test('declining with no reason picked still succeeds — reason is never a blocker', async () => {
+    await page.evaluate(() => declineBid());
+    await page.click('#decline-confirm-btn');
+    await page.waitForTimeout(500);
+    await expect(page.locator('#pg-declined')).toBeVisible();
+    assertNoErrors(page, 'decline with no reason picked');
+  });
+
+  test('"Other" reason with typed text is combined as "Other: <text>"', async () => {
+    await page.evaluate(() => declineBid());
+    await page.locator('.decline-reason-opt[data-reason="Other"]').click();
+    await page.fill('#decline-other-text', 'Budget got cut this quarter');
+    await page.click('#decline-confirm-btn');
+    await page.waitForTimeout(500);
+    const rows = await page.evaluate(() => window.__declineUpserts);
+    expect(rows.length).toBe(1);
+    expect(rows[0].decline_reason).toBe('Other: Budget got cut this quarter');
+  });
+
+  test('no console errors from the decline reason picker', async () => {
+    assertNoErrors(page, 'decline reason picker');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  PSYCH/UX CLOSE PASS — deposit-first framing, price-held date, endowed
+//  progress, risk reversal, peak-end confirmation (owner-approved 5)
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('sign.html — close-rate UX pass', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('sticky bar leads with the deposit lock-in line, not the total', async () => {
+    const line = page.locator('#sticky-deposit-line');
+    await expect(line).toBeVisible();
+    const text = await line.textContent();
+    expect(text).toContain('$594'); // MOCK_PROPOSAL.deposit — the action-sized number
+    expect(text).toContain('locks in your price and your spot on the schedule');
+    expect(text).not.toContain('$2,375'); // never the full total at the commitment moment
+  });
+
+  test('price-held chip shows the real 30-day validity date before the scope card', async () => {
+    const chip = page.locator('#price-held-chip');
+    await expect(chip).toBeVisible();
+    const text = await chip.textContent();
+    expect(text).toContain('This price is held for you until');
+    // MOCK_PROPOSAL.createdAt is "now" → +30 days must render a real date
+    const expected = new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    expect(text).toContain(expected);
+  });
+
+  test('endowed progress — every step-dots row starts with a completed first dot', async () => {
+    const rows = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.step-dots')).map(row => {
+        const dots = Array.from(row.querySelectorAll('.dot'));
+        return { count: dots.length, firstDone: dots[0]?.classList.contains('done') || false };
+      })
+    );
+    expect(rows.length).toBeGreaterThanOrEqual(5);
+    rows.forEach(r => {
+      expect(r.count).toBe(5);
+      expect(r.firstDone).toBe(true);
+    });
+  });
+
+  test('risk-reversal strip sits in the sig card with the state cancel window populated', async () => {
+    const r = await page.evaluate(() => {
+      const strip = document.getElementById('risk-reversal-strip');
+      const sigCard = document.getElementById('sig-card');
+      const ueta = document.querySelector('.sig-checkbox');
+      return {
+        inSigCard: !!(strip && sigCard && sigCard.contains(strip)),
+        beforeUeta: !!(strip && ueta && (strip.compareDocumentPosition(ueta) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        cancelText: document.getElementById('rr-cancel')?.textContent || '',
+        hasSvgChecks: (strip?.querySelectorAll('svg').length || 0) >= 3,
+      };
+    });
+    expect(r.inSigCard).toBe(true);
+    expect(r.beforeUeta, 'strip must sit above the agreement checkbox — where signing anxiety spikes').toBe(true);
+    expect(r.cancelText).toContain('3-day right to cancel'); // MOCK_PROPOSAL has no cancelDays → default 3
+    expect(r.hasSvgChecks).toBe(true);
+  });
+
+  test('peak-end — done page shows "What happens next" with three concrete steps', async () => {
+    await page.evaluate(() => showDone('cash'));
+    await expect(page.locator('#done-next')).toBeVisible();
+    const rows = await page.locator('#done-next-rows > div').count();
+    expect(rows).toBe(3);
+    const text = await page.locator('#done-next').textContent();
+    expect(text).toContain('What happens next');
+    expect(text).toContain('confirm your start date');
+    expect(text).toContain('project hub');
+  });
+
+  test('cash confirmation copy uses schedule lock-in framing, not "spot is reserved"', async () => {
+    const html = await page.content();
+    expect(html).not.toContain('your spot is reserved');
+    expect(html).toContain('locked in on the schedule');
+  });
+
+  test('no console errors from the close-rate UX pass', async () => {
+    assertNoErrors(page, 'close-rate UX pass');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SIGN-FLOW STEP FUNNEL — every milestone pings log-proposal-view with a step
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('sign.html — step funnel analytics', () => {
+  let page;
+
+  test.beforeEach(async ({ page: p }) => {
+    page = p;
+    // Record every log-proposal-view body carrying a step. Init script runs
+    // before the Supabase shim wraps fetch, so both wrappers chain and the
+    // ping still reaches mockAllExternal's route.
+    await page.addInitScript(() => {
+      window.__stepPings = [];
+      const of = window.fetch;
+      window.fetch = function (input, init) {
+        try {
+          const u = typeof input === 'string' ? input : (input && input.url) || '';
+          if (u.includes('log-proposal-view') && init && init.body) {
+            const b = JSON.parse(init.body);
+            if (b.step) window.__stepPings.push(b);
+          }
+        } catch (_e) {}
+        return of.apply(this, arguments);
+      };
+    });
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(
+      `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 }
+    );
+    await page.waitForTimeout(2000);
+  });
+
+  test('walking the full flow fires the steps in order: approved → signature_ready → payment_viewed → method_selected → signed', async () => {
+    await page.evaluate(() => {
+      approveAndSign();                                   // painting + surfaces → color pick, still counts as approved
+      if (typeof _goToSignPad === 'function') _goToSignPad(); else _openSignPad();
+    });
+    await page.fill('#sig-name', 'Alice Smith');
+    await page.check('#sig-ueta-ck');
+    await page.waitForTimeout(200);
+    await page.evaluate(() => { goToPayment(); });
+    await page.evaluate(() => { _paySign('cash'); });
+    await page.evaluate(() => { showDone('cash'); });
+    await page.waitForTimeout(300);
+    const pings = await page.evaluate(() => window.__stepPings);
+    expect(pings.map(x => x.step)).toEqual(['approved', 'signature_ready', 'payment_viewed', 'method_selected', 'signed']);
+    pings.forEach(x => {
+      expect(x.contractorUserId).toBe(FAKE_USER_ID);
+      expect(String(x.bidId)).toBe(String(FAKE_BID_ID_1));
+    });
+    assertNoErrors(page, 'step funnel full walk');
+  });
+
+  test('each step fires at most once per page load — re-renders never duplicate pings', async () => {
+    await page.evaluate(() => { approveAndSign(); approveAndSign(); approveAndSign(); });
+    await page.waitForTimeout(200);
+    const pings = await page.evaluate(() => window.__stepPings.map(x => x.step));
+    expect(pings).toEqual(['approved']);
+  });
+
+  test('contractor previews never pollute the funnel', async () => {
+    await page.evaluate(() => { window._viewerIsContractor = true; approveAndSign(); });
+    await page.waitForTimeout(200);
+    expect(await page.evaluate(() => window.__stepPings.length)).toBe(0);
   });
 });
 

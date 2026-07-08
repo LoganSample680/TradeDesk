@@ -1454,38 +1454,32 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderTodayFeed: stale lastBidId — draft and its bids[] twin de-dup to one card', async () => {
+  test('renderTodayFeed: a bids[] draft renders exactly one card', async () => {
+    // The old localStorage-backed "est_full_draft" dedup/heal mechanism was removed
+    // with the paint estimator — every draft now lives only in bids[], so there is
+    // no longer a separate localStorage-draft card to de-dup against.
     const r = await page.evaluate(() => {
       window._mmtCol_build = false; // expand BUILD so cards render into innerHTML
-      // Saved draft bid in bids[] for "TEsty Test".
       const twin = {
         id: 76055, client_id: 76055, client_name: 'TEsty Test', name: 'TEsty Test',
         status: 'Draft', draft: true, amount: 0, bid_date: todayKey()
       };
       bids.unshift(twin);
-      // localStorage draft for the SAME client whose lastBidId points at a bid that
-      // no longer exists (stale link) — the reported duplicate-card condition.
-      const stale = { ts: Date.now(), cname: 'TEsty Test', lastBidId: 999999, surfaces: [] };
-      localStorage.setItem('zp3_est_full_draft', JSON.stringify(stale));
       try {
         renderTodayFeed();
         const el = document.getElementById('dash-money-feed');
         const count = el ? (el.innerHTML.match(/TEsty Test/g) || []).length : 0;
-        let healed = null;
-        try { healed = JSON.parse(localStorage.getItem('zp3_est_full_draft')).lastBidId; } catch (e) {}
-        return { ok: true, count, healed };
+        return { ok: true, count };
       }
       catch (e) { return { ok: false, err: e.message }; }
       finally {
         const i = bids.findIndex(b => b.id === 76055);
         if (i !== -1) bids.splice(i, 1);
-        localStorage.removeItem('zp3_est_full_draft');
         delete window._mmtCol_build;
       }
     });
     expect(r.ok).toBe(true);
-    expect(r.count).toBe(1);       // one card, not two
-    expect(r.healed).toBe(76055);  // stale link healed to the real bid id
+    expect(r.count).toBe(1); // one card, not two
   });
 
   test('MMT pending follow-up card has a Close out button using the same close-out framework', async () => {
@@ -1516,6 +1510,182 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasCard).toBe(true);
     expect(r.usesFramework).toBe(true);
     expect(r.hasCloseOut).toBe(true);
+  });
+
+  test('BUILD "View leads" button opens _showNewLeadsPicker, not goPg(pg-leads)', async () => {
+    const r = await page.evaluate(() => {
+      window._mmtCol_build = false;
+      const cid = 780001;
+      clients.unshift({ id: cid, name: 'ViewLeadsBtn Test', phone: '3165559010', addr: '1 Lead St', created: todayKey() });
+      let err = '';
+      try { renderTodayFeed(); } catch (e) { err = e.message; }
+      const html = (document.getElementById('dash-money-feed') || {}).innerHTML || '';
+      const res = {
+        err,
+        hasNewBtn: html.includes('_showNewLeadsPicker()'),
+        hasOldBtn: html.includes("goPg('pg-leads')"),
+      };
+      clients = clients.filter(c => c.id !== cid);
+      delete window._mmtCol_build;
+      return res;
+    });
+    expect(r.err).toBe('');
+    expect(r.hasNewBtn).toBe(true);
+    expect(r.hasOldBtn).toBe(false);
+  });
+
+  test('_mmtNewLeads returns only brand-new clients with no bid and no estimate job', async () => {
+    const r = await page.evaluate(() => {
+      const cA = 780101, cB = 780102, cC = 780103;
+      clients.unshift({ id: cA, name: 'NewLead Bare', addr: '1 Bare St', created: todayKey() });
+      clients.unshift({ id: cB, name: 'NewLead HasBid', addr: '2 Bid St', created: todayKey() });
+      clients.unshift({ id: cC, name: 'NewLead HasEstJob', addr: '3 Est St', created: todayKey() });
+      bids.unshift({ id: 780201, client_id: cB, status: 'Pending', amount: 100, bid_date: todayKey() });
+      jobs.unshift({ id: 780301, client_id: cC, eventType: 'estimate', date: todayKey() });
+      const ids = _mmtNewLeads().map(c => c.id);
+      bids = bids.filter(b => b.id !== 780201);
+      jobs = jobs.filter(j => j.id !== 780301);
+      clients = clients.filter(c => ![cA, cB, cC].includes(c.id));
+      return { hasBare: ids.includes(cA), hasBid: ids.includes(cB), hasEstJob: ids.includes(cC) };
+    });
+    expect(r.hasBare).toBe(true);
+    expect(r.hasBid).toBe(false);
+    expect(r.hasEstJob).toBe(false);
+  });
+
+  test('_showNewLeadsPicker lists leads oldest-first (top) to newest (bottom)', async () => {
+    const r = await page.evaluate(() => {
+      const oldId = 780401, midId = 780402, newId = 780403;
+      clients.unshift({ id: oldId, name: 'Oldest Lead', addr: '1 Old St', created: '2020-01-01' });
+      clients.unshift({ id: midId, name: 'Middle Lead', addr: '2 Mid St', created: '2022-06-15' });
+      clients.unshift({ id: newId, name: 'Newest Lead', addr: '3 New St', created: todayKey() });
+      let err = '';
+      try { _showNewLeadsPicker(); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_leads-pick-ov');
+      const html = ov ? ov.innerHTML : '';
+      const iOld = html.indexOf('Oldest Lead');
+      const iMid = html.indexOf('Middle Lead');
+      const iNew = html.indexOf('Newest Lead');
+      ov?.remove();
+      clients = clients.filter(c => ![oldId, midId, newId].includes(c.id));
+      return { err, hasOverlay: !!ov, iOld, iMid, iNew };
+    });
+    expect(r.err).toBe('');
+    expect(r.hasOverlay).toBe(true);
+    expect(r.iOld).toBeGreaterThanOrEqual(0);
+    expect(r.iOld).toBeLessThan(r.iMid);
+    expect(r.iMid).toBeLessThan(r.iNew);
+  });
+
+  test('_showNewLeadsPicker with zero leads shows empty state, no throw', async () => {
+    const r = await page.evaluate(() => {
+      let err = '';
+      try { _showNewLeadsPicker(); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_leads-pick-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      return { err, hasOverlay: !!ov, html };
+    });
+    expect(r.err).toBe('');
+    expect(r.hasOverlay).toBe(true);
+  });
+
+  test('_showNewLeadsPicker title reads "Leads waiting on an estimate" and shows a lead count', async () => {
+    const r = await page.evaluate(() => {
+      const cid = 780450;
+      clients.unshift({ id: cid, name: 'Count Label Lead', addr: '1 Count St', created: todayKey() });
+      let err = '';
+      try { _showNewLeadsPicker(); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_leads-pick-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      clients = clients.filter(c => c.id !== cid);
+      return {
+        err,
+        hasTitle: html.includes('Leads waiting on an estimate'),
+        hasOldTitle: html.includes('oldest first'),
+        hasCount: /1\s*lead\b/.test(html),
+      };
+    });
+    expect(r.err).toBe('');
+    expect(r.hasTitle).toBe(true);
+    expect(r.hasOldTitle).toBe(false);
+    expect(r.hasCount).toBe(true);
+  });
+
+  test('_showNewLeadsPicker shows a real date+time stamp for the lead (regression)', async () => {
+    const r = await page.evaluate(() => {
+      // A real lead's id is Date.now() at creation — pin a known timestamp so the
+      // rendered stamp is deterministic: Mar 15 2026, 2:30 PM local.
+      const knownMs = new Date(2026, 2, 15, 14, 30, 0).getTime();
+      clients.unshift({ id: knownMs, name: 'Timestamp Lead', addr: '1 Stamp St', created: '2026-03-15' });
+      let err = '';
+      try { _showNewLeadsPicker(); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_leads-pick-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      clients = clients.filter(c => c.id !== knownMs);
+      return { err, hasDate: html.includes('Mar 15, 2026'), hasTime: /2:30\s*PM/i.test(html) };
+    });
+    expect(r.err).toBe('');
+    expect(r.hasDate).toBe(true);
+    expect(r.hasTime).toBe(true);
+  });
+
+  test('_showNewLeadsPicker falls back to the relative label for non-timestamp ids (fixtures/legacy)', async () => {
+    const r = await page.evaluate(() => {
+      const cid = 780460; // small id — not a real Date.now() timestamp
+      clients.unshift({ id: cid, name: 'Legacy Id Lead', addr: '1 Legacy St', created: todayKey() });
+      let err = '';
+      try { _showNewLeadsPicker(); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_leads-pick-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      clients = clients.filter(c => c.id !== cid);
+      return { err, hasNewToday: html.includes('New today') };
+    });
+    expect(r.err).toBe('');
+    expect(r.hasNewToday).toBe(true);
+  });
+
+  test('clicking a lead name in the picker opens the estimate picker, not the client record', async () => {
+    const r = await page.evaluate(() => {
+      const cid = 780501;
+      clients.unshift({ id: cid, name: 'ClickToEstimate Lead', addr: '1 Click St', created: todayKey() });
+      let openEstimateArg = null, openedClientDetail = false;
+      const origDoOpen = window._doOpenEstimate;
+      const origOpenDetail = window.openClientDetail;
+      window._doOpenEstimate = (c) => { openEstimateArg = c && c.id; };
+      window.openClientDetail = () => { openedClientDetail = true; };
+      let err = '';
+      try {
+        _showNewLeadsPicker();
+        _pickLeadForEstimate(cid);
+      } catch (e) { err = e.message; }
+      const overlayGoneAfterPick = !document.getElementById('_leads-pick-ov');
+      window._doOpenEstimate = origDoOpen;
+      window.openClientDetail = origOpenDetail;
+      clients = clients.filter(c => c.id !== cid);
+      return { err, openEstimateArg, openedClientDetail, overlayGoneAfterPick };
+    });
+    expect(r.err).toBe('');
+    expect(r.openEstimateArg).toBe(780501);
+    expect(r.openedClientDetail).toBe(false);
+    expect(r.overlayGoneAfterPick).toBe(true);
+  });
+
+  test('_pickLeadForEstimate with unknown clientId — does not throw, does not open estimate', async () => {
+    const r = await page.evaluate(() => {
+      let called = false;
+      const orig = window._doOpenEstimate;
+      window._doOpenEstimate = () => { called = true; };
+      let err = '';
+      try { _pickLeadForEstimate(999999999); } catch (e) { err = e.message; }
+      window._doOpenEstimate = orig;
+      return { err, called };
+    });
+    expect(r.err).toBe('');
+    expect(r.called).toBe(false);
   });
 
   test('MMT awaiting-signature card has NO Delete button — deletion is the hidden 3s hold only', async () => {

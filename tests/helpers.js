@@ -326,7 +326,12 @@ function _supabaseShim() {
           getSession: () => { if(global.__authFail401) return authErrorResult(); const uid = (typeof window!=='undefined'&&window.__overrideSessionUserId)||'e2e-user'; return noopResult({ session: { access_token: 'fake-jwt', user: { id: uid, email: 'test@test.com' } } }); },
           signInWithPassword: () => noopResult({ user: { id: 'e2e-user' }, session: { access_token: 'fake-jwt' } }),
           signOut:    () => noopResult(null),
-          onAuthStateChange: (cb) => { return { data: { subscription: { unsubscribe: ()=>{} } } }; },
+          // Stash the registered callback so tests can fire a synthetic SIGNED_IN/
+          // SIGNED_OUT/etc. event and observe the app's real handler behavior —
+          // otherwise that logic (account-switch reset, post-sign-in navigation) is
+          // unreachable from any offline test since the real Supabase client never
+          // actually fires this callback in a mocked environment.
+          onAuthStateChange: (cb) => { if (typeof window !== 'undefined') window.__capturedAuthCallback = cb; return { data: { subscription: { unsubscribe: ()=>{} } } }; },
           startAutoRefresh: () => {},
           stopAutoRefresh:  () => {},
         },
@@ -366,6 +371,9 @@ function _supabaseShim() {
         channel: (name) => ({
           on: function() { return this; },
           subscribe: function(cb) { if(cb) cb('SUBSCRIBED'); return this; },
+          // Records every broadcast send so specs can assert a live-push nudge
+          // was attempted, mirroring the __storageFetches capture above.
+          send: function(msg) { (global.__channelBroadcasts = global.__channelBroadcasts || []).push({ name: name, msg: msg }); return Promise.resolve('ok'); },
           unsubscribe: () => {},
         }),
         removeChannel: () => {},
@@ -407,7 +415,7 @@ function _supabaseShimIntake() {
         auth:{
           getUser:()=>noopResult({user:null}),
           getSession:()=>noopResult({session:null}),
-          onAuthStateChange:(cb)=>({data:{subscription:{unsubscribe:()=>{}}}}),
+          onAuthStateChange:(cb)=>{if(typeof window!=='undefined')window.__capturedAuthCallback=cb;return{data:{subscription:{unsubscribe:()=>{}}}};},
         },
         from:(table)=>queryBuilder(table),
         storage:{from:(b)=>({upload:(p,d,o)=>noopResult({path:p}),download:(p)=>noopResult(null),getPublicUrl:(p)=>({data:{publicUrl:''}}),remove:(ps)=>noopResult(null),list:(pr)=>noopResult([])})},

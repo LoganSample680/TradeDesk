@@ -7,6 +7,7 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://js.stripe.com/v3/"></script>
+<script src="js/icons.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -24,8 +25,8 @@
   --border2:#cccbc4;
   --text:#1a1a18;
   --text2:#5f5e5a;
-  --text3:#9a9890;
-  --bg:#F4F5F7;
+  --text3:#6a6963;   /* AA on white cards AND the darker page bg (4.57:1) */
+  --bg:#E8EAEF;   /* deep enough that white cards visibly lift off the page */
   --bg-card:#fff;
   --r:10px;
   --rl:16px;
@@ -58,11 +59,15 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .nav-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0}
 .nav-footer{margin-top:auto;padding:14px 18px;font-size:10px;color:var(--text3)}
 
-/* ── Bottom nav (mobile) ── */
-.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--bg-card);border-top:1px solid var(--border);display:flex;align-items:stretch;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)}
-.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px;font-weight:700;color:var(--text3);cursor:pointer;border:none;background:none;padding:10px 4px;font-family:inherit;-webkit-tap-highlight-color:transparent;border-top:2px solid transparent;transition:color .15s,border-color .15s}
-.bn-item.active{color:var(--ink);border-top:2px solid var(--ink);padding-top:8px}
-.bn-icon{font-size:22px;line-height:1}
+/* ── Bottom nav (mobile) — same dark-ink tab bar as the TradeDesk app
+   (#mobile-tabbar), not the old white strip with a top border. Active tab gets
+   a soft pill behind the icon. */
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--ink);border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:stretch;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)}
+.bn-item{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px;font-weight:700;color:rgba(255,255,255,.5);cursor:pointer;border:none;background:none;padding:8px 4px 10px;font-family:inherit;-webkit-tap-highlight-color:transparent;min-height:56px;transition:color .15s}
+.bn-item.active{color:#fff}
+.bn-item:active .bn-icon{transform:scale(.9)}
+.bn-icon{font-size:22px;line-height:1;display:flex;align-items:center;justify-content:center;width:40px;height:26px;border-radius:9px;background:transparent;transition:background .18s,transform .12s cubic-bezier(.22,1,.36,1)}
+.bn-item.active .bn-icon{background:color-mix(in srgb,var(--denim) 40%,rgba(255,255,255,.14))}
 
 @media(min-width:640px){
   .bottom-nav{display:none}
@@ -91,14 +96,37 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .pg-status h2{font-size:26px;font-weight:900;margin-bottom:10px;font-family:var(--font-display);letter-spacing:-.4px}
 .pg-status p{font-size:14px;color:var(--text2);line-height:1.7;max-width:380px;margin:0 auto}
 
-/* ── Hero ── */
-.hub-hero{background:radial-gradient(120% 80% at 0% 100%, rgba(45,93,168,.36) 0%, transparent 55%), linear-gradient(155deg, #1B1612 0%, #1F2230 100%);border-radius:16px;padding:22px 20px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;position:relative;overflow:hidden}
-.hub-hero::before{content:'';position:absolute;right:-40px;top:-40px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.04)}
+/* ── Hero — photoless "aurora" premium card ──────────────────────────────────
+   Research (2026 SaaS-premium default): a multi-blob radial mesh over a dark
+   base + a faint grain overlay reads richer than a photo, works for a client
+   who owns MANY properties (no single subject to show), is resolution-free, and
+   re-skins per contractor from one --denim variable. The single saturated hue
+   is the brand; the other blobs are neutral white-alpha, so any brand color
+   stays coherent. Blobs drift slowly (GPU-composited transform only) and freeze
+   under prefers-reduced-motion. Depth = contact + ambient shadow + inset top
+   highlight. */
+.hub-hero{position:relative;overflow:hidden;border-radius:22px;padding:24px 22px;margin-bottom:16px;display:flex;align-items:flex-start;gap:20px;background:linear-gradient(158deg,#171b24 0%,#0b0e14 100%);box-shadow:0 1px 2px rgba(0,0,0,.18),0 10px 26px rgba(11,14,20,.24),inset 0 1px 0 rgba(255,255,255,.07)}
+.hub-hero::before{content:'';position:absolute;inset:-30%;z-index:0;pointer-events:none;filter:blur(34px);background:
+  radial-gradient(42% 50% at 14% 6%,color-mix(in srgb,var(--denim) 82%,transparent) 0%,transparent 62%),
+  radial-gradient(30% 38% at 95% 4%,rgba(255,255,255,.14) 0%,transparent 55%),
+  radial-gradient(52% 58% at 88% 120%,color-mix(in srgb,var(--denim) 48%,transparent) 0%,transparent 62%);
+  animation:hub-aurora 22s ease-in-out infinite alternate}
+@keyframes hub-aurora{from{transform:translate3d(0,0,0) scale(1)}to{transform:translate3d(-5%,3%,0) scale(1.12)}}
+.hub-hero::after{content:'';position:absolute;inset:0;z-index:0;pointer-events:none;opacity:.07;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+@media(prefers-reduced-motion:reduce){.hub-hero::before{animation:none}}
 .hub-hero-l{flex:1;min-width:0;position:relative;z-index:1}
-.hub-hero-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px}
-.hub-hero-greeting{font-size:38px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-.8px;line-height:1;margin-bottom:4px}
-.hub-hero-sub{font-size:13px;color:rgba(255,255,255,.55);font-weight:500;margin-bottom:3px}
-.hub-hero-phone{font-size:12px;color:rgba(255,255,255,.4);text-decoration:none;display:block;margin-bottom:14px}
+.hub-hero.has-badge .hub-hero-l{padding-right:64px}
+.hub-hero-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.5);margin-bottom:5px}
+.hub-hero-greeting{font-size:38px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-.8px;line-height:1;margin-bottom:6px}
+.hub-hero-sub{font-size:13px;color:rgba(255,255,255,.62);font-weight:600;margin-bottom:10px}
+/* Phone reads as a tappable chip, not dim text — a real affordance + higher contrast. */
+.hub-hero-phone{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:rgba(255,255,255,.82);text-decoration:none;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);padding:5px 11px;border-radius:999px;margin-bottom:14px;transition:transform .12s cubic-bezier(.22,1,.36,1),background .15s}
+.hub-hero-phone svg{width:12px;height:12px}
+.hub-hero-phone:active{transform:scale(.96)}
+/* Contractor LOGO fills the hero's right side when they have one. No generic
+   letter-monogram fallback — an initial in a box read as filler, not brand. */
+.hub-hero-badge{position:absolute;top:22px;right:20px;z-index:1;width:54px;height:54px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.95);overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+.hub-hero-badge img{width:100%;height:100%;object-fit:contain;padding:6px;box-sizing:border-box}
 .hub-progress-row{display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.45);margin-bottom:5px;font-weight:600}
 .hub-progress-track{height:6px;background:rgba(255,255,255,.12);border-radius:3px;overflow:hidden}
 .hub-progress-fill{height:100%;background:var(--denim);border-radius:3px;box-shadow:0 0 10px rgba(45,93,168,.8)}
@@ -140,7 +168,8 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 }
 
 /* ── Feed ── */
-.hub-feed-hd{font-size:13px;font-weight:800;color:var(--text);margin-bottom:10px;letter-spacing:-.1px}
+.hub-feed-hd{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--text);margin-bottom:12px;letter-spacing:-.1px}
+.hub-feed-hd::before{content:'';width:3px;height:14px;border-radius:2px;background:var(--denim);flex-shrink:0}
 .hub-feed-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
 .hub-feed-item:last-child{border-bottom:none}
 .hub-feed-dot{width:8px;height:8px;border-radius:50%;background:var(--denim);flex-shrink:0;margin-top:4px}
@@ -162,14 +191,28 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-timeline-meta{font-size:11px;color:var(--text3);margin-top:2px}
 .hub-timeline-status{display:flex;align-items:center;gap:8px;margin-top:6px}
 .hub-timeline-amt{font-size:13px;font-weight:700;color:var(--text)}
-.hub-badge{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700}
-.hub-badge-paid{background:var(--green-lt);color:var(--green-mid)}
-.hub-badge-due{background:#FEF3C7;color:#92400E}
+.hub-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800}
+.hub-badge svg{width:11px;height:11px}
+.hub-badge-paid{background:var(--green-lt);color:var(--green-mid);border:1px solid var(--green-border)}
+.hub-badge-due{background:#FEF3C7;color:#92400E;border:1px solid #FADF98}
+
+/* ── Trust — split, inline sentences, NOT pills (research: decision-point placement
+   beats arrival for conversion; inline reads as fact, a badge/pill grid reads as
+   "trying too hard"). Two instances carry different emphasis so it's reinforcement:
+   credibility (years/reviews) in the hero on arrival; safety (Licensed & Insured ·
+   warranty) right above each Review & Sign button. */
+.hub-hero-trust{display:flex;flex-wrap:wrap;align-items:center;gap:3px 12px;margin-bottom:2px;font-size:11.5px;font-weight:600;color:rgba(255,255,255,.6)}
+.hub-hero-trust span,.hub-hero-trust a{display:inline-flex;align-items:center;gap:5px}
+.hub-hero-trust a{color:rgba(255,255,255,.82);text-decoration:none}
+.hub-hero-trust svg{width:12px;height:12px}
+.hub-cta-trust{display:flex;flex-wrap:wrap;align-items:center;gap:3px 12px;margin-bottom:11px;font-size:11.5px;font-weight:600;color:var(--text2)}
+.hub-cta-trust span{display:inline-flex;align-items:center;gap:5px}
+.hub-cta-trust svg{width:13px;height:13px;color:var(--denim);flex-shrink:0}
 
 /* ── Sidebar cards ── */
 .hub-side-card{background:var(--bg-card);border-radius:12px;padding:14px 16px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.05)}
 .hub-side-hd{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px}
-.hub-contact-btn{display:block;padding:10px 14px;border-radius:10px;background:var(--ink);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:8px;font-family:inherit}
+.hub-contact-btn{display:block;padding:10px 14px;border-radius:10px;background:var(--denim);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:8px;font-family:inherit}
 .hub-contact-btn-sec{background:transparent;color:var(--text2);border:1.5px solid var(--border2)}
 .hub-approval-item{padding:8px 0;border-bottom:1px solid var(--border)}
 .hub-approval-item:last-child{border-bottom:none}
@@ -177,15 +220,28 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-approval-amt{font-size:11px;color:var(--text3)}
 .hub-approval-link{font-size:12px;font-weight:700;color:var(--denim);text-decoration:none;display:block;margin-top:4px}
 
-/* ── Bid rows ── */
-.hub-bid-row{background:#fff;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.06)}
-.hub-bid-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
-.hub-bid-name{font-size:15px;font-weight:700}
+/* ── Bid rows — elevated proposal cards ──────────────────────────────────────
+   Research synthesis (PaintScout / DripJobs / QuoteIQ + Qwilr/Proposify data):
+   borderless double-shadow elevation instead of a hairline box, a brand-tinted
+   document chip so the card isn't text-only, a soft pill status chip, and a
+   thin brand accent rail down the left edge. Price stays OFF the card by design
+   (loss-aversion — revealed inside the proposal after scope). */
+.hub-bid-row{position:relative;background:#fff;border-radius:18px;padding:18px 18px 18px 22px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.05),0 10px 26px rgba(16,24,40,.10);transition:transform .12s ease,box-shadow .12s ease}
+.hub-bid-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,var(--denim),color-mix(in srgb,var(--denim) 55%,#000))}
+.hub-bid-row:active{transform:translateY(1px);box-shadow:0 1px 2px rgba(16,24,40,.06),0 4px 12px rgba(16,24,40,.10)}
+.hub-bid-top{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.hub-bid-ico{flex-shrink:0;width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--denim) 12%,#fff);color:var(--denim)}
+.hub-bid-ico svg{width:20px;height:20px}
+.hub-bid-hd{flex:1;min-width:0}
+.hub-bid-name{font-size:15px;font-weight:800;letter-spacing:-.2px}
 .hub-bid-date{font-size:12px;color:var(--text3);margin-top:2px}
-.hub-bid-amt{font-size:26px;font-weight:900;font-family:var(--font-display);color:var(--denim);letter-spacing:-.7px;flex-shrink:0;margin-left:10px}
+.hub-bid-amt{font-size:26px;font-weight:900;font-family:var(--font-display);color:var(--denim);letter-spacing:-.7px;flex-shrink:0;margin-left:10px;font-variant-numeric:tabular-nums lining-nums}
 .hub-bid-pending-msg{font-size:12px;color:var(--text3);margin-top:4px}
 .hub-btn{display:block;padding:13px 16px;border-radius:10px;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
-.hub-btn-sign{background:var(--ink);color:#fff;box-shadow:0 2px 10px rgba(27,22,18,.2)}
+/* Primary client actions carry the contractor's brand color (--denim is the
+   ADA-clamped brandColor set by applyBranding) — the hub reads as THEIR
+   contractor's, not a generic black-and-white page. */
+.hub-btn-sign{background:linear-gradient(155deg,var(--denim) 0%,rgba(0,0,0,.25) 340%) var(--denim);color:#fff;box-shadow:0 3px 14px rgba(27,22,18,.22)}
 
 /* ── Project tab ── */
 .hub-photo-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:20px}
@@ -278,16 +334,52 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 /* ── Proposal overlay ── */
 #prop-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
 .prop-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
+/* The proposal card itself carries its own border+shadow (baked into the stored
+   HTML at send time) — the 24px side padding above double-frames it on a phone
+   screen, wasting width on a page a client is reading closely. Tighten to a
+   small gutter (not 0 — keeps the card's rounded corners/shadow from clipping
+   at the viewport edge) so the content actually uses the screen. */
+@media(max-width:640px){.prop-wrap{padding-left:8px;padding-right:8px}}
 .prop-close{position:fixed;top:16px;right:16px;background:var(--ink);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
 
-/* ── Boot overlay ── */
-#boot-overlay{position:fixed;inset:0;background:var(--ink);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity}
+/* ── Boot overlay — same premium treatment as the TradeDesk app boot screen
+   (glow drift, breathing mark, wordmark sheen, progress track + sheen), but
+   client-specific: contractor logo/name center stage, "Loading your client
+   hub…" copy. Element IDs (boot-logo/boot-name/boot-bar) are unchanged — the
+   load-progress JS drives the same widths on the same timings as before. */
+#boot-overlay{position:fixed;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity;overflow:hidden}
+.cbo-glow{position:absolute;width:130vmax;height:130vmax;left:50%;top:55%;background:radial-gradient(closest-side,rgba(45,93,168,.30),transparent 65%);animation:cbo-drift 9s ease-in-out infinite alternate;pointer-events:none}
+@keyframes cbo-drift{from{transform:translate(-56%,-52%) scale(1)}to{transform:translate(-44%,-46%) scale(1.14)}}
+.cbo-center{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:0 24px;position:relative}
+@keyframes cbo-logoin{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
+.cbo-mark{position:relative;width:64px;height:64px;border-radius:16px;background:linear-gradient(155deg,#2D5DA8 0%,#1E3F73 100%);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.4);animation:cbo-logoin .5s cubic-bezier(.22,1,.36,1) both,cbo-breathe 2.8s ease-in-out .6s infinite}
+.cbo-mark svg{width:32px;height:32px;stroke:#FFF1E6;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.cbo-mark::after{content:'';position:absolute;inset:-7px;border-radius:20px;border:1.5px solid rgba(148,185,235,.55);opacity:0;animation:cbo-halo 2.2s cubic-bezier(.22,1,.36,1) 1.1s infinite}
+@keyframes cbo-halo{0%{opacity:.8;transform:scale(1)}70%{opacity:0;transform:scale(1.6)}100%{opacity:0;transform:scale(1.6)}}
+@keyframes cbo-breathe{0%,100%{box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.35);transform:scale(1)}50%{box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 16px 48px rgba(92,143,212,.55);transform:scale(1.045)}}
+.cbo-logo-frame{background:rgba(255,255,255,.97);border-radius:22px;padding:16px 24px;max-width:78vw;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 18px 50px rgba(0,0,0,.5);animation:cbo-logoin .55s cubic-bezier(.22,1,.36,1) both}
+.cbo-name{font-size:clamp(24px,6.4vw,36px);font-weight:900;letter-spacing:-1px;text-align:center;max-width:88vw;line-height:1.1;padding:0 16px;background:linear-gradient(100deg,#fff 42%,#a9c8f2 50%,#fff 58%);background-size:230% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:cbo-textsheen 2.6s ease-in-out 1s infinite}
+@keyframes cbo-textsheen{0%{background-position:125% 0}100%{background-position:-125% 0}}
+.cbo-tag{font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.4);animation:cbo-fadeup .6s .3s cubic-bezier(.22,1,.36,1) both}
+@keyframes cbo-fadeup{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.cbo-foot{width:100%;padding:0 0 44px;display:flex;flex-direction:column;gap:13px}
+.cbo-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:99px;margin:0 40px;overflow:hidden}
+.cbo-bar{height:100%;width:0%;background:linear-gradient(90deg,#2D5DA8,#5C8FD4);border-radius:99px;box-shadow:0 0 12px rgba(92,143,212,.55);transition:width 1.4s cubic-bezier(.4,0,.2,1)}
+.cbo-sheen{position:absolute;inset:0;background:linear-gradient(100deg,transparent 32%,rgba(255,255,255,.32) 50%,transparent 68%);transform:translateX(-100%);animation:cbo-sheen 1.7s ease-in-out .5s infinite}
+@keyframes cbo-sheen{to{transform:translateX(100%)}}
+.cbo-hint{text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,.35);letter-spacing:.02em;animation:cbo-fadeup .5s .55s cubic-bezier(.22,1,.36,1) both}
+@media (prefers-reduced-motion:reduce){.cbo-mark,.cbo-mark::after,.cbo-sheen,.cbo-glow,.cbo-name{animation:none}}
 #inv-overlay,#prop-overlay{transition:opacity .22s ease;will-change:opacity}
 
 /* ── Notification panel ── */
 .notif-wrap{position:relative;display:flex}
 .notif-unread-dot{position:absolute;top:5px;right:5px;width:8px;height:8px;background:#ef4444;border-radius:50%;border:1.5px solid var(--ink);display:none;pointer-events:none}
 .notif-panel{position:absolute;right:-6px;top:calc(100% + 8px);width:300px;background:var(--bg-card);border-radius:14px;box-shadow:0 8px 30px rgba(27,22,18,.18),0 0 0 1px rgba(27,22,18,.06);z-index:300;overflow:hidden;display:none}
+/* On mobile a 300px panel anchored to the bell bled off the left edge. Span the
+   viewport with margins instead so it's always fully visible below the topbar. */
+@media(max-width:520px){
+  .notif-panel{position:fixed;top:58px;left:10px;right:10px;width:auto;max-height:calc(100vh - 74px);overflow-y:auto}
+}
 .notif-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px;border-bottom:1px solid var(--border)}
 .notif-hd-title{font-size:13px;font-weight:800}
 .notif-mark-read{font-size:11px;color:var(--denim);cursor:pointer;font-weight:600;background:none;border:none;font-family:inherit;padding:0}
@@ -325,9 +417,18 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .acct-menu-item:not(:last-child){border-bottom:1px solid var(--border)}
 
 /* ── Mobile contact strip (PR3) ── */
-.hub-mobile-strip{display:flex;gap:8px;margin-bottom:14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.hub-mstrip-btn{flex:1;min-width:64px;padding:11px 8px;border-radius:10px;background:var(--ink);color:#fff;font-size:13px;font-weight:700;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit;white-space:nowrap}
-.hub-mstrip-sec{background:transparent;color:var(--text);border:1.5px solid var(--border2)}
+/* Contact pair — Call (filled brand) + Text (warm brand-tonal). Research: 66% of
+   clients prefer messaging (+40% reply), so Text gets an inviting tonal fill, not
+   a thin outline; both are ≥48px tap targets with icon+label and a press-scale
+   micro-interaction so every tap is acknowledged. Real tel:/sms: hrefs (dead-
+   button-safe). ADA: the tonal Text label stays neutral-dark on a light brand
+   tint so any brand color clears AA. */
+.hub-mobile-strip{display:flex;gap:10px;margin-bottom:14px}
+.hub-mstrip-btn{flex:1;min-width:0;min-height:50px;display:flex;align-items:center;justify-content:center;gap:7px;padding:12px 10px;border-radius:14px;background:var(--denim);color:#fff;font-size:14px;font-weight:800;text-decoration:none;text-align:center;border:none;cursor:pointer;font-family:inherit;white-space:nowrap;box-shadow:0 3px 12px color-mix(in srgb,var(--denim) 32%,transparent);transition:transform .12s cubic-bezier(.22,1,.36,1),box-shadow .12s ease}
+.hub-mstrip-btn svg{width:17px;height:17px}
+.hub-mstrip-btn:active{transform:scale(.97)}
+.hub-mstrip-sec{background:color-mix(in srgb,var(--denim) 12%,#fff);color:var(--text);border:1px solid color-mix(in srgb,var(--denim) 26%,#fff);box-shadow:none}
+.hub-mstrip-sec svg{color:var(--denim)}
 @media(min-width:640px){.hub-mobile-strip{display:none}}
 
 /* ── Approvals card (PR4) ── */
@@ -341,6 +442,12 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-swatch.selected{border-color:var(--denim);box-shadow:0 0 0 2px rgba(45,93,168,.25)}
 .hub-co-btn-approve{padding:7px 12px;border-radius:8px;background:var(--ink);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer;font-family:inherit}
 .hub-co-btn-decline{padding:7px 12px;border-radius:8px;background:transparent;color:var(--text2);border:1.5px solid var(--border2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+
+/* Loading spinner — same treatment as sign.html, so a loading moment on the
+   client hub matches the vibe of the rest of the client-facing surfaces
+   instead of a plain "Loading…" text block sitting there doing nothing. */
+.hub-spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--border2);border-top-color:var(--denim);margin:0 auto 12px;animation:hub-spin .8s linear infinite}
+@keyframes hub-spin{to{transform:rotate(360deg)}}
 
 /* ── Change order signing modal ── */
 @keyframes hub-ov-fade{from{opacity:0}to{opacity:1}}
@@ -385,10 +492,17 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
 
 <!-- Boot overlay — covers everything until hub data loads -->
 <div id="boot-overlay">
-  <div id="boot-logo-wrap" style="display:none;margin-bottom:14px"><img id="boot-logo" style="height:54px;max-width:200px;object-fit:contain;border-radius:6px;display:block"></div>
-  <div id="boot-name" style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-.3px;text-align:center;padding:0 32px;line-height:1.25;margin-bottom:5px;max-width:300px"></div>
-  <div style="font-size:11px;color:rgba(255,255,255,.3);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:32px">Project Hub</div>
-  <div style="width:110px;height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden"><div id="boot-bar" style="height:100%;width:0%;background:#2D5DA8;border-radius:2px;transition:width 1.4s cubic-bezier(.4,0,.2,1)"></div></div>
+  <div class="cbo-glow"></div>
+  <div class="cbo-center">
+    <div id="boot-logo-wrap" class="cbo-logo-frame" style="display:none"><img id="boot-logo" style="max-height:96px;max-width:100%;object-fit:contain;display:block"></div>
+    <div id="boot-mark" class="cbo-mark"><svg viewBox="0 0 24 24"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/></svg></div>
+    <div id="boot-name" class="cbo-name"></div>
+    <div class="cbo-tag">Client hub</div>
+  </div>
+  <div class="cbo-foot">
+    <div class="cbo-track"><div id="boot-bar" class="cbo-bar"></div><div class="cbo-sheen"></div></div>
+    <div class="cbo-hint">Loading your client hub…</div>
+  </div>
 </div>
 
 <!-- Stripe embedded checkout modal -->
@@ -399,7 +513,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
         <div id="stripe-modal-biz" style="font-size:15px;font-weight:800;color:#fff"></div>
         <div id="stripe-modal-amt" style="font-size:12px;color:rgba(255,255,255,.6);margin-top:2px"></div>
       </div>
-      <button onclick="closePaymentModal()" style="background:rgba(255,255,255,.12);border:none;color:#fff;font-size:18px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center">✕</button>
+      <button onclick="closePaymentModal()" style="background:rgba(255,255,255,.12);border:none;color:#fff;font-size:18px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center"><script>document.write(svgIcon('✕',{size:18}))</script></button>
     </div>
     <div id="checkout-embed-container" style="padding:12px 12px 0"></div>
     <div style="padding:12px 18px 18px">
@@ -415,7 +529,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
   <span id="topbar-name" class="topbar-name"></span>
   <div class="topbar-actions">
     <div class="notif-wrap">
-      <button class="topbar-icon-btn" id="notif-btn" onclick="toggleNotifPanel(event)" aria-label="Notifications">🔔</button>
+      <button class="topbar-icon-btn" id="notif-btn" onclick="toggleNotifPanel(event)" aria-label="Notifications"><script>document.write(svgIcon('🔔',{size:20}))</script></button>
       <span class="notif-unread-dot" id="notif-dot"></span>
       <div class="notif-panel" id="notif-panel">
         <div class="notif-hd">
@@ -425,17 +539,17 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
         <div id="notif-list"></div>
       </div>
     </div>
-    <button class="topbar-icon-btn" onclick="openHelp()" aria-label="Help">❓</button>
+    <button class="topbar-icon-btn" onclick="openHelp()" aria-label="Help"><script>document.write(svgIcon('❓',{size:20}))</script></button>
     <div class="acct-wrap" id="acct-wrap">
       <button class="acct-chip" id="acct-chip" onclick="toggleAcctMenu(event)" aria-label="Account menu">
         <div class="acct-avatar" id="acct-avatar"></div>
         <span class="acct-chip-name" id="acct-chip-name"></span>
-        <span class="acct-chevron">▾</span>
+        <span class="acct-chevron"><script>document.write(svgIcon('▾',{size:10}))</script></span>
       </button>
       <div class="acct-dropdown" id="acct-dropdown">
-        <button class="acct-menu-item" onclick="closeAcctMenu()">👤 Profile</button>
-        <button class="acct-menu-item" onclick="toggleNotifPanel(event);closeAcctMenu()">🔔 Notifications</button>
-        <button class="acct-menu-item" onclick="closeAcctMenu()" style="color:#c0392b">🚪 Sign out</button>
+        <button class="acct-menu-item" onclick="closeAcctMenu()"><script>document.write(svgIcon('👤'))</script> Profile</button>
+        <button class="acct-menu-item" onclick="toggleNotifPanel(event);closeAcctMenu()"><script>document.write(svgIcon('🔔'))</script> Notifications</button>
+        <button class="acct-menu-item" onclick="closeAcctMenu()" style="color:#c0392b"><script>document.write(svgIcon('🚪'))</script> Sign out</button>
       </div>
     </div>
   </div>
@@ -446,18 +560,18 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
   <nav class="left-nav" id="left-nav">
     <div class="nav-client" id="nav-client-info"></div>
     <div role="tablist">
-      <div class="nav-item active" id="ni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="nav-icon">🏠</span>Overview</div>
-      <div class="nav-item" id="ni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="nav-icon">🔨</span>Project</div>
-      <div class="nav-item" id="ni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="nav-icon">💳</span>Payments</div>
-      <div class="nav-item" id="ni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="nav-icon">📁</span>Documents</div>
-      <div class="nav-item" id="ni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="nav-icon">💬</span>Messages</div>
+      <div class="nav-item active" id="ni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="nav-icon"><script>document.write(svgIcon('🏠',{size:22}))</script></span>Overview</div>
+      <div class="nav-item" id="ni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="nav-icon"><script>document.write(svgIcon('🔨',{size:22}))</script></span>Project</div>
+      <div class="nav-item" id="ni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="nav-icon"><script>document.write(svgIcon('💳',{size:22}))</script></span>Payments</div>
+      <div class="nav-item" id="ni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="nav-icon"><script>document.write(svgIcon('📁',{size:22}))</script></span>Documents</div>
+      <div class="nav-item" id="ni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="nav-icon"><script>document.write(svgIcon('💬',{size:22}))</script></span>Messages</div>
     </div>
     <div class="nav-footer" id="nav-footer"></div>
   </nav>
 
   <div class="main-content">
     <div class="pg-status" id="pg-err" style="display:none">
-      <div class="pg-status-icon">🔗</div>
+      <div class="pg-status-icon"><script>document.write(svgIcon('🔗',{size:48}))</script></div>
       <h2>Hub not found</h2>
       <p>This link may have expired. Contact us for a new link.</p>
     </div>
@@ -473,11 +587,11 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
 
 <!-- Bottom nav (mobile) -->
 <nav class="bottom-nav" id="bottom-nav" role="tablist">
-  <button class="bn-item active" id="bni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="bn-icon">🏠</span>Overview</button>
-  <button class="bn-item" id="bni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="bn-icon">🔨</span>Project</button>
-  <button class="bn-item" id="bni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="bn-icon">💳</span>Payments</button>
-  <button class="bn-item" id="bni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="bn-icon">📁</span>Documents</button>
-  <button class="bn-item" id="bni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="bn-icon">💬</span>Messages</button>
+  <button class="bn-item active" id="bni-overview" role="tab" aria-selected="true" onclick="switchView('overview')"><span class="bn-icon"><script>document.write(svgIcon('🏠',{size:22}))</script></span>Overview</button>
+  <button class="bn-item" id="bni-project" role="tab" aria-selected="false" onclick="switchView('project')"><span class="bn-icon"><script>document.write(svgIcon('🔨',{size:22}))</script></span>Project</button>
+  <button class="bn-item" id="bni-payments" role="tab" aria-selected="false" onclick="switchView('payments')"><span class="bn-icon"><script>document.write(svgIcon('💳',{size:22}))</script></span>Payments</button>
+  <button class="bn-item" id="bni-documents" role="tab" aria-selected="false" onclick="switchView('documents')"><span class="bn-icon"><script>document.write(svgIcon('📁',{size:22}))</script></span>Documents</button>
+  <button class="bn-item" id="bni-messages" role="tab" aria-selected="false" onclick="switchView('messages')"><span class="bn-icon"><script>document.write(svgIcon('💬',{size:22}))</script></span>Messages</button>
 </nav>
 
 <!-- Help drawer -->
@@ -486,19 +600,19 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     <div class="help-handle"></div>
     <div class="help-title">Help & FAQ</div>
     <div class="help-sec">
-      <div class="help-sec-hd">💳 How payments work</div>
+      <div class="help-sec-hd"><script>document.write(svgIcon('💳'))</script> How payments work</div>
       <div class="help-sec-body"><span class="hub-cn-name">Your contractor</span> sends you a secure payment link. You can pay by card, ACH bank transfer, or Apple Pay. Deposits are due before work begins; the final balance is due on completion. All payments are processed securely — <span class="hub-cn-name">your contractor</span> never sees your card details.</div>
     </div>
     <div class="help-sec">
-      <div class="help-sec-hd">✍️ How signing works</div>
+      <div class="help-sec-hd"><script>document.write(svgIcon('✍'))</script> How signing works</div>
       <div class="help-sec-body">When you receive a proposal, tap <strong>Review &amp; Sign</strong>. You'll see the full scope of work and price. Sign with your finger or mouse and submit. You'll receive a confirmation email with a copy of the signed agreement.</div>
     </div>
     <div class="help-sec">
-      <div class="help-sec-hd">📞 Contacting <span class="hub-cn-name">your contractor</span></div>
+      <div class="help-sec-hd"><script>document.write(svgIcon('📞'))</script> Contacting <span class="hub-cn-name">your contractor</span></div>
       <div class="help-sec-body">Use the Call, Text, or Email buttons on the Overview tab to reach <span class="hub-cn-name">your contractor</span> directly. For non-urgent questions, the Messages tab keeps everything in one place so nothing gets lost in your inbox.</div>
     </div>
     <div class="help-sec">
-      <div class="help-sec-hd">❓ Common questions</div>
+      <div class="help-sec-hd"><script>document.write(svgIcon('❓'))</script> Common questions</div>
       <div class="help-sec-body">
         <strong>Can I change the scope after signing?</strong> Yes — <span class="hub-cn-name">your contractor</span> can send a change order for your approval.<br><br>
         <strong>Is this hub link private?</strong> Yes. The link is unique to you and not publicly indexed.<br><br>
@@ -516,18 +630,18 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     <div id="hub-lb-tag" class="hub-lb-tag"></div>
   </div>
   <button class="hub-lb-arrow hub-lb-next" onclick="event.stopPropagation();lbNav(1)" aria-label="Next photo">›</button>
-  <button class="hub-lb-close" onclick="closeLightbox()" aria-label="Close lightbox">✕</button>
+  <button class="hub-lb-close" onclick="closeLightbox()" aria-label="Close lightbox"><script>document.write(svgIcon('✕',{size:20}))</script></button>
 </div>
 
 <!-- Invoice overlay -->
 <div id="inv-overlay">
-  <button class="inv-close no-print" onclick="closeInvoice()">✕</button>
+  <button class="inv-close no-print" onclick="closeInvoice()"><script>document.write(svgIcon('✕',{size:20}))</script></button>
   <div class="inv-wrap" id="inv-content"></div>
 </div>
 
 <!-- Proposal overlay -->
 <div id="prop-overlay">
-  <button class="prop-close no-print" onclick="closeProp()">✕</button>
+  <button class="prop-close no-print" onclick="closeProp()"><script>document.write(svgIcon('✕',{size:20}))</script></button>
   <div class="prop-wrap" id="prop-content"></div>
 </div>
 
@@ -613,6 +727,19 @@ async function _mergeSignedProposals(hub,u){
     if(sigs)sigs.forEach(sp=>{
       const bid=hub.bids.find(b=>String(b.id)===sp.bid_id);
       if(!bid)return;
+      // A DECLINE also writes a signed_proposals row (payment_status='declined',
+      // signed_at = decline timestamp — that's how the contractor app learns of
+      // it). It is a terminal NO, not a signature: never promote it to Closed
+      // Won or stamp a "Signed by" name/date from it. Live bug: a declined
+      // proposal rendered a full CLIENT SIGNATURE block in the hub viewer.
+      if(sp.payment_status==='declined'||sp.payment_method==='declined'){
+        bid.status='Closed Lost';
+        bid.declinedAt=bid.declinedAt||sp.signed_at;
+        bid.lostAt=bid.lostAt||sp.signed_at; // Documents' declined card reads lostAt/lostReason
+        if(sp.decline_reason){bid.declineReason=sp.decline_reason;bid.lostReason=bid.lostReason||sp.decline_reason;}
+        bid.balance=0; // nothing owed on a declined proposal — no pay CTA
+        return;
+      }
       if(bid.status==='Pending'){
         bid.status='Closed Won';bid.signedAt=sp.signed_at;bid.paymentStatus=sp.payment_status;
       }
@@ -716,6 +843,20 @@ function _startHubRefresh(){
   if(_hubRefreshTimer)clearInterval(_hubRefreshTimer); // never stack timers
   _hubRefreshTimer=setInterval(_refreshHub,30000);
 }
+// Live push — a content-free "something changed" nudge on a per-client Realtime
+// broadcast channel (mirrors the contractor app's sig-feed-<uid> pattern), so a
+// status change lands in seconds instead of waiting out the 30s poll above. The
+// poll stays as-is: if this channel never connects or a message drops, the next
+// tick still catches up — nothing here is required for correctness.
+let _hubLiveChan=null;
+function _startHubLiveChannel(u,c){
+  if(!_supa||_hubLiveChan)return;
+  try{
+    _hubLiveChan=_supa.channel('hub-upd-'+u+'-'+c);
+    _hubLiveChan.on('broadcast',{event:'updated'},()=>{_refreshHub();});
+    _hubLiveChan.subscribe();
+  }catch(e){}
+}
 async function init(){
   const p=new URLSearchParams(location.search);
   const t=p.get('t'),u=p.get('u'),c=p.get('c'),mode=p.get('mode');
@@ -738,6 +879,7 @@ async function init(){
     await Promise.race([_mergeSignedProposals(_hub,u),new Promise(r=>setTimeout(r,6000))]);
     applyBranding(_hub);renderAll();
     _startHubRefresh();
+    _startHubLiveChannel(u,c);
     // Activate the correct view BEFORE revealing pg-hub so there's no flash
     const _hv=location.hash.slice(1);
     if(!location.hash.startsWith('#paid-')&&!location.hash.startsWith('#invoice-')){
@@ -809,7 +951,7 @@ async function initOnboard(t,u,c){
   const formHtml=
     '<div class="main-content" style="padding-top:72px;padding-bottom:40px;max-width:480px">'+
     '<div style="text-align:center;margin-bottom:28px">'+
-      '<div style="font-size:36px;margin-bottom:8px">📋</div>'+
+      '<div style="font-size:36px;margin-bottom:8px">'+svgIcon('📋',{size:36})+'</div>'+
       '<div style="font-size:22px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px">'+(firstName?'Hi '+esc(firstName)+'!':'Get your free quote')+'</div>'+
       '<div style="font-size:14px;color:var(--text2);line-height:1.6">'+esc(contractorName)+' needs a couple details to prepare your quote — takes about 2 minutes.</div>'+
     '</div>'+
@@ -918,7 +1060,7 @@ async function submitOnboard(userId,clientId){
     // Show brief confirmation then transition to hub (or quote-in-progress)
     document.querySelector('.body-wrap').innerHTML=
       '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;padding:40px 20px;text-align:center">'+
-      '<div style="font-size:64px;margin-bottom:20px">✅</div>'+
+      '<div style="font-size:64px;margin-bottom:20px">'+svgIcon('✅',{size:48})+'</div>'+
       '<div style="font-size:24px;font-weight:800;margin-bottom:10px">Got it!</div>'+
       '<div style="font-size:15px;color:var(--text2);line-height:1.7;max-width:340px">'+esc(_hub?.contractorName||'Your contractor')+' is preparing your quote.</div>'+
       '</div>';
@@ -936,10 +1078,10 @@ function showQuoteInProgress(h){
   const phone=h?.contractorPhone||'';
   document.getElementById('pg-hub').innerHTML=
     '<div class="pg-status" style="display:block">'+
-    '<div class="pg-status-icon">📋</div>'+
+    '<div class="pg-status-icon">'+svgIcon('📋',{size:48})+'</div>'+
     '<h2>Quote in progress</h2>'+
     '<p>'+esc(name)+' has your details and is preparing your free quote.</p>'+
-    (phone?'<a href="tel:'+phone.replace(/\D/g,'')+'" style="display:inline-block;margin-top:20px;background:var(--ink);color:#fff;padding:14px 28px;border-radius:var(--r);font-weight:700;text-decoration:none;font-size:15px">Call '+esc(phone)+'</a>':'')+
+    (phone?'<a target="_top" href="tel:'+phone.replace(/\D/g,'')+'" style="display:inline-block;margin-top:20px;background:var(--ink);color:#fff;padding:14px 28px;border-radius:var(--r);font-weight:700;text-decoration:none;font-size:15px">Call '+esc(phone)+'</a>':'')+
     '</div>';
   const pgLoad=document.getElementById('pg-load');if(pgLoad)pgLoad.style.display='none';
   document.getElementById('pg-hub').style.display='block';
@@ -959,8 +1101,23 @@ function showState(s){
   if(s==='hub'){_dismissBootOverlay(false);}
   else if(s==='err'){_dismissBootOverlay(true);}
 }
+// WCAG clamp for the contractor's brand color (self-contained copy of utils.js
+// adaBrand — this page loads no app JS). --denim renders as colored text on
+// white (links, timeline) AND as a bg under white text (buttons, chat bubbles):
+// darken toward black, hue preserved, until ≥4.6:1 vs white so no brand pick
+// can ever produce illegible text. Snapshots are clamped at upload too — this
+// covers legacy snapshots that stored a light color before the clamp existed.
+function _adaBrand(hex){
+  const h=String(hex||'').trim().replace('#','');
+  if(!/^[0-9a-fA-F]{6}$/.test(h))return hex||'';
+  let rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
+  const lum=c=>{const s=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
+  let guard=0;
+  while(1.05/(lum(rgb)+0.05)<4.6&&guard++<48){rgb=rgb.map(v=>Math.max(0,Math.floor(v*0.92)));}
+  return'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
+}
 function applyBranding(h){
-  if(h.brandColor)document.documentElement.style.setProperty('--denim',h.brandColor);
+  if(h.brandColor)document.documentElement.style.setProperty('--denim',_adaBrand(h.brandColor));
   document.title=(h.contractorName||'Project Hub')+' — Your Hub';
   // Swap generic "your contractor" placeholders in static copy (e.g. Help drawer) for the business name.
   const _cnName=(h.contractorName||'').trim();
@@ -983,10 +1140,14 @@ function applyBranding(h){
   const chipName=document.getElementById('acct-chip-name');
   if(avatar)avatar.textContent=fn.charAt(0).toUpperCase();
   if(chipName)chipName.textContent=fn;
-  // Populate + animate boot overlay
+  // Populate + animate boot overlay — a contractor logo replaces the generic
+  // house mark (same swap the app's boot screen does for white-label).
   const bn=document.getElementById('boot-name');if(bn)bn.textContent=h.contractorName||'';
   const bl=document.getElementById('boot-logo'),blw=document.getElementById('boot-logo-wrap');
-  if(bl&&blw&&h.logoData){bl.src=h.logoData;blw.style.display='block';}
+  if(bl&&blw&&h.logoData){
+    bl.src=h.logoData;blw.style.display='flex';
+    const bm=document.getElementById('boot-mark');if(bm)bm.style.display='none';
+  }
   const bb=document.getElementById('boot-bar');
   if(bb){if(h.brandColor)bb.style.background=h.brandColor;setTimeout(()=>bb.style.width='78%',40);}
 }
@@ -1046,13 +1207,21 @@ function renderOverview(){
   ];
 
   // Hero
-  let html='<div class="hub-hero">';
+  let html='<div class="hub-hero'+(h.logoData?' has-badge':'')+'">';
+  if(h.logoData)html+='<div class="hub-hero-badge"><img src="'+esc(h.logoData)+'" alt=""></div>';
   html+='<div class="hub-hero-l">';
   html+='<div class="hub-hero-eyebrow">Your project hub</div>';
   html+='<div class="hub-hero-greeting">'+esc(firstName)+'</div>';
   html+='<div class="hub-hero-sub">'+esc(h.contractorName||'')+'</div>';
-  if(h.contractorPhone)html+='<a class="hub-hero-phone" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'">'+esc(h.contractorPhone)+'</a>';
+  if(h.contractorPhone)html+='<a class="hub-hero-phone" target="_top" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'">'+svgIcon('📞',{size:12})+esc(h.contractorPhone)+'</a>';
   else html+='<div style="margin-bottom:14px"></div>';
+  // Credibility half of the trust split — light, one line, on arrival (NN/g: bank
+  // baseline trust before the ask). Years in business + a reviews link only.
+  { const _hc=[];
+    if(h.yearsInBusiness&&Number(h.yearsInBusiness)>0)_hc.push('<span>'+svgIcon('⭐',{size:12})+esc(h.yearsInBusiness)+' years in business</span>');
+    if(h.reviewUrl)_hc.push('<a target="_top" href="'+esc(h.reviewUrl)+'">'+svgIcon('★',{size:12})+'Reviews</a>');
+    if(_hc.length)html+='<div class="hub-hero-trust">'+_hc.join('')+'</div>';
+  }
   if(pct!==null){
     html+='<div class="hub-progress-row"><span>Project progress</span><span>'+pct+'%</span></div>';
     html+='<div class="hub-progress-track"><div class="hub-progress-fill" style="width:'+pct+'%"></div></div>';
@@ -1064,10 +1233,9 @@ function renderOverview(){
   if(h.contractorPhone){
     const phone=h.contractorPhone.replace(/\D/g,'');
     html+='<div class="hub-mobile-strip">';
-    html+='<a href="tel:'+phone+'" class="hub-mstrip-btn">📞 Call</a>';
-    html+='<a href="sms:'+phone+'" class="hub-mstrip-btn hub-mstrip-sec">💬 Text</a>';
-    if(h.contractorEmail)html+='<a href="mailto:'+esc(h.contractorEmail)+'" class="hub-mstrip-btn hub-mstrip-sec">📧 Email</a>';
-    html+='<button class="hub-mstrip-btn hub-mstrip-sec" onclick="openHelp()">📅 Schedule</button>';
+    html+='<a target="_top" href="tel:'+phone+'" class="hub-mstrip-btn">'+svgIcon('📞')+' Call</a>';
+    html+='<a target="_top" href="sms:'+phone+'" class="hub-mstrip-btn hub-mstrip-sec">'+svgIcon('💬')+' Text</a>';
+    if(h.contractorEmail)html+='<a target="_top" href="mailto:'+esc(h.contractorEmail)+'" class="hub-mstrip-btn hub-mstrip-sec">'+svgIcon('📧')+' Email</a>';
     html+='</div>';
   }
 
@@ -1092,7 +1260,7 @@ function renderOverview(){
     html+='<span style="font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>';
     html+='<span style="font-weight:800">= '+fmt(co.newAmount)+'</span>';
     html+='</div>';
-    html+='<button class="hub-btn hub-btn-sign" style="width:100%" onclick="_showCODoc('+bid.id+','+co.coNum+')">✍️ Review &amp; sign Change Order #'+co.coNum+'</button>';
+    html+='<button class="hub-btn hub-btn-sign" style="width:100%" onclick="_showCODoc('+bid.id+','+co.coNum+')">'+svgIcon('✍')+' Review &amp; sign Change Order #'+co.coNum+'</button>';
     html+='</div>';
   });
 
@@ -1126,7 +1294,7 @@ function renderOverview(){
       }
     });
   }else if(totalPaid>0.01){
-    html+='<div class="hub-paid-banner"><div style="font-size:28px">✅</div><div><div class="hub-paid-title">Paid in full</div><div class="hub-paid-sub">'+fmt(totalPaid)+' received — thank you!</div></div></div>';
+    html+='<div class="hub-paid-banner"><div style="font-size:28px">'+svgIcon('✅',{size:28})+'</div><div><div class="hub-paid-title">Paid in full</div><div class="hub-paid-sub">'+fmt(totalPaid)+' received — thank you!</div></div></div>';
   }
 
   // Two-col layout
@@ -1135,29 +1303,51 @@ function renderOverview(){
   // Main col
   html+='<div class="hub-col-main">';
 
-  // Feed: daily updates
-  html+='<div class="card">';
-  html+='<div class="hub-feed-hd">Daily updates</div>';
+  // Feed: daily updates — hidden entirely when there's nothing to show, so
+  // "Awaiting your signature" (the highest-priority action) isn't pushed below
+  // an empty placeholder card with nothing in it.
   if(activeJobs.length){
+    html+='<div class="card">';
+    html+='<div class="hub-feed-hd">Daily updates</div>';
     activeJobs.forEach(j=>{
       html+='<div class="hub-feed-item"><div class="hub-feed-dot"></div><div><div class="hub-feed-title">'+esc(j.name)+'</div><div class="hub-feed-meta">'+(j.start?'Starts '+fmtDate(j.start):'')+(j.days?' · '+j.days+(j.days===1?' day':' days'):'In progress')+'</div></div></div>';
     });
-  }else{
-    html+='<div class="hub-feed-empty">No updates yet — we\'ll post progress here.</div>';
+    html+='</div>';
   }
-  html+='</div>';
 
   // Awaiting signature
   if(pendingBids.length){
+    // Trust: split, weighted to the CTA (research: decision-point placement beats
+    // arrival-point for conversion; inline sentence, never a pill/badge wall). The
+    // credibility half (years/reviews) rides in the hero on arrival; the
+    // safety half (Licensed & Insured · warranty) sits right above each
+    // Review & Sign button — built once here, reused per card.
+    // Warranty period → adjective form so it reads right: "1 year" → "1-year",
+    // "6 months" → "6-month". Result: "1-year workmanship warranty".
+    const _warrAdj=String(h.warrantyPeriod||'').trim().replace(/^(\d+)\s+(year|month|day)s?$/i,'$1-$2');
+    let _ctaTrust='';
+    { const _t=[];
+      if(h.trustLicense)_t.push('<span>'+svgIcon('🛡',{size:13})+esc(h.trustLicense)+'</span>');
+      if(_warrAdj)_t.push('<span>'+svgIcon('✓',{size:13})+esc(_warrAdj)+' workmanship warranty</span>');
+      if(_t.length)_ctaTrust='<div class="hub-cta-trust">'+_t.slice(0,2).join('')+'</div>';
+    }
     html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';
     pendingBids.slice(0,3).forEach(b=>{
       html+='<div class="hub-bid-row">';
-      html+='<div class="hub-bid-top"><div><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div><div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+'</div></div></div>';
+      // No per-card status pill — the section header already says "Awaiting your
+      // signature", so a pill on every card was redundant AND fought long
+      // estimate names for width. The name now gets the full row.
+      html+='<div class="hub-bid-top">'+
+        '<div class="hub-bid-ico">'+svgIcon('📄',{size:20})+'</div>'+
+        '<div class="hub-bid-hd"><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div>'+
+        '<div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+' · #'+String(b.id).slice(-6)+'</div></div>'+
+      '</div>';
       /* Price intentionally hidden from the card — research shows showing a large
          dollar amount before the client reads the scope triggers loss-aversion and
          kills conversions. Price is revealed inside the proposal after scope context. */
+      html+=_ctaTrust;   // risk-killers immediately above the sign button (thumb zone)
       if(b.signHubUrl){
-        html+='<a href="'+esc(_signHref(b.signHubUrl))+'" class="hub-btn hub-btn-sign" style="width:100%">✍️ Review &amp; Sign →</a>';
+        html+='<a href="'+esc(_signHref(b.signHubUrl))+'" class="hub-btn hub-btn-sign" style="width:100%">'+svgIcon('✍')+' Review &amp; Sign →</a>';
       }else{
         html+='<div class="hub-bid-pending-msg">Sign link on the way — check back soon</div>';
       }
@@ -1175,7 +1365,7 @@ function renderOverview(){
       const isPaid=!isCancelled&&(b.balance||0)<0.01;
       const dotCls=isCancelled?'cancelled':(isPaid?'done':'active');
       const badgeCls=isCancelled?'hub-badge-cancelled':(isPaid?'hub-badge-paid':'hub-badge-due');
-      const badgeTxt=isCancelled?'Cancelled 🚫':(isPaid?'Paid ✓':'Balance due');
+      const badgeTxt=isCancelled?'Cancelled '+svgIcon('🚫'):(isPaid?'Paid '+svgIcon('✓'):'Balance due');
       html+='<div class="hub-timeline-item">';
       html+='<div class="hub-timeline-dot '+dotCls+'"></div>';
       html+='<div class="hub-timeline-body">';
@@ -1198,8 +1388,8 @@ function renderOverview(){
   if(h.contractorPhone){
     html+='<div class="hub-side-card">';
     html+='<div class="hub-side-hd">Contact us</div>';
-    html+='<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn">📞 Call '+esc(h.contractorPhone)+'</a>';
-    html+='<a href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn hub-contact-btn-sec">💬 Send a text</a>';
+    html+='<a target="_top" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn">'+svgIcon('📞')+' Call '+esc(h.contractorPhone)+'</a>';
+    html+='<a target="_top" href="sms:'+h.contractorPhone.replace(/\D/g,'')+'" class="hub-contact-btn hub-contact-btn-sec">'+svgIcon('💬')+' Send a text</a>';
     html+='</div>';
   }
 
@@ -1237,7 +1427,7 @@ function renderProject(){
   let html='<div class="view-title">Project &amp; Photos</div>';
 
   if(!allJobs.length&&!allPhotos.length){
-    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📷</div><div class="hub-empty-title">No photos yet</div><div class="hub-empty-body">'+_cn('Your contractor')+' will upload progress photos here as work begins. Check back soon!</div></div></div>';
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">'+svgIcon('📷',{size:48})+'</div><div class="hub-empty-title">No photos yet</div><div class="hub-empty-body">'+_cn('Your contractor')+' will upload progress photos here as work begins. Check back soon!</div></div></div>';
     document.getElementById('view-project').innerHTML=html;return;
   }
 
@@ -1247,7 +1437,10 @@ function renderProject(){
     const jobPhotos=job.photos||[];
     const beforePhotos=jobPhotos.filter(p=>p.type==='before');
     const afterPhotos=jobPhotos.filter(p=>p.type==='after');
-    const otherPhotos=jobPhotos.filter(p=>p.type!=='before'&&p.type!=='after');
+    // Chronological — this IS the milestone timeline for the job, so it must read
+    // in the order things actually happened, not upload-request-arrival order.
+    const progressPhotos=jobPhotos.filter(p=>p.type==='progress').slice().sort((a,b)=>(a.uploadedAt||'').localeCompare(b.uploadedAt||''));
+    const otherPhotos=jobPhotos.filter(p=>p.type!=='before'&&p.type!=='after'&&p.type!=='progress');
     const isDone=job.status==='done';
     const isActive=job.status==='active';
     const statusLabel=isDone?'Complete':isActive?'In progress':'Scheduled';
@@ -1260,42 +1453,55 @@ function renderProject(){
     html+='</div>';
     html+='<span style="font-size:11px;font-weight:700;color:'+statusColor+';flex-shrink:0;margin-left:10px">'+statusLabel+'</span>';
     html+='</div>';
-    if(beforePhotos.length&&afterPhotos.length){
-      const b=beforePhotos[beforePhotos.length-1];
-      const a=afterPhotos[afterPhotos.length-1];
-      const bIdx=jobPhotos.indexOf(b);
-      const aIdx=jobPhotos.indexOf(a);
-      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">';
-      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+bIdx+')" aria-label="Before">';
-      html+='<img src="'+esc(b.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-      html+='<div class="hub-photo-tag">Before</div></div>';
-      html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+aIdx+')" aria-label="After">';
-      html+='<img src="'+esc(a.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-      html+='<div class="hub-photo-tag">After</div></div>';
+    if(beforePhotos.length||afterPhotos.length){
+      html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px'+((progressPhotos.length||otherPhotos.length)?';margin-bottom:14px':'')+'">';
+      if(beforePhotos.length){
+        const b=beforePhotos[beforePhotos.length-1];
+        const bIdx=jobPhotos.indexOf(b);
+        html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+bIdx+')" aria-label="Before">';
+        html+='<img src="'+esc(b.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<div class="hub-photo-tag">Before</div></div>';
+      }else html+='<div></div>';
+      if(afterPhotos.length){
+        const a=afterPhotos[afterPhotos.length-1];
+        const aIdx=jobPhotos.indexOf(a);
+        html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+aIdx+')" aria-label="After">';
+        html+='<img src="'+esc(a.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<div class="hub-photo-tag">After</div></div>';
+      }else html+='<div></div>';
       html+='</div>';
-      if(otherPhotos.length){
-        html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px;margin-top:6px">';
-        otherPhotos.forEach(p=>{
-          const idx=jobPhotos.indexOf(p);
-          const tag=p.type==='progress'?'Progress':p.type==='before-after'?'B&A':p.type;
-          html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')">';
-          html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-          html+='<div class="hub-photo-tag">'+tag+'</div></div>';
-        });
-        html+='</div>';
-      }
-    }else if(jobPhotos.length){
+    }
+    // Milestone timeline — one entry per progress photo, oldest first, dated and
+    // (if the contractor typed one) labeled, so a multi-week remodel reads as a
+    // day-by-day story instead of a flat thumbnail grid.
+    if(progressPhotos.length){
+      html+='<div class="hub-timeline"'+(otherPhotos.length?' style="margin-bottom:14px"':'')+'>';
+      progressPhotos.forEach(p=>{
+        const idx=jobPhotos.indexOf(p);
+        const dayNum=(job.start&&p.uploadedAt)?Math.floor((new Date(p.uploadedAt)-new Date(job.start+'T00:00:00'))/86400000)+1:null;
+        const dateLabel=p.uploadedAt?fmtDate(p.uploadedAt.slice(0,10)):'';
+        html+='<div class="hub-log-item">';
+        html+='<div class="hub-log-dot"></div>';
+        html+='<div class="hub-log-body">';
+        html+='<div class="hub-log-date">'+(dayNum&&dayNum>0?'Day '+dayNum+(dateLabel?' · '+dateLabel:''):dateLabel)+'</div>';
+        html+='<div class="hub-log-text">'+(p.caption?esc(p.caption):'Progress photo')+'</div>';
+        html+='<div class="hub-log-photos"><img class="hub-log-photo-sq" src="'+esc(p.url)+'" loading="lazy" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')" onerror="this.style.display=\'none\'"></div>';
+        html+='</div></div>';
+      });
+      html+='</div>';
+    }
+    if(otherPhotos.length){
       html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:6px">';
-      jobPhotos.forEach((p,idx)=>{
-        const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='progress'?'Progress':p.type==='before-after'?'B&A':'';
+      otherPhotos.forEach(p=>{
+        const idx=jobPhotos.indexOf(p);
         html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')">';
         html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
-        if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
         html+='</div>';
       });
       html+='</div>';
-    }else{
-      html+='<div style="font-size:12px;color:var(--text3);padding-top:'+(job.start||job.name?'8':'0')+'px;border-top:'+(job.start||job.name?'1px solid var(--border)':'none')+'">📷 Progress photos will appear here</div>';
+    }
+    if(!jobPhotos.length){
+      html+='<div style="font-size:12px;color:var(--text3);padding-top:'+(job.start||job.name?'8':'0')+'px;border-top:'+(job.start||job.name?'1px solid var(--border)':'none')+'">'+svgIcon('📷')+' Progress photos will appear here</div>';
     }
     html+='</div>';
   });
@@ -1336,7 +1542,7 @@ function renderPayments(){
   let html='<div class="view-title">Payments</div>';
 
   if(!wonBids.length){
-    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">💳</div><div class="hub-empty-title">No invoices yet</div><div class="hub-empty-body">Payments and invoices will appear here once a proposal is signed.</div></div></div>';
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">'+svgIcon('💳',{size:48})+'</div><div class="hub-empty-title">No invoices yet</div><div class="hub-empty-body">Payments and invoices will appear here once a proposal is signed.</div></div></div>';
     document.getElementById('view-payments').innerHTML=html;return;
   }
 
@@ -1361,7 +1567,7 @@ function renderPayments(){
     html+='<div onclick="_togglePay('+bid_id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer;position:relative">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px">'+esc(bid.type||'Estimate')+(isPaid?' · Paid ✓':' · Balance due')+'</div>';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px">'+esc(bid.type||'Estimate')+(isPaid?' · Paid '+svgIcon('✓'):' · Balance due')+'</div>';
     html+='<div style="display:flex;align-items:baseline;gap:7px">';
     html+='<span style="font-size:28px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-1.5px;line-height:1">'+fmt(isPaid?total:balance)+'</span>';
     html+='<span style="font-size:12px;color:rgba(255,255,255,.4);font-weight:500">'+(isPaid?'paid in full':'remaining')+'</span>';
@@ -1433,7 +1639,7 @@ function renderPayments(){
     // Invoice link — only once the job is marked complete (same gate as Documents)
     if(bid.completion_date){
       html+='<button onclick="openInvoice('+bid_id+')" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;background:var(--bg-card);border:none;border-top:0;cursor:pointer;font-family:inherit;text-align:left">';
-      html+='<div style="width:32px;height:32px;background:var(--bg);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📄</div>';
+      html+='<div style="width:32px;height:32px;background:var(--bg);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">'+svgIcon('📄')+'</div>';
       html+='<div style="flex:1;font-size:13px;font-weight:700;color:var(--text)">View invoice</div>';
       html+='<div style="font-size:18px;color:var(--text3)">›</div>';
       html+='</button>';
@@ -1509,7 +1715,7 @@ function _cancelSetContent(html){
 function _cancelHdr(title){
   return '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
     '<div style="font-size:13px;font-weight:800;color:#1a365d">'+title+'</div>'+
-    '<button onclick="_cancelClose()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">✕</button>'+
+    '<button onclick="_cancelClose()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">'+svgIcon('✕',{size:22})+'</button>'+
   '</div>';
 }
 function _showCancelForm(bidId){
@@ -1528,7 +1734,7 @@ function _showCancelForm(bidId){
   if(bid.cancelledAt){_cancelShowConfirmed(bid);return;}
   if(!open){
     _cancelSetContent(_cancelHdr('Notice of Cancellation')+
-      '<div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#64748b;font-weight:700">🔒 Cancellation window closed '+dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</div>'+
+      '<div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#64748b;font-weight:700">'+svgIcon('🔒')+' Cancellation window closed '+dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</div>'+
       '<p style="margin:0;font-size:12px;color:#64748b">The cancellation window for this agreement has closed.</p>');
     return;
   }
@@ -1539,7 +1745,7 @@ function _cancelShowStep1(dl){
   const contractorName=esc((_hub&&_hub.contractorName)||'your contractor');
   const reasons=['Price concerns','Schedule conflict','Found another contractor','Changed my mind','Other'];
   let h=_cancelHdr('Notice of Cancellation');
-  h+='<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:#92400E;font-weight:700">⏳ Cancellation window open — expires '+dl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at midnight</div>';
+  h+='<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:#92400E;font-weight:700">'+svgIcon('⏳',{size:12})+' Cancellation window open — expires '+dl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at midnight</div>';
   h+='<div style="font-size:15px;font-weight:800;color:#1a1a18;margin-bottom:6px">Why are you considering cancelling?</div>';
   h+='<div style="font-size:13px;color:#64748b;margin-bottom:14px">Helps '+contractorName+' improve their service.</div>';
   reasons.forEach(r=>{h+='<button class="cancel-reason-opt" data-reason="'+r+'" onclick="_cancelPickReason(this)" style="display:block;width:100%;text-align:left;padding:11px 14px;margin-bottom:8px;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;font-size:14px;cursor:pointer;font-family:inherit;color:#1a1a18;transition:border-color .15s,background .15s">'+r+'</button>';});
@@ -1570,12 +1776,12 @@ function _cancelShowStep2(){
   const contractorName=esc((_hub&&_hub.contractorName)||'your contractor');
   let h=_cancelHdr('Notice of Cancellation');
   h+='<div style="text-align:center;padding:4px 0 16px">';
-  h+='<div style="font-size:36px;margin-bottom:12px">📞</div>';
+  h+='<div style="font-size:36px;margin-bottom:12px">'+svgIcon('📞',{size:36})+'</div>';
   h+='<div style="font-size:16px;font-weight:800;color:#1a1a18;margin-bottom:10px">Have you spoken with '+contractorName+' first?</div>';
   h+='<div style="font-size:13px;color:#64748b;line-height:1.65;margin-bottom:20px">Most concerns — pricing, scheduling, scope — can be resolved with a quick conversation. Once you cancel, the contract is voided and <strong>cannot be reinstated</strong>.</div>';
   if(phone){
-    h+='<a href="tel:'+phone+'" style="display:block;width:100%;padding:13px;border-radius:10px;background:#1b1612;color:#fff;font-size:15px;font-weight:800;text-decoration:none;text-align:center;margin-bottom:10px;box-sizing:border-box">📞 Call '+contractorName+'</a>';
-    h+='<a href="sms:'+phone+'" style="display:block;width:100%;padding:12px;border:1.5px solid #1b1612;border-radius:10px;background:#fff;color:#1b1612;font-size:14px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:20px;box-sizing:border-box">💬 Text '+contractorName+'</a>';
+    h+='<a target="_top" href="tel:'+phone+'" style="display:block;width:100%;padding:13px;border-radius:10px;background:#1b1612;color:#fff;font-size:15px;font-weight:800;text-decoration:none;text-align:center;margin-bottom:10px;box-sizing:border-box">'+svgIcon('📞',{size:15})+' Call '+contractorName+'</a>';
+    h+='<a target="_top" href="sms:'+phone+'" style="display:block;width:100%;padding:12px;border:1.5px solid #1b1612;border-radius:10px;background:#fff;color:#1b1612;font-size:14px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:20px;box-sizing:border-box">'+svgIcon('💬',{size:14})+' Text '+contractorName+'</a>';
   }
   h+='<button id="cancel-proceed-btn" onclick="_cancelShowStep3()" style="background:none;border:none;font-size:12px;color:#94a3b8;cursor:pointer;font-family:inherit;text-decoration:underline;padding:4px">I\'ve already tried — I still want to cancel</button>';
   h+='</div>';
@@ -1640,7 +1846,7 @@ function _cancelShowConfirmed(bid){
   h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+' — Detach &amp; Retain</div>';
   h+='<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:14px">NOTICE OF CANCELLATION</div>';
   h+='<div style="font-size:12px;color:#2d3748;line-height:1.8"><p style="margin:0 0 8px"><strong>Date of Transaction:</strong> '+txDate+'</p><p style="margin:0 0 10px;font-weight:700">YOU MAY CANCEL THIS TRANSACTION, WITHOUT ANY PENALTY OR OBLIGATION, WITHIN '+daysWord+' BUSINESS DAYS FROM THE ABOVE DATE.</p></div>';
-  h+='<div style="border-top:1px solid #e2e8f0;padding-top:14px"><div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 14px;font-size:12px;color:#991B1B"><strong>🚫 Cancellation submitted</strong><br>Signed by '+esc(bid.cancelledName||'you')+' · '+dt;
+  h+='<div style="border-top:1px solid #e2e8f0;padding-top:14px"><div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 14px;font-size:12px;color:#991B1B"><strong>'+svgIcon('🚫')+' Cancellation submitted</strong><br>Signed by '+esc(bid.cancelledName||'you')+' · '+dt;
   if(refundNote)h+='<br><span style="color:#92400E">'+refundNote+'</span>';
   h+='<br>'+_cn('Your contractor')+' has been notified.</div></div>';
   _cancelSetContent(h);
@@ -1657,8 +1863,8 @@ function _showEpaDoc(bidId){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px';
   ov.innerHTML='<div style="background:#fff;border-radius:14px;padding:22px 20px 26px;max-width:520px;width:100%;max-height:88vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
-      '<div style="font-size:13px;font-weight:800;color:#92400E">⚠️ EPA Renovate Right Disclosure</div>'+
-      '<button onclick="document.getElementById(\'epa-doc-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">✕</button>'+
+      '<div style="font-size:13px;font-weight:800;color:#92400E">'+svgIcon('⚠',{size:13})+' EPA Renovate Right Disclosure</div>'+
+      '<button onclick="document.getElementById(\'epa-doc-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">'+svgIcon('✕',{size:22})+'</button>'+
     '</div>'+
     '<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">EPA 40 CFR Part 745 — Pre-Renovation Disclosure</div>'+
     '<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#92400E;margin-bottom:14px">Confirmation of Receipt</div>'+
@@ -1666,7 +1872,7 @@ function _showEpaDoc(bidId){
       '<p style="margin:0 0 10px">I confirm that I received a copy of the EPA pamphlet <em>"Renovate Right: Important Lead Hazard Information for Families, Child Care Providers and Schools"</em> informing me of the potential risk of lead hazard exposure from renovation activity to be performed in my dwelling. I received this pamphlet before the work began.</p>'+
       (bid.rrpFirmCert?'<p style="margin:0 0 6px"><strong>EPA Certified Firm #:</strong> '+esc(bid.rrpFirmCert)+'</p>':'')+
       (bid.rrpRenovatorName?'<p style="margin:0 0 10px"><strong>Certified Renovator:</strong> '+esc(bid.rrpRenovatorName)+'</p>':'')+
-      '<p style="margin:0 0 4px"><a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:700">📄 View the Renovate Right pamphlet →</a></p>'+
+      '<p style="margin:0 0 4px"><a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:#1d4ed8;font-weight:700">'+svgIcon('📄')+' View the Renovate Right pamphlet →</a></p>'+
     '</div>'+
     '<div style="border-top:2px solid #1a1a18;margin-top:18px;padding-top:14px">'+
       '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:8px">Acknowledged &amp; Signed</div>'+
@@ -1710,8 +1916,8 @@ function _showCODoc(bidId,coNum){
   const dt=co.signedAt?new Date(co.signedAt).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
   let h='<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;margin:auto;padding:22px 20px 26px;box-sizing:border-box;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">';
-  h+='<div style="font-size:13px;font-weight:800;color:#1a365d">📋 Change Order</div>';
-  h+='<button onclick="document.getElementById(\'co-hub-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1" aria-label="Close">✕</button>';
+  h+='<div style="font-size:13px;font-weight:800;color:#1a365d">'+svgIcon('📋',{size:13})+' Change Order</div>';
+  h+='<button onclick="document.getElementById(\'co-hub-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1" aria-label="Close">'+svgIcon('✕',{size:22})+'</button>';
   h+='</div>';
   // CO number badge
   h+='<div style="display:inline-block;background:#EBF2FB;color:#1a365d;font-size:12px;font-weight:800;padding:4px 12px;border-radius:20px;margin-bottom:16px">CO #'+co.coNum+'</div>';
@@ -1755,7 +1961,7 @@ function _showCODoc(bidId,coNum){
     h+='<canvas id="co-hub-canvas" width="500" height="140" style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>';
     h+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button onclick="_clearCOHubCanvas()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button></div>';
     h+='<div id="co-hub-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:6px"></div>';
-    h+='<button id="co-hub-sign-btn" onclick="_submitCOHubSign('+bid.id+','+co.coNum+')" style="width:100%;padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">✓ Sign Change Order</button>';
+    h+='<button id="co-hub-sign-btn" onclick="_submitCOHubSign('+bid.id+','+co.coNum+')" style="width:100%;padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:14})+' Sign Change Order</button>';
   }
   h+='</div>';
   const ov=document.createElement('div');
@@ -1840,7 +2046,7 @@ async function _submitCOHubSign(bidId,coNum){
       const _deltaLabel=(co.type==='sub'?'−':'+')+fmt(co.amount);
       const _dtFmt=new Date(ts).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
       _ovEl.innerHTML='<div style="background:#fff;border-radius:14px;max-width:420px;width:100%;margin:auto;padding:32px 24px 28px;box-sizing:border-box;text-align:center">'+
-        '<div style="font-size:48px;margin-bottom:12px">✅</div>'+
+        '<div style="font-size:48px;margin-bottom:12px">'+svgIcon('✅',{size:48})+'</div>'+
         '<div style="font-size:20px;font-weight:900;color:#1a1a18;margin-bottom:8px">You\'re all set!</div>'+
         '<div style="font-size:14px;color:#475569;margin-bottom:24px">Change Order #'+co.coNum+' has been signed.</div>'+
         '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:16px;margin-bottom:24px;text-align:left">'+
@@ -1856,7 +2062,7 @@ async function _submitCOHubSign(bidId,coNum){
   }catch(e){
     console.warn('change order sign:',e);
     if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact '+_cnText('your contractor')+'.');
-    if(btn){btn.disabled=false;btn.textContent='✓ Sign Change Order';}
+    if(btn){btn.disabled=false;btn.innerHTML=svgIcon('✓',{size:14})+' Sign Change Order';}
   }
 }
 async function _submitCancellation(bidId){
@@ -1901,7 +2107,7 @@ function renderDocuments(){
   let html='<div class="view-title">Documents</div>';
 
   if(!wonBids.length&&!lostBids.length&&!h.epaRequired&&!(_hub._clientDocs&&_hub._clientDocs.length)){
-    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">📁</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals and invoices will appear here once a proposal is signed.</div></div></div>';
+    html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">'+svgIcon('📁',{size:48})+'</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals and invoices will appear here once a proposal is signed.</div></div></div>';
   }
 
   // One accordion card per signed estimate — invoice + agreement nested inside
@@ -1918,7 +2124,7 @@ function renderDocuments(){
     html+='<div onclick="_toggleDoc('+bid.id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Estimate')+(_isCancelled?' · Cancelled 🚫':(isPaid?' · Paid ✓':' · Balance due'))+'</div>';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Estimate')+(_isCancelled?' · Cancelled '+svgIcon('🚫'):(isPaid?' · Paid '+svgIcon('✓'):' · Balance due'))+'</div>';
     html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
     html+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:3px">Signed '+fmtDate(bid.signedAt||bid.bid_date)+' · '+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
     html+='</div>';
@@ -1928,30 +2134,30 @@ function renderDocuments(){
     // Collapsible body
     html+='<div id="db-'+bid.id+'" style="background:var(--bg-card);display:'+(autoOpen?'block':'none')+'">';
     html+='<div style="padding:0 16px">';
-    if(bid.completion_date){html+=_docRow('📄','Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');}
+    if(bid.completion_date){html+=_docRow(svgIcon('📄',{size:18}),'Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');}
     if(bid.proposalKey){
       const _sigMeta=bid.signedAt
-        ?'✍️ Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
+        ?svgIcon('✍',{size:11})+' Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
         :'Tap to view signed proposal';
-      html+=_docRow('📋','Signed Agreement',_sigMeta,'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Contract</span>','openProposal('+bid.id+')','');
+      html+=_docRow(svgIcon('📋',{size:18}),'Signed Agreement',_sigMeta,'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Contract</span>','openProposal('+bid.id+')','');
     }
     // EPA RRP disclosure — doc 2 of the signing flow on pre-1978 homes. Acknowledged
     // with the same signature as the agreement, so it shows the same signer + timestamp.
     if(_hasEpaDoc){
       const _epaTs=bid.epaAckAt||bid.signedAt;
-      const _epaMeta='✍️ Acknowledged by '+esc(bid.signerName||'client')+' · '+new Date(_epaTs).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-      html+=_docRow('⚠️','EPA Renovate Right Disclosure',_epaMeta,'<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','_showEpaDoc('+bid.id+')','');
+      const _epaMeta=svgIcon('✍',{size:11})+' Acknowledged by '+esc(bid.signerName||'client')+' · '+new Date(_epaTs).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+      html+=_docRow(svgIcon('⚠',{size:18}),'EPA Renovate Right Disclosure',_epaMeta,'<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','_showEpaDoc('+bid.id+')','');
     }
     // Change orders — signed ones render like the EPA doc (signature + metadata);
     // pending ones open the review & sign modal.
     _bidCOs.forEach(co=>{
       const _coMeta=co.signedAt
-        ?'✍️ Signed by '+esc(co.signerName||'client')+' · '+new Date(co.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
+        ?svgIcon('✍',{size:11})+' Signed by '+esc(co.signerName||'client')+' · '+new Date(co.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
         :'Review &amp; sign — '+(co.type==='sub'?'−':'+')+fmt(co.amount)+' adjustment';
       const _coTag=co.signedAt
         ?'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Signed</span>'
         :'<span class="hub-doc-tag" style="margin-left:6px;background:#FEF3C7;color:#92400E">Action needed</span>';
-      html+=_docRow('📋','Change Order #'+co.coNum,_coMeta,_coTag,'_showCODoc('+bid.id+','+co.coNum+')','');
+      html+=_docRow(svgIcon('📋',{size:18}),'Change Order #'+co.coNum,_coMeta,_coTag,'_showCODoc('+bid.id+','+co.coNum+')','');
     });
     // Cancellation notice — e-signable while the rescission window is open
     // (_cancelWindowOpen is the authority); the row removes itself entirely once
@@ -1968,7 +2174,7 @@ function renderDocuments(){
         ?'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEE2E2;color:#991B1B">Cancelled</span>'
         :'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEF3C7;color:#92400E">Active</span>';
       html+='<div style="display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);cursor:pointer" onclick="_showCancelForm('+bid.id+')">'+
-        '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">⚖️</div>'+
+        '<div style="width:36px;height:36px;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0">'+svgIcon('⚖',{size:18})+'</div>'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:13px;font-weight:700;color:var(--text)">'+_cd+'-Day Cancellation Right'+_cancelTag+'</div>'+
           '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+_cancelMeta+'</div>'+
@@ -2004,7 +2210,7 @@ function renderDocuments(){
     html+='<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:'+(_note?'4px':'10px')+'">Reason: '+_reason+'</div>';
     if(_note)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:10px;line-height:1.5">'+_note+'</div>';
     if(bid.proposalKey){
-      html+=_docRow('📋','Proposal','View the proposal that was sent (read-only)','<span class="hub-doc-tag" style="margin-left:6px;background:#E5E7EB;color:#374151">Declined</span>','openProposal('+bid.id+')','');
+      html+=_docRow(svgIcon('📋',{size:18}),'Proposal','View the proposal that was sent (read-only)','<span class="hub-doc-tag" style="margin-left:6px;background:#E5E7EB;color:#374151">Declined</span>','openProposal('+bid.id+')','');
     }
     html+='</div>';
     html+='</div>'; // end body
@@ -2016,7 +2222,7 @@ function renderDocuments(){
     html+='<div class="card" style="margin-bottom:12px">';
     html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Your uploads</div>';
     _hub._clientDocs.forEach(d=>{
-      html+=_docRow('📎',esc(d.name),d.meta||'Uploaded by you','<span class="hub-doc-tag hub-doc-tag-client" style="margin-left:6px">Yours</span>','',d.url);
+      html+=_docRow(svgIcon('📎',{size:18}),esc(d.name),d.meta||'Uploaded by you','<span class="hub-doc-tag hub-doc-tag-client" style="margin-left:6px">Yours</span>','',d.url);
     });
     html+='</div>';
   }
@@ -2025,19 +2231,19 @@ function renderDocuments(){
   if(h.epaRequired){
     html+='<div class="card" style="margin-bottom:12px">';
     html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Compliance</div>';
-    html+=_docRow('⚠️','EPA Lead Paint Pamphlet','Renovate Right — required for pre-1978 homes','<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','','https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools');
+    html+=_docRow(svgIcon('⚠',{size:18}),'EPA Lead Paint Pamphlet','Renovate Right — required for pre-1978 homes','<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','','https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools');
     html+='</div>';
   }
 
   // Upload button
-  html+='<div style="margin-bottom:14px"><button class="btn btn-sec" style="width:auto;padding:10px 18px;font-size:13px" onclick="_uploadClientDoc()">📎 Upload a document</button></div>';
+  html+='<div style="margin-bottom:14px"><button class="btn btn-sec" style="width:auto;padding:10px 18px;font-size:13px" onclick="_uploadClientDoc()">'+svgIcon('📎',{size:13})+' Upload a document</button></div>';
 
   // Contractor info
   html+='<div class="card">';
   html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Your contractor</div>';
   html+='<div class="hub-contractor-grid">';
   html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Business</div><div class="hub-contractor-val">'+esc(h.contractorName||'—')+'</div></div>';
-  html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Phone</div><div class="hub-contractor-val">'+(h.contractorPhone?'<a href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" style="color:inherit;text-decoration:none">'+esc(h.contractorPhone)+'</a>':'—')+'</div></div>';
+  html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Phone</div><div class="hub-contractor-val">'+(h.contractorPhone?'<a target="_top" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" style="color:inherit;text-decoration:none">'+esc(h.contractorPhone)+'</a>':'—')+'</div></div>';
   if(h.bwebsite){
     const safeUrl=(h.bwebsite||'').trim();
     const isSafeUrl=/^https?:\/\//i.test(safeUrl);
@@ -2062,25 +2268,25 @@ function renderMessages(){
   html+='<div class="hub-chat-messages">';
   // System message
   html+='<div class="hub-msg hub-msg-contractor">';
-  html+='👋 Welcome to your project hub. Send us a message or call/text anytime.';
+  html+=svgIcon('👋',{size:13})+' Welcome to your project hub. Send us a message or call/text anytime.';
   html+='<div class="hub-msg-time">'+cName+'</div>';
   html+='</div>';
   if(!phone){
     html+='<div style="text-align:center;padding:20px 0;color:var(--text3);font-size:13px">Contact info not available yet.</div>';
   }else{
     html+='<div style="display:flex;gap:8px;justify-content:center;margin-top:8px">';
-    html+='<a href="tel:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:var(--ink);color:#fff;border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">📞 Call</a>';
-    html+='<a href="sms:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:transparent;color:var(--text);border:1.5px solid var(--border2);border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">💬 Text</a>';
+    html+='<a target="_top" href="tel:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:var(--ink);color:#fff;border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">'+svgIcon('📞',{size:13})+' Call</a>';
+    html+='<a target="_top" href="sms:'+phone.replace(/\D/g,'')+'" style="padding:10px 18px;background:transparent;color:var(--text);border:1.5px solid var(--border2);border-radius:22px;font-size:13px;font-weight:700;text-decoration:none">'+svgIcon('💬',{size:13})+' Text</a>';
     html+='</div>';
     html+='<div style="text-align:center;padding:16px 0">';
-    html+='<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Start the conversation 👋</div>';
+    html+='<div style="font-size:13px;color:var(--text3);margin-bottom:8px">Start the conversation '+svgIcon('👋',{size:13})+'</div>';
     html+='<button onclick="const inp=document.getElementById(\'chat-input\');if(inp){inp.value=\'Hi! I\'m checking in on my project.\';inp.focus();}" style="padding:9px 18px;border-radius:22px;background:var(--bg);color:var(--text2);border:1.5px solid var(--border2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Say hi to '+cName+' →</button>';
     html+='</div>';
   }
   html+='</div>';
   html+='<div class="hub-chat-input">';
   html+='<input type="text" placeholder="Message '+cName+'…" id="chat-input" onkeydown="if(event.key===\'Enter\')_sendChatMsg()">';
-  html+='<button class="hub-chat-attach" onclick="_attachChatFile()" aria-label="Attach file">📎</button>';
+  html+='<button class="hub-chat-attach" onclick="_attachChatFile()" aria-label="Attach file">'+svgIcon('📎')+'</button>';
   html+='<button class="hub-chat-send" onclick="_sendChatMsg()">Send</button>';
   html+='</div>';
   html+='</div>';
@@ -2102,7 +2308,7 @@ function renderInvoices(){
     html+='<div style="font-size:18px;font-weight:800;flex-shrink:0;margin-left:10px;color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+fmt(b.amount)+'</div></div>';
     html+='<div style="margin-bottom:10px"><span class="badge" style="background:'+(isPaid?'var(--green-lt)':'var(--red-lt)')+';color:'+(isPaid?'var(--green-mid)':'var(--red)')+'">'+( isPaid?'Paid in full':'Balance: '+fmt(b.balance))+'</span></div>';
     if(!isPaid)html+=_payBtn(b,_hub);
-    if(b.completion_date||(job&&job.completion_date))html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">📄 View Invoice</button>';
+    if(b.completion_date||(job&&job.completion_date))html+='<button onclick="openInvoice('+b.id+')" class="btn btn-sec">'+svgIcon('📄')+' View Invoice</button>';
     html+='</div>';
   });
   const el=document.getElementById('view-invoices');if(el)el.innerHTML=html;
@@ -2120,7 +2326,7 @@ async function _launchCheckout(bidId,amount,label){
   // Open modal with loading state immediately
   document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
   document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
-  document.getElementById('checkout-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center;color:#9ca3af;font-size:14px">Loading payment options…</div>';
+  document.getElementById('checkout-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center"><div class="hub-spinner"></div><div style="color:#9ca3af;font-size:14px">Loading payment options…</div></div>';
   const submitBtn=document.getElementById('checkout-submit-btn');
   if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
   document.getElementById('stripe-overlay').style.display='block';
@@ -2220,7 +2426,7 @@ function _showCashMsg(){
   const ov=document.createElement('div');
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding-bottom:env(safe-area-inset-bottom,0)';
   ov.innerHTML='<div style="background:var(--bg);border-radius:20px 20px 0 0;padding:24px 20px 32px;width:100%;max-width:480px;text-align:center">'+
-    '<div style="font-size:32px;margin-bottom:12px">💵</div>'+
+    '<div style="font-size:32px;margin-bottom:12px">'+svgIcon('💵',{size:32})+'</div>'+
     '<div style="font-size:17px;font-weight:800;margin-bottom:8px">Paying with cash?</div>'+
     '<div style="font-size:14px;color:var(--text2);line-height:1.5;margin-bottom:20px">Contact '+biz+' directly to arrange your cash payment. They\'ll mark it as received once collected.</div>'+
     '<button onclick="this.closest(\'[data-cash-ov]\').remove()" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--bg2);color:var(--text);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Got it</button>'+
@@ -2243,7 +2449,7 @@ function showPaymentSuccess(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
   const banner=document.createElement('div');
   banner.style.cssText='position:fixed;top:60px;left:0;right:0;z-index:300;background:#16a34a;color:#fff;padding:14px 20px;text-align:center;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)';
-  banner.textContent='✅ Payment received — thank you! We\'ll be in touch.';
+  banner.innerHTML=svgIcon('✅',{size:14})+' Payment received — thank you! We\'ll be in touch.';
   document.body.appendChild(banner);setTimeout(()=>banner.remove(),6000);
   if(bid){bid.paymentStatus='paid';bid.balance=0;renderAll();}
 }
@@ -2277,13 +2483,13 @@ function openInvoice(bidId){
   });
   html+='<div class="inv-total-row inv-total-grand"><span>Balance due</span><span>'+fmt(balance)+'</span></div></div>';
   html+='<div style="background:'+bdBg+';border:2px solid '+bdBrd+';border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center">';
-  html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full ✓':'Balance due')+'</div>';
+  html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full '+svgIcon('✓',{size:12}):'Balance due')+'</div>';
   html+='<div style="font-size:11px;color:'+bdClr+';margin-top:3px">'+(isPaid?'Thank you for your business!':'Please remit payment at your earliest convenience')+'</div>';
   if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay now — Secured by Stripe</button>';
   html+='</div><div style="font-size:28px;font-weight:800;color:'+bdClr+'">'+fmt(balance)+'</div></div>';
   html+='<div class="inv-footer-text">'+esc(h.contractorName)+' · '+(h.contractorPhone?esc(h.contractorPhone)+' · ':'')+'Thank you for choosing us!</div>';
   html+='<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">';
-  html+='<button onclick="window.print()" class="btn" style="width:auto;flex:1;padding:12px">⬇ Save as PDF</button>';
+  html+='<button onclick="window.print()" class="btn" style="width:auto;flex:1;padding:12px">'+svgIcon('⬇',{size:14})+' Save as PDF</button>';
   html+='<button onclick="closeInvoice()" class="btn btn-sec" style="width:auto;flex:1">Close</button></div>';
   document.getElementById('inv-content').innerHTML=html;
   const _invOv=document.getElementById('inv-overlay');
@@ -2300,14 +2506,16 @@ async function openProposal(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
   if(!bid||!bid.proposalKey){alert('Proposal document not available. Please contact us.');return;}
   const ov=document.getElementById('prop-overlay'),ct=document.getElementById('prop-content');
-  ct.innerHTML='<div style="text-align:center;padding:60px 20px;color:#999;font-size:16px">Loading proposal…</div>';
+  ct.innerHTML='<div style="text-align:center;padding:60px 20px"><div class="hub-spinner"></div><div style="color:#999;font-size:16px">Loading proposal…</div></div>';
   ov.style.opacity='0';ov.style.display='block';requestAnimationFrame(()=>ov.style.opacity='1');scrollTo(0,0);
   try{
     const{data:propData,error}=await _fetchStorageJson(bid.proposalKey);
     if(error||!propData)throw new Error(error?.message||'document not found in storage');
     // Fall back to the bid's DB-sourced fields when the storage JSON missed the
     // signing update — the signature block must still show name + timestamp.
-    if(propData.status!=='signed'&&bid.signedAt){
+    // Never for a declined proposal: a decline is not a signature.
+    const _isDeclined=propData.status==='declined'||!!bid.declinedAt;
+    if(!_isDeclined&&propData.status!=='signed'&&bid.signedAt){
       propData.status='signed';
       propData.signerName=propData.signerName||bid.signerName||'Client';
       propData.signedAt=propData.signedAt||bid.signedAt;
@@ -2315,7 +2523,14 @@ async function openProposal(bidId){
     // DB-stored signature image fills in when the storage JSON copy is missing
     if(!propData.signatureDataUrl&&bid.signatureData)propData.signatureDataUrl=bid.signatureData;
     let sigBlock='';
-    if(propData.status==='signed'&&propData.signerName){
+    if(_isDeclined){
+      const decDate=(propData.declinedAt||bid.declinedAt)?new Date(propData.declinedAt||bid.declinedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'';
+      sigBlock='<div style="margin-top:32px;border-top:2px solid #e0e0dc;padding-top:20px">'+
+        '<div style="display:inline-flex;align-items:center;gap:8px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:20px;padding:8px 16px;font-size:12px;font-weight:800;color:#475569">Declined'+(decDate?' — '+escHtml(decDate):'')+'</div>'+
+        '<div style="font-size:12px;color:#94a3b8;margin-top:10px;line-height:1.6">This proposal was declined and is not a signed agreement. If you’ve changed your mind, reach out — we’d love to revisit it.</div>'+
+      '</div>';
+    }
+    else if(propData.status==='signed'&&propData.signerName){
       const sigDate=propData.signedAt?new Date(propData.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
       const payLabel=(propData.paymentMethod||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       sigBlock='<div style="margin-top:32px;border-top:2px solid var(--ink,#1a1a18);padding-top:24px">'+
@@ -2417,8 +2632,8 @@ function _renderApprovalsCard(approvals){
       h+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">';
       h+='<div><div class="hub-approv-label">'+esc(a.label)+'</div><div style="font-size:11px;color:var(--text3)">+'+fmt(a.amount)+'</div></div>';
       h+='<div style="display:flex;gap:6px">';
-      h+='<button class="hub-co-btn-approve" onclick="_approveChange(\''+esc(a.id)+'\',true)">✓ Approve</button>';
-      h+='<button class="hub-co-btn-decline" onclick="_approveChange(\''+esc(a.id)+'\',false)">✕</button>';
+      h+='<button class="hub-co-btn-approve" onclick="_approveChange(\''+esc(a.id)+'\',true)">'+svgIcon('✓',{size:12})+' Approve</button>';
+      h+='<button class="hub-co-btn-decline" onclick="_approveChange(\''+esc(a.id)+'\',false)">'+svgIcon('✕',{size:12})+'</button>';
       h+='</div></div></div>';
     }
   });
@@ -2493,7 +2708,7 @@ async function _attachChatFile(){
         if(file.type.startsWith('image/')){
           bubble.innerHTML='<img src="'+esc(publicUrl)+'" style="max-width:200px;border-radius:8px;display:block" onclick="openPhoto(\''+esc(publicUrl)+'\',\'\')">';
         }else{
-          bubble.innerHTML='<a href="'+esc(publicUrl)+'" target="_blank" style="color:#fff">📎 '+esc(file.name)+'</a>';
+          bubble.innerHTML='<a href="'+esc(publicUrl)+'" target="_blank" style="color:#fff">'+svgIcon('📎',{size:13})+' '+esc(file.name)+'</a>';
         }
         bubble.innerHTML+='<div class="hub-msg-time">just now</div>';
         msgs.appendChild(bubble);
@@ -2530,7 +2745,7 @@ function renderNotifPanel(){
   if(!list)return;
   const notifs=_seedNotifs();
   if(!notifs.length){
-    list.innerHTML='<div class="notif-empty">You\'re all caught up 🎉</div>';
+    list.innerHTML='<div class="notif-empty">You\'re all caught up '+svgIcon('🎉',{size:13})+'</div>';
   }else{
     list.innerHTML=notifs.map(n=>`
       <div class="notif-item" onclick="markRead(${n.id})">

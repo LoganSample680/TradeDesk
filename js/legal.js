@@ -328,6 +328,63 @@ function _cancelCitation(state){
   return rule?rule.statute:'16 CFR Part 429 (federal)';
 }
 
+// ── Terms & Conditions accordion ─────────────────────────────────────────────
+// Every terms section ("Terms & Conditions" + legacy "Payment Terms" headers)
+// merges under ONE "Terms & Conditions" toggle at the first section's position.
+// Match by exact header text (whitelist) — layout labels never get toggles.
+// The Required Notice (home solicitation law) and the Notice of Cancellation
+// form each keep their own separate toggle.
+// Shared between sign.html (the real client-facing signing page) and the
+// contractor's "Preview" overlay (js/generic-estimate.js _showProposalPreviewOverlay)
+// so the preview is a true match of what the client actually sees — one
+// function, one behavior, can't silently drift between the two views again.
+function _applyTermsAccordion(root){
+  if(!root)return;
+  function mkToggle(label,bodies){
+    const btn=document.createElement('button');btn.dataset.termsToggle='1';
+    btn.style.cssText='display:flex;align-items:center;width:100%;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:0 0 8px;font-family:inherit;cursor:pointer;transition:background .15s,border-color .15s';
+    const lbl=document.createElement('span');
+    lbl.style.cssText='flex:1;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1a365d;text-align:left';
+    lbl.textContent=label;
+    const hint=document.createElement('span');
+    hint.style.cssText='font-size:11px;font-weight:600;color:#94a3b8;white-space:nowrap;margin-left:8px';
+    hint.textContent='Tap to view ›';
+    btn.appendChild(lbl);btn.appendChild(hint);
+    btn.onclick=function(){
+      const open=bodies[0].style.display!=='none';
+      bodies.forEach(function(b){b.style.display=open?'none':'';});
+      hint.textContent=open?'Tap to view ›':'Collapse ‹';
+      btn.style.background=open?'#f8fafc':'#eef2f7';
+      btn.style.borderColor=open?'#e2e8f0':'#b6c8da';
+    };
+    return btn;
+  }
+  const termsHdrs=[],termsBodies=[];
+  root.querySelectorAll('div').forEach(function(hdr){
+    if(hdr.children.length)return;
+    const lc=hdr.textContent.trim().toLowerCase();
+    const isTerms=(lc==='payment terms'||lc==='terms & conditions'||lc==='terms and conditions');
+    const isNotice=(lc.includes('required notice')||lc.includes('solicitation law'));
+    if(!isTerms&&!isNotice)return;
+    const body=hdr.nextElementSibling;if(!body||body.tagName==='BUTTON')return;
+    hdr.style.display='none';hdr.dataset.termsHdr='1';
+    body.style.display='none';body.dataset.termsBody='1';
+    if(isNotice){hdr.after(mkToggle('Required Notice',[body]));return;}
+    termsHdrs.push(hdr);termsBodies.push(body);
+  });
+  if(termsHdrs.length)termsHdrs[0].after(mkToggle('Terms & Conditions',termsBodies));
+  // Collapse entire Notice of Cancellation form (dashed-border detach section)
+  root.querySelectorAll('div').forEach(function(div){
+    const fc=div.firstElementChild;if(!fc||!fc.textContent.includes('✂'))return;
+    div.style.display='none';div.dataset.termsBody='1';
+    const btn=document.createElement('button');btn.dataset.termsToggle='1';
+    btn.textContent='View notice of cancellation ▾';
+    btn.style.cssText='display:block;width:100%;background:none;border:none;color:var(--accent);font-size:11px;font-weight:700;cursor:pointer;padding:6px 24px 2px;font-family:inherit;text-align:left';
+    btn.onclick=function(){const open=div.style.display!=='none';div.style.display=open?'none':'';btn.textContent=open?'View notice of cancellation ▾':'Hide cancellation notice ▴';};
+    div.before(btn);
+  });
+}
+
 // ── Dev: Legal Compliance Inspector ──────────────────────────────────────────
 // Shows the exact strings that will appear on proposals, sign page, and client hub
 // for any state. Client-side only — no API calls.

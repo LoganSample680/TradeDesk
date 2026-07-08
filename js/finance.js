@@ -23,11 +23,11 @@ function openExpenseFlow(){
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">'+
         '<button id="exp-scan-area" style="border:1.5px solid var(--blue);border-radius:12px;padding:12px 8px;cursor:pointer;background:rgba(45,93,168,.06);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerScan()">'+
-          '<span style="font-size:22px">📷</span>'+
+          '<span style="font-size:22px">'+svgIcon('📷',{size:22})+'</span>'+
           '<div style="text-align:left"><div style="font-size:13px;font-weight:700;color:var(--blue)">Scan receipt</div><div style="font-size:10px;color:var(--text3)">AI fills fields</div></div>'+
         '</button>'+
         '<button id="exp-attach-area" style="border:1.5px solid var(--border2);border-radius:12px;padding:12px 8px;cursor:pointer;background:var(--bg2);font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px" onclick="expTriggerAttach()">'+
-          '<span style="font-size:22px">📎</span>'+
+          '<span style="font-size:22px">'+svgIcon('📎',{size:22})+'</span>'+
           '<div style="text-align:left"><div style="font-size:13px;font-weight:700">Attach photo</div><div style="font-size:10px;color:var(--text3)">No sign-in needed</div></div>'+
         '</button>'+
       '</div>'+
@@ -50,7 +50,7 @@ function openExpenseFlow(){
       '</div>'+
       '<div id="em-marketing-section" style="display:none;margin-bottom:12px">'+
         '<div style="background:rgba(45,93,168,.07);border:1.5px solid rgba(45,93,168,.22);border-radius:var(--r);padding:12px">'+
-          '<div style="font-size:11px;font-weight:800;color:var(--blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">📢 Marketing channel</div>'+
+          '<div style="font-size:11px;font-weight:800;color:var(--blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">'+svgIcon('📢')+' Marketing channel</div>'+
           '<div class="f"><label>Which lead source did you spend on? <span style="color:#A32D2D">*</span></label>'+
             '<select id="em-mkt-source" style="font-size:13px">'+
               '<option value="">— Select source —</option>'+mktSrcOpts+
@@ -59,7 +59,7 @@ function openExpenseFlow(){
         '</div>'+
       '</div>'+
       '<div id="em-meal-section" style="display:none;background:#FFF8F0;border:1.5px solid #F59E0B;border-radius:var(--r);padding:12px;margin-bottom:12px">'+
-        '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">🍽️ Meal — Business purpose required</div>'+
+        '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">'+svgIcon('🍽')+' Meal — Business purpose required</div>'+
         '<div class="f" style="margin-bottom:8px"><label>Business purpose <span style="color:#A32D2D">*</span></label><input id="em-meal-purpose" placeholder="e.g. Client meeting — reviewed Bettis job scope" style="font-size:13px"></div>'+
         '<div class="f"><label>Who attended</label><input id="em-meal-attendees" placeholder="e.g. Zach + client John Smith" style="font-size:13px"></div>'+
       '</div>'+
@@ -128,7 +128,7 @@ function expTriggerScan(){
     const scanArea=document.getElementById('exp-scan-area');
     const token=await tokenP;
     if(!token){if(status){status.style.display='block';status.innerHTML='<div class="tip tip-w">Sign in to use receipt scanning. <button class="btn btn-sm btn-p" onclick="supaShowLogin()" style="margin-left:8px">Sign in</button></div>';}return;}
-    if(status){status.style.display='block';status.innerHTML='<div class="tip"><strong>📡 Reading receipt...</strong></div>';}
+    if(status){status.style.display='block';status.innerHTML='<div class="tip"><strong>'+svgIcon('📡')+' Reading receipt...</strong></div>';}
     if(scanArea)scanArea.style.opacity='.5';
     let b64;
     try{b64=await compressAndEncodeImage(blob);}
@@ -300,7 +300,7 @@ async function _openLiveScanner(callback){
   const cancelBtn=document.createElement('button');
   cancelBtn.id='ls-cancel';
   cancelBtn.style.cssText='position:absolute;top:calc(env(safe-area-inset-top,0px)+14px);left:16px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;z-index:3';
-  cancelBtn.textContent='✕ Cancel';
+  cancelBtn.innerHTML=svgIcon('✕',{size:14})+' Cancel';
   ov.appendChild(cancelBtn);
 
   const hint=document.createElement('div');
@@ -311,7 +311,7 @@ async function _openLiveScanner(callback){
   const shutterWrap=document.createElement('div');
   shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+20px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:3';
   shutterWrap.innerHTML=
-    '<div id="ls-ready-label" style="background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:20px;opacity:0;transition:opacity .3s">✓ Receipt detected — tap to capture</div>'+
+    '<div id="ls-ready-label" style="background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:20px;opacity:0;transition:opacity .3s">'+svgIcon('✓',{size:12})+' Receipt detected — tap to capture</div>'+
     '<button id="ls-shutter" style="width:76px;height:76px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.4);cursor:pointer;box-shadow:0 4px 28px rgba(0,0,0,.6);display:block;transition:transform .1s,background .2s"></button>';
   ov.appendChild(shutterWrap);
 
@@ -486,7 +486,7 @@ function _buildScanUI(img,origBlob,callback){
   hdr.innerHTML=
     '<button id="scan-skip-btn" style="background:none;border:1px solid #555;color:#ccc;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Skip</button>'+
     '<div style="color:#fff;font-size:14px;font-weight:700">Adjust crop</div>'+
-    '<button id="scan-use-btn" style="background:#0ea5e9;border:none;color:#fff;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Use scan ✓</button>';
+    '<button id="scan-use-btn" style="background:#0ea5e9;border:none;color:#fff;padding:7px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Use scan '+svgIcon('✓',{size:13})+'</button>';
   ov.appendChild(hdr);
 
   const wrap=document.createElement('div');
@@ -670,10 +670,10 @@ function _confirmReceiptDate(aiDate,statusEl){
   let displayDate=aiDate||'(no date found)';
   try{if(aiDate){const d=new Date(aiDate+'T12:00:00');displayDate=d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});}}catch(e){}
   div.innerHTML=
-    '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">📅 AI read date as: <strong>'+displayDate+'</strong> — correct?</div>'+
+    '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">'+svgIcon('📅',{size:12})+' AI read date as: <strong>'+displayDate+'</strong> — correct?</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'+
-      '<button id="rcpt-yes-btn" style="padding:8px;border-radius:var(--r);border:none;background:#D97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✓ Yes</button>'+
-      '<button id="rcpt-no-btn" style="padding:8px;border-radius:var(--r);border:1px solid #D97706;background:#fff;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✗ Let me fix it</button>'+
+      '<button id="rcpt-yes-btn" style="padding:8px;border-radius:var(--r);border:none;background:#D97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:12})+' Yes</button>'+
+      '<button id="rcpt-no-btn" style="padding:8px;border-radius:var(--r);border:1px solid #D97706;background:#fff;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✗',{size:12})+' Let me fix it</button>'+
     '</div>';
   const scanArea=document.getElementById('exp-scan-area');
   if(scanArea)scanArea.after(div);
@@ -681,13 +681,13 @@ function _confirmReceiptDate(aiDate,statusEl){
     const el=document.getElementById('em-date');
     if(el&&aiDate){const m=aiDate.match(/(\d{4})-(\d{2})-(\d{2})/);el.value=m?m[2]+'/'+m[3]+'/'+m[1]:aiDate;}
     div.remove();
-    if(statusEl)statusEl.innerHTML='<div class="tip tip-s"><strong>✓ Receipt saved</strong> — fill in any missing fields and tap Save.</div>';
+    if(statusEl)statusEl.innerHTML='<div class="tip tip-s"><strong>'+svgIcon('✓',{size:13})+' Receipt saved</strong> — fill in any missing fields and tap Save.</div>';
   };
   div.querySelector('#rcpt-no-btn').onclick=()=>{
     const el=document.getElementById('em-date');
     if(el){el.value='';el.style.borderColor='#D97706';el.style.background='#FEF3C7';el.focus();}
     div.remove();
-    if(statusEl)statusEl.innerHTML='<div class="tip tip-s"><strong>✓ Receipt read</strong> — enter the correct date below.</div>';
+    if(statusEl)statusEl.innerHTML='<div class="tip tip-s"><strong>'+svgIcon('✓',{size:13})+' Receipt read</strong> — enter the correct date below.</div>';
   };
 }
 
@@ -807,7 +807,7 @@ async function expSave(){
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved — '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
-  if(cat==='tools'&&amount>=500)setTimeout(()=>showToast('💡 Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction — flag for your CPA','📋'),900);
+  if(cat==='tools'&&amount>=500)setTimeout(()=>showToast(svgIcon('💡')+' Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction — flag for your CPA','📋'),900);
   closeExpenseFlow();
   goPg('pg-tracker');
   setTimeout(()=>{const b=document.getElementById('tr-t-expenses');if(b)b.click();},200);
@@ -905,7 +905,7 @@ function openCompleteJobModal(){
   overlay.innerHTML=
     '<div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-height:80vh;overflow-y:auto">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border-bottom:1px solid var(--border2)">'+
-        '<div style="font-size:16px;font-weight:800">✅ Complete Job</div>'+
+        '<div style="font-size:16px;font-weight:800">'+svgIcon('✅',{size:16})+' Complete Job</div>'+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0 4px">×</button>'+
       '</div>'+rows+
     '</div>';
@@ -938,7 +938,7 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew){
       '</div>'+
       suggestions.map((s,i)=>
         '<button data-idx="'+i+'" data-action="'+actionType+'" onclick="pickQuickClient(this,this.dataset.action)" style="width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:6px;display:flex;align-items:center;gap:10px">'+
-          '<span style="font-size:20px">'+s.icon+'</span>'+
+          '<span style="font-size:20px">'+svgIcon(s.icon,{size:20})+'</span>'+
           '<div style="flex:1;min-width:0">'+
             '<div style="font-size:14px;font-weight:700;color:var(--text)">'+escHtml(s.label||'')+'</div>'+
             '<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(s.sub||'')+'</div>'+
@@ -952,7 +952,7 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew){
   box.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
       '<div style="font-size:17px;font-weight:800">'+title+'</div>'+
-      '<button onclick="closeTopModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">✕</button>'+
+      '<button onclick="closeTopModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:22})+'</button>'+
     '</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+subtitle+'</div>'+
     suggestHtml+
@@ -1065,10 +1065,10 @@ function showQuickExpenseModal(clientId,bidId){
   box.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
       '<div style="font-size:17px;font-weight:800">Log Expense</div>'+
-      '<button onclick="closeTopModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>'+
+      '<button onclick="closeTopModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">'+svgIcon('✕',{size:22})+'</button>'+
     '</div>'+
     '<div style="background:var(--blue-lt);border-radius:var(--r);padding:8px 12px;margin-bottom:14px;font-size:12px;font-weight:700;color:var(--blue-dk)">'+
-      '📌 '+escHtml(c?c.name:'Client')+
+      svgIcon('📌',{size:13})+' '+escHtml(c?c.name:'Client')+
     '</div>'+
     (clientBids.length>1?
       '<div class="f" style="margin-bottom:10px">'+
@@ -1087,7 +1087,7 @@ function showQuickExpenseModal(clientId,bidId){
     '</div>'+
     '<div class="f" style="margin-bottom:10px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Amount <span style="color:#A32D2D">*</span></label>'+
-      '<input type="number" id="qe-amount" placeholder="0.00" step="0.01" inputmode="decimal" style="font-size:26px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
+      '<input type="text" id="qe-amount" placeholder="0.00" inputmode="decimal" oninput="_fmtMoneyInput(this)" style="font-size:26px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
     '</div>'+
     '<div class="f" style="margin-bottom:14px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Category</label>'+
@@ -1121,7 +1121,7 @@ function showQuickExpenseModal(clientId,bidId){
 
 function saveQuickExpense(clientId){
   const vendor=(document.getElementById('qe-vendor').value||'').trim();
-  const amount=parseFloat(document.getElementById('qe-amount').value);
+  const amount=_moneyVal('qe-amount');
   if(!vendor){zAlert('Enter a vendor.',{title:'Required'});document.getElementById('qe-vendor').focus();return;}
   if(!amount){zAlert('Enter an amount.',{title:'Required'});document.getElementById('qe-amount').focus();return;}
   const bidEl=document.getElementById('qe-bid');
@@ -1149,7 +1149,7 @@ function saveQuickExpense(clientId){
   saveAll();
   const overlay=document.querySelector('.zmodal-overlay');
   if(overlay)overlay.remove();
-  showToast(vendor+' — '+fmt(amount)+' logged ✓','💰');
+  showToast(vendor+' — '+fmt(amount)+' logged '+svgIcon('✓'),'💰');
   renderDash();
   goPg('pg-dash');
   window.scrollTo({top:0,left:0,behavior:'instant'});
@@ -1323,7 +1323,7 @@ async function refreshAvail(){
     if(isPast)return'<div class="av-d av-past">'+dayNum+'</div>';
     // Weekends grayed when not allowed — never blue, never selectable
     if(isWeekend&&!allowWknd)return'<div class="av-d av-past">'+dayNum+'</div>';
-    if(timeOffDays.has(key))return'<div class="av-d" style="background:#FDE68A;color:#92400E;font-weight:700;cursor:not-allowed" title="Time off">'+dayNum+'<br><span style="font-size:11px">🏖</span></div>';
+    if(timeOffDays.has(key))return'<div class="av-d" style="background:#FDE68A;color:#92400E;font-weight:700;cursor:not-allowed" title="Time off">'+dayNum+'<br><span style="font-size:11px">'+svgIcon('🏖',{size:11})+'</span></div>';
     if(schedType==='estimate'){
       if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
       return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
@@ -1654,7 +1654,7 @@ function openExportPanel(){
 function exportOptionHTML(onclick,icon,title,desc){
   return '<div style="border:1.5px solid var(--border2);border-radius:var(--rl);padding:16px;margin-bottom:10px;cursor:pointer;transition:border-color .15s" onclick="'+onclick+'" onmouseover="this.style.borderColor=\'var(--blue)\'" onmouseout="this.style.borderColor=\'var(--border2)\'">'+
     '<div style="display:flex;align-items:center;gap:12px">'+
-      '<div style="font-size:28px;flex-shrink:0">'+icon+'</div>'+
+      '<div style="font-size:28px;flex-shrink:0">'+svgIcon(icon,{size:28})+'</div>'+
       '<div style="flex:1">'+
         '<div style="font-size:14px;font-weight:700">'+title+'</div>'+
         '<div style="font-size:12px;color:var(--text3);margin-top:2px">'+desc+'</div>'+
@@ -2404,7 +2404,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </head><body>
 <div class="no-print">
   <span><strong>${bname}</strong> — ${filtered.length} receipt${filtered.length>1?'s':''} · ${yr}</span>
-  <button onclick="window.print()">🖨 Print / Save PDF</button>
+  <button onclick="window.print()">${svgIcon('🖨',{size:14})} Print / Save PDF</button>
 </div>
 ${pages}
 </body></html>`);
@@ -2446,8 +2446,8 @@ function renderJobsHistory(){
 
   el.innerHTML=
     ((typeof _canViewComp==='function'&&_canViewComp())?'<div style="display:flex;gap:8px;margin-bottom:10px">'+
-      '<button onclick="_openJobProfit()" style="flex:1;padding:11px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">💰 Job Profit</button>'+
-      '<button onclick="_openCrewCost()" style="flex:1;padding:11px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">👷 Crew Cost</button>'+
+      '<button onclick="_openJobProfit()" style="flex:1;padding:11px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">'+svgIcon('💰',{size:14})+' Job Profit</button>'+
+      '<button onclick="_openCrewCost()" style="flex:1;padding:11px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">'+svgIcon('👷',{size:14})+' Crew Cost</button>'+
     '</div>':'')+
     '<div class="mets" style="margin-bottom:10px">'+
       '<div class="met"><div class="met-l">Jobs</div><div class="met-v">'+yearBids.length+'</div></div>'+
@@ -2482,7 +2482,7 @@ async function _openJobProfit(){
   document.getElementById('_job-pl-ov')?.remove();
   const ov=document.createElement('div');ov.id='_job-pl-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
-  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">💰 Job Profit</div>'+
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('💰',{size:18})+' Job Profit</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Revenue minus materials and labor cost (wage + '+Math.round(((S.laborBurden||1.3)-1)*100)+'% overhead) from tracked crew time on site.</div>'+
     '<div id="_job-pl-body" style="font-size:13px;color:var(--text3);max-height:60vh;overflow-y:auto">Loading…</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
@@ -2553,7 +2553,7 @@ async function _openJobProfit(){
       const margin=r.revenue>0?Math.round(r.profit/r.revenue*100):0;
       const timeRow=r.plannedHrs!=null?(
         r.underStaffed?
-          '<div style="font-size:10px;color:var(--c-amber);margin-top:3px">⚠ Only '+r.actualHrs.toFixed(1)+'h tracked vs '+r.plannedHrs+'h planned — check crew time on this job</div>':
+          '<div style="font-size:10px;color:var(--c-amber);margin-top:3px">'+svgIcon('⚠',{size:11})+' Only '+r.actualHrs.toFixed(1)+'h tracked vs '+r.plannedHrs+'h planned — check crew time on this job</div>':
         r.noTimeYet?
           '<div style="font-size:10px;color:var(--text3);margin-top:3px">No time logged yet · '+r.plannedHrs+'h planned</div>':
         (r.hasLabor?'<div style="font-size:10px;color:var(--text3);margin-top:3px">⏱ '+r.actualHrs.toFixed(1)+'h on-site / '+r.plannedHrs+'h planned</div>':'')
@@ -2625,7 +2625,7 @@ async function _renderDashCrewToday(){
   el.style.display='block';
   el.innerHTML='<div onclick="goToTrackerTab(\'jobs\')" style="cursor:pointer;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
     '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'+
-      '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">👷 Crew today</div>'+
+      '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">'+svgIcon('👷',{size:13})+' Crew today</div>'+
       '<div style="font-size:11px;color:var(--blue);font-weight:700">Books ›</div>'+
     '</div>'+
     '<div style="display:flex;gap:18px;margin-bottom:8px">'+
@@ -2640,7 +2640,7 @@ async function _openCrewCost(){
   const ov=document.createElement('div');ov.id='_crew-cost-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
   const _ccBtn=id=>'<button id="_cc-'+id+'" onclick="_crewCostRender(\''+id+'\')" style="flex:1;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;min-width:0">';
-  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">👷 Crew Cost</div>'+
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('👷',{size:18})+' Crew Cost</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:10px">What each person actually cost you — wage + overhead (payroll taxes, insurance) — from tracked time on site.</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:6px">'+
       _ccBtn('today')+'Today</button>'+
@@ -2721,7 +2721,7 @@ async function _crewCostRender(range){
     const workedDays=Math.max(1,Object.keys(e.dayMins).length);
     const unaccH=Math.max(0,(bizDayMins*workedDays-e.min)/60);
     const hasBreakdown=e.driveMin>0||e.shopMin>0;
-    const otTag=e.otDays>0?'<span style="color:var(--c-amber);font-weight:700;margin-left:6px">⚠ OT '+e.otDays+'d</span>':'';
+    const otTag=e.otDays>0?'<span style="color:var(--c-amber);font-weight:700;margin-left:6px">'+svgIcon('⚠',{size:12})+' OT '+e.otDays+'d</span>':'';
     const rlTag=(e.revenue>0&&loaded>0)?'<span style="color:var(--green);font-weight:700;margin-left:6px">'+fmt(e.revenue)+' rev</span>':'';
     const jobLines=Object.keys(e.jobs).sort((a,b)=>e.jobs[b]-e.jobs[a]).map(bid=>{
       const jh=e.jobs[bid]/60;
@@ -2729,9 +2729,9 @@ async function _crewCostRender(range){
     }).join('');
     const breakdownHtml=hasBreakdown?
       '<div style="display:flex;flex-wrap:wrap;gap:10px;font-size:10px;color:var(--text3);margin:4px 0 6px 0;padding:6px 8px;background:var(--bg2);border-radius:var(--r)">'+
-        '<span>🏗 On-site '+jsHrs.toFixed(1)+'h</span>'+
-        (drHrs>0.1?'<span>🚗 Drive '+drHrs.toFixed(1)+'h</span>':'')+
-        (shHrs>0.1?'<span>🏠 Shop '+shHrs.toFixed(1)+'h</span>':'')+
+        '<span>'+svgIcon('🏗',{size:11})+' On-site '+jsHrs.toFixed(1)+'h</span>'+
+        (drHrs>0.1?'<span>'+svgIcon('🚗',{size:11})+' Drive '+drHrs.toFixed(1)+'h</span>':'')+
+        (shHrs>0.1?'<span>'+svgIcon('🏠',{size:11})+' Shop '+shHrs.toFixed(1)+'h</span>':'')+
         (unaccH>0.5?'<span style="color:var(--text4)">~ '+unaccH.toFixed(1)+'h unaccounted</span>':'')+
       '</div>':'';
     return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'+
@@ -2768,7 +2768,7 @@ function viewSavedProposal(bidId){
   ov.style.cssText='position:fixed;inset:0;background:#f0f4f8;z-index:10000;overflow-y:auto;-webkit-overflow-scrolling:touch';
   const signedBadge=b.signedAt?
     '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px">'+
-      '<span style="font-size:16px">✓</span>'+
+      '<span style="font-size:16px">'+svgIcon('✓',{size:16})+'</span>'+
       '<span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span>'+
     '</div>':'';
   ov.innerHTML=
@@ -2790,7 +2790,7 @@ function viewSavedProposal(bidId){
           const sec=document.getElementById('pov-color-section');
           if(!sec)return;
           sec.innerHTML='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:var(--rl,10px);padding:14px 16px;margin-bottom:16px">'+
-            '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+
+            '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">'+svgIcon('🎨',{size:12})+' Client Color Selections</div>'+
             choices.map(c=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px">'+
               '<span style="font-weight:600;color:#1E3A5F">'+escHtml(c.room)+'</span>'+
               '<span style="color:#1E40AF;font-weight:700">'+escHtml(c.colorName)+(c.swCode?' <span style="font-size:11px;font-weight:500;color:#93C5FD">('+escHtml(c.swCode)+')</span>':'')+'</span>'+
@@ -2918,7 +2918,7 @@ function openManualIncomeModal(){
   sheet.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
       '<div style="font-size:17px;font-weight:800">Log Income</div>'+
-      '<button onclick="document.getElementById(\'_inc-ov\').remove()" style="background:none;border:none;font-size:20px;color:var(--text3);cursor:pointer">✕</button>'+
+      '<button onclick="document.getElementById(\'_inc-ov\').remove()" style="background:none;border:none;font-size:20px;color:var(--text3);cursor:pointer">'+svgIcon('✕',{size:20})+'</button>'+
     '</div>'+
     '<div style="display:grid;gap:12px">'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Date <span style="color:#A32D2D">*</span></label>'+
@@ -2932,14 +2932,14 @@ function openManualIncomeModal(){
           '<option value="Job payment">Job payment</option><option value="Deposit">Deposit / advance</option><option value="Final payment">Final payment</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
         '</select>'+
         '<div id="_inc-deposit-warn" style="display:none;background:#FFFBEB;border:1.5px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-top:8px;font-size:12px;color:#92400E;line-height:1.5">'+
-          '💡 <strong>Deposits count as income now.</strong> The IRS says any money you receive is taxable the year you get it — even if it\'s a deposit for work you haven\'t done yet. Don\'t wait until the job is done to report it.'+
+          svgIcon('💡',{size:13})+' <strong>Deposits count as income now.</strong> The IRS says any money you receive is taxable the year you get it — even if it\'s a deposit for work you haven\'t done yet. Don\'t wait until the job is done to report it.'+
         '</div></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Payment method</label>'+
         '<select id="_inc-method" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box" onchange="toggleCashWarning()">'+
           '<option value="Check">Check</option><option value="Card">Card</option><option value="Zelle">Zelle</option><option value="Venmo">Venmo</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
         '</select></div>'+
       '<div id="_inc-cash-warn" style="display:none;background:#FFFACD;border:2px solid #F59E0B;border-radius:var(--r);padding:10px 12px;margin-top:10px">'+
-        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:6px">⚠️ Cash Income — IRS Red Flag</div>'+
+        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:6px">'+svgIcon('⚠',{size:13})+' Cash Income — IRS Red Flag</div>'+
         '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;color:#78350F">'+
           '<input type="checkbox" id="_inc-cash-confirm" style="margin-top:2px;width:16px;height:16px;flex-shrink:0">'+
           '<span>I confirm this cash was deposited to my business bank account</span>'+
@@ -3063,12 +3063,12 @@ function renderIncome(){
   const _methodBadge=m=>{
     const v=(m||'').toLowerCase();
     if(!m||m==='—')return '<span style="color:var(--text3)">—</span>';
-    if(v==='cash')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#D1FAE5;color:#065F46;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">💵 Cash</span>';
-    if(v==='check')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#DBEAFE;color:#1E40AF;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">✓ Check</span>';
-    if(v==='zelle')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#EDE9FE;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">⚡ Zelle</span>';
+    if(v==='cash')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#D1FAE5;color:#065F46;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">'+svgIcon('💵',{size:11})+' Cash</span>';
+    if(v==='check')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#DBEAFE;color:#1E40AF;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">'+svgIcon('✓',{size:11})+' Check</span>';
+    if(v==='zelle')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#EDE9FE;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">'+svgIcon('⚡',{size:11})+' Zelle</span>';
     if(v==='venmo')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#DBEAFE;color:#1D4ED8;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">V Venmo</span>';
     if(v==='refund')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#FEE2E2;color:#991B1B;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">↩ Refund</span>';
-    if(v==='card'||v==='us_bank_account'||v==='cashapp'||v==='ach')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#F3F0FF;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">⚡ Stripe</span>';
+    if(v==='card'||v==='us_bank_account'||v==='cashapp'||v==='ach')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#F3F0FF;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">'+svgIcon('⚡',{size:11})+' Stripe</span>';
     return '<span style="display:inline-flex;align-items:center;gap:3px;background:var(--bg3);color:var(--text2);font-size:10px;font-weight:600;padding:2px 7px;border-radius:99px;white-space:nowrap">'+escHtml(m)+'</span>';
   };
   const _incRow=r=>{
@@ -3151,7 +3151,7 @@ function renderExpenses(){
   if(_hiddenVeh.length){
     const _hidTot=_hiddenVeh.reduce((s,e)=>s+(e.amount||0),0);
     const _untagN=_vdE?_vdE.untagged:0;
-    html+='<div class="tip tip-w">🚗 <strong>'+_hiddenVeh.length+' vehicle expense'+(_hiddenVeh.length>1?'s':'')+' ('+fmt(_hidTot)+') not shown or deducted</strong> — '+
+    html+='<div class="tip tip-w">'+svgIcon('🚗',{size:13})+' <strong>'+_hiddenVeh.length+' vehicle expense'+(_hiddenVeh.length>1?'s':'')+' ('+fmt(_hidTot)+') not shown or deducted</strong> — '+
       (_untagN?_untagN+' need'+(_untagN>1?'':'s')+' a vehicle picked (edit the expense), the rest are covered by the standard-mileage rate.':'covered by the standard-mileage deduction (one method per vehicle, IRS rule). Keep logging them — they still count in the year-end mileage-vs-actual comparison, and switching the vehicle to Actual expenses in Fleet deducts them instead.')+'</div>';
   }
   // Both entry paths count: 'subs' (full modal) + 'Subcontractors' (quick modal),
@@ -3162,15 +3162,15 @@ function renderExpenses(){
     subsFiltered.forEach(e=>{const k=(e.vendor||'Unknown').trim();subsBy[k]=(subsBy[k]||0)+e.amount;});
     const flagged=Object.entries(subsBy).filter(([,amt])=>amt>=600);
     if(flagged.length){
-      html+='<div class="tip tip-a" onclick="if(typeof open1099Report===\'function\')open1099Report('+(yr==='all'?'null':yr)+')" style="background:#FFF3CD;border:1.5px solid #D4A017;color:#6B4C00;cursor:pointer"><strong>⚠️ 1099-NEC Required:</strong> '+flagged.length+' subcontractor'+(flagged.length>1?'s':'')+' reached $600+ in '+yr+' — file Form 1099-NEC by Jan 31. '+flagged.map(([v,a])=>v+' ('+fmt(a)+')').join(', ')+' <span style="font-weight:800;text-decoration:underline">Tap for the full per-job report →</span></div>';
+      html+='<div class="tip tip-a" onclick="if(typeof open1099Report===\'function\')open1099Report('+(yr==='all'?'null':yr)+')" style="background:#FFF3CD;border:1.5px solid #D4A017;color:#6B4C00;cursor:pointer"><strong>'+svgIcon('⚠',{size:13})+' 1099-NEC Required:</strong> '+flagged.length+' subcontractor'+(flagged.length>1?'s':'')+' reached $600+ in '+yr+' — file Form 1099-NEC by Jan 31. '+flagged.map(([v,a])=>v+' ('+fmt(a)+')').join(', ')+' <span style="font-weight:800;text-decoration:underline">Tap for the full per-job report →</span></div>';
     }
   }
   if(noReceipt.length){
     const missingPct=filtered.length>0?Math.round(noReceipt.length/filtered.length*100):0;
     const cls=missingPct>30?'tip-a':'tip-w';
-    html+='<div class="tip '+cls+'"><strong>'+noReceipt.length+' missing receipt'+(noReceipt.length>1?'s':'')+' ('+missingPct+'% of '+yr+' expenses)</strong>'+(missingPct>30?' — ⚠️ Over 30% missing. IRS can disallow undocumented expenses.':' — photograph them before they\'re gone.')+'</div>';
+    html+='<div class="tip '+cls+'"><strong>'+noReceipt.length+' missing receipt'+(noReceipt.length>1?'s':'')+' ('+missingPct+'% of '+yr+' expenses)</strong>'+(missingPct>30?' — '+svgIcon('⚠',{size:12})+' Over 30% missing. IRS can disallow undocumented expenses.':' — photograph them before they\'re gone.')+'</div>';
   }
-  if(!expenses.length){el.innerHTML=html+'<div class="empty-state"><div class="empty-state-icon">🧾</div><h3>No expenses yet</h3><p>Tap the Expense button on the home screen or use the Scan button above to photograph a receipt.</p></div>';return;}
+  if(!expenses.length){el.innerHTML=html+'<div class="empty-state"><div class="empty-state-icon">'+svgIcon('🧾',{size:44})+'</div><h3>No expenses yet</h3><p>Tap the Expense button on the home screen or use the Scan button above to photograph a receipt.</p></div>';return;}
   if(!filtered.length){el.innerHTML=html+'<div class="empty">No expenses in '+yr+'.</div>';return;}
   html+='<div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0 12px;border-bottom:2px solid var(--border);margin-bottom:8px;flex-wrap:wrap;gap:6px">'+
     '<div><span style="font-size:12px;font-weight:700;color:var(--text3)">'+filtered.length+' expense'+(filtered.length!==1?'s':'')+' in '+yr+'</span></div>'+
@@ -3189,8 +3189,8 @@ function renderExpenses(){
     const pgLabel=pageCount>1?' ('+pageCount+'pg)':'';
     const recLabel=hasImg
       ?(hasBucket
-        ?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">☁️ View'+pgLabel+'</button>'
-        :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">💾 View</button>')
+        ?'<button onclick="viewReceipt('+r.id+')" style="background:var(--green-lt);border:1px solid var(--green);color:var(--green);font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">'+svgIcon('☁',{size:11})+' View'+pgLabel+'</button>'
+        :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">'+svgIcon('💾',{size:11})+' View</button>')
       :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
     return '<tr data-lp-id="'+r.id+'" data-lp-type="expense" data-lp-label="'+escHtml((r.vendor||'expense')+' · '+fmt(r.amount||0))+'">'+
       '<td class="bold" data-label="Vendor">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
@@ -3285,7 +3285,7 @@ function editExpense(id){
       const preview=document.getElementById('exp-preview-img');
       if(preview){
         preview.style.display='block';
-        preview.innerHTML='<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:6px">☁️ '+pc+' receipt page'+(pc>1?'s':'')+' on file</div>'+
+        preview.innerHTML='<div style="font-size:11px;color:var(--green-mid);font-weight:700;margin-bottom:6px">'+svgIcon('☁',{size:12})+' '+pc+' receipt page'+(pc>1?'s':'')+' on file</div>'+
           '<button type="button" onclick="expTriggerAttach(true)" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1.5px dashed var(--blue);background:var(--blue-lt);color:var(--blue-dk);cursor:pointer;font-family:inherit;font-weight:700">+ Add another page</button>';
       }
     }
@@ -3414,7 +3414,7 @@ function renderMoneyPage(){
   // Sort: most days unpaid first, then highest balance
   show.sort((a,b)=>(b.daysUnpaid||0)-(a.daysUnpaid||0)||(b.balance-a.balance));
   if(!show.length){
-    el.innerHTML='<div class="empty">'+(moneyFilter==='paid'?'No paid jobs in records.':moneyFilter==='all'?'Nothing outstanding — all collected! 🎉':'No '+moneyFilter+' items.')+'</div>';return;
+    el.innerHTML='<div class="empty">'+(moneyFilter==='paid'?'No paid jobs in records.':moneyFilter==='all'?'Nothing outstanding — all collected! '+svgIcon('🎉'):'No '+moneyFilter+' items.')+'</div>';return;
   }
   el.innerHTML=show.map(({c,b,balance,paid,total,bucket,daysUnpaid})=>{
     const pct=total>0?Math.min(100,Math.round(paid/total*100)):0;
@@ -3428,13 +3428,13 @@ function renderMoneyPage(){
     const stageBorder=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red-edge)':daysUnpaid>=14?'var(--c-amber-edge)':'var(--line)'):bucket==='paid'?'var(--c-green-edge)':'var(--line)';
     const {daysUntilDeadline}=getLienTimeline(b)||{daysUntilDeadline:999};
     const lienWarn=daysUntilDeadline>0&&daysUntilDeadline<=30?
-      ' <span style="color:var(--c-red);font-weight:700">· ⚠ Lien: '+daysUntilDeadline+'d left</span>':'';
+      ' <span style="color:var(--c-red);font-weight:700">· '+svgIcon('⚠',{size:12})+' Lien: '+daysUntilDeadline+'d left</span>':'';
     const nxt=getNextCollAction(stage);
     let nextBtn='';
     if(nxt.smsKey){
-      nextBtn='<button class="btn btn-sm" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+nxt.smsKey+'\')" style="font-size:11px">💬 '+nxt.label+'</button>';
+      nextBtn='<button class="btn btn-sm" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+nxt.smsKey+'\')" style="font-size:11px">'+svgIcon('💬',{size:12})+' '+nxt.label+'</button>';
     } else if(stage==='intent'||stage==='lien_ready'){
-      nextBtn='<button class="btn btn-sm" onclick="showFileLienDirect('+b.id+')" style="font-size:11px;background:var(--c-deep);color:var(--c-deep-soft);border-color:transparent">⚖️ '+nxt.label+'</button>';
+      nextBtn='<button class="btn btn-sm" onclick="showFileLienDirect('+b.id+')" style="font-size:11px;background:var(--c-deep);color:var(--c-deep-soft);border-color:transparent">'+svgIcon('⚖',{size:12})+' '+nxt.label+'</button>';
     } else if(stage==='lien_filed'){
       nextBtn='<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="font-size:11px;background:var(--c-green-soft);color:var(--c-green);border-color:var(--c-green-edge)">'+nxt.label+'</button>';
     }
@@ -3453,7 +3453,7 @@ function renderMoneyPage(){
       (paid>0.01&&total>0?'<div class="pay-bar" style="margin-top:8px"><div class="pay-fill" style="width:'+pct+'%;background:var(--c-green)"></div></div>':'')+
       '<div style="display:flex;gap:6px;margin-top:10px" onclick="event.stopPropagation()">'+
         nextBtn+
-        '<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')" style="font-size:11px;flex:1">💰 Log payment</button>'+
+        '<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')" style="font-size:11px;flex:1">'+svgIcon('💰',{size:12})+' Log payment</button>'+
       '</div>'+
     '</div>';
   }).join('');
@@ -3526,7 +3526,7 @@ function openCollectModal(){
   overlay.className='zmodal-overlay';
   overlay.style.cssText='align-items:center;padding:16px';
   const content=items.length===0?
-    '<div style="text-align:center;padding:24px;color:var(--text3)">🎉 Nothing to collect — all paid!</div>':
+    '<div style="text-align:center;padding:24px;color:var(--text3)">'+svgIcon('🎉',{size:16})+' Nothing to collect — all paid!</div>':
     items.map(({c,b,balance,paid,daysOverdue,isCompleted})=>{
       const urgTag=!isCompleted?'<span style="font-size:10px;background:var(--border2);color:var(--text3);padding:2px 5px;border-radius:4px;font-weight:800">Job not done</span>':
         daysOverdue>=7?'<span style="font-size:10px;background:#A32D2D;color:#fff;padding:2px 5px;border-radius:4px;font-weight:800">'+daysOverdue+'d overdue</span>':
@@ -3543,7 +3543,7 @@ function openCollectModal(){
           '<div style="font-size:18px;font-weight:800;color:#A32D2D">'+fmt(balance)+'</div>'+
         '</div>'+
         '<div style="display:flex;gap:6px">'+
-          '<button class="btn btn-sm btn-g" onclick="document.querySelector(\'.zmodal-overlay\').remove();openClientDetail('+c.id+');setTimeout(()=>{setCDTab(\'bids\',null);setTimeout(()=>openPayPanel('+b.id+'),100)},200)" style="flex:1;font-size:13px;padding:10px 14px">💰 Log payment</button>'+
+          '<button class="btn btn-sm btn-g" onclick="document.querySelector(\'.zmodal-overlay\').remove();openClientDetail('+c.id+');setTimeout(()=>{setCDTab(\'bids\',null);setTimeout(()=>openPayPanel('+b.id+'),100)},200)" style="flex:1;font-size:13px;padding:10px 14px">'+svgIcon('💰',{size:14})+' Log payment</button>'+
         '</div>'+
       '</div>';
     }).join('');

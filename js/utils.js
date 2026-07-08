@@ -21,6 +21,26 @@ const parseD=s=>new Date(s+'T12:00:00');
 const addDays=(s,n)=>{const d=parseD(s);d.setDate(d.getDate()+n);return dateKey(d);};
 const v=id=>(document.getElementById(id)||{}).value||'';
 const nv=id=>parseFloat(v(id))||0;
+// Shared dollar-amount input formatter — native <input type="number"> rejects
+// commas outright (worst on iOS Safari, which blocks the keystroke before it's
+// even typed; other browsers fail more quietly by dropping the value on read).
+// These fields are plain text with this oninput handler instead: strips
+// anything but digits and a single decimal point, caps cents to 2 digits, and
+// live-formats the integer part with thousands commas as you type. Reads go
+// through _moneyVal, which strips the commas back out before parseFloat.
+function _fmtMoneyInput(el){
+  let raw=(el.value||'').replace(/[^\d.]/g,'');
+  const dot=raw.indexOf('.');
+  if(dot!==-1)raw=raw.slice(0,dot+1)+raw.slice(dot+1).replace(/\./g,'');
+  let[intPart,decPart]=raw.split('.');
+  if(decPart!==undefined)decPart=decPart.slice(0,2);
+  const grouped=intPart?Number(intPart).toLocaleString('en-US'):'';
+  el.value=decPart!==undefined?grouped+'.'+decPart:grouped;
+}
+const _moneyVal=id=>parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
+// Comma+cents string for programmatically pre-filling a money input (no $ sign —
+// the field's own label/prefix already shows that).
+const _moneyStr=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const IRS=()=>S.irsRate||.725;
 function fmtTime(t){if(!t)return'';const[h,m]=t.split(':').map(Number);const ampm=h>=12?'PM':'AM';const h12=h%12||12;return h12+':'+(m<10?'0':'')+m+' '+ampm;}
 const COVERAGE=()=>S.cov||350;
@@ -44,6 +64,23 @@ function stageAvatar(stage){
   return m[stage]||'background:var(--blue-lt);color:var(--blue-dk)';
 }
 function lighten(hex){if(!hex||typeof hex!=='string'||!/^#[0-9a-fA-F]{6}/.test(hex))return'#eee';try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},0.15)`;}catch(e){return'#eee';}}
+// WCAG clamp for the contractor's brand color. The brand color renders both as
+// colored TEXT on white surfaces (proposal section labels, hub links) and as a
+// BACKGROUND under white text (proposal header, TOTAL row, hub buttons) — both
+// are the same white↔color pair, so one clamp covers both directions: darken
+// the pick toward black (hue preserved) until it clears AA 4.5:1 against
+// white, with a small margin for the near-white (#f8fafc) document surfaces.
+// Invalid/empty input passes through untouched so callers' fallbacks still run.
+function adaBrand(hex){
+  const h=String(hex||'').trim().replace('#','');
+  if(!/^[0-9a-fA-F]{6}$/.test(h))return hex||'';
+  let rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
+  const lum=c=>{const s=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
+  const ratioVsWhite=c=>1.05/(lum(c)+0.05);
+  let guard=0;
+  while(ratioVsWhite(rgb)<4.6&&guard++<48){rgb=rgb.map(v=>Math.max(0,Math.floor(v*0.92)));}
+  return'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
+}
 function barChart(label,val,total,color){const pct=Math.round(val/total*100);return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span>${escHtml(String(label))}</span><span style="font-weight:700">${fmt(val)}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${pct}%;background:${color}"></div></div></div>`;}
 function calcBrackets(inc,brackets){let tax=0,prev=0;for(const[lim,rate]of brackets){if(inc<=prev)break;tax+=Math.max(0,Math.min(inc,lim)-prev)*rate;prev=lim;if(lim===Infinity||inc<=lim)break;}return tax;}
 function fmtDateShort(d){if(!d)return'';try{const dt=new Date(d+'T12:00');return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return d;}}
@@ -119,9 +156,13 @@ function zPrompt(msg, onOk, opts={}){
 
 function showToast(msg,icon,duration){
   icon=icon||'✓';duration=duration||3500;
+  // Renders the icon arg as a real SVG when we have one mapped (js/icons.js) —
+  // covers ~200 showToast call sites app-wide from one place, instead of
+  // touching each call site's emoji argument individually.
+  const _iconHtml=(typeof hasSvgIcon==='function'&&hasSvgIcon(icon))?svgIcon(icon,{size:15}):icon;
   const t=document.createElement('div');
   t.className='toast';
-  t.innerHTML='<span class="toast-icon">'+icon+'</span><span style="flex:1">'+msg+'</span><button class="toast-close" onclick="this.parentElement.remove()">×</button>';
+  t.innerHTML='<span class="toast-icon">'+_iconHtml+'</span><span style="flex:1">'+msg+'</span><button class="toast-close" onclick="this.parentElement.remove()">×</button>';
   document.body.appendChild(t);
   setTimeout(()=>{t.style.opacity='0';t.style.transform='scale(.9) translateY(8px)';t.style.transition='all .3s';setTimeout(()=>t.remove(),300);},duration);
 }
@@ -200,7 +241,15 @@ function _autoCapEligible(el){
 function _applyAutoCapAttrs(root){
   try {
     (root || document).querySelectorAll('input:not([type]), input[type="text"], textarea').forEach(function(el){
-      if (!el.hasAttribute('autocapitalize') && _autoCapEligible(el)) el.setAttribute('autocapitalize', 'words');
+      if (!_autoCapEligible(el)) return;
+      if (!el.hasAttribute('autocapitalize')) el.setAttribute('autocapitalize', 'words');
+      // iOS/Safari silently disable autocorrect on fields they can't classify
+      // (most of ours carry autocomplete="off"). Explicit autocorrect="on" +
+      // spellcheck restore native as-you-type correction on every free-text
+      // field. Same eligibility gate as autocapitalize, and a field can opt out
+      // by setting its own autocorrect/spellcheck attribute.
+      if (!el.hasAttribute('autocorrect')) el.setAttribute('autocorrect', 'on');
+      if (!el.hasAttribute('spellcheck')) el.setAttribute('spellcheck', 'true');
     });
   } catch (_e) {}
 }

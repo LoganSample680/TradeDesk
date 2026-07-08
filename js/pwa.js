@@ -63,7 +63,7 @@ function _wakeLockShouldHold(){
   const active=document.querySelector('.pg.active');
   if(!active)return false;
   const id=active.id||'';
-  return id==='pg-est'||id==='pg-est-generic';
+  return id==='pg-est-generic';
 }
 
 // ── Web Share API ─────────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ async function _pwaHandleSharedPhoto(){
         const preview=document.getElementById('exp-preview-img');
         if(preview){
           preview.style.display='block';
-          preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">📎 Photo attached</div>';
+          preview.innerHTML='<img src="data:image/jpeg;base64,'+b64+'" style="max-height:80px;border-radius:8px;border:1px solid var(--border)"><div style="font-size:11px;color:var(--green-mid);margin-top:4px;font-weight:700">'+svgIcon('📎',{size:11})+' Photo attached</div>';
         }
       });
     },300);

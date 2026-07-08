@@ -24,22 +24,9 @@ function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
 let currentClientId=null,editClientId=null,clientFilter='all';
 Object.defineProperty(window,'currentClientId',{get:()=>currentClientId,set:v=>{currentClientId=v;},configurable:true});
 Object.defineProperty(window,'editClientId',{get:()=>editClientId,set:v=>{editClientId=v;},configurable:true});
-let estSurfaces=[],estSurfId=0,estStep=1,estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
+let estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
 let _pendingSignToken=null; // {bidId,token,proposalKey} — committed to bid only when SMS/email is actually sent
-let _estAddrOptions=[];
-function _pickEstAddr(i){
-  const a=_estAddrOptions[i];if(!a)return;
-  const f=document.getElementById('e-caddr');if(f){f.value=a.addr;markFieldFilled(f);saveEstFullDraft();}
-  document.querySelectorAll('#_est-addr-picker button').forEach((b,j)=>{
-    b.style.background=j===i?'var(--blue)':'var(--bg2)';
-    b.style.color=j===i?'#fff':'var(--text3)';
-    b.style.borderColor=j===i?'var(--blue)':'var(--border2)';
-  });
-}
-let scopeHrsStore={};  // legacy — now keyed by room: roomScopeMap[roomName][scopeId]
-let scopeActiveMap={};  // legacy — now keyed by room
-let roomScopeMap={};  // PRIMARY: {roomName: {scopeId: {active:bool, hrs:N, rate:N, cost:N}}}
-let estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};  // property profile for this estimate
+let _pendingShareData=null; // {url,cname,bname,cphone,cemail} for the just-generated proposal link — read by _proposalShareData()
 let sigCanvas,sigCtx,isSigning=false;
 let trackerTab='income',cdTab='overview',trackerYear=new Date().getFullYear();
 let selectedColor='#185FA5';
@@ -340,7 +327,7 @@ async function _lookupProperty(addr,cardId){
       card.innerHTML=
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
           '<span style="font-weight:600;color:var(--text)">Property Info</span>'+
-          (leadPaint?'<span style="font-size:10px;background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-weight:700">⚠ Pre-1978</span>':'')+
+          (leadPaint?'<span style="font-size:10px;background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-weight:700">'+svgIcon('⚠',{size:11})+' Pre-1978</span>':'')+
         '</div>'+
         (leadPaint?'<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:6px 10px;margin-bottom:8px;color:#991b1b;font-size:11px;font-weight:600;line-height:1.4">Lead paint protocol required — EPA RRP Rule applies to renovation work</div>':'')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">'+
@@ -356,7 +343,7 @@ async function _lookupProperty(addr,cardId){
 
 // ── Crowdsourced scope-timing benchmarks ──────────────────────────────────────
 // _scopeRates: { 'scope_id:trade': { median_min, p25_min, p75_min, sample_count } }
-// Populated from td_scope_rates table on boot; used by buildScopeGrid for live hints.
+// Populated from td_scope_rates table on boot; used for live scope-timing hints.
 window._scopeRates = {};
 
 function _applyScopeRates(rates) {

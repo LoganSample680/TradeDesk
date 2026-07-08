@@ -167,7 +167,6 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 #pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .72s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
 @media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:none}}
 #pg-cal.active{animation:td-pg-enter 5s cubic-bezier(.22,1,.36,1) both}
-#pg-est.active{position:fixed;inset:0;z-index:1100;overflow-y:auto;overscroll-behavior:none;padding:0;background:var(--bg)}
 #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
 .drive-active .pg{padding-top:70px}
 .clock-active .pg{padding-top:70px}
@@ -375,15 +374,24 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .mmt-sec-badge{font-size:11px;font-weight:700;background:var(--border2);border-radius:10px;padding:1px 8px;color:var(--text2)}
 .mmt-sec-chev{font-size:13px;color:var(--text3);width:14px;text-align:center}
 
-/* ── Quick actions ── */
-.qa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px}
-.qa{padding:14px 8px;border-radius:var(--r-lg);font-family:var(--font-ui);font-size:11px;font-weight:800;letter-spacing:-.05px;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer;background:var(--bg-card);color:var(--text);box-shadow:var(--shadow-card);transition:box-shadow .12s,transform .08s;width:100%;border:none}
-.qa:hover{box-shadow:var(--shadow-hover)}
-.qa:active{transform:translateY(1px)}
-.qa-p{background:var(--ink);color:#fff;box-shadow:0 1px 0 rgba(0,0,0,.2) inset,0 -1px 0 rgba(255,255,255,.06) inset,0 2px 8px rgba(27,22,18,.18)}
-.qa-g{background:var(--c-green);color:#fff;box-shadow:var(--shadow-btn-pop)}
-.qa-d{background:var(--denim);color:#fff;box-shadow:var(--shadow-btn-pop)}
-.qa-emoji{font-size:22px;line-height:1}
+/* ── Quick actions ──
+   App-launcher pattern: the tinted icon chip IS the button — no tile card
+   around it (white-card-in-white-card read as nested boxes and wasted half the
+   screen on phones). Each action carries its own accent (inline
+   --qa-accent/--qa-tint); state classes color the CHIP, never the tile:
+   qa-p (New lead) = dark chip, qa-g (Collect, money owed) = green chip,
+   qa-idle (Collect, nothing owed) = muted gray chip. */
+.qa-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:4px 6px}
+.qa{padding:10px 4px 9px;border-radius:var(--r-lg);font-family:var(--font-ui);font-size:11.5px;font-weight:700;letter-spacing:-.1px;display:flex;flex-direction:column;align-items:center;gap:7px;cursor:pointer;background:transparent;color:var(--text);box-shadow:none;border:none;transition:background .15s;width:100%}
+.qa:hover{background:var(--bg2)}
+.qa:hover .qa-ico{transform:scale(1.06)}
+.qa:active .qa-ico{transform:scale(.93)}
+.qa-ico{width:48px;height:48px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:var(--qa-tint,var(--bg3));color:var(--qa-accent,#fff);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),0 2px 7px var(--qa-glow,rgba(15,23,42,.22));transition:transform .15s cubic-bezier(.22,1,.36,1)}
+.qa-p .qa-ico{background:linear-gradient(155deg,#2A2622 0%,#0E1217 100%);color:#fff;--qa-glow:rgba(27,22,18,.3)}
+.qa-g .qa-ico{background:linear-gradient(155deg,#22A45D 0%,#15803D 100%);color:#fff;--qa-glow:rgba(21,128,61,.35)}
+.qa-idle{color:var(--text-2)}
+.qa-idle .qa-ico{background:linear-gradient(155deg,#9AA3B0 0%,#6F7A89 100%);color:#fff;--qa-glow:rgba(100,116,139,.3)}
+.qa-d .qa-ico{background:linear-gradient(155deg,#3568B8 0%,#24508F 100%);color:#fff;--qa-glow:rgba(45,93,168,.35)}
 .td-micro{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3)}
 
 /* ── Tables ── */
@@ -447,7 +455,7 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .detail-actions .btn:hover{background:rgba(255,255,255,.18)}
 .detail-actions .btn-p{background:var(--denim);border-color:transparent}
 /* ── Estimate type chooser ── */
-.chooser-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.chooser-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
 .chooser-card{background:var(--bg-card);border-radius:14px;border:1.5px solid var(--border);padding:24px 22px 20px;cursor:pointer;text-align:left;font-family:inherit;color:var(--text);transition:transform .12s,box-shadow .15s,border-color .15s;display:flex;flex-direction:column;gap:6px;position:relative;overflow:hidden}
 .chooser-card::before{content:"";position:absolute;inset:0 0 70% 0;background:linear-gradient(180deg,rgba(45,93,168,.07),transparent);pointer-events:none;opacity:0;transition:opacity .15s}
 .chooser-amber::before{background:linear-gradient(180deg,rgba(159,91,0,.07),transparent)}
@@ -469,7 +477,6 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .chooser-card-cta{margin-top:auto;padding-top:14px;font-size:12px;font-weight:800;letter-spacing:-.1px;color:var(--blue);display:flex;align-items:center;gap:4px}
 .chooser-amber .chooser-card-cta{color:var(--amber)}
 .chooser-green .chooser-card-cta{color:var(--green)}
-@media(max-width:900px){.chooser-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:560px){.chooser-grid{grid-template-columns:1fr}}
 
 /* ── Kanban ── */
@@ -829,8 +836,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   .fb{padding:8px 14px;font-size:12px;min-height:44px}
   .split-2-wide,.split-2-eq,.split-3-eq,.split-est{grid-template-columns:1fr}
   .qa-grid{grid-template-columns:repeat(3,1fr)}
-  .qa{padding:14px 6px;font-size:10px}
-  .qa-emoji{font-size:20px}
+  .qa{padding:9px 2px 8px;font-size:10.5px}
   .kanban{display:flex;flex-direction:column;gap:10px}
   .kcol{width:100%}
   .cal-cell{min-height:64px;padding:4px}
@@ -841,7 +847,6 @@ body.dark .cal-cell.other{background:var(--cream)}
 }
 @media(max-width:380px){
   .mets{grid-template-columns:1fr 1fr}
-  .qa-grid{grid-template-columns:repeat(2,1fr)}
 }
 /* ── Mileage hero ── */
 .mil-hero{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:14px;margin-bottom:14px}
@@ -1021,9 +1026,6 @@ body.dark .cal-cell.other{background:var(--cream)}
 .tm-mat-cat{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
 .tm-mat-notes{font-size:11px;color:var(--text-3);margin-top:2px;font-weight:500}
 .tm-mat-est{font-family:var(--font-display);font-size:14px;font-weight:800;letter-spacing:-.3px;color:var(--text);font-variant-numeric:tabular-nums}
-.tm-mat-del{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:14px;padding:0 0 0 8px;opacity:0;transition:opacity .12s,color .12s;font-family:inherit;line-height:1}
-.tm-mat-row:hover .tm-mat-del{opacity:1}
-.tm-mat-del:hover{color:var(--c-red)}
 .tm-mat-empty{padding:14px 0;text-align:center;color:var(--text-3);font-size:12px;font-weight:500}
 
 /* Billing cadence chip (interactive variant of .chip) */
@@ -1032,25 +1034,20 @@ body.dark .cal-cell.other{background:var(--cream)}
 .chip.chip-int.on{background:var(--ink);color:var(--text-cream);border-color:var(--ink)}
 
 /* BYO rows (Build Your Own line-item estimate) */
-.byo-row{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s}
+.byo-row{display:flex;flex-direction:column;padding:12px 18px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .12s}
 .byo-row:last-child{border-bottom:none}
 .byo-row:hover{background:var(--cream)}
 .byo-row.on{background:rgba(45,93,168,.04)}
 .byo-row.req{cursor:default;opacity:.95}
 .byo-row.req:hover{background:transparent}
+.byo-row-hd{display:flex;align-items:center;gap:12px}
 .byo-check{width:20px;height:20px;border-radius:6px;border:1.5px solid var(--line-2);background:var(--bg-card);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:transparent;font-size:12px;font-weight:900}
 .byo-check.on{background:var(--denim);border-color:var(--denim);color:#fff}
-.byo-body{flex:1;min-width:0}
-.byo-label{font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
-.byo-meta{font-size:10px;color:var(--text-3);margin-top:3px;font-weight:600;letter-spacing:.04em;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.byo-label{flex:1;min-width:0;overflow-wrap:anywhere;font-size:13px;font-weight:700;color:var(--text);letter-spacing:-.1px}
+.byo-meta{font-size:10px;color:var(--text-3);margin-top:5px;margin-left:32px;font-weight:600;letter-spacing:.04em;overflow-wrap:anywhere}
 .byo-price{font-family:var(--font-display);font-size:15px;font-weight:800;color:var(--text);letter-spacing:-.3px;font-variant-numeric:tabular-nums;min-width:64px;text-align:right;flex-shrink:0}
 .byo-edit{background:none;border:0;color:var(--text-3);cursor:pointer;font-size:10px;font-weight:700;font-family:inherit;padding:1px 4px;letter-spacing:.04em;text-transform:uppercase;text-decoration:underline;text-underline-offset:2px}
 .byo-edit:hover{color:var(--text)}
-/* Mobile sticky bar retired: its total (#byo-mob-total) was never wired so it showed a
-   stale $0, and being position:fixed it overlapped the summary-rail's own Send/Sign
-   buttons on phones. The summary-rail stacks below the form on mobile and already
-   provides the totals + all actions, so the bar was a broken duplicate. */
-.byo-mob-bar{display:none}
 
 /* Client hub directory page */
 .hub-dir-row{padding:14px 18px;border-bottom:1px solid var(--line);transition:background .12s;cursor:pointer}
@@ -1249,22 +1246,22 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="td-micro" style="margin-bottom:10px">Quick actions</div>
         <div class="qa-grid">
           <button class="qa qa-p" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">
-            <span class="qa-emoji">👤</span><span>New lead</span>
+            <span class="qa-ico"><span data-ico="👤" data-ico-size="24"></span></span><span>New lead</span>
           </button>
-          <button class="qa" onclick="quickAction('drive')">
-            <span class="qa-emoji">🚗</span><span>Drive</span>
+          <button class="qa" style="--qa-tint:linear-gradient(155deg,#3D74C6 0%,#24508F 100%);--qa-glow:rgba(45,93,168,.35)" onclick="quickAction('drive')">
+            <span class="qa-ico"><span data-ico="🚗" data-ico-size="24"></span></span><span>Drive</span>
           </button>
-          <button class="qa" id="qa-estimate-btn" onclick="quickAction('estimate')">
-            <span class="qa-emoji">📋</span><span>Estimate</span>
+          <button class="qa" id="qa-estimate-btn" style="--qa-tint:linear-gradient(155deg,#8B5CF6 0%,#6D28D9 100%);--qa-glow:rgba(109,40,217,.35)" onclick="quickAction('estimate')">
+            <span class="qa-ico"><span data-ico="📋" data-ico-size="24"></span></span><span>Estimate</span>
           </button>
-          <button class="qa" onclick="quickAction('schedule')">
-            <span class="qa-emoji">📅</span><span>Schedule</span>
+          <button class="qa" style="--qa-tint:linear-gradient(155deg,#DE8514 0%,#B45309 100%);--qa-glow:rgba(180,83,9,.35)" onclick="quickAction('schedule')">
+            <span class="qa-ico"><span data-ico="📅" data-ico-size="24"></span></span><span>Schedule</span>
           </button>
-          <button class="qa" onclick="quickAction('expense')">
-            <span class="qa-emoji">🧾</span><span>Expense</span>
+          <button class="qa" style="--qa-tint:linear-gradient(155deg,#CC4B4B 0%,#A32D2D 100%);--qa-glow:rgba(163,45,45,.35)" onclick="quickAction('expense')">
+            <span class="qa-ico"><span data-ico="🧾" data-ico-size="24"></span></span><span>Expense</span>
           </button>
           <button class="qa qa-g" id="qa-collect-btn" onclick="quickAction('collect')">
-            <span class="qa-emoji">💰</span><span id="qa-collect-label">Collect</span>
+            <span class="qa-ico"><span data-ico="💰" data-ico-size="24"></span></span><span id="qa-collect-label">Collect</span>
           </button>
         </div>
       </div>
@@ -1389,9 +1386,9 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div id="err-cf-addr" style="display:none;font-size:11px;color:var(--c-red);margin-top:3px"></div>
           </div>
           <div class="f"><label>City</label><input id="cf-city" placeholder="Denver" autocomplete="address-level2" oninput="_updateAddrComputed()"></div>
-          <div class="f" style="display:grid;grid-template-columns:1fr 80px;gap:8px">
-            <div><label>State</label><input id="cf-state" placeholder="CO" maxlength="2" autocomplete="address-level1" oninput="this.value=this.value.toUpperCase();_updateAddrComputed()"></div>
-            <div><label>Zip</label><input id="cf-zip" placeholder="80203" maxlength="10" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
+          <div class="f" style="display:grid;grid-template-columns:1fr 80px;gap:8px;min-width:0">
+            <div style="min-width:0"><label>State</label><input id="cf-state" placeholder="CO" maxlength="2" autocomplete="address-level1" oninput="this.value=this.value.toUpperCase();_updateAddrComputed()"></div>
+            <div style="min-width:0"><label>Zip</label><input id="cf-zip" placeholder="80203" maxlength="10" autocomplete="postal-code" oninput="_updateAddrComputed()"></div>
           </div>
           <div class="f"><label>Email</label><input type="email" id="cf-email" placeholder="client@email.com" autocomplete="off"></div>
           <div class="f"><label>Property type</label><select id="cf-ptype"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select></div>
@@ -1400,7 +1397,7 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input id="cf-year-built" type="number" min="1800" max="2030" placeholder="e.g. 1965" oninput="checkYearBuilt()" style="flex:1">
               <button type="button" class="btn btn-sm btn-g" id="cf-year-lookup" onclick="lookupYearBuilt()" style="display:none;white-space:nowrap">&#128269; Look up</button>
             </div>
-            <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px">⚠️ Pre-1978 — Lead paint pamphlet required</div>
+            <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px"><span data-ico="⚠" data-ico-size="14"></span> Pre-1978 — Lead paint pamphlet required</div>
           </div>
           <div class="f">
             <label>Occupation</label>
@@ -1495,8 +1492,8 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" id="cd-notes-card">
       <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Notes<span style="font-size:10px;color:var(--text3);font-weight:400">Private · not sent to client</span></div>
       <div id="cd-notes-list" style="margin-bottom:10px"></div>
-      <div style="display:flex;gap:8px">
-        <input id="cd-note-input" type="text" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit" onkeydown="if(event.key==='Enter')addClientNote()">
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="cd-note-input" rows="2" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addClientNote();}"></textarea>
         <button class="btn btn-p btn-sm" onclick="addClientNote()">Add</button>
       </div>
     </div>
@@ -1512,7 +1509,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span style="font-size:13px;font-weight:700">Bids &amp; payments</span>
       <div style="display:flex;gap:6px">
-        <button class="btn btn-sm" onclick="openClientProposals(currentClientId)" style="font-size:12px">📄 Proposals</button>
+        <button class="btn btn-sm" onclick="openClientProposals(currentClientId)" style="font-size:12px"><span data-ico="📄" data-ico-size="14"></span> Proposals</button>
         <button class="btn btn-p btn-sm" onclick="quickBid()">+ Add bid</button>
       </div>
     </div>
@@ -1557,7 +1554,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             </select>
           </div>
           <div class="f"><label>Date of action</label><input type="date" id="lien-date"></div>
-          <div class="f"><label>Amount claimed ($)</label><input type="number" id="lien-amount" placeholder="0.00"></div>
+          <div class="f"><label>Amount claimed ($)</label><input type="text" inputmode="decimal" id="lien-amount" placeholder="0.00" oninput="_fmtMoneyInput(this)"></div>
           <div class="f"><label>County filed</label><input id="lien-county" placeholder="Sedgwick County"></div>
           <div class="f" style="grid-column:1/-1"><label>Notes / attorney / case #</label><textarea id="lien-notes" placeholder="Case number, attorney name, next steps..."></textarea></div>
         </div>
@@ -1582,503 +1579,6 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
   <div id="cdt-contracts-content" style="display:none"></div>
 </div>
-<div class="pg" id="pg-est">
-  <div style="padding:20px 16px 24px;max-width:900px;margin:0 auto;box-sizing:border-box;width:100%">
-  <div class="tbar">
-    <div class="tbar-l">
-      <button class="link-back" onclick="_estCancelToStylePicker()">← Pick a different type</button>
-      <div class="tbar-eyebrow">Interior/Exterior estimate</div>
-      <div class="tbar-title" id="est-tbar-title">Estimate builder</div>
-    </div>
-    <div class="tbar-r">
-      <button class="btn btn-sm" onclick="saveEstFullDraft();goPg('pg-dash')" style="color:var(--text2)">Save &amp; exit</button>
-    </div>
-  </div>
-  <div class="steps" id="est-steps">
-    <div class="step active" id="est-st-1" onclick="goEstStep(1)"><div class="snum">1</div><span class="slbl">Client</span></div>
-    <div class="ssep"></div>
-    <div class="step" id="est-st-3" onclick="goEstStep(3)"><div class="snum">2</div><span class="slbl">Surfaces</span></div>
-    <div class="ssep"></div>
-    <div class="step" id="est-st-4" onclick="goEstStep(4)"><div class="snum">3</div><span class="slbl">Review</span></div>
-    <div class="ssep"></div>
-    <div class="step" id="est-st-5" onclick="goEstStep(5)"><div class="snum">4</div><span class="slbl">Proposal</span></div>
-    <div class="ssep"></div>
-    <div class="step" id="est-st-6" onclick="goEstStep(6)"><div class="snum">5</div><span class="slbl">Sign</span></div>
-  </div>
-  <div id="est-s1">
-    <!-- Job type — drives tax treatment from the start -->
-    <div class="card" style="margin-bottom:12px">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Property type</div>
-      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:10px">
-        <button id="paint-prop-res"  onclick="_paintSetPropertyType('residential')" class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🏠 Residential</button>
-        <button id="paint-prop-comm" onclick="_paintSetPropertyType('commercial')"  class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏢 Commercial</button>
-      </div>
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Work type</div>
-      <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:8px">
-        <button id="paint-work-repair"   onclick="_paintSetWorkScope('repair')"      class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🔧 Repair / Remodel</button>
-        <button id="paint-work-newbuild" onclick="_paintSetWorkScope('improvement')" class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏗️ New Build / Addition</button>
-      </div>
-      <div id="paint-jscope-note" style="font-size:11px;color:var(--text3)"></div>
-    </div>
-    <!-- Business fields as hidden inputs — pre-filled from settings by prefillEstimateRates(); proposal reads them with S.* fallbacks -->
-    <input type="hidden" id="e-bname"><input type="hidden" id="e-bphone"><input type="hidden" id="e-blic">
-    <select id="e-bvalid" style="display:none"><option>7 days</option><option>14 days</option><option selected>30 days</option><option>60 days</option></select>
-    <select id="e-cprop" style="display:none"><option>Single family home</option><option>Townhouse/condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option></select>
-    <div class="card"><div class="card-hd">Client info <span id="e-client-linked"></span></div>
-      <div class="fg fg2">
-        <div class="f"><label>Client name <span style="color:var(--c-red)">*</span></label><input id="e-cname" autocapitalize="words" placeholder="John &amp; Sarah Smith" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
-        <div class="f"><label>Phone <span style="color:var(--c-red)">*</span></label><input id="e-cphone" type="tel" maxlength="12" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="fmtPhone(this);markFieldFilled(this);checkStep1Ready();saveEstFullDraft()"></div>
-        <div class="f" style="grid-column:1/-1;position:relative"><label>Property address <span style="color:var(--c-red)">*</span></label><input id="e-caddr" autocapitalize="words" placeholder="1234 Maple St, Wichita KS 67201" autocomplete="off" style="border:2px solid var(--c-red);background:var(--red-lt)" oninput="markFieldFilled(this);checkStep1Ready();saveEstFullDraft();_paintOnAddrInput();_lookupProperty(this.value,'ecaddr')" onblur="typeof checkAddrServiceState==='function'&&checkAddrServiceState(this.value)"></div>
-        <div id="prop-card-ecaddr" style="display:none;margin-top:8px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px;grid-column:1/-1"></div>
-      </div>
-      <div class="f"><label>Walkthrough notes</label><textarea id="e-cnotes" placeholder="What did you see? What does the client want?"></textarea></div>
-    </div>
-
-    <div class="brow"><button class="btn btn-p" id="est-s1-next" onclick="validateAndGoStep2()" style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Next: Surfaces &#8594;</button></div>
-  </div>
-  <!-- Step 2 (Rates) is now merged into Step 3. Hidden inputs kept here for DOM availability. -->
-  <div id="est-s2" style="display:none">
-    <!-- Hidden rate inputs — still used by calcEst, set from settings -->
-    <input type="hidden" id="e-r-walls"><input type="hidden" id="e-r-ceil">
-    <input type="hidden" id="e-r-trim"><input type="hidden" id="e-r-door">
-    <input type="hidden" id="e-r-win"><input type="hidden" id="e-r-ext">
-    <input type="hidden" id="e-r-deck"><input type="hidden" id="e-paint-rate">
-    <input type="hidden" id="e-supplies-rate">
-    <input type="hidden" id="e-cond" value="1.0">
-  </div>
-  <div id="est-s3" style="display:none">
-    <!-- Property tier picker (was step 2, now at top of surfaces step) -->
-    <div class="card" style="margin-bottom:10px">
-      <div class="card-hd">Pricing tier</div>
-      <div style="font-size:12px;color:var(--text3);margin-bottom:10px">One tap sets your pricing. Override anytime.</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px" id="prop-tier-grid">
-        <button type="button" id="ptier-rental" onclick="selectPropertyTier('rental')"
-          style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
-          <div style="font-size:18px;margin-bottom:2px">🏚️</div>
-          <div style="font-size:12px;font-weight:800;color:var(--text)">Rental / Fixer</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:1px">−18% · ProMar 700</div>
-        </button>
-        <button type="button" id="ptier-avg" onclick="selectPropertyTier('avg')"
-          style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--blue);background:var(--blue-lt);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
-          <div style="font-size:18px;margin-bottom:2px">🏠</div>
-          <div style="font-size:12px;font-weight:800;color:var(--blue-dk)">Average Home</div>
-          <div style="font-size:10px;color:var(--blue);margin-top:1px">Base · ProMar 200</div>
-        </button>
-        <button type="button" id="ptier-nice" onclick="selectPropertyTier('nice')"
-          style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
-          <div style="font-size:18px;margin-bottom:2px">🏡</div>
-          <div style="font-size:12px;font-weight:800;color:var(--text)">Well-Maintained</div>
-          <div style="font-size:10px;color:var(--green-mid);margin-top:1px">+22% · SuperPaint</div>
-        </button>
-        <button type="button" id="ptier-premium" onclick="selectPropertyTier('premium')"
-          style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s">
-          <div style="font-size:18px;margin-bottom:2px">🏛️</div>
-          <div style="font-size:12px;font-weight:800;color:var(--text)">High-End</div>
-          <div style="font-size:10px;color:#856404;margin-top:1px">+50% · Duration</div>
-        </button>
-        <button type="button" id="ptier-commercial" onclick="selectPropertyTier('commercial')"
-          style="padding:10px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;transition:all .15s;grid-column:1/-1;display:flex;align-items:center;gap:10px">
-          <div style="font-size:22px;line-height:1">🏢</div>
-          <div style="flex:1">
-            <div style="font-size:12px;font-weight:800;color:var(--text)">Commercial</div>
-            <div style="font-size:10px;color:#856404;margin-top:1px">+65% · Duration · Genie lifts &amp; equipment included in price</div>
-          </div>
-        </button>
-      </div>
-      <div id="prop-tier-hint" style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center;min-height:14px"></div>
-      <div id="_tier-industrial-banner" style="display:none;margin-top:8px;padding:10px 12px;border-radius:var(--r);border:1.5px dashed #ea580c;background:#fff7ed">
-        <div style="display:flex;align-items:center;gap:10px">
-          <span style="font-size:18px;flex-shrink:0">🏗️</span>
-          <div style="flex:1"><div style="font-size:12px;font-weight:700;color:#c2410c">Asphalt plant, tanks, or heavy machinery?</div><div style="font-size:11px;color:#9a3412">Switch to Equipment Coating for auto-calculated crew, schedule &amp; materials</div></div>
-          <button onclick="openIndustrialEquipEstimate(getClientById(currentClientId||estLinkedClientId))" style="padding:7px 12px;border-radius:var(--r);border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">Switch →</button>
-        </div>
-      </div>
-      <!-- Advanced rates — collapsed -->
-      <details style="margin-top:10px">
-        <summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:4px 0;list-style:none;display:flex;align-items:center;gap:6px">
-          <span style="font-size:13px">⚙️</span> Override rates for this job
-        </summary>
-        <div style="margin-top:8px;background:var(--bg2);border-radius:var(--r);padding:10px">
-          <div style="font-size:10px;color:var(--text3);margin-bottom:6px">Change here to override for this job only.</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Walls ($/wall sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-walls-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-walls-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-walls-adv','e-r-walls')"><button type="button" onclick="adjRateAdv('e-r-walls-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
-            <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Ceiling ($/sf)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-ceil-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-ceil-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-ceil-adv','e-r-ceil')"><button type="button" onclick="adjRateAdv('e-r-ceil-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
-            <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Trim ($/lin ft)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-trim-adv',-0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-trim-adv" step="0.25" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-trim-adv','e-r-trim')"><button type="button" onclick="adjRateAdv('e-r-trim-adv',0.25)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
-            <div><label style="font-size:10px;font-weight:700;color:var(--text3);display:block;margin-bottom:3px">Doors ($/door)</label><div style="display:flex;gap:3px"><button type="button" onclick="adjRateAdv('e-r-door-adv',-5)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:var(--r) 0 0 var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">−</button><input type="number" id="e-r-door-adv" step="5" style="font-size:14px;padding:5px;border-radius:0;border:1px solid var(--border2);border-left:none;border-right:none;background:var(--bg);color:var(--text);width:100%;box-sizing:border-box;text-align:center" oninput="syncAdvRate('e-r-door-adv','e-r-door')"><button type="button" onclick="adjRateAdv('e-r-door-adv',5)" style="padding:0 8px;font-size:14px;font-weight:700;border-radius:0 var(--r) var(--r) 0;border:1px solid var(--border2);background:var(--bg);color:var(--text);cursor:pointer;height:32px;flex-shrink:0">+</button></div></div>
-          </div>
-        </div>
-      </details>
-    </div>
-
-    <div id="surf-rooms-logged" style="margin-bottom:8px"></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
-      <button id="surf-type-int" onclick="setSurfJobType('interior')"
-        style="padding:12px;border-radius:var(--rl);border:2px solid var(--blue);background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Interior</button>
-      <button id="surf-type-ext" onclick="setSurfJobType('exterior')"
-        style="padding:12px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);color:var(--text2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Exterior</button>
-    </div>
-
-    
-    <div class="card" id="surf-room-card" style="border:2px solid var(--blue)">
-
-      
-      <div id="surf-step-a">
-        <div style="font-size:13px;font-weight:800;color:var(--blue);margin-bottom:10px" id="surf-card-title">New room</div>
-
-        <div style="margin-bottom:12px">
-          <label id="surf-room-name-label" style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Room name <span style="color:var(--c-red)">*</span></label>
-          <input id="surf-room-name" autocapitalize="words" placeholder="Living room, Master bedroom..."
-            style="font-size:16px;font-weight:700;padding:10px 12px;width:100%;border:1.5px solid var(--border2);background:var(--bg2);border-radius:var(--r);outline:none;box-sizing:border-box;color:var(--text)"
-            oninput="onSurfRoomName(this)">
-          <input id="surf-room-sqft" type="hidden" value="0">
-        </div>
-
-        <input type="hidden" id="surf-color" class="surf-color-entry" value="">
-        <input type="hidden" id="surf-colors-list" style="display:none"></input>
-
-        <div style="margin-bottom:14px">
-          <label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:8px">What needs painting? <span style="font-weight:400;opacity:.6">Select all that apply</span></label>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px" id="surf-what-grid">
-            <button onclick="toggleSurfWhat('walls',this)" class="surf-what-btn" id="swhat-walls"
-              style="padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#9640;</div>Walls</button>
-            <button onclick="toggleSurfWhat('ceiling',this)" class="surf-what-btn" id="swhat-ceiling"
-              style="padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#9723;</div>Ceiling</button>
-            <button onclick="toggleSurfWhat('trim',this)" class="surf-what-btn" id="swhat-trim"
-              style="padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#9645;</div>Trim</button>
-            <button onclick="toggleSurfWhat('doors',this)" class="surf-what-btn" id="swhat-doors"
-              style="padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#128686;</div>Doors</button>
-            <button onclick="toggleSurfWhat('windows',this)" class="surf-what-btn" id="swhat-windows"
-              style="padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#9633;</div>Windows</button>
-            <button onclick="toggleSurfWhat('cabinets',this)" class="surf-what-btn" id="swhat-cabinets"
-              style="padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#9699;</div>Cabinets</button>
-            
-            <button onclick="toggleSurfWhat('ext_walls',this)" class="surf-what-btn" id="swhat-ext_walls"
-              style="display:none;padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#127968;</div>Siding</button>
-            <button onclick="toggleSurfWhat('ext_trim',this)" class="surf-what-btn" id="swhat-ext_trim"
-              style="display:none;padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#9645;</div>Ext trim</button>
-            <button onclick="toggleSurfWhat('deck',this)" class="surf-what-btn" id="swhat-deck"
-              style="display:none;padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#127795;</div>Deck</button>
-            <button onclick="toggleSurfWhat('fence',this)" class="surf-what-btn" id="swhat-fence"
-              style="display:none;padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#129717;</div>Fence</button>
-            <button onclick="toggleSurfWhat('epoxy',this)" class="surf-what-btn" id="swhat-epoxy"
-              style="padding:12px 6px;border-radius:var(--rl);border:2px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text2)">
-              <div style="font-size:20px;margin-bottom:3px">&#129699;</div>Epoxy floor</button>
-          </div>
-        </div>
-
-        <button class="btn btn-p btn-full" onclick="goSurfStepB()" id="surf-next-to-dims"
-          style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>
-          Scope of Work &#8594;
-        </button>
-      </div>
-
-      
-      <div id="surf-step-b" style="display:none;position:fixed;inset:0;z-index:1100;background:var(--bg);overflow-y:auto;overscroll-behavior:none;padding:16px 16px 80px;box-sizing:border-box">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-          <button onclick="goSurfStepA()" style="border:none;background:none;cursor:pointer;font-size:18px;color:var(--text3);padding:0">&#8592;</button>
-          <div>
-            <div style="font-size:15px;font-weight:800" id="surf-b-roomname"></div>
-            <div style="font-size:11px;color:var(--text3)" id="surf-b-progress"></div>
-          </div>
-        </div>
-
-        <!-- SCOPE FIRST: shown before surfaces, hidden after -->
-        <div id="surf-scope-first" style="display:none">
-          <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--rl);padding:14px;margin-bottom:14px">
-            <div style="font-size:13px;font-weight:800;color:var(--text);margin-bottom:4px">🔍 Room walkthrough</div>
-            <div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6">Check anything that needs doing in this room. These will auto-calculate into your price — no hours needed.</div>
-            <div class="sg" id="surf-scope-first-grid"></div>
-          </div>
-          <div id="surf-paint-supply-wrap" style="margin-top:14px;padding:14px;background:var(--bg);border:1px solid var(--border2);border-radius:var(--rl)">
-            <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:8px">🎨 Who's supplying the paint?</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-              <button type="button" id="paint-sup-zach" onclick="setPaintSupply('zach')"
-                style="padding:11px 8px;border-radius:var(--r);border:2px solid var(--blue);background:var(--blue-lt);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue-dk)">
-                🪣 I'm supplying
-              </button>
-              <button type="button" id="paint-sup-cust" onclick="setPaintSupply('customer')"
-                style="padding:11px 8px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">
-                🏠 Client supplies
-              </button>
-            </div>
-            <div id="paint-supply-note" style="display:none;margin-top:8px;font-size:11px;color:#856404;background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 10px;line-height:1.6">
-              ⚠️ Paint cost removed from estimate. No warranty on finish quality — client assumes all responsibility for paint performance.
-            </div>
-          </div>
-          <button class="btn btn-p btn-full" onclick="goSurfScopeToMeasure()" style="font-size:15px;padding:14px;margin-top:12px">
-            Measurements &#8594;
-          </button>
-        </div>
-
-        <!-- MEASUREMENTS + COLOR: shown after scope -->
-        <div id="surf-measure-color-wrap">
-
-        
-        <div id="surf-b-current"></div>
-
-        
-        <div id="surf-b-dims" style="margin-bottom:12px"></div>
-
-        
-        <div id="surf-b-subopts" style="margin-bottom:12px;display:none"></div>
-
-        <!-- Product line selector -->
-        <div id="sw-product-wrap" style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
-          <div style="padding:10px 12px 8px;border-bottom:1px solid var(--border2);display:flex;align-items:center;justify-content:space-between">
-            <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Product <span style="color:var(--c-red)">*</span></div>
-            <div id="sw-product-selected" style="font-size:11px;font-weight:700;color:var(--blue)"></div>
-          </div>
-          <div style="padding:6px 12px 4px;font-size:11px;color:var(--blue-dk);font-weight:700" id="sw-product-grid-hdr"></div>
-          <div id="sw-product-grid" style="padding:4px 10px 8px;display:grid;grid-template-columns:1fr;gap:5px"></div>
-          <input type="hidden" id="sw-selected-product" value="">
-        </div>
-
-        <!-- Color browser -->
-        <div id="sw-color-wrap" style="margin-top:14px;background:var(--bg2);border-radius:var(--rl);border:1px solid var(--border2);overflow:hidden">
-          <!-- Header with selected pill -->
-          <div style="padding:10px 12px 8px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border2)">
-            <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Color &amp; Finish <span style="color:var(--c-red)">*</span></div>
-            <div id="sw-selected-pill" style="display:none;align-items:center;gap:6px">
-              <div id="sw-color-preview" style="width:20px;height:20px;border-radius:3px;background:#eee;border:1px solid var(--border2);cursor:pointer" onclick="swOpenFullscreen()"></div>
-              <span id="sw-selected-label" style="font-size:11px;font-weight:700;color:var(--text);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-              <button type="button" onclick="swClearColor()" style="font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:2px 4px;line-height:1">✕</button>
-            </div>
-          </div>
-          <!-- Finish row — above color so user picks it first -->
-          <div style="padding:8px 12px;border-bottom:1px solid var(--border2)" id="sw-finish-row">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Finish <span style="font-weight:400;text-transform:none;font-size:9px">(pick first)</span></div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:3px" id="sw-finish-grid">
-              <button type="button" class="sw-finish-btn" data-finish="Flat" onclick="swSelectFinish(this)" style="position:relative;padding:8px 10px;min-height:72px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);text-align:left;cursor:pointer;font-family:inherit"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">Flat</div><div style="font-size:10px;color:var(--text3);line-height:1.3">Ceilings and low-traffic areas, hides imperfections.</div><span onclick="event.stopPropagation();showFinishTip('Flat',event)" style="position:absolute;top:6px;right:7px;font-size:14px;color:var(--text3);cursor:pointer;line-height:1">ⓘ</span></button>
-              <button type="button" class="sw-finish-btn" data-finish="Matte" onclick="swSelectFinish(this)" style="position:relative;padding:8px 10px;min-height:72px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);text-align:left;cursor:pointer;font-family:inherit"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">Matte</div><div style="font-size:10px;color:var(--text3);line-height:1.3">Soft look, slightly more durable than flat.</div><span onclick="event.stopPropagation();showFinishTip('Matte',event)" style="position:absolute;top:6px;right:7px;font-size:14px;color:var(--text3);cursor:pointer;line-height:1">ⓘ</span></button>
-              <button type="button" class="sw-finish-btn" data-finish="Eggshell" onclick="swSelectFinish(this)" style="position:relative;padding:8px 10px;min-height:72px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);text-align:left;cursor:pointer;font-family:inherit"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">Eggshell</div><div style="font-size:10px;color:var(--text3);line-height:1.3">Most popular for living rooms and bedrooms.</div><span onclick="event.stopPropagation();showFinishTip('Eggshell',event)" style="position:absolute;top:6px;right:7px;font-size:14px;color:var(--text3);cursor:pointer;line-height:1">ⓘ</span></button>
-              <button type="button" class="sw-finish-btn" data-finish="Satin" onclick="swSelectFinish(this)" style="position:relative;padding:8px 10px;min-height:72px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);text-align:left;cursor:pointer;font-family:inherit"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">Satin</div><div style="font-size:10px;color:var(--text3);line-height:1.3">Kitchens and bathrooms, washable and moisture resistant.</div><span onclick="event.stopPropagation();showFinishTip('Satin',event)" style="position:absolute;top:6px;right:7px;font-size:14px;color:var(--text3);cursor:pointer;line-height:1">ⓘ</span></button>
-              <button type="button" class="sw-finish-btn" data-finish="Semi-Gloss" onclick="swSelectFinish(this)" style="position:relative;padding:8px 10px;min-height:72px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);text-align:left;cursor:pointer;font-family:inherit"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">Semi-Gloss</div><div style="font-size:10px;color:var(--text3);line-height:1.3">Doors, trim, cabinets — very durable.</div><span onclick="event.stopPropagation();showFinishTip('Semi-Gloss',event)" style="position:absolute;top:6px;right:7px;font-size:14px;color:var(--text3);cursor:pointer;line-height:1">ⓘ</span></button>
-              <button type="button" class="sw-finish-btn" data-finish="Gloss" onclick="swSelectFinish(this)" style="position:relative;padding:8px 10px;min-height:72px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);text-align:left;cursor:pointer;font-family:inherit"><div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">Gloss</div><div style="font-size:10px;color:var(--text3);line-height:1.3">Highest durability, very shiny.</div><span onclick="event.stopPropagation();showFinishTip('Gloss',event)" style="position:absolute;top:6px;right:7px;font-size:14px;color:var(--text3);cursor:pointer;line-height:1">ⓘ</span></button>
-              <button type="button" class="sw-finish-btn" data-finish="Semi-Trans Stain" onclick="swSelectFinish(this);swShowFamily('stain','Deck Stain')" style="position:relative;padding:8px 10px;min-height:72px;border-radius:var(--r);border:1px solid #8B6340;background:#FFF8F0;text-align:left;cursor:pointer;font-family:inherit"><div style="font-size:13px;font-weight:700;color:#7B4E2A;margin-bottom:2px">Semi-Trans Stain</div><div style="font-size:10px;color:#9B7755;line-height:1.3">Decks and fences, wood grain shows through.</div><span onclick="event.stopPropagation();showFinishTip('Semi-Trans Stain',event)" style="position:absolute;top:6px;right:7px;font-size:14px;color:#9B7755;cursor:pointer;line-height:1">ⓘ</span></button>
-              <button type="button" class="sw-finish-btn" data-finish="Solid Stain" onclick="swSelectFinish(this);swShowFamily('stain','Deck Stain')" style="position:relative;padding:8px 10px;min-height:72px;border-radius:var(--r);border:1px solid #8B6340;background:#FFF8F0;text-align:left;cursor:pointer;font-family:inherit"><div style="font-size:13px;font-weight:700;color:#7B4E2A;margin-bottom:2px">Solid Stain</div><div style="font-size:10px;color:#9B7755;line-height:1.3">Full coverage for decks, breathes better than paint.</div><span onclick="event.stopPropagation();showFinishTip('Solid Stain',event)" style="position:absolute;top:6px;right:7px;font-size:14px;color:#9B7755;cursor:pointer;line-height:1">ⓘ</span></button>
-            </div>
-          </div>
-          <!-- State 1: search first, then family tiles -->
-          <div id="sw-state-family" style="padding:10px 12px">
-            <div style="position:relative;margin-bottom:10px">
-              <input id="sw-search-input" autocomplete="off" placeholder="Search SW name or number (e.g. Repose Gray, 7015)..."
-                style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);width:100%;box-sizing:border-box"
-                oninput="swSearch(this.value)" onblur="setTimeout(swHideDropdown,200)">
-              <div id="sw-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:500;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);box-shadow:0 4px 20px rgba(0,0,0,.15);max-height:220px;overflow-y:auto"></div>
-            </div>
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Or browse by family:</div>
-            <div id="sw-family-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px"></div>
-          </div>
-          <!-- State 2: swatch grid -->
-          <div id="sw-state-swatches" style="display:none;padding:10px 12px">
-            <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-              <button type="button" onclick="swBackToFamilies()" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--text3);padding:0;line-height:1">&#8592;</button>
-              <span id="sw-family-label" style="font-size:14px;font-weight:800;color:var(--text)"></span>
-              <span id="sw-family-count" style="font-size:11px;color:var(--text3)"></span>
-            </div>
-            <div id="sw-swatch-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;max-height:200px;overflow-y:auto"></div>
-          </div>
-          <!-- Accent wall (rare but possible) -->
-          <div id="sw-accent-wrap" style="display:none;padding:8px 12px;border-top:1px solid var(--border2);background:var(--bg)">
-            <div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Accent wall color</div>
-            <div style="position:relative">
-              <input id="sw-accent-search" autocomplete="off" placeholder="Search SW color name or number..."
-                style="font-size:12px;padding:7px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"
-                oninput="swAccentSearch(this.value)" onblur="setTimeout(swHideAccentDropdown,200)">
-              <div id="sw-accent-dropdown" style="display:none;position:absolute;top:100%;left:0;right:0;z-index:600;margin-top:2px;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);box-shadow:0 4px 20px rgba(0,0,0,.15);max-height:180px;overflow-y:auto"></div>
-            </div>
-            <div id="sw-accent-selected" style="display:none;margin-top:6px;display:flex;align-items:center;gap:6px">
-              <div id="sw-accent-preview" style="width:18px;height:18px;border-radius:3px;background:#eee;border:1px solid var(--border2);flex-shrink:0"></div>
-              <span id="sw-accent-label" style="font-size:11px;font-weight:700;color:var(--text)"></span>
-              <button type="button" onclick="swClearAccent()" style="font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:0;margin-left:auto">✕</button>
-            </div>
-            <input type="hidden" id="sw-accent-note" value="">
-          </div>
-          <input type="hidden" id="sw-selected-hex" value="">
-          <input type="hidden" id="sw-selected-finish" value="">
-          <input type="hidden" id="surf-color-b" class="surf-color-entry" value="">
-          <div style="padding:4px 12px 8px">
-            <button type="button" onclick="const w=document.getElementById('sw-accent-wrap');w.style.display=w.style.display==='none'?'block':'none'" 
-              style="font-size:11px;color:var(--blue-dk);background:none;border:none;cursor:pointer;font-family:inherit;padding:0">+ Different accent wall color?</button>
-          </div>
-        </div>
-
-        <button class="btn btn-p btn-full" id="surf-b-next-btn" onclick="saveSurfBAndNext()" style="font-size:15px;padding:14px;margin-top:10px">
-          Next &#8594;
-        </button>
-        </div><!-- end surf-measure-color-wrap -->
-      </div>
-
-    </div>
-
-    
-    <div class="card" style="margin-top:10px"><div class="card-hd">Running total</div><div id="est-running"></div></div>
-
-    
-    <div style="text-align:center;margin-top:8px">
-      
-    </div>
-
-    
-    <input type="hidden" id="surf-length">
-    <input type="hidden" id="surf-height">
-    <div id="surf-measure-panel" style="display:none"></div>
-    <div id="surf-count-panel" style="display:none"></div>
-    <div id="surf-calc-result" style="display:none"></div>
-    <select id="surf-type-btns" style="display:none"></select>
-
-    
-    <div class="brow" style="margin-top:10px">
-      <button class="btn" onclick="goEstStep(1)">&#8592; Back</button>
-      <button class="btn btn-p" id="est-s3-next-btn" onclick="goEstStep(4)"
-        style="background:var(--border2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>
-        Review &#8594;
-      </button>
-    </div>
-  </div>
-
-    <div id="est-s4" style="display:none">
-    <div class="card"><div id="est-review"></div></div>
-    <div class="card" id="adj-portfolio-card"><div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:10px">Price adjustment</div>
-      <input type="checkbox" id="portfolio-toggle" onchange="togglePortfolioShowcase()" style="display:none">
-      <div id="portfolio-details" style="display:none;margin-bottom:14px">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-          <span style="font-size:13px;font-weight:700;color:var(--green-mid)">📸 Portfolio Showcase</span>
-          <button onclick="clearPortfolioShowcase()" style="margin-left:auto;font-size:11px;padding:3px 8px;border-radius:12px;border:1px solid var(--border2);background:var(--bg2);color:var(--text3);cursor:pointer">Remove</button>
-        </div>
-        <div class="fg fg2" style="margin-bottom:10px">
-          <div class="f">
-            <label>Discount % <span style="font-size:10px;font-weight:400;color:var(--text3)">(5–25)</span></label>
-            <input type="number" id="portfolio-pct" value="15" min="5" max="25" oninput="onPortfolioPctChange()">
-          </div>
-        </div>
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Proposal pitch preview</div>
-        <div id="portfolio-preview" style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 12px;font-size:11px;color:var(--text2);line-height:1.6"></div>
-        <div style="height:1px;background:var(--border2);margin:10px -16px 14px"></div>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
-        <label style="font-size:11px;color:var(--text2);min-width:80px">Adjust price</label>
-        <input type="range" id="est-adj" min="-40" max="40" step="1" value="0" oninput="syncAdj()" onchange="onAdjSliderRelease()" style="flex:1;accent-color:var(--ink);height:6px;cursor:pointer">
-        <span id="est-adj-val" style="font-size:12px;font-weight:700;min-width:55px;text-align:right;color:var(--blue)">0%</span>
-      </div>
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:10px;padding:0 2px">
-        <span>-40%</span><span>0</span><span>+40%</span>
-      </div>
-      <div id="adj-reason-summary" style="display:none;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;padding:8px 10px;background:var(--bg2);border-radius:var(--r)">
-        <span id="adj-reason-summary-text" style="font-size:12px;color:var(--text2);flex:1;min-width:0"></span>
-        <button onclick="clearAdjReason()" style="font-size:12px;color:var(--text3);background:none;border:none;cursor:pointer;padding:2px 4px;line-height:1;flex-shrink:0">✕</button>
-      </div>
-      <input type="hidden" id="adj-type-hidden" value="">
-      <input type="hidden" id="adj-reason-hidden" value="">
-      <div style="display:flex;align-items:center;gap:14px;margin-top:8px;padding-top:10px;border-top:1px solid var(--line)">
-        <span style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3)">Final bid</span>
-        <span id="est-final-disp" style="font-size:40px;font-weight:900;color:var(--denim);letter-spacing:-1.5px;font-family:var(--font-display);line-height:1"></span>
-      </div>
-    </div>
-      <input type="hidden" id="e-paint" value="">
-      <input type="hidden" id="e-customer-paint">
-    <div class="card">
-      <div class="f">
-        <label>Est. days to complete <span style="color:var(--c-red)">*</span></label>
-        <input type="number" id="e-days" placeholder="e.g. 2" min="1" max="60"
-          style="border:2px solid var(--c-red);background:var(--red-lt)"
-          onchange="validateJobSettings();saveEstFullDraft()" oninput="validateJobSettings();saveEstFullDraft()">
-      </div>
-      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:13px;font-weight:600;margin-top:10px">
-        <input type="checkbox" id="e-allow-weekend" style="width:18px;height:18px;accent-color:var(--blue);cursor:pointer;appearance:auto;-webkit-appearance:checkbox;flex-shrink:0">
-        Available to work weekends for this job
-      </label>
-      <div style="font-size:11px;color:var(--text3);margin-top:4px;margin-left:28px">Saturday and Sunday will show as available when scheduling</div>
-      <div class="f" style="margin-top:14px">
-        <label>Deposit % <span style="font-size:10px;font-weight:400;color:var(--text3)">(0 = no deposit required)</span></label>
-        <input type="number" id="e-deposit-pct" value="25" min="0" max="100" step="5" style="font-size:16px;font-weight:700">
-      </div>
-    </div>
-        <div class="brow"><button class="btn" onclick="goEstStep(3)">&#8592; Back</button><button class="btn btn-p" onclick="validateAndGoStep5()">Generate proposal &#8594;</button></div>
-        <div class="brow" style="margin-top:6px"><button class="btn" onclick="saveAndExitEstimate()" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:13px">💾 Save bid &amp; exit — I'll finish later</button></div>
-  </div>
-  <div id="est-s5" style="display:none">
-    <div id="est-proposal"></div>
-    
-    <div class="brow" style="flex-wrap:wrap;gap:6px">
-      <button class="btn" onclick="goEstStep(4)" style="flex:1;min-width:80px">← Adjust</button>
-      <button class="btn" onclick="downloadProposalPDF()" style="flex:1;min-width:80px;background:var(--bg2);border-color:var(--border2)">📄 PDF</button>
-      <button class="btn btn-g" id="send-proposal-btn" onclick="sendProposalLink()" style="flex:1;min-width:80px">🔗 Send to client</button>
-      <button class="btn btn-p" onclick="goEstStep(6)" style="flex:1;min-width:80px">Sign here</button>
-    </div>
-    <div class="brow" style="margin-top:6px">
-      <button class="btn" onclick="saveAndExitEstimate()" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:13px">
-        💾 Save bid &amp; exit — I'll get the signature later
-      </button>
-    </div>
-    <div id="proposal-link-bar" style="display:none;margin-top:8px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:12px 14px">
-      <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:10px;text-align:center">✓ Link ready — send to client</div>
-      <a id="proposal-link-anchor" href="#" target="_blank" style="display:none"></a>
-      <div id="proposal-link-label" style="display:none"></div>
-      <div id="proposal-link-sublabel" style="display:none"></div>
-      <div id="proposal-link-shorturl" style="display:none"></div>
-      <input id="proposal-link-input" readonly style="display:none">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">📱 Text</button>
-        <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">✉️ Email</button>
-      </div>
-      <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>
-      <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
-    </div>
-  </div>
-  <div id="est-s6" style="display:none">
-    <div class="card"><div class="card-hd">Review &amp; sign</div>
-      <div id="est-sig-sum"></div><hr>
-      <div class="fg fg2">
-        <div class="f"><label>Client printed name <span style="font-size:10px;font-weight:400;color:var(--text3)">(required)</span></label><input id="sig-pname" placeholder="Full name" oninput="checkConfirmReady()"></div>
-        <div class="f"><label>Date</label><input id="sig-date" readonly></div>
-      </div>
-      <div class="f" style="margin-bottom:8px">
-        <label>Signature — type your name</label>
-        <input id="sig-typed" placeholder="Type full name to sign..." oninput="updateTypedSig()" style="width:100%;box-sizing:border-box;font-size:16px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">
-        <div id="sig-typed-preview" style="font-family:'Dancing Script',cursive;font-size:36px;color:var(--denim);min-height:52px;display:flex;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:var(--bg)"></div>
-      </div>
-      <details style="margin-bottom:6px">
-        <summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:4px 0">Or draw signature instead</summary>
-        <div style="margin-top:8px">
-          <canvas id="sig-canvas"></canvas>
-          <div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px">Draw with finger or stylus</div>
-          <div class="brow" style="margin-top:6px"><button class="btn btn-sm" onclick="clearSig()">Clear</button></div>
-        </div>
-      </details>
-    </div>
-    <div class="card"><div class="card-hd">Terms &amp; conditions</div><div id="est-terms" style="font-size:11px;color:var(--text3);line-height:1.8"></div></div>
-    <div class="brow"><button class="btn" onclick="goEstStep(5)">&#8592; Back to proposal</button><button class="btn btn-xl" id="confirm-btn" onclick="confirmContract()" style="background:var(--bg2);color:var(--text3);border-color:var(--border2);cursor:not-allowed" disabled>Confirm &amp; close job</button></div>
-    <div class="brow" style="margin-top:6px"><button class="btn" onclick="saveAndExitEstimate()" style="width:100%;background:var(--bg2);border-color:var(--border2);color:var(--text2);font-size:13px">💾 Not signing now — save &amp; exit</button></div>
-  </div>
-  <div id="est-s7" style="display:none">
-    <div style="text-align:center;padding:28px 16px">
-      <div style="width:64px;height:64px;border-radius:50%;background:var(--green-lt);display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:30px">&#10003;</div>
-      <div style="font-size:22px;font-weight:700;margin-bottom:6px">Job closed!</div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:20px" id="est-done-msg"></div>
-      <div class="card" id="est-done-sum" style="text-align:left;margin-bottom:16px"></div>
-
-      <div style="display:grid;gap:8px;margin-top:4px">
-        <button class="btn btn-g btn-full" style="font-size:15px;padding:14px" onclick="goToDepositFromEstimate()">Collect 25% deposit &#8594;</button>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-full" onclick="schedJobFromEstimate()" style="font-size:13px">Schedule job</button>
-          <button class="btn btn-full" onclick="goBackToClient()" style="font-size:13px">View client</button>
-        </div>
-      </div>
-    </div>
-  </div>
-  </div><!-- end est wrapper -->
-</div>
 <div class="pg" id="pg-est-generic">
   <div class="tbar" id="gei-old-tbar">
     <div class="tbar-l">
@@ -2086,7 +1586,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-eyebrow" id="gei-tbar-eyebrow">General estimate</div>
       <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
         <span id="gei-trade-title">Estimate</span>
-        <button onclick="_editScopeTitle()" id="scope-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
+        <button onclick="_editScopeTitle()" id="scope-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)"><span data-ico="✏" data-ico-size="16"></span></button>
       </div>
     </div>
     <div class="tbar-r">
@@ -2099,38 +1599,19 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <!-- T&M single-page layout (matches design spec EstimateTM.jsx) — shown when _geiIsTM=true -->
   <div id="gei-tm-page" style="display:none">
-    <div class="tbar">
-      <div class="tbar-l">
-        <button class="link-back" onclick="_geiBack()">← Job type</button>
-        <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
-          <span id="tm-tbar-title">Time &amp; Materials proposal</span>
-          <button onclick="_editTMTitle()" id="tm-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
-        </div>
-        <div class="tbar-sub" id="tm-page-sub">—</div>
-      </div>
-      <div class="tbar-r">
-        <button class="btn" onclick="saveGenericEstimate(true)">💾 Save draft</button>
-        <button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>
-      </div>
-    </div>
+    <div class="tbar" id="tm-topbar-wrap"></div>
 
     <div class="split-est">
       <div>
         <!-- Scope of work chips -->
-        <div class="card card-pad-0" style="margin-bottom:12px">
-          <div class="card-hd">
-            <div class="card-hd-title">Scope of work</div>
-            <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet('tm-scope-wrap')">+ Add scope</button></div>
-          </div>
-          <div id="tm-scope-wrap"></div>
-        </div>
+        <div class="card card-pad-0" style="margin-bottom:12px" id="tm-scopecard-wrap"></div>
         <!-- Rates & crew -->
         <div class="card">
           <div class="td-h3" style="margin-bottom:10px">Rates &amp; crew</div>
           <div class="fg fg2">
             <div class="f">
               <label>Hourly rate · $/hr</label>
-              <div class="input-prefix"><span>$</span><input type="number" id="tm-i-rate" min="0" step="5" placeholder="75" oninput="_tmInputChange()"></div>
+              <div class="input-prefix"><span>$</span><input type="text" inputmode="decimal" id="tm-i-rate" placeholder="75" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
             </div>
             <div class="f">
               <label>Crew size</label>
@@ -2141,12 +1622,8 @@ body.dark .cal-cell.other{background:var(--cream)}
               </div>
             </div>
             <div class="f">
-              <label>Estimated hours</label>
-              <input type="number" id="tm-i-hours" min="0" step="1" placeholder="40" oninput="_tmInputChange()">
-            </div>
-            <div class="f">
-              <label>Materials markup <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>
-              <div class="input-suffix"><input type="number" id="tm-i-markup" min="0" max="100" step="5" placeholder="0" oninput="_tmInputChange()"><span>%</span></div>
+              <label>Estimated days</label>
+              <input type="text" inputmode="decimal" id="tm-i-days" placeholder="5" oninput="_fmtMoneyInput(this);_tmInputChange()">
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px">
@@ -2161,7 +1638,7 @@ body.dark .cal-cell.other{background:var(--cream)}
               <div class="stat-s" id="tm-stat-labor-s">—</div>
             </div>
             <div class="stat-tile">
-              <div class="stat-l">Working days</div>
+              <div class="stat-l">Total hours</div>
               <div class="stat-v" id="tm-stat-days">0</div>
               <div class="stat-s">at 8hr days</div>
             </div>
@@ -2176,7 +1653,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
           <div class="tm-mat-list" id="tm-mat-list"></div>
           <div class="tip" style="margin-top:12px">
-            <span style="font-size:18px">🧾</span>
+            <span data-ico="🧾" data-ico-size="18"></span>
             <div><b>Markup is baked into displayed prices.</b> Clients see the all-in price only — markup is never shown to them.</div>
           </div>
         </div>
@@ -2187,11 +1664,11 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="fg fg2">
             <div class="f">
               <label>Cap amount</label>
-              <div class="input-prefix"><span>$</span><input type="number" id="tm-i-nte" placeholder="e.g. 12,000" min="0" step="500" oninput="_tmInputChange()"></div>
+              <div class="input-prefix"><span>$</span><input type="text" inputmode="decimal" id="tm-i-nte" placeholder="e.g. 12,000" oninput="_fmtMoneyInput(this);_tmInputChange()"></div>
             </div>
             <div class="f">
               <label>What happens at cap</label>
-              <select id="tm-i-cap-action" onchange="_tmCapAction=this.value">
+              <select id="tm-i-cap-action" onchange="_tmCapAction=this.value;_byoAutosave()">
                 <option>Stop &amp; get re-approval</option>
                 <option>Continue at agreed rate</option>
                 <option>Switch to fixed-price quote</option>
@@ -2212,19 +1689,11 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-row"><span>Materials</span><span id="tm-rail-mat">$0</span></div>
           <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
-          <input type="number" id="tm-expected-cost" style="display:none" oninput="_tmInputChange()">
-          <div id="tm-gauge-hint" style="display:none"></div>
-          <div id="tm-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
-            <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">
-              <div id="tm-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
-            </div>
-            <div style="text-align:center;padding-bottom:12px">
-              <div id="tm-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>
-              <div id="tm-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>
-              <div id="tm-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>
-            </div>
-          </div>
+          <!-- Crew labor cost — only rendered when the contractor has employees -->
+          <div id="tm-labor-cost-wrap" style="display:none"></div>
+          <div id="tm-gauge-wrap"></div>
+          <div class="summary-divider"></div>
+          <div id="tm-deposit-wrap"></div>
           <div class="summary-divider"></div>
           <div class="td-micro" style="margin-bottom:6px">Billing cadence</div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
@@ -2232,12 +1701,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <span class="chip chip-int" id="tm-cad-milestone" onclick="_tmCadence('milestone')">By milestone</span>
             <span class="chip chip-int" id="tm-cad-completion" onclick="_tmCadence('completion')">On completion</span>
           </div>
-          <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send T&amp;M proposal</button>
-          <button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_tmPreviewClient()">👁 Preview</button>
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">📊 Compare</button>
-          </div>
+          <div id="tm-actions-wrap"></div>
         </div>
       </div>
     </div>
@@ -2245,31 +1709,12 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <!-- Build Your Own (line-item) single-page layout (matches EstimateBYO.jsx) — shown when _geiIsFreeForm=true -->
   <div id="gei-byo-page" style="display:none">
-    <div class="tbar">
-      <div class="tbar-l">
-        <button class="link-back" onclick="_geiBack()">← Job type</button>
-        <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
-          <span id="byo-tbar-title">Build Your Own proposal</span>
-          <button onclick="_editByoTitle()" id="byo-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">✏️</button>
-        </div>
-        <div class="tbar-sub" id="byo-page-sub">—</div>
-      </div>
-      <div class="tbar-r">
-        <button class="btn" onclick="saveGenericEstimate(true)">💾 Save draft</button>
-        <button class="btn btn-ghost" onclick="_geiBack()">Cancel</button>
-      </div>
-    </div>
+    <div class="tbar" id="byo-topbar-wrap"></div>
 
     <div class="split-est">
       <div>
         <!-- Scope of work chips -->
-        <div class="card card-pad-0" style="margin-bottom:12px">
-          <div class="card-hd">
-            <div class="card-hd-title">Scope of work</div>
-            <div style="display:flex;gap:6px"><button class="btn btn-sm" onclick="_openScopeSheet('byo-scope-wrap')">+ Add scope</button></div>
-          </div>
-          <div id="byo-scope-wrap"></div>
-        </div>
+        <div class="card card-pad-0" style="margin-bottom:12px" id="byo-scopecard-wrap"></div>
         <div id="byo-sections"></div>
 
       </div>
@@ -2282,59 +1727,12 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-divider"></div>
           <!-- Crew labor cost — only rendered when the contractor has employees -->
           <div id="byo-labor-cost-wrap" style="display:none"></div>
-          <input type="number" id="byo-expected-cost" style="display:none" oninput="this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()">
-          <div id="byo-gauge-hint" style="display:none"></div>
-          <div id="byo-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
-            <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:14px 10px 26px">
-              <div id="byo-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
-            </div>
-            <div style="text-align:center;padding-bottom:12px">
-              <div id="byo-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
-              <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>
-              <div id="byo-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>
-              <div id="byo-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>
-            </div>
-          </div>
+          <div id="byo-gauge-wrap"></div>
           <div class="summary-divider"></div>
-          <div class="summary-row" style="align-items:center">
-            <span style="display:flex;align-items:center;gap:6px;font-size:14px;font-weight:600">Deposit %</span>
-            <span style="display:flex;align-items:center;gap:4px">
-              <input type="number" id="byo-deposit-pct" value="25" min="0" max="100" step="5"
-                oninput="_byoUpdateRail();_byoAutosave()"
-                style="width:68px;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:17px;font-weight:700;text-align:center;font-family:inherit;-moz-appearance:textfield">
-              <span style="font-size:15px;font-weight:700">%</span>
-            </span>
-          </div>
-          <div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="byo-rail-balance">$0</span></div>
-          <button class="btn btn-p btn-xl btn-full" style="margin-top:14px" onclick="sendGenericProposal()">📨 Send proposal</button>
-          <button class="btn btn-xl btn-full" style="margin-top:8px;background:var(--green);color:#fff;border-color:var(--green)" onclick="_geiSignInPerson()">✍️ Sign in person</button>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:8px">
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_byoPreviewClient()">👁 Preview</button>
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_byoDuplicateBid()">📋 Option B</button>
-            <button class="btn btn-sm" style="background:var(--bg2);color:var(--text2);font-size:11px;padding:8px 4px" onclick="_openComparisonPicker()">📊 Compare</button>
-          </div>
+          <div id="byo-deposit-wrap"></div>
+          <div id="byo-actions-wrap"></div>
         </div>
       </div>
-    </div>
-    <!-- Mobile sticky bottom bar — shown on narrow viewports via .byo-mob-bar CSS class -->
-    <div class="byo-mob-bar" id="byo-mob-bar" style="position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-top:1px solid var(--line);padding:10px 16px 18px;z-index:200">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-        <span style="font-size:12px;font-weight:600;color:var(--text3)">Total</span>
-        <span id="byo-mob-total" style="font-size:20px;font-weight:900;font-family:var(--font-display);color:var(--text)">$0</span>
-      </div>
-      <input type="number" id="byom-expected-cost" placeholder="Your cost (optional)" style="display:none;width:100%;padding:8px 10px;border-radius:8px;border:1.5px solid var(--border2);font-size:15px;font-weight:600;font-family:inherit;margin-bottom:6px;box-sizing:border-box" oninput="_byoUpdateRail();_byoAutosave()">
-      <div id="byom-gauge-hint" style="display:none;font-size:11px;color:var(--text3);margin-bottom:4px"></div>
-      <div id="byom-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">
-        <div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 78%,#F59E0B 92%,#EF4444 100%);margin:6px 0 18px">
-          <div id="byom-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
-        </div>
-        <div style="text-align:center;padding-bottom:6px">
-          <div id="byom-gauge-pct" style="font-size:26px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
-          <div id="byom-gauge-dollars" style="font-size:14px;font-weight:700;margin:0 0 3px;transition:color .4s ease"></div>
-          <div id="byom-gauge-msg" style="font-size:11px;color:var(--text3);min-height:14px"></div>
-        </div>
-      </div>
-      <button class="btn btn-p btn-full" style="margin-top:4px" onclick="sendGenericProposal()">📨 Send proposal</button>
     </div>
   </div>
 
@@ -2344,17 +1742,17 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Property type</div>
       <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:10px">
-        <button id="gei-prop-res"  onclick="_geiSetPropertyType('residential')" class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🏠 Residential</button>
-        <button id="gei-prop-comm" onclick="_geiSetPropertyType('commercial')"  class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏢 Commercial</button>
+        <button id="gei-prop-res"  onclick="_geiSetPropertyType('residential')" class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)"><span data-ico="🏠" data-ico-size="14"></span> Residential</button>
+        <button id="gei-prop-comm" onclick="_geiSetPropertyType('commercial')"  class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)"><span data-ico="🏢" data-ico-size="14"></span> Commercial</button>
       </div>
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Work type</div>
       <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:8px">
-        <button id="gei-work-repair"   onclick="_geiSetWorkType('repair')"      class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)">🔧 Repair / Remodel</button>
-        <button id="gei-work-newbuild" onclick="_geiSetWorkType('improvement')" class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🏗️ New Build / Addition</button>
+        <button id="gei-work-repair"   onclick="_geiSetWorkType('repair')"      class="btn btn-sm" style="border:2px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk)"><span data-ico="🔧" data-ico-size="14"></span> Repair / Remodel</button>
+        <button id="gei-work-newbuild" onclick="_geiSetWorkType('improvement')" class="btn btn-sm" style="border:2px solid var(--border2);background:var(--bg2);color:var(--text2)"><span data-ico="🏗" data-ico-size="14"></span> New Build / Addition</button>
       </div>
       <div id="gei-jtype-note" style="font-size:11px;color:var(--text3)"></div>
       <div style="display:flex;gap:6px;margin-top:8px">
-        <button id="gei-emrg-btn" onclick="_geiToggleEmergency()" class="btn btn-sm" style="flex:1;font-size:12px;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)">🚨 Emergency / after-hours</button>
+        <button id="gei-emrg-btn" onclick="_geiToggleEmergency()" class="btn btn-sm" style="flex:1;font-size:12px;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)"><span data-ico="🚨" data-ico-size="14"></span> Emergency / after-hours</button>
       </div>
     </div>
     <div class="card" style="margin-bottom:12px">
@@ -2364,12 +1762,12 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <!-- Free-form chip (shown in Build Your Own mode) -->
       <div id="gei-ff-chip" style="display:none;margin-bottom:12px">
-        <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px">✏️ Build Your Own Proposal</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;background:#f0fdf4;color:#166534;font-size:12px;font-weight:700;padding:5px 12px;border-radius:20px"><span data-ico="✏" data-ico-size="14"></span> Build Your Own Proposal</span>
       </div>
       <div class="f" style="margin-bottom:8px"><label>Client name</label><input type="text" id="gei-client" placeholder="Client name"></div>
       <div class="f" style="margin-bottom:8px;position:relative"><label>Job address</label><input type="text" id="gei-addr" placeholder="123 Main St, Wichita KS 67201" autocomplete="off" oninput="_geiOnAddrInput();_lookupProperty(this.value,'geiaddr')"></div>
       <div id="prop-card-geiaddr" style="display:none;margin-top:6px;padding:10px 12px;background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--r);font-size:12px"></div>
-      <div class="f" style="margin-bottom:8px"><label>Name your proposal</label><input type="text" id="gei-desc" placeholder="e.g. Water heater replacement"></div>
+      <div class="f" style="margin-bottom:8px"><label>Name your proposal</label><input type="text" id="gei-desc" placeholder="e.g. Water heater replacement" onblur="typeof _byoAutosave==='function'&&_byoAutosave()"></div>
       <div class="f" style="margin-bottom:8px"><label>Date</label><input type="date" id="gei-date"></div>
       <!-- T&M reason (shown in T&M mode) -->
       <div id="gei-tm-reason-wrap" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">
@@ -2435,7 +1833,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <button onclick="goGeiStep(3)" class="btn btn-p" style="margin-top:10px;margin-bottom:4px">Review &amp; send proposal →</button>
     </div>
     <div id="gei-svc-wrap" style="display:flex;justify-content:flex-end;margin-bottom:4px">
-      <button onclick="showGeiOnboarding({force:true})" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--text3);cursor:pointer;font-family:inherit">⚙️ Change services</button>
+      <button onclick="showGeiOnboarding({force:true})" style="font-size:11px;padding:4px 10px;background:none;border:1px solid var(--border2);border-radius:var(--r);color:var(--text3);cursor:pointer;font-family:inherit"><span data-ico="⚙" data-ico-size="13"></span> Change services</button>
     </div>
     <div id="gei-templates"></div>
   </div>
@@ -2512,7 +1910,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div id="gei-tax-rate-note" style="display:none;font-size:11px;margin-bottom:6px;padding:0 2px"></div>
       <!-- Prompt shown when no sales tax rate configured and no address entered -->
       <div id="gei-tax-rate-prompt" style="display:none;align-items:center;gap:6px;padding:7px 10px;background:var(--amber-lt,#fffbeb);border:1px solid var(--amber,#f59e0b);border-radius:var(--r);margin-bottom:8px;font-size:12px">
-        <span style="color:var(--amber-dk,#92400e)">⚠ Sales tax rate not set</span>
+        <span style="color:var(--amber-dk,#92400e)"><span data-ico="⚠" data-ico-size="14"></span> Sales tax rate not set</span>
         <button onclick="openSalesTaxSetup()" style="margin-left:auto;background:none;border:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;padding:0">Set rate →</button>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
@@ -2540,15 +1938,15 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="f"><label>Est. duration</label><input type="text" id="gei-duration" placeholder="e.g. 4 hrs, 2 days"></div>
     </div>
     <div id="gei-panel-section" style="margin-bottom:12px"></div>
-    <button id="gei-send-btn" class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px">🔗 Save &amp; get client link</button>
+    <button id="gei-send-btn" class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px"><span data-ico="🔗" data-ico-size="14"></span> Save &amp; get client link</button>
     <button class="btn" onclick="saveGenericEstimate(true)" style="font-size:13px;color:var(--text2)">Save as draft</button>
   </div>
   <!-- Send bar — shown after proposal is generated; same buttons as paint estimate -->
   <div id="gei-send-bar" style="display:none;margin:0 14px 80px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:12px 14px">
-    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:10px;text-align:center">✓ Link ready — send to client</div>
+    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:10px;text-align:center"><span data-ico="✓" data-ico-size="14"></span> Link ready — send to client</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-      <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">📱 Text</button>
-      <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">✉️ Email</button>
+      <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center"><span data-ico="📱" data-ico-size="16"></span> Text</button>
+      <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center"><span data-ico="✉" data-ico-size="16"></span> Email</button>
     </div>
     <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>
     <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
@@ -2573,7 +1971,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 </div>
 <div class="pg" id="pg-schedule">
-  <div class="tbar"><div class="tbar-title">Schedule</div><button class="btn btn-sm" onclick="openTimeOffModal()" style="background:var(--amber-lt);border-color:#D97706;color:#92400E;font-weight:700">🏖 Time off</button></div>
+  <div class="tbar"><div class="tbar-title">Schedule</div><button class="btn btn-sm" onclick="openTimeOffModal()" style="background:var(--amber-lt);border-color:#D97706;color:#92400E;font-weight:700"><span data-ico="🏖" data-ico-size="14"></span> Time off</button></div>
 
   
   <div class="fbar" style="margin-bottom:12px">
@@ -2695,8 +2093,8 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
   <div class="fbar" style="margin-bottom:16px;padding-left:2px">
-    <button type="button" class="fb active" id="ft-t-fleet" onclick="setFleetTab('fleet')">🚗 Fleet</button>
-    <button type="button" class="fb" id="ft-t-team" onclick="setFleetTab('team')">👷 Team</button>
+    <button type="button" class="fb active" id="ft-t-fleet" onclick="setFleetTab('fleet')"><span data-ico="🚗" data-ico-size="14"></span> Fleet</button>
+    <button type="button" class="fb" id="ft-t-team" onclick="setFleetTab('team')"><span data-ico="👷" data-ico-size="14"></span> Team</button>
   </div>
   <div id="ft-fleet">
     <div id="fleet-vehicle-list"></div>
@@ -2716,7 +2114,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" style="margin-top:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Devices</div>
-        <button onclick="registerDevice(true);renderTeam()" class="btn btn-sm" style="font-size:10px;padding:3px 8px">📍 Update my location</button>
+        <button onclick="registerDevice(true);renderTeam()" class="btn btn-sm" style="font-size:10px;padding:3px 8px"><span data-ico="📍" data-ico-size="12"></span> Update my location</button>
       </div>
       <div id="team-page-devices"></div>
     </div>
@@ -2741,7 +2139,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb" id="tr-t-mileage" onclick="setTrTab('mileage',this)">Mileage</button>
     <button type="button" class="fb" id="tr-t-jobs" onclick="setTrTab('jobs',this)">Jobs</button>
     <button type="button" class="fb" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
-    <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)">👥 Hiring</button>
+    <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)"><span data-ico="👥" data-ico-size="14"></span> Hiring</button>
   </div>
   <div id="tr-income">
     
@@ -2754,7 +2152,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="tr-expenses" style="display:none">
     <div class="card">
       <div class="card-hd">Scan a receipt
-        <span><button class="btn btn-sm btn-p" onclick="triggerReceiptScan()">📷 Scan</button></span>
+        <span><button class="btn btn-sm btn-p" onclick="triggerReceiptScan()"><span data-ico="📷" data-ico-size="14"></span> Scan</button></span>
       </div>
       <div class="tip" id="scan-tip">Take a photo of any receipt — AI reads the vendor, amount, date and category automatically.</div>
       <input type="file" id="receipt-file-input" accept="image/*" capture="environment" style="display:none" onchange="processReceiptPhoto(this)">
@@ -2823,7 +2221,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <select id="tax-yr-sel" onchange="setTaxYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%"></select>
   </div>
-  <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong>⚠️ Not a licensed tax tool.</strong> These numbers are estimates only — not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
+  <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong><span data-ico="⚠" data-ico-size="13"></span> Not a licensed tax tool.</strong> These numbers are estimates only — not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
   <div class="fbs" style="margin-bottom:14px">
     <button type="button" class="fb active" id="tx-tab-current" onclick="setTaxTab('current',this)">Current year</button>
   </div>
@@ -2897,7 +2295,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <!-- search -->
     <div style="display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1.5px solid var(--border2);border-radius:12px;padding:10px 14px;margin:0 16px 14px;color:var(--text3)">
-      <span>🔍</span>
+      <span data-ico="🔍" data-ico-size="16"></span>
       <input id="set-search-input" placeholder="Search settings…" oninput="_filterSetRows(this.value)" style="flex:1;border:0;background:transparent;outline:none;font-family:inherit;font-size:13px;color:var(--text);padding:0;width:auto">
     </div>
 
@@ -2929,7 +2327,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-left:4px">Your business</div>
       <div class="card" style="padding:0;overflow:hidden">
         <div class="set-idx-row" data-search="business info name phone email license contact address" onclick="_openSetDetail('biz')">
-          <div class="set-idx-icon">🏢</div>
+          <div class="set-idx-icon"><span data-ico="🏢" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Business info</div>
             <div class="set-idx-sub">Name, address, phone, email, license #</div>
@@ -2938,7 +2336,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="branding logo color hub subdomain preview powered" onclick="_openSetDetail('branding')">
-          <div class="set-idx-icon">🎨</div>
+          <div class="set-idx-icon"><span data-ico="🎨" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Branding</div>
             <div class="set-idx-sub">Logo, brand color, white-label client hub</div>
@@ -2947,7 +2345,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="rates pricing labor margin deposit estimator goals" onclick="_openSetDetail('rates')">
-          <div class="set-idx-icon">💵</div>
+          <div class="set-idx-icon"><span data-ico="💵" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Rates &amp; pricing</div>
             <div class="set-idx-sub">Default labor rate, deposit %, IRS mileage rate</div>
@@ -2956,7 +2354,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="legal terms conditions UETA change order clause proposal" onclick="_openSetDetail('legal')">
-          <div class="set-idx-icon">📋</div>
+          <div class="set-idx-icon"><span data-ico="📋" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Legal &amp; terms</div>
             <div class="set-idx-sub">Proposal terms, change-order clause, UETA disclosure</div>
@@ -2965,7 +2363,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="trades painting roofing flooring business type" onclick="_openSetDetail('trades')">
-          <div class="set-idx-icon">🏗️</div>
+          <div class="set-idx-icon"><span data-ico="🏗" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title" id="set-idx-trades-title">Your trades</div>
             <div class="set-idx-sub" id="set-idx-trades-sub">Manage your trade lines</div>
@@ -2980,7 +2378,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-left:4px">Operations</div>
       <div class="card" style="padding:0;overflow:hidden">
         <div class="set-idx-row" data-search="integrations stripe payments" onclick="_openSetDetail('integrations')">
-          <div class="set-idx-icon">🔌</div>
+          <div class="set-idx-icon"><span data-ico="🔌" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Integrations</div>
             <div class="set-idx-sub">Stripe payments</div>
@@ -2989,7 +2387,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="tax setup taxes mileage rate federal state brackets filing" onclick="_openSetDetail('taxes')">
-          <div class="set-idx-icon">📄</div>
+          <div class="set-idx-icon"><span data-ico="📄" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Tax setup</div>
             <div class="set-idx-sub">State, filing status, quarterly schedule</div>
@@ -2998,7 +2396,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="cloud sync backup restore location" onclick="_openSetDetail('cloud')">
-          <div class="set-idx-icon">☁️</div>
+          <div class="set-idx-icon"><span data-ico="☁" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Cloud sync</div>
             <div class="set-idx-sub">Backup, restore, device list</div>
@@ -3007,7 +2405,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" data-search="sms notifications templates messages follow up email push" onclick="_openSetDetail('notifications')">
-          <div class="set-idx-icon">💬</div>
+          <div class="set-idx-icon"><span data-ico="💬" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Notifications</div>
             <div class="set-idx-sub">Email + push for new leads, signed proposals, payments</div>
@@ -3023,7 +2421,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:10px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:8px;padding-left:4px">Advanced</div>
       <div class="card" style="padding:0;overflow:hidden">
         <div class="set-idx-row" data-search="data export download reset factory danger" onclick="_openSetDetail('data')">
-          <div class="set-idx-icon">📦</div>
+          <div class="set-idx-icon"><span data-ico="📦" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Data &amp; export</div>
             <div class="set-idx-sub">Download data, factory reset</div>
@@ -3031,7 +2429,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-idx-chev">›</div>
         </div>
         <div class="set-idx-row" id="set-idx-row-dev" style="display:none" data-search="developer dev tools debug api" onclick="_openSetDetail('dev')">
-          <div class="set-idx-icon">🛠️</div>
+          <div class="set-idx-icon"><span data-ico="🛠" data-ico-size="18"></span></div>
           <div class="set-idx-body">
             <div class="set-idx-title">Developer</div>
             <div class="set-idx-sub">Trade switcher, debug tools, legal inspector</div>
@@ -3058,13 +2456,13 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-biz">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🏢</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🏢" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Business info</div><div style="font-size:11px;color:var(--text3)">Shown on proposals, invoices, and your client hub</div></div>
     </div>
     <div style="padding:16px">
       <div class="set-form-card">
         <div class="set-form-card-hd">
-          <div style="font-size:28px;line-height:1">🏢</div>
+          <div style="font-size:28px;line-height:1"><span data-ico="🏢" data-ico-size="28"></span></div>
           <div><div style="font-size:15px;font-weight:800">Business info</div><div style="font-size:11px;color:var(--text3);margin-top:1px">Shown on proposals, invoices, and your client hub</div></div>
         </div>
         <div class="set-form-row">
@@ -3118,8 +2516,8 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl"><input id="set-blic" placeholder="KS-PNT-2024-08812"></div>
         </div>
         <div class="set-form-row">
-          <div><div class="set-form-lbl">Years in business</div></div>
-          <div class="set-form-ctrl"><input type="number" id="set-byears" min="1" max="50" placeholder="e.g. 12"></div>
+          <div><div class="set-form-lbl">In business since</div><div class="set-form-hint">The year you started. Your client hub shows "X years in business" and bumps itself automatically every year — no need to update it.</div></div>
+          <div class="set-form-ctrl"><input type="number" id="set-since-year" min="1900" max="2100" placeholder="e.g. 2013"></div>
         </div>
         <div class="set-form-row">
           <div><div class="set-form-lbl">Sales tax rate</div><div class="set-form-hint">Default rate charged on taxable materials. ZIP lookup available from any estimate.</div></div>
@@ -3137,7 +2535,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="set-form-row" style="border-top:2px solid var(--border);padding-top:14px;margin-top:6px">
           <div><div class="set-form-lbl">Crew location tracking</div><div class="set-form-hint">Auto-logs drive mileage and time-on-site for dispatched crew during business hours only. Always on — a standard part of running your crew on TradeDesk.</div></div>
           <div class="set-form-ctrl">
-            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--green-mid);font-weight:700"><span style="font-size:15px">✓</span><span>Active during business hours</span></div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--green-mid);font-weight:700"><span data-ico="✓" data-ico-size="15"></span><span>Active during business hours</span></div>
           </div>
         </div>
         <div class="set-form-row">
@@ -3177,13 +2575,13 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-branding">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🎨</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🎨" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Branding</div><div style="font-size:11px;color:var(--text3)">Applied to client hub, intake, proposals, and signature pages</div></div>
     </div>
     <div style="padding:16px">
       <div class="set-form-card">
         <div class="set-form-card-hd">
-          <div style="font-size:28px;line-height:1">🎨</div>
+          <div style="font-size:28px;line-height:1"><span data-ico="🎨" data-ico-size="28"></span></div>
           <div><div style="font-size:15px;font-weight:800">Branding</div><div style="font-size:11px;color:var(--text3);margin-top:1px">Applied to client hub, intake, proposals, and signature pages</div></div>
         </div>
         <div class="set-form-row">
@@ -3245,7 +2643,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-rates">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">💵</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="💵" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Rates &amp; pricing</div><div style="font-size:11px;color:var(--text3)">Labor rate, deposit, margin &amp; estimator defaults</div></div>
     </div>
     <div style="padding:16px">
@@ -3258,40 +2656,12 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
         <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.40"></div>
       </div>
-      <!-- Painting labor rates (shown for painting trade) -->
-      <div id="set-rates-lp" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">🎨 Painting labor rates</div>
-        <div class="tip" style="margin-bottom:10px">Base labor rates before scope add-ons. If a $2,500 job feels like it should show more profit, raise these to match your real pricing.</div>
-        <div class="fg" style="grid-template-columns:1fr 1fr;gap:9px">
-          <div class="f"><label>Walls ($/actual wall sqft)</label><input type="number" id="set-r-walls" step="0.05"></div>
-          <div class="f"><label>Ceiling ($/sqft)</label><input type="number" id="set-r-ceil" step="0.05"></div>
-          <div class="f"><label>Trim ($/lin ft)</label><input type="number" id="set-r-trim" step="0.05"></div>
-          <div class="f"><label>Doors ($/door)</label><input type="number" id="set-r-door" step="1"></div>
-          <div class="f"><label>Windows ($/window)</label><input type="number" id="set-r-win" step="1"></div>
-          <div class="f"><label>Exterior walls ($/sf)</label><input type="number" id="set-r-ext" step="0.05"></div>
-          <div class="f"><label>Deck/fence ($/sf)</label><input type="number" id="set-r-deck" step="0.05"></div>
-        </div>
-        <div style="font-size:10px;color:var(--text3);margin-top:8px;line-height:1.6">Walls rate is per room sq ft (L×W floor area). Trim is per linear foot. Add-ons (sand, spackle, primer) stack automatically.</div>
-      </div>
       <!-- Generic labor rates -->
-      <div id="set-rates-lg" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
+      <div id="set-rates-lg" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px" id="set-rates-lg-title">Labor rates</div>
         <div class="fg fg2">
           <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="number" placeholder="75" min="0" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item estimates for this trade.</div></div>
         </div>
-      </div>
-      <!-- Sherwin-Williams prices (painting trade only) -->
-      <div id="set-rates-sw" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
-        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:6px">Sherwin-Williams paint prices</div>
-        <div style="font-size:11px;color:var(--text3);margin-bottom:8px" id="sw-price-updated">Last updated: Apr 2025</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.6">Contractor pricing used in material cost calculations. Edit any price to match your PRO+ account rates.</div>
-        <details id="set-sw-prices-details" style="border:1px solid var(--border2);border-radius:var(--r);padding:8px 10px;margin-bottom:12px">
-          <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--text);user-select:none;-webkit-user-select:none">Edit contractor prices ($/gal)</summary>
-          <div id="set-sw-prices-list" style="margin-top:6px"></div>
-          <button type="button" onclick="_resetSwPriceInputs()" style="background:none;border:none;color:var(--blue);font-size:11px;font-weight:600;cursor:pointer;padding:8px 0 2px;font-family:inherit">Reset to defaults</button>
-        </details>
-        <button class="btn btn-p" id="sw-price-refresh-btn" onclick="swRefreshPrices()" style="font-size:13px">🔄 Refresh SW prices via AI</button>
-        <div id="sw-price-refresh-status" style="font-size:12px;color:var(--text3);margin-top:8px;display:none"></div>
       </div>
       <!-- Workmanship warranty period -->
       <div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
@@ -3336,7 +2706,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-notifications">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">💬</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="💬" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Notifications</div><div style="font-size:11px;color:var(--text3)">SMS templates sent to clients</div></div>
     </div>
     <div style="padding:16px">
@@ -3369,14 +2739,14 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-legal">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">📋</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="📋" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Legal &amp; terms</div><div style="font-size:11px;color:var(--text3)">Proposal terms, change-order clause, UETA disclosure</div></div>
     </div>
     <div style="padding:16px">
       <div class="tip" style="margin-bottom:14px">These terms appear on every proposal and are required for enforceable contracts in most states. Keep them up to date each year.</div>
       <div class="set-form-card">
         <div class="set-form-card-hd">
-          <div style="font-size:24px;line-height:1">📋</div>
+          <div style="font-size:24px;line-height:1"><span data-ico="📋" data-ico-size="24"></span></div>
           <div><div style="font-size:15px;font-weight:800">Proposal terms</div><div style="font-size:11px;color:var(--text3)">Shown at the bottom of every estimate before signing</div></div>
         </div>
         <div style="padding:14px 16px">
@@ -3387,7 +2757,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div class="set-form-card">
         <div class="set-form-card-hd">
-          <div style="font-size:24px;line-height:1">🔄</div>
+          <div style="font-size:24px;line-height:1"><span data-ico="🔄" data-ico-size="24"></span></div>
           <div><div style="font-size:15px;font-weight:800">Change-order clause</div><div style="font-size:11px;color:var(--text3)">Appended to every change order document</div></div>
         </div>
         <div style="padding:14px 16px">
@@ -3396,7 +2766,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div class="set-form-card" style="margin-bottom:16px">
         <div class="set-form-card-hd">
-          <div style="font-size:24px;line-height:1">✍️</div>
+          <div style="font-size:24px;line-height:1"><span data-ico="✍" data-ico-size="24"></span></div>
           <div><div style="font-size:15px;font-weight:800">UETA disclosure</div><div style="font-size:11px;color:var(--text3)">Electronic signature consent statement</div></div>
         </div>
         <div style="padding:14px 16px">
@@ -3412,7 +2782,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-trades">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🏗️</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🏗" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px" id="set-trades-det-title">Your trades</div><div style="font-size:11px;color:var(--text3)">Manage which trades you offer</div></div>
     </div>
     <div style="padding:16px">
@@ -3424,14 +2794,14 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-integrations">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🔌</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🔌" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Integrations</div><div style="font-size:11px;color:var(--text3)">External services connected to your account</div></div>
     </div>
     <div style="padding:16px">
       <div style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.5">Third-party services you opt into. Each shows its connection status and a tap-target to connect or manage.</div>
       <div class="set-form-card" style="margin-bottom:14px">
         <div class="set-form-card-hd">
-          <div style="font-size:24px;line-height:1">🔌</div>
+          <div style="font-size:24px;line-height:1"><span data-ico="🔌" data-ico-size="24"></span></div>
           <div><div style="font-size:15px;font-weight:800">Connected services</div><div style="font-size:11px;color:var(--text3)">at a glance</div></div>
         </div>
         <div id="integrations-list">
@@ -3469,7 +2839,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-taxes">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">📄</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="📄" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Tax setup</div><div style="font-size:11px;color:var(--text3)">Mileage rate, federal brackets, state rates</div></div>
     </div>
     <div style="padding:16px">
@@ -3530,7 +2900,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-cloud">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">☁️</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="☁" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Cloud sync</div><div style="font-size:11px;color:var(--text3)">Backup, restore, and device access</div></div>
     </div>
     <div style="padding:16px">
@@ -3539,7 +2909,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-p" onclick="if(supaEnabled())supaSignOut()" style="width:100%;padding:13px">Sign out of cloud sync</button>
-        <button id="location-settings-btn" class="btn" onclick="resetLocationPermission()" style="width:100%;padding:13px;font-size:13px">📍 Location access</button>
+        <button id="location-settings-btn" class="btn" onclick="resetLocationPermission()" style="width:100%;padding:13px;font-size:13px"><span data-ico="📍" data-ico-size="14"></span> Location access</button>
         <button class="btn" onclick="resetSettings()" style="width:100%;padding:13px;font-size:13px">Reset all settings to defaults</button>
       </div>
     </div>
@@ -3549,7 +2919,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-data">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">📦</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="📦" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Data &amp; export</div><div style="font-size:11px;color:var(--text3)">Delete by category or factory reset</div></div>
     </div>
     <div style="padding:16px">
@@ -3589,7 +2959,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="background:var(--bg-card);border-radius:var(--r);border:1px solid var(--c-red);padding:16px">
         <div style="font-size:13px;font-weight:700;color:var(--c-red);margin-bottom:4px">Factory reset</div>
         <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Wipes everything — clients, bids, mileage, expenses, fleet, settings. Cannot be undone.</div>
-        <button class="btn btn-r" onclick="clearAllData()" style="width:100%;padding:12px;font-size:13px">🗑️ Clear ALL data — start fresh</button>
+        <button class="btn btn-r" onclick="clearAllData()" style="width:100%;padding:12px;font-size:13px"><span data-ico="🗑" data-ico-size="14"></span> Clear ALL data — start fresh</button>
       </div>
 
     </div>
@@ -3599,7 +2969,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="set-detail" id="setd-dev">
     <div class="set-detail-hd">
       <button class="set-detail-back" onclick="_closeSetDetail()">‹</button>
-      <div class="set-idx-icon" style="flex-shrink:0">🛠️</div>
+      <div class="set-idx-icon" style="flex-shrink:0"><span data-ico="🛠" data-ico-size="18"></span></div>
       <div style="flex:1"><div style="font-size:16px;font-weight:800;letter-spacing:-.2px">Developer</div><div style="font-size:11px;color:var(--text3)">Trade switcher, debug tools</div></div>
     </div>
     <div style="padding:16px">
@@ -3610,7 +2980,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
       <!-- Legal Compliance Inspector -->
       <div style="border-top:1px solid var(--border);padding-top:14px">
-        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px">⚖️ Legal Compliance Inspector</div>
+        <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px"><span data-ico="⚖" data-ico-size="14"></span> Legal Compliance Inspector</div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
           <div class="f" style="margin:0">
             <label style="font-size:10px">State</label>
@@ -3714,7 +3084,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-sub" id="jobs-count-sub"></div>
     </div>
     <div class="tbar-r">
-      <button class="btn btn-sm" id="jobs-dispatch-btn" onclick="goPg('pg-dispatch')">📋 Dispatch</button>
+      <button class="btn btn-sm" id="jobs-dispatch-btn" onclick="goPg('pg-dispatch')"><span data-ico="📋" data-ico-size="14"></span> Dispatch</button>
       <button class="btn btn-p btn-sm" onclick="goPg('pg-schedule')">+ Schedule</button>
     </div>
   </div>
@@ -3734,7 +3104,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="tbar-sub" id="money-lien-sub">Pre-written SMS for each escalation stage. Lien deadlines auto-tracked under applicable state law.</div>
     </div>
     <div class="tbar-r">
-      <button class="btn btn-sm" id="money-send-all-btn" onclick="collSendAllReminders()" style="display:none">📤 Send all reminders</button>
+      <button class="btn btn-sm" id="money-send-all-btn" onclick="collSendAllReminders()" style="display:none"><span data-ico="📤" data-ico-size="14"></span> Send all reminders</button>
       <button class="btn btn-p btn-sm" onclick="openManualInvoiceModal()">+ Manual invoice</button>
     </div>
   </div>
@@ -3827,7 +3197,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
   <div style="display:flex;gap:5px;flex-shrink:0">
     <button onclick="nextClockTask()" style="background:#1E4D2B;color:#6EE7A0;border:1px solid #2D7A44;border-radius:var(--r);padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">→ Next</button>
-    <button onclick="doneForDay()" style="background:#1A3A5A;color:#7EC8E3;border:1px solid #2A5A8A;border-radius:var(--r);padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">✓ Done</button>
+    <button onclick="doneForDay()" style="background:#1A3A5A;color:#7EC8E3;border:1px solid #2A5A8A;border-radius:var(--r);padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap"><span data-ico="✓" data-ico-size="13"></span> Done</button>
     <button onclick="clockOut()" style="background:rgba(163,45,45,.7);color:#fff;border:none;border-radius:var(--r);padding:5px 8px;font-size:14px;cursor:pointer;font-family:inherit;flex-shrink:0" title="Clock out">⏹</button>
   </div>
 </div>
@@ -4013,9 +3383,27 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button class="mmi" id="mmi-settings" onclick="mobileNavTo('pg-settings')">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
     </button>
+    <!-- Employees can't reach pg-settings (goPg blocks it), so they need Sign out here
+         instead. Owners already have it inside Settings — hidden by default, shown only
+         for employees by _applyEmployeeNavGating (js/navigation.js). -->
+    <button class="mmi" id="mmi-signout" style="display:none" onclick="_employeeSignOutMenu()">
+      <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Sign out
+    </button>
   </div>
 </div>
 <script src="js/lib/xlsx.min.js"></script>
+<script src="js/icons.js"></script>
+<script>
+// Hydrate static emoji-icon placeholders — this file writes most of its UI as
+// literal HTML parsed long before this <script> tag runs, so those spots can't
+// call svgIcon() inline. Instead they carry data-ico (the emoji) and optional
+// data-ico-size, and this single pass — right after icons.js defines svgIcon —
+// swaps every one of them for its inline-SVG rendering.
+document.querySelectorAll('[data-ico]').forEach(function(el){
+  var sz = el.getAttribute('data-ico-size');
+  el.innerHTML = svgIcon(el.getAttribute('data-ico'), sz ? {size:+sz} : undefined);
+});
+</script>
 <script src="js/constants.js"></script>
 <script src="js/utils.js"></script>
 <script src="js/data.js"></script>
@@ -4028,7 +3416,6 @@ body.dark .cal-cell.other{background:var(--cream)}
 <script src="js/jobs.js"></script>
 <script src="js/mileage.js"></script>
 <script src="js/geo-track.js"></script>
-<script src="js/paint-estimate.js"></script>
 <script src="js/legal.js"></script>
 <script src="js/proposals.js"></script>
 <script src="js/sales-tax.js"></script>
@@ -4164,7 +3551,7 @@ if(supaEnabled()){
     _sdk.addEventListener('load',supaInit);
     // SDK failed to load (offline boot, CDN unreachable) — don't strand the user
     // on the boot overlay forever; render local data like the offline-mode path.
-    const _sdkFallback=()=>{if(typeof _removeBootOverlay==='function')_removeBootOverlay();renderDash();buildScopeGrid();};
+    const _sdkFallback=()=>{if(typeof _removeBootOverlay==='function')_removeBootOverlay();renderDash();};
     _sdk.addEventListener('error',_sdkFallback);
     // The async script may have ALREADY errored before this listener attached —
     // watchdog: if the SDK still isn't present after 6s and nothing signed in,
@@ -4175,7 +3562,7 @@ if(supaEnabled()){
   document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openSearch();}});
 } else {
   // Offline mode — render from localStorage immediately
-  renderDash();buildScopeGrid();
+  renderDash();
 }
 
 (function seedTestData(){
@@ -4277,21 +3664,21 @@ if(supaEnabled()){
     <div style="font-size:12px;color:var(--text3);margin-bottom:16px">All imported contacts are tagged <strong>Existing Contact</strong> as their lead source.</div>
     <div id="import-phone-opt" style="display:none;margin-bottom:10px">
       <button onclick="_importPhoneContacts()" style="width:100%;text-align:left;padding:14px 16px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit">
-        <div style="font-weight:700;font-size:14px;color:var(--text)">📱 From your phone contacts</div>
+        <div style="font-weight:700;font-size:14px;color:var(--text)"><span data-ico="📱" data-ico-size="14"></span> From your phone contacts</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">Pick contacts directly from your device</div>
       </button>
     </div>
     <div style="margin-bottom:10px">
       <label style="display:block;padding:14px 16px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer">
         <input type="file" accept=".csv" style="display:none" onchange="_handleImportFile(this.files[0]);this.value=''">
-        <div style="font-weight:700;font-size:14px;color:var(--text)">📄 Upload CSV</div>
+        <div style="font-weight:700;font-size:14px;color:var(--text)"><span data-ico="📄" data-ico-size="14"></span> Upload CSV</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">From Jobber, HouseCall Pro, spreadsheet, or any app</div>
       </label>
     </div>
     <div style="margin-bottom:6px">
       <label style="display:block;padding:14px 16px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer">
         <input type="file" accept=".vcf,.vcard" style="display:none" onchange="_handleImportFile(this.files[0]);this.value=''">
-        <div style="font-weight:700;font-size:14px;color:var(--text)">👤 Upload vCard (.vcf)</div>
+        <div style="font-weight:700;font-size:14px;color:var(--text)"><span data-ico="👤" data-ico-size="14"></span> Upload vCard (.vcf)</div>
         <div style="font-size:11px;color:var(--text3);margin-top:2px">Export from Apple Contacts, Google Contacts, or Outlook</div>
       </label>
     </div>
@@ -4311,14 +3698,7 @@ if(supaEnabled()){
 (function(){
   function tryWire(){
     if(typeof _addrAutoFull!=='function')return;
-    // 1. e-caddr — Paint estimate property address
-    const ecaddr=document.getElementById('e-caddr');
-    if(ecaddr&&!ecaddr._addrAutoFullBound)
-      _addrAutoFull(ecaddr,function(full,street,city,state,zip){
-        if(typeof _paintOnAddrInput==='function')_paintOnAddrInput();
-        if(typeof _lookupProperty==='function')_lookupProperty(full,'ecaddr');
-      });
-    // 2. gei-addr — Generic estimate job address
+    // 1. gei-addr — Generic estimate job address
     const geiaddr=document.getElementById('gei-addr');
     if(geiaddr&&!geiaddr._addrAutoFullBound)
       _addrAutoFull(geiaddr,function(full,street,city,state,zip){

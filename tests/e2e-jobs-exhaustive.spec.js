@@ -12,12 +12,15 @@ test.describe('jobs.js — exhaustive coverage', () => {
   let page;
 
   // Idempotent fixture seed — filter-then-push so it's safe to re-run. Called in
-  // beforeAll AND beforeEach: a late-resolving cloud/cache load reassigns the
-  // in-memory arrays after the initial seed and drops these fixtures, so tests
-  // running after that clobber saw undefined scopes/time-entries (task #22 race).
-  // Re-seeding before EVERY test guarantees the canonical fixture is present at
-  // the moment each test reads it — one file-scoped fix for the whole spec.
-  const seedFixtures = () => page.evaluate(() => {
+  // beforeAll AND beforeEach, AND (crucially) inside the same page.evaluate as
+  // every test that asserts seeded values: a late-resolving cloud/cache load
+  // reassigns the in-memory arrays after boot (task #22 race), and it can land
+  // in the gap BETWEEN beforeEach's evaluate and the test body's evaluate — the
+  // beforeEach re-seed alone still flaked on WebKit shard 3 (getJobClockTotal
+  // read 0, fd9b3ba run). page.evaluate is atomic, so seeding at the top of the
+  // reading evaluate fully closes the race; between-call re-seeds stay as a
+  // cheap best-effort for tests that only mutate.
+  const SEED_FIXTURES_FN = () => {
     clients = clients.filter(c => c.id !== 79901 && c.id !== 79902);
     bids    = bids.filter(b => b.id !== 78801 && b.id !== 78802);
     jobs    = jobs.filter(j => j.id !== 77701 && j.id !== 77702 && j.id !== 77703);
@@ -51,7 +54,8 @@ test.describe('jobs.js — exhaustive coverage', () => {
       { id: 9990002, job_id: 77701, date: '2026-06-01', minutes: 45, scope_id: 'prime',  scope_label: 'Primer coat' },
       { id: 9990003, job_id: 77701, date: '2026-06-01', minutes: 30, scope_id: null,     scope_label: null }
     );
-  });
+  };
+  const seedFixtures = () => page.evaluate(() => window.__seedJobsFixtures());
 
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -60,6 +64,9 @@ test.describe('jobs.js — exhaustive coverage', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
 
+    // Install the seed as an in-page function so test bodies can re-run it
+    // atomically inside their own evaluate (see SEED_FIXTURES_FN comment).
+    await page.evaluate(`window.__seedJobsFixtures = ${SEED_FIXTURES_FN.toString()}`);
     await seedFixtures();
 
     await page.evaluate(() => {
@@ -203,6 +210,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('job with no bid — falls back to default clock scopes', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           const res = getJobScopes(77703);
           return { ok: true, len: res.length, ids: res.map(s => s.id) };
         } catch (e) { return { ok: false, err: e.message }; }
@@ -214,6 +222,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('no duplicate ids returned even when extraScopes overlaps bid scopes', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           const j = jobs.find(x => x.id === 77701);
           const prev = j.extraScopes;
           j.extraScopes = ['sand', 'popcorn'];
@@ -231,6 +240,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('extraScopes as object with id — included correctly', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           const j = jobs.find(x => x.id === 77701);
           const prev = j.extraScopes;
           j.extraScopes = [{ id: 'custom_test_xyz', label: 'Custom XYZ', icon: '🔧', hint: '', ratePerSqFt: 0, flatRate: 0, clientDesc: '' }];
@@ -245,6 +255,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
 
     test('concurrent calls — no corruption', async () => {
       const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
         let ok = 0;
         for (let i = 0; i < 5; i++) {
           try { getJobScopes(77701); ok++; } catch (_) {}
@@ -289,6 +300,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('golden path — correct minutes per scope_id, __other for null scope', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           const res = getJobScopeBreakdown(77701);
           return { ok: true, sand: res.sand, prime: res.prime, other: res['__other'] };
         } catch (e) { return { ok: false, err: e.message }; }
@@ -309,6 +321,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
 
     test('concurrent calls — stable results', async () => {
       const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
         let ok = 0;
         for (let i = 0; i < 5; i++) {
           try { const res = getJobScopeBreakdown(77701); if (res.sand === 90) ok++; } catch (_) {}
@@ -352,7 +365,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
 
     test('golden path — sum of minutes across all time entries for job', async () => {
       const r = await page.evaluate(() => {
-        try { return { ok: true, v: getJobClockTotal(77701) }; }
+        try { window.__seedJobsFixtures(); return { ok: true, v: getJobClockTotal(77701) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
@@ -362,6 +375,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     test('entry with missing minutes — treated as 0', async () => {
       const r = await page.evaluate(() => {
         try {
+          window.__seedJobsFixtures();
           timeEntries.push({ id: 9990099, job_id: 77701, date: '2026-06-02', scope_id: 'sand' }); // no minutes field
           const v = getJobClockTotal(77701);
           timeEntries = timeEntries.filter(e => e.id !== 9990099);
@@ -374,6 +388,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
 
     test('concurrent calls — stable', async () => {
       const r = await page.evaluate(() => {
+        window.__seedJobsFixtures();
         let ok = 0;
         for (let i = 0; i < 5; i++) {
           try { if (getJobClockTotal(77701) === 165) ok++; } catch (_) {}
@@ -1463,808 +1478,18 @@ test.describe('jobs.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // buildScopeGrid
+  // buildScopeGrid / toggleScopeRoom / scopeOn / roomScopeOn / setRoomScope —
+  // removed with the paint estimator's scope-item grid (§7.1: assert gone)
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('buildScopeGrid', () => {
-    test('null roomName with no #est-scope-grid — does not throw', async () => {
+  test.describe('paint scope-grid functions — deleted', () => {
+    test('buildScopeGrid, roomScopeOn, scopeOn, setRoomScope no longer exist', async () => {
       const r = await page.evaluate(() => {
-        try {
-          document.getElementById('est-scope-grid')?.remove();
-          document.getElementById('surf-scope-first-grid')?.remove();
-          buildScopeGrid(null);
-          return { ok: true };
-        } catch (e) { return { ok: false, err: e.message }; }
+        const names = ['buildScopeGrid', 'toggleScopeRoom', '_saveScopeHoursRoom', '_cancelScopeHoursRoom',
+          'toggleScope', 'promptScopeHours', '_syncScopePopupHint', '_saveScopeHours', '_cancelScopeHours',
+          'scopeOn', 'roomScopeOn', 'setRoomScope'];
+        return names.map(n => { let t; try { t = typeof eval(n); } catch (e) { t = 'undefined'; } return [n, t]; });
       });
-      expect(r.ok).toBe(true);
-    });
-
-    test('undefined roomName with no DOM — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          document.getElementById('est-scope-grid')?.remove();
-          document.getElementById('surf-scope-first-grid')?.remove();
-          buildScopeGrid(undefined);
-          return { ok: true };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('golden path with #est-scope-grid — renders all SCOPE_ITEMS', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          let el = document.getElementById('est-scope-grid');
-          if (!el) { el = document.createElement('div'); el.id = 'est-scope-grid'; document.body.appendChild(el); }
-          buildScopeGrid(null);
-          const count = el.querySelectorAll('.stog').length;
-          el.remove();
-          return { ok: true, count, expected: SCOPE_ITEMS.length };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.count).toBe(r.expected);
-    });
-
-    test('with roomName — uses surf-scope-first-grid fallback', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          document.getElementById('est-scope-grid')?.remove();
-          let el = document.getElementById('surf-scope-first-grid');
-          if (!el) { el = document.createElement('div'); el.id = 'surf-scope-first-grid'; document.body.appendChild(el); }
-          buildScopeGrid('Living Room');
-          const count = el.querySelectorAll('.stog').length;
-          el.remove();
-          return { ok: true, count, expected: SCOPE_ITEMS.length };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.count).toBe(r.expected);
-    });
-
-    test('called 3 times — no duplicate scope items in grid', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          let el = document.getElementById('est-scope-grid');
-          if (!el) { el = document.createElement('div'); el.id = 'est-scope-grid'; document.body.appendChild(el); }
-          buildScopeGrid(null);
-          buildScopeGrid(null);
-          buildScopeGrid(null);
-          const count = el.querySelectorAll('.stog').length;
-          el.remove();
-          return { ok: true, count, expected: SCOPE_ITEMS.length };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.count).toBe(r.expected);
-    });
-
-    test('concurrent calls — no throw', async () => {
-      const r = await page.evaluate(() => {
-        let el = document.getElementById('est-scope-grid');
-        if (!el) { el = document.createElement('div'); el.id = 'est-scope-grid'; document.body.appendChild(el); }
-        let ok = 0;
-        for (let i = 0; i < 5; i++) {
-          try { buildScopeGrid(null); ok++; } catch (_) {}
-        }
-        el.remove();
-        return ok;
-      });
-      expect(r).toBe(5);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // toggleScopeRoom
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('toggleScopeRoom', () => {
-    test.beforeEach(async () => {
-      await page.evaluate(() => { roomScopeMap = {}; });
-    });
-
-    test('null id — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { toggleScopeRoom(null, 'Kitchen'); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('null roomName — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { toggleScopeRoom('sand', null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('golden path — turns scope on in room', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = {};
-          toggleScopeRoom('sand', 'Kitchen');
-          const on = roomScopeOn('Kitchen', 'sand');
-          return { ok: true, on };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.on).toBe(true);
-    });
-
-    test('toggle twice — turns back off', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = {};
-          toggleScopeRoom('sand', 'Kitchen');
-          toggleScopeRoom('sand', 'Kitchen');
-          const on = roomScopeOn('Kitchen', 'sand');
-          return { ok: true, on };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.on).toBe(false);
-    });
-
-    test('concurrent calls — no throw', async () => {
-      const r = await page.evaluate(() => {
-        roomScopeMap = {};
-        let ok = 0;
-        for (let i = 0; i < 5; i++) {
-          try { toggleScopeRoom('sand', 'Room' + i); ok++; } catch (_) {}
-        }
-        return ok;
-      });
-      expect(r).toBe(5);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // _saveScopeHoursRoom
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_saveScopeHoursRoom', () => {
-    test('missing DOM inputs — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          document.getElementById('scope-hrs-popup')?.remove();
-          document.getElementById('scope-rate-popup')?.remove();
-          _saveScopeHoursRoom('sand', 'Kitchen');
-          return { ok: true };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('hrs=0 — removes scope from map', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = { 'Kitchen': { sand: { active: true } } };
-          let hrsEl = document.getElementById('scope-hrs-popup');
-          if (!hrsEl) { hrsEl = document.createElement('input'); hrsEl.id = 'scope-hrs-popup'; document.body.appendChild(hrsEl); }
-          let rateEl = document.getElementById('scope-rate-popup');
-          if (!rateEl) { rateEl = document.createElement('input'); rateEl.id = 'scope-rate-popup'; document.body.appendChild(rateEl); }
-          hrsEl.value = '0';
-          rateEl.value = '45';
-          _saveScopeHoursRoom('sand', 'Kitchen');
-          const stillOn = roomScopeOn('Kitchen', 'sand');
-          hrsEl.remove(); rateEl.remove();
-          roomScopeMap = {};
-          return { ok: true, stillOn };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.stillOn).toBe(false);
-    });
-
-    test('hrs>0 — sets scope active with hrs and rate', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = {};
-          let hrsEl = document.getElementById('scope-hrs-popup');
-          if (!hrsEl) { hrsEl = document.createElement('input'); hrsEl.id = 'scope-hrs-popup'; document.body.appendChild(hrsEl); }
-          let rateEl = document.getElementById('scope-rate-popup');
-          if (!rateEl) { rateEl = document.createElement('input'); rateEl.id = 'scope-rate-popup'; document.body.appendChild(rateEl); }
-          hrsEl.value = '3';
-          rateEl.value = '50';
-          _saveScopeHoursRoom('sand', 'Kitchen');
-          const on = roomScopeOn('Kitchen', 'sand');
-          const entry = roomScopeMap['Kitchen'] && roomScopeMap['Kitchen']['sand'];
-          hrsEl.remove(); rateEl.remove();
-          roomScopeMap = {};
-          return { ok: true, on, hrs: entry && entry.hrs, rate: entry && entry.rate };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.on).toBe(true);
-      expect(r.hrs).toBe(3);
-      expect(r.rate).toBe(50);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // _cancelScopeHoursRoom
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_cancelScopeHoursRoom', () => {
-    test('null id — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _cancelScopeHoursRoom(null, 'Kitchen'); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('scope not active — removes on class from DOM', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = {};
-          const tog = document.createElement('div'); tog.id = 'est-st-sand'; tog.classList.add('on');
-          document.body.appendChild(tog);
-          _cancelScopeHoursRoom('sand', 'Kitchen');
-          const hasOn = tog.classList.contains('on');
-          tog.remove();
-          return { ok: true, hasOn };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.hasOn).toBe(false);
-    });
-
-    test('scope is active — preserves on state', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = { 'Kitchen': { sand: { active: true } } };
-          const tog = document.createElement('div'); tog.id = 'est-st-sand'; tog.classList.add('on');
-          document.body.appendChild(tog);
-          _cancelScopeHoursRoom('sand', 'Kitchen');
-          const hasOn = tog.classList.contains('on');
-          tog.remove();
-          roomScopeMap = {};
-          return { ok: true, hasOn };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.hasOn).toBe(true);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // toggleScope
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('toggleScope', () => {
-    test.beforeEach(async () => {
-      await page.evaluate(() => { scopeActiveMap = {}; scopeHrsStore = {}; });
-    });
-
-    test('null id — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { toggleScope(null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('undefined id — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { toggleScope(undefined); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('golden path — toggles scope on/off', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeActiveMap = {};
-          toggleScope('sand');
-          const on = scopeOn('sand');
-          toggleScope('sand');
-          const off = scopeOn('sand');
-          return { ok: true, on, off };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.on).toBe(true);
-      expect(r.off).toBe(false);
-    });
-
-    test('force=true — forces on regardless of current state', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeActiveMap = {};
-          toggleScope('sand', true);
-          toggleScope('sand', true);
-          return { ok: true, on: scopeOn('sand') };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.on).toBe(true);
-    });
-
-    test('force=false — forces off', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeActiveMap = { sand: true };
-          toggleScope('sand', false);
-          return { ok: true, on: scopeOn('sand') };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.on).toBe(false);
-    });
-
-    test('turning off clears scopeHrsStore entry', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeActiveMap = { sand: true };
-          scopeHrsStore = { sand: { hrs: 3, rate: 45, cost: 135 } };
-          toggleScope('sand', false);
-          return { ok: true, cleared: !scopeHrsStore['sand'] };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.cleared).toBe(true);
-    });
-
-    test('concurrent calls — no corruption', async () => {
-      const r = await page.evaluate(() => {
-        scopeActiveMap = {};
-        let ok = 0;
-        for (let i = 0; i < 5; i++) {
-          try { toggleScope('sand'); ok++; } catch (_) {}
-        }
-        return ok;
-      });
-      expect(r).toBe(5);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // promptScopeHours
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('promptScopeHours', () => {
-    test('null id — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          promptScopeHours(null, 'Test');
-          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-          return { ok: true };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('undefined label — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          promptScopeHours('sand', undefined);
-          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-          return { ok: true };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('golden path — creates overlay with scope-hrs-popup input', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-          promptScopeHours('sand', 'Sanding');
-          const inp = document.getElementById('scope-hrs-popup');
-          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-          return { ok: true, hasInput: !!inp };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.hasInput).toBe(true);
-    });
-
-    test('called 3 times — only 1 overlay present at a time', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          promptScopeHours('sand', 'S');
-          promptScopeHours('prime', 'P');
-          promptScopeHours('tape', 'T');
-          const count = document.querySelectorAll('.zmodal-overlay').length;
-          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-          return { ok: true, count };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      // Each promptScopeHours appends a new overlay — the important thing is no crash
-      expect(r.count).toBeGreaterThanOrEqual(1);
-    });
-
-    test('pre-filled from scopeHrsStore — input has existing value', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeHrsStore = { sand: { hrs: 4, rate: 55, cost: 220 } };
-          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-          promptScopeHours('sand', 'Sanding');
-          const val = document.getElementById('scope-hrs-popup')?.value;
-          document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
-          scopeHrsStore = {};
-          return { ok: true, val };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.val).toBe('4');
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // _syncScopePopupHint
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_syncScopePopupHint', () => {
-    test('missing elements — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          document.getElementById('scope-hrs-popup')?.remove();
-          document.getElementById('scope-rate-popup')?.remove();
-          document.getElementById('scope-popup-hint')?.remove();
-          _syncScopePopupHint();
-          return { ok: true };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('missing hint element only — returns early without throw', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          let h = document.getElementById('scope-hrs-popup');
-          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; h.value = '2'; document.body.appendChild(h); }
-          document.getElementById('scope-popup-hint')?.remove();
-          _syncScopePopupHint();
-          h.remove();
-          return { ok: true };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('hrs=0 — clears hint', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          let h = document.getElementById('scope-hrs-popup');
-          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; document.body.appendChild(h); }
-          let rEl = document.getElementById('scope-rate-popup');
-          if (!rEl) { rEl = document.createElement('input'); rEl.id = 'scope-rate-popup'; document.body.appendChild(rEl); }
-          let hint = document.getElementById('scope-popup-hint');
-          if (!hint) { hint = document.createElement('div'); hint.id = 'scope-popup-hint'; hint.textContent = 'old'; document.body.appendChild(hint); }
-          h.value = '0'; rEl.value = '45';
-          _syncScopePopupHint();
-          const txt = hint.textContent;
-          h.remove(); rEl.remove(); hint.remove();
-          return { ok: true, txt };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.txt).toBe('');
-    });
-
-    test('hrs=2, rate=50 — shows correct calculation', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          let h = document.getElementById('scope-hrs-popup');
-          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; document.body.appendChild(h); }
-          let rEl = document.getElementById('scope-rate-popup');
-          if (!rEl) { rEl = document.createElement('input'); rEl.id = 'scope-rate-popup'; document.body.appendChild(rEl); }
-          let hint = document.getElementById('scope-popup-hint');
-          if (!hint) { hint = document.createElement('div'); hint.id = 'scope-popup-hint'; document.body.appendChild(hint); }
-          h.value = '2'; rEl.value = '50';
-          _syncScopePopupHint();
-          const txt = hint.textContent;
-          h.remove(); rEl.remove(); hint.remove();
-          return { ok: true, txt };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.txt).toContain('$100');
-    });
-
-    test('concurrent calls — no throw', async () => {
-      const r = await page.evaluate(() => {
-        let ok = 0;
-        for (let i = 0; i < 5; i++) {
-          try { _syncScopePopupHint(); ok++; } catch (_) {}
-        }
-        return ok;
-      });
-      expect(r).toBe(5);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // _saveScopeHours
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_saveScopeHours', () => {
-    test('missing DOM — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          document.getElementById('scope-hrs-popup')?.remove();
-          document.getElementById('scope-rate-popup')?.remove();
-          _saveScopeHours('sand');
-          return { ok: true };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('hrs=0 — deletes scopeHrsStore entry', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeHrsStore = { sand: { hrs: 2, rate: 45, cost: 90 } };
-          let h = document.getElementById('scope-hrs-popup');
-          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; document.body.appendChild(h); }
-          let rEl = document.getElementById('scope-rate-popup');
-          if (!rEl) { rEl = document.createElement('input'); rEl.id = 'scope-rate-popup'; document.body.appendChild(rEl); }
-          h.value = '0'; rEl.value = '45';
-          _saveScopeHours('sand');
-          const gone = !scopeHrsStore['sand'];
-          h.remove(); rEl.remove();
-          scopeHrsStore = {};
-          return { ok: true, gone };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.gone).toBe(true);
-    });
-
-    test('hrs>0 — stores {hrs, rate, cost} in scopeHrsStore', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeHrsStore = {};
-          let h = document.getElementById('scope-hrs-popup');
-          if (!h) { h = document.createElement('input'); h.id = 'scope-hrs-popup'; document.body.appendChild(h); }
-          let rEl = document.getElementById('scope-rate-popup');
-          if (!rEl) { rEl = document.createElement('input'); rEl.id = 'scope-rate-popup'; document.body.appendChild(rEl); }
-          h.value = '3'; rEl.value = '60';
-          _saveScopeHours('prime');
-          const entry = scopeHrsStore['prime'];
-          h.remove(); rEl.remove();
-          scopeHrsStore = {};
-          return { ok: true, hrs: entry && entry.hrs, rate: entry && entry.rate, cost: entry && entry.cost };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.hrs).toBe(3);
-      expect(r.rate).toBe(60);
-      expect(r.cost).toBe(180);
-    });
-
-    test('null id — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _saveScopeHours(null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // _cancelScopeHours
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('_cancelScopeHours', () => {
-    test('null id — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _cancelScopeHours(null); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('no hrs stored — removes on class from DOM elements', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeHrsStore = {};
-          const tog = document.createElement('div'); tog.id = 'est-st-sand'; tog.classList.add('on');
-          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = 'est-sc-sand'; cb.checked = true;
-          document.body.appendChild(tog); document.body.appendChild(cb);
-          _cancelScopeHours('sand');
-          const hasOn = tog.classList.contains('on');
-          const checked = cb.checked;
-          tog.remove(); cb.remove();
-          return { ok: true, hasOn, checked };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.hasOn).toBe(false);
-      expect(r.checked).toBe(false);
-    });
-
-    test('hrs stored — preserves on state', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeHrsStore = { sand: { hrs: 2, rate: 45, cost: 90 } };
-          const tog = document.createElement('div'); tog.id = 'est-st-sand'; tog.classList.add('on');
-          document.body.appendChild(tog);
-          _cancelScopeHours('sand');
-          const hasOn = tog.classList.contains('on');
-          tog.remove();
-          scopeHrsStore = {};
-          return { ok: true, hasOn };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.hasOn).toBe(true);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // scopeOn
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('scopeOn', () => {
-    test('null — returns false', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, v: scopeOn(null) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.v).toBe(false);
-    });
-
-    test('undefined — returns false', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, v: scopeOn(undefined) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.v).toBe(false);
-    });
-
-    test('absent id — returns false', async () => {
-      const r = await page.evaluate(() => {
-        try { scopeActiveMap = {}; return { ok: true, v: scopeOn('nonexistent_scope') }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.v).toBe(false);
-    });
-
-    test('active id — returns true', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          scopeActiveMap = { sand: true };
-          return { ok: true, v: scopeOn('sand') };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.v).toBe(true);
-    });
-
-    test('concurrent calls — stable', async () => {
-      const r = await page.evaluate(() => {
-        scopeActiveMap = { sand: true };
-        let ok = 0;
-        for (let i = 0; i < 5; i++) {
-          try { if (scopeOn('sand') === true) ok++; } catch (_) {}
-        }
-        return ok;
-      });
-      expect(r).toBe(5);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // roomScopeOn
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('roomScopeOn', () => {
-    test('null roomName — returns false', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, v: roomScopeOn(null, 'sand') }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.v).toBe(false);
-    });
-
-    test('null id — returns false', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, v: roomScopeOn('Kitchen', null) }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.v).toBe(false);
-    });
-
-    test('room not in map — returns false', async () => {
-      const r = await page.evaluate(() => {
-        try { roomScopeMap = {}; return { ok: true, v: roomScopeOn('Missing Room', 'sand') }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.v).toBe(false);
-    });
-
-    test('golden path — active scope returns true', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = { 'Kitchen': { sand: { active: true } } };
-          return { ok: true, v: roomScopeOn('Kitchen', 'sand') };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.v).toBe(true);
-    });
-
-    test('scope with active:false — returns false', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = { 'Kitchen': { sand: { active: false } } };
-          return { ok: true, v: roomScopeOn('Kitchen', 'sand') };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.v).toBe(false);
-    });
-  });
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // setRoomScope
-  // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('setRoomScope', () => {
-    test.beforeEach(async () => {
-      await page.evaluate(() => { roomScopeMap = {}; });
-    });
-
-    test('null roomName — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { setRoomScope(null, 'sand', true, 2, 45); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
-    test('active=false — deletes scope from map', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = { 'Kitchen': { sand: { active: true } } };
-          setRoomScope('Kitchen', 'sand', false);
-          const gone = !(roomScopeMap['Kitchen'] && roomScopeMap['Kitchen']['sand']);
-          return { ok: true, gone };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.gone).toBe(true);
-    });
-
-    test('active=true with hrs and rate — stores correct cost', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = {};
-          setRoomScope('Bedroom', 'prime', true, 3, 50);
-          const entry = roomScopeMap['Bedroom'] && roomScopeMap['Bedroom']['prime'];
-          return { ok: true, active: entry && entry.active, hrs: entry && entry.hrs, cost: entry && entry.cost };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.active).toBe(true);
-      expect(r.hrs).toBe(3);
-      expect(r.cost).toBe(150);
-    });
-
-    test('active=true without hrs/rate — uses defaults', async () => {
-      const r = await page.evaluate(() => {
-        try {
-          roomScopeMap = {};
-          setRoomScope('Bath', 'sand', true);
-          const entry = roomScopeMap['Bath'] && roomScopeMap['Bath']['sand'];
-          return { ok: true, active: entry && entry.active, rate: entry && entry.rate };
-        } catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.active).toBe(true);
-      expect(r.rate).toBe(45);
-    });
-
-    test('concurrent calls — no corruption', async () => {
-      const r = await page.evaluate(() => {
-        roomScopeMap = {};
-        let ok = 0;
-        for (let i = 0; i < 5; i++) {
-          try { setRoomScope('Room' + i, 'sand', true, i, 45); ok++; } catch (_) {}
-        }
-        return ok;
-      });
-      expect(r).toBe(5);
+      for (const [name, type] of r) expect(type, name + ' should no longer be defined').toBe('undefined');
     });
   });
 

@@ -66,6 +66,36 @@ test.describe('auto-capitalize free-text fields', () => {
     expect(r.opt).toBe('none');   // explicit opt-out preserved
   });
 
+  test('eligible fields also get autocorrect="on" + spellcheck="true"; opt-outs and excluded types do not', async () => {
+    // iOS/Safari heuristically disable autocorrect on unclassifiable fields
+    // (ours mostly carry autocomplete="off") — the tagger must force it back on
+    // for free-text fields, and only those.
+    const r = await page.evaluate(() => {
+      const host = document.createElement('div'); document.body.appendChild(host);
+      host.innerHTML =
+        '<input type="text" id="_acr_text">' +
+        '<textarea id="_acr_ta"></textarea>' +
+        '<input type="email" id="_acr_email">' +
+        '<input type="text" autocapitalize="none" id="_acr_opt">' +
+        '<input type="text" autocorrect="off" id="_acr_own">';
+      _applyAutoCapAttrs(host);
+      const g = (id, a) => document.getElementById(id).getAttribute(a);
+      const out = {
+        text: [g('_acr_text', 'autocorrect'), g('_acr_text', 'spellcheck')],
+        ta: [g('_acr_ta', 'autocorrect'), g('_acr_ta', 'spellcheck')],
+        email: [g('_acr_email', 'autocorrect'), g('_acr_email', 'spellcheck')],
+        opt: [g('_acr_opt', 'autocorrect'), g('_acr_opt', 'spellcheck')],
+        own: g('_acr_own', 'autocorrect'),   // field's own setting wins
+      };
+      host.remove(); return out;
+    });
+    expect(r.text).toEqual(['on', 'true']);
+    expect(r.ta).toEqual(['on', 'true']);
+    expect(r.email).toEqual([null, null]);
+    expect(r.opt).toEqual([null, null]);     // autocapitalize opt-out ⇒ no forced autocorrect either
+    expect(r.own).toBe('off');
+  });
+
   test('a real spacebar keydown title-cases the value (desktop fallback)', async () => {
     const out = await page.evaluate(async () => {
       const i = document.createElement('input'); i.type = 'text';

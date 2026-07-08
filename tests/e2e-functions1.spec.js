@@ -748,7 +748,6 @@ test.describe('Proposals functions', () => {
         addr: '400 Prop St', city: 'Wichita', state: 'KS', zip: '67202' });
       bids.push({ id: 50001, clientId: 'c-prop-001', status: 'Pending', amount: 2500,
         trade: 'painting', createdAt: new Date().toISOString(), proposalHtml: '<p>Test proposal</p>' });
-      if (typeof goPg === 'function') goPg('pg-est');
     });
     await page.waitForTimeout(400);
   });

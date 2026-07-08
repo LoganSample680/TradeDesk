@@ -476,7 +476,6 @@ const SW_FAMILIES=[
   {id:'stain',  label:'Deck Stain', bg:'#7B4E2A',tc:'#fff'},
 ];
 
-const _FINISH_TIPS={'Flat':'Ceilings and low traffic areas, hides imperfections.','Matte':'Similar to flat with slightly more durability.','Eggshell':'Most popular for living rooms and bedrooms, easy to clean.','Satin':'Kitchens, bathrooms and trim, moisture resistant and washable.','Semi-Gloss':'Doors, trim and cabinets, very durable and easy to wipe down.','Gloss':'Highest durability for doors and trim, very shiny.','Semi-Trans Stain':'Decks and fences, lets wood grain show through.','Solid Stain':'Decks and siding, full coverage like paint but breathes better.'};
 const SW_PRODUCTS={
   interior:[
     {id:'pm700',  name:'ProMar 700',        sub:'Budget · rentals, basic repaint',           price:'$',   retail:55,  contractor:20, cov:350},
@@ -855,9 +854,6 @@ const TRADE_JOB_CATS={
   },
 };
 
-const SURF_ORDER=['walls','ceiling','trim','epoxy','ext_walls','ext_trim','deck','fence','doors','windows','cabinets'];
-const SURF_NEEDS_H=['walls','ceiling','ext_walls','deck'];
-const SURF_IS_COUNT=['doors','windows','cabinets'];
 const SURF_LABELS={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext trim',deck:'Deck',fence:'Fence staining',epoxy:'Epoxy floor'};
 const PROP_TIERS={
   rental: {key:'rental',mult:0.82,paint:'ProMar 700',label:'Rental / Fixer',hint:'Budget finish · ProMar 700',

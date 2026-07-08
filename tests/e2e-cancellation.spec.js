@@ -131,6 +131,16 @@ test.describe('Notice of Cancellation — 3-step friction flow', () => {
     assertNoErrors(page, 'step 1 reason picker');
   });
 
+  test('regression: "Cancellation window open" banner renders an SVG icon, not a bare hourglass emoji', async ({ page }) => {
+    // This exact call site was missed by the codebase-wide emoji→SVG icon sweep —
+    // caught by manual audit after the fact. Locking it in so it can't regress.
+    await bootHub(page, hubWith());
+    await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
+    const html = await page.locator('#cancel-notice-ov').innerHTML();
+    expect(html).toContain('<svg');
+    expect(html).not.toContain('⏳');
+  });
+
   test('selecting a reason enables Continue and advances to step 2', async ({ page }) => {
     await bootHub(page, hubWith());
     await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
@@ -210,6 +220,122 @@ test.describe('Notice of Cancellation — 3-step friction flow', () => {
     // No Stripe payment button should appear
     expect(overview).not.toContain('Secured by Stripe');
     assertNoErrors(page, 'cancelled bid clears balance in overview');
+  });
+
+  test('regression: account-menu chevron and invoice "Save as PDF" render SVG icons, not bare glyphs', async ({ page }) => {
+    // Two more call sites the emoji→SVG sweep missed — static topbar markup (▾)
+    // and a JS-built invoice button string (⬇). Both caught by manual audit.
+    await bootHub(page, hubWith());
+    const chevron = page.locator('.acct-chevron');
+    expect(await chevron.innerHTML()).toContain('<svg');
+    // .innerText, not .innerHTML — the chevron hydrates via document.write(), which
+    // leaves the original (inert, never re-run) <script> tag in the DOM afterward
+    // with its JS source as literal child text; innerHTML picks up that source's
+    // '▾' even though the SVG renders correctly on screen. innerText reflects only
+    // what's actually visible, same fix as the nav-icon regression test above.
+    expect(await chevron.innerText()).not.toContain('▾');
+    await page.evaluate(id => openInvoice(id), FAKE_BID_ID_1);
+    const invHtml = await page.locator('#inv-content').innerHTML();
+    expect(invHtml).toContain('Save as PDF');
+    expect(invHtml).not.toContain('⬇');
+    assertNoErrors(page, 'chevron + invoice PDF button icon regression');
+  });
+});
+
+// ── Declined proposals must NEVER render as signed ────────────────────────────
+// Live bug (owner screenshot, 2026-07-07): a client declined a proposal and the
+// hub viewer showed a full "CLIENT SIGNATURE — Signed by <name>" block with a
+// timestamp. Root cause: a decline writes a signed_proposals row too
+// (payment_status='declined', signed_at = decline time — that's how the
+// contractor app learns of it), and _mergeSignedProposals treated EVERY row in
+// that table as a signature — promoting the declined bid to Closed Won and
+// stamping signedAt/signerName from the decline record.
+test.describe('Declined proposal — never rendered as signed', () => {
+  const DECLINED_ROW = {
+    bid_id: String(FAKE_BID_ID_1),
+    client_name: 'Logan Sample',
+    client_signed_name: 'Logan Sample',
+    payment_method: 'declined',
+    payment_status: 'declined',
+    signed_at: '2026-07-07T15:36:00.000Z',
+    decline_reason: 'Price',
+  };
+
+  async function mergeDeclined(page) {
+    await page.evaluate(async (row) => {
+      const origFrom = _supa.from.bind(_supa);
+      _supa.from = (table) => table === 'signed_proposals'
+        ? { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [row] }) }) }) }
+        : origFrom(table);
+      await _mergeSignedProposals(_hub, _hub.contractorUserId);
+      _supa.from = origFrom;
+    }, DECLINED_ROW);
+  }
+
+  test('_mergeSignedProposals: a declined row marks the bid Closed Lost — no signedAt, no signer, no balance', async ({ page }) => {
+    await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
+    await mergeDeclined(page);
+    const bid = await page.evaluate(() => {
+      const b = _hub.bids[0];
+      return { status: b.status, signedAt: b.signedAt || null, signerName: b.signerName || null, declinedAt: b.declinedAt || null, lostReason: b.lostReason || null, balance: b.balance };
+    });
+    expect(bid.status).toBe('Closed Lost');
+    expect(bid.signedAt).toBeNull();
+    expect(bid.signerName).toBeNull();
+    expect(bid.declinedAt).toBe(DECLINED_ROW.signed_at);
+    expect(bid.lostReason).toBe('Price'); // client-picked reason surfaces in Documents immediately
+    expect(bid.balance).toBe(0);
+    assertNoErrors(page, 'declined merge');
+  });
+
+  test('opening a declined proposal shows a Declined notice — never a CLIENT SIGNATURE block', async ({ page }) => {
+    // The stored proposal JSON (MOCK_PROPOSAL, status:'pending') deliberately does
+    // NOT say declined — the decline state arrives via the merged bid, exactly like
+    // the live bug, so this exercises the bid.declinedAt guard in openProposal.
+    await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
+    await mergeDeclined(page);
+    await page.evaluate(id => openProposal(id), FAKE_BID_ID_1);
+    await page.waitForTimeout(600);
+    const html = await page.locator('#prop-content').innerHTML();
+    expect(html).toContain('Declined');
+    expect(html).toContain('not a signed agreement');
+    expect(html).not.toContain('CLIENT SIGNATURE');
+    expect(html).not.toContain('Client Signature');
+    expect(html).not.toContain('Signed By');
+    assertNoErrors(page, 'declined proposal viewer');
+  });
+
+  test('a light brand color in the hub snapshot is clamped to a WCAG-compliant accent', async ({ page }) => {
+    // Legacy snapshots can carry an unclamped light brand color; applyBranding
+    // must never let it become the hub accent (--denim renders as link text on
+    // white and as button bg under white text).
+    await bootHub(page, hubWith({}, { brandColor: '#FFE44D' }));
+    const denim = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--denim').trim());
+    const lum = (hex) => {
+      const c = hex.replace('#', '');
+      const s = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) / 255)
+        .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+      return 0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2];
+    };
+    expect(denim).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(1.05 / (lum(denim) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+
+  test('a genuinely signed row still merges as signed — the decline guard is exact', async ({ page }) => {
+    await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
+    await page.evaluate(async () => {
+      const row = { bid_id: String(_hub.bids[0].id), client_signed_name: 'Alice Smith', payment_method: 'cash', payment_status: 'pending', signed_at: '2026-07-06T12:00:00.000Z' };
+      const origFrom = _supa.from.bind(_supa);
+      _supa.from = (table) => table === 'signed_proposals'
+        ? { select: () => ({ eq: () => ({ in: () => Promise.resolve({ data: [row] }) }) }) }
+        : origFrom(table);
+      await _mergeSignedProposals(_hub, _hub.contractorUserId);
+      _supa.from = origFrom;
+    });
+    const bid = await page.evaluate(() => ({ status: _hub.bids[0].status, signedAt: _hub.bids[0].signedAt || null, signerName: _hub.bids[0].signerName || null }));
+    expect(bid.status).toBe('Closed Won');
+    expect(bid.signedAt).toBe('2026-07-06T12:00:00.000Z');
+    expect(bid.signerName).toBe('Alice Smith');
   });
 });
 

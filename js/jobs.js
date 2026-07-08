@@ -71,14 +71,14 @@ function openClockInSheet(jobId){
       rows+='<button onclick="clockIn('+jobId+',\''+sid+'\',\''+slabel+'\');setTimeout(()=>window._cksRebuild&&window._cksRebuild(),80)" '+
         'style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;border:none;border-bottom:1px solid var(--border);'+bg+bl+' text-align:left;font-family:inherit;cursor:pointer;font-size:14px;color:var(--text)">'+
         dot+
-        '<span style="font-size:18px;flex-shrink:0">'+s.icon+'</span>'+
+        '<span style="font-size:18px;flex-shrink:0">'+svgIcon(s.icon,{size:18})+'</span>'+
         '<span style="font-weight:600;flex:1">'+escHtml(s.label)+'</span>'+
         (logged>0?'<span style="font-size:11px;color:var(--text3)">'+_fmtMin(logged)+'</span>':'')+
       '</button>';
     }
     rows+='<button onclick="_clockAddTask('+jobId+')" '+
       'style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer;font-size:13px;color:var(--text3)">'+
-      '<span style="font-size:16px">➕</span><span>Add task not in estimate…</span>'+
+      '<span style="font-size:16px">'+svgIcon('➕',{size:16})+'</span><span>Add task not in estimate…</span>'+
     '</button>';
     const el=document.getElementById('_cks-sheet');if(!el)return;
     el.innerHTML=
@@ -91,7 +91,7 @@ function openClockInSheet(jobId){
       '</div>'+
       rows+
       '<div style="padding:12px 16px">'+
-        '<button onclick="_markJobComplete('+jobId+')" style="width:100%;padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">🏁 Mark job complete</button>'+
+        '<button onclick="_markJobComplete('+jobId+')" style="width:100%;padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">'+svgIcon('🏁')+' Mark job complete</button>'+
       '</div>';
   };
   window._cksRebuild();
@@ -108,7 +108,7 @@ function _clockAddTask(jobId){
     const sl=s.label.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
     return '<button onclick="_clockAddTaskConfirm('+jobId+',\''+s.id+'\',\''+sl+'\');this.closest(\'.zmodal-overlay\').remove()" '+
       'style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer;font-size:14px;color:var(--text)">'+
-      '<span style="font-size:18px">'+s.icon+'</span><span style="font-weight:600">'+escHtml(s.label)+'</span>'+
+      '<span style="font-size:18px">'+svgIcon(s.icon,{size:18})+'</span><span style="font-weight:600">'+escHtml(s.label)+'</span>'+
     '</button>';
   }).join('');
   box.innerHTML=
@@ -252,7 +252,7 @@ function doneForDay(){
     const rows=todayEntries.map(e=>{
       const sc=SCOPE_ITEMS.find(x=>x.id===e.scope_id)||{icon:'⏱',label:e.scope_label||'Other'};
       return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:13px"><span style="margin-right:6px">'+sc.icon+'</span>'+escHtml(sc.label||'')+'</div>'+
+        '<div style="font-size:13px"><span style="margin-right:6px">'+svgIcon(sc.icon)+'</span>'+escHtml(sc.label||'')+'</div>'+
         '<div style="font-size:13px;font-weight:700;color:var(--text2)">'+_fmtMin(e.minutes)+'</div></div>';
     }).join('');
     const ov=document.createElement('div');ov.className='zmodal-overlay';
@@ -321,174 +321,6 @@ function renderTodayLegs(){
     '<span style="color:var(--green)">'+fmt(total*IRS())+' deduction</span>'+
   '</div>';
 }
-
-
-function buildScopeGrid(roomName){
-  // Only fall back to surf-scope-first-grid when called WITH a roomName — prevents
-  // cloud-sync / navigation calls (no roomName) from clobbering the paint-estimate scope view.
-  const el=document.getElementById('est-scope-grid')||(roomName?document.getElementById('surf-scope-first-grid'):null);
-  if(!el)return;
-  _currentScopeRoom=roomName||'';
-  el.innerHTML=SCOPE_ITEMS.map(s=>{
-    const isOn=roomName?roomScopeOn(roomName,s.id):!!scopeActiveMap[s.id];
-    const roomAttr=roomName?(' data-room="'+encodeURIComponent(roomName)+'"'):'';
-    const clickHandler=roomName
-      ?'onclick="toggleScopeRoom(\''+s.id+'\',decodeURIComponent(this.dataset.room))"'
-      :'onclick="toggleScope(\''+s.id+'\')"';
-    const _lr=(window._scopeRates||{})[s.id+':painting']||(window._scopeRates||{})[s.id+':general'];
-    const _hint=_lr&&_lr.sample_count>=5?'~'+_lr.median_min+' min avg · '+_lr.sample_count+' jobs':s.hint;
-    return '<div class="stog'+(isOn?' on':'')+'" id="est-st-'+s.id+'" '+clickHandler+roomAttr+' style="align-items:flex-start">'+
-      '<input type="checkbox" id="est-sc-'+s.id+'" style="display:none"'+(isOn?' checked':'')+'>'+
-      '<div class="sdot" style="margin-top:2px"></div>'+
-      '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:13px;font-weight:700">'+(s.icon||'')+' '+s.label+'</div>'+
-        '<span style="display:block;font-size:10px;color:var(--text3);font-weight:400;margin-top:1px;line-height:1.4">'+_hint+'</span>'+
-      '</div></div>';
-  }).join('');
-}
-function toggleScopeRoom(id, roomName){
-  const wasOn=roomScopeOn(roomName,id);
-  const nowOn=!wasOn;
-  const cb=document.getElementById('est-sc-'+id);
-  const tog=document.getElementById('est-st-'+id);
-  if(!nowOn){
-    if(roomScopeMap[roomName])delete roomScopeMap[roomName][id];
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-  } else {
-    if(!roomScopeMap[roomName])roomScopeMap[roomName]={};
-    roomScopeMap[roomName][id]={active:true};
-    if(cb)cb.checked=true;if(tog)tog.classList.add('on');
-  }
-  saveEstFullDraft();
-  renderEstRunning();
-}
-function _saveScopeHoursRoom(id,roomName){
-  const hrs=parseFloat(document.getElementById('scope-hrs-popup')?.value)||0;
-  const rate=parseFloat(document.getElementById('scope-rate-popup')?.value)||45;
-  if(hrs>0){
-    setRoomScope(roomName,id,true,hrs,rate);
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.innerHTML=hrs+'h<br>$'+rate+'/hr';badge.style.display='';}
-    const tog=document.getElementById('est-st-'+id);if(tog)tog.classList.add('on');
-    const cb=document.getElementById('est-sc-'+id);if(cb)cb.checked=true;
-  } else {
-    if(roomScopeMap[roomName])delete roomScopeMap[roomName][id];
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.textContent='';badge.style.display='none';}
-  }
-  closeTopModal();renderEstRunning&&renderEstRunning();saveEstFullDraft();
-}
-function _cancelScopeHoursRoom(id,roomName){
-  if(!roomScopeOn(roomName,id)){
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-  }
-  closeTopModal();
-}
-function toggleScope(id,force){
-  const wasOn=!!scopeActiveMap[id];
-  const nowOn=force!==undefined?!!force:!wasOn;
-  scopeActiveMap[id]=nowOn;
-  // Sync DOM if grid is rendered
-  const cb=document.getElementById('est-sc-'+id);
-  const tog=document.getElementById('est-st-'+id);
-  if(cb)cb.checked=nowOn;
-  if(tog)tog.classList.toggle('on',nowOn);
-  if(!nowOn){
-    delete scopeHrsStore[id];
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.textContent='';badge.style.display='none';}
-  }
-  checkStep2Ready();saveEstFullDraft();
-}
-function promptScopeHours(id,label){
-  const existing=scopeHrsStore[id]||{};
-  const existHrs=typeof existing==='object'?existing.hrs||'':existing||'';
-  const sc=SCOPE_ITEMS.find(x=>x.id===id);
-  const defaultRate=parseFloat(document.getElementById(sc?sc.rateKey:'')?.value)||sc?.defaultRate||45;
-  const existRate=typeof existing==='object'&&existing.rate?existing.rate:defaultRate;
-  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  const box=document.createElement('div');box.className='zmodal';
-  box.innerHTML=
-    '<div style="font-size:18px;font-weight:800;margin-bottom:2px">'+label+'</div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Set hours and rate for this job</div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
-      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Hours</label>'+
-        '<input type="number" id="scope-hrs-popup" value="'+existHrs+'" min="0" step="0.5" placeholder="0.0" inputmode="decimal"'+
-          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="_syncScopePopupHint()"></div>'+
-      '<div><label style="font-size:11px;font-weight:700;color:var(--text3);display:block;margin-bottom:4px">Rate ($/hr)</label>'+
-        '<input type="number" id="scope-rate-popup" value="'+existRate+'" min="0" step="5" placeholder="45" inputmode="decimal"'+
-          ' style="font-size:28px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--green);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center"'+
-          ' oninput="_syncScopePopupHint()"></div>'+
-    '</div>'+
-    '<div id="scope-popup-hint" style="font-size:13px;font-weight:700;color:var(--green-mid);text-align:center;margin-bottom:14px;min-height:20px"></div>'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<button id="scope-cancel-btn" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
-      '<button id="scope-save-btn" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save ✓</button>'+
-    '</div>';
-  overlay.appendChild(box);document.body.appendChild(overlay);
-  overlay.addEventListener('click',e=>{if(e.target===overlay)_cancelScopeHours(id);});
-  box.querySelector('#scope-cancel-btn').onclick=()=>_cancelScopeHours(id);
-  box.querySelector('#scope-save-btn').onclick=()=>_saveScopeHours(id);
-  setTimeout(()=>{
-    _syncScopePopupHint();
-    const inp=document.getElementById('scope-hrs-popup');if(inp){inp.focus();inp.select();}
-  },80);
-}
-function _syncScopePopupHint(){
-  const hrsEl=document.getElementById('scope-hrs-popup');
-  const rateEl=document.getElementById('scope-rate-popup');
-  const hint=document.getElementById('scope-popup-hint');
-  if(!hint)return;
-  const hrs=parseFloat(hrsEl?.value)||0;
-  const rate=parseFloat(rateEl?.value)||0;
-  if(hrs>0&&rate>0){
-    hint.textContent=hrs+'h × $'+rate+'/hr = $'+Math.round(hrs*rate);
-    hint.style.color='var(--green-mid)';
-  } else {
-    hint.textContent='';
-  }
-}
-function _saveScopeHours(id){
-  const hrsEl=document.getElementById('scope-hrs-popup');
-  const rateEl=document.getElementById('scope-rate-popup');
-  const hrs=parseFloat(hrsEl?hrsEl.value:0)||0;
-  const rate=parseFloat(rateEl?rateEl.value:0)||0;
-  const cost=hrs>0&&rate>0?Math.round(hrs*rate):0;
-  if(hrs>0){
-    scopeHrsStore[id]={hrs,rate,cost};
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.innerHTML=hrs+'h<br>$'+rate+'/hr';badge.style.display='';}
-  } else {
-    delete scopeHrsStore[id];
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-    const badge=document.getElementById('scope-hrs-badge-'+id);
-    if(badge){badge.textContent='';badge.style.display='none';}
-  }
-  closeTopModal();renderEstRunning&&renderEstRunning();checkStep2Ready();saveEstFullDraft();
-}
-function _cancelScopeHours(id){
-  if(!scopeHrsStore[id]){
-    const cb=document.getElementById('est-sc-'+id);const tog=document.getElementById('est-st-'+id);
-    if(cb)cb.checked=false;if(tog)tog.classList.remove('on');
-  }
-  closeTopModal();
-}
-function scopeOn(id){return !!scopeActiveMap[id];}
-function roomScopeOn(roomName,id){return !!(roomScopeMap[roomName]&&roomScopeMap[roomName][id]&&roomScopeMap[roomName][id].active);}
-function setRoomScope(roomName,id,active,hrs,rate){
-  if(!roomScopeMap[roomName])roomScopeMap[roomName]={};
-  if(!active){delete roomScopeMap[roomName][id];return;}
-  const cost=hrs&&rate?Math.round(hrs*rate*100)/100:0;
-  roomScopeMap[roomName][id]={active:true,hrs:hrs||0,rate:rate||45,cost};
-}
-let surfJobType='interior', surfColor='', surfRoom='';
-Object.defineProperty(window,'surfRoom',{get:()=>surfRoom,set:v=>{surfRoom=v;},configurable:true});
-let _currentScopeRoom='';  // room name currently shown in scope grid
 
 // ── More menu toggle ──────────────────────────────────────────────────────
 // ── Leads page ────────────────────────────────────────────────────────────
@@ -564,7 +396,7 @@ function renderJobsPage(){
       if(jB)return 1;
       return (stA.priority||9)-(stB.priority||9);
     });
-  if(!filtered.length){el.innerHTML='<div class="empty"><div class="em-emoji">📋</div><h3>No '+jobFilter+' jobs right now</h3><p><button class="btn btn-p" onclick="goPg(\'pg-schedule\')">Schedule a job</button></p></div>';return;}
+  if(!filtered.length){el.innerHTML='<div class="empty"><div class="em-emoji">'+svgIcon('📋',{size:44})+'</div><h3>No '+jobFilter+' jobs right now</h3><p><button class="btn btn-p" onclick="goPg(\'pg-schedule\')">Schedule a job</button></p></div>';return;}
   el.innerHTML='<div style="margin-top:4px">'+filtered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Client',id:b.client_id,phone:'',addr:b.addr||''};
     const st=getBidStage(b);
@@ -591,19 +423,19 @@ function renderJobsPage(){
         const _el=Math.floor((Date.now()-_activeTimer.startTime)/1000);
         const _h=Math.floor(_el/3600),_m=Math.floor((_el%3600)/60),_s=_el%60;
         const _ts=(_h?_h+'h ':'')+_m+':'+((_s<10?'0':'')+_s);
-        clockBtn='<button onclick="clockOut();event.stopPropagation()" class="btn btn-sm" style="border-radius:20px;border-color:#E97B00;background:#FFF3E0;color:#E97B00">⏹ '+_ts+'</button>';
+        clockBtn='<button onclick="clockOut();event.stopPropagation()" class="btn btn-sm" style="border-radius:20px;border-color:#E97B00;background:#FFF3E0;color:#E97B00">'+svgIcon('⏹')+' '+_ts+'</button>';
       }else{
-        clockBtn='<button onclick="openClockInSheet('+nextJobId+');event.stopPropagation()" class="btn btn-sm" style="border-radius:20px">▶ Clock in</button>';
+        clockBtn='<button onclick="openClockInSheet('+nextJobId+');event.stopPropagation()" class="btn btn-sm" style="border-radius:20px">'+svgIcon('▶')+' Clock in</button>';
       }
     }
     const hasTasks=b.roomScopeMap&&Object.values(b.roomScopeMap).some(r=>Object.values(r).some(v=>v&&v.active));
-    const checklistBtn=hasTasks?'<button onclick="openJobChecklist('+b.id+');event.stopPropagation()" class="btn btn-sm" style="border-radius:20px">📋 Checklist</button>':'';
+    const checklistBtn=hasTasks?'<button onclick="openJobChecklist('+b.id+');event.stopPropagation()" class="btn btn-sm" style="border-radius:20px">'+svgIcon('📋')+' Checklist</button>':'';
     const btnRow=(primaryBtn||clockBtn||checklistBtn)?'<div class="tf-acts">'+(primaryBtn||'')+(clockBtn||'')+(checklistBtn||'')+'</div>':'';
     const amtColor=balance>0.01?'var(--c-red)':paid>0?'var(--c-green)':'var(--text)';
     const amtSub=balance>0.01?'<div style="font-size:10px;font-weight:700;color:var(--c-red);margin-top:1px">'+fmt(balance)+' due</div>':paid>0?'<div style="font-size:10px;font-weight:600;color:var(--c-green);margin-top:1px">Paid ✓</div>':'';
     return '<div class="tf-card" onclick="openJobSheet('+c.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(c.name||'job')+'">'+
       '<div class="tf-icon '+(st.stage==='active'?'t-green':st.stage==='balance_due'?'t-red':'t-blue')+'" style="font-size:14px">'+
-        (st.stage==='active'?'🔨':st.stage==='balance_due'?'💰':st.stage==='signed'?'✍️':'📅')+
+        (st.stage==='active'?svgIcon('🔨'):st.stage==='balance_due'?svgIcon('💰'):st.stage==='signed'?svgIcon('✍'):svgIcon('📅'))+
       '</div>'+
       '<div class="tf-body">'+
         '<div class="tf-name">'+escHtml(c.name)+'</div>'+
@@ -631,7 +463,7 @@ function _renderJobsKanban(el,tk,wonBidsList){
     const _kcollapsed=!!(window._kcolCollapsed&&window._kcolCollapsed[col.id]);
     return '<div class="kcol" data-status="'+col.id+'">'+
       '<div class="kcol-hd" onclick="_toggleKcol(\''+col.id+'\')" style="cursor:pointer;user-select:none">'+
-        '<span style="display:flex;align-items:center;min-width:0"><span class="kcol-chev" style="display:inline-block;transition:transform .18s cubic-bezier(.22,1,.36,1);transform:'+(_kcollapsed?'':'rotate(90deg)')+';font-size:9px;color:var(--text3);margin-right:5px">▶</span><span>'+col.label+'</span></span>'+
+        '<span style="display:flex;align-items:center;min-width:0"><span class="kcol-chev" style="display:inline-block;transition:transform .18s cubic-bezier(.22,1,.36,1);transform:'+(_kcollapsed?'':'rotate(90deg)')+';font-size:9px;color:var(--text3);margin-right:5px">'+svgIcon('▶',{size:9})+'</span><span>'+col.label+'</span></span>'+
         '<span class="k-count">'+col.items.length+'</span></div>'+
       '<div class="kcol-body"'+(_kcollapsed?' style="display:none"':'')+'>'+
       (col.items.length===0
@@ -712,7 +544,7 @@ function openJobChecklist(bidId){
   const sheet=document.createElement('div');
   sheet.style.cssText='background:var(--bg2);border-radius:14px;width:100%;max-width:480px;max-height:85vh;overflow-y:auto;padding:20px 16px 24px';
   const hdr='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
-    '<div style="font-size:17px;font-weight:800">📋 Job Checklist</div>'+
+    '<div style="font-size:17px;font-weight:800">'+svgIcon('📋')+' Job Checklist</div>'+
     '<button onclick="closeJobChecklist()" style="background:none;border:none;font-size:20px;color:var(--text3);cursor:pointer;padding:4px">✕</button>'+
   '</div>'+
   '<div id="_cl-prog" style="font-size:13px;color:var(--text3);margin-bottom:12px">'+done+' of '+tasks.length+' tasks done</div>'+
@@ -724,7 +556,7 @@ function openJobChecklist(bidId){
         (isDone?'<svg width="12" height="10" viewBox="0 0 12 10"><polyline points="1,5 4,8 11,1" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/></svg>':'')+
       '</div>'+
       '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:14px;font-weight:600;color:var(--text);'+(isDone?'text-decoration:line-through;opacity:.5':'')+'">'+t.icon+' '+t.label+'</div>'+
+        '<div style="font-size:14px;font-weight:600;color:var(--text);'+(isDone?'text-decoration:line-through;opacity:.5':'')+'">'+svgIcon(t.icon)+' '+t.label+'</div>'+
         '<div style="font-size:11px;color:var(--text3)">'+t.room+'</div>'+
       '</div>'+
     '</div>';
@@ -777,16 +609,16 @@ function openJobSheet(clientId){
     '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">'+
       '<div style="min-width:0">'+
         '<div style="font-size:20px;font-weight:800;line-height:1.15">'+escHtml(c.name||'')+'</div>'+
-        (c.addr?'<div style="font-size:12px;opacity:.75;margin-top:4px">📍 '+escHtml(c.addr)+'</div>':'')+
+        (c.addr?'<div style="font-size:12px;opacity:.75;margin-top:4px">'+svgIcon('📍')+' '+escHtml(c.addr)+'</div>':'')+
       '</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;flex-shrink:0;line-height:1">✕</button>'+
     '</div>'+
     '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap">'+
       '<span style="font-size:11px;font-weight:800;padding:4px 10px;border-radius:20px;background:rgba(255,255,255,.18);color:#fff;letter-spacing:.02em">'+st.label+'</span>'+
       '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-        (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" style="background:rgba(52,211,153,.25);color:#fff;text-decoration:none;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="event.stopPropagation()">📞 Call</a>':'')+
-        (c.addr?'<button onclick="openMapsForClient('+clientId+');event.stopPropagation()" style="background:rgba(96,165,250,.25);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">🗺️ Drive</button>':'')+
-        (c.phone?'<button onclick="sendOMWText('+clientId+');event.stopPropagation()" style="background:rgba(251,191,36,.3);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">🚗 OMW</button>':'')+
+        (c.phone?'<a href="tel:'+c.phone.replace(/\D/g,'')+'" style="background:rgba(52,211,153,.25);color:#fff;text-decoration:none;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;display:inline-flex;align-items:center;gap:4px" onclick="event.stopPropagation()">'+svgIcon('📞')+' Call</a>':'')+
+        (c.addr?'<button onclick="openMapsForClient('+clientId+');event.stopPropagation()" style="background:rgba(96,165,250,.25);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">'+svgIcon('🗺')+' Drive</button>':'')+
+        (c.phone?'<button onclick="sendOMWText('+clientId+');event.stopPropagation()" style="background:rgba(251,191,36,.3);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">'+svgIcon('🚗')+' OMW</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:20px;cursor:pointer;font-family:inherit">Full record ›</button>'+
       '</div>'+
     '</div>';
@@ -803,7 +635,7 @@ function openJobSheet(clientId){
     const barColor=pct>=100?'var(--green-mid)':pct>0?'var(--blue)':'var(--border2)';
     payHtml=
       '<div style="padding:16px 20px;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">💰 Payment</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">'+svgIcon('💰')+' Payment</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">'+
           '<div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">'+
             '<div style="font-size:10px;color:var(--text3);font-weight:600;margin-bottom:3px">Contract</div>'+
@@ -842,7 +674,7 @@ function openJobSheet(clientId){
     const dt=parseD(nextJob.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
     schedHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">📅 Schedule</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('📅')+' Schedule</div>'+
         '<div style="background:var(--blue-lt);border-radius:var(--r);padding:10px 14px;display:flex;justify-content:space-between;align-items:center;gap:8px">'+
           '<div>'+
             '<div style="font-size:14px;font-weight:700;color:var(--blue-dk)">'+dt+(nextJob.time?' · '+fmtTime(nextJob.time):'')+'</div>'+
@@ -858,7 +690,7 @@ function openJobSheet(clientId){
   } else if(bid&&st.stage==='signed'){
     schedHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">📅 Schedule</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('📅')+' Schedule</div>'+
         '<div style="background:var(--amber-lt);border-radius:var(--r);padding:10px 14px;display:flex;justify-content:space-between;align-items:center">'+
           '<div style="font-size:13px;font-weight:600;color:#856404">Signed — not yet scheduled</div>'+
           '<button onclick="this.closest(\'.zmodal-overlay\').remove();schedFromBid('+bid.id+')" style="padding:7px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Schedule →</button>'+
@@ -901,10 +733,10 @@ function openJobSheet(clientId){
     const bidLabel=showBidLabel?(b.addr||b.name||b.type||'Bid '+b.bid_date||''):'';
     return '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(bidLabel?'4px':'10px')+'">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">📦 Materials</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+svgIcon('📦')+' Materials</div>'+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();showSupplyList('+b.id+')" style="padding:5px 12px;border-radius:20px;border:none;background:#FFF0E8;color:#854F0B;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">Full supply list →</button>'+
       '</div>'+
-      (bidLabel?'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">📍 '+escHtml(bidLabel)+'</div>':'')+
+      (bidLabel?'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">'+svgIcon('📍')+' '+escHtml(bidLabel)+'</div>':'')+
       (paintRows||'<div style="font-size:12px;color:var(--text3)">No paint selected yet.</div>')+
     '</div>';
   }
@@ -917,10 +749,10 @@ function openJobSheet(clientId){
     if(!allScope.length)return'';
     const bidLabel=showBidLabel?(b.addr||b.name||b.type||''):'';
     return '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:'+(bidLabel?'4px':'8px')+'">🔧 Scope of work</div>'+
-      (bidLabel?'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">📍 '+escHtml(bidLabel)+'</div>':'')+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:'+(bidLabel?'4px':'8px')+'">'+svgIcon('🔧')+' Scope of work</div>'+
+      (bidLabel?'<div style="font-size:11px;color:var(--text3);margin-bottom:8px">'+svgIcon('📍')+' '+escHtml(bidLabel)+'</div>':'')+
       '<div style="display:flex;flex-wrap:wrap;gap:5px">'+
-        allScope.map(s=>'<span style="font-size:11px;background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:3px 9px;color:var(--text2)">'+s.icon+' '+s.label+'</span>').join('')+
+        allScope.map(s=>'<span style="font-size:11px;background:var(--bg2);border:1px solid var(--border2);border-radius:20px;padding:3px 9px;color:var(--text2)">'+svgIcon(s.icon)+' '+s.label+'</span>').join('')+
       '</div></div>';
   }
   const _multiWon=wonBids.length>1;
@@ -933,18 +765,19 @@ function openJobSheet(clientId){
   const existingPhotos=jobForPhotos?(jobForPhotos.photos||[]):[];
   const beforePhotos=existingPhotos.filter(p=>p.type==='before');
   const afterPhotos=existingPhotos.filter(p=>p.type==='after');
+  const progressPhotos=existingPhotos.filter(p=>p.type==='progress');
   let photosHtml='';
   if(photoJobId){
     const renderThumb=(p,idx,type)=>'<div style="position:relative;width:80px;height:80px;flex-shrink:0">'+
-      '<img src="'+p.data+'" style="width:80px;height:80px;object-fit:cover;border-radius:var(--r);border:2px solid '+(type==='before'?'var(--amber)':'var(--green-mid)')+'">'+
-      ''+
+      '<img src="'+p.data+'" style="width:80px;height:80px;object-fit:cover;border-radius:var(--r);border:2px solid '+(type==='before'?'var(--amber)':type==='after'?'var(--green-mid)':'var(--denim)')+'">'+
+      (p.caption?'<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);color:#fff;font-size:9px;font-weight:700;padding:2px 4px;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;border-radius:0 0 var(--r) var(--r)">'+escHtml(p.caption)+'</div>':'')+
     '</div>';
     const shareBtn=beforePhotos.length&&afterPhotos.length
-      ?'<button onclick="_shareBeforeAfterCard('+clientId+')" style="display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:8px 14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;justify-content:center">📤 Share before/after card</button>'
+      ?'<button onclick="_shareBeforeAfterCard('+clientId+')" style="display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:8px 14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;width:100%;justify-content:center">'+svgIcon('📤')+' Share before/after card</button>'
       :'';
     photosHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">📸 Job photos</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">'+svgIcon('📸')+' Job photos</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
           '<div>'+
             '<div style="font-size:11px;font-weight:700;color:var(--amber);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Before ('+beforePhotos.length+')</div>'+
@@ -961,6 +794,17 @@ function openJobSheet(clientId){
             '</div>'+
             '<label style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--green-mid);color:var(--green-mid);font-size:11px;font-weight:700;cursor:pointer;background:var(--green-lt)">'+
               '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'after\');this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ After</label>'+
+          '</div>'+
+        '</div>'+
+        '<div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border)">'+
+          '<div style="font-size:11px;font-weight:700;color:var(--denim);margin-bottom:6px;text-transform:uppercase;letter-spacing:.04em">Progress ('+progressPhotos.length+')</div>'+
+          '<div style="display:flex;gap:6px;flex-wrap:wrap;min-height:40px;margin-bottom:8px">'+
+            progressPhotos.map((p,i)=>renderThumb(p,i,'progress')).join('')+
+          '</div>'+
+          '<div style="display:flex;gap:6px">'+
+            '<input type="text" id="_progLbl-'+photoJobId+'" maxlength="60" placeholder="Label (optional) — e.g. Framing, Rough-in" style="flex:1;min-width:0;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
+            '<label style="display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--denim);color:var(--denim);font-size:11px;font-weight:700;cursor:pointer;background:var(--bg2);flex-shrink:0;white-space:nowrap">'+
+              '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'progress\',document.getElementById(\'_progLbl-'+photoJobId+'\').value);this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ Photo</label>'+
           '</div>'+
         '</div>'+
         shareBtn+
@@ -981,7 +825,7 @@ function openJobSheet(clientId){
     actualCostsHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'+
-          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">📊 Actual costs</div>'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+svgIcon('📊')+' Actual costs</div>'+
           '<button onclick="this.closest(\'.zmodal-overlay\').remove();showQuickExpenseModal('+clientId+',null)" style="padding:5px 12px;border-radius:20px;border:none;background:var(--bg2);color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Log cost</button>'+
         '</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:10px">'+
@@ -1012,7 +856,7 @@ function openJobSheet(clientId){
     actualCostsHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
-          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">📊 Job expenses</div>'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+svgIcon('📊')+' Job expenses</div>'+
           '<button onclick="this.closest(\'.zmodal-overlay\').remove();showQuickExpenseModal('+clientId+',null)" style="padding:5px 12px;border-radius:20px;border:none;background:var(--bg2);color:var(--text3);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Log cost</button>'+
         '</div>'+
         '<div style="font-size:14px;font-weight:800;color:#A32D2D">'+fmt(totalActual)+' logged</div>'+
@@ -1031,7 +875,7 @@ function openJobSheet(clientId){
     subsHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(jobSubs.length?'10px':'0')+'">'+
-          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">🔨 Subcontractors'+(totalOwed>0?' <span style="font-size:10px;font-weight:700;background:#FEE8E8;color:#991B1B;padding:1px 7px;border-radius:8px">'+fmt(totalOwed)+' owed</span>':'')+'</div>'+
+          '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+svgIcon('🔨')+' Subcontractors'+(totalOwed>0?' <span style="font-size:10px;font-weight:700;background:#FEE8E8;color:#991B1B;padding:1px 7px;border-radius:8px">'+fmt(totalOwed)+' owed</span>':'')+'</div>'+
           '<button onclick="openAssignSubModal('+subsJobId+','+clientId+')" style="padding:5px 12px;border-radius:20px;border:none;background:var(--bg2);color:var(--blue);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Assign sub</button>'+
         '</div>'+
         (jobSubs.length?
@@ -1061,7 +905,7 @@ function openJobSheet(clientId){
   if(visitNotesJobId){
     visitNotesHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">📝 Job notes</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('📝')+' Job notes</div>'+
         '<textarea id="visit-notes-ta" placeholder="Site conditions, instructions for crew, client requests, punch list..." '+
           'style="width:100%;min-height:75px;font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:none;box-sizing:border-box;line-height:1.5" '+
           'onblur="saveVisitNotes('+visitNotesJobId+',this.value)">'+escHtml(visitNotesVal)+'</textarea>'+
@@ -1084,7 +928,7 @@ function openJobSheet(clientId){
     }).join('');
     tasksHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">✅ Crew Tasks</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('✅')+' Crew Tasks</div>'+
         '<div id="_jtasks-list-'+latestJob.id+'">'+(_taskRows||'<div style="font-size:12px;color:var(--text3);padding:4px 0">No tasks — add one below</div>')+'</div>'+
         '<div style="display:flex;gap:8px;margin-top:10px">'+
           '<input id="_jtask-input-'+latestJob.id+'" placeholder="e.g. Call ahead 30 min before arrival" '+
@@ -1099,13 +943,13 @@ function openJobSheet(clientId){
   const jobActions=getClientJobs(clientId).filter(j=>j.eventType!=='estimate'&&j.status==='active');
   let actionsHtml=
     '<div style="padding:14px 20px">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">⚡ Actions</div>'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">'+svgIcon('⚡')+' Actions</div>'+
       '<div style="display:grid;gap:8px">'+
         (jobActions.length?
           jobActions.map(j=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();markJobDone('+j.id+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">✓ Mark job complete — '+escHtml(j.name||'')+'</button>').join('')
         :'')+
-        (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">📋 Change order — adjust scope or price</button>':'')+
-        '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text);text-align:left">📋 Full client record & history</button>'+
+        (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">'+svgIcon('📋')+' Change order — adjust scope or price</button>':'')+
+        '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text);text-align:left">'+svgIcon('📋')+' Full client record & history</button>'+
       '</div>'+
     '</div>';
 
@@ -1114,7 +958,7 @@ function openJobSheet(clientId){
   const allCOs=wonBids.flatMap(wb=>(wb.changeOrders||[]).map(co=>({...co,bidId:wb.id})));
   if(allCOs.length){
     coHistoryHtml='<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">📋 Change Orders</div>'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">'+svgIcon('📋')+' Change Orders</div>'+
       allCOs.map(co=>{
         const deltaColor=co.type==='add'?'var(--blue)':'#A32D2D';
         const deltaLabel=co.type==='add'?'+'+fmt(co.amount):'-'+fmt(co.amount);
@@ -1125,7 +969,7 @@ function openJobSheet(clientId){
             '<div style="display:flex;align-items:center;gap:6px">'+
               '<span style="font-size:13px;font-weight:800;color:'+deltaColor+'">'+deltaLabel+'</span>'+
               (co.signedAt?'<span style="font-size:10px;font-weight:700;background:#D1FAE5;color:#065F46;padding:2px 7px;border-radius:10px">Signed</span>':
-               co.status==='pending_client'?'<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">⏳ Awaiting client signature</span>':
+               co.status==='pending_client'?'<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">'+svgIcon('⏳')+' Awaiting client signature</span>':
                            '<span style="font-size:10px;font-weight:700;background:#FEF3C7;color:#92400E;padding:2px 7px;border-radius:10px">Unsigned</span>')+
             '</div>'+
           '</div>'+
@@ -1160,7 +1004,7 @@ function openJobSheet(clientId){
     const _coats=_paintBid.coats||2;
     paintOrderHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">🎨 Paint order</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">'+svgIcon('🎨')+' Paint order</div>'+
         '<div style="display:grid;grid-template-columns:1fr auto auto;gap:3px 10px;font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:6px">'+
           '<span>Product · Color · Finish</span><span style="text-align:right">Sq ft</span><span style="text-align:right">Cans</span>'+
         '</div>'+
@@ -1358,7 +1202,7 @@ function openPushBackModal(jobId,clientId,parentOverlay){
   const ov=document.createElement('div');ov.id='_pb-modal-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
-    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">📅 Push job back</div>'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📅')+' Push job back</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Currently: <strong>'+oldDate+'</strong></div>'+
     '<div class="f" style="margin-bottom:14px"><label>New start date</label>'+
       '<input id="pb-new-date" type="date" value="'+j.start+'" min="'+todayKey()+'" style="font-size:15px;padding:10px;font-weight:700" oninput="_updatePushBackMsg('+clientId+')"></div>'+
@@ -1420,15 +1264,16 @@ function sendOMWText(clientId){
   const msg='Hi '+firstName+', this is '+biz+' — I\'m on my way! I\'ll be there shortly.';
   window.location.href='sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg);
 }
-function addJobPhoto(jobId,input,type){
+function addJobPhoto(jobId,input,type,caption){
   const file=input.files[0];if(!file)return;
+  caption=(caption||'').trim().slice(0,60);
   const reader=new FileReader();
   reader.onload=async e=>{
     const j=jobs.find(x=>x.id===jobId);if(!j)return;
     if(!j.photos)j.photos=[];
-    j.photos.push({type,data:e.target.result,ts:new Date().toISOString()});
+    j.photos.push({type,data:e.target.result,ts:new Date().toISOString(),caption});
     saveAll();
-    showToast((type==='before'?'Before':'After')+' photo saved','📸');
+    showToast((type==='before'?'Before':type==='after'?'After':caption||'Progress')+' photo saved','📸');
     // Upload to gallery storage → push to global photos[] → refresh client hub
     if(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa){
       try{
@@ -1441,7 +1286,7 @@ function addJobPhoto(jobId,input,type){
           if(publicUrl){
             const c=clients.find(x=>x.id===j.client_id);
             const _photoClientName=c?c.name||'':'';
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type,caption:'',client_id:j.client_id||null,client_name:_photoClientName,job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type,caption,client_id:j.client_id||null,client_name:_photoClientName,job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
             saveAll();
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
@@ -1485,7 +1330,7 @@ async function _drainPhotoQueue(){
           if(publicUrl){
             const c=clients.find(x=>x.id===j.client_id);
             const _drainClientName=c?c.name||'':'';
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:p.type,caption:'',client_id:j.client_id||null,client_name:_drainClientName,job_id:j.id,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:p.type,caption:p.caption||'',client_id:j.client_id||null,client_name:_drainClientName,job_id:j.id,job_name:j.name||'',uploadedAt:new Date().toISOString()});
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
           delete p.pendingUpload;delete p._uploadExt;delete p._uploadMime;
@@ -1612,9 +1457,9 @@ function markJobDone(jobId){
         '<div id="adj-fields" style="display:none;margin-top:10px">'+
           '<div class="f" style="margin-bottom:8px">'+
             '<label style="font-size:11px;font-weight:700;color:var(--text3)">Amount ($)</label>'+
-            '<input type="number" id="adj-amount" min="0" step="5" placeholder="0" inputmode="decimal"'+
+            '<input type="text" id="adj-amount" placeholder="0" inputmode="decimal"'+
               ' style="font-size:22px;font-weight:700;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);text-align:center"'+
-              ' oninput="_previewAdjTotal('+jobId+')">'+
+              ' oninput="_fmtMoneyInput(this);_previewAdjTotal('+jobId+')">'+
           '</div>'+
           '<div id="adj-preview" style="font-size:13px;font-weight:700;text-align:center;min-height:20px;margin-bottom:8px"></div>'+
           '<div class="f">'+
@@ -1647,7 +1492,7 @@ function _previewAdjTotal(jobId){
   const j=jobs.find(x=>x.id===jobId);
   const bid=j?.bid_id?bids.find(b=>b.id===j.bid_id):null;
   if(!bid)return;
-  const amt=parseFloat(document.getElementById('adj-amount')?.value)||0;
+  const amt=_moneyVal('adj-amount');
   const preview=document.getElementById('adj-preview');
   if(!preview||!amt)return;
   const newTotal=_adjType==='increase'?bid.amount+amt:Math.max(0,bid.amount-amt);
@@ -1661,7 +1506,7 @@ async function confirmJobDone(jobId){
   if(!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)){zAlert('Enter a valid date.',{title:'Invalid date'});return;}
   const adjFields=document.getElementById('adj-fields');
   const adjOpen=adjFields&&adjFields.style.display!=='none';
-  const adjAmt=parseFloat(document.getElementById('adj-amount')?.value||0)||0;
+  const adjAmt=_moneyVal('adj-amount');
   const adjReason=(document.getElementById('adj-reason')?.value||'').trim();
   if(adjOpen&&_adjType){
     if(adjAmt<=0){
@@ -1743,6 +1588,88 @@ async function confirmJobDone(jobId){
   try{await _flushSaveNow();}catch(_e){}
 }
 function confirmMarkComplete(jobId){confirmJobDone(jobId);}
+
+// Post-job debrief — shown when marking job complete (only if the linked bid
+// has scope hours tracked; jobs with no roomScopeMap skip straight to complete)
+function showJobDebrief(jobId){
+  const job=jobs.find(j=>j.id===jobId);if(!job)return;
+  const bid=bids.find(b=>b.id===job.bid_id);
+  const roomScope=bid?.roomScopeMap||{};
+  const scopeRooms=Object.entries(roomScope).filter(([r,sc])=>Object.values(sc).some(e=>e&&e.active));
+  if(!scopeRooms.length){confirmMarkComplete(jobId);return;}
+  const ov=document.createElement('div');ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.style.maxHeight='88vh';box.style.overflowY='auto';
+  let debriefRows='';
+  scopeRooms.forEach(([room,sc])=>{
+    const items=SCOPE_ITEMS.filter(s=>sc[s.id]&&sc[s.id].active);
+    if(!items.length)return;
+    debriefRows+=`<div style="margin-bottom:12px">
+      <div style="font-size:11px;font-weight:800;color:var(--text3);text-transform:uppercase;margin-bottom:6px">${escHtml(room)}</div>
+      ${items.map(s=>`<div style="display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid var(--border2)">
+        <div style="font-size:13px;flex:1">${s.icon?svgIcon(s.icon):''} ${s.label}</div>
+        <input type="number" min="0" step="0.25" placeholder="hrs" inputmode="decimal"
+          data-room="${encodeURIComponent(room)}" data-scope="${s.id}"
+          style="width:64px;padding:5px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:13px;text-align:center">
+      </div>`).join('')}
+    </div>`;
+  });
+  box.innerHTML=
+    `<div style="font-size:17px;font-weight:800;margin-bottom:4px">How'd the job go?</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6">Optional — enter actual hours for each task. Over time this builds your personal benchmarks so future estimates get sharper. Skip anything you didn't track.</div>
+    ${debriefRows}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
+      <button onclick="this.closest('.zmodal-overlay').remove();confirmMarkComplete(${jobId})"
+        style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Skip</button>
+      <button onclick="saveDebriefAndComplete(${jobId},this)"
+        style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Save & complete ✓</button>
+    </div>`;
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();confirmMarkComplete(jobId);}});
+  // Pre-fill hours from clock entries
+  const breakdown=getJobScopeBreakdown(jobId);
+  if(Object.keys(breakdown).length){
+    box.querySelectorAll('input[data-scope]').forEach(inp=>{
+      const sid=inp.dataset.scope;
+      const mins=breakdown[sid]||0;
+      if(mins>0&&!inp.value){
+        inp.value=Math.round(mins/60*4)/4; // round to nearest 0.25
+      }
+    });
+  }
+}
+
+function saveDebriefAndComplete(jobId,btn){
+  const box=btn.closest('.zmodal');
+  const inputs=box.querySelectorAll('input[data-room][data-scope]');
+  let totalActualHrs=0;
+  inputs.forEach(inp=>{
+    const room=decodeURIComponent(inp.dataset.room);
+    const scopeId=inp.dataset.scope;
+    const hrs=parseFloat(inp.value)||0;
+    if(!hrs)return;
+    totalActualHrs+=hrs;
+    if(!S.scopeHistory)S.scopeHistory={};
+    if(!S.scopeHistory[scopeId])S.scopeHistory[scopeId]=[];
+    S.scopeHistory[scopeId].push({hrs,ts:Date.now()});
+    if(S.scopeHistory[scopeId].length>20)S.scopeHistory[scopeId]=S.scopeHistory[scopeId].slice(-20);
+  });
+  if(totalActualHrs>0){const j=jobs.find(x=>x.id===jobId);if(j)j.actualHours=Math.round(totalActualHrs*10)/10;}
+  saveAll();
+  // Upload actual hours to crowdsourced benchmark pool
+  const _debJob=jobs.find(x=>x.id===jobId);
+  const _debBid=_debJob?.bid_id?bids.find(b=>b.id===_debJob.bid_id):null;
+  const _debTrade=_debBid?.trade_type||'painting';
+  const _benchRows=[];
+  inputs.forEach(inp=>{
+    const scopeId=inp.dataset.scope;
+    const hrs=parseFloat(inp.value)||0;
+    if(hrs>0&&_user?.id)_benchRows.push({user_id:_user.id,scope_id:scopeId,trade:_debTrade,actual_hrs:hrs});
+  });
+  if(typeof _submitScopeBenchmarks==='function')_submitScopeBenchmarks(_benchRows);
+  btn.closest('.zmodal-overlay').remove();
+  confirmMarkComplete(jobId);
+}
 function showReviewRequestPrompt(clientId){
   const c=getClientById(clientId);if(!c)return;
   const firstName=c.name.split(' ')[0];
@@ -1751,13 +1678,13 @@ function showReviewRequestPrompt(clientId){
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
-    '<div style="text-align:center;font-size:22px;margin-bottom:8px">⭐</div>'+
+    '<div style="text-align:center;font-size:22px;margin-bottom:8px">'+svgIcon('⭐',{size:22})+'</div>'+
     '<div class="zmodal-title" style="text-align:center">Request a review?</div>'+
     '<div style="font-size:13px;color:var(--text2);margin-bottom:12px;line-height:1.5">Send '+firstName+' a text asking for a Google review while the job is fresh.</div>'+
     '<textarea id="review-msg-text" style="width:100%;min-height:90px;font-size:12px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:none;box-sizing:border-box">'+escHtml(msg)+'</textarea>'+
     '<div class="zmodal-btns" style="gap:8px;margin-top:12px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;flex:1">Skip</button>'+
-      '<button onclick="_sendReviewRequest(\''+c.phone+'\');this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:none;background:#FFC107;color:#1a1a1a;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;flex:1">⭐ Send text</button>'+
+      '<button onclick="_sendReviewRequest(\''+c.phone+'\');this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:none;background:#FFC107;color:#1a1a1a;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit;flex:1">'+svgIcon('⭐')+' Send text</button>'+
     '</div>';
   overlay.appendChild(box);
   document.body.appendChild(overlay);

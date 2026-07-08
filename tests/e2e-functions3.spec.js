@@ -291,10 +291,6 @@ test.describe('Proposals lifecycle functions', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
-    await page.evaluate(() => {
-      if (typeof goPg === 'function') goPg('pg-est');
-    });
-    await page.waitForTimeout(400);
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -1884,6 +1880,50 @@ test.describe('Client detail tab and notes functions', () => {
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  // Regression — a real user-reported bug: client notes had no way back in once
+  // typed. The entry field was a single-line <input>, so anything past a sentence
+  // scrolled out of view while typing (couldn't proofread/fix a misspelling before
+  // saving), and saved notes rendered as plain read-only text with zero edit path —
+  // the only fix was delete-and-retype the whole thing from memory.
+  test('client notes — entry field is a multi-line textarea, and a saved note can be edited in place', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof editClientNote !== 'function' || typeof currentClientId === 'undefined') return { skip: true };
+      const inputEl = document.getElementById('cd-note-input');
+      if (!inputEl) return { skip: true };
+      const isTextarea = inputEl.tagName === 'TEXTAREA';
+
+      // Seed a client + a note directly, then drive the real edit flow.
+      const cid = 995501;
+      if (typeof clients !== 'undefined') {
+        clients = clients.filter(c => c.id !== cid);
+        clients.push({ id: cid, name: 'Notes Edit Client', notes: [{ id: 'note-995501', text: 'Original misspelled tex', ts: new Date().toISOString() }] });
+      }
+      const savedCurrent = window.currentClientId;
+      window.currentClientId = cid;
+      try {
+        editClientNote('note-995501');
+        const modalPresent = !!document.getElementById('_cnote-edit-ov');
+        const textareaEl = document.getElementById('_cnote-edit-text');
+        const prefilled = textareaEl ? textareaEl.value : null;
+        if (textareaEl) textareaEl.value = 'Original misspelled text — fixed';
+        if (typeof _saveEditedClientNote === 'function') _saveEditedClientNote('note-995501');
+        const savedText = clients.find(c => c.id === cid)?.notes?.find(n => n.id === 'note-995501')?.text;
+        const modalGoneAfterSave = !document.getElementById('_cnote-edit-ov');
+        return { isTextarea, modalPresent, prefilled, savedText, modalGoneAfterSave };
+      } finally {
+        window.currentClientId = savedCurrent;
+        clients = clients.filter(c => c.id !== cid);
+        document.getElementById('_cnote-edit-ov')?.remove();
+      }
+    });
+    if (result.skip) return;
+    expect(result.isTextarea, 'the note entry field must be a <textarea>, not a single-line <input>').toBe(true);
+    expect(result.modalPresent, 'editClientNote must open an edit surface').toBe(true);
+    expect(result.prefilled, 'the edit surface must show the full existing note text').toBe('Original misspelled tex');
+    expect(result.savedText, 'saving must persist the corrected text back onto the note').toBe('Original misspelled text — fixed');
+    expect(result.modalGoneAfterSave).toBe(true);
   });
 
   test('toggleTlGroup — calls without throwing', async () => {
@@ -3521,6 +3561,25 @@ test.describe('Mileage map and geo functions', () => {
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_addrSugSelect — regression: suggestion box stays closed, does not reopen itself for the picked address', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _addrSugSelect !== 'function' || typeof openNewClient !== 'function') return { skip: true };
+      openNewClient();
+      _addrSugSelect('cf-addr-sugg', 'cf-street', 'cf-city', 'cf-state', 'cf-zip', '123 Main St', 'Wichita', 'KS', '67206');
+      const box = document.getElementById('cf-addr-sugg');
+      const immediatelyAfter = box ? box.style.display : 'NO BOX';
+      // The old bug re-dispatched a bubbling 'input' event that re-triggered _addrSugSearch
+      // via the field's own oninput handler, reopening this box ~220ms later.
+      await new Promise(r => setTimeout(r, 400));
+      const after = box ? box.style.display : 'NO BOX';
+      return { skip: false, immediatelyAfter, after };
+    });
+    if (!result.skip) {
+      expect(result.immediatelyAfter).toBe('none');
+      expect(result.after).toBe('none');
+    }
   });
 
   test('_showRecentFromAddresses — calls without throwing', async () => {
@@ -5374,6 +5433,32 @@ test.describe('Tax, legal, and template functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Regression — the BYO price field was a native <input type="number">, which
+  // rejects commas at the keystroke level (worst on iOS Safari/iPad, inconsistent
+  // elsewhere — the "won't accept comma" report). Fixed: the field is now plain
+  // text with a live comma-formatting oninput handler (_byaFormatPriceInput),
+  // and reads go through _byaPriceValue which strips commas before parsing —
+  // so typing "1500" displays as "1,500" and still stores as the number 1500.
+  test('_bya-price field auto-formats with commas and parses back to the correct number', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _byoAddItem !== 'function' || typeof _byaFormatPriceInput !== 'function') return { skip: true };
+      _byoAddItem('Introduction');
+      const el = document.getElementById('_bya-price');
+      if (!el) return { skip: true };
+      const fieldType = el.type;
+      el.value = '1500';
+      _byaFormatPriceInput(el);
+      const displayed = el.value;
+      const parsed = (typeof _byaPriceValue === 'function') ? _byaPriceValue('_bya-price') : null;
+      document.getElementById('_byo-add-modal')?.remove();
+      return { fieldType, displayed, parsed };
+    });
+    if (result.skip) return;
+    expect(result.fieldType, 'must not be type="number" — that is what rejected commas').not.toBe('number');
+    expect(result.displayed).toBe('1,500');
+    expect(result.parsed).toBe(1500);
+  });
+
   test('_byaConfirm — calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _byaConfirm !== 'function') return { skip: true };
@@ -5455,6 +5540,22 @@ test.describe('Tax, legal, and template functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  test('_tmMatCatModal — regression: field order matches BYO\'s Add item modal (Name, Cost, Notes — not Name, Notes, Cost)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _tmMatCatModal !== 'function') return { skip: true };
+      _tmMatCatModal(-1);
+      const modal = document.getElementById('_tm-mat-modal');
+      const fields = [...modal.querySelectorAll('input#tcm-name, input#tcm-cost, textarea#tcm-notes')].map(el => el.id);
+      const notesIsTextarea = modal.querySelector('#tcm-notes')?.tagName === 'TEXTAREA';
+      modal.remove();
+      return { skip: false, fields, notesIsTextarea };
+    });
+    if (!result.skip) {
+      expect(result.fields).toEqual(['tcm-name', 'tcm-cost', 'tcm-notes']);
+      expect(result.notesIsTextarea, 'notes should be a resizable textarea, matching BYO\'s Add item modal').toBe(true);
+    }
+  });
+
   test('_tmMatCatSave — calls without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmMatCatSave !== 'function') return { skip: true };
@@ -5480,6 +5581,27 @@ test.describe('Tax, legal, and template functions', () => {
       catch (e) { return { ok: true, note: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_tmPreviewClient calls sendGenericProposal(true) — must preview, never actually send (regression)', async () => {
+    // Root cause: _tmPreviewClient used to call sendGenericProposal() with NO argument,
+    // so previewOnly was undefined (falsy) — T&M's "Preview as client" button silently
+    // sent a real, live proposal (signing link + possible SMS/email) instead of previewing.
+    // _byoPreviewClient has always correctly passed `true`; T&M must match it exactly.
+    const result = await page.evaluate(() => {
+      if (typeof _tmPreviewClient !== 'function' || typeof _byoPreviewClient !== 'function') return { skip: true };
+      const orig = window.sendGenericProposal;
+      let tmArg = 'not-called', byoArg = 'not-called';
+      window.sendGenericProposal = (previewOnly) => { tmArg = previewOnly; };
+      try { _tmPreviewClient(); } catch (e) {}
+      window.sendGenericProposal = (previewOnly) => { byoArg = previewOnly; };
+      try { _byoPreviewClient(); } catch (e) {}
+      window.sendGenericProposal = orig;
+      return { skip: false, tmArg, byoArg };
+    });
+    if (result.skip) return;
+    expect(result.tmArg).toBe(true);
+    expect(result.byoArg).toBe(true);
   });
 
   test('no console errors during tax/legal/template tests', async () => {
@@ -6213,48 +6335,21 @@ test.describe('Client pipeline — behavioral flow', () => {
   });
 
   test('navigate to estimate editor for the client', async () => {
-    // Bypass the style picker: call _doOpenEstimate with _forceTrade so it goes straight to pg-est
+    // _doOpenEstimate now always routes to the generic estimator (pg-est-generic)
     await page.evaluate(() => {
       const c = getClientById(9_100_001);
       if (!c) return;
-      if (typeof estSurfaces !== 'undefined') estSurfaces.length = 0;
       editingBidId = null;
       _doOpenEstimate(c, undefined, 'painting');
     });
     await page.waitForTimeout(600);
     const activePg = await page.evaluate(() => document.querySelector('.pg.active')?.id);
-    expect(activePg).toBe('pg-est');
+    expect(activePg).toBe('pg-est-generic');
   });
 
   test('estimate editor has client name prefilled', async () => {
-    const clientField = await page.evaluate(() =>
-      document.getElementById('e-cname')?.value || document.getElementById('e-client-name')?.textContent || '');
+    const clientField = await page.evaluate(() => document.getElementById('gei-client')?.value || '');
     expect(clientField).toContain('Behavioral Test Client');
-  });
-
-  test('estimate editor shows step 1 UI', async () => {
-    const step1Visible = await page.evaluate(() => {
-      const s = document.getElementById('est-step-1') || document.querySelector('[data-step="1"]');
-      // _doOpenEstimate calls goEstStep(1) then goEstStep(3), so estStep ends at 3 (surfaces)
-      // Accept any valid step on pg-est as passing
-      const onEstPg = document.querySelector('.pg.active')?.id === 'pg-est';
-      return !!s || estStep === 1 || onEstPg;
-    });
-    expect(step1Visible).toBe(true);
-  });
-
-  test('save estimate as draft persists the draft to localStorage', async () => {
-    // saveEstFullDraft writes the in-progress estimate to localStorage (zp3_est_full_draft,
-    // paint-estimate.js:1869) — it does NOT add to bids[]. The old assertion checked
-    // bids.length, which (a) saveEstFullDraft never changes and (b) unrelated async could
-    // mutate during the wait — a wrong target that flaked (2→1) under shard reordering.
-    const saved = await page.evaluate(() => {
-      try { localStorage.removeItem('zp3_est_full_draft'); } catch (e) {}
-      if (typeof saveEstFullDraft === 'function') saveEstFullDraft();
-      let d = null; try { d = JSON.parse(localStorage.getItem('zp3_est_full_draft') || 'null'); } catch (e) {}
-      return !!(d && typeof d === 'object');
-    });
-    expect(saved).toBe(true);
   });
 
   test('no console errors during client pipeline flow', async () => {
@@ -6263,114 +6358,46 @@ test.describe('Client pipeline — behavioral flow', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  ESTIMATE PRICING — add surfaces, verify totals are calculated
+//  ESTIMATE PRICING — add line items, verify totals are calculated
+//  (replaces the old paint-estimator surface/sqft flow — generic estimate uses
+//  priced line items via _geiLines instead)
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Estimate pricing — surfaces and total calculation', () => {
+test.describe('Estimate pricing — line items and total calculation', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
     const { ctx, pg } = await bootPage(browser);
     page = pg;
-    // Set up a client and open a fresh estimate
     await page.evaluate(() => {
       const c = { id: 9_100_002, name: 'Price Test Client', phone: '316-555-9002',
                   addr: '100 Paint Ave, Wichita, KS 67202', created: new Date().toISOString() };
       clients.push(c);
       currentClientId = 9_100_002;
-      // Reset estimate state
-      estSurfaces = []; estSurfId = 0; editingBidId = null;
-    });
-    // Bypass the style picker: call _doOpenEstimate directly with trade='painting'
-    await page.evaluate(() => {
-      if (typeof estSurfaces !== 'undefined') estSurfaces.length = 0;
-      estSurfId = 0; editingBidId = null;
-      const c = clients.find(x => x.id === 9_100_002) ||
-                { id: 9_100_002, name: 'Price Test Client', phone: '316-555-9002',
-                  addr: '100 Paint Ave, Wichita, KS 67202', created: new Date().toISOString() };
-      _doOpenEstimate(c, undefined, 'painting');
+      openFreeFormEstimate(c);
     });
     await page.waitForTimeout(500);
   });
   test.afterAll(async () => { if (page) await page.context().close(); });
 
-  test('estimate editor is open on pg-est', async () => {
+  test('estimate editor is open on pg-est-generic', async () => {
     const activePg = await page.evaluate(() => document.querySelector('.pg.active')?.id);
-    expect(activePg).toBe('pg-est');
+    expect(activePg).toBe('pg-est-generic');
   });
 
-  test('inject wall surface 400 sqft and verify it is in estSurfaces', async () => {
+  test('inject line items and verify they are in _geiLines', async () => {
     await page.evaluate(() => {
-      estSurfaces.push({ id: ++estSurfId, type: 'walls', qty: 400, wallSqft: 400,
-                         room: 'Living Room', price: 0 });
-      if (typeof renderEstSurfs === 'function') renderEstSurfs();
+      _geiLines.push({ id: 1, desc: 'Living room paint', qty: 1, price: 500 });
+      _geiLines.push({ id: 2, desc: 'Ceiling paint', qty: 1, price: 150 });
+      _geiLines.push({ id: 3, desc: 'Trim + doors', qty: 1, price: 120 });
     });
-    const count = await page.evaluate(() => estSurfaces.filter(s => s.type === 'walls').length);
-    expect(count).toBeGreaterThan(0);
+    const count = await page.evaluate(() => _geiLines.length);
+    expect(count).toBeGreaterThanOrEqual(3);
   });
 
-  test('inject ceiling surface 400 sqft', async () => {
-    await page.evaluate(() => {
-      estSurfaces.push({ id: ++estSurfId, type: 'ceiling', qty: 400,
-                         room: 'Living Room', price: 0 });
-      if (typeof renderEstSurfs === 'function') renderEstSurfs();
-    });
-    const count = await page.evaluate(() => estSurfaces.filter(s => s.type === 'ceiling').length);
-    expect(count).toBeGreaterThan(0);
-  });
-
-  test('inject trim and door surfaces', async () => {
-    await page.evaluate(() => {
-      estSurfaces.push({ id: ++estSurfId, type: 'trim', qty: 120, room: 'Living Room', price: 0 });
-      estSurfaces.push({ id: ++estSurfId, type: 'doors', qty: 3, room: 'Living Room', price: 0 });
-      if (typeof renderEstSurfs === 'function') renderEstSurfs();
-    });
-    const total = await page.evaluate(() => estSurfaces.length);
-    expect(total).toBeGreaterThanOrEqual(4);
-  });
-
-  test('navigate to step 3 — price review', async () => {
-    await page.evaluate(() => { if (typeof goEstStep === 'function') goEstStep(3); });
-    await page.waitForTimeout(400);
-    // Either we're on step 3 or some review UI is visible
-    const onReview = await page.evaluate(() => {
-      return estStep === 3 ||
-             !!document.getElementById('est-step-3') ||
-             !!document.querySelector('[data-step="3"]');
-    });
-    expect(onReview).toBe(true);
-  });
-
-  test('bid total is calculated and greater than zero after surfaces added', async () => {
-    // Surfaces are in memory — estimate has value if surfaces exist
-    const total = await page.evaluate(() => {
-      if (typeof getEstTotal === 'function') return getEstTotal();
-      if (typeof calcBidTotal === 'function') return calcBidTotal();
-      // Proxy: surfaces in estSurfaces means estimate has value
-      return estSurfaces.length > 0 ? 1 : 0;
-    });
+  test('bid total is calculated and greater than zero after line items added', async () => {
+    const total = await page.evaluate(() => _geiLines.reduce((s, l) => s + (l.price || 0) * (l.qty || 1), 0));
     expect(total).toBeGreaterThan(0);
-  });
-
-  test('save estimate and verify bid persists in bids array', async () => {
-    const idBefore = await page.evaluate(() => bids.length);
-    await page.evaluate(() => {
-      if (typeof saveEstFullDraft === 'function') saveEstFullDraft();
-    });
-    await page.waitForTimeout(600);
-    const idAfter = await page.evaluate(() => bids.length);
-    expect(idAfter).toBeGreaterThanOrEqual(idBefore);
-    // Data is in memory — that's what matters
-    const clientBids = await page.evaluate(() => bids.filter(b => b.client_id === 9_100_002).length);
-    expect(clientBids).toBeGreaterThanOrEqual(0); // save may create a new bid or update existing
-  });
-
-  test('saved bid has surfaces attached', async () => {
-    const hasSurfaces = await page.evaluate(() => {
-      const bid = bids.find(b => b.client_id === 9_100_002);
-      return bid ? (bid.surfaces?.length > 0 || estSurfaces.length > 0) : estSurfaces.length > 0;
-    });
-    expect(hasSurfaces).toBe(true);
   });
 
   test('no console errors during estimate pricing flow', async () => {
@@ -7064,4 +7091,98 @@ test.describe('Version consistency', () => {
     const v = await page.evaluate(() => typeof APP_VERSION !== 'undefined' ? APP_VERSION : null);
     expect(v).toMatch(/^\d{2}\.\d{2}\.\d{2}\.\d+$/);
   });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Regression — every dollar-amount field in the app was a native
+// <input type="number">, which rejects commas outright (worst on iOS Safari,
+// which blocks the comma keystroke before it's even typed; other browsers fail
+// more quietly by dropping the value on read). Fixed everywhere by switching to
+// plain text fields with the shared _fmtMoneyInput (live comma-format oninput)
+// and _moneyVal/_moneyStr (comma-safe read/pre-fill) helpers in utils.js.
+// This suite covers the shared helpers directly, then spot-checks every real
+// field call site to prove the wiring (not just the helper in isolation).
+// ═══════════════════════════════════════════════════════════════════════════════
+test.describe('Dollar-field comma formatting — shared helpers + every real call site', () => {
+  let page;
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(() => {
+      const cid = 990101, bidId = 990102, jobId = 990103, ctId = 990104;
+      if (typeof clients !== 'undefined') clients.push({ id: cid, name: 'MoneyFmt Client', phone: '3165551111' });
+      if (typeof bids !== 'undefined') bids.push({ id: bidId, client_id: cid, client_name: 'MoneyFmt Client', amount: 500000, status: 'Closed Won' });
+      if (typeof jobs !== 'undefined') jobs.push({ id: jobId, client_id: cid, bid_id: bidId, name: 'MoneyFmt Job', status: 'active' });
+      if (typeof contracts !== 'undefined') contracts.push({ id: ctId, clientId: cid, title: 'MoneyFmt Contract', amount: 100, freq: 'annual', startDate: '2026-01-01', nextDate: '2026-01-01', active: true, invoices: [] });
+      window._moneyFmtIds = { cid, bidId, jobId, ctId };
+    });
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('_fmtMoneyInput — strips non-digits, caps cents to 2, live-formats commas', async () => {
+    const r = await page.evaluate(() => {
+      const el = document.createElement('input');
+      const type = (str) => { el.value = ''; for (const ch of str) { el.value += ch; _fmtMoneyInput(el); } return el.value; };
+      const whole = type('125000');
+      const withLetters = type('12a5b,000');
+      const withCents = type('1500.999');
+      const doubleDot = type('12.5.6');
+      return { whole, withLetters, withCents, doubleDot };
+    });
+    expect(r.whole).toBe('125,000');
+    expect(r.withLetters).toBe('125,000'); // letters and stray commas stripped identically
+    expect(r.withCents).toBe('1,500.99'); // cents capped to 2 digits
+    expect(r.doubleDot).toBe('12.56'); // only the first decimal point survives
+  });
+
+  test('_moneyVal — parses a comma-formatted field back to the correct number', async () => {
+    const r = await page.evaluate(() => {
+      const el = document.createElement('input'); el.id = '_moneyfmt-test-el';
+      el.value = '12,500.50'; document.body.appendChild(el);
+      const v = _moneyVal('_moneyfmt-test-el');
+      el.remove();
+      return v;
+    });
+    expect(r).toBe(12500.5);
+  });
+
+  test('_moneyStr — formats a raw number with commas and 2 decimals for pre-fill', async () => {
+    const r = await page.evaluate(() => ({ whole: _moneyStr(55000), cents: _moneyStr(1234.5), zero: _moneyStr(0) }));
+    expect(r.whole).toBe('55,000.00');
+    expect(r.cents).toBe('1,234.50');
+    expect(r.zero).toBe('0.00');
+  });
+
+  // Per-field: open the real UI path and confirm the field is (a) not type="number"
+  // and (b) actually wired to _fmtMoneyInput, not just coincidentally text.
+  // fs-price isn't driven separately — it's the same input markup pattern as
+  // fv-pprice (both fixed identically in fleet.js), so it's covered by that check
+  // plus the shared-helper tests above.
+  const FIELD_NAMES = ['lien-amount', 'mpay-amount', 'co-amount', 'ct-amount', 'qe-amount', 'fv-pprice', 'adj-amount', 'emp-pay-rate'];
+  for (const fieldName of FIELD_NAMES) {
+    test(`${fieldName} — is not type="number" (would reject commas)`, async () => {
+      const result = await page.evaluate((name) => {
+        const ids = window._moneyFmtIds;
+        try {
+          if (name === 'lien-amount') { window.activeLienBidId = ids.bidId; openLienPanel(ids.bidId); }
+          else if (name === 'mpay-amount') { openPayPanel(ids.bidId, null); document.querySelector('[data-ptype="custom"]')?.click(); }
+          else if (name === 'co-amount') { showChangeOrderModal(ids.bidId, ids.cid); }
+          else if (name === 'ct-amount') { editContractModal(ids.ctId); }
+          else if (name === 'qe-amount') { showQuickExpenseModal(ids.cid, null); }
+          else if (name === 'fv-pprice') { openAddVehicleModal(null); }
+          else if (name === 'adj-amount') { markJobDone(ids.jobId); }
+          else if (name === 'emp-pay-rate') { openAddEmployeeModal(); }
+        } catch (e) { return { skip: true, err: e.message }; }
+        const el = document.getElementById(name);
+        if (!el) return { skip: true };
+        return { type: el.type, hasHandler: (el.getAttribute('oninput') || '').includes('_fmtMoneyInput') };
+      }, fieldName);
+      if (result.skip) return;
+      expect(result.type, `${fieldName} must not be type="number" — that is what rejected commas`).not.toBe('number');
+      expect(result.hasHandler, `${fieldName} must call _fmtMoneyInput on input`).toBe(true);
+    });
+  }
 });

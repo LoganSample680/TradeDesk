@@ -924,24 +924,16 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('style=scope — calls _doOpenScopeEstimate when state has client', async () => {
+    test('style=scope — no longer a valid style, does not throw and calls nothing', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = { c: clients.find(x => x.id === 77702), overrideAddr: null };
-        let scopeCalled = false;
-        const orig = window._doOpenScopeEstimate;
-        window._doOpenScopeEstimate = () => { scopeCalled = true; };
         const ov = document.createElement('div');
         ov.id = '_style-pick-ov';
         document.body.appendChild(ov);
-        try {
-          _pickEstStyle('scope');
-          if (orig) window._doOpenScopeEstimate = orig;
-          return { ok: true, scopeCalled };
-        }
+        try { _pickEstStyle('scope'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.scopeCalled).toBe(true);
     });
 
     test('style=tm — calls openTMEstimate', async () => {
@@ -996,38 +988,15 @@ test.describe('clients.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // _doOpenScopeEstimate
+  // _doOpenScopeEstimate — Scope & Price mode removed; only T&M and BYO remain
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_doOpenScopeEstimate', () => {
-    test('null client — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        const orig = window._doOpenEstimate;
-        window._doOpenEstimate = () => {};
-        try { _doOpenScopeEstimate(null, null); window._doOpenEstimate = orig; return { ok: true }; }
-        catch (e) { window._doOpenEstimate = orig; return { ok: false, err: e.message }; }
+    test('function was removed with the Scope & Price estimate mode', async () => {
+      const exists = await page.evaluate(() => {
+        let val; try { val = eval('_doOpenScopeEstimate'); } catch (e) { val = undefined; }
+        return typeof val === 'function';
       });
-      expect(r.ok).toBe(true);
-    });
-
-    test('resets _geiIsTM and _geiIsFreeForm flags', async () => {
-      const r = await page.evaluate(() => {
-        window._geiIsTM = true;
-        window._geiIsFreeForm = true;
-        const orig = window._doOpenEstimate;
-        window._doOpenEstimate = () => {};
-        const c = clients.find(x => x.id === 77702);
-        try {
-          _doOpenScopeEstimate(c, null);
-          const isTM = window._geiIsTM;
-          const isFF = window._geiIsFreeForm;
-          window._doOpenEstimate = orig;
-          return { ok: true, isTM, isFF };
-        }
-        catch (e) { window._doOpenEstimate = orig; return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.isTM).toBe(false);
-      expect(r.isFF).toBe(false);
+      expect(exists).toBe(false);
     });
   });
 

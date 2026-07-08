@@ -45,7 +45,7 @@ function openNewContractModal(clientId){
           CONTRACT_FREQ.map(f=>'<option value="'+f.id+'">'+f.label+'</option>').join('')+
         '</select></div>'+
       '<div class="f"><label>Amount ($)</label>'+
-        '<input id="ct-amount" type="number" min="0" step="0.01" placeholder="0.00" style="font-size:15px;padding:10px;font-weight:700"></div>'+
+        '<input id="ct-amount" type="text" inputmode="decimal" placeholder="0.00" oninput="_fmtMoneyInput(this)" style="font-size:15px;padding:10px;font-weight:700"></div>'+
     '</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Start date</label>'+
@@ -68,7 +68,7 @@ function openNewContractModal(clientId){
 function _ctSaveNew(clientId){
   const title=(document.getElementById('ct-title')?.value||'').trim();
   if(!title)return showToast('Enter a service title','⚠️');
-  const amount=parseFloat(document.getElementById('ct-amount')?.value||0)||0;
+  const amount=_moneyVal('ct-amount');
   const freq=document.getElementById('ct-freq')?.value||'annual';
   const start=document.getElementById('ct-start')?.value||todayKey();
   const next=document.getElementById('ct-next')?.value||todayKey();
@@ -99,7 +99,7 @@ function editContractModal(ctId){
           CONTRACT_FREQ.map(f=>'<option value="'+f.id+'"'+(ct.freq===f.id?' selected':'')+'>'+f.label+'</option>').join('')+
         '</select></div>'+
       '<div class="f"><label>Amount ($)</label>'+
-        '<input id="ct-amount" type="number" min="0" step="0.01" value="'+(ct.amount||'')+'" style="font-size:15px;padding:10px;font-weight:700"></div>'+
+        '<input id="ct-amount" type="text" inputmode="decimal" value="'+(ct.amount?_moneyStr(ct.amount):'')+'" oninput="_fmtMoneyInput(this)" style="font-size:15px;padding:10px;font-weight:700"></div>'+
     '</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Start date</label>'+
@@ -113,7 +113,7 @@ function editContractModal(ctId){
       '<textarea id="ct-notes" style="font-size:13px;padding:10px;min-height:60px;resize:none;line-height:1.5;width:100%;box-sizing:border-box;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+escHtml(ct.notes||'')+'</textarea></div>'+
     // Mark this service done → advances nextDate to the next cycle, which drops the
     // contract off the dashboard "Maintenance Due" card (it filters nextDate<=today+14).
-    '<button onclick="logContractVisit('+ctId+');document.getElementById(\'_ct-modal-ov\').remove();" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;touch-action:manipulation">✓ Log service — advance to next visit</button>'+
+    '<button onclick="logContractVisit('+ctId+');document.getElementById(\'_ct-modal-ov\').remove();" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;touch-action:manipulation">'+svgIcon('✓',{size:14})+' Log service — advance to next visit</button>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
       ''+
       '<button onclick="document.getElementById(\'_ct-modal-ov\').remove()" style="padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
@@ -127,7 +127,7 @@ function _ctUpdate(ctId){
   const ct=contracts.find(x=>x.id===ctId);if(!ct)return;
   ct.title=(document.getElementById('ct-title')?.value||'').trim()||ct.title;
   ct.freq=document.getElementById('ct-freq')?.value||ct.freq;
-  ct.amount=parseFloat(document.getElementById('ct-amount')?.value||0)||0;
+  ct.amount=_moneyVal('ct-amount');
   ct.startDate=document.getElementById('ct-start')?.value||ct.startDate;
   ct.nextDate=document.getElementById('ct-next')?.value||ct.nextDate;
   ct.notes=document.getElementById('ct-notes')?.value||'';
@@ -177,7 +177,7 @@ function renderClientContracts(clientId){
   if(!cts.length){
     el.innerHTML=
       '<div style="text-align:center;padding:40px 20px;color:var(--text3)">'+
-        '<div style="font-size:36px;margin-bottom:10px">🔄</div>'+
+        '<div style="font-size:36px;margin-bottom:10px">'+svgIcon('🔄',{size:36})+'</div>'+
         '<div style="font-size:14px;font-weight:700;margin-bottom:6px">No maintenance contracts yet</div>'+
         '<div style="font-size:12px;margin-bottom:16px">Turn one-time clients into recurring revenue with annual or seasonal service agreements.</div>'+
         '<button onclick="openNewContractModal('+clientId+')" class="btn btn-p">+ New contract</button>'+
@@ -222,8 +222,8 @@ function renderClientContracts(clientId){
         '</div>'+
         (ct.notes?'<div style="font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.4">'+escHtml(ct.notes)+'</div>':'')+
         '<div style="display:flex;gap:6px;flex-wrap:wrap">'+
-          '<button onclick="logContractVisit('+ct.id+')" style="padding:7px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">✓ Log visit</button>'+
-          (unpaidIdx>=0?'<button onclick="markCtInvoicePaid('+ct.id+','+unpaidIdx+')" style="padding:7px 12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">💰 Mark paid</button>':'')+
+          '<button onclick="logContractVisit('+ct.id+')" style="padding:7px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:14})+' Log visit</button>'+
+          (unpaidIdx>=0?'<button onclick="markCtInvoicePaid('+ct.id+','+unpaidIdx+')" style="padding:7px 12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💰',{size:14})+' Mark paid</button>':'')+
           '<button onclick="editContractModal('+ct.id+')" style="padding:7px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Edit</button>'+
         '</div>'+
       '</div>';
@@ -241,7 +241,7 @@ function renderContractsDash(){
   el.style.display='';
   el.innerHTML=
     '<div style="background:linear-gradient(135deg,var(--blue-lt),rgba(45,93,168,.06));border:1px solid rgba(45,93,168,.3);border-radius:var(--r);padding:12px 14px;margin-bottom:10px">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--blue-dk);margin-bottom:8px">🔄 Maintenance Due</div>'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--blue-dk);margin-bottom:8px">'+svgIcon('🔄',{size:12})+' Maintenance Due</div>'+
       due.map(ct=>{
         const cl=getClientById(ct.clientId);
         const daysUntil=Math.ceil((new Date(ct.nextDate+'T12:00')-new Date())/86400000);

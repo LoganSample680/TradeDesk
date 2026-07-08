@@ -146,7 +146,7 @@ test.describe('Address autocomplete — Photon API', () => {
   test('address input field exists in new client form or estimate flow', async () => {
     // Navigate to where address autocomplete is wired
     await page.evaluate(() => {
-      if (typeof goPg === 'function') goPg('pg-est');
+      if (typeof goPg === 'function') goPg('pg-est-generic');
     });
     await page.waitForTimeout(400);
     const addrEl = await page.evaluate(() => {
@@ -1147,6 +1147,69 @@ test.describe('Proposals — send link, hub snapshot, gallery', () => {
     }
   });
 
+  test('trust honesty gate: "Licensed & Insured" only renders for numbers actually on file', async () => {
+    // The client-facing "Licensed & Insured" line must never be an unbacked claim.
+    // S.blic DEFAULTS to the literal string "Licensed & Insured" — that default
+    // must NOT produce a badge. Only a real license number and/or a real insurance
+    // policy number does, and the wording matches exactly what's backed.
+    const r = await page.evaluate((cid) => {
+      const snapLabel = () => _buildClientHubSnapshot(cid).trustLicense;
+      const origBlic = S.blic, origLic = (typeof licenses !== 'undefined') ? licenses.slice() : [];
+      const out = {};
+      // 1. Default blic marker + no insurance record → nothing claimed.
+      S.blic = 'Licensed & Insured'; licenses = [];
+      out.defaultOnly = snapLabel();
+      // 2. Real license number, still no insurance → "Licensed" only.
+      S.blic = 'KS-PNT-2024-08812';
+      out.licenseOnly = snapLabel();
+      // 3. No license, but an insurance policy number on file → "Insured" only.
+      S.blic = ''; licenses = [{ id: 1, cat: 'insurance', typeId: 'gl_ins', licenseNumber: 'GL-99117' }];
+      out.insuranceOnly = snapLabel();
+      // 4. Both a license number and an insurance policy number → the full claim.
+      S.blic = 'KS-PNT-2024-08812';
+      out.both = snapLabel();
+      // 5. Insurance record with NO policy number → doesn't count as insured.
+      S.blic = 'KS-PNT-2024-08812'; licenses = [{ id: 2, cat: 'insurance', typeId: 'gl_ins', licenseNumber: '' }];
+      out.insuranceBlank = snapLabel();
+      S.blic = origBlic; licenses = origLic;
+      return out;
+    }, PROP_CLIENT);
+    expect(r.defaultOnly).toBe('');                 // the default marker is NOT a claim
+    expect(r.licenseOnly).toBe('Licensed');
+    expect(r.insuranceOnly).toBe('Insured');
+    expect(r.both).toBe('Licensed & Insured');
+    expect(r.insuranceBlank).toBe('Licensed');      // blank policy # ⇒ not insured
+  });
+
+  test('years-in-business computes live from "in business since" year (auto-increments), falls back to legacy number', async () => {
+    // Owner: the manual years number goes stale. Now the hub computes it from a
+    // "since" year so it bumps itself every Jan 1 with no contractor action.
+    const r = await page.evaluate((cid) => {
+      const yrs = () => _buildClientHubSnapshot(cid).yearsInBusiness;
+      const now = new Date().getFullYear();
+      const origSince = S.sinceYear, origByears = S.byears;
+      const out = {};
+      // 1. Since-year set → live computed (current year − since).
+      S.sinceYear = now - 12; S.byears = 0;
+      out.fromSince = yrs();
+      // 2. No since-year, legacy manual number present → fallback to it.
+      S.sinceYear = 0; S.byears = 7;
+      out.legacyFallback = yrs();
+      // 3. Since-year IS the current year (<1 yr in business) → 0 → hub hides the line.
+      S.sinceYear = now; S.byears = 0;
+      out.brandNew = yrs();
+      // 4. Since-year set wins over a stale legacy number.
+      S.sinceYear = now - 5; S.byears = 99;
+      out.sinceWins = yrs();
+      S.sinceYear = origSince; S.byears = origByears;
+      return { ...out, now };
+    }, PROP_CLIENT);
+    expect(r.fromSince).toBe(12);
+    expect(r.legacyFallback).toBe(7);
+    expect(r.brandNew).toBe(0);            // hub gate hides "0 years"
+    expect(r.sinceWins).toBe(5);
+  });
+
   test('renderGallery — renders gallery page without errors', async () => {
     await page.evaluate(() => {
       if (typeof goPg === 'function') goPg('pg-gallery');
@@ -1798,58 +1861,18 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
     expect(exists).toBe(false);
   });
 
-  // ── Field: e-caddr (paint estimate property address) ────────────────────
-  test('e-caddr input exists and _addrAutoFull is attached', async () => {
-    await goPg(page, 'pg-est');
-    await page.waitForTimeout(300);
-    const result = await page.evaluate(() => {
-      const el = document.getElementById('e-caddr');
-      return { exists: !!el, bound: !!(el && el._addrAutoFullBound), autocomplete: el && el.getAttribute('autocomplete') };
-    });
-    expect(result.exists).toBe(true);
-    expect(result.bound).toBe(true);
-    expect(result.autocomplete).toBe('off');
-  });
-
-  test('e-caddr — typing shows dropdown and clicking a suggestion fills the input', async () => {
-    await goPg(page, 'pg-est');
-    await page.waitForTimeout(300);
-    // Stub the geocoder so the real bound dropdown renders a known suggestion.
-    const result = await page.evaluate(async () => {
-      const el = document.getElementById('e-caddr');
-      if (!el || !el._addrAutoFullBound) return null;
-      const _origGeo = window._geocodeAddress;
-      window._geocodeAddress = async () => [{
-        line1: '123 Main St', line2: 'Wichita, KS 67202',
-        street: '123 Main St', city: 'Wichita', state: 'KS', zip: '67202',
-      }];
-      const _prevVal = el.value;
-      el.value = '123 Main';
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise(r => setTimeout(r, 600));
-      const box = el.nextElementSibling;
-      const suggestion = box && box.firstElementChild;
-      const dropdownShown = !!(box && box.style.display === 'block' && suggestion);
-      if (suggestion) suggestion.click();
-      const filledValue = el.value;
-      window._geocodeAddress = _origGeo;
-      el.value = _prevVal;
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      await new Promise(r => setTimeout(r, 100));
-      return { dropdownShown, filledValue };
-    });
-    if (result) {
-      expect(result.dropdownShown, 'dropdown must appear after typing in e-caddr').toBe(true);
-      expect(result.filledValue).toContain('123 Main St');
-      expect(result.filledValue).toContain('Wichita');
-    }
-    assertNoErrors(page, 'e-caddr autocomplete');
+  // ── Field: e-caddr (paint estimate property address) — removed with pg-est ──
+  test('e-caddr — removed along with the paint estimator page', async () => {
+    const result = await page.evaluate(() => ({
+      pgEst: !!document.getElementById('pg-est'),
+      eCaddr: !!document.getElementById('e-caddr'),
+    }));
+    expect(result.pgEst).toBe(false);
+    expect(result.eCaddr).toBe(false);
   });
 
   // ── Save-and-exit must never spawn a duplicate bid (upsert by stable id) ──
   test('save-and-exit twice (session id lost + client renamed) keeps exactly one bid', async () => {
-    await goPg(page, 'pg-est');
-    await page.waitForTimeout(300);
     const r = await page.evaluate(() => {
       const CN1 = 'Dedup Orig Name', CN2 = 'Dedup Renamed';
       const mine = b => [CN1, CN2].includes(b.name) || [CN1, CN2].includes(b.client_name);
@@ -2228,20 +2251,177 @@ test.describe('Employee dispatch and daily view', () => {
 
   test('employee nav gating hides financial and settings buttons', async () => {
     const result = await page.evaluate(() => {
+      const saved = _isEmployee, savedRec = _employeeRecord;
       _isEmployee = true;
       _employeeRecord = { id: 'test-emp-1', name: 'Test Worker', role: 'worker' };
-      if (typeof _applyEmployeeNavGating === 'function') _applyEmployeeNavGating();
+      // nb-taxes is gated by applyPermissions()'s canSeeTaxes() check, not
+      // _applyEmployeeNavGating() directly — call the real entry point so both are exercised.
+      if (typeof applyPermissions === 'function') applyPermissions();
       const hidden = ['nb-tracker','nb-taxes','nb-settings','nb-team','nb-leads']
         .map(id => document.getElementById(id))
         .filter(Boolean)
         .every(el => el.style.display === 'none');
-      _isEmployee = false;
-      _employeeRecord = null;
-      return { fnExists: typeof _applyEmployeeNavGating === 'function', hidden };
+      _isEmployee = saved;
+      _employeeRecord = savedRec;
+      return { fnExists: typeof applyPermissions === 'function', hidden };
     });
     if (!result.fnExists) return;
     expect(result.hidden).toBe(true);
     assertNoErrors(page, 'employee nav gating');
+  });
+
+  test('switching from an employee to an owner in the same tab RESTORES Settings/Team/Tracker nav (regression)', async () => {
+    // Root cause of the live bug: nav gating used to only ever HIDE contractor-only nav
+    // for employees, with nothing to un-hide it if a later account in the same tab
+    // (no page reload) turned out to be a real owner — the earlier employee session's
+    // display:none just stuck around forever, making Settings vanish for the owner too.
+    const result = await page.evaluate(() => {
+      const savedEmployee = _isEmployee, savedRec = _employeeRecord;
+      const ids = ['nb-tracker', 'nb-team', 'nb-settings', 'nb-licensing', 'nb-contracts', 'nb-hub', 'nb-money'];
+      const created = [];
+      ids.forEach(id => {
+        if (!document.getElementById(id)) { const el = document.createElement('div'); el.id = id; document.body.appendChild(el); created.push(id); }
+      });
+      // 1. An employee session hides everything (simulates account A).
+      _isEmployee = true;
+      _employeeRecord = { id: 'emp-switch-1', name: 'Worker A', role: 'tech' };
+      applyPermissions();
+      const hiddenAfterEmployee = ids.every(id => document.getElementById(id).style.display === 'none');
+      // 2. A DIFFERENT, real owner account signs in — in the live app this is exactly
+      // what loadAccountData()'s u.account_id branch does: reset _isEmployee then call
+      // applyPermissions() again, with NO page reload in between.
+      _isEmployee = false;
+      _employeeRecord = null;
+      applyPermissions();
+      const restoredAfterOwner = ids.every(id => document.getElementById(id).style.display !== 'none');
+      _isEmployee = savedEmployee; _employeeRecord = savedRec;
+      created.forEach(id => document.getElementById(id)?.remove());
+      return { hiddenAfterEmployee, restoredAfterOwner };
+    });
+    expect(result.hiddenAfterEmployee).toBe(true);
+    expect(result.restoredAfterOwner).toBe(true);
+    assertNoErrors(page, 'employee-to-owner nav restore');
+  });
+
+  test('nav-user click target restores to Settings for an owner after an employee session in the same tab', async () => {
+    const result = await page.evaluate(() => {
+      const savedEmployee = _isEmployee, savedRec = _employeeRecord;
+      let el = document.getElementById('nav-user');
+      const created = !el;
+      if (!el) { el = document.createElement('div'); el.id = 'nav-user'; document.body.appendChild(el); }
+      _isEmployee = true; _employeeRecord = { id: 'emp-switch-2', name: 'Worker B', role: 'tech' };
+      if (typeof _applyEmployeeNavGating === 'function') _applyEmployeeNavGating();
+      const employeeOnclickIsSignOutMenu = typeof el.onclick === 'function';
+      const employeeCursor = el.style.cursor;
+      _isEmployee = false; _employeeRecord = null;
+      if (typeof _applyEmployeeNavGating === 'function') _applyEmployeeNavGating();
+      const ownerCursor = el.style.cursor;
+      const ownerOnclickIsFunction = typeof el.onclick === 'function';
+      if (created) el.remove();
+      _isEmployee = savedEmployee; _employeeRecord = savedRec;
+      return { fnExists: typeof _applyEmployeeNavGating === 'function', employeeOnclickIsSignOutMenu, employeeCursor, ownerCursor, ownerOnclickIsFunction };
+    });
+    if (!result.fnExists) return;
+    // Employees get a clickable avatar too now (routes to sign-out menu, not Settings) —
+    // it must never be nulled, or a real employee has no way to sign out at all.
+    expect(result.employeeOnclickIsSignOutMenu).toBe(true);
+    expect(result.employeeCursor).toBe('pointer');
+    expect(result.ownerCursor).toBe('pointer');
+    expect(result.ownerOnclickIsFunction).toBe(true);
+  });
+
+  test('_employeeSignOutMenu exists and shows Cancel + Sign out for the current employee', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _employeeSignOutMenu !== 'function') return { fnExists: false };
+      const savedRec = _employeeRecord;
+      _employeeRecord = { id: 'emp-signout-1', name: 'Sign Out Tester', role: 'tech' };
+      _employeeSignOutMenu();
+      const ov = document.getElementById('_emp-signout-ov');
+      const html = ov ? ov.innerHTML : '';
+      ov?.remove();
+      _employeeRecord = savedRec;
+      return { fnExists: true, hasOverlay: !!ov, hasName: html.includes('Sign Out Tester'), hasCancel: html.includes('Cancel'), hasSignOut: html.includes('Sign out'), callsSupaSignOut: html.includes('supaSignOut()') };
+    });
+    if (!result.fnExists) return;
+    expect(result.hasOverlay).toBe(true);
+    expect(result.hasName).toBe(true);
+    expect(result.hasCancel).toBe(true);
+    expect(result.hasSignOut).toBe(true);
+    expect(result.callsSupaSignOut).toBe(true);
+  });
+
+  test('_employeeSignOutMenu — no throw with null _employeeRecord', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _employeeSignOutMenu !== 'function') return { fnExists: false };
+      const savedRec = _employeeRecord;
+      _employeeRecord = null;
+      let ok = true;
+      try { _employeeSignOutMenu(); } catch (e) { ok = false; }
+      document.getElementById('_emp-signout-ov')?.remove();
+      _employeeRecord = savedRec;
+      return { fnExists: true, ok };
+    });
+    if (!result.fnExists) return;
+    expect(result.ok).toBe(true);
+  });
+
+  test('mmi-signout is visible only for employees, hidden for owners', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _applyEmployeeNavGating !== 'function') return { fnExists: false };
+      const savedEmployee = _isEmployee, savedRec = _employeeRecord;
+      let el = document.getElementById('mmi-signout');
+      const created = !el;
+      if (!el) { el = document.createElement('div'); el.id = 'mmi-signout'; document.body.appendChild(el); }
+      _isEmployee = true; _employeeRecord = { id: 'emp-mmi-1', name: 'Mobile Worker', role: 'tech' };
+      _applyEmployeeNavGating();
+      const visibleForEmployee = el.style.display !== 'none';
+      _isEmployee = false; _employeeRecord = null;
+      _applyEmployeeNavGating();
+      const hiddenForOwner = el.style.display === 'none';
+      if (created) el.remove();
+      _isEmployee = savedEmployee; _employeeRecord = savedRec;
+      return { fnExists: true, visibleForEmployee, hiddenForOwner };
+    });
+    if (!result.fnExists) return;
+    expect(result.visibleForEmployee).toBe(true);
+    expect(result.hiddenForOwner).toBe(true);
+  });
+
+  test('loadAccountData resets stale _isEmployee state for a real owner account (regression)', async () => {
+    // Simulates the exact bug: _isEmployee left true from a previous employee session in
+    // the same tab, then a real owner account (one with its own accounts row) signs in.
+    const result = await page.evaluate(async () => {
+      if (typeof loadAccountData !== 'function' || typeof _supa === 'undefined' || !_supa) return { skip: true };
+      const savedEmployee = _isEmployee, savedRec = _employeeRecord, savedCid = _contractorUserId;
+      const savedSupa = _supa, savedSupaUser = _supaUser;
+      _isEmployee = true; _employeeRecord = { id: 'stale-emp', name: 'Stale', role: 'tech' }; _contractorUserId = 'stale-cid';
+      _supaUser = { id: 'owner-uid-1' };
+      _supa = {
+        from(table) {
+          const chain = {
+            select: () => chain, eq: () => chain,
+            maybeSingle: async () => {
+              if (table === 'users') return { data: { id: 'owner-uid-1', account_id: 'acct-1', role: 'owner' } };
+              if (table === 'accounts') return { data: { id: 'acct-1', business_name: 'Test Co' } };
+              if (table === 'account_config') return { data: null };
+              return { data: null };
+            },
+          };
+          if (table === 'vehicles') return { select: () => ({ eq: async () => ({ data: [] }) }) };
+          return chain;
+        },
+      };
+      let ok = true, err = '';
+      try { await loadAccountData(); } catch (e) { ok = false; err = e.message; }
+      const isEmployeeAfter = _isEmployee, employeeRecordAfter = _employeeRecord;
+      _isEmployee = savedEmployee; _employeeRecord = savedRec; _contractorUserId = savedCid;
+      _supa = savedSupa; _supaUser = savedSupaUser;
+      return { skip: false, ok, err, isEmployeeAfter, employeeRecordAfter };
+    });
+    if (result.skip) return;
+    expect(result.ok).toBe(true);
+    expect(result.isEmployeeAfter).toBe(false);
+    expect(result.employeeRecordAfter).toBe(null);
   });
 
   test('invite landing banner shown when pending invite in localStorage', async () => {
@@ -2516,6 +2696,8 @@ test.describe('Employee role/classification split and leads gating', () => {
   test('_applyEmployeeNavGating hides nb-leads when no leads perm', async () => {
     const result = await page.evaluate(() => {
       if (typeof _applyEmployeeNavGating !== 'function') return { fnExists: false };
+      const savedEmployee = _isEmployee;
+      _isEmployee = true;
       _employeeRecord = { id: 'test-emp3', name: 'Tech', role: 'tech', permissions: { mileage: true } };
       _applyEmployeeNavGating();
       const nbLeads = document.getElementById('nb-leads');
@@ -2523,6 +2705,7 @@ test.describe('Employee role/classification split and leads gating', () => {
       // Restore
       if (nbLeads) nbLeads.style.display = '';
       _employeeRecord = null;
+      _isEmployee = savedEmployee;
       return { fnExists: true, hidden };
     });
     if (!result.fnExists) return;
@@ -2535,12 +2718,15 @@ test.describe('Employee role/classification split and leads gating', () => {
       if (typeof _applyEmployeeNavGating !== 'function') return { fnExists: false };
       const nbLeads = document.getElementById('nb-leads');
       if (!nbLeads) return { fnExists: true, skipped: true };
+      const savedEmployee = _isEmployee;
       nbLeads.style.display = '';
+      _isEmployee = true;
       _employeeRecord = { id: 'test-emp4', name: 'Sales', role: 'office', permissions: { leads: true } };
       _applyEmployeeNavGating();
       const visible = nbLeads.style.display !== 'none';
       nbLeads.style.display = '';
       _employeeRecord = null;
+      _isEmployee = savedEmployee;
       return { fnExists: true, visible, skipped: false };
     });
     if (!result.fnExists) return;
@@ -2969,10 +3155,16 @@ test.describe('Scope-of-work chips', () => {
   });
 
   test('tm-scope-wrap and byo-scope-wrap elements exist in DOM', async () => {
-    const r = await page.evaluate(() => ({
-      tmScopeWrap: !!document.getElementById('tm-scope-wrap'),
-      byoScopeWrap: !!document.getElementById('byo-scope-wrap'),
-    }));
+    // Both wrap divs are now rendered into tm-scopecard-wrap/byo-scopecard-wrap by
+    // _geiRenderScopeCard (called from _tmShowPage/_byoShowPage) rather than existing
+    // statically in the HTML — render them first, same as a real page visit would.
+    const r = await page.evaluate(() => {
+      if (typeof _geiRenderScopeCard === 'function') { _geiRenderScopeCard('tm'); _geiRenderScopeCard('byo'); }
+      return {
+        tmScopeWrap: !!document.getElementById('tm-scope-wrap'),
+        byoScopeWrap: !!document.getElementById('byo-scope-wrap'),
+      };
+    });
     expect(r.tmScopeWrap).toBe(true);
     expect(r.byoScopeWrap).toBe(true);
   });
@@ -2980,6 +3172,7 @@ test.describe('Scope-of-work chips', () => {
   test('_renderScopeChips renders selected scope as line items, not pills', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderScopeChips !== 'function') return null;
+      if (typeof _geiRenderScopeCard === 'function') _geiRenderScopeCard('tm');
       _geiTrade = 'painting';
       _geiScopeNoScope = false;
       _geiScopeChips = ['Interior walls', 'Pressure wash'];
@@ -3549,9 +3742,14 @@ test.describe('Scope of work — collapsed + sheet picker', () => {
       const before = [..._geiScopeChips];
       if (tile) tile.click();
       const after = [..._geiScopeChips];
-      // Tile should now show a checkmark in its _sc-ck element
+      // Tile should now show a checkmark in its _sc-ck element. Old behavior:
+      // the checkmark was a literal '✓' text character. New behavior (this
+      // session's icon-system migration): it's rendered via svgIcon('✓'), an
+      // inline <svg> — an SVG element contributes no text, so textContent is
+      // now empty even when the checkmark correctly renders. Assert on the
+      // <svg> markup instead.
       const ck = tile ? tile.querySelector('._sc-ck') : null;
-      const checked = ck ? ck.textContent.trim() === '✓' : false;
+      const checked = ck ? ck.innerHTML.includes('<svg') : false;
       sheet.remove();
       return { hasPrice, tileId, beforeLen: before.length, afterLen: after.length, checked };
     });
@@ -3767,6 +3965,726 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
     expect(r.token.length).toBeGreaterThan(0);  // token restored onto the live object too
     assertNoErrors(page, 'hub live-object stamp');
   });
+
+  test('a successful hub upload sends a live-push broadcast — client hub refreshes in seconds, not up to 30s', async () => {
+    // The client hub polls its storage snapshot every 30s (client.html _refreshHub).
+    // _broadcastHubUpdate is the accelerator: a content-free nudge on a per-client
+    // Realtime channel so a status change (payment logged, job marked done, a
+    // photo added) reaches an open hub instantly instead of sitting for up to 30s.
+    const r = await page.evaluate(async (cid) => {
+      window.__channelBroadcasts = [];
+      clients = clients.filter(c => c.id !== cid);
+      clients.push({ id: cid, name: 'Live Push C', phone: '3165550999', clientToken: 'livepushtok', clientHubKey: '' });
+      window._supaUser = window._supaUser || { id: 'livepush-user-1', email: 'lp@t.com' };
+      await _uploadClientHub(cid);
+      const hit = (window.__channelBroadcasts || []).find(b => b.name.indexOf('hub-upd-') === 0 && b.name.indexOf('-' + cid) > -1);
+      return { found: !!hit, event: hit && hit.msg && hit.msg.event };
+    }, 886200);
+    expect(r.found).toBe(true);
+    expect(r.event).toBe('updated');
+    assertNoErrors(page, 'hub live-push broadcast');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CLIENT HUB — live push channel (client.html side)
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('client hub — subscribes to and reacts to the live-push channel', () => {
+  let page;
+  const LIVE_PUSH_HUB = {
+    clientId: 903, contractorUserId: FAKE_USER_ID, contractorName: 'Live Push Co', businessName: 'Live Push Co',
+    clientName: 'Live Push Client', clientAddr: '2 Live Push Ln',
+    bids: [], payments: [], jobs: [], photos: [], messages: [], notifications: [], invoices: [],
+  };
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await page.addInitScript(hub => { window.__mockHubData = hub; }, LIVE_PUSH_HUB);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=903&u=${FAKE_USER_ID}&t=livepushtok903`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('boot subscribes a hub-upd-<uid>-<clientId> channel for broadcast "updated"', async () => {
+    // _startHubLiveChannel/_hubLiveChan are top-level `let`/`function` bindings in
+    // client.html's classic script — re-invokable from page.evaluate the same way
+    // the existing _uploadClientHub cert above manipulates index.html's _supa.
+    const r = await page.evaluate((u) => {
+      const handlers = {};
+      const origChannel = _supa.channel.bind(_supa);
+      _supa.channel = function(name) {
+        const ch = origChannel(name);
+        const origOn = ch.on.bind(ch);
+        ch.on = function(type, filter, cb) {
+          if (type === 'broadcast' && filter && filter.event === 'updated') handlers[name] = cb;
+          return origOn(type, filter, cb);
+        };
+        return ch;
+      };
+      _hubLiveChan = null; // clear the boot-time channel so a fresh subscribe is observable
+      _startHubLiveChannel(u, '903');
+      _supa.channel = origChannel;
+      window.__hubLiveHandlers = handlers;
+      return { key: 'hub-upd-' + u + '-903', found: !!handlers['hub-upd-' + u + '-903'] };
+    }, FAKE_USER_ID);
+    expect(r.found).toBe(true);
+  });
+
+  test('firing the broadcast handler triggers an immediate hub refresh — not a 30s wait', async () => {
+    const r = await page.evaluate((u) => {
+      const key = 'hub-upd-' + u + '-903';
+      const cb = (window.__hubLiveHandlers || {})[key];
+      if (!cb) return { found: false };
+      let refreshed = false;
+      const origRefresh = window._refreshHub;
+      window._refreshHub = function() { refreshed = true; return origRefresh.apply(this, arguments); };
+      cb();
+      window._refreshHub = origRefresh;
+      return { found: true, refreshed };
+    }, FAKE_USER_ID);
+    expect(r.found).toBe(true);
+    expect(r.refreshed).toBe(true);
+  });
+
+  test('no console errors from the live-push channel', async () => {
+    assertNoErrors(page, 'client hub live-push channel');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  PROGRESS PHOTOS — optional milestone label, threaded through to the snapshot
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('checkNewSignatures — client-picked decline reason lands on bid.lostReason', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('a signed_proposals row with decline_reason populates bid.lostReason — same field the Declined tab already reads', async () => {
+    const r = await page.evaluate(async ({ bidId, uid }) => {
+      window._supaUser = window._supaUser || { id: uid, email: 'z@t.com' };
+      bids = bids.filter(b => b.id !== bidId);
+      bids.push({ id: bidId, client_id: 886400, status: 'Pending', amount: 4200, type: 'Roof Repair' });
+      const origFrom = _supa.from.bind(_supa);
+      _supa.from = function(table) {
+        if (table === 'signed_proposals') {
+          const row = [{ bid_id: String(bidId), contractor_user_id: uid, payment_status: 'declined', decline_reason: 'Not the right time', signed_at: new Date().toISOString() }];
+          const q = { select: () => q, eq: () => q, order: () => q, limit: () => q, then: (res) => res({ data: row, error: null }) };
+          return q;
+        }
+        return origFrom(table);
+      };
+      try { await checkNewSignatures(); } catch (e) { return { err: e.message }; }
+      finally { _supa.from = origFrom; }
+      const b = bids.find(x => x.id === bidId);
+      return { status: b.status, lostReason: b.lostReason || '' };
+    }, { bidId: 886401, uid: FAKE_USER_ID });
+    expect(r.status).toBe('Closed Lost');
+    expect(r.lostReason).toBe('Not the right time');
+    assertNoErrors(page, 'decline reason merge onto bid.lostReason');
+  });
+});
+
+test.describe('addJobPhoto — progress type carries an optional milestone caption', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('a captioned progress photo lands in job.photos AND the global photos[] with the caption intact', async () => {
+    const r = await page.evaluate(async (jobId) => {
+      window._supaUser = window._supaUser || { id: 'progphoto-user-1', email: 'pp@t.com' };
+      jobs = jobs.filter(j => j.id !== jobId);
+      jobs.push({ id: jobId, client_id: 886300, name: 'Progress Photo Job', status: 'active', photos: [] });
+      const dt = new DataTransfer();
+      dt.items.add(new File(['dummy'], 'progress.jpg', { type: 'image/jpeg' }));
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.files = dt.files;
+      await new Promise((resolve) => {
+        addJobPhoto(jobId, inp, 'progress', 'Rough-in complete');
+        // FileReader.onload is async — poll until the job's local photo record lands.
+        const check = () => {
+          const j = jobs.find(x => x.id === jobId);
+          if (j && j.photos.length) resolve(); else setTimeout(check, 30);
+        };
+        check();
+      });
+      const j = jobs.find(x => x.id === jobId);
+      const globalRow = photos.find(p => p.job_id === jobId);
+      return {
+        localCaption: j.photos[0] && j.photos[0].caption,
+        localType: j.photos[0] && j.photos[0].type,
+        globalCaption: globalRow && globalRow.caption,
+      };
+    }, 886301);
+    expect(r.localType).toBe('progress');
+    expect(r.localCaption).toBe('Rough-in complete');
+    expect(r.globalCaption).toBe('Rough-in complete'); // caption reaches the uploaded row, not just the local base64 copy
+    assertNoErrors(page, 'progress photo caption');
+  });
+
+  test('caption is trimmed and capped at 60 chars — never bloats the hub snapshot', async () => {
+    const r = await page.evaluate(async (jobId) => {
+      jobs = jobs.filter(j => j.id !== jobId);
+      jobs.push({ id: jobId, client_id: 886300, name: 'Progress Photo Job 2', status: 'active', photos: [] });
+      const longCaption = '  ' + 'x'.repeat(200) + '  ';
+      const dt = new DataTransfer();
+      dt.items.add(new File(['dummy'], 'progress2.jpg', { type: 'image/jpeg' }));
+      const inp = document.createElement('input');
+      inp.type = 'file';
+      inp.files = dt.files;
+      await new Promise((resolve) => {
+        addJobPhoto(jobId, inp, 'progress', longCaption);
+        const check = () => {
+          const j = jobs.find(x => x.id === jobId);
+          if (j && j.photos.length) resolve(); else setTimeout(check, 30);
+        };
+        check();
+      });
+      const j = jobs.find(x => x.id === jobId);
+      return { caption: j.photos[0].caption };
+    }, 886302);
+    expect(r.caption.length).toBeLessThanOrEqual(60);
+    expect(r.caption.startsWith(' ')).toBe(false); // trimmed
+  });
+
+  test('_buildClientHubSnapshot carries uploadedAt through to the nested job photo — the timeline needs it to sort/group', async () => {
+    const r = await page.evaluate((clientId) => {
+      if (typeof _buildClientHubSnapshot !== 'function') return { skip: true };
+      clients = clients.filter(c => c.id !== clientId);
+      clients.push({ id: clientId, name: 'Snap Photo Client', clientToken: 'snapphototok' });
+      const jobId = clientId + 1;
+      jobs = jobs.filter(j => j.id !== jobId);
+      jobs.push({ id: jobId, client_id: clientId, name: 'Snap Photo Job', status: 'active' });
+      const stamp = new Date().toISOString();
+      photos = photos.filter(p => p.job_id !== jobId);
+      photos.push({ id: Date.now(), url: 'https://example.com/p.jpg', type: 'progress', caption: 'Framing', client_id: clientId, job_id: jobId, job_name: 'Snap Photo Job', uploadedAt: stamp });
+      const snap = _buildClientHubSnapshot(clientId);
+      const j = snap.jobs.find(x => x.id === jobId);
+      return { skip: false, uploadedAt: j && j.photos[0] && j.photos[0].uploadedAt, caption: j && j.photos[0] && j.photos[0].caption, stamp };
+    }, 886310);
+    if (r.skip) return;
+    expect(r.uploadedAt).toBe(r.stamp);
+    expect(r.caption).toBe('Framing');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CLIENT HUB — Project tab renders a milestone timeline for progress photos
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('client hub — progress photos render as a dated milestone timeline', () => {
+  let page;
+  const TIMELINE_HUB = {
+    clientId: 904, contractorUserId: FAKE_USER_ID, contractorName: 'Timeline Co', businessName: 'Timeline Co',
+    clientName: 'Timeline Client', clientAddr: '3 Timeline Ave',
+    bids: [], payments: [], messages: [], notifications: [], invoices: [],
+    jobs: [{
+      id: 5001, bid_id: null, name: 'Kitchen Remodel', start: '2026-06-01', days: 10, status: 'active', completion_date: '',
+      photos: [
+        { url: 'https://example.com/before.jpg', type: 'before', caption: '', uploadedAt: '2026-06-01T09:00:00.000Z' },
+        { url: 'https://example.com/demo.jpg', type: 'progress', caption: 'Demo day', uploadedAt: '2026-06-02T09:00:00.000Z' },
+        { url: 'https://example.com/framing.jpg', type: 'progress', caption: 'Framing complete', uploadedAt: '2026-06-04T09:00:00.000Z' },
+        { url: 'https://example.com/after.jpg', type: 'after', caption: '', uploadedAt: '2026-06-11T09:00:00.000Z' },
+      ],
+    }],
+    photos: [],
+  };
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await page.addInitScript(hub => { window.__mockHubData = hub; }, TIMELINE_HUB);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=904&u=${FAKE_USER_ID}&t=timelinetok904`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    await page.evaluate(() => switchView('project'));
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('before/after still render as the top highlight pair', async () => {
+    const html = await page.locator('#view-project').innerHTML();
+    expect(html).toContain('Before');
+    expect(html).toContain('After');
+  });
+
+  test('progress photos render as timeline entries, oldest first, with their milestone label', async () => {
+    const r = await page.evaluate(() => {
+      const items = Array.from(document.querySelectorAll('#view-project .hub-timeline .hub-log-item'));
+      return items.map(it => ({
+        date: it.querySelector('.hub-log-date')?.textContent || '',
+        text: it.querySelector('.hub-log-text')?.textContent || '',
+      }));
+    });
+    expect(r.length).toBe(2);
+    expect(r[0].text).toBe('Demo day');
+    expect(r[1].text).toBe('Framing complete');
+    // Demo day (day 2) must render before Framing complete (day 4) — chronological, not upload order.
+    expect(r[0].date).toContain('Day 2');
+    expect(r[1].date).toContain('Day 4');
+  });
+
+  test('no console errors from the milestone timeline', async () => {
+    assertNoErrors(page, 'client hub milestone timeline');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  CLIENT HUB — empty "Daily updates" card hidden so a pending signature
+//  isn't pushed below a placeholder with nothing in it
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('client hub — Daily updates card hides when there is nothing to show', () => {
+  test('no active jobs — card is absent and "Awaiting your signature" is the first thing in the main column', async ({ page }) => {
+    const hub = {
+      clientId: 905, contractorUserId: FAKE_USER_ID, contractorName: 'Feed Co', businessName: 'Feed Co',
+      clientName: 'Feed Client', clientAddr: '4 Feed Rd',
+      bids: [{ id: 5101, status: 'Pending', type: 'Roof Repair', amount: 3000, deposit: 750, balance: 3000, bid_date: '2026-07-01', signHubUrl: 'https://example.com/sign', paid: 0 }],
+      jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [],
+    };
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=905&u=${FAKE_USER_ID}&t=feedtok905`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    expect(await page.locator('.hub-feed-hd:has-text("Daily updates")').count()).toBe(0);
+    const mainCol = page.locator('.hub-col-main');
+    const firstHd = await mainCol.locator('.hub-feed-hd').first().textContent();
+    expect(firstHd).toContain('Awaiting your signature');
+    assertNoErrors(page, 'empty daily updates card hidden');
+  });
+
+  test('an active job — Daily updates card still renders with the job in it', async ({ page }) => {
+    const hub = {
+      clientId: 906, contractorUserId: FAKE_USER_ID, contractorName: 'Feed Co', businessName: 'Feed Co',
+      clientName: 'Feed Client 2', clientAddr: '5 Feed Rd',
+      bids: [], jobs: [{ id: 5201, name: 'Roof Repair Job', status: 'active', start: '2026-07-01', days: 3 }],
+      payments: [], messages: [], notifications: [], invoices: [], photos: [],
+    };
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=906&u=${FAKE_USER_ID}&t=feedtok906`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const feedCard = page.locator('.hub-feed-hd:has-text("Daily updates")');
+    expect(await feedCard.count()).toBe(1);
+    expect(await page.locator('.hub-feed-item').count()).toBe(1);
+    assertNoErrors(page, 'populated daily updates card renders');
+  });
+
+  test('elevated proposal cards: doc icon + proposal ref, borderless shadow, no status pill, long name never bleeds', async ({ page }) => {
+    // Research-informed card redesign (PaintScout/DripJobs/QuoteIQ synthesis):
+    // borderless shadow elevation, brand-tinted doc icon, proposal-# reference.
+    // Price stays OFF the card (loss-aversion). No per-card status pill — the
+    // section header already says "Awaiting your signature", so a pill was
+    // redundant and fought long estimate names for width. A long name must wrap
+    // cleanly with no horizontal bleed.
+    const hub = {
+      clientId: 909, contractorUserId: FAKE_USER_ID, contractorName: 'Card Co', businessName: 'Card Co',
+      clientName: 'Card Client', clientAddr: '7 Card Rd', contractorPhone: '316-555-0199', brandColor: '#FFE44D',
+      bids: [{ id: 887799, status: 'Pending', type: 'Interior & Exterior Full Repaint + Cabinet Refinishing and Deck Staining', amount: 4200, deposit: 1050, balance: 4200, bid_date: '2026-07-06', signHubUrl: 'https://example.com/sign' }],
+      jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [],
+    };
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=909&u=${FAKE_USER_ID}&t=cardtok909`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const card = document.querySelector('.hub-bid-row');
+      if (!card) return { noCard: true };
+      const cs = getComputedStyle(card);
+      return {
+        hasIcon: !!card.querySelector('.hub-bid-ico svg'),
+        hasChip: !!card.querySelector('.hub-chip-pending'),  // must be GONE now
+        hasRef: /#887799/.test(card.textContent),
+        borderless: cs.borderStyle === 'none' || cs.borderTopWidth === '0px',
+        shadow: cs.boxShadow !== 'none',
+        showsPrice: /\$4[,.]?200/.test(card.textContent),
+        // long name must not push the card wider than the page
+        cardRight: card.getBoundingClientRect().right,
+        docWidth: document.documentElement.clientWidth,
+      };
+    });
+    expect(r.hasIcon).toBe(true);
+    expect(r.hasChip).toBe(false);                          // no per-card status pill
+    expect(r.hasRef).toBe(true);
+    expect(r.borderless).toBe(true);
+    expect(r.shadow).toBe(true);
+    expect(r.showsPrice).toBe(false);                       // price stays off the card by design
+    expect(r.cardRight).toBeLessThanOrEqual(r.docWidth + 1); // long estimate name never bleeds off-screen
+    // No trust data in this fixture → no trust lines render (never a fabricated
+    // badge). The trust split is covered by its own test below.
+    const noTrust = await page.evaluate(() => document.querySelectorAll('.hub-cta-trust, .hub-hero-trust').length);
+    expect(noTrust).toBe(0);
+    assertNoErrors(page, 'elevated proposal cards');
+  });
+
+  test('trust split: credibility line in hero + safety line above each sign CTA, inline (no pills), AA', async ({ page }) => {
+    // Placement research: two-instance split weighted to the CTA, inline
+    // sentences NOT pills. Hero = credibility (years/reviews) on arrival; the
+    // safety line (Licensed & Insured · warranty) sits immediately above the
+    // Review & Sign button (thumb zone / decision point). The old .hub-trust
+    // pill chips must be GONE.
+    const hub = {
+      clientId: 910, contractorUserId: FAKE_USER_ID, contractorName: 'Trust Co', businessName: 'Trust Co',
+      clientName: 'Trust Client', clientAddr: '8 Trust Rd', contractorPhone: '316-555-0110', brandColor: '#FFE44D',
+      trustLicense: 'Licensed & Insured', warrantyPeriod: '2 years', yearsInBusiness: 12, reviewUrl: 'https://g.page/r/x',
+      bids: [{ id: 887800, status: 'Pending', type: 'Repaint', amount: 3000, deposit: 750, balance: 3000, bid_date: '2026-07-06', signHubUrl: 'https://example.com/sign' }],
+      jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [],
+    };
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=910&u=${FAKE_USER_ID}&t=trusttok910`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const parse = v => { const n = (v.match(/[\d.]+/g) || []).map(Number); return /color\(srgb/i.test(v) ? n.slice(0, 3).map(x => x * 255) : n.slice(0, 3); };
+      const lum = c => { const s = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return .2126 * s[0] + .7152 * s[1] + .0722 * s[2]; };
+      const ratio = (a, b) => { const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x); return (l1 + .05) / (l2 + .05); };
+      const hero = document.querySelector('.hub-hero-trust');
+      const cta = document.querySelector('.hub-cta-trust');
+      const signBtn = document.querySelector('.hub-btn-sign');
+      // luminance of the hero trust against the (dark) hero it sits on
+      const ctaCs = cta ? getComputedStyle(cta) : null;
+      return {
+        pillsGone: document.querySelectorAll('.hub-trust-chip').length,
+        heroHasYears: hero ? /years in business/i.test(hero.textContent) : false,
+        heroHasReviews: hero ? /reviews/i.test(hero.textContent) : false,
+        ctaHasLicensed: cta ? /Licensed/i.test(cta.textContent) : false,
+        ctaHasWarranty: cta ? /warranty/i.test(cta.textContent) : false,
+        warrantyHyphenated: cta ? /2-year workmanship warranty/i.test(cta.textContent) : false,  // "2 years" → "2-year"
+        ctaAboveButton: (cta && signBtn) ? cta.getBoundingClientRect().bottom <= signBtn.getBoundingClientRect().top + 1 : false,
+        ctaInlineNotPill: ctaCs ? ctaCs.backgroundColor === 'rgba(0, 0, 0, 0)' : false,  // no chip fill
+        ctaRatio: ctaCs ? ratio(parse(ctaCs.color), [255, 255, 255]) : 0,
+      };
+    });
+    expect(r.pillsGone).toBe(0);                             // pill chips removed
+    expect(r.heroHasYears).toBe(true);                       // credibility on arrival
+    expect(r.heroHasReviews).toBe(true);
+    expect(r.ctaHasLicensed).toBe(true);                     // safety at the decision point
+    expect(r.ctaHasWarranty).toBe(true);
+    expect(r.warrantyHyphenated).toBe(true);                 // adjective form reads right
+    expect(r.ctaAboveButton).toBe(true);                     // immediately above the sign button
+    expect(r.ctaInlineNotPill).toBe(true);                   // inline text, not a filled chip
+    expect(r.ctaRatio).toBeGreaterThanOrEqual(4.5);          // AA on the white card
+    assertNoErrors(page, 'trust split');
+  });
+
+  test('notification panel fits the screen on mobile — no left bleed', async ({ page }) => {
+    // Owner-reported: on mobile the 300px panel anchored to the bell bled off the
+    // left edge. It now spans the viewport with margins below the topbar.
+    const hub = {
+      clientId: 911, contractorUserId: FAKE_USER_ID, contractorName: 'Notif Co', businessName: 'Notif Co',
+      clientName: 'Notif Client', clientAddr: '9 Notif Rd', contractorPhone: '316-555-0120',
+      bids: [], jobs: [], payments: [], messages: [],
+      notifications: [{ id: 1, title: 'Proposal sent', body: 'Ready to review.', ts: '2026-07-08T13:00:00Z', read: false }],
+      invoices: [], photos: [],
+    };
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=911&u=${FAKE_USER_ID}&t=notiftok911`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      try { toggleNotifPanel({ stopPropagation() {}, preventDefault() {} }); } catch (e) {}
+      const p = document.getElementById('notif-panel');
+      const rect = p.getBoundingClientRect();
+      return { display: getComputedStyle(p).display, left: rect.left, right: rect.right, vw: document.documentElement.clientWidth };
+    });
+    expect(r.display).toBe('block');           // panel opened
+    expect(r.left).toBeGreaterThanOrEqual(0);  // no left bleed
+    expect(r.right).toBeLessThanOrEqual(r.vw + 1);  // no right bleed
+    assertNoErrors(page, 'notif panel mobile');
+  });
+
+  test('mobile contact strip: Schedule button deleted, Text/Call/Email escape the preview iframe via target="_top"', async ({ page }) => {
+    // Two owner-reported bugs: (1) the strip's Schedule button was wired to
+    // openHelp() — tapping "Schedule" dumped the client into the FAQs; deleted.
+    // (2) sms:/tel:/mailto: taps died silently inside the in-app hub preview,
+    // which renders client.html in an iframe — subframes can't navigate to
+    // external protocols on iOS. target="_top" makes them open at top level
+    // (harmless in a normal tab, where top === self).
+    const hub = {
+      clientId: 908, contractorUserId: FAKE_USER_ID, contractorName: 'Strip Co', businessName: 'Strip Co',
+      clientName: 'Strip Client', clientAddr: '6 Strip Rd', contractorPhone: '316-555-0100', contractorEmail: 'strip@co.com',
+      bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [],
+    };
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=908&u=${FAKE_USER_ID}&t=striptok908`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const strip = document.querySelector('.hub-mobile-strip');
+      const btns = strip ? [...strip.querySelectorAll('a,button')] : [];
+      const badTargets = [...document.querySelectorAll('a[href^="sms:"],a[href^="tel:"],a[href^="mailto:"]')]
+        .filter(a => a.getAttribute('target') !== '_top').length;
+      return {
+        stripLabels: btns.map(b => b.textContent.trim()),
+        scheduleCount: btns.filter(b => /schedule/i.test(b.textContent)).length,
+        smsHref: strip ? (strip.querySelector('a[href^="sms:"]') || {}).href || '' : '',
+        badTargets,
+      };
+    });
+    expect(r.scheduleCount).toBe(0);                       // §7.1 — old entry point is GONE
+    expect(r.stripLabels.join(' ')).toContain('Text');
+    expect(r.smsHref).toContain('sms:3165550100');
+    expect(r.badTargets).toBe(0);                          // every protocol link escapes the iframe
+    // Sprucing pass (owner ask): dark TradeDesk-style tab bar, brand color on
+    // primary actions — never the old white strip / black-slab basis.
+    const chrome = await page.evaluate(() => {
+      const nav = getComputedStyle(document.querySelector('.bottom-nav'));
+      const denim = getComputedStyle(document.documentElement).getPropertyValue('--denim').trim();
+      const probe = document.createElement('a'); probe.className = 'hub-mstrip-btn'; document.body.appendChild(probe);
+      const callBg = getComputedStyle(probe).backgroundColor; probe.remove();
+      const pill = document.querySelector('.bn-item.active .bn-icon');
+      return { navBg: nav.backgroundColor, denim, callBg, activePill: pill ? getComputedStyle(pill).backgroundColor : '' };
+    });
+    expect(chrome.navBg).not.toBe('rgb(255, 255, 255)');   // dark bar, not the white strip
+    expect(chrome.callBg).not.toBe('rgb(27, 22, 18)');     // primary action is brand-colored, not ink
+    // Hero + contact-pair + navbar close-rate redesign (research-informed):
+    const hero = await page.evaluate(() => {
+      const h = document.querySelector('.hub-hero');
+      const before = h ? getComputedStyle(h, '::before') : null;
+      const strip = document.querySelectorAll('.hub-mstrip-btn');
+      const call = strip[0] ? getComputedStyle(strip[0]) : null;
+      const text = strip[1] ? getComputedStyle(strip[1]) : null;
+      return {
+        heroAnim: before ? before.animationName : '',                 // aurora drift present
+        callH: call ? parseFloat(call.minHeight) : 0,
+        textH: text ? parseFloat(text.minHeight) : 0,
+        textTonal: text ? text.backgroundColor : '',                  // Text is a filled tonal, not transparent
+        pressEase: call ? call.transitionProperty : '',
+      };
+    });
+    expect(hero.heroAnim).toBe('hub-aurora');                // living aurora background
+    expect(hero.callH).toBeGreaterThanOrEqual(48);           // ≥48px tap target
+    expect(hero.textH).toBeGreaterThanOrEqual(48);
+    expect(hero.textTonal).not.toBe('rgba(0, 0, 0, 0)');     // Text is tonal-filled, not a thin outline
+    expect(hero.pressEase).toContain('transform');           // press micro-interaction wired
+    // Hero polish: NO badge when the contractor has no logo (owner: the generic
+    // letter monogram read as filler — a badge only renders for a real logo).
+    // Phone renders as a tappable chip not dim text.
+    const heroPolish = await page.evaluate(() => {
+      const phone = document.querySelector('.hub-hero-phone');
+      return {
+        hasBadge: !!document.querySelector('.hub-hero-badge'),
+        hasMonogram: !!document.querySelector('.hub-hero-monogram'),
+        phoneChip: phone ? getComputedStyle(phone).backgroundColor !== 'rgba(0, 0, 0, 0)' : false,
+      };
+    });
+    expect(heroPolish.hasBadge).toBe(false);                 // no logo in fixture → no badge
+    expect(heroPolish.hasMonogram).toBe(false);              // letter monogram removed entirely
+    expect(heroPolish.phoneChip).toBe(true);                 // phone is a filled chip, not bare text
+    // Page bg is the deeper neutral (cards must lift off it) and the tertiary
+    // gray text stays AA (≥4.5:1) against BOTH that bg and white cards.
+    const ada = await page.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement);
+      const parse = v => v.trim().replace('#', '').match(/.{2}/g).map(x => parseInt(x, 16));
+      const lum = c => { const s = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return .2126 * s[0] + .7152 * s[1] + .0722 * s[2]; };
+      const ratio = (a, b) => { const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x); return (l1 + .05) / (l2 + .05); };
+      const bg = parse(cs.getPropertyValue('--bg')), t3 = parse(cs.getPropertyValue('--text3'));
+      return { bgIsWhiteish: lum(bg) > 0.87, t3OnBg: ratio(t3, bg), t3OnWhite: ratio(t3, [255, 255, 255]) };
+    });
+    expect(ada.bgIsWhiteish).toBe(false);                  // "too white" fix holds
+    expect(ada.t3OnBg).toBeGreaterThanOrEqual(4.5);
+    expect(ada.t3OnWhite).toBeGreaterThanOrEqual(4.5);
+    assertNoErrors(page, 'mobile contact strip');
+  });
+
+  test('boot overlay shows client-facing loading copy', async ({ page }) => {
+    // Regression guard for the boot-overlay label — must read as addressed to the
+    // client ("Loading your client hub…"), not a generic unlabeled "Project Hub" tag.
+    const hub = { clientId: 907, contractorUserId: FAKE_USER_ID, contractorName: 'Boot Co', businessName: 'Boot Co', clientName: 'Boot Client', bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [] };
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=907&u=${FAKE_USER_ID}&t=boottok907`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const bootText = await page.locator('#boot-overlay').textContent();
+    expect(bootText).toContain('Loading your client hub');
+    // Premium treatment (owner ask): the hub boot screen carries the same
+    // glow/mark/track construction as the TradeDesk app boot overlay — not the
+    // old bare name + 2px line.
+    const r = await page.evaluate(() => ({
+      glow: !!document.querySelector('#boot-overlay .cbo-glow'),
+      mark: !!document.querySelector('#boot-overlay .cbo-mark svg'),
+      track: !!document.querySelector('#boot-overlay .cbo-track .cbo-sheen'),
+      bar: !!document.querySelector('#boot-overlay #boot-bar.cbo-bar'),
+      tag: (document.querySelector('#boot-overlay .cbo-tag') || {}).textContent || '',
+    }));
+    expect(r.glow).toBe(true);
+    expect(r.mark).toBe(true);
+    expect(r.track).toBe(true);
+    expect(r.bar).toBe(true);
+    expect(r.tag).toBe('Client hub');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  QUICK ACTIONS — accent icon chips + class-driven Collect state
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('dashboard quick actions — accent chips', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('all six actions render an icon chip with an SVG inside; old .qa-emoji is deleted', async () => {
+    const r = await page.evaluate(() => ({
+      chips: document.querySelectorAll('#dash-quick .qa-ico').length,
+      svgs: document.querySelectorAll('#dash-quick .qa-ico svg').length,
+      emojiClass: document.querySelectorAll('.qa-emoji').length, // removed, not renamed-and-left
+    }));
+    expect(r.chips).toBe(6);
+    expect(r.svgs).toBe(6);
+    expect(r.emojiClass).toBe(0);
+  });
+
+  test('Collect state is class-driven: qa-idle with nothing owed, qa-g when money is collectible — no inline background', async () => {
+    const r = await page.evaluate(() => {
+      const btn = document.getElementById('qa-collect-btn');
+      bids = bids.filter(b => b.id !== 886400);
+      renderDash();
+      const idle = { g: btn.classList.contains('qa-g'), idle: btn.classList.contains('qa-idle'), inlineBg: btn.style.background };
+      clients = clients.filter(c => c.id !== 886401);
+      clients.push({ id: 886401, name: 'QA Owing Client', phone: '3165550444' });
+      bids.push({ id: 886400, client_id: 886401, status: 'Closed Won', amount: 900, deposit: 0, bid_date: todayKey(), signingToken: 'qatok' });
+      renderDash();
+      const owed = { g: btn.classList.contains('qa-g'), idle: btn.classList.contains('qa-idle'), inlineBg: btn.style.background };
+      bids = bids.filter(b => b.id !== 886400);
+      renderDash();
+      return { idle, owed };
+    });
+    expect(r.idle.idle).toBe(true);
+    expect(r.idle.g).toBe(false);
+    expect(r.idle.inlineBg).toBe('');
+    expect(r.owed.g).toBe(true);
+    expect(r.owed.idle).toBe(false);
+    expect(r.owed.inlineBg).toBe('');
+    assertNoErrors(page, 'quick action collect states');
+  });
+
+  test('launcher layout on a phone: 3 columns, no tile card chrome — the chip is the button', async () => {
+    // Regression guard for the nested-card look: white .qa tiles inside the white
+    // #dash-quick card rendered as giant empty slabs (2-across on ≤380px phones).
+    // The redesign removes ALL tile chrome and guarantees 3 columns on phones.
+    const r = await page.evaluate(() => {
+      const grid = document.querySelector('#dash-quick .qa-grid');
+      const cols = getComputedStyle(grid).gridTemplateColumns.split(' ').length;
+      const qa = document.querySelector('#dash-quick .qa:not(.qa-p):not(.qa-g):not(.qa-idle)');
+      const qs = getComputedStyle(qa);
+      const chip = qa.querySelector('.qa-ico');
+      const cs = getComputedStyle(chip);
+      return {
+        cols,
+        tileBg: qs.backgroundColor,
+        tileShadow: qs.boxShadow,
+        chipW: chip.getBoundingClientRect().width,
+        chipPainted: cs.backgroundColor !== 'rgba(0, 0, 0, 0)' || cs.backgroundImage.includes('gradient'),
+      };
+    });
+    expect(r.cols).toBe(3);                                  // 390px phone → 3-across, never 2 giant slabs
+    expect(r.tileBg).toBe('rgba(0, 0, 0, 0)');               // tile itself is chromeless
+    expect(r.tileShadow).toBe('none');                       // no card shadow around the tile
+    expect(Math.abs(r.chipW - 48)).toBeLessThan(1);          // the icon chip is the visual button (subpixel-safe)
+    expect(r.chipPainted).toBe(true);                        // and it carries the accent fill (solid or gradient)
+    assertNoErrors(page, 'quick action launcher layout');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  SIGN-FLOW WARMTH BADGE — contractor-facing furthest-step surfacing
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('_signStepBadge — sign-flow warmth on pending bid cards', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('renders an escalating warmth label per step, empty for opened/signed/unknown/missing', async () => {
+    const r = await page.evaluate(() => {
+      window._proposalViewsByBidStep = {
+        '9001': 'approved', '9002': 'signature_ready', '9003': 'payment_viewed',
+        '9004': 'method_selected', '9005': 'opened', '9006': 'signed', '9007': 'garbage',
+      };
+      return {
+        approved: _signStepBadge(9001),
+        sig: _signStepBadge(9002),
+        pay: _signStepBadge(9003),
+        method: _signStepBadge(9004),
+        opened: _signStepBadge(9005),   // adds nothing beyond the existing viewed badge
+        signed: _signStepBadge(9006),   // redundant with the bid flipping Closed Won
+        unknown: _signStepBadge(9007),
+        missing: _signStepBadge(9999),
+      };
+    });
+    expect(r.approved).toContain('Reviewing');
+    expect(r.sig).toContain('Signature entered');
+    expect(r.pay).toContain('Reached payment — hot lead');
+    expect(r.method).toContain('call them now');
+    expect(r.opened).toBe('');
+    expect(r.signed).toBe('');
+    expect(r.unknown).toBe('');
+    expect(r.missing).toBe('');
+    // Renders a real SVG icon, and escalating steps carry distinct colors
+    expect(r.pay).toContain('<svg');
+    expect(r.pay).not.toBe(r.method);
+    assertNoErrors(page, 'sign step badge');
+  });
+
+  test('dashboard pending-proposal card includes the warmth line when a step exists', async () => {
+    const r = await page.evaluate(() => {
+      const cid = 887001, bid = 887002;
+      clients = clients.filter(c => c.id !== cid);
+      clients.push({ id: cid, name: 'Warmth Client', phone: '3165550777' });
+      bids = bids.filter(b => b.id !== bid);
+      bids.push({ id: bid, client_id: cid, status: 'Pending', amount: 4200, bid_date: todayKey(), signingToken: 'warmtok', type: 'Roof Repair' });
+      window._proposalViewsByBidStep = { [String(bid)]: 'payment_viewed' };
+      window._proposalViewsByBidClient = { [String(bid)]: new Date().toISOString() };
+      // §11.6: Make Money Today sections only render items into innerHTML when
+      // expanded — default (undefined) means collapsed and the count is always 0.
+      window._mmtCol_build = false; window._mmtCol_pending = false; window._mmtCol_collect = false;
+      renderDash();
+      const feed = document.getElementById('dash-money-feed');
+      return { html: feed ? feed.innerHTML : '' };
+    });
+    expect(r.html).toContain('Reached payment — hot lead');
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3928,6 +4846,16 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     await mockAllExternal(page);
     await page.goto('/');
     await waitForAppBoot(page);
+    // tm-profit-gauge/byo-profit-gauge are rendered into empty wrap divs by
+    // _geiRenderProfitGauge (called from _tmShowPage/_byoShowPage on a real page
+    // visit) rather than existing statically in the HTML — render them here so
+    // every test in this block sees the same elements a real visit would produce.
+    await page.evaluate(() => {
+      if (typeof _geiRenderProfitGauge === 'function') {
+        _geiRenderProfitGauge('tm', '_tmInputChange()');
+        _geiRenderProfitGauge('byo', "this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()");
+      }
+    });
   });
   test.afterAll(() => page.close());
 
@@ -3984,7 +4912,7 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     expect(color).toBe('rgb(34, 197, 94)');
   });
 
-  test('gauge dot position matches the margin percent (high margin lands in green band)', async () => {
+  test('gauge dot position matches the margin percent (68% now lands in the amber band per owner threshold change)', async () => {
     const r = await page.evaluate(() => {
       const costEl = document.getElementById('tm-expected-cost');
       if (!costEl || typeof _updateMarginGauge !== 'function') return null;
@@ -4002,10 +4930,11 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     });
     if (r === null) return;
     expect(r.pctText).toBe('68%');
-    // Dot sits at its own margin % — within the gradient's green band (38%–78%), matching the green ring.
+    // Dot sits at its own margin % along the bar.
     expect(r.left).toBe('68%');
-    // Browsers normalize hex → rgb() when reading .style.color
-    expect(r.color).toBe('rgb(34, 197, 94)');
+    // Owner threshold change (2026-07-06): green tops out at 55% — 55-75% is now
+    // amber "double-check your cost numbers". Browsers normalize hex → rgb().
+    expect(r.color).toBe('rgb(245, 158, 11)');
   });
 
   test('gauge shows red zone when underpriced (10% margin)', async () => {
@@ -4227,7 +5156,10 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
     expect(r.notesWouldSuppressForRrp).toBe(true);
   });
 
-  test('mobile profit bar elements exist in DOM', async () => {
+  test('the dead duplicate mobile profit bar (#byo-mob-bar) was deleted, not just hidden', async () => {
+    // Was permanently display:none with byom-* ids never touched by any JS (confirmed via
+    // grep) — a broken duplicate of the summary rail's Send/Sign buttons. Deleted outright
+    // per CLAUDE.md §7 rather than left as inert markup.
     const r = await page.evaluate(() => ({
       bar: !!document.getElementById('byo-mob-bar'),
       total: !!document.getElementById('byo-mob-total'),
@@ -4237,29 +5169,13 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
       gaugeMsg: !!document.getElementById('byom-gauge-msg'),
       gaugeHint: !!document.getElementById('byom-gauge-hint'),
     }));
-    expect(r.bar).toBe(true);
-    expect(r.total).toBe(true);
-    expect(r.costInput).toBe(true);
-    expect(r.gauge).toBe(true);
-    expect(r.gaugePct).toBe(true);
-    expect(r.gaugeMsg).toBe(true);
-    expect(r.gaugeHint).toBe(true);
-  });
-
-  test('_updateMarginGauge works for byom prefix — updates pct and msg', async () => {
-    const r = await page.evaluate(() => {
-      // Set mobile cost input value
-      const costEl = document.getElementById('byom-expected-cost');
-      if (costEl) costEl.value = '1200';
-      _updateMarginGauge('byom', 2000);
-      const pct = document.getElementById('byom-gauge-pct')?.textContent;
-      const msg = document.getElementById('byom-gauge-msg')?.textContent;
-      const gaugeVisible = document.getElementById('byom-profit-gauge')?.style.display !== 'none';
-      return { pct, msg: !!msg, gaugeVisible };
-    });
-    expect(r.pct).toBe('40%');
-    expect(r.msg).toBe(true);
-    expect(r.gaugeVisible).toBe(true);
+    expect(r.bar).toBe(false);
+    expect(r.total).toBe(false);
+    expect(r.costInput).toBe(false);
+    expect(r.gauge).toBe(false);
+    expect(r.gaugePct).toBe(false);
+    expect(r.gaugeMsg).toBe(false);
+    expect(r.gaugeHint).toBe(false);
   });
 
   test('_injectRrpItems seeds T&M lines when _geiIsTM is true', async () => {
@@ -4480,6 +5396,15 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // byo-expected-cost/byo-gauge-dollars live inside byo-gauge-wrap, rendered by
+    // _geiRenderProfitGauge (called from _byoShowPage on a real page visit) rather
+    // than existing statically — render once here since these tests don't drive
+    // the full goGeiStep() navigation that would trigger it.
+    await page.evaluate(() => {
+      if (typeof _geiRenderProfitGauge === 'function') {
+        _geiRenderProfitGauge('byo', "this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()");
+      }
+    });
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -4748,7 +5673,7 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
 
 
 // ── Paint estimate scope fixes: no scroll chaining, unified renderer, no hours popup ─────────
-test.describe('Paint estimate scope — scroll fix + unified renderer', () => {
+test.describe('Paint estimate scope — deleted with the surface estimator', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -4759,91 +5684,16 @@ test.describe('Paint estimate scope — scroll fix + unified renderer', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('surf-step-b has overscroll-behavior:none to kill iOS pull-to-refresh and scroll chaining', async () => {
-    const style = await page.locator('#surf-step-b').getAttribute('style');
-    expect(style).toContain('overscroll-behavior:none');
-  });
-
-  test('surf-scope-preset container removed from DOM', async () => {
-    const count = await page.locator('#surf-scope-preset').count();
-    expect(count).toBe(0);
-  });
-
-  test('applyStdScopePreset function removed', async () => {
-    const exists = await page.evaluate(() => typeof applyStdScopePreset === 'function');
-    expect(exists).toBe(false);
-  });
-
-  test('buildScopeGrid with roomName populates surf-scope-first-grid', async () => {
+  test('surf-step-b, buildScopeGrid, toggleScope, goSurfStepB all removed', async () => {
     const r = await page.evaluate(() => {
-      if (typeof buildScopeGrid !== 'function') return null;
-      if (typeof SCOPE_ITEMS === 'undefined') return null;
-      buildScopeGrid('Living Room');
-      const grid = document.getElementById('surf-scope-first-grid');
-      if (!grid) return null;
-      return { itemCount: grid.querySelectorAll('.stog').length, usesRoomHandler: grid.innerHTML.includes('toggleScopeRoom') };
+      const names = ['buildScopeGrid', 'toggleScope', 'goSurfStepB', 'onSurfRoomName', 'toggleSurfWhat', 'applyStdScopePreset'];
+      return {
+        surfStepB: !!document.getElementById('surf-step-b'),
+        types: names.map(n => { let t; try { t = typeof eval(n); } catch (e) { t = 'undefined'; } return [n, t]; }),
+      };
     });
-    if (r === null) return;
-    expect(r.itemCount).toBeGreaterThan(0);
-    expect(r.usesRoomHandler).toBe(true);
-  });
-
-  test('buildScopeGrid without roomName does NOT write to surf-scope-first-grid', async () => {
-    const r = await page.evaluate(() => {
-      if (typeof buildScopeGrid !== 'function') return null;
-      const grid = document.getElementById('surf-scope-first-grid');
-      if (!grid) return null;
-      const before = grid.innerHTML;
-      buildScopeGrid();
-      return { changed: grid.innerHTML !== before };
-    });
-    if (r === null) return;
-    expect(r.changed).toBe(false);
-  });
-
-  test('toggleScope does not open a scope-hours modal', async () => {
-    const r = await page.evaluate(() => {
-      if (typeof toggleScope !== 'function') return null;
-      const before = document.querySelectorAll('.zmodal-overlay').length;
-      try { toggleScope('protect'); } catch(e) {}
-      const after = document.querySelectorAll('.zmodal-overlay').length;
-      return { modalOpened: after > before };
-    });
-    if (r === null) return;
-    expect(r.modalOpened).toBe(false);
-  });
-
-  test('goSurfStepB sets pg-est overflow to hidden and resets scrollTop', async () => {
-    const r = await page.evaluate(() => {
-      if (typeof goSurfStepB !== 'function') return null;
-      if (typeof onSurfRoomName !== 'function') return null;
-      const pgEst = document.getElementById('pg-est');
-      if (!pgEst) return null;
-      // Simulate a scrolled state before opening the overlay
-      pgEst.scrollTop = 300;
-      // surfRoom is a top-level `let` (declared in js/jobs.js) living in the shared
-      // global lexical environment, NOT on window — assigning window.surfRoom would
-      // create a separate property the function never reads. Drive it through the
-      // production handler onSurfRoomName(), which mutates the real binding from inside
-      // its own closure. Same reason toggleSurfWhat() is used for surfWhatSelected.
-      let roomInput = document.getElementById('surf-room-name');
-      if (!roomInput) { roomInput = document.createElement('input'); roomInput.id = 'surf-room-name'; document.body.appendChild(roomInput); }
-      roomInput.value = 'Kitchen';
-      onSurfRoomName(roomInput);
-      if (typeof toggleSurfWhat === 'function') toggleSurfWhat('walls');
-      try { goSurfStepB(); } catch(e) {}
-      const overflowHidden = pgEst.style.overflowY === 'hidden';
-      const scrollReset = pgEst.scrollTop === 0;
-      document.getElementById('surf-step-b').style.display = 'none';
-      pgEst.style.overflowY = '';
-      // Reset the shared binding so later tests start from a clean room state
-      roomInput.value = ''; onSurfRoomName(roomInput);
-      if (typeof toggleSurfWhat === 'function') toggleSurfWhat('walls');
-      return { overflowHidden, scrollReset };
-    });
-    if (r === null) return;
-    expect(r.overflowHidden).toBe(true);
-    expect(r.scrollReset).toBe(true);
+    expect(r.surfStepB).toBe(false);
+    for (const [name, type] of r.types) expect(type, name + ' should no longer be defined').toBe('undefined');
   });
 
   test('no console errors in scope fix tests', async () => {
@@ -5077,6 +5927,14 @@ test.describe('Crew labor cost in profit gauge', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // byo-expected-cost lives inside byo-gauge-wrap, rendered by _geiRenderProfitGauge
+    // (called from _byoShowPage on a real page visit) — render once here since these
+    // tests call _byoUpdateRail directly without driving full page navigation.
+    await page.evaluate(() => {
+      if (typeof _geiRenderProfitGauge === 'function') {
+        _geiRenderProfitGauge('byo', "this.dataset.userSet='true';_byoUpdateRail();_byoAutosave()");
+      }
+    });
   });
 
   test.afterAll(async () => { await page.context().close(); });
@@ -5323,6 +6181,10 @@ test.describe('UI cleanup — redundant elements removed', () => {
     await page.evaluate(() => {
       const el = document.getElementById('gei-byo-page');
       if (el) el.style.display = 'block';
+      // The back button is rendered into byo-topbar-wrap by _geiRenderTopBar
+      // (called from _byoShowPage on a real page visit) rather than existing
+      // statically in the HTML.
+      if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('byo', 'Build Your Own proposal', '_editByoTitle');
     });
     const backBtns = await page.locator('#gei-byo-page .tbar .link-back').count();
     expect(backBtns).toBe(1);
@@ -5332,6 +6194,7 @@ test.describe('UI cleanup — redundant elements removed', () => {
     await page.evaluate(() => {
       const el = document.getElementById('gei-tm-page');
       if (el) el.style.display = 'block';
+      if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('tm', 'Time &amp; Materials proposal', '_editTMTitle');
     });
     const backBtns = await page.locator('#gei-tm-page .tbar .link-back').count();
     expect(backBtns).toBe(1);
@@ -5347,18 +6210,9 @@ test.describe('UI cleanup — redundant elements removed', () => {
     expect(count).toBe(0);
   });
 
-  test('est-review div is direct child of its card with no header', async () => {
+  test('est-review — removed with the paint estimator', async () => {
     const reviewEl = await page.locator('#est-review').count();
-    expect(reviewEl).toBeGreaterThan(0);
-    // Confirm no sibling card-hd exists in the same card
-    const cardHdInReviewCard = await page.evaluate(() => {
-      const el = document.getElementById('est-review');
-      if (!el) return 0;
-      const card = el.closest('.card');
-      if (!card) return 0;
-      return card.querySelectorAll('.card-hd').length;
-    });
-    expect(cardHdInReviewCard).toBe(0);
+    expect(reviewEl).toBe(0);
   });
 
   test('step bar steps are evenly distributed — flex:1 applied', async () => {
@@ -5414,13 +6268,9 @@ test.describe('UI cleanup — redundant elements removed', () => {
     expect(result.base).toBeGreaterThanOrEqual(500);
   });
 
-  test('step 3 heading is Pricing tier not Property type', async () => {
-    const tierHeading = await page.evaluate(() => {
-      const cards = document.querySelectorAll('#est-s3 .card-hd');
-      return Array.from(cards).map(c => c.textContent.trim());
-    });
-    expect(tierHeading.some(t => t === 'Pricing tier')).toBe(true);
-    expect(tierHeading.some(t => t === 'Property type')).toBe(false);
+  test('est-s3 — removed with the paint estimator', async () => {
+    const count = await page.locator('#est-s3').count();
+    expect(count).toBe(0);
   });
 
   test('pg.active animation leaves no persistent transform stacking context', async () => {
@@ -5442,7 +6292,7 @@ test.describe('UI cleanup — redundant elements removed', () => {
   });
 });
 
-test.describe('Int/ext estimate review — profit gauge + compact summary', () => {
+test.describe('Int/ext estimate review — removed with the paint estimator', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -5455,46 +6305,19 @@ test.describe('Int/ext estimate review — profit gauge + compact summary', () =
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderEstReview renders compact summary with Total row', async () => {
+  test('renderEstReview, _paintGaugeUpdate, and the paint profit gauge DOM are all gone', async () => {
     const r = await page.evaluate(() => {
-      if (typeof renderEstReview !== 'function') return null;
-      estSurfaces = [{ room: 'Living Room', type: 'walls', qty: 400 }];
-      renderEstReview();
-      const el = document.getElementById('est-review');
-      return el ? el.innerHTML : null;
+      let renderEstReviewType, paintGaugeUpdateType;
+      try { renderEstReviewType = typeof renderEstReview; } catch (e) { renderEstReviewType = 'undefined'; }
+      try { paintGaugeUpdateType = typeof _paintGaugeUpdate; } catch (e) { paintGaugeUpdateType = 'undefined'; }
+      return {
+        renderEstReviewType, paintGaugeUpdateType,
+        gauge: !!document.getElementById('paint-profit-gauge'),
+      };
     });
-    if (r === null) return;
-    expect(r).toContain('Total');
-    expect(r).not.toContain('Labor hours'); // analysis hidden by default
-  });
-
-  test('analysis details collapsed by default (est-mets-detail hidden)', async () => {
-    const hidden = await page.evaluate(() => {
-      const d = document.getElementById('est-mets-detail');
-      return d ? d.hidden : null;
-    });
-    if (hidden === null) return;
-    expect(hidden).toBe(true);
-  });
-
-  test('profit gauge IDs present after renderEstReview', async () => {
-    const ids = await page.evaluate(() => ({
-      gauge: !!document.getElementById('paint-profit-gauge'),
-      dot: !!document.getElementById('paint-gauge-dot'),
-      pct: !!document.getElementById('paint-gauge-pct'),
-      hint: !!document.getElementById('paint-gauge-hint'),
-      costInput: !!document.getElementById('paint-expected-cost'),
-    }));
-    if (!ids.gauge) return;
-    expect(ids.gauge).toBe(true);
-    expect(ids.dot).toBe(true);
-    expect(ids.pct).toBe(true);
-    expect(ids.costInput).toBe(true);
-  });
-
-  test('_paintGaugeUpdate function exists', async () => {
-    const exists = await page.evaluate(() => typeof _paintGaugeUpdate === 'function');
-    expect(exists).toBe(true);
+    expect(r.renderEstReviewType).toBe('undefined');
+    expect(r.paintGaugeUpdateType).toBe('undefined');
+    expect(r.gauge).toBe(false);
   });
 
   test('no console errors in review gauge tests', async () => {
@@ -5558,7 +6381,6 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       _tmRatePerMan = 65;
       _tmEstHours = 8;
       _tmBillingCycle = 'weekly';
-      _tmMatMarkup = 15;
       _byoAutosave();
       const saved = bids.find(b => b.id === fakeId);
       bids.splice(bids.findIndex(b => b.id === fakeId), 1);
@@ -5640,7 +6462,6 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       _tmRatePerMan = 75;
       _tmEstHours = 10;
       _tmBillingCycle = 'completion';
-      _tmMatMarkup = 0;
       // _tmRecalc() reads crew/rate/hours from DOM — sync DOM first
       const _crewEl = document.getElementById('tm-crew-display');
       if (_crewEl) _crewEl.textContent = '2';
@@ -5680,19 +6501,13 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_paintEstAutosave function exists', async () => {
-    const exists = await page.evaluate(() => typeof _paintEstAutosave === 'function');
-    expect(exists).toBe(true);
-  });
-
-  test('tbar-r has Save & exit navigation button (no manual Save draft button)', async () => {
-    // A "Save & exit" navigation button lives in tbar-r so users can leave without
-    // generating a bid. Autosave (_paintEstAutosave) handles drafting — no separate
-    // "Save draft" button should exist; only the exit-to-home navigation button.
-    const count = await page.locator('#pg-est .tbar-r button').count();
-    expect(count).toBe(1);
-    const label = await page.locator('#pg-est .tbar-r button').first().textContent();
-    expect(label).toContain('exit');
+  test('_paintEstAutosave and pg-est were removed with the paint estimator', async () => {
+    const r = await page.evaluate(() => {
+      let t; try { t = typeof _paintEstAutosave; } catch (e) { t = 'undefined'; }
+      return { paintEstAutosaveType: t, pgEst: !!document.getElementById('pg-est') };
+    });
+    expect(r.paintEstAutosaveType).toBe('undefined');
+    expect(r.pgEst).toBe(false);
   });
 
   test('_paintEstAutosave creates a draft bid in bids[] when client name is set', async () => {
@@ -5829,66 +6644,38 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
     expect(result.rooms).toBe(1);
   });
 
-  test('recoverBidRooms restores surfaces from the recovery snapshot', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof recoverBidRooms !== 'function') return null;
-      if (typeof bids === 'undefined') return null;
-      const fakeId = 'recover-' + Date.now();
-      // Live bid lost its surfaces; snapshot holds the full copy
-      bids.push({ id: fakeId, status: 'Pending', client_name: 'Recover Test', surfaces: [], roomScopeMap: { 'Living': { spackle: { active: true } } } });
-      const snap = { ts: Date.now(), cloud_cache: JSON.stringify({ bids: [
-        { id: fakeId, surfaces: [{ id: 1, type: 'walls', room: 'Living', qty: 300 }, { id: 2, type: 'ceiling', room: 'Living', qty: 150 }], roomScopeMap: { 'Living': { spackle: { active: true } } } }
-      ] }) };
-      localStorage.setItem('zp3_recovery_snapshot', JSON.stringify(snap));
-      const ok = recoverBidRooms(fakeId);
-      const b = bids.find(x => x.id === fakeId);
-      const out = { ok, surf: b.surfaces?.length || 0 };
-      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
-      localStorage.removeItem('zp3_recovery_snapshot');
-      return out;
-    });
-    if (result === null) return;
-    expect(result.ok).toBe(true);
-    expect(result.surf).toBe(2);
+  // The paint-era recovery system (boot snapshot + per-bid "Recover rooms") was
+  // removed with the owner's sign-off — it recovered surfaces/roomScopeMap for
+  // the deleted paint estimator and never worked reliably. §7.1: prove the old
+  // entry points are gone, not just unused. _pickBid/_bidRichness stay — they
+  // are live sync-merge logic, not part of the recovery feature.
+  test('recovery system removed — recoverBidRooms and _captureRecoverySnapshot are gone', async () => {
+    const r = await page.evaluate(() => ({
+      recoverFn: typeof recoverBidRooms,
+      captureFn: typeof _captureRecoverySnapshot,
+      scanFn: typeof _scanRecoverableEstimate,
+      windowBinding: typeof window.recoverBidRooms,
+      mergeHelpersKept: typeof _pickBid === 'function' && typeof _bidRichness === 'function',
+    }));
+    expect(r.recoverFn).toBe('undefined');
+    expect(r.captureFn).toBe('undefined');
+    expect(r.scanFn).toBe('undefined');
+    expect(r.windowBinding).toBe('undefined');
+    expect(r.mergeHelpersKept, '_pickBid/_bidRichness are live sync-merge logic and must survive the removal').toBe(true);
   });
 
-  test('recoverBidRooms does not downgrade a bid that already has more data', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof recoverBidRooms !== 'function') return null;
-      const fakeId = 'nodown-' + Date.now();
-      bids.push({ id: fakeId, status: 'Pending', client_name: 'NoDown', surfaces: [{ id: 1, type: 'walls', room: 'A', qty: 100 }, { id: 2, type: 'walls', room: 'B', qty: 100 }], roomScopeMap: {} });
-      const snap = { ts: Date.now(), cloud_cache: JSON.stringify({ bids: [{ id: fakeId, surfaces: [{ id: 1, type: 'walls', room: 'A', qty: 100 }], roomScopeMap: {} }] }) };
-      localStorage.setItem('zp3_recovery_snapshot', JSON.stringify(snap));
-      const ok = recoverBidRooms(fakeId);
-      const b = bids.find(x => x.id === fakeId);
-      const out = { ok, surf: b.surfaces.length };
-      bids.splice(bids.findIndex(x => x.id === fakeId), 1);
-      localStorage.removeItem('zp3_recovery_snapshot');
-      return out;
+  test('recovery system removed — no "Recover rooms" button renders on bid cards', async () => {
+    const r = await page.evaluate(() => {
+      const c = { id: 90201, name: 'Recover Btn Client', addr: '1 Gone St' };
+      clients = clients.filter(x => x.id !== 90201).concat([c]);
+      bids = bids.filter(x => x.client_id !== 90201);
+      bids.push({ id: 902011, client_id: 90201, client_name: c.name, amount: 400, deposit: 0, status: 'Pending', bid_date: todayKey(), trade_type: 'general', geiLines: [{ desc: 'Work', qty: 1, rate: 400, total: 400 }] });
+      currentClientId = 90201;
+      if (typeof renderClientDetail === 'function') try { renderClientDetail(); } catch (e) {}
+      const html = document.getElementById('pg-client-detail')?.innerHTML || '';
+      return { hasRecoverBtn: html.includes('Recover rooms') || html.includes('recoverBidRooms') };
     });
-    if (result === null) return;
-    expect(result.ok).toBe(false);
-    expect(result.surf).toBe(2); // unchanged — never downgraded
-  });
-
-  test('_scanRecoverableEstimate finds surfaces frozen in the boot snapshot', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _scanRecoverableEstimate !== 'function') return null;
-      const snap = { ts: Date.now(),
-        est_full_draft: JSON.stringify({ cname: 'Adam Ryder', surfaces: [], roomScopeMap: { A:{}, B:{} }, ts: Date.now() }),
-        surf_draft: JSON.stringify({ surfaces: [
-          { id:1, type:'walls', room:'A', qty:200 }, { id:2, type:'ceiling', room:'A', qty:150 }, { id:3, type:'walls', room:'B', qty:180 }
-        ], ts: Date.now() }) };
-      const prev = localStorage.getItem('zp3_recovery_snapshot');
-      localStorage.setItem('zp3_recovery_snapshot', JSON.stringify(snap));
-      const r = _scanRecoverableEstimate();
-      if (prev) localStorage.setItem('zp3_recovery_snapshot', prev); else localStorage.removeItem('zp3_recovery_snapshot');
-      return r ? { surf: r.surf, rooms: r.rooms, cname: r.cname } : null;
-    });
-    if (result === null) return;
-    expect(result.surf).toBe(3);      // grafted from the richer surf_draft
-    expect(result.rooms).toBe(2);     // roomScopeMap from est_full_draft
-    expect(result.cname).toBe('Adam Ryder');
+    expect(r.hasRecoverBtn).toBe(false);
   });
 
   test('no console errors in paint autosave tests', async () => {
@@ -6393,6 +7180,30 @@ test.describe('Never-delete policy — archive + hold + edit', () => {
       expect(r.vehicles.length).toBe(0);                  // took B's (empty) vehicles wholesale
       expect(r.bname).toBe('Zach Co');                    // B's business name, not A's
       expect(r.owner).toBe('account-B-uid');              // S now stamped to B
+    }
+  });
+
+  // Regression — a real user-reported bug: leads a contractor created on their own
+  // device kept showing up in a different employee's (Zach's) Leads page after he
+  // signed in on the same shared device. Root cause: the inbound-lead review queue
+  // (_pendingInbound, for QR/intake-form leads awaiting review) is in-memory state
+  // that lives OUTSIDE the clients/bids/jobs/... arrays the account-switch wipe
+  // already clears — it was never included, so it survived a sign-out/sign-in and
+  // kept rendering (and could be promoted into) the next account signed into.
+  test('cross-account lead-bleed guard: _pendingInbound (QR/intake review queue) is cleared on account switch', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _wipeLocalAccountData !== 'function' || typeof _pendingInbound === 'undefined') return { skip: true };
+      _pendingInbound = [{ id: 'lead-a-1', name: 'Account A Lead', source: 'qr_form' }];
+      _processedInboundIds.add('already-processed-by-a');
+      _wipeLocalAccountData();
+      return {
+        pendingCount: (typeof _pendingInbound !== 'undefined' ? _pendingInbound.length : -1),
+        processedHasStale: (typeof _processedInboundIds !== 'undefined' ? _processedInboundIds.has('already-processed-by-a') : true),
+      };
+    });
+    if (!r.skip) {
+      expect(r.pendingCount, 'the outgoing account\'s unreviewed leads must not survive into the next login').toBe(0);
+      expect(r.processedHasStale, 'the outgoing account\'s processed-id memory must not carry over either').toBe(false);
     }
   });
 

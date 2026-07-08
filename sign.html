@@ -7,6 +7,7 @@
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://js.stripe.com/v3/"></script>
+<script src="js/icons.js"></script>
 <script src="js/legal.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
@@ -37,13 +38,6 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .card{background:var(--bg2);border-radius:var(--rl);padding:20px;margin-bottom:14px;box-shadow:0 2px 8px rgba(27,22,18,.10),0 0 0 1px rgba(27,22,18,.05)}
 .lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--text3);margin-bottom:12px;display:block;font-family:var(--font-ui)}
 
-/* Amount box */
-.amt-box{background:linear-gradient(135deg,var(--ink) 0%,#1B3465 100%);border-radius:var(--rl);padding:28px 24px;text-align:center;margin-bottom:16px;position:relative;overflow:hidden}
-.amt-box::before{content:'';position:absolute;right:-30px;top:-30px;width:120px;height:120px;border-radius:50%;background:rgba(255,255,255,.04)}
-.amt-total{font-size:52px;font-weight:900;color:#fff;letter-spacing:-2px;font-family:var(--font-display);line-height:1}
-.amt-dep{font-size:14px;color:rgba(255,255,255,.65);margin-top:10px;font-weight:600}
-.amt-bal{font-size:12px;color:rgba(255,255,255,.38);margin-top:4px;font-weight:500}
-
 /* Row */
 .row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);font-size:13px}
 .row:last-child{border-bottom:none;padding-bottom:0}
@@ -70,12 +64,15 @@ input[type=text]:focus{border-color:var(--denim)}
 
 /* Status pages */
 .pg-status{text-align:center;padding:60px 20px}
-.pg-status-icon{font-size:60px;margin-bottom:16px}
 .pg-status h2{font-size:26px;font-weight:900;margin-bottom:10px;font-family:var(--font-display);letter-spacing:-.5px}
 .pg-status p{font-size:14px;color:var(--text2);line-height:1.7;max-width:400px;margin:0 auto}
 
 /* Done box */
 .done-box{margin-top:20px;background:var(--green-lt);border:1px solid var(--green-border);border-radius:var(--rl);padding:16px;text-align:left}
+/* Peak-end: confirmation badge pops in like a win, not a form submission.
+   Re-triggers automatically when pg-done flips from display:none to visible. */
+@keyframes td-done-pop{0%{transform:scale(.5);opacity:0}70%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+#pg-done .pg-status-badge{animation:td-done-pop .35s cubic-bezier(.22,1,.36,1) both}
 
 /* Step dots */
 .step-dots{display:flex;gap:5px;margin-bottom:22px}
@@ -83,9 +80,7 @@ input[type=text]:focus{border-color:var(--denim)}
 .dot.active{background:var(--denim);flex:2}
 .dot.done{background:var(--green-mid)}
 
-/* Portfolio offer */
-.po-hdr{background:linear-gradient(135deg,var(--ink) 0%,#1a365d 100%);border-radius:var(--rl) var(--rl) 0 0;padding:18px 20px}
-.po-body{background:#fff;border:1px solid var(--border);border-top:none;border-radius:0 0 var(--rl) var(--rl);padding:18px 20px}
+/* Portfolio offer — plain card, not a competing hero banner */
 .po-prices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
 .po-price-box{border-radius:var(--r);padding:16px;text-align:center}
 .po-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
@@ -105,12 +100,6 @@ input[type=text]:focus{border-color:var(--denim)}
 /* Sticky bar */
 #sticky-bar{position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--border);padding:12px 16px;display:none;flex-direction:column;align-items:stretch;gap:8px;z-index:200;box-shadow:0 -4px 24px rgba(27,22,18,.12)}
 
-/* Float call */
-#float-call{position:fixed;bottom:80px;right:16px;width:52px;height:52px;border-radius:50%;background:#16a34a;display:none;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,0,0,.25);z-index:201;font-size:20px;text-decoration:none}
-
-/* PDF button */
-.pdf-btn{width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:14px;display:flex;align-items:center;justify-content:center;gap:7px}
-
 /* --- sig-* new classes --- */
 
 /* Eyebrow label */
@@ -119,10 +108,16 @@ input[type=text]:focus{border-color:var(--denim)}
 /* Title */
 .sig-title{font-size:32px;font-weight:900;font-family:var(--font-display);letter-spacing:-.5px;color:var(--text);margin-bottom:18px;line-height:1.1}
 
-/* Summary banner */
-.sig-summary{background:linear-gradient(135deg,var(--ink) 0%,#1B3465 100%);border-radius:var(--r);padding:16px 18px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:center;position:relative;overflow:hidden}
-.sig-summary-lbl{font-size:11px;color:rgba(255,255,255,.5);font-weight:700;text-transform:uppercase;letter-spacing:.07em}
-.sig-summary-amt{font-size:34px;font-weight:900;color:#fff;font-family:var(--font-display);letter-spacing:-1px;line-height:1}
+/* Status badge — replaces decorative emoji on load/done/error/declined pages
+   with a single consistent icon language (plain circle + line-art SVG) */
+.pg-status-badge{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+.pg-status-badge svg{width:28px;height:28px}
+.pg-status-badge.success{background:linear-gradient(135deg,#16a34a,#15803d)}
+.pg-status-badge.error{background:linear-gradient(135deg,#dc2626,#b91c1c)}
+.pg-status-badge.neutral{background:var(--bg);border:1.5px solid var(--border2)}
+.pg-status-badge.neutral svg{stroke:var(--text2)}
+.pg-spinner{width:40px;height:40px;border-radius:50%;border:3px solid var(--border2);border-top-color:var(--denim);margin:0 auto 18px;animation:pg-spin .8s linear infinite}
+@keyframes pg-spin{to{transform:rotate(360deg)}}
 
 /* Field wrapper */
 .sig-field{margin-bottom:14px}
@@ -133,12 +128,6 @@ input[type=text]:focus{border-color:var(--denim)}
 .sig-pad canvas{display:block;width:100%;height:130px}
 .sig-pad-baseline{position:absolute;bottom:28px;left:20px;right:20px;height:1.5px;background:var(--ink);opacity:.1}
 .sig-pad .sig-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;pointer-events:none;text-align:center;padding:0 20px}
-
-/* Meta grid */
-.sig-meta{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;border-radius:10px;overflow:hidden;background:var(--border);margin-bottom:16px}
-.sig-meta-cell{background:var(--bg);padding:10px 12px}
-.sig-meta-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:3px}
-.sig-meta-val{font-size:13px;font-weight:700;color:var(--text);word-break:break-all}
 
 /* Checkbox */
 .sig-checkbox{display:flex;align-items:flex-start;gap:12px;padding:14px;background:var(--bg);border:1.5px solid var(--border2);border-radius:10px;cursor:pointer;margin-bottom:20px}
@@ -182,12 +171,9 @@ input[type=text]:focus{border-color:var(--denim)}
 /* Cash notice */
 .cash-notice{background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:12px;margin-bottom:14px;font-size:13px;color:#92400E;line-height:1.6}
 
-@media(max-width:480px){
-  .sig-meta{grid-template-columns:1fr 1fr}
-}
 
 @media print{
-  .topbar,#sticky-bar,#float-call,.step-dots,#portfolio-offer-card,.sig-pad,.btn,.btn-sec,button,.pdf-btn{display:none!important}
+  .topbar,#sticky-bar,.step-dots,#portfolio-offer-card,.sig-pad,.btn,.btn-sec,button{display:none!important}
   /* Accordion-collapsed terms must always appear in the printed/PDF contract */
   #prop-html [data-terms-hdr],#prop-html [data-terms-body]{display:block!important}
   .wrap{padding:8px;max-width:100%}
@@ -221,7 +207,7 @@ input[type=text]:focus{border-color:var(--denim)}
 
 <div class="wrap" style="padding-bottom:90px">
   <!-- Loading -->
-  <div id="pg-load" class="pg-status"><div class="pg-status-icon">⏳</div><h2>Loading proposal...</h2><p>Just a moment.</p></div>
+  <div id="pg-load" class="pg-status"><div class="pg-spinner"></div><h2>Loading proposal...</h2><p>Just a moment.</p></div>
 
   <!-- Step 1: Review -->
   <div id="pg-sign" style="display:none">
@@ -245,48 +231,11 @@ input[type=text]:focus{border-color:var(--denim)}
       </div>
     </div>
 
-    <!-- Portfolio offer — shown only when isPortfolio=true -->
-    <div id="portfolio-offer-card" style="display:none;margin-bottom:14px;box-shadow:0 2px 8px rgba(0,0,0,.1);border-radius:var(--rl)">
-      <div class="po-hdr">
-        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:rgba(255,255,255,.5);margin-bottom:5px">Limited offer</div>
-        <div style="font-size:19px;font-weight:800;color:#fff;letter-spacing:-.3px">Special offer — Save <span id="po-pct-hdr"></span>% on this project</div>
-      </div>
-      <div class="po-body">
-        <div id="po-pitch" style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:16px"></div>
-        <div class="po-prices">
-          <div class="po-price-box" style="background:var(--bg);border:1px solid var(--border2)">
-            <div class="po-lbl" style="color:var(--text3)">Full price</div>
-            <div id="po-full-price" class="po-amt" style="color:var(--text)"></div>
-          </div>
-          <div class="po-price-box" style="background:#f0fdf4;border:2px solid #16a34a">
-            <div class="po-lbl" style="color:#16a34a">With photos</div>
-            <div id="po-disc-price" class="po-amt" style="color:#16a34a"></div>
-            <div id="po-save-tag" style="font-size:11px;color:#16a34a;margin-top:4px;font-weight:600"></div>
-          </div>
-        </div>
-        <div id="po-btns">
-          <div id="po-terms" style="display:none;background:#f0fdf4;border:1px solid #16a34a;border-radius:var(--r);padding:12px 14px;margin-bottom:12px">
-            <div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px">Photo terms:</div>
-            <ul style="font-size:12px;color:#166534;line-height:1.9;padding-left:18px">
-              <li>Photos taken of painted areas only</li>
-              <li>May appear on website and social media</li>
-              <li>No personal identifying information shared</li>
-              <li>You can request removal at any time</li>
-              <li>Does not affect your warranty</li>
-            </ul>
-          </div>
-          <button id="po-accept-btn" onclick="portfolioAccept()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px"></button>
-          <button onclick="portfolioDecline()" style="width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">No thanks — I'll pay full price</button>
-        </div>
-        <div id="po-confirmed" style="display:none;text-align:center;padding:6px 0">
-          <div id="po-confirmed-msg" style="font-size:16px;font-weight:800;color:#16a34a"></div>
-        </div>
-        <div id="po-declined" style="display:none;color:var(--text3);font-size:13px;text-align:center;padding:4px 0">No problem — full price applies. Scroll down to review and sign.</div>
-      </div>
-    </div>
-
     <div id="epa-doc1-label" style="display:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Document 1 of 2</div>
-    <div class="step-dots"><div class="dot active" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div><div class="dot" id="d4"></div></div>
+    <!-- Endowed progress: the first dot arrives already done ("proposal prepared
+         for you") — people finish a process they perceive as already started far
+         more often than one starting at zero. Every step-dots row carries it. -->
+    <div class="step-dots"><div class="dot done"></div><div class="dot active" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div><div class="dot" id="d4"></div></div>
 
     <!-- Estimate data nodes kept hidden — JS writes to them, nothing visible -->
     <div style="display:none">
@@ -294,7 +243,52 @@ input[type=text]:focus{border-color:var(--denim)}
       <div id="sum-rows"></div>
     </div>
 
-    <div class="card"><span class="lbl">Scope &amp; terms</span><div id="prop-html" style="font-size:13px;line-height:1.6"></div></div>
+    <!-- Deadline effect, honestly applied: proposals are already valid 30 days
+         from send (baked into the document terms) — this just surfaces that real
+         deadline where the client reads it BEFORE the price, not buried in the
+         project-details fine print. -->
+    <div id="price-held-chip" style="display:none;align-items:center;gap:6px;justify-content:center;margin:-8px 0 14px;font-size:12px;font-weight:700;color:var(--text2)"></div>
+
+    <div class="card"><span class="lbl">Scope &amp; terms</span><div id="prop-html" style="font-size:13px;line-height:1.6;overflow-wrap:anywhere"></div></div>
+
+    <!-- Portfolio offer — shown only when isPortfolio=true. Sits after scope/terms,
+         not before, so the client reads what they're buying before seeing an
+         optional discount pitch — and it's a plain card like everything else on
+         the page, not a competing hero banner. -->
+    <div id="portfolio-offer-card" class="card" style="display:none">
+      <span class="lbl" style="color:#16a34a">Optional — save with photos</span>
+      <div style="font-size:16px;font-weight:800;color:var(--ink);letter-spacing:-.2px;margin-bottom:10px">Save <span id="po-pct-hdr"></span>% on this project</div>
+      <div id="po-pitch" style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:16px"></div>
+      <div class="po-prices">
+        <div class="po-price-box" style="background:var(--bg);border:1px solid var(--border2)">
+          <div class="po-lbl" style="color:var(--text3)">Full price</div>
+          <div id="po-full-price" class="po-amt" style="color:var(--text)"></div>
+        </div>
+        <div class="po-price-box" style="background:#f0fdf4;border:2px solid #16a34a">
+          <div class="po-lbl" style="color:#16a34a">With photos</div>
+          <div id="po-disc-price" class="po-amt" style="color:#16a34a"></div>
+          <div id="po-save-tag" style="font-size:11px;color:#16a34a;margin-top:4px;font-weight:600"></div>
+        </div>
+      </div>
+      <div id="po-btns">
+        <div id="po-terms" style="display:none;background:#f0fdf4;border:1px solid #16a34a;border-radius:var(--r);padding:12px 14px;margin-bottom:12px">
+          <div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:6px">Photo terms:</div>
+          <ul style="font-size:12px;color:#166534;line-height:1.9;padding-left:18px">
+            <li>Photos taken of painted areas only</li>
+            <li>May appear on website and social media</li>
+            <li>No personal identifying information shared</li>
+            <li>You can request removal at any time</li>
+            <li>Does not affect your warranty</li>
+          </ul>
+        </div>
+        <button id="po-accept-btn" onclick="portfolioAccept()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px"></button>
+        <button onclick="portfolioDecline()" style="width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">No thanks — I'll pay full price</button>
+      </div>
+      <div id="po-confirmed" style="display:none;text-align:center;padding:6px 0">
+        <div id="po-confirmed-msg" style="font-size:16px;font-weight:800;color:#16a34a"></div>
+      </div>
+      <div id="po-declined" style="display:none;color:var(--text3);font-size:13px;text-align:center;padding:4px 0">No problem — full price applies. Scroll down to review and sign.</div>
+    </div>
 
     <button onclick="declineBid()" style="display:block;width:100%;margin-top:8px;padding:13px;border:none;background:none;color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center;border-radius:var(--r)">Not interested — decline this proposal</button>
   </div>
@@ -302,9 +296,9 @@ input[type=text]:focus{border-color:var(--denim)}
   <!-- Step 2: Color selection (painting only) -->
   <div id="pg-color-pick" style="display:none">
     <button onclick="_backFromColorPick()" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back</button>
-    <div class="step-dots"><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
     <div class="card">
-      <div style="font-size:20px;font-weight:900;letter-spacing:-.4px;color:var(--ink);margin-bottom:4px;font-family:var(--font-display)">Choose your colors 🎨</div>
+      <div style="font-size:20px;font-weight:900;letter-spacing:-.4px;color:var(--ink);margin-bottom:4px;font-family:var(--font-display)">Choose your colors</div>
       <div style="font-size:13px;color:var(--text2);margin-bottom:18px;line-height:1.5">Select a Sherwin-Williams color for each area below. Your contractor will order the exact paint before your project starts. You can leave any field blank and decide later.</div>
       <div id="color-pick-rows"></div>
       <button class="btn" onclick="_goToSignPad()" style="margin-top:6px">Continue to sign →</button>
@@ -314,7 +308,7 @@ input[type=text]:focus{border-color:var(--denim)}
   <!-- Step 3: Sign -->
   <div id="pg-sign-action" style="display:none">
     <button onclick="_backFromSign();scrollTo(0,0)" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back</button>
-    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div></div>
 
     <div class="card" id="sig-card">
       <span class="sig-eyebrow">Agreement</span>
@@ -330,41 +324,33 @@ input[type=text]:focus{border-color:var(--denim)}
       <div class="sig-pad" id="sig-pad-wrap">
         <canvas id="sig-canvas"></canvas>
         <div class="sig-pad-baseline"></div>
-        <div class="sig-ph" id="sig-ph">✍️ Signature appears here as you type — or draw below</div>
+        <div class="sig-ph" id="sig-ph">Signature appears here as you type — or draw below</div>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
         <button class="btn-ghost" onclick="clearSig()">Clear drawing</button>
       </div>
 
-      <!-- Meta grid -->
-      <div class="sig-meta" style="margin-bottom:16px">
-        <div class="sig-meta-cell">
-          <div class="sig-meta-lbl">Signed by</div>
-          <div class="sig-meta-val" id="sig-meta-name">—</div>
-        </div>
-        <div class="sig-meta-cell">
-          <div class="sig-meta-lbl">Initials</div>
-          <div class="sig-meta-val" id="sig-meta-initials">—</div>
-        </div>
-        <div class="sig-meta-cell">
-          <div class="sig-meta-lbl">Date</div>
-          <div class="sig-meta-val" id="sig-meta-date">—</div>
-        </div>
-        <div class="sig-meta-cell">
-          <div class="sig-meta-lbl">Method</div>
-          <div class="sig-meta-val">Electronic</div>
-        </div>
-      </div>
-
       <!-- EPA notice shown in sig-card when epaRequired; one signature covers both documents -->
       <div id="epa-section" style="display:none;background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
-        <div style="font-size:12px;font-weight:800;color:#78350f;margin-bottom:4px">⚠️ Pre-1978 Home — EPA Lead Paint Disclosure</div>
+        <div style="font-size:12px;font-weight:800;color:#78350f;margin-bottom:4px">Pre-1978 Home — EPA Lead Paint Disclosure</div>
         <div style="font-size:12px;color:#92400e;line-height:1.5">You have reviewed the <strong>EPA Pre-Renovation Disclosure (Document 2 of 2)</strong>. Your signature below applies to both this proposal and that EPA disclosure. <a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:#92400e;font-weight:700">Renovate Right pamphlet →</a></div>
       </div>
 
       <!-- Notice of Cancellation — minimum required disclosure (FTC 16 CFR Part 429 / state equiv.) -->
       <div id="cancel-notice-section" style="display:none;border-top:1px solid var(--border);padding-top:10px;margin-bottom:12px">
         <div id="cancel-notice-body" style="font-size:11px;color:var(--text3);line-height:1.6"></div>
+      </div>
+
+      <!-- Risk reversal — signing anxiety is a risk calculation; answer it at the
+           exact moment it spikes. Every line is already true and data-driven
+           (cancel window from state law on the proposal, contract terms as
+           written, ESIGN) — this only surfaces existing protections, no new
+           claims. Styled as a quiet hairline list, not a colored callout box —
+           reassurance should read like part of the document, not a sales badge. -->
+      <div id="risk-reversal-strip" style="border-top:1px solid var(--border);padding:12px 2px 4px;margin-bottom:12px">
+        <div id="rr-cancel" style="display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:var(--text2);line-height:1.5;margin-bottom:7px"></div>
+        <div style="display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:var(--text2);line-height:1.5;margin-bottom:7px"><span id="rr-ck2" style="flex-shrink:0;color:var(--green-mid)"></span>Price and scope locked exactly as written — changes only with your signed approval</div>
+        <div style="display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:var(--text2);line-height:1.5"><span id="rr-ck3" style="flex-shrink:0;color:var(--green-mid)"></span>Secure, legally binding e-signature</div>
       </div>
 
       <!-- UETA checkbox -->
@@ -376,23 +362,6 @@ input[type=text]:focus{border-color:var(--denim)}
         </div>
       </label>
 
-      <!-- Pay amount tiles -->
-      <div class="sig-pay-opts-label">How much would you like to pay now?</div>
-      <div class="sig-pay-opts-row">
-        <div id="pay-tile-dep" class="sig-pay-opt sel" onclick="_selectPayTile('dep')">
-          <div id="pay-tile-dep-badge" class="sig-pay-opt-badge">Deposit</div>
-          <div id="pay-tile-dep-amt" class="sig-pay-opt-amt"></div>
-          <div id="pay-tile-dep-note" class="sig-pay-opt-sub"></div>
-          <div class="sig-pay-opt-sel">✓ Selected</div>
-        </div>
-        <div id="pay-tile-full" class="sig-pay-opt" onclick="_selectPayTile('full')">
-          <div class="sig-pay-opt-badge" style="color:#3B6D11">Pay in Full</div>
-          <div id="pay-tile-full-amt" class="sig-pay-opt-amt"></div>
-          <div class="sig-pay-opt-sub" style="opacity:0">·</div>
-          <div class="sig-pay-opt-sel" style="opacity:0">·</div>
-        </div>
-      </div>
-
       <div id="sign-ready-hint" style="display:block;font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px">Type your name or draw your signature above to continue.</div>
       <button class="btn" id="sign-btn" disabled onclick="goToPayment()">Continue to payment →</button>
       <div id="sign-err" style="color:#A32D2D;font-size:12px;text-align:center;min-height:16px"></div>
@@ -401,8 +370,27 @@ input[type=text]:focus{border-color:var(--denim)}
 
   <!-- Step 4: Payment -->
   <div id="pg-pay" style="display:none">
-    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div></div>
     <div class="card">
+
+      <!-- Pay amount tiles — "how much" belongs on the payment screen, not the
+           sign screen; it used to be picked here AND restated as a balance card
+           one screen later. Now it's picked once, right above the amount it produces. -->
+      <div class="sig-pay-opts-label">How much would you like to pay now?</div>
+      <div class="sig-pay-opts-row">
+        <div id="pay-tile-dep" class="sig-pay-opt sel" onclick="_selectPayTile('dep')">
+          <div id="pay-tile-dep-badge" class="sig-pay-opt-badge">Deposit</div>
+          <div id="pay-tile-dep-amt" class="sig-pay-opt-amt"></div>
+          <div id="pay-tile-dep-note" class="sig-pay-opt-sub"></div>
+          <div class="sig-pay-opt-sel"></div>
+        </div>
+        <div id="pay-tile-full" class="sig-pay-opt" onclick="_selectPayTile('full')">
+          <div class="sig-pay-opt-badge" style="color:#3B6D11">Pay in Full</div>
+          <div id="pay-tile-full-amt" class="sig-pay-opt-amt"></div>
+          <div class="sig-pay-opt-sub" style="opacity:0">·</div>
+          <div class="sig-pay-opt-sel" style="opacity:0">·</div>
+        </div>
+      </div>
 
       <!-- Balance display -->
       <div class="pay-balance-card">
@@ -415,7 +403,7 @@ input[type=text]:focus{border-color:var(--denim)}
       <div id="sign-pay-btns" style="margin-top:4px"></div>
 
       <div id="sec-cash" style="display:none">
-        <div class="cash-notice"><strong id="cash-confirm-hdr">Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.</span></div>
+        <div class="cash-notice"><strong id="cash-confirm-hdr">Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed — you’re locked in on the schedule. The contractor will collect the deposit when they arrive.</span></div>
         <button class="btn" id="sec-cash-confirm-btn" onclick="submitCash()">Confirm — I'll pay cash in person</button>
         <button class="btn btn-sec" onclick="document.getElementById('sec-cash').style.display='none';document.getElementById('sign-pay-btns').style.display='block'" style="margin-top:8px;font-size:13px">← Choose a different payment method</button>
       </div>
@@ -429,12 +417,12 @@ input[type=text]:focus{border-color:var(--denim)}
   <!-- EPA Pre-Renovation Disclosure — Document 2 of 2 (review before signing) -->
   <div id="pg-epa" style="display:none">
     <button onclick="show('pg-sign');scrollTo(0,0)" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back to proposal</button>
-    <div class="step-dots"><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
+    <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
     <div class="card">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Document 2 of 2</div>
       <div style="font-size:26px;font-weight:900;margin-bottom:16px;font-family:var(--font-display);letter-spacing:-.4px;line-height:1.1">EPA Pre-Renovation Disclosure</div>
       <div style="background:#fef9ec;border:1px solid #f59e0b;border-radius:8px;padding:12px 14px;margin-bottom:16px;font-size:13px;line-height:1.6">
-        <div style="font-weight:700;margin-bottom:6px">⚠️ Federal Lead Paint Disclosure Required</div>
+        <div style="font-weight:700;margin-bottom:6px">Federal Lead Paint Disclosure Required</div>
         <div>This home was built before 1978. Federal law requires your contractor to share the <a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:#92400e;font-weight:700">Renovate Right pamphlet</a> before any renovation begins. Please review the acknowledgment below, then continue to sign both documents.</div>
       </div>
       <div id="epa-prop-address" style="font-size:13px;color:var(--text2);margin-bottom:12px"></div>
@@ -443,7 +431,7 @@ input[type=text]:focus{border-color:var(--denim)}
         <div id="epa-disclosure-text">I acknowledge receipt of the <em>Renovate Right</em> pamphlet from my contractor, informing me of potential lead hazard risks from renovation at this property. I understand the contractor performing this work is an EPA Lead-Safe Certified Firm using approved lead-safe work practices.</div>
         <div id="epa-cert-info" style="margin-top:10px;font-size:11px;color:var(--text3)"></div>
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:20px;text-align:center">📁 This pamphlet will be saved in your project hub under Documents → Compliance for future reference.</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:20px;text-align:center">This pamphlet will be saved in your project hub under Documents → Compliance for future reference.</div>
       <button class="btn" onclick="_continueFromEpaReview()">Continue — Sign Both Documents →</button>
     </div>
   </div>
@@ -451,18 +439,22 @@ input[type=text]:focus{border-color:var(--denim)}
   <!-- Complete -->
   <div id="pg-done" style="display:none">
     <div class="pg-status">
-      <div class="pg-status-icon" id="done-icon">✅</div>
+      <div class="pg-status-badge success" id="done-icon"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 9 17 20 6"/></svg></div>
       <h2 id="done-title">You're all set!</h2>
       <p id="done-msg">Your proposal has been signed. The contractor will be in touch to confirm your start date.</p>
       <div id="done-stamp" style="display:none;text-align:center;margin-bottom:12px"></div>
       <div class="done-box"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--green-mid);margin-bottom:10px">Confirmation</div><div id="done-rows"></div></div>
+      <!-- Peak-end: the last thing the client sees is forward motion ("here's
+           what happens next"), not a receipt. This moment is what they remember
+           and retell — it drives referrals and change-order goodwill later. -->
+      <div class="done-box" id="done-next" style="display:none;background:var(--bg-card,#fff);border-color:var(--border)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">What happens next</div><div id="done-next-rows"></div></div>
       <a id="done-hub-cta" href="#" style="display:none;margin-top:20px;padding:14px;background:var(--ink);border-radius:12px;font-size:14px;font-weight:700;color:#fff;text-align:center;text-decoration:none">View your project hub →</a>
     </div>
   </div>
 
   <!-- Error -->
   <div id="pg-err" style="display:none">
-    <div class="pg-status"><div class="pg-status-icon">🔗</div><h2>Proposal not found</h2><p>This link may have expired or already been used. Please contact us for a new link.</p>
+    <div class="pg-status"><div class="pg-status-badge error"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></div><h2>Proposal not found</h2><p>This link may have expired or already been used. Please contact us for a new link.</p>
     <div id="pg-err-detail" style="margin-top:12px;font-size:11px;color:#94a3b8;word-break:break-all;text-align:left;background:#f8fafc;border-radius:8px;padding:10px 12px;display:none"></div>
     </div>
   </div>
@@ -470,40 +462,54 @@ input[type=text]:focus{border-color:var(--denim)}
   <!-- Declined -->
   <div id="pg-declined" style="display:none">
     <div class="pg-status">
-      <div class="pg-status-icon">👋</div>
+      <div class="pg-status-badge neutral"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 12 9 17 20 6"/></svg></div>
       <h2>Thanks for letting us know</h2>
       <p id="declined-msg">The contractor has been notified that you're not moving forward at this time. We hope to have the opportunity to work with you in the future.</p>
     </div>
   </div>
 
-  <div style="text-align:center;padding:28px 16px 12px;font-size:11px;color:var(--text3);font-weight:500">Powered by <strong style="font-weight:700;color:var(--text2)">TradeDesk Pro</strong></div>
+  <div id="powered-by-footer" style="text-align:center;padding:28px 16px 12px;font-size:11px;color:var(--text3);font-weight:500">Powered by <strong style="font-weight:700;color:var(--text2)">TradeDesk Pro</strong></div>
 </div>
 
-<!-- Decline confirmation modal -->
+<!-- Decline confirmation modal — reason picker before the exit completes, so a
+     lost deal leaves real signal instead of a blank decline. Reason is optional
+     context for the contractor, never a blocker: the Decline button stays
+     enabled with or without a pick, matching this screen's low-friction intent
+     (unlike the post-signing cancellation flow in client.html, which requires
+     one before continuing). -->
 <div id="decline-modal" style="display:none;position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);align-items:center;justify-content:center;padding:20px">
-  <div style="background:var(--bg);border-radius:16px;padding:24px;width:100%;max-width:320px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.35)">
-    <div style="font-size:36px;margin-bottom:12px">🤔</div>
-    <div style="font-size:17px;font-weight:800;margin-bottom:8px;color:var(--ink)">Decline this proposal?</div>
-    <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:20px">This will notify <span class="decline-biz-name">the contractor</span> that you're not moving forward. You can always reach out to them directly.</div>
-    <div style="display:flex;gap:10px">
+  <div style="background:var(--bg);border-radius:16px;padding:24px;width:100%;max-width:340px;box-shadow:0 8px 32px rgba(0,0,0,.35)">
+    <div style="text-align:center">
+      <div class="pg-status-badge neutral"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg></div>
+      <div style="font-size:17px;font-weight:800;margin-bottom:8px;color:var(--ink)">Decline this proposal?</div>
+      <div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:16px">This will notify <span class="decline-biz-name">the contractor</span> that you're not moving forward. You can always reach out to them directly.</div>
+    </div>
+    <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px;text-align:left">Mind sharing why? (optional)</div>
+    <div id="decline-reason-opts" style="margin-bottom:8px"></div>
+    <div id="decline-other-wrap" style="display:none;margin-bottom:8px"><textarea id="decline-other-text" placeholder="Tell us more…" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;font-family:inherit;resize:none;height:56px;color:var(--ink)"></textarea></div>
+    <div style="display:flex;gap:10px;margin-top:12px">
       <button onclick="document.getElementById('decline-modal').style.display='none'" style="flex:1;padding:12px;border:1.5px solid var(--border2);background:var(--bg2);border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">Go back</button>
       <button id="decline-confirm-btn" onclick="_confirmDecline()" style="flex:1;padding:12px;border:none;background:#A32D2D;color:#fff;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Decline</button>
     </div>
   </div>
 </div>
 
-<!-- Sticky approve bar -->
-<div id="sticky-bar" style="flex-direction:column;gap:8px">
+<!-- Sticky approve bar — primary action leads and carries the visual weight;
+     Download PDF is a side-action, not a competing button. -->
+<div id="sticky-bar" style="flex-direction:column;gap:6px">
   <!-- sticky-total kept hidden for JS compatibility -->
   <div id="sticky-total" style="display:none"></div>
-  <button onclick="window.print()" style="width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:7px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download PDF</button>
-  <button id="approve-btn" onclick="approveAndSign()" style="width:100%;padding:14px 22px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);box-shadow:0 3px 16px rgba(27,22,18,.3);transition:background .3s">✓ Approve &amp; Sign</button>
+  <!-- Deposit-first framing: the action-sized number ($ deposit), not the total,
+       is what the commitment moment leads with — and "locks in" points the verb
+       at the two real things the client loses by waiting (price, schedule slot),
+       never at the client themselves. -->
+  <div id="sticky-deposit-line" style="display:none;text-align:center;font-size:12px;color:var(--text2);font-weight:600;line-height:1.4"></div>
+  <button id="approve-btn" onclick="approveAndSign()" style="width:100%;padding:14px 22px;border-radius:var(--r);border:none;background:var(--ink);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);box-shadow:0 3px 16px rgba(27,22,18,.3);transition:background .3s"><span id="approve-btn-label"></span></button>
+  <button onclick="window.print()" class="btn-ghost" style="width:100%;padding:6px;font-size:12px">Download PDF</button>
 </div>
 
-<!-- Floating call button -->
-<a id="float-call" href="" data-has-phone="0">📞</a>
-
 <script>
+document.getElementById('approve-btn-label').innerHTML=svgIcon('✓',{size:16})+' Approve &amp; Sign';
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 // _supa is session-isolated: it never loads a stored login, so every data call on
@@ -544,7 +550,6 @@ function show(id){
   });
   const onSign=id==='pg-sign';
   const sb=document.getElementById('sticky-bar');
-  const fc=document.getElementById('float-call');
   if(sb){
     if(onSign){
       sb.style.transform='translateY(100%)';sb.style.transition='';sb.style.display='flex';
@@ -553,7 +558,6 @@ function show(id){
       }));
     }else{sb.style.display='none';sb.style.transform='';sb.style.transition='';}
   }
-  if(fc)fc.style.display=onSign&&fc.dataset.hasPhone==='1'?'flex':'none';
 }
 
 function _showPortfolioOffer(){
@@ -588,7 +592,7 @@ function portfolioAccept(){
     window._portfolioAccepted=true;
     document.getElementById('po-btns').style.display='none';
     document.getElementById('po-confirmed').style.display='block';
-    document.getElementById('po-confirmed-msg').textContent='✓ Discount applied — '+fmt(savings)+' saved!';
+    document.getElementById('po-confirmed-msg').innerHTML=svgIcon('✓',{size:14})+' Discount applied — '+fmt(savings)+' saved!';
     document.getElementById('amt-total').textContent=fmt(discP);
     document.getElementById('amt-dep').textContent='Deposit to start: '+fmt(newDep);
     document.getElementById('amt-bal').textContent='Balance on completion: '+fmt(newBal);
@@ -661,8 +665,7 @@ async function init(){
       const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
       const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—';
       const payMethod=_sigRecord?.payment_method;
-      const payLabel=payMethod==='card'?'💳 Card charged':payMethod==='ach'?'🏦 Bank transfer':payMethod==='cash'?'💵 Cash on arrival':payMethod==='check'?'📝 Check':'—';
-      document.getElementById('done-icon').textContent='✅';
+      const payLabel=payMethod==='card'?'Card charged':payMethod==='ach'?'Bank transfer':payMethod==='cash'?'Cash on arrival':payMethod==='check'?'Check':'—';
       document.getElementById('done-title').textContent='Already signed';
       document.getElementById('done-msg').textContent='This proposal has already been signed. The contractor will be in touch to confirm your start date.';
       document.getElementById('done-rows').innerHTML=
@@ -674,9 +677,9 @@ async function init(){
         '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop.deposit)+'</span></div>'+
         (payMethod?'<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>':'')+
         '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>'+
-        (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">📞 Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
+        (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
       const _stamp=document.getElementById('done-stamp');
-      if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">✓ Signed &amp; Approved</div>';_stamp.style.display='block';}
+      if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">'+svgIcon('✓',{size:14})+' Signed &amp; Approved</div>';_stamp.style.display='block';}
       show('pg-done');return;
     }
     // Log view via Edge Function — skip entirely when preview=1 (contractor previewing, not a real client open).
@@ -685,7 +688,7 @@ async function init(){
     if(_isPreview){
       const _pvBanner=document.createElement('div');
       _pvBanner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#1d4ed8;color:#fff;font-size:13px;font-weight:700;text-align:center;padding:10px 16px;letter-spacing:.01em';
-      _pvBanner.textContent='👁 Preview mode — navigate freely to QA the flow. Final submission is disabled.';
+      _pvBanner.textContent='Preview mode — navigate freely to QA the flow. Final submission is disabled.';
       document.body.prepend(_pvBanner);
       // Shift page content down so banner doesn't cover anything
       document.body.style.paddingTop='44px';
@@ -696,6 +699,7 @@ async function init(){
         const{data:{session}}=await _supaAuth.auth.getSession();
         if(session?.user?.id&&session.user.id===_prop.contractorUserId)_viewerType='contractor';
       }catch(_){}
+      window._viewerIsContractor=(_viewerType==='contractor');
       fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
         method:'POST',
         headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
@@ -721,15 +725,41 @@ async function init(){
     // Sticky bar total
     const stickyTotal=document.getElementById('sticky-total');
     if(stickyTotal)stickyTotal.textContent=fmt(_prop.amount);
-    // Floating call button
-    const fc=document.getElementById('float-call');
-    if(fc&&_prop.businessPhone){fc.href='tel:'+_prop.businessPhone.replace(/\D/g,'');fc.dataset.hasPhone='1';}
     document.getElementById('amt-total').textContent=fmt(_prop.amount);
+    // Contractor-configurable — Settings → "Show 'Powered by'" (S.poweredBy, default true).
+    if(_prop.poweredBy===false){const _pbf=document.getElementById('powered-by-footer');if(_pbf)_pbf.style.display='none';}
+    // Deposit-first framing in the sticky bar — the action-sized number leads.
+    const _sdl=document.getElementById('sticky-deposit-line');
+    if(_sdl&&(_prop.deposit||0)>0){
+      _sdl.innerHTML='<strong style="color:var(--ink)">'+fmt(_prop.deposit)+' today</strong> locks in your price and your spot on the schedule';
+      _sdl.style.display='block';
+    }
+    // Price-held-until chip — surfaces the REAL 30-day validity window the
+    // proposal document already carries (generic-estimate bakes "Valid until:
+    // send date + 30 days" into the terms). Hidden once that window has passed:
+    // never advertise a price hold that's no longer true.
+    const _phc=document.getElementById('price-held-chip');
+    if(_phc&&_prop.createdAt){
+      const _exp=new Date(new Date(_prop.createdAt).getTime()+30*86400000);
+      if(_exp>new Date()){
+        _phc.innerHTML=svgIcon('⏳',{size:13})+' This price is held for you until <strong style="color:var(--ink)">&nbsp;'+_exp.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</strong>';
+        _phc.style.display='flex';
+      }
+    }
+    // Risk-reversal strip — populate the state-specific cancellation window and
+    // the check icons. Cancel row hides if the proposal carries no window.
+    const _rrCancel=document.getElementById('rr-cancel');
+    if(_rrCancel){
+      const _rrDays=_prop.cancelDays!=null?_prop.cancelDays:3;
+      if(_rrDays>0)_rrCancel.innerHTML='<span style="flex-shrink:0;color:var(--green-mid)">'+svgIcon('✓',{size:13})+'</span>'+_rrDays+'-day right to cancel — no questions asked';
+      else _rrCancel.style.display='none';
+    }
+    const _rrCk2=document.getElementById('rr-ck2'),_rrCk3=document.getElementById('rr-ck3');
+    if(_rrCk2)_rrCk2.innerHTML=svgIcon('✓',{size:13});
+    if(_rrCk3)_rrCk3.innerHTML=svgIcon('✓',{size:13});
     // Update cash section with actual business name
-    const _cashPaySub=document.querySelector('#opt-cash .pay-opt-sub');
-    if(_cashPaySub)_cashPaySub.textContent="I'll pay "+_biz+' directly in person';
     const _cashMsg=document.getElementById('cash-confirm-msg');
-    if(_cashMsg)_cashMsg.textContent=' Your proposal is signed and your spot is reserved. '+_biz+' will collect the deposit when they arrive.';
+    if(_cashMsg)_cashMsg.textContent=' Your proposal is signed — you’re locked in on the schedule. '+_biz+' will collect the deposit when they arrive.';
     document.getElementById('amt-dep').textContent='Deposit to start: '+fmt(_prop.deposit);
     document.getElementById('amt-bal').textContent='Balance on completion: '+fmt(_prop.amount-_prop.deposit);
     const _days=_prop.estDays;
@@ -856,56 +886,9 @@ async function init(){
       };
       ol.after(btn);
     });
-    // Terms accordion — every terms section ("Terms & Conditions" + legacy "Payment Terms"
-    // headers) merges under ONE "Terms & Conditions" toggle at the first section's position.
-    // Match by exact header text (whitelist) — layout labels never get toggles.
-    // The Required Notice (home solicitation law) keeps its own separate toggle.
-    (function(){
-      const ph=document.getElementById('prop-html');if(!ph)return;
-      function mkToggle(label,bodies){
-        const btn=document.createElement('button');btn.dataset.termsToggle='1';
-        btn.style.cssText='display:flex;align-items:center;width:100%;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px 14px;margin:0 0 8px;font-family:inherit;cursor:pointer;transition:background .15s,border-color .15s';
-        const lbl=document.createElement('span');
-        lbl.style.cssText='flex:1;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1a365d;text-align:left';
-        lbl.textContent=label;
-        const hint=document.createElement('span');
-        hint.style.cssText='font-size:11px;font-weight:600;color:#94a3b8;white-space:nowrap;margin-left:8px';
-        hint.textContent='Tap to view ›';
-        btn.appendChild(lbl);btn.appendChild(hint);
-        btn.onclick=function(){
-          const open=bodies[0].style.display!=='none';
-          bodies.forEach(function(b){b.style.display=open?'none':'';});
-          hint.textContent=open?'Tap to view ›':'Collapse ‹';
-          btn.style.background=open?'#f8fafc':'#eef2f7';
-          btn.style.borderColor=open?'#e2e8f0':'#b6c8da';
-        };
-        return btn;
-      }
-      const termsHdrs=[],termsBodies=[];
-      ph.querySelectorAll('div').forEach(function(hdr){
-        if(hdr.children.length)return;
-        const lc=hdr.textContent.trim().toLowerCase();
-        const isTerms=(lc==='payment terms'||lc==='terms & conditions'||lc==='terms and conditions');
-        const isNotice=(lc.includes('required notice')||lc.includes('solicitation law'));
-        if(!isTerms&&!isNotice)return;
-        const body=hdr.nextElementSibling;if(!body||body.tagName==='BUTTON')return;
-        hdr.style.display='none';hdr.dataset.termsHdr='1';
-        body.style.display='none';body.dataset.termsBody='1';
-        if(isNotice){hdr.after(mkToggle('Required Notice',[body]));return;}
-        termsHdrs.push(hdr);termsBodies.push(body);
-      });
-      if(termsHdrs.length)termsHdrs[0].after(mkToggle('Terms & Conditions',termsBodies));
-      // Collapse entire Notice of Cancellation form (dashed-border detach section)
-      ph.querySelectorAll('div').forEach(function(div){
-        const fc=div.firstElementChild;if(!fc||!fc.textContent.includes('✂'))return;
-        div.style.display='none';div.dataset.termsBody='1';
-        const btn=document.createElement('button');btn.dataset.termsToggle='1';
-        btn.textContent='View notice of cancellation ▾';
-        btn.style.cssText='display:block;width:100%;background:none;border:none;color:var(--accent);font-size:11px;font-weight:700;cursor:pointer;padding:6px 24px 2px;font-family:inherit;text-align:left';
-        btn.onclick=function(){const open=div.style.display!=='none';div.style.display=open?'none':'';btn.textContent=open?'View notice of cancellation ▾':'Hide cancellation notice ▴';};
-        div.before(btn);
-      });
-    })();
+    // Terms accordion — shared with the contractor's estimate-builder Preview
+    // overlay via _applyTermsAccordion (js/legal.js) so the two views can't drift.
+    _applyTermsAccordion(document.getElementById('prop-html'));
     // If any legacy patches were applied, silently re-upload the corrected proposal to Supabase storage
     // so hub preview and all future views (client.html) reflect the correct state-specific terms.
     if(!alreadySigned&&_proposalHtml!==_proposalHtmlOrig&&key){
@@ -1003,7 +986,25 @@ function updateTypedSigPreview(){
   if(metaInitials)metaInitials.textContent=initials||'—';
 }
 
+// ── Sign-flow step funnel ─────────────────────────────────────────────────
+// Fire-and-forget ping per milestone so the contractor sees exactly how far
+// this client got ("reached payment" is a hot lead, "opened once" is not) and
+// the community funnel can time opened→signed. Monotonic server-side; the
+// sent-Set just avoids repeat network calls when a step re-renders. Never
+// fires for contractor previews or the in-app preview iframe.
+const _stepsSent=new Set();
+function _logStep(step){
+  if(_isPreview||window._viewerIsContractor||!_prop?.contractorUserId||!_prop?.id)return;
+  if(_stepsSent.has(step))return;
+  _stepsSent.add(step);
+  fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+    body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),step})
+  }).catch(()=>{});
+}
 function approveAndSign(){
+  _logStep('approved');
   if(_prop?.epaRequired){showEpaPage();return;}
   if(_prop?.trade==='painting'&&_prop?.surfaces?.length){
     _buildColorPickUI();
@@ -1103,6 +1104,7 @@ function checkReady(){
   const hasSig=typedOk||hasInk;
   const btn=document.getElementById('sign-btn');
   if(btn)btn.disabled=!hasSig||!uetaOk;
+  if(hasSig&&uetaOk)_logStep('signature_ready');
   const hint=document.getElementById('sign-ready-hint');
   if(hint){
     if(!hasSig){hint.textContent='Type your name or draw your signature above to continue.';hint.style.display='block';}
@@ -1115,6 +1117,7 @@ function goToPayment(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
   if(!typedOk&&!hasInk){document.getElementById('sign-err').textContent='Type your full name or draw your signature above.';return;}
   _sigData=sigCanvas.toDataURL('image/png');
+  _logStep('payment_viewed');
   show('pg-pay');scrollTo(0,0);
   _renderPayTiles();
   const depAmt2=window._portfolioAccepted&&_prop?.discountedPrice?_prop.discountedPrice*0.25:_prop?.deposit||0;
@@ -1153,7 +1156,7 @@ function _renderPayTiles(){
     const amtEl=td.querySelector('.sig-pay-opt-amt');
     if(amtEl)amtEl.style.color=depSel?'var(--denim)':'var(--text)';
     const selEl=td.querySelector('.sig-pay-opt-sel');
-    if(selEl)selEl.style.color=depSel?'var(--denim)':'transparent';
+    if(selEl){selEl.innerHTML=svgIcon('✓',{size:14})+' Selected';selEl.style.color=depSel?'var(--denim)':'transparent';}
   }
   if(tf){
     tf.style.display=showFull?'':'none';
@@ -1173,7 +1176,7 @@ function _updatePayButtons(){
   const pnd=document.getElementById('pay-now-display');
   if(pnd)pnd.textContent=fmt(_payFullAmount?fullAmt:depAmt);
   const cashMsg=document.getElementById('cash-confirm-msg');
-  if(cashMsg)cashMsg.textContent=(_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed and your spot is reserved. The contractor will collect the deposit when they arrive.');
+  if(cashMsg)cashMsg.textContent=(_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed — you’re locked in on the schedule. The contractor will collect the deposit when they arrive.');
 }
 
 
@@ -1239,17 +1242,17 @@ async function submitCash(){
 }
 
 function showDone(method){
+  _logStep('signed'); // terminal step — completes the opened→signed timeline
   const isAch=method==='ach';
   const isCashApp=method==='cashapp';
   const isCheck=method==='check';
   const isPaid=method==='card'||isAch||isCashApp;
-  document.getElementById('done-icon').textContent=isPaid?'🎉':'✅';
   document.getElementById('done-title').textContent=isPaid?'Payment confirmed!':'Proposal signed!';
   document.getElementById('done-msg').textContent=isPaid
     ?'Your deposit has been received. The contractor will be in touch to confirm your start date.'
     :'Your proposal is signed. The contractor will collect your deposit on arrival.';
   const _confNum=_prop?'#CONF-'+String(_prop.id).slice(-6).toUpperCase():'';
-  const payLabel=isAch?'🏦 Bank transfer':isCashApp?'💚 Cash App Pay':isCheck?'📝 Check':method==='card'?'💳 Card charged':'💵 Cash on arrival';
+  const payLabel=isAch?'Bank transfer':isCashApp?'Cash App Pay':isCheck?'Check':method==='card'?'Card charged':'Cash on arrival';
   document.getElementById('done-rows').innerHTML=
     (_confNum?'<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+_confNum+'</span></div>':'')+
     '<div class="row"><span class="rl">Client</span><span class="rv">'+escHtmlN(_prop?.clientName||'')+'</span></div>'+
@@ -1258,9 +1261,20 @@ function showDone(method){
     '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop?.amount)+'</span></div>'+
     '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop?.deposit)+'</span></div>'+
     '<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>'+
-    (_prop?.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">📞 Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
+    (_prop?.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
   const _stamp=document.getElementById('done-stamp');
-  if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">✓ Signed &amp; Approved</div>';_stamp.style.display='block';}
+  if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">'+svgIcon('✓',{size:14})+' Signed &amp; Approved</div>';_stamp.style.display='block';}
+  // Peak-end: forward motion, not a receipt — three concrete next steps.
+  const _dNext=document.getElementById('done-next'),_dNextRows=document.getElementById('done-next-rows');
+  if(_dNext&&_dNextRows){
+    const _biz2=escHtmlN(_prop?.businessName||'Your contractor');
+    const _step2=isPaid?'Deposit received — you’re locked in on the schedule'
+      :isCheck?'Deposit collected before work begins'
+      :'Deposit collected on arrival — your spot stays held';
+    const _nextSteps=[_biz2+' reaches out to confirm your start date',_step2,'Work begins — follow progress and photos in your project hub'];
+    _dNextRows.innerHTML=_nextSteps.map((t,i)=>'<div style="display:flex;align-items:flex-start;gap:10px;padding:5px 0;font-size:13px;color:var(--text);line-height:1.5"><span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--bg);border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--text2)">'+(i+1)+'</span><span>'+t+'</span></div>').join('');
+    _dNext.style.display='block';
+  }
   const hubUrl=new URLSearchParams(location.search).get('hub')||'';
   const hubCta=document.getElementById('done-hub-cta');
   if(hubCta&&hubUrl){hubCta.href=hubUrl;hubCta.style.display='block';}
@@ -1282,9 +1296,33 @@ function showEpaPage(){
   document.getElementById('epa-cert-info').textContent=certLines.join(' · ');
 }
 
+// Research-backed reason list (price/value, competitor, timing, DIY, changed
+// mind, other) — matches the ranked reasons homeowners actually decline home
+// improvement quotes for. Mirrors the post-signing cancellation reason picker
+// in client.html for a consistent pattern, with "Doing it myself" added since
+// it's a distinct, common decline reason that never applies to cancellation.
+const DECLINE_REASONS=['Price','Found another contractor','Not the right time','Doing it myself','Changed my mind','Other'];
+let _declineReason='';
 function declineBid(){
   const modal=document.getElementById('decline-modal');
-  if(modal){modal.style.display='flex';}
+  if(!modal)return;
+  _declineReason='';
+  const opts=document.getElementById('decline-reason-opts');
+  if(opts&&!opts.dataset.built){
+    opts.innerHTML=DECLINE_REASONS.map(r=>'<button class="decline-reason-opt" data-reason="'+r+'" onclick="_declinePickReason(this)" style="display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:6px;border:1.5px solid var(--border2);border-radius:8px;background:#fff;font-size:13px;cursor:pointer;font-family:inherit;color:var(--ink);transition:border-color .15s,background .15s">'+r+'</button>').join('');
+    opts.dataset.built='1';
+  }
+  document.querySelectorAll('#decline-reason-opts .decline-reason-opt').forEach(b=>{b.style.borderColor='var(--border2)';b.style.background='#fff';b.style.fontWeight='';});
+  const ow=document.getElementById('decline-other-wrap');if(ow)ow.style.display='none';
+  const ot=document.getElementById('decline-other-text');if(ot)ot.value='';
+  modal.style.display='flex';
+}
+function _declinePickReason(btn){
+  document.querySelectorAll('#decline-reason-opts .decline-reason-opt').forEach(b=>{b.style.borderColor='var(--border2)';b.style.background='#fff';b.style.fontWeight='';});
+  btn.style.borderColor='var(--ink)';btn.style.background='var(--bg2)';btn.style.fontWeight='800';
+  _declineReason=btn.dataset.reason;
+  const ow=document.getElementById('decline-other-wrap');
+  if(ow)ow.style.display=_declineReason==='Other'?'block':'none';
 }
 async function _confirmDecline(){
   const btn=document.getElementById('decline-confirm-btn');
@@ -1293,9 +1331,15 @@ async function _confirmDecline(){
   let key=params2.get('key');
   if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
   const ts=new Date().toISOString();
+  // Reason is entirely optional — an empty pick just means no signal, never a blocker.
+  let declineReason=_declineReason;
+  if(declineReason==='Other'){
+    const t=(document.getElementById('decline-other-text')?.value||'').trim();
+    declineReason=t?'Other: '+t:'Other';
+  }
   try{
     // Update proposal JSON in storage
-    const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts});
+    const updated=Object.assign({},_prop,{status:'declined',declinedAt:ts,declineReason});
     await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
     // Write to signed_proposals with payment_status:'declined' so the contractor app
     // sees the decline and marks the bid as Closed Lost (not Closed Won)
@@ -1305,7 +1349,7 @@ async function _confirmDecline(){
       amount:_prop.amount,deposit:_prop.deposit,
       payment_method:'declined',payment_status:'declined',
       signed_at:ts,notify_email:_prop.notifyEmail,storage_key:key,
-      portfolio_accepted:false,
+      portfolio_accepted:false,decline_reason:declineReason||null,
     },{onConflict:'bid_id'});
   }catch(e){console.error('[decline]',e);}
   const modal=document.getElementById('decline-modal');
@@ -1339,13 +1383,14 @@ function _renderSignPayBtns(){
       (surchargeOn?'<div style="font-size:11px;color:#b45309;text-align:center;margin-bottom:16px">'+pct+'% fee on credit cards · debit cards &amp; bank transfer are free</div>':'');
   }
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px">'+
-    '<button onclick="_paySign(\'cash\')" style="padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">💵 Cash</button>'+
-    '<button onclick="_paySign(\'check\')" style="padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">📝 Check</button>'+
+    '<button onclick="_paySign(\'cash\')" style="padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Cash</button>'+
+    '<button onclick="_paySign(\'check\')" style="padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Check</button>'+
   '</div>';
   container.innerHTML=html;
 }
 async function _paySign(method){
   if(!_prop)return;
+  _logStep('method_selected');
   if(method==='cash'||method==='check'){
     _manualPayMethod=method;
     document.getElementById('sign-pay-btns').style.display='none';
@@ -1355,7 +1400,7 @@ async function _paySign(method){
     const msg=document.getElementById('cash-confirm-msg');
     const confirmBtn=document.getElementById('sec-cash-confirm-btn');
     if(hdr)hdr.textContent=method==='check'?'Check selected.':'Cash selected.';
-    if(msg)msg.textContent=_payFullAmount?(' Your proposal is signed. The contractor will collect the full amount '+(method==='check'?'when work is complete.':'when they arrive.')):(' Your proposal is signed and your spot is reserved. '+(_prop?.businessName||'The contractor')+' will collect the deposit '+(method==='check'?'before work begins.':'when they arrive.'));
+    if(msg)msg.textContent=_payFullAmount?(' Your proposal is signed. The contractor will collect the full amount '+(method==='check'?'when work is complete.':'when they arrive.')):(' Your proposal is signed — you’re locked in on the schedule. '+(_prop?.businessName||'The contractor')+' will collect the deposit '+(method==='check'?'before work begins.':'when they arrive.'));
     if(confirmBtn)confirmBtn.textContent=method==='check'?(_payFullAmount?"Confirm — pay in full by check":"Confirm — I'll pay by check"):(_payFullAmount?"Confirm — pay in full cash in person":"Confirm — I'll pay cash in person");
     return;
   }

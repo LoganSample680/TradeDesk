@@ -366,7 +366,7 @@ async function _geoPermissionBanner(){
   const denied=state==='denied';
   el.style.display='block';
   el.innerHTML='<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:var(--r);padding:12px 14px;margin-bottom:12px">'+
-    '<div style="font-size:13px;font-weight:800;color:#991B1B;margin-bottom:4px">📍 Location is off</div>'+
+    '<div style="font-size:13px;font-weight:800;color:#991B1B;margin-bottom:4px">'+svgIcon('📍',{size:13})+' Location is off</div>'+
     '<div style="font-size:12px;color:#991B1B;line-height:1.5;margin-bottom:'+(denied?'0':'10px')+'">'+
       'TradeDesk logs your drive time and job hours automatically during work hours — it only works with location on. '+
       (denied
@@ -474,7 +474,7 @@ function _geoConsentPrompt(isOwner){
     :'This logs your drive mileage and time on each job automatically — only during work hours ('+hrs+'). It never tracks you outside that window or after hours.';
   const note=isOwner?'You can turn this off anytime in Settings.':'You can turn this off anytime, and your pay is never affected by declining.';
   sheet.innerHTML=
-    '<div style="font-size:30px;margin-bottom:8px">📍</div>'+
+    '<div style="font-size:30px;margin-bottom:8px">'+svgIcon('📍',{size:30})+'</div>'+
     '<div style="font-size:17px;font-weight:800;margin-bottom:6px">'+title+'</div>'+
     '<div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:8px">'+sub+'</div>'+
     '<div style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:16px">'+note+'</div>'+

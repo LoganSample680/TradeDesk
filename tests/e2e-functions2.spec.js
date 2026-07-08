@@ -223,7 +223,6 @@ test.describe('Paint estimate additional functions', () => {
       if (!window.estSurfaces) window.estSurfaces = [];
       estSurfaces.push({ id: 1, room: 'Living Room', type: 'walls', qty: 400, wallSqft: 400, coats: 2, primer: true });
       estSurfaces.push({ id: 2, room: 'Living Room', type: 'ceiling', qty: 180, coats: 1, primer: false });
-      if (typeof goPg === 'function') goPg('pg-est');
     });
     await page.waitForTimeout(400);
   });
@@ -384,6 +383,40 @@ test.describe('BYO (Build Your Own) estimate functions', () => {
       } catch (e) { return { ok: false, error: e.message }; }
     });
     if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('line-item notes field is a textarea, not a single-line input (regression)', async () => {
+    // Owner report: a long note typed into a line item got clipped in a single-line
+    // input with no way to see/edit the full text. Both the Add and Edit item modals
+    // must use a <textarea> so the full note is visible and editable.
+    if (typeof _byoAddItem !== 'function' || typeof _byoEditItem !== 'function') return;
+    const addTag = await page.evaluate(() => {
+      _byoAddItem('Labor');
+      const tag = document.getElementById('_bya-notes')?.tagName;
+      document.getElementById('_byo-add-modal')?.remove();
+      return tag;
+    });
+    expect(addTag).toBe('TEXTAREA');
+    const editTag = await page.evaluate(() => {
+      _byoEditItem(0);
+      const tag = document.getElementById('_bya-notes')?.tagName;
+      document.getElementById('_byo-add-modal')?.remove();
+      return tag;
+    });
+    expect(editTag).toBe('TEXTAREA');
+  });
+
+  test('editing a line item preserves a multi-line note through save (regression)', async () => {
+    if (typeof _byoEditItem !== 'function' || typeof _byaEditConfirm !== 'function') return;
+    const longNote = 'Line one of the note.\nLine two — a fix the contractor wants to make.\nLine three.';
+    const result = await page.evaluate((note) => {
+      _byoEditItem(0);
+      const ta = document.getElementById('_bya-notes');
+      if (ta) ta.value = note;
+      _byaEditConfirm(0);
+      return { savedNotes: _byoItems[0].notes };
+    }, longNote);
+    expect(result.savedNotes).toBe(longNote);
   });
 
   test('_editByoTitle — makes title inline editable', async () => {
@@ -1741,7 +1774,6 @@ test.describe('Paint estimate extra functions', () => {
         addr: '800 Paint St', city: 'Wichita', state: 'KS', zip: '67202' });
       if (!window.estSurfaces) window.estSurfaces = [];
       estSurfaces.push({ id: 10, room: 'Main Room', type: 'walls', qty: 500, wallSqft: 500, coats: 2, primer: false });
-      if (typeof goPg === 'function') goPg('pg-est');
     });
     await page.waitForTimeout(400);
   });

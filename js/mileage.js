@@ -17,7 +17,7 @@ function _showOdometerModal(tasks,hardBlock){
     ov.innerHTML=`
     <div style="background:var(--bg);border-radius:var(--rl);width:100%;max-width:440px;padding:24px 20px 28px;box-sizing:border-box">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-        <div style="width:38px;height:38px;border-radius:50%;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">🚗</div>
+        <div style="width:38px;height:38px;border-radius:50%;background:#dbeafe;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">${svgIcon('🚗',{size:20})}</div>
         <div>
           <div style="font-size:16px;font-weight:800;color:var(--text)">${isStart?(t.midYear?t.year+' Opening Odometer':t.year+' Start Odometer'):'Year-End Odometer'}</div>
           <div style="font-size:12px;color:var(--text3)">${vLabel} · ${isStart?(t.midYear?'First business use, '+t.year:'Jan 1, '+t.year):'Dec 31, '+t.year}</div>
@@ -25,9 +25,9 @@ function _showOdometerModal(tasks,hardBlock){
       </div>
       <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:var(--r);padding:10px 12px;margin:14px 0 16px;font-size:12px;color:#1e40af;line-height:1.5">
         <strong>IRS Pub. 463 requires annual odometer records.</strong> ${t.midYear?'You joined mid-year — enter the odometer reading from when you first started using this vehicle for business, or your best Jan 1 estimate. An estimate is far better than no record.':'Recording Jan 1 &amp; Dec 31 readings proves your business-use % and makes your mileage deduction bulletproof — even in a field audit.'}
-        ${loggedMi>0?`<div style="margin-top:6px">📍 You logged <strong>${loggedMi.toFixed(1)} mi</strong> in ${t.year} for this vehicle in TradeDesk.</div>`:''}
+        ${loggedMi>0?`<div style="margin-top:6px">${svgIcon('📍',{size:12})} You logged <strong>${loggedMi.toFixed(1)} mi</strong> in ${t.year} for this vehicle in TradeDesk.</div>`:''}
         ${otherReading?`<div style="margin-top:4px">${isStart?'Dec 31':'Jan 1'} reading on file: <strong>${otherReading.toLocaleString()} mi</strong></div>`:''}
-        ${(()=>{const prevEnd=(S.vehicleOdoLog||{})[t.year-1]?.[_vehKey(t.veh)]?.end||0;return(isStart&&prevEnd&&!existing.start)?`<div style="margin-top:4px">✅ Carried forward from Dec 31, ${t.year-1}: <strong>${prevEnd.toLocaleString()} mi</strong></div>`:'';})()}
+        ${(()=>{const prevEnd=(S.vehicleOdoLog||{})[t.year-1]?.[_vehKey(t.veh)]?.end||0;return(isStart&&prevEnd&&!existing.start)?`<div style="margin-top:4px">${svgIcon('✅',{size:12})} Carried forward from Dec 31, ${t.year-1}: <strong>${prevEnd.toLocaleString()} mi</strong></div>`:'';})()}
       </div>
       <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">${isStart?(t.midYear?t.year+' opening odometer (best estimate)':'Jan 1, '+t.year+' odometer reading'):'Dec 31, '+t.year+' odometer reading'}</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
@@ -287,7 +287,7 @@ function showEndDrive(){
   box.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
       '<div style="font-size:17px;font-weight:800">End Drive</div>'+
-      '<button onclick="closeTopModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">✕</button>'+
+      '<button onclick="closeTopModal()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">'+svgIcon('✕',{size:20})+'</button>'+
     '</div>'+
     '<div style="background:var(--blue-lt);border-radius:var(--r);padding:8px 12px;margin-bottom:14px;font-size:12px;color:var(--blue-dk)">'+
       '<strong>'+(c?c.name:'Client')+'</strong> · '+gps.purpose+' · '+m+'m '+s+'s'+
@@ -580,7 +580,11 @@ function _addrSugSelect(suggId,streetId,cityId,stateId,zipId,street,city,state,z
   const set=(id,v)=>{const el=document.getElementById(id);if(el)el.value=v;};
   set(streetId,street);set(cityId,city);set(stateId,state);set(zipId,zip);
   const box=document.getElementById(suggId);if(box)box.style.display='none';
-  document.getElementById(streetId)?.dispatchEvent(new Event('input',{bubbles:true}));
+  // Call the dependent UI update directly rather than re-dispatching a bubbling 'input'
+  // event on the street field — that event re-fires the SAME inline oninput handler that
+  // opened this box, which calls _addrSugSearch again and reopens the suggestion list
+  // ~220ms later for the address the user just picked (the "bubble won't go away" bug).
+  if(typeof _updateAddrComputed==='function')_updateAddrComputed();
   // For existing clients, fire lookup immediately on address selection
   if(editClientId&&street&&city)_lookupPropertyData(editClientId,{street,city,state,zip});
 }
@@ -654,7 +658,7 @@ function _showRecentFromAddresses(){
   if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
   sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
     recents.map(r=>{const sa=r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");const sp=(r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");return'<div onclick="_selectRecentFrom(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
-      '<span style="font-size:16px;color:var(--text3)">🕐</span>'+
+      '<span style="font-size:16px;color:var(--text3)">'+svgIcon('🕐',{size:16})+'</span>'+
       '<div>'+(r.poi_name?'<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(r.poi_name)+'</div><div style="font-size:11px;color:var(--text3)">'+escHtml(r.addr)+'</div>':'<div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>')+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
       '</div></div>';}).join('');
   sugg.style.display='block';
@@ -691,7 +695,7 @@ function _showRecentDestinations(){
   if(!recents.length){sugg.style.display='none';sugg.innerHTML='';return;}
   sugg.innerHTML='<div style="padding:4px 10px 2px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Recent</div>'+
     recents.map(r=>{const sa=r.addr.replace(/\\/g,'\\\\').replace(/'/g,"\\'");const sp=(r.poi_name||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");return'<div onclick="_selectRecentDest(\''+sa+'\',\''+sp+'\')" style="padding:9px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border)" onmouseenter="this.style.background=\'var(--bg2)\'" onmouseleave="this.style.background=\'\'">'+
-      '<span style="font-size:16px;color:var(--text3)">🕐</span>'+
+      '<span style="font-size:16px;color:var(--text3)">'+svgIcon('🕐',{size:16})+'</span>'+
       '<div>'+(r.poi_name?'<div style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(r.poi_name)+'</div><div style="font-size:11px;color:var(--text3)">'+escHtml(r.addr)+'</div>':'<div style="font-size:13px;color:var(--text)">'+escHtml(r.addr)+'</div>')+(r.client_name?'<div style="font-size:11px;color:var(--text3)">'+escHtml(r.client_name)+'</div>':'')+
       '</div></div>';}).join('');
   sugg.style.display='block';
@@ -728,7 +732,7 @@ function _tripDestSearch(val){
   const clientMatches=clients.filter(c=>c.name&&c.name.toLowerCase().includes(val.toLowerCase())&&c.addr).slice(0,4);
   _tripDestTimer=setTimeout(async()=>{
     let html=clientMatches.map(c=>'<div onclick="_selectTripClient('+c.id+')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
-      '<div style="font-size:13px;font-weight:700;color:var(--text)">👤 '+escHtml(c.name)+'</div>'+
+      '<div style="font-size:13px;font-weight:700;color:var(--text)">'+svgIcon('👤',{size:13})+' '+escHtml(c.name)+'</div>'+
       '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(c.addr||'')+'</div>'+
     '</div>').join('');
     try{
@@ -758,7 +762,7 @@ function _tripDestSearch(val){
         const isPoi=res.name&&res.name.toLowerCase()!==res.line1.toLowerCase();
         html+='<div onclick="selectTripPlace(\'lm-to\',\'lm-to-sugg\',\'to\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+',\''+safeName+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
           (isPoi?
-            '<div style="font-size:13px;font-weight:700;color:var(--text)">📍 '+escHtml(res.name)+'</div>'+
+            '<div style="font-size:13px;font-weight:700;color:var(--text)">'+svgIcon('📍',{size:13})+' '+escHtml(res.name)+'</div>'+
             '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line1)+(res.line2?', '+escHtml(res.line2):'')+'</div>':
             '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
             (res.line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>':''))+
@@ -808,7 +812,7 @@ function tripPlaceSearch(fieldId,suggId,val){
         const isPoi=res.name&&res.name.toLowerCase()!==res.line1.toLowerCase();
         return '<div onclick="selectTripPlace(\''+fieldId+'\',\''+suggId+'\',\''+whichKey+'\',\''+safeL1+'\',\''+safeL2+'\','+res.lat+','+res.lon+',\''+safeName+'\')" style="padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer">'+
           (isPoi?
-            '<div style="font-size:13px;font-weight:700;color:var(--text)">📍 '+escHtml(res.name)+'</div>'+
+            '<div style="font-size:13px;font-weight:700;color:var(--text)">'+svgIcon('📍',{size:13})+' '+escHtml(res.name)+'</div>'+
             '<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line1)+(res.line2?', '+escHtml(res.line2):'')+'</div>':
             '<div style="font-size:13px;font-weight:600;color:var(--text)">'+escHtml(res.line1)+'</div>'+
             (res.line2?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+escHtml(res.line2)+'</div>':''))+
@@ -881,7 +885,7 @@ function openLogTripModal(opts){
             const safeAddr=(s.addr||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
             const safePurpose=(s.purpose||'').replace(/'/g,"\\'");
             return '<button type="button" onclick="fillTripSuggestion('+s.clientId+',\''+safeAddr+'\',\''+safePurpose+'\')" style="display:flex;align-items:center;gap:5px;padding:7px 10px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:600;cursor:pointer;color:var(--text)">'+
-              (s.icon||'📍')+' <span>'+safeLabel+'</span>'+
+              svgIcon(s.icon||'📍',{size:12})+' <span>'+safeLabel+'</span>'+
             '</button>';
           }).join('')+
         '</div>'+
@@ -891,7 +895,7 @@ function openLogTripModal(opts){
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   overlay.innerHTML='<div style="background:var(--bg);border-radius:var(--rl);padding:20px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">'+
-      '<div style="font-size:17px;font-weight:800">'+(opts.editId?'✏️ Edit trip':'🚗 Log a trip')+'</div>'+
+      '<div style="font-size:17px;font-weight:800">'+(opts.editId?svgIcon('✏',{size:17})+' Edit trip':svgIcon('🚗',{size:17})+' Log a trip')+'</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0 4px;line-height:1">×</button>'+
     '</div>'+
     suggHtml+
@@ -910,15 +914,15 @@ function openLogTripModal(opts){
     '<div class="f" style="margin-bottom:12px"><label>Starting from</label>'+
       '<div style="display:flex;gap:8px">'+
         '<input id="lm-from" placeholder="Your address or last job" style="flex:1" value="'+escHtml(opts.fromAddress||'')+'" onfocus="_showRecentFromAddresses()" oninput="tripPlaceSearch(\'lm-from\',\'lm-from-sugg\',this.value)" autocomplete="off">'+
-        '<button type="button" onclick="grabMyLocation(true)" class="btn btn-sm" id="lm-gps-btn" style="white-space:nowrap;flex-shrink:0;min-height:44px">📍 GPS</button>'+
+        '<button type="button" onclick="grabMyLocation(true)" class="btn btn-sm" id="lm-gps-btn" style="white-space:nowrap;flex-shrink:0;min-height:44px">'+svgIcon('📍',{size:12})+' GPS</button>'+
       '</div>'+
       '<div id="lm-from-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
-      '<div id="lm-from-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-from-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
+      '<div id="lm-from-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>'+svgIcon('📍',{size:11})+'</span><span id="lm-from-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">'+svgIcon('✓',{size:11})+'</span></div>'+
       '</div>'+
     '<div class="f" style="margin-bottom:4px"><label>Driving to — client name or address</label>'+
       '<input id="lm-to" placeholder="Type client name or any address" value="'+escHtml(opts.toAddress||'')+'" onfocus="_showRecentDestinations()" oninput="_tripDestSearch(this.value)" autocomplete="off">'+
       '<div id="lm-to-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
-      '<div id="lm-to-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>📍</span><span id="lm-to-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">✓</span></div>'+
+      '<div id="lm-to-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>'+svgIcon('📍',{size:11})+'</span><span id="lm-to-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">'+svgIcon('✓',{size:11})+'</span></div>'+
       '</div>'+
     '<div id="lm-route-result" style="display:none;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:6px;text-align:center">'+
       '<div id="lm-miles-display" style="font-size:32px;font-weight:800;color:var(--blue-dk)"></div>'+
@@ -942,8 +946,8 @@ function openLogTripModal(opts){
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
       (opts.editId
-        ? '<button onclick="updateLoggedTrip('+opts.editId+')" class="btn btn-p" style="flex:2;min-height:48px;font-size:15px;font-weight:700">✓ Save changes</button>'
-        : '<button onclick="saveLoggedTrip()" class="btn btn-p" style="flex:2;min-height:48px;font-size:15px;font-weight:700">✓ Save trip</button>')+
+        ? '<button onclick="updateLoggedTrip('+opts.editId+')" class="btn btn-p" style="flex:2;min-height:48px;font-size:15px;font-weight:700">'+svgIcon('✓',{size:15})+' Save changes</button>'
+        : '<button onclick="saveLoggedTrip()" class="btn btn-p" style="flex:2;min-height:48px;font-size:15px;font-weight:700">'+svgIcon('✓',{size:15})+' Save trip</button>')+
     '</div>'+
   '</div>';
   document.body.appendChild(overlay);
@@ -1028,7 +1032,7 @@ async function grabMyLocation(showErr){
     const inp=document.getElementById('lm-from');if(inp)inp.value=addr;
   }catch(e){
     if(showErr)zAlert('Could not get your location. Check that location access is enabled for Safari.',{title:'GPS unavailable'});
-  }finally{if(btn){btn.disabled=false;btn.textContent='📍 GPS';}}
+  }finally{if(btn){btn.disabled=false;btn.innerHTML=svgIcon('📍',{size:12})+' GPS';}}
 }
 async function calculateAndShowRoute(){
   const fromVal=(document.getElementById('lm-from')?.value||'').trim();
@@ -1049,7 +1053,7 @@ async function calculateAndShowRoute(){
     const _rcr=document.getElementById('lm-recalc-row');if(_rcr)_rcr.style.display='block';
   }catch(e){
     zAlert(e.message+'\n\nTip: Try typing the city and state, or pick from the search suggestions.',{title:'Could not calculate route'});
-  }finally{if(btn){btn.disabled=false;btn.textContent='🗺 Calculate miles';}}
+  }finally{if(btn){btn.disabled=false;btn.innerHTML=svgIcon('🗺',{size:12})+' Calculate miles';}}
 }
 function openTripInMaps(which,from,to){
   if(!to||!which)return;
@@ -1136,7 +1140,7 @@ function renderAllMileage(){
     if(!vehs.length){
       heroEl.innerHTML=
         '<div style="background:var(--bg2);border-radius:var(--r);padding:20px;text-align:center;margin-bottom:12px">'+
-          '<div style="font-size:28px;margin-bottom:8px">🚛</div>'+
+          '<div style="font-size:28px;margin-bottom:8px">'+svgIcon('🚛',{size:28})+'</div>'+
           '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px">Add a vehicle to start logging</div>'+
           '<div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.5">The IRS requires a vehicle description on every mileage entry. You\'re one tap away from tracking deductible trips.</div>'+
           '<button class="btn btn-p" onclick="goPg(\'pg-team\');setFleetTab(\'fleet\')" style="font-size:14px;padding:11px 22px">+ Add vehicle in Fleet</button>'+
@@ -1178,15 +1182,15 @@ function renderAllMileage(){
         '</div>'+
         '<div class="mil-hero-r">'+
           '<button class="mil-action mil-action-go" onclick="openDriveModal()">'+
-            '<div class="mil-action-icon">📍</div>'+
+            '<div class="mil-action-icon">'+svgIcon('📍',{size:20})+'</div>'+
             '<div class="mil-action-body"><div class="mil-action-label">Log a trip</div><div class="mil-action-sub">Manual · type addresses + miles</div></div>'+
           '</button>'+
           '<button class="mil-action" onclick="checkOdometerEntries(true)">'+
-            '<div class="mil-action-icon">🔢</div>'+
+            '<div class="mil-action-icon">'+svgIcon('🔢',{size:20})+'</div>'+
             '<div class="mil-action-body"><div class="mil-action-label">Update odometer</div><div class="mil-action-sub">'+vehLabel+(startOdo?' · '+startOdo.toLocaleString()+' mi':'')+' </div></div>'+
           '</button>'+
           '<button class="mil-action" onclick="openExportPanel()">'+
-            '<div class="mil-action-icon">📊</div>'+
+            '<div class="mil-action-icon">'+svgIcon('📊',{size:20})+'</div>'+
             '<div class="mil-action-body"><div class="mil-action-label">Export IRS report</div><div class="mil-action-sub">Schedule C · Form 4562</div></div>'+
           '</button>'+
         '</div>'+
@@ -1222,8 +1226,8 @@ function renderAllMileage(){
   const metsEl=document.getElementById('tr-mile-mets');
   if(metsEl){
     metsEl.innerHTML=S.homeOffice
-      ?'<div class="tip" style="margin-top:4px"><span style="font-size:18px">✅</span><div><b>Home office active</b> — your drives from home to job sites count as deductible business miles.</div></div>'
-      :'<div class="tip" style="margin-top:4px"><span style="font-size:18px">💡</span><div><b>Home office tip:</b> Set up a home office in Settings to make drives from home to your first job site deductible.</div></div>';
+      ?'<div class="tip" style="margin-top:4px"><span style="font-size:18px">'+svgIcon('✅',{size:18})+'</span><div><b>Home office active</b> — your drives from home to job sites count as deductible business miles.</div></div>'
+      :'<div class="tip" style="margin-top:4px"><span style="font-size:18px">'+svgIcon('💡',{size:18})+'</span><div><b>Home office tip:</b> Set up a home office in Settings to make drives from home to your first job site deductible.</div></div>';
   }
 }
 
@@ -1279,7 +1283,7 @@ function _milRenderVehicleWorksheet(yr,tot,irsRate){
       '</div>'+
       '<div class="mil-vehicle">'+
         '<div class="mil-vehicle-l">'+
-          '<div class="mil-vehicle-icon">🛻</div>'+
+          '<div class="mil-vehicle-icon">'+svgIcon('🛻',{size:22})+'</div>'+
           '<div>'+
             '<div class="mil-vehicle-name">'+escHtml(vehLabel)+'</div>'+
             (vehPlate?'<div class="mil-vehicle-plate">'+escHtml(vehPlate)+' · primary work vehicle</div>':'<div class="mil-vehicle-plate">Primary work vehicle</div>')+
@@ -1340,7 +1344,7 @@ function _milRenderClassifyCard(unclassified){
       '</div>'+
       '<div class="mil-classify-actions">'+
         '<button class="mil-class-btn" onclick="_milSkipClassify('+next.id+')">Skip</button>'+
-        '<button class="mil-class-btn mil-class-business" onclick="openMileageEdit('+next.id+')">💼 Add purpose →</button>'+
+        '<button class="mil-class-btn mil-class-business" onclick="openMileageEdit('+next.id+')">'+svgIcon('💼',{size:12})+' Add purpose →</button>'+
       '</div>'+
     '</div>';
 }
@@ -1493,7 +1497,7 @@ function _milRenderSummary(filtered,tot,irsRate){
       '</div>'+
       '<div class="mil-summary-cell">'+
         '<div class="td-micro">Audit-ready</div>'+
-        '<div class="mil-summary-v" style="color:var(--c-green)">'+(filtered.every(m=>m.purpose)?'✓':'⚠️')+'</div>'+
+        '<div class="mil-summary-v" style="color:var(--c-green)">'+(filtered.every(m=>m.purpose)?svgIcon('✓',{size:20}):svgIcon('⚠',{size:20}))+'</div>'+
         '<div class="mil-summary-sub">'+(filtered.every(m=>m.purpose)?'IRS Pub. 463 compliant':filtered.filter(m=>!m.purpose).length+' trips need purpose')+'</div>'+
       '</div>'+
     '</div>';
@@ -1532,4 +1536,32 @@ function updateLoggedTrip(id){
   saveAll();_flushSaveNow();closeTopModal();showToast('Trip updated','✓');
   if(document.getElementById('mil-table'))renderAllMileage();
   if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
+}
+
+let _rateRefreshInProgress=false;
+Object.defineProperty(window,'_rateRefreshInProgress',{get:()=>_rateRefreshInProgress,set:v=>{_rateRefreshInProgress=v;},configurable:true});
+async function autoRefreshRates(){
+  if(!_supa||!_supaUser||_rateRefreshInProgress)return;
+  const thisYear=new Date().getFullYear();
+  // S.irsRateYear syncs to Supabase — once ANY device sets it for this year, all devices skip the fetch
+  if(S.irsRateYear===thisYear&&S.irsRate)return;
+  _rateRefreshInProgress=true;
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    if(!session)return;
+    const resp=await fetch(SUPA_URL+'/functions/v1/get-rates',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+session.access_token},
+      body:JSON.stringify({})
+    });
+    if(!resp.ok)return;
+    const d=await resp.json();
+    // Sanity bounds — IRS rate must be realistic (never below 50¢ or above $1.00/mi)
+    if(!d.irsRate||d.irsRate<0.50||d.irsRate>1.00)return;
+    if(Math.abs(d.irsRate-(S.irsRate||0))>0.0005){
+      showToast('IRS mileage rate updated to $'+(+d.irsRate).toFixed(3)+'/mi for '+d.year);
+      const el=document.getElementById('set-irs');if(el)el.value=d.irsRate;
+    }
+    S.irsRate=d.irsRate;S.irsRateYear=thisYear;saveAll();
+  }catch(e){}finally{_rateRefreshInProgress=false;}
 }

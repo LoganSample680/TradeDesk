@@ -17,13 +17,8 @@ async function runE2ETest(){
     'goPg','mobileNavTo','openMobileMore',
     'openClientDetail','openEstimateForClient',
     '_doOpenEstimate','_showEstimateStylePicker','_pickEstStyle',
-    'goSurfStepB','goSurfScopeToMeasure','goSurfStepA',
-    'toggleSurfWhat','setSurfJobType','onSurfRoomName','updateSurfWhatUI',
-    'saveAndExitEstimate','saveEstFullDraft','clearEstimatorForm',
-    'goEstStep','calcEst','renderEstSurfs','renderEstRunning',
-    'buildScopeGrid','toggleScopeRoom','roomScopeOn','scopeOn',
     'openGenericEstimate','openTMEstimate','openFreeFormEstimate',
-    'buildProposal','sendProposalLink','sendProposalViaSms','sendProposalViaEmail',
+    'sendProposalViaSms','sendProposalViaEmail',
     'zAlert','zConfirm','showToast','closeTopModal',
     'fmtD','fmt','fmtShort','todayKey','dateKey','addDays','escHtml',
     'applySettings','applyBrandLogo','registerDevice',
@@ -34,6 +29,21 @@ async function runE2ETest(){
     'showNotesFab','hideNotesFab',
     'getActiveTrade','_getTradeLines',
   ];
+  // The interior/exterior "Scope & Price" surface estimator was removed —
+  // assert its entry points are actually gone, not just unused.
+  const mustNotExist=[
+    'goSurfStepB','goSurfScopeToMeasure','goSurfStepA','toggleSurfWhat',
+    'setSurfJobType','onSurfRoomName','updateSurfWhatUI','saveEstFullDraft',
+    'clearEstimatorForm','goEstStep','calcEst','renderEstSurfs','renderEstRunning',
+    'buildScopeGrid','toggleScopeRoom','roomScopeOn','scopeOn','sendProposalLink',
+    '_doOpenScopeEstimate',
+  ];
+  for(const fn of mustNotExist){
+    check(fn+' was removed with the paint estimator',()=>{
+      let val;try{val=eval(fn);}catch(e){val=undefined;}
+      if(typeof val==='function')throw new Error(fn+' still exists — should have been deleted');
+    });
+  }
   for(const fn of mustExist){
     check('typeof '+fn+' === function',()=>{
       // const/let globals are lexical — not on window — use eval to reach them
@@ -52,22 +62,20 @@ async function runE2ETest(){
     });
   }
   check('S is an object',()=>{if(typeof S!=='object'||!S)throw new Error('S is '+typeof S);});
-  check('SCOPE_ITEMS is an Array',()=>{if(!Array.isArray(SCOPE_ITEMS)||!SCOPE_ITEMS.length)throw new Error('SCOPE_ITEMS empty or missing');});
-  check('SURF_ORDER is an Array',()=>{if(!Array.isArray(SURF_ORDER)||!SURF_ORDER.length)throw new Error('SURF_ORDER empty or missing');});
   check('JOB_COLORS is an Array',()=>{if(!Array.isArray(JOB_COLORS)||!JOB_COLORS.length)throw new Error('JOB_COLORS empty or missing');});
   check('IRS_EXPENSE_CATS is an Array',()=>{if(!Array.isArray(IRS_EXPENSE_CATS)||!IRS_EXPENSE_CATS.length)throw new Error('IRS_EXPENSE_CATS empty or missing');});
-  check('estSurfaces is an Array',()=>{if(!Array.isArray(estSurfaces))throw new Error('estSurfaces is '+typeof estSurfaces);});
-  check('roomScopeMap is an object',()=>{if(typeof roomScopeMap!=='object'||!roomScopeMap)throw new Error('roomScopeMap is '+typeof roomScopeMap);});
 
   // ── 3. Key DOM elements exist ─────────────────────────────────────────────
   section('Critical DOM elements');
-  const mustExistDom=['pg-dash','pg-est','pg-clients','pg-leads','pg-jobs','pg-tracker','pg-settings','pg-taxes',
-    'surf-step-a','surf-step-b','surf-scope-first','surf-measure-color-wrap','surf-next-to-dims',
-    'surf-room-name','surf-what-grid','surf-scope-first-grid',
-    'e-cname','e-cphone','e-caddr','e-days','e-paint',
+  const mustExistDom=['pg-dash','pg-est-generic','pg-clients','pg-leads','pg-jobs','pg-tracker','pg-settings','pg-taxes',
+    'gei-client','gei-addr','gei-desc',
     'supa-boot-overlay'];
   for(const id of mustExistDom){
     check('#'+id+' exists in DOM',()=>{if(!document.getElementById(id))throw new Error('element #'+id+' not found');});
+  }
+  const mustNotExistDom=['pg-est','surf-step-a','surf-step-b','surf-scope-first','surf-room-name','e-caddr'];
+  for(const id of mustNotExistDom){
+    check('#'+id+' removed with the paint estimator',()=>{if(document.getElementById(id))throw new Error('element #'+id+' still in DOM — should have been removed');});
   }
 
   // ── 4. Navigation ─────────────────────────────────────────────────────────
@@ -82,8 +90,8 @@ async function runE2ETest(){
   }
   goPg('pg-dash'); // return to dash
 
-  // ── 5. Estimate flow — full walk-through ──────────────────────────────────
-  section('Painting estimate flow');
+  // ── 5. Generic estimate flow — full walk-through ──────────────────────────
+  section('Generic (Scope & Price / T&M / BYO) estimate flow');
 
   // Need a client to open estimate for
   let tc=clients[0];
@@ -96,104 +104,28 @@ async function runE2ETest(){
     check('found existing client: '+tc.name,()=>{});
   }
 
-  check('_doOpenEstimate navigates to pg-est',()=>{
-    _doOpenEstimate(tc,null,'painting');
+  check('openGenericEstimate navigates to pg-est-generic',()=>{
+    openGenericEstimate(tc,null,'general');
     const active=document.querySelector('.pg.active')?.id;
-    if(active!=='pg-est')throw new Error('expected pg-est active, got '+active);
-  });
-  await new Promise(r=>setTimeout(r,250)); // let setTimeout in _doOpenEstimate fire
-
-  check('surf-step-a visible at estimate start',()=>{
-    const a=document.getElementById('surf-step-a');
-    if(a.style.display==='none')throw new Error('surf-step-a is hidden');
+    if(active!=='pg-est-generic')throw new Error('expected pg-est-generic active, got '+active);
   });
 
-  check('surf-step-b hidden at estimate start',()=>{
-    const b=document.getElementById('surf-step-b');
-    if(b.style.display!=='none')throw new Error('surf-step-b visible prematurely');
+  check('gei-client pre-filled with client name',()=>{
+    const el=document.getElementById('gei-client');
+    if(!el||el.value!==tc.name)throw new Error('gei-client='+JSON.stringify(el?.value));
   });
 
-  check('onSurfRoomName sets surfRoom',()=>{
-    const inp=document.getElementById('surf-room-name');
-    if(!inp)throw new Error('#surf-room-name not found');
-    inp.value='Living Room E2E';
-    onSurfRoomName(inp);
-    if(surfRoom!=='Living Room E2E')throw new Error('surfRoom='+JSON.stringify(surfRoom));
-  });
-
-  check('toggleSurfWhat adds walls to surfWhatSelected',()=>{
-    const btn=document.getElementById('swhat-walls');
-    // Clear first to ensure consistent state
-    surfWhatSelected=[];
-    toggleSurfWhat('walls',btn);
-    if(!surfWhatSelected.includes('walls'))throw new Error('walls not in surfWhatSelected: '+JSON.stringify(surfWhatSelected));
-  });
-
-  check('surf-next-to-dims button is enabled after room+surface selected',()=>{
-    const nextBtn=document.getElementById('surf-next-to-dims');
-    if(!nextBtn)throw new Error('#surf-next-to-dims not found');
-    if(nextBtn.disabled)throw new Error('button still disabled; surfRoom='+surfRoom+' surfWhatSelected='+JSON.stringify(surfWhatSelected));
-  });
-
-  check('goSurfStepB shows surf-step-b overlay',()=>{
-    goSurfStepB();
-    const b=document.getElementById('surf-step-b');
-    if(b.style.display==='none')throw new Error('surf-step-b still display:none after goSurfStepB()');
-  });
-
-  check('surf-scope-first-grid populated with SCOPE_ITEMS',()=>{
-    const grid=document.getElementById('surf-scope-first-grid');
-    if(!grid)throw new Error('#surf-scope-first-grid not found');
-    if(!grid.innerHTML.trim())throw new Error('scope grid is empty');
-    if(!grid.querySelector('.stog'))throw new Error('no .stog items in scope grid');
-  });
-
-  check('goSurfScopeToMeasure hides scope-first, shows measure-wrap',()=>{
-    goSurfScopeToMeasure();
-    const sf=document.getElementById('surf-scope-first');
-    const mw=document.getElementById('surf-measure-color-wrap');
-    if(sf&&sf.style.display!=='none')throw new Error('surf-scope-first still visible');
-    if(!mw)throw new Error('#surf-measure-color-wrap not found');
-    if(mw.style.display==='none')throw new Error('surf-measure-color-wrap still hidden');
-  });
-
-  check('goSurfStepA returns to step A',()=>{
-    goSurfStepA();
-    const a=document.getElementById('surf-step-a');
-    const b=document.getElementById('surf-step-b');
-    if(a.style.display==='none')throw new Error('surf-step-a still hidden after goSurfStepA');
-    if(b.style.display!=='none')throw new Error('surf-step-b still visible after goSurfStepA');
-  });
-
-  // ── 6. saveAndExitEstimate ────────────────────────────────────────────────
-  section('saveAndExitEstimate');
-  // Re-enter step B and scope for a valid save
-  check('re-enter goSurfStepB to get valid state',()=>{
-    const inp=document.getElementById('surf-room-name');inp.value='Kitchen E2E';onSurfRoomName(inp);
-    if(!surfWhatSelected.includes('walls')){surfWhatSelected=['walls'];updateSurfWhatUI();}
-    goSurfStepB();
-  });
-  check('saveAndExitEstimate completes without error',()=>{
-    // saveAndExitEstimate calls calcEst, writes a bid, navigates to dash
-    saveAndExitEstimate();
-  });
-  await new Promise(r=>setTimeout(r,100));
-  check('navigated back to pg-dash after saveAndExitEstimate',()=>{
-    const active=document.querySelector('.pg.active')?.id;
-    if(active!=='pg-dash')throw new Error('expected pg-dash active, got '+active);
-  });
+  goPg('pg-dash');
 
   // ── 7. Proposal / hub links ───────────────────────────────────────────────
   section('Proposal & hub links');
   const recentBid=bids[0];
   if(recentBid){
-    check('buildProposal returns HTML string',()=>{
-      const html=buildProposal(recentBid);
-      if(typeof html!=='string'||!html.length)throw new Error('buildProposal returned: '+typeof html);
-      if(!html.includes('<'))throw new Error('buildProposal returned non-HTML: '+html.slice(0,80));
+    check('sendProposalViaSms exists and is callable',()=>{
+      if(typeof sendProposalViaSms!=='function')throw new Error('sendProposalViaSms not a function');
     });
-    check('sendProposalLink exists and is callable',()=>{
-      if(typeof sendProposalLink!=='function')throw new Error('sendProposalLink not a function');
+    check('sendProposalViaEmail exists and is callable',()=>{
+      if(typeof sendProposalViaEmail!=='function')throw new Error('sendProposalViaEmail not a function');
     });
   } else {
     results.push({name:'proposal tests: no bids yet — skipped',ok:true});
@@ -221,11 +153,11 @@ function _showE2EResults(results){
   const rows=results.map(r=>{
     if(r.section)return`<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#93c5fd;margin:10px 0 4px">${r.section}</div>`;
     const bg=r.ok?'rgba(34,197,94,.12)':'rgba(239,68,68,.15)';
-    const icon=r.ok?'✓':'✗';
+    const icon=r.ok?svgIcon('✓',{size:12}):svgIcon('✗',{size:12});
     const color=r.ok?'#86efac':'#fca5a5';
     return`<div style="padding:5px 8px;border-radius:4px;margin-bottom:3px;background:${bg};font-size:12px">
       <span style="color:${color};font-weight:700;margin-right:6px">${icon}</span>${r.name}
-      ${r.err?`<div style="font-size:10px;color:#fca5a5;margin-top:2px;padding-left:16px">⚠ ${r.err}</div>`:''}
+      ${r.err?`<div style="font-size:10px;color:#fca5a5;margin-top:2px;padding-left:16px">${svgIcon('⚠',{size:10})} ${r.err}</div>`:''}
     </div>`;
   }).join('');
   const html=`<div id="_e2e_overlay" style="position:fixed;inset:0;z-index:99999;background:rgba(10,10,20,.92);padding:16px;overflow-y:auto;font-family:var(--font,monospace)">

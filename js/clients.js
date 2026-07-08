@@ -22,9 +22,9 @@ function openEstimateForClient(){
   const c=getClientById(currentClientId);
   if(!c){showWorkflowGate('Select a client first before starting an estimate.','Choose Client','function(){goPg(\'pg-clients\');}');return;}
   const r=getClientRisk(c.id);
-  if(r==='blacklisted'){zAlert('This client is blacklisted. Estimates are blocked.',{title:'🚫 Blocked'});return;}
+  if(r==='blacklisted'){zAlert('This client is blacklisted. Estimates are blocked.',{title:svgIcon('🚫')+' Blocked'});return;}
   if(r==='high_risk'){
-    zConfirm('⚠️ This client previously required a lien for payment. Continue with estimate?',
+    zConfirm(svgIcon('⚠️')+' This client previously required a lien for payment. Continue with estimate?',
       ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true});
     return;
   }
@@ -36,7 +36,7 @@ function _showEstimateRequestModal(){
   if(typeof zConfirm==='function'){
     zConfirm("You don't have permission to create estimates yet. Send a request to your manager for access?",
       ()=>_submitEstimateRequest(),
-      {title:'🔒 Estimate access',yes:'Request access'});
+      {title:svgIcon('🔒')+' Estimate access',yes:'Request access'});
   }else if(typeof zAlert==='function'){
     zAlert('You do not have permission to create estimates. Ask your manager for access.',{title:'Permission needed'});
   }
@@ -93,7 +93,7 @@ function _showRrpModal(c,onProceed){
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_rrp-gate-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
-    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">⚠️ Pre-1978 Home — Built '+c.yearBuilt+'</div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+svgIcon('⚠️')+' Pre-1978 Home — Built '+c.yearBuilt+'</div>'+
     '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.5">Will painted surfaces be disturbed during this job?</div>'+
     '<div style="font-size:11.5px;color:var(--text3);margin-bottom:14px;line-height:1.5">EPA RRP applies when &gt;6 sq ft interior or &gt;20 sq ft exterior painted surface is disturbed.</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
@@ -138,7 +138,7 @@ function _gateAddressThenEstimate(c){
     const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addr-gate-overlay';
     const box=document.createElement('div');box.className='zmodal';
     box.innerHTML=
-      '<div style="font-size:18px;margin-bottom:6px">📍 Address required</div>'+
+      '<div style="font-size:18px;margin-bottom:6px">'+svgIcon('📍')+' Address required</div>'+
       '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+escHtml(c.name)+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
       '<div style="position:relative;margin-bottom:14px">'+
 '<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
@@ -184,13 +184,13 @@ function _checkMultiPropertyThenOpen(c){
     const addrHint=resumeTarget.addr?' ('+resumeTarget.addr+')':'';
     zConfirm(c.name+' has an estimate in progress'+addrHint+'. Resume it or start one for a different property?',
       ()=>{
-        if(activeBids.length===1){openEditBid(resumeTarget.id);}
+        if(activeBids.length===1){openGenericEstimate(c,resumeTarget.id,resumeTarget.trade_type||getActiveTrade());}
         else{
           // Multiple in-progress — show picker
           const ov=document.createElement('div');ov.className='zmodal-overlay';
           const box=document.createElement('div');box.className='zmodal';
           box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">Choose estimate to resume</div>'+
-            activeBids.map(b=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();openEditBid('+b.id+')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:13px;color:var(--text)">'+escHtml(b.addr||b.name||'Estimate')+'<span style="font-size:11px;color:var(--text3);display:block;margin-top:2px">'+escHtml(b.bid_date||'')+'</span></button>').join('')+
+            activeBids.map(b=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||getActiveTrade())+'\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:13px;color:var(--text)">'+escHtml(b.addr||b.name||'Estimate')+'<span style="font-size:11px;color:var(--text3);display:block;margin-top:2px">'+escHtml(b.bid_date||'')+'</span></button>').join('')+
             '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
           ov.appendChild(box);document.body.appendChild(ov);
           ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -237,7 +237,7 @@ function _showTradePicker(title,cb){
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+title+'</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Which trade is this for?</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">'+
-    lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};return'<button onclick="_pickTrade(\''+id+'\')" style="padding:14px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center"><div style="font-size:22px;margin-bottom:4px">'+m.icon+'</div><div style="font-size:13px;font-weight:700;color:var(--text)">'+m.label+'</div></button>';}).join('')+
+    lines.map(id=>{const m=TRADE_META[id]||{icon:'🔧',label:id};return'<button onclick="_pickTrade(\''+id+'\')" style="padding:14px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:center"><div style="font-size:22px;margin-bottom:4px">'+svgIcon(m.icon,{size:22})+'</div><div style="font-size:13px;font-weight:700;color:var(--text)">'+m.label+'</div></button>';}).join('')+
     '</div>'+
     '<button onclick="document.getElementById(\'_trade-pick-ov\')?.remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
@@ -267,33 +267,11 @@ function _closeStylePicker(){
 }
 function _showEstimateStylePicker(c,overrideAddr){
   _stylePickState={c,overrideAddr};
-  const trade=getActiveTrade();
-  const _SCOPE_DESC={
-    painting:'You define the work, the client sees one bottom-line price. Best for clearly-defined jobs like a full repaint or exterior project.',
-    electrical:'You define the work, the client sees one bottom-line price. Best for service upgrades, panel installs, or any clearly-scoped electrical job.',
-    plumbing:'You define the work, the client sees one bottom-line price. Best for fixture replacements, pipe repairs, or clearly-scoped plumbing installs.',
-    hvac:'You define the work, the client sees one bottom-line price. Best for equipment installs, duct work, or any clearly-scoped HVAC job.',
-    roofing:'You define the work, the client sees one bottom-line price. Best for full replacements, repairs, or gutter installs with known scope.',
-    landscaping:'You define the work, the client sees one bottom-line price. Best for installs, hardscape, or irrigation projects with a defined deliverable.',
-    general:'You define the work, the client sees one bottom-line price. Best for any job with a fixed scope and a single deliverable.',
-  };
-  const _TIPS={
-    painting:'Most painters use <b>Scope &amp; Price</b> for new clients and <b>T&M</b> for repeat customers with open-ended work. <b>Build Your Own</b> shines for upsells.',
-    electrical:'Most electricians use <b>Scope &amp; Price</b> for installs and upgrades, <b>T&M</b> for troubleshooting and service calls, and <b>Build Your Own</b> for whole-home packages.',
-    plumbing:'Most plumbers use <b>Scope &amp; Price</b> for installs and replacements, <b>T&M</b> for service calls with unknown scope, and <b>Build Your Own</b> for remodel packages.',
-    hvac:'Most HVAC contractors use <b>Scope &amp; Price</b> for equipment installs, <b>T&M</b> for diagnostics and service calls, and <b>Build Your Own</b> for maintenance packages.',
-    roofing:'Most roofers use <b>Scope &amp; Price</b> for replacements, <b>T&M</b> for repairs with unknown damage extent, and <b>Build Your Own</b> for full exterior packages.',
-    landscaping:'Most landscapers use <b>Scope &amp; Price</b> for install projects, <b>T&M</b> for open-ended maintenance, and <b>Build Your Own</b> for seasonal service packages.',
-    general:'Use <b>Scope &amp; Price</b> for fixed deliverables, <b>T&M</b> for open-ended or uncertain scope, and <b>Build Your Own</b> when the client wants to choose their services.',
-  };
-  const scopeDesc=_SCOPE_DESC[trade]||_SCOPE_DESC.general;
-  const tipText=_TIPS[trade]||_TIPS.general;
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
-  const isPainting=trade==='painting'||trade==='general';
   const card=(id,tone,icon,eyebrow,title,sub,bullets)=>{
-    const bul=bullets.map(b=>'<li><span>✓</span>'+b+'</li>').join('');
+    const bul=bullets.map(b=>'<li><span>'+svgIcon('✓')+'</span>'+b+'</li>').join('');
     return `<button class="chooser-card chooser-${tone}" onclick="_pickEstStyle('${id}')">
       <div class="chooser-card-eyebrow">${eyebrow}</div>
       <div class="chooser-card-icon">${icon}</div>
@@ -304,7 +282,7 @@ function _showEstimateStylePicker(c,overrideAddr){
     </button>`;
   };
   ov.innerHTML=
-    '<div style="max-width:1100px;margin:0 auto;padding:24px 20px 40px">'+
+    '<div style="max-width:760px;margin:0 auto;padding:24px 20px 40px">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
         '<div>'+
           '<div class="tbar-eyebrow">Pick estimate type</div>'+
@@ -313,16 +291,10 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
-        card('scope','denim',isPainting?'🖌️':'📋','Most popular',
-          isPainting?'Interior / Exterior':'Scope &amp; Price',
-          isPainting?'Surface-by-surface pricing':'Fixed scope, one final number',
-          isPainting
-            ?['Interior, exterior &amp; cabinet','Auto-calculates from room sq ft','Single-price proposal','Deposit collected upfront']
-            :['Line items private from client','Internal labor + materials math','Single-price proposal','Deposit collected upfront'])+
-        card('tm','amber','⏱️','Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
-          ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
-        card('freeform','green','🧩','A la carte','Build Your Own','List every service with its own price',
+        card('freeform','green',svgIcon('🧩',{size:36}),'A la carte','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
+        card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
+          ['Hourly rate + crew size','Materials at cost + markup','Not-to-exceed cap (optional)','Weekly invoicing'])+
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
@@ -334,18 +306,11 @@ function _pickEstStyle(style){
     const {c,overrideAddr}=_stylePickState||{};
     if(!c)return;
     _stylePickState=null;
-    if(style==='scope'){_doOpenScopeEstimate(c,overrideAddr);}
-    else if(style==='tm'){openTMEstimate(c);}
+    if(style==='tm'){openTMEstimate(c);}
     else if(style==='freeform'){openFreeFormEstimate(c);}
   };
   if(ov){doIt();ov.style.opacity='0';ov.style.transform='translateY(10px)';setTimeout(()=>ov.remove(),220);}
   else{doIt();}
-}
-function _doOpenScopeEstimate(c,overrideAddr){
-  // Explicitly reset TM/BYO flags so switching types doesn't carry over the previous mode
-  if(typeof _geiIsTM!=='undefined')_geiIsTM=false;
-  if(typeof _geiIsFreeForm!=='undefined')_geiIsFreeForm=false;
-  _doOpenEstimate(c,overrideAddr,getActiveTrade());
 }
 
 function _doOpenEstimate(c,_overrideAddr,_forceTrade){
@@ -364,127 +329,7 @@ function _doOpenEstimate(c,_overrideAddr,_forceTrade){
   }
   const _trade=_forceTrade||getActiveTrade();
   _activeTrade=_trade;_renderNavTradeSwitcher();
-  if(_trade!=='painting'&&_trade!=='general'){
-    openGenericEstimate(c,null,_trade);
-    return;
-  }
-  _resetNotesForNewEstimate();
-  // Full state wipe — prevents ANY bleed from a prior estimate session
-  _pendingSignToken=null;
-  const _plbD=document.getElementById('proposal-link-bar');if(_plbD){_plbD.style.display='none';_plbD.dataset.signingUrl='';}
-  const _sBtnD=document.getElementById('send-proposal-btn');if(_sBtnD){_sBtnD.textContent='🔗 Send to client';_sBtnD.disabled=false;}
-  _swLastProductByCategory={};
-  estSurfaces=[];estSurfId=0;clearSurfDraft();
-  scopeActiveMap={};scopeHrsStore={};roomScopeMap={};
-  estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200',products:{interior:'pm200',exterior:'spe',trim:'pm200t'}};
-  surfRoom='';surfColor='';surfJobType='interior';surfWhatSelected=[];surfBQueue=[];surfBIdx=0;surfBMeasurements={};_swLastProductByCategory={};
-  // Clear persistent DOM fields so they don't bleed from the previous estimate
-  ['surf-room-name','laser-room-name','manual-room-name'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-  const _sigTyped=document.getElementById('sig-typed');if(_sigTyped)_sigTyped.value='';
-  const _sigPrev=document.getElementById('sig-typed-preview');if(_sigPrev)_sigPrev.textContent='';
-  estLinkedClientId=currentClientId;
-  editingBidId=null;
-  // Reuse only a truly empty draft for this client (no surfaces, never worked on) — prevents
-  // orphan bids from accidental navigation away at step 1. Does NOT touch Pending bids with
-  // surfaces — those are real jobs for other properties and must stay in Estimates in Progress.
-  const _curTrade=getActiveTrade();
-  const _existingDraft=bids.find(b=>b.client_id===c.id&&b.draft===true&&b.status==='Draft'&&!b.signingToken&&(!b.surfaces||!b.surfaces.length)&&(b.trade_type===_curTrade||!b.trade_type));
-  if(_existingDraft){
-    lastCreatedBidId=_existingDraft.id;
-    if(_existingDraft.surfaces&&_existingDraft.surfaces.length){
-      estSurfaces=[..._existingDraft.surfaces];
-      estSurfId=estSurfaces.reduce((mx,s)=>Math.max(mx,s.id||0),0);
-    }
-    if(_existingDraft.roomScopeMap)roomScopeMap=JSON.parse(JSON.stringify(_existingDraft.roomScopeMap));
-    showToast('Resuming your previous estimate','✏️');
-  } else {
-    // Create a draft bid immediately so notes have an ID to attach to from the first stroke
-    const draftBid={
-      id:_newBidId(),
-      client_id:c.id,
-      client_name:c.name||'',
-      name:c.name||'',
-      phone:c.phone||'',
-      addr:c.addr||'',
-      bid_date:todayKey(),
-      amount:0,
-      status:'Draft',
-      draft:true,
-      notesCanvas:null,
-      surfaces:[],
-      scope:{},
-      trade_type:_trade,
-    };
-    bids.unshift(draftBid);
-    lastCreatedBidId=draftBid.id;
-    saveAll();
-  }
-  setTimeout(()=>{
-    const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
-    sf('e-cname',c.name||'');
-    sf('e-cphone',c.phone||'');
-    sf('e-caddr',_overrideAddr||c.addr||'');
-    if((_overrideAddr||c.addr)&&typeof _paintLookupClientTaxRate==='function')_paintLookupClientTaxRate();
-    // If client has multiple addresses, show a picker hint below the address field (skip if override provided)
-    _estAddrOptions=_overrideAddr?[{label:'New property',addr:_overrideAddr}]:[{label:'Primary',addr:c.addr||''},...(c.extraAddresses||[])];
-    const _addrField=document.getElementById('e-caddr');
-    const _oldHint=document.getElementById('_est-addr-picker');if(_oldHint)_oldHint.remove();
-    if(_addrField&&_estAddrOptions.length>1){
-      const _hint=document.createElement('div');_hint.id='_est-addr-picker';
-      _hint.style.cssText='margin-top:4px;display:flex;gap:6px;flex-wrap:wrap';
-      _hint.innerHTML=_estAddrOptions.map((a,i)=>'<button type="button" onclick="_pickEstAddr('+i+')" style="font-size:10px;padding:4px 9px;border:1px solid '+(i===0?'var(--blue)':'var(--border2)')+';border-radius:20px;background:'+(i===0?'var(--blue)':'var(--bg2)')+';color:'+(i===0?'#fff':'var(--text3)')+';cursor:pointer;font-family:inherit;font-weight:600">'+escHtml(a.label)+'</button>').join('');
-      _addrField.parentElement.appendChild(_hint);
-    }
-    sf('e-cnotes','');
-    if(c.ptype){const el=document.getElementById('e-cprop');if(el)el.value=c.ptype;}
-    if(S.bname)sf('e-bname',S.bname);
-    if(S.bphone)sf('e-bphone',S.bphone);
-    if(S.blic)sf('e-blic',S.blic);
-    sf('e-r-walls',S.rWalls||1.30);sf('e-r-ceil',S.rCeil||1.00);sf('e-r-trim',S.rTrim||3.25);sf('e-r-walls-adv',S.rWalls||1.30);sf('e-r-ceil-adv',S.rCeil||1.00);sf('e-r-trim-adv',S.rTrim||3.25);sf('e-r-door',S.rDoor||95);sf('e-r-door-adv',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);sf('e-r-deck',S.rDeck||1.00);
-    sf('e-r-door',S.rDoor||95);sf('e-r-win',S.rWin||50);sf('e-r-ext',S.rExt||1.10);
-    sf('e-r-deck',S.rDeck||1.00);sf('e-paint-rate',83);
-    SCOPE_ITEMS.forEach(sc=>{sf(sc.rateKey,sc.defaultRate);});
-    const cmiles=getClientMileage(currentClientId);
-    const totalMiles=cmiles.reduce((s,m)=>s+(m.miles||0),0);
-    if(totalMiles>0){
-      sf('e-travel', (Math.round(totalMiles*10)/10).toString());
-      const tel=document.getElementById('e-travel');
-      if(tel){tel.style.background='var(--green-lt)';tel.title=cmiles.length+' GPS trip(s) pre-filled';}
-    } else {
-      sf('e-travel','0');
-    }
-    const sel=document.getElementById('e-client-sel');
-    if(sel){
-      let found=false;
-      for(let i=0;i<sel.options.length;i++){if(parseInt(sel.options[i].value)===currentClientId){sel.selectedIndex=i;found=true;break;}}
-    }
-    const linked=document.getElementById('e-client-linked');
-    if(linked)linked.innerHTML='<span class="conn-tag">'+escHtml(c.name)+'</span>';
-    const adj=document.getElementById('est-adj');if(adj)adj.value=0;
-    const adjv=document.getElementById('est-adj-val');if(adjv)adjv.textContent='0%';
-    ['adj-type-hidden','adj-reason-hidden','inc-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-    const _ars=document.getElementById('adj-reason-summary');if(_ars)_ars.style.display='none';
-    scopeActiveMap={};scopeHrsStore={};roomScopeMap={};estPropertyTier={key:'avg',mult:1.00,paint:'ProMar 200'};
-  SCOPE_ITEMS.forEach(s=>{const cb=document.getElementById('est-sc-'+s.id),tog=document.getElementById('est-st-'+s.id);if(cb){cb.checked=false;if(tog)tog.classList.remove('on');}});
-    const epEl=document.getElementById('e-paint');if(epEl)epEl.value='interior';const custEl2=document.getElementById('e-customer-paint');if(custEl2)custEl2.value='';
-    document.querySelectorAll('#paint-picker .surf-type-btn').forEach(b=>b.classList.remove('active-surf-btn'));
-    const edEl=document.getElementById('e-days');
-    if(edEl){edEl.value='';edEl.style.borderColor='#A32D2D';edEl.style.background='var(--red-lt)';}
-    const ecEl=document.getElementById('e-cond');if(ecEl)ecEl.value='1.0';
-  const wknd=document.getElementById('e-allow-weekend');if(wknd)wknd.checked=false;
-    document.querySelectorAll('[id^=cond-]').forEach(b=>b.classList.remove('active-surf-btn'));
-    // Mark client fields as filled (they came from record) — clears red borders
-    ['e-cname','e-cphone','e-caddr'].forEach(id=>{
-      const el=document.getElementById(id);
-      if(el&&el.value){markFieldFilled(el);}
-    });
-    // Re-check step 1 readiness — client fields filled, paint/days still needed
-    checkStep1Ready();
-    renderEstSurfs();
-    goEstStep(1);
-    goEstStep(3); // Jump to surfaces (step 2 is merged in)
-  },50);
-  goPg('pg-est');
+  openFreeFormEstimate(c);
 }
 
 let dashYear=new Date().getFullYear();
@@ -561,7 +406,7 @@ function renderClientHubPage(){
   const sorted=[...clients].sort((a,b)=>(b.created||'').localeCompare(a.created||''));
   if(subEl)subEl.textContent=sorted.length?sorted.length+' client'+(sorted.length!==1?'s':'')+'  · tap any row to preview':'Every client has a private project portal — preview, share, or copy any link.';
   if(!sorted.length){
-    el.innerHTML='<div class="card hub-empty-card"><div style="font-size:36px;margin-bottom:8px">📂</div><h3>No clients yet</h3><p>Add your first client from the Clients tab and a private hub link is created automatically.</p><button class="btn btn-p" onclick="goPg(\'pg-clients\')">Go to Clients →</button></div>';
+    el.innerHTML='<div class="card hub-empty-card"><div style="font-size:36px;margin-bottom:8px">'+svgIcon('📂',{size:36})+'</div><h3>No clients yet</h3><p>Add your first client from the Clients tab and a private hub link is created automatically.</p><button class="btn btn-p" onclick="goPg(\'pg-clients\')">Go to Clients →</button></div>';
     return;
   }
   const rowHtml=c=>{
@@ -575,9 +420,9 @@ function renderClientHubPage(){
     const smsBody=_smsApply(S.smsHub||_getSmsDefaults().hub,{name:firstName,business:bname,url});
     const addrLine=c.addr?c.addr.split(',')[0]:'';
     const metaParts=[addrLine?escHtml(addrLine):'',c.phone?escHtml(c.phone):''].filter(Boolean).join(' · ');
-    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\','+c.id+')" >👁 Preview</button>'+
-      '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">📋 Copy</button>'+
-      (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">📱 Send</button>':'');
+    const actions='<button class="btn btn-sm" onclick="event.stopPropagation();_previewClientHub(\''+url+'\',\''+escHtml(c.name||'')+'\','+c.id+')" >'+svgIcon('👁')+' Preview</button>'+
+      '<button class="btn btn-sm" onclick="event.stopPropagation();_clientHubCopy(\''+url+'\',this)">'+svgIcon('📋')+' Copy</button>'+
+      (phone?'<button class="btn btn-sm btn-p" onclick="event.stopPropagation();window.location.href=\'sms:'+phone+'?body='+encodeURIComponent(smsBody)+'\'">'+svgIcon('📱')+' Send</button>':'');
     return '<div class="hub-dir-row" onclick="openClientDetail('+c.id+',\'clients\')">'+
       '<div class="hub-dir-l">'+
         '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'+
@@ -1205,8 +1050,8 @@ function _showImportPreview(parsed){
   const hasEmail=toImport.some(c=>c.email);
   const hasAddr=toImport.some(c=>c.addr||c.city);
   summary.innerHTML='<strong>'+toImport.length+' contacts ready to import</strong>'+
-    (hasEmail?' <span style="color:var(--green-mid)">· Email ✓</span>':'')+
-    (hasAddr?' <span style="color:var(--green-mid)">· Address ✓</span>':'')+
+    (hasEmail?' <span style="color:var(--green-mid)">· Email '+svgIcon('✓')+'</span>':'')+
+    (hasAddr?' <span style="color:var(--green-mid)">· Address '+svgIcon('✓')+'</span>':'')+
     (skipped?' <span style="color:var(--text3)">· '+skipped+' skipped (already in list)</span>':'');
   list.innerHTML=toImport.slice(0,25).map(c=>
     '<div style="padding:7px 10px;border-bottom:1px solid var(--border2)">'+
@@ -1283,15 +1128,15 @@ function renderClientDetail(){
     '<div class="detail-name">'+escHtml(c.name)+' '+riskBadge(c.id)+'</div>'+
     '<div class="detail-addr">'+
       escHtml(c.addr||'No address')+(c.ptype?' · '+escHtml(c.ptype):'')+(c.yearBuilt?' · Built '+c.yearBuilt:'')+
-      (getActiveTrade()==='painting'&&!c.yearBuilt?'<span onclick="openEditClient()" style="color:#fbbf24;font-weight:700;cursor:pointer;margin-left:6px">⚠️ Add year built</span>':'')+
+      (getActiveTrade()==='painting'&&!c.yearBuilt?'<span onclick="openEditClient()" style="color:#fbbf24;font-weight:700;cursor:pointer;margin-left:6px">'+svgIcon('⚠️')+' Add year built</span>':'')+
     '</div>'+
     '<div class="detail-actions">'+
-      (c.phone?'<button class="btn" onclick="callClient()">📞 Call</button>':'')+
-      (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">💬 SMS</button>':'')+
-      (c.email?'<button class="btn" onclick="emailClient()">✉️ Email</button>':'')+
-      (!gps.active?'<button class="btn" onclick="startDriveToClient()">🚗 Drive there</button>':'')+
-      '<button class="btn" onclick="showHubMenu('+c.id+')">🔗 Client hub</button>'+
-      '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':'🔒 ')+'+ New estimate</button>'+
+      (c.phone?'<button class="btn" onclick="callClient()">'+svgIcon('📞')+' Call</button>':'')+
+      (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">'+svgIcon('💬')+' SMS</button>':'')+
+      (c.email?'<button class="btn" onclick="emailClient()">'+svgIcon('✉️')+' Email</button>':'')+
+      (!gps.active?'<button class="btn" onclick="startDriveToClient()">'+svgIcon('🚗')+' Drive there</button>':'')+
+      '<button class="btn" onclick="showHubMenu('+c.id+')">'+svgIcon('🔗')+' Client hub</button>'+
+      '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':svgIcon('🔒')+' ')+'+ New estimate</button>'+
     '</div>'+
     '';
   // Metric tiles — outside hero in split-3-eq grid
@@ -1356,7 +1201,7 @@ function renderClientDetail(){
     </div>`
     :totalPaidAll>0?
     `<div style="background:var(--green-lt);border:1px solid #97C459;border-radius:var(--rl);padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:12px;font-weight:700;color:var(--green-mid)">✓ Paid in full</div>
+      <div style="font-size:12px;font-weight:700;color:var(--green-mid)">${svgIcon('✓')} Paid in full</div>
       <div style="font-size:14px;font-weight:700;color:var(--green-mid)">${fmt(totalPaidAll)}</div>
     </div>`:'';
   // Lien alert — any won bid with balance overdue 30+ days
@@ -1372,18 +1217,18 @@ function renderClientDetail(){
     const _lienFC=typeof _calcFinanceCharge==='function'?_calcFinanceCharge(_lienBid):0;
     const _lienTotal=_lienBal+_lienFC;
     lienAlertHTML=`<div style="background:#3D0000;border:2px solid #A32D2D;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">
-      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#FFB3B3;margin-bottom:8px">⚠️ Balance overdue 30+ days</div>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#FFB3B3;margin-bottom:8px">${svgIcon('⚠️')} Balance overdue 30+ days</div>
       <div style="font-size:12px;color:rgba(255,179,179,.75);line-height:1.9;margin-bottom:10px">
         <div style="display:flex;justify-content:space-between"><span>Contract balance:</span><span style="font-weight:700;color:#FFB3B3">${fmt(_lienBal)}</span></div>
         ${_lienFC>0.01?`<div style="display:flex;justify-content:space-between"><span>Finance charge:</span><span style="font-weight:700;color:#FFB3B3">${fmt(_lienFC)}</span></div>`:''}
         <div style="border-top:1px solid rgba(163,45,45,.5);margin:4px 0"></div>
         <div style="display:flex;justify-content:space-between;font-weight:800;color:#FFB3B3"><span>Total lienable:</span><span>${fmt(_lienTotal)}</span></div>
       </div>
-      <button onclick="showFileLienDirect(${_lienBid.id})" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:#A32D2D;color:#FFB3B3;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">📋 Prepare Lien Document</button>
+      <button onclick="showFileLienDirect(${_lienBid.id})" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:#A32D2D;color:#FFB3B3;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${svgIcon('📋')} Prepare Lien Document</button>
     </div>`;
   }
-  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📞 Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">📋 Intake notes:</span> ${escHtml(c.notes)}</div>`:''}</div>`:'';
-  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">⚠️ Pre-1978 — EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
+  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📞')} Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📋')} Intake notes:</span> ${escHtml(c.notes)}</div>`:''}</div>`:'';
+  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">${svgIcon('⚠️')} Pre-1978 — EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
   const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML+epaHTML;
   const _metsEl=document.getElementById('cd-client-mets');
   _metsEl.innerHTML=_metsContent;
@@ -1396,19 +1241,19 @@ function renderClientDetail(){
       const _onbSent=c.onboardingSentAt?'Link sent '+_relTime(c.onboardingSentAt):'';
       _cdActions.innerHTML=
         '<div style="background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--rl);padding:14px 16px;margin-bottom:4px">'+
-          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">📋 Needs onboarding — send link so they can fill in their address &amp; project details</div>'+
-          '<button onclick="sendOnboardingLink('+c.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--amber);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">📲 Send onboarding link</button>'+
+          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">'+svgIcon('📋')+' Needs onboarding — send link so they can fill in their address &amp; project details</div>'+
+          '<button onclick="sendOnboardingLink('+c.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--amber);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📲')+' Send onboarding link</button>'+
           (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
         '</div>';
     }else{
       _cdActions.innerHTML=
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
           '<button onclick="schedForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-            '<span style="font-size:18px">📅</span><span>Schedule estimate</span>'+
+            '<span style="font-size:18px">'+svgIcon('📅')+'</span><span>Schedule estimate</span>'+
             '<span style="font-size:10px;color:var(--text3);font-weight:400">Pick a date &amp; time</span>'+
           '</button>'+
           '<button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px'+(_canEstimate()?'':';opacity:.55')+'">'+
-            '<span style="font-size:18px">'+(_canEstimate()?'📋':'🔒')+'</span><span>Start estimate now</span>'+
+            '<span style="font-size:18px">'+(_canEstimate()?svgIcon('📋'):svgIcon('🔒'))+'</span><span>Start estimate now</span>'+
             '<span style="font-size:10px;color:var(--blue);font-weight:400">I\'m already here</span>'+
           '</button>'+
         '</div>';
@@ -1449,7 +1294,7 @@ function renderCDRisk(){
       ).join('')+
     '</div>'+
     (r==='blacklisted'?'<div style="font-size:11px;color:#A32D2D;margin-top:8px;font-weight:700">Estimates and scheduling are blocked for this client.</div>':'')+
-    (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">⚠️ Previous lien filed. Require full payment before scheduling.</div>':'');
+    (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">'+svgIcon('⚠️')+' Previous lien filed. Require full payment before scheduling.</div>':'');
 }
 function renderClientNotes(){
   const c=getClientById(currentClientId);if(!c)return;
@@ -1460,10 +1305,10 @@ function renderClientNotes(){
     const dt=new Date(n.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
     return '<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:13px;color:var(--text);line-height:1.4">'+escHtml(n.text)+'</div>'+
+        '<div style="font-size:13px;color:var(--text);line-height:1.4;white-space:pre-wrap;word-break:break-word">'+escHtml(n.text)+'</div>'+
         '<div style="font-size:10px;color:var(--text3);margin-top:2px">'+dt+'</div>'+
       '</div>'+
-      ''+
+      '<button onclick="editClientNote(\''+n.id+'\')" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);flex-shrink:0;touch-action:manipulation">Edit</button>'+
     '</div>';
   }).join('');
 }
@@ -1480,6 +1325,34 @@ function deleteClientNote(noteId){
   const c=getClientById(currentClientId);if(!c)return;
   c.notes=(c.notes||[]).filter(n=>n.id!==noteId);
   saveAll();renderClientNotes();
+}
+// Notes previously had no way back in once added — long ones got clipped to
+// whatever fit the one-line display, with no edit path to fix a typo. This opens
+// the full text in a real textarea (scrollable, multi-line) with Save/Delete.
+function editClientNote(noteId){
+  const c=getClientById(currentClientId);if(!c)return;
+  const n=(c.notes||[]).find(x=>x.id===noteId);if(!n)return;
+  document.getElementById('_cnote-edit-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_cnote-edit-ov';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:12px">Edit note</div>'+
+    '<textarea id="_cnote-edit-text" rows="6" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;line-height:1.4;margin-bottom:14px">'+escHtml(n.text)+'</textarea>'+
+    '<div style="display:flex;gap:8px">'+
+      '<button onclick="deleteClientNote(\''+noteId+'\');this.closest(\'.zmodal-overlay\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid #A32D2D;background:none;color:#A32D2D;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Delete</button>'+
+      '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="_saveEditedClientNote(\''+noteId+'\')" style="flex:2;padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>';
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  setTimeout(()=>document.getElementById('_cnote-edit-text')?.focus(),50);
+}
+function _saveEditedClientNote(noteId){
+  const c=getClientById(currentClientId);if(!c)return;
+  const n=(c.notes||[]).find(x=>x.id===noteId);if(!n)return;
+  const text=(document.getElementById('_cnote-edit-text')?.value||'').trim();
+  if(!text){deleteClientNote(noteId);}else{n.text=text;saveAll();renderClientNotes();}
+  document.getElementById('_cnote-edit-ov')?.remove();
 }
 function renderCDTimeline(){
   const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId),cmiles=getClientMileage(currentClientId);
@@ -1539,7 +1412,7 @@ function renderCDTimeline(){
       }).join('');
       return '<div style="margin-bottom:8px">'+
         '<div data-tlgroup="'+domId+'" onclick="toggleTlGroup(this.dataset.tlgroup)" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;user-select:none">'+
-          '<span id="'+domId+'-arrow" style="font-size:10px;color:var(--text3);transition:transform .2s;display:inline-block">▶</span>'+
+          '<span id="'+domId+'-arrow" style="font-size:10px;color:var(--text3);transition:transform .2s;display:inline-block">'+svgIcon('▶')+'</span>'+
           '<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:'+(isToday?'var(--blue)':'var(--text3)')+'">'+dayLabel+'</span>'+
           '<span style="font-size:10px;color:var(--text3)">('+evts.length+')</span>'+
         '</div>'+
@@ -1640,7 +1513,7 @@ function renderCDBids(){
     alertEl.innerHTML=alerts.map(b=>{
       const days=daysSince(b.completion_date);
       const lien=getBidLien(b.id);
-      if(lien&&lien.status==='filed')return '<div class="lien-banner"><div><span style="font-size:11px;font-weight:800">⚠ LIEN FILED</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' outstanding · '+escHtml(lien.county)+'</span></div><button class="btn btn-sm" onclick="openLienPanel('+b.id+')" style="background:rgba(255,100,100,.2);border-color:rgba(255,100,100,.4);color:#FFB3B3;font-size:11px">Edit lien</button></div>';
+      if(lien&&lien.status==='filed')return '<div class="lien-banner"><div><span style="font-size:11px;font-weight:800">'+svgIcon('⚠')+' LIEN FILED</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' outstanding · '+escHtml(lien.county)+'</span></div><button class="btn btn-sm" onclick="openLienPanel('+b.id+')" style="background:rgba(255,100,100,.2);border-color:rgba(255,100,100,.4);color:#FFB3B3;font-size:11px">Edit lien</button></div>';
       if(lien&&lien.status==='intent')return '<div class="overdue-banner"><div><span style="font-size:11px;font-weight:700;color:var(--red)">NOTICE OF INTENT SENT</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' owed · '+days+' days since completion</span></div><button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">Update lien</button></div>';
       if(days>=30)return '<div class="overdue-banner"><div><span style="font-size:11px;font-weight:700;color:var(--red)">'+days+' DAYS OVERDUE</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' owed since '+b.completion_date+'</span></div><button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">File lien</button></div>';
       if(days>=7)return '<div class="tip tip-w"><strong>Balance '+days+' days past completion</strong> — '+fmt(getBidBalance(b))+' owed. <button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="margin-left:6px">Log payment</button></div>';
@@ -1674,7 +1547,7 @@ function renderCDBids(){
         // NO DELETE BUTTON (owner directive): the visible control is EDIT — fix the
         // record in place. Deletion is dev-only via the 3s long-press (data-lp-*,
         // cloud.js) and inert for everyone else. Nobody deletes payments in normal use.
-        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">↩ -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div data-lp-id="'+p.id+'" data-lp-type="payment" data-lp-label="'+escHtml('Payment '+fmt(Math.abs(p.amount)))+'" style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button onclick="editPayment('+p.id+')" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--text2);cursor:pointer;font-family:inherit">✎ Edit</button></span></div>';}).join('');
+        payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">'+svgIcon('↩')+' -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div data-lp-id="'+p.id+'" data-lp-type="payment" data-lp-label="'+escHtml('Payment '+fmt(Math.abs(p.amount)))+'" style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button onclick="editPayment('+p.id+')" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--text2);cursor:pointer;font-family:inherit">'+svgIcon('✎')+' Edit</button></span></div>';}).join('');
         payHTML+='</div>';
       }
       if(lien){
@@ -1695,35 +1568,33 @@ function renderCDBids(){
     const actBtns=[];
     if(isWon){
       // Close job button — when won but not yet marked complete
-      if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">✓ Close job</button>');}
+      if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">'+svgIcon('✓')+' Close job</button>');}
       if(balance>0.01)actBtns.push('<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')">+ Log payment</button>');
-      if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">💳 Send pay link</button>');
-      if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">📲 Request pay</a>');}}
-      if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">↩ Issue refund</button>');
+      if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">'+svgIcon('💳')+' Send pay link</button>');
+      if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">'+svgIcon('📲')+' Request pay</a>');}}
+      if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">'+svgIcon('↩')+' Issue refund</button>');
       actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
       actBtns.push('<button class="btn btn-sm" onclick="printInvoice('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128438; Print invoice</button>');
       if(!scheduledIds.has(b.id))actBtns.push('<button class="btn btn-sm btn-p" onclick="schedFromBid('+b.id+')">Schedule →</button>');
-      if(!lien&&balance>0.01&&days>=14)actBtns.push('<button class="btn btn-sm btn-r" onclick="showFileLienDirect('+b.id+')">⚖️ File lien</button>');
+      if(!lien&&balance>0.01&&days>=14)actBtns.push('<button class="btn btn-sm btn-r" onclick="showFileLienDirect('+b.id+')">'+svgIcon('⚖️')+' File lien</button>');
       else if(lien&&lien.status!=='resolved')actBtns.push('<button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">Lien status</button>');
       // SMS escalation buttons based on days overdue
-      if(balance>0.01&&days>=7&&days<14)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'reminder\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">💬 Remind</button>');
-      if(balance>0.01&&days>=14&&days<21)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'second\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">💬 2nd notice</button>');
-      if(balance>0.01&&days>=21)actBtns.push('<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')">💬 Intent to lien</button>');
-      if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">✓ Release lien</button>');
+      if(balance>0.01&&days>=7&&days<14)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'reminder\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('💬')+' Remind</button>');
+      if(balance>0.01&&days>=14&&days<21)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'second\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('💬')+' 2nd notice</button>');
+      if(balance>0.01&&days>=21)actBtns.push('<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')">'+svgIcon('💬')+' Intent to lien</button>');
+      if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('✓')+' Release lien</button>');
       // Recordable release doc — reachable any time after release (re-file, lost copy).
-      if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">📄 Release doc</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="openEditBid('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">📦 Supply list</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="recoverBidRooms('+b.id+')" style="background:#F0F7FF;color:#1a365d;border-color:#9DBEE5">♻️ Recover rooms</button>');
+      if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('📄')+' Release doc</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">'+svgIcon('📦')+' Supply list</button>');
       actBtns.push('');
     }
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
-      const _reviseFn=b.geiLines!==undefined?'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')':'openEditBid('+b.id+')';
-      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">✎ Revise bid</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">📝 Notes</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="recoverBidRooms('+b.id+')" style="background:#F0F7FF;color:#1a365d;border-color:#9DBEE5">♻️ Recover rooms</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">🤝 Handshake</button>');
+      const _reviseFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
+      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('📝')+' Notes</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">'+svgIcon('🤝')+' Handshake</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
       actBtns.push('');
     }
@@ -1762,15 +1633,17 @@ function renderCDBids(){
               let badge='';
               if(hubTs){
                 const cStr=hubCnt>1?' · '+hubCnt+'×':'';
-                badge+='<div style="font-size:11px;color:#2563eb;margin-top:2px">🔗 Hub opened · '+_localTs(hubTs)+cStr+'</div>';
+                badge+='<div style="font-size:11px;color:#2563eb;margin-top:2px">'+svgIcon('🔗')+' Hub opened · '+_localTs(hubTs)+cStr+'</div>';
               }
               if(clientTs){
                 const cStr=clientCnt>1?' · '+clientCnt+'×':'';
-                badge+='<div style="font-size:11px;color:var(--green-mid);margin-top:2px">👁 Proposal opened · '+_localTs(clientTs)+cStr+'</div>';
+                badge+='<div style="font-size:11px;color:var(--green-mid);margin-top:2px">'+svgIcon('👁')+' Proposal opened · '+_localTs(clientTs)+cStr+'</div>';
               }
               if(!hubTs&&!clientTs){
                 badge+='<div style="font-size:11px;color:var(--text3);margin-top:2px">Client hasn\'t opened yet</div>';
               }
+              // Sign-flow warmth: how far INSIDE the proposal they got (hot-lead signal)
+              if(typeof _signStepBadge==='function')badge+=_signStepBadge(b.id);
               if(contractorTs){
                 badge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_localTs(contractorTs)+'</div>';
               }
@@ -1778,12 +1651,12 @@ function renderCDBids(){
             })():'')+
         '</div>'+
         '<div style="text-align:right">'+
-          (b.isTM?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;border-radius:10px;padding:2px 7px;margin-bottom:3px">⏱️ T&M</span><br>':'')+
+          (b.isTM?'<span style="display:inline-block;font-size:10px;font-weight:700;background:#dbeafe;color:#1d4ed8;border-radius:10px;padding:2px 7px;margin-bottom:3px">'+svgIcon('⏱️')+' T&M</span><br>':'')+
           '<div style="font-size:16px;font-weight:700;color:var(--green-mid)">'+(b.isTM&&b.tmNteCap?'Est. '+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):fmt(b.amount))+'</div>'+
           (b.isTM&&b.tmDepositAmt?'<div style="font-size:11px;color:var(--text3)">Deposit: '+fmt(b.tmDepositAmt)+'</div>':'')+
           '<span class="bdg '+(SBADGE[b.status]||'')+'">'+b.status+'</span>'+
           (_rrpRequired?'<span style="font-size:10px;background:#fef3c7;color:#92400e;border-radius:4px;padding:2px 6px;font-weight:700;margin-left:4px">RRP</span>':'')+
-          (b.handshake?'<br><span style="font-size:10px;font-weight:700;background:#FFF8E8;color:#856404;border:1px solid var(--amber);border-radius:4px;padding:1px 6px;white-space:nowrap;display:inline-block;margin-top:3px">🤝 Handshake</span>':'')+
+          (b.handshake?'<br><span style="font-size:10px;font-weight:700;background:#FFF8E8;color:#856404;border:1px solid var(--amber);border-radius:4px;padding:1px 6px;white-space:nowrap;display:inline-block;margin-top:3px">'+svgIcon('🤝')+' Handshake</span>':'')+
         '</div>'+
       '</div>'+
       payHTML+
@@ -1832,7 +1705,7 @@ function openClientProposals(clientId){
       ?new Date(b.signedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
       :(b._dk||'Unknown date');
     const signedLine=b.signedAt
-      ?'<span style="color:var(--green-mid);font-size:11px;font-weight:600">✓ Signed '+dateStr+(b.signedName?' · '+escHtml(b.signedName):'')+'</span>'
+      ?'<span style="color:var(--green-mid);font-size:11px;font-weight:600">'+svgIcon('✓')+' Signed '+dateStr+(b.signedName?' · '+escHtml(b.signedName):'')+'</span>'
       :'<span style="color:var(--text3);font-size:11px">Won '+dateStr+'</span>';
     return '<div class="card" style="margin:0 0 10px;border-radius:12px">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'+
@@ -1843,9 +1716,9 @@ function openClientProposals(clientId){
         '<div style="font-size:18px;font-weight:800;color:var(--green-mid);margin-left:12px;flex-shrink:0">'+fmt(b.amount)+'</div>'+
       '</div>'+
       '<div style="display:flex;gap:8px">'+
-        '<button onclick="_cpOpen('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">📋 Our bid</button>'+
+        '<button onclick="_cpOpen('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋')+' Our bid</button>'+
         (b.proposalHtml
-          ?'<button onclick="_cpOpen('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">📄 Client view</button>'
+          ?'<button onclick="_cpOpen('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('📄')+' Client view</button>'
           :'<span style="flex:1;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-style:italic">No proposal saved</span>')+
       '</div>'+
     '</div>';
@@ -1962,11 +1835,11 @@ function _cpOpen(bidId,view){
     if(scope.length)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Scope of work</div>'+scope.map(s=>'<div style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--border)">'+escHtml(s)+'</div>').join('')+'</div>';
   }
 
-  if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Notes</div><div style="font-size:13px;color:var(--text2);line-height:1.5">'+escHtml(b.notes)+'</div></div>';
+  if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Notes</div><button onclick="openBidNotes('+b.id+')" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px;color:var(--blue);font-weight:700">Edit</button></div><div style="font-size:13px;color:var(--text2);line-height:1.5;white-space:pre-wrap">'+escHtml(b.notes)+'</div></div>';
 
   if(pays.length){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Payment history</div>'+
-      pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':escHtml(p.method||p.type)+(p.ref?' #'+escHtml(p.ref):''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?'↩ -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
+      pays.map(p=>{const ref=p.type==='refund';return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:5px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+(ref?'REFUND':escHtml(p.method||p.type)+(p.ref?' #'+escHtml(p.ref):''))+'</span><span style="font-weight:700;color:'+(ref?'#A32D2D':'var(--green-mid)')+'">'+( ref?svgIcon('↩')+' -':'+' )+fmt(Math.abs(p.amount))+'</span></div>';}).join('')+
       '<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:800;padding:8px 0 0"><span>Total paid</span><span style="color:var(--green-mid)">'+fmt(paid)+'</span></div>'+
     '</div>';
   }
@@ -1976,7 +1849,7 @@ function _cpOpen(bidId,view){
   // Build proposal pane (client view)
   const propPane=document.getElementById('cp-prop-pane');
   const _cpStorageKey=b.signingKey||b.proposalKey||null;
-  const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">✓</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
+  const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓')+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
   // Signature block pinned at the bottom of the client view — image from the stored
   // proposal JSON when available, falling back to the name/timestamp on the bid so the
   // block still shows when the storage write was missed at signing time.
@@ -2001,7 +1874,7 @@ function _cpOpen(bidId,view){
         const prop=JSON.parse(txt);
         // Upgrade the signature block with the drawn signature image
         if(prop.signatureDataUrl||prop.signerName){const old=document.getElementById('cp-sig-block');const wrap=document.createElement('div');wrap.innerHTML=_cpSigBlock(prop);if(old&&wrap.firstChild)old.replaceWith(wrap.firstChild);else if(wrap.firstChild)propPane.appendChild(wrap.firstChild);}
-        const choices=prop.colorChoices||[];if(!choices.length)return;const cd=document.createElement('div');cd.style.cssText='background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px';cd.innerHTML='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('');propPane.insertBefore(cd,propPane.firstChild);}catch(e){}});}).catch(()=>{});
+        const choices=prop.colorChoices||[];if(!choices.length)return;const cd=document.createElement('div');cd.style.cssText='background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px';cd.innerHTML='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">'+svgIcon('🎨')+' Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('');propPane.insertBefore(cd,propPane.firstChild);}catch(e){}});}).catch(()=>{});
     }
   }else if(_cpStorageKey&&typeof _supa!=='undefined'){
     propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px">Loading proposal…</div>';
@@ -2014,7 +1887,7 @@ function _cpOpen(bidId,view){
         b.proposalHtml=html;
         let colorTop='';
         const choices=prop.colorChoices||[];
-        if(choices.length)colorTop='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">🎨 Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('')+'</div>';
+        if(choices.length)colorTop='<div style="background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">'+svgIcon('🎨')+' Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('')+'</div>';
         propPane.innerHTML=colorTop+_cpSignedBadge+html+_cpSigBlock(prop);
       }catch(e){propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Error parsing proposal.</div>';}});
     }).catch(()=>{propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Could not load proposal.</div>';});
@@ -2026,7 +1899,7 @@ function _cpOpen(bidId,view){
   function _tabBtn(v,label,active){
     return '<button id="cp-tab-'+v+'" onclick="_cpView(\''+v+'\')" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1.5px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue-lt)':'var(--bg)')+';color:'+(active?'var(--blue-dk)':'var(--text2)')+'">'+label+'</button>';
   }
-  document.getElementById('cp-tabs').innerHTML=_tabBtn('bid','📋 Our bid',view==='bid')+_tabBtn('proposal','📄 Client view',view==='proposal');
+  document.getElementById('cp-tabs').innerHTML=_tabBtn('bid',svgIcon('📋')+' Our bid',view==='bid')+_tabBtn('proposal',svgIcon('📄')+' Client view',view==='proposal');
   _cpView(view);
 }
 function _cpView(v){
@@ -2082,11 +1955,11 @@ function renderCDJobs(){
         const _h2=Math.floor(_el2/3600),_m2=Math.floor((_el2%3600)/60),_s2=_el2%60;
         const _ts2=(_h2?_h2+'h ':'')+_m2+':'+((_s2<10?'0':'')+_s2);
         const _sl2=_activeTimer.scopeLabel?_activeTimer.scopeLabel+' ':'';
-        clockBtnCD='<button class="btn btn-sm" onclick="clockOut()" style="border-color:#E97B00;color:#E97B00;background:#FFF3E0">⏹ '+_sl2+_ts2+'</button>';
+        clockBtnCD='<button class="btn btn-sm" onclick="clockOut()" style="border-color:#E97B00;color:#E97B00;background:#FFF3E0">'+svgIcon('⏹')+' '+_sl2+_ts2+'</button>';
       }else{
         const logged=getJobClockTotal(j.id);
         const loggedLabel=logged>0?_fmtMin(logged)+' logged · ':'';
-        clockBtnCD='<button class="btn btn-sm" onclick="openClockInSheet('+j.id+')" style="border-color:var(--border2);color:var(--text2)">▶ '+(logged>0?loggedLabel:'')+'Clock in</button>';
+        clockBtnCD='<button class="btn btn-sm" onclick="openClockInSheet('+j.id+')" style="border-color:var(--border2);color:var(--text2)">'+svgIcon('▶')+' '+(logged>0?loggedLabel:'')+'Clock in</button>';
       }
     }
     return '<div class="card" style="margin-bottom:8px;border-left:3px solid '+(j.color||'var(--blue)')+'" data-lp-id="'+j.id+'" data-lp-type="job" data-lp-label="'+escHtml(j.name||'job')+'">'+
@@ -2169,26 +2042,26 @@ function renderCDAddresses(){
   const openKey='_cdpropOpen_'+currentClientId;
   const isOpen=!!window[openKey];
   const hasProp=!!(c.yearBuilt||c.sqft||c.estimatedValue||c.stories||c.bedrooms||c.bathrooms||c.exteriorMaterial||c.roofType||c.garage||c.lotSize||c.lastSaleDate||c.isRental);
-  const pre78Badge=c.yearBuilt&&c.yearBuilt<1978?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">⚠️ Pre-1978</span>`:'';
+  const pre78Badge=c.yearBuilt&&c.yearBuilt<1978?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">${svgIcon('⚠️')} Pre-1978</span>`:'';
   const srcBadge=c.propDataFetchedAt
     ?(c.propDataExact===false?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(area avg)</span>`:'')
-    :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">🏠 Look up</button>`:'');
-  const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">▶</span>`:'';
+    :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">${svgIcon('🏠')} Look up</button>`:'');
+  const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">${svgIcon('▶')}</span>`:'';
   const propPanel=hasProp&&isOpen?`<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px">
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
-      ${c.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">📅 Year built</div></div>`:''}
-      ${c.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">📐 Sq ft</div></div>`:''}
-      ${c.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">💰 Est. value</div></div>`:''}
-      ${c.stories?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.stories}</div><div style="font-size:10px;color:var(--text3)">🏢 Stories</div></div>`:''}
-      ${c.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">🛏 Beds</div></div>`:''}
-      ${c.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">🛁 Baths</div></div>`:''}
-      ${c.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">🌳 Lot</div></div>`:''}
+      ${c.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📅')} Year built</div></div>`:''}
+      ${c.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📐')} Sq ft</div></div>`:''}
+      ${c.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('💰')} Est. value</div></div>`:''}
+      ${c.stories?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.stories}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🏢')} Stories</div></div>`:''}
+      ${c.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛏')} Beds</div></div>`:''}
+      ${c.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛁')} Baths</div></div>`:''}
+      ${c.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🌳')} Lot</div></div>`:''}
     </div>
     ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice||c.assessorUrl?'8px':'0'}">
-      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏠 ${escHtml(String(c.exteriorMaterial))}</span>`:''}
-      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🏗️ ${escHtml(String(c.roofType))}</span>`:''}
-      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">🚗 ${escHtml(String(c.garage))}</span>`:''}
-      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.12);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">🔑 Rental</span>`:''}
+      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🏠')} ${escHtml(String(c.exteriorMaterial))}</span>`:''}
+      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🏗️')} ${escHtml(String(c.roofType))}</span>`:''}
+      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🚗')} ${escHtml(String(c.garage))}</span>`:''}
+      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.12);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">${svgIcon('🔑')} Rental</span>`:''}
     </div>`:''}
     ${c.lastSaleDate||c.lastSalePrice?`<div style="font-size:12px;color:var(--text3);padding-top:6px;border-top:1px solid var(--border);margin-bottom:${c.assessorUrl?'6px':'0'}">Last sold ${c.lastSaleDate?new Date(c.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${c.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(c.lastSalePrice)+'</strong>':''}</div>`:''}
     ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">${c.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`:''}
@@ -2251,4 +2124,58 @@ function removeClientAddress(idx){
     saveAll();
     renderCDAddresses();
   });
+}
+
+// ── Property data auto-lookup ───────────────────────────────────────────────
+async function _lookupPropertyData(clientId,addrParts){
+  try{
+    const addr=[addrParts.street,addrParts.city,addrParts.state,addrParts.zip].filter(Boolean).join(' ');
+    const _ctrl=new AbortController();
+    const _t=setTimeout(()=>_ctrl.abort(),12000);
+    let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
+    if(!res.ok||res.status===204)return;
+    const d=await res.json();
+    if(d.error)return;
+    const c=clients.find(x=>x.id===clientId);if(!c)return;
+    if(d.yearBuilt&&!c.yearBuilt)c.yearBuilt=d.yearBuilt;
+    if(d.sqft)c.sqft=d.sqft;
+    if(d.estValue)c.estimatedValue=d.estValue;
+    if(d.beds)c.bedrooms=d.beds;
+    if(d.baths)c.bathrooms=d.baths;
+    if(d.lastSalePrice)c.lastSalePrice=d.lastSalePrice;
+    if(d.lastSaleDate)c.lastSaleDate=d.lastSaleDate;
+    if(d.propertyUrl)c.assessorUrl=d.propertyUrl;
+    c.propDataSource='zillow';
+    c.propDataExact=true;
+    c.propDataFetchedAt=new Date().toISOString();
+    saveAll();
+    if(currentClientId===clientId)renderClientDetail();
+  }catch(e){console.warn('Property lookup failed:',e);}
+}
+
+// ── Background property data queue ────────────────────────────────────────────
+// Processes all clients with addresses but no Zillow data, one every 6.5s.
+// Fires automatically after login — handles onboarding imports and existing accounts.
+let _propQueue=[];
+let _propQueueTimer=null;
+
+function _startPropQueue(){
+  if(_propQueueTimer)return;
+  _propQueue=clients.filter(c=>(c.addr||c.street)&&!c.propDataFetchedAt).map(c=>c.id);
+  if(!_propQueue.length)return;
+  _propQueueTimer=setTimeout(_tickPropQueue,3000);
+}
+
+function _tickPropQueue(){
+  _propQueueTimer=null;
+  const id=_propQueue.shift();
+  if(id===undefined)return;
+  const c=clients.find(x=>x.id===id);
+  if(c&&(c.addr||c.street)&&!c.propDataFetchedAt){
+    const parts=c.street&&c.city
+      ?{street:c.street,city:c.city,state:c.state||'',zip:c.zip||''}
+      :(typeof _parseAddrParts==='function'?_parseAddrParts(c.addr||''):{street:c.addr||'',city:'',state:'',zip:''});
+    if(parts.street)_lookupPropertyData(id,parts);
+  }
+  if(_propQueue.length)_propQueueTimer=setTimeout(_tickPropQueue,6500);
 }
