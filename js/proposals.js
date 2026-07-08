@@ -178,10 +178,25 @@ function _buildClientHubSnapshot(clientId){
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
     brandColor:adaBrand(S.brandColor)||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
     // Trust signals (research: the #1 close-rate lever is trust clustered near the
-    // sign CTA). Contractor-global, already collected in Settings — surfaced to
-    // the hub. Only rendered when present, curated to ≤3 chips (Baymard: 1–3 beats
-    // a badge wall).
-    trustLicense:S.blic||'',warrantyPeriod:S.warrantyPeriod||'',yearsInBusiness:S.byears||0,reviewUrl:S.reviewUrl||'',
+    // sign CTA). Contractor-global, surfaced from Settings. HONESTY GATE: the
+    // "Licensed & Insured" claim only renders for what the contractor can actually
+    // back with a NUMBER on file — never the S.blic default string, never an
+    // unbacked claim on a client-facing page:
+    //   • Licensed  → S.blic is a real entry (not blank, not the default marker),
+    //                 OR a non-insurance license record carries a license number.
+    //   • Insured   → an Insurance-category record carries a policy number.
+    // Both → "Licensed & Insured"; one → just that word; neither → no chip.
+    // Reviews → only when the Google review URL is linked (below).
+    trustLicense:(()=>{
+      const _all=(typeof licenses!=='undefined'?licenses:[]);
+      const _num=l=>String(l&&l.licenseNumber||'').trim();
+      const _blic=String(S.blic||'').trim();
+      const _blicReal=!!_blic && _blic.toLowerCase()!=='licensed & insured' && _blic.toLowerCase()!=='licensed and insured';
+      const _hasLicense=_blicReal || _all.some(l=>l.cat!=='insurance' && l.cat!=='epa' && _num(l));
+      const _hasInsurance=_all.some(l=>l.cat==='insurance' && _num(l));
+      return _hasLicense&&_hasInsurance?'Licensed & Insured':_hasLicense?'Licensed':_hasInsurance?'Insured':'';
+    })(),
+    warrantyPeriod:S.warrantyPeriod||'',yearsInBusiness:S.byears||0,reviewUrl:S.reviewUrl||'',
     contractorUserId:_snapUserId,notifyEmail:S.bemail||_snapUserEmail,
     stripeEnabled:_snapStripeOn,
     ccSurchargeEnabled:_snapSurchargeOn,

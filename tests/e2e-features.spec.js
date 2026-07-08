@@ -1147,6 +1147,40 @@ test.describe('Proposals — send link, hub snapshot, gallery', () => {
     }
   });
 
+  test('trust honesty gate: "Licensed & Insured" only renders for numbers actually on file', async () => {
+    // The client-facing "Licensed & Insured" line must never be an unbacked claim.
+    // S.blic DEFAULTS to the literal string "Licensed & Insured" — that default
+    // must NOT produce a badge. Only a real license number and/or a real insurance
+    // policy number does, and the wording matches exactly what's backed.
+    const r = await page.evaluate((cid) => {
+      const snapLabel = () => _buildClientHubSnapshot(cid).trustLicense;
+      const origBlic = S.blic, origLic = (typeof licenses !== 'undefined') ? licenses.slice() : [];
+      const out = {};
+      // 1. Default blic marker + no insurance record → nothing claimed.
+      S.blic = 'Licensed & Insured'; licenses = [];
+      out.defaultOnly = snapLabel();
+      // 2. Real license number, still no insurance → "Licensed" only.
+      S.blic = 'KS-PNT-2024-08812';
+      out.licenseOnly = snapLabel();
+      // 3. No license, but an insurance policy number on file → "Insured" only.
+      S.blic = ''; licenses = [{ id: 1, cat: 'insurance', typeId: 'gl_ins', licenseNumber: 'GL-99117' }];
+      out.insuranceOnly = snapLabel();
+      // 4. Both a license number and an insurance policy number → the full claim.
+      S.blic = 'KS-PNT-2024-08812';
+      out.both = snapLabel();
+      // 5. Insurance record with NO policy number → doesn't count as insured.
+      S.blic = 'KS-PNT-2024-08812'; licenses = [{ id: 2, cat: 'insurance', typeId: 'gl_ins', licenseNumber: '' }];
+      out.insuranceBlank = snapLabel();
+      S.blic = origBlic; licenses = origLic;
+      return out;
+    }, PROP_CLIENT);
+    expect(r.defaultOnly).toBe('');                 // the default marker is NOT a claim
+    expect(r.licenseOnly).toBe('Licensed');
+    expect(r.insuranceOnly).toBe('Insured');
+    expect(r.both).toBe('Licensed & Insured');
+    expect(r.insuranceBlank).toBe('Licensed');      // blank policy # ⇒ not insured
+  });
+
   test('renderGallery — renders gallery page without errors', async () => {
     await page.evaluate(() => {
       if (typeof goPg === 'function') goPg('pg-gallery');
