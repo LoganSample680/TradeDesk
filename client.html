@@ -1000,8 +1000,23 @@ function showState(s){
   if(s==='hub'){_dismissBootOverlay(false);}
   else if(s==='err'){_dismissBootOverlay(true);}
 }
+// WCAG clamp for the contractor's brand color (self-contained copy of utils.js
+// adaBrand — this page loads no app JS). --denim renders as colored text on
+// white (links, timeline) AND as a bg under white text (buttons, chat bubbles):
+// darken toward black, hue preserved, until ≥4.6:1 vs white so no brand pick
+// can ever produce illegible text. Snapshots are clamped at upload too — this
+// covers legacy snapshots that stored a light color before the clamp existed.
+function _adaBrand(hex){
+  const h=String(hex||'').trim().replace('#','');
+  if(!/^[0-9a-fA-F]{6}$/.test(h))return hex||'';
+  let rgb=[0,2,4].map(i=>parseInt(h.slice(i,i+2),16));
+  const lum=c=>{const s=c.map(v=>{v/=255;return v<=0.03928?v/12.92:Math.pow((v+0.055)/1.055,2.4);});return .2126*s[0]+.7152*s[1]+.0722*s[2];};
+  let guard=0;
+  while(1.05/(lum(rgb)+0.05)<4.6&&guard++<48){rgb=rgb.map(v=>Math.max(0,Math.floor(v*0.92)));}
+  return'#'+rgb.map(v=>v.toString(16).padStart(2,'0')).join('');
+}
 function applyBranding(h){
-  if(h.brandColor)document.documentElement.style.setProperty('--denim',h.brandColor);
+  if(h.brandColor)document.documentElement.style.setProperty('--denim',_adaBrand(h.brandColor));
   document.title=(h.contractorName||'Project Hub')+' — Your Hub';
   // Swap generic "your contractor" placeholders in static copy (e.g. Help drawer) for the business name.
   const _cnName=(h.contractorName||'').trim();

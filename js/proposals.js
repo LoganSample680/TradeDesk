@@ -176,7 +176,7 @@ function _buildClientHubSnapshot(clientId){
   return {
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
-    brandColor:S.brandColor||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
+    brandColor:adaBrand(S.brandColor)||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
     contractorUserId:_snapUserId,notifyEmail:S.bemail||_snapUserEmail,
     stripeEnabled:_snapStripeOn,
     ccSurchargeEnabled:_snapSurchargeOn,

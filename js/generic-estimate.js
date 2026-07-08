@@ -2933,7 +2933,10 @@ async function sendGenericProposal(previewOnly){
   // visual change for every account that hasn't picked a brand color.
   let _pAccent='#1a365d',_pAccent2='#2a4a7f';
   if(S&&S.brandColor){
-    const _bh=S.brandColor.replace('#','');
+    // adaBrand clamp: the accent renders as text on white AND as a bg under
+    // white text — a light brand pick would fail WCAG both ways. Belt for
+    // legacy stored values; settings.js also clamps at save time now.
+    const _bh=(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor).replace('#','');
     const _br=parseInt(_bh.substr(0,2),16),_bg=parseInt(_bh.substr(2,2),16),_bb=parseInt(_bh.substr(4,2),16);
     if(!isNaN(_br)&&!isNaN(_bg)&&!isNaN(_bb)){
       _pAccent='rgb('+_br+','+_bg+','+_bb+')';

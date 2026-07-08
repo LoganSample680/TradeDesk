@@ -1851,6 +1851,56 @@ test.describe('utils.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // adaBrand — WCAG clamp for contractor brand colors
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('adaBrand', () => {
+    // Node-side mirror of the WCAG math so the assertions are independent of
+    // the implementation under test.
+    const lum = (hex) => {
+      const c = hex.replace('#', '');
+      const s = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) / 255)
+        .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+      return 0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2];
+    };
+    const ratioVsWhite = (hex) => 1.05 / (lum(hex) + 0.05);
+
+    test('EVERY hue at maximum brightness clamps to ≥4.5:1 against white', async () => {
+      // The property the owner asked for: NO possible pick can produce
+      // non-compliant text. Sweep the worst case — fully saturated, fully
+      // bright hues (the lightest, most-failing form of every color).
+      const out = await page.evaluate(() => {
+        const picks = [];
+        for (let h = 0; h < 360; h += 15) {
+          // Standard HSL→RGB at S=100%, L=50% — the most saturated form of each hue.
+          const f = (n) => { const k = (n + h / 30) % 12; return Math.round(255 * (0.5 - 0.5 * Math.max(-1, Math.min(k - 3, 9 - k, 1)))); };
+          const hex = '#' + [f(0), f(8), f(4)].map(v => v.toString(16).padStart(2, '0')).join('');
+          picks.push({ pick: hex, clamped: adaBrand(hex) });
+        }
+        picks.push({ pick: '#FFFFFF', clamped: adaBrand('#FFFFFF') }); // pure white — the absolute worst pick
+        picks.push({ pick: '#FFE44D', clamped: adaBrand('#FFE44D') }); // pale yellow — the classic real-world failure
+        return picks;
+      });
+      for (const { pick, clamped } of out) {
+        expect(ratioVsWhite(clamped), pick + ' → ' + clamped + ' must clear AA').toBeGreaterThanOrEqual(4.5);
+      }
+    });
+
+    test('already-compliant dark colors pass through unchanged', async () => {
+      const r = await page.evaluate(() => ({ navy: adaBrand('#1B3465'), ink: adaBrand('#1B1612') }));
+      expect(r.navy).toBe('#1b3465');
+      expect(r.ink).toBe('#1b1612');
+    });
+
+    test('invalid/empty input passes through untouched so caller fallbacks still run', async () => {
+      const r = await page.evaluate(() => ({ empty: adaBrand(''), nul: adaBrand(null), word: adaBrand('red'), short: adaBrand('#abc') }));
+      expect(r.empty).toBe('');
+      expect(r.nul).toBe('');
+      expect(r.word).toBe('red');
+      expect(r.short).toBe('#abc');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // No console errors
   // ═══════════════════════════════════════════════════════════════════════════
   test('no console errors — utils.js', async () => {

@@ -305,6 +305,22 @@ test.describe('Declined proposal — never rendered as signed', () => {
     assertNoErrors(page, 'declined proposal viewer');
   });
 
+  test('a light brand color in the hub snapshot is clamped to a WCAG-compliant accent', async ({ page }) => {
+    // Legacy snapshots can carry an unclamped light brand color; applyBranding
+    // must never let it become the hub accent (--denim renders as link text on
+    // white and as button bg under white text).
+    await bootHub(page, hubWith({}, { brandColor: '#FFE44D' }));
+    const denim = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--denim').trim());
+    const lum = (hex) => {
+      const c = hex.replace('#', '');
+      const s = [0, 2, 4].map(i => parseInt(c.slice(i, i + 2), 16) / 255)
+        .map(v => v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+      return 0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2];
+    };
+    expect(denim).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(1.05 / (lum(denim) + 0.05)).toBeGreaterThanOrEqual(4.5);
+  });
+
   test('a genuinely signed row still merges as signed — the decline guard is exact', async ({ page }) => {
     await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
     await page.evaluate(async () => {
