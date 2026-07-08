@@ -144,7 +144,8 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 }
 
 /* ── Feed ── */
-.hub-feed-hd{font-size:13px;font-weight:800;color:var(--text);margin-bottom:10px;letter-spacing:-.1px}
+.hub-feed-hd{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--text);margin-bottom:12px;letter-spacing:-.1px}
+.hub-feed-hd::before{content:'';width:3px;height:14px;border-radius:2px;background:var(--denim);flex-shrink:0}
 .hub-feed-item{display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
 .hub-feed-item:last-child{border-bottom:none}
 .hub-feed-dot{width:8px;height:8px;border-radius:50%;background:var(--denim);flex-shrink:0;margin-top:4px}
@@ -166,9 +167,10 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-timeline-meta{font-size:11px;color:var(--text3);margin-top:2px}
 .hub-timeline-status{display:flex;align-items:center;gap:8px;margin-top:6px}
 .hub-timeline-amt{font-size:13px;font-weight:700;color:var(--text)}
-.hub-badge{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:700}
-.hub-badge-paid{background:var(--green-lt);color:var(--green-mid)}
-.hub-badge-due{background:#FEF3C7;color:#92400E}
+.hub-badge{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;font-size:11px;font-weight:800}
+.hub-badge svg{width:11px;height:11px}
+.hub-badge-paid{background:var(--green-lt);color:var(--green-mid);border:1px solid var(--green-border)}
+.hub-badge-due{background:#FEF3C7;color:#92400E;border:1px solid #FADF98}
 
 /* ── Sidebar cards ── */
 .hub-side-card{background:var(--bg-card);border-radius:12px;padding:14px 16px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.05)}
@@ -181,13 +183,33 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-approval-amt{font-size:11px;color:var(--text3)}
 .hub-approval-link{font-size:12px;font-weight:700;color:var(--denim);text-decoration:none;display:block;margin-top:4px}
 
-/* ── Bid rows ── */
-.hub-bid-row{background:#fff;border-radius:14px;padding:16px;margin-bottom:10px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.06)}
-.hub-bid-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
-.hub-bid-name{font-size:15px;font-weight:700}
+/* ── Bid rows — elevated proposal cards ──────────────────────────────────────
+   Research synthesis (PaintScout / DripJobs / QuoteIQ + Qwilr/Proposify data):
+   borderless double-shadow elevation instead of a hairline box, a brand-tinted
+   document chip so the card isn't text-only, a soft pill status chip, and a
+   thin brand accent rail down the left edge. Price stays OFF the card by design
+   (loss-aversion — revealed inside the proposal after scope). */
+.hub-bid-row{position:relative;background:#fff;border-radius:18px;padding:18px 18px 18px 22px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.05),0 10px 26px rgba(16,24,40,.10);transition:transform .12s ease,box-shadow .12s ease}
+.hub-bid-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,var(--denim),color-mix(in srgb,var(--denim) 55%,#000))}
+.hub-bid-row:active{transform:translateY(1px);box-shadow:0 1px 2px rgba(16,24,40,.06),0 4px 12px rgba(16,24,40,.10)}
+.hub-bid-top{display:flex;align-items:center;gap:12px;margin-bottom:14px}
+.hub-bid-ico{flex-shrink:0;width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:color-mix(in srgb,var(--denim) 12%,#fff);color:var(--denim)}
+.hub-bid-ico svg{width:20px;height:20px}
+.hub-bid-hd{flex:1;min-width:0}
+.hub-bid-name{font-size:15px;font-weight:800;letter-spacing:-.2px}
 .hub-bid-date{font-size:12px;color:var(--text3);margin-top:2px}
-.hub-bid-amt{font-size:26px;font-weight:900;font-family:var(--font-display);color:var(--denim);letter-spacing:-.7px;flex-shrink:0;margin-left:10px}
+.hub-bid-amt{font-size:26px;font-weight:900;font-family:var(--font-display);color:var(--denim);letter-spacing:-.7px;flex-shrink:0;margin-left:10px;font-variant-numeric:tabular-nums lining-nums}
 .hub-bid-pending-msg{font-size:12px;color:var(--text3);margin-top:4px}
+/* Soft-tinted pill status chip — 12% fill / 26% border / solid text (the
+   premium chip triad from the design-system research). */
+.hub-chip{flex-shrink:0;display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:800;letter-spacing:.01em;white-space:nowrap}
+.hub-chip svg{width:12px;height:12px}
+/* Brand identity comes from the fill + border + icon; the LABEL is neutral-dark
+   so a light brand pick (clamped to a light text value) can never drop the pill
+   text below AA. Icon is non-text (3:1) so brand color there is always fine. */
+.hub-chip-pending{background:color-mix(in srgb,var(--denim) 11%,#fff);color:var(--text2);border:1px solid color-mix(in srgb,var(--denim) 28%,#fff)}
+.hub-chip-pending svg{color:var(--denim)}
+.hub-chip-amber{background:#FEF3C7;color:#92400E;border:1px solid #FADF98}
 .hub-btn{display:block;padding:13px 16px;border-radius:10px;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
 /* Primary client actions carry the contractor's brand color (--denim is the
    ADA-clamped brandColor set by applyBranding) — the hub reads as THEIR
@@ -1249,7 +1271,12 @@ function renderOverview(){
     html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';
     pendingBids.slice(0,3).forEach(b=>{
       html+='<div class="hub-bid-row">';
-      html+='<div class="hub-bid-top"><div><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div><div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+'</div></div></div>';
+      html+='<div class="hub-bid-top">'+
+        '<div class="hub-bid-ico">'+svgIcon('📄',{size:20})+'</div>'+
+        '<div class="hub-bid-hd"><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div>'+
+        '<div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+' · #'+String(b.id).slice(-6)+'</div></div>'+
+        '<span class="hub-chip hub-chip-pending">'+svgIcon('✍',{size:12})+' Awaiting</span>'+
+      '</div>';
       /* Price intentionally hidden from the card — research shows showing a large
          dollar amount before the client reads the scope triggers loss-aversion and
          kills conversions. Price is revealed inside the proposal after scope context. */
