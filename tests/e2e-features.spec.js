@@ -4278,7 +4278,55 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     expect(r.shadow).toBe(true);
     expect(r.showsPrice).toBe(false);                       // price stays off the card by design
     expect(r.pillLabelRatio).toBeGreaterThanOrEqual(4.5);   // AA even for the lightest brand (#FFE44D)
+    // Trust strip: no trust data in this fixture → strip is absent (never a
+    // fabricated badge). Presence + curation is covered by its own test below.
+    const noTrust = await page.evaluate(() => document.querySelectorAll('.hub-trust-chip').length);
+    expect(noTrust).toBe(0);
     assertNoErrors(page, 'elevated proposal cards');
+  });
+
+  test('trust strip: renders curated credibility chips above the sign CTA when data exists; ≤3; label AA', async ({ page }) => {
+    // Research: trust clustered above the ask is the #1 close-rate lever, but
+    // Baymard's dose-response says 1–3 types beat a badge wall — so cap at 3.
+    // Only chips with real data render (no fabricated stat). Label is neutral so
+    // any brand color clears AA.
+    const hub = {
+      clientId: 910, contractorUserId: FAKE_USER_ID, contractorName: 'Trust Co', businessName: 'Trust Co',
+      clientName: 'Trust Client', clientAddr: '8 Trust Rd', contractorPhone: '316-555-0110', brandColor: '#FFE44D',
+      trustLicense: 'Licensed & Insured', warrantyPeriod: '2 years', yearsInBusiness: 12, reviewUrl: 'https://g.page/r/x',
+      bids: [{ id: 887800, status: 'Pending', type: 'Repaint', amount: 3000, deposit: 750, balance: 3000, bid_date: '2026-07-06', signHubUrl: 'https://example.com/sign' }],
+      jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [],
+    };
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.addInitScript(h => { window.__mockHubData = h; }, hub);
+    await mockAllExternal(page);
+    await page.goto(`/client.html?c=910&u=${FAKE_USER_ID}&t=trusttok910`, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const strip = document.querySelector('.hub-trust');
+      const chips = [...document.querySelectorAll('.hub-trust-chip')];
+      const parse = v => { const n = (v.match(/[\d.]+/g) || []).map(Number); return /color\(srgb/i.test(v) ? n.slice(0, 3).map(x => x * 255) : n.slice(0, 3); };
+      const lum = c => { const s = c.map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }); return .2126 * s[0] + .7152 * s[1] + .0722 * s[2]; };
+      const ratio = (a, b) => { const [l1, l2] = [lum(a), lum(b)].sort((x, y) => y - x); return (l1 + .05) / (l2 + .05); };
+      // Trust strip must sit ABOVE the sign CTA in DOM order.
+      const stripTop = strip ? strip.getBoundingClientRect().top : 1e9;
+      const signBtn = document.querySelector('.hub-btn-sign');
+      const labelChip = chips.find(c => !c.classList.contains('is-link'));
+      const lcs = labelChip ? getComputedStyle(labelChip) : null;
+      return {
+        count: chips.length,
+        aboveCTA: signBtn ? stripTop < signBtn.getBoundingClientRect().top : false,
+        hasLicensed: chips.some(c => /Licensed/i.test(c.textContent)),
+        hasWarranty: chips.some(c => /warranty/i.test(c.textContent)),
+        labelRatio: lcs ? ratio(parse(lcs.color), parse(lcs.backgroundColor)) : 0,
+      };
+    });
+    expect(r.count).toBe(3);                                 // curated cap, not all 4
+    expect(r.aboveCTA).toBe(true);                           // trust banked before the ask
+    expect(r.hasLicensed).toBe(true);
+    expect(r.hasWarranty).toBe(true);
+    expect(r.labelRatio).toBeGreaterThanOrEqual(4.5);
+    assertNoErrors(page, 'trust strip');
   });
 
   test('mobile contact strip: Schedule button deleted, Text/Call/Email escape the preview iframe via target="_top"', async ({ page }) => {

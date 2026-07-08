@@ -177,6 +177,11 @@ function _buildClientHubSnapshot(clientId){
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
     brandColor:adaBrand(S.brandColor)||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
+    // Trust signals (research: the #1 close-rate lever is trust clustered near the
+    // sign CTA). Contractor-global, already collected in Settings — surfaced to
+    // the hub. Only rendered when present, curated to ≤3 chips (Baymard: 1–3 beats
+    // a badge wall).
+    trustLicense:S.blic||'',warrantyPeriod:S.warrantyPeriod||'',yearsInBusiness:S.byears||0,reviewUrl:S.reviewUrl||'',
     contractorUserId:_snapUserId,notifyEmail:S.bemail||_snapUserEmail,
     stripeEnabled:_snapStripeOn,
     ccSurchargeEnabled:_snapSurchargeOn,

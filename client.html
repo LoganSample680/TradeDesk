@@ -197,6 +197,15 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-badge-paid{background:var(--green-lt);color:var(--green-mid);border:1px solid var(--green-border)}
 .hub-badge-due{background:#FEF3C7;color:#92400E;border:1px solid #FADF98}
 
+/* ── Trust strip — curated credibility chips banked ABOVE the sign CTA (research:
+   trust clustered near the ask is the top close-rate lever; ≤3 types, not a wall).
+   Icon carries the brand accent; label is neutral-dark → AA on any brand. */
+.hub-trust{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
+.hub-trust-chip{display:inline-flex;align-items:center;gap:7px;padding:8px 13px;border-radius:12px;background:var(--bg-card);border:1px solid var(--border);font-size:12.5px;font-weight:700;color:var(--text2);box-shadow:0 1px 2px rgba(16,24,40,.05);text-decoration:none;transition:transform .12s cubic-bezier(.22,1,.36,1)}
+.hub-trust-chip:active{transform:scale(.97)}
+.hub-trust-chip svg{width:15px;height:15px;color:var(--denim);flex-shrink:0}
+.hub-trust-chip.is-link{color:var(--denim)}
+
 /* ── Sidebar cards ── */
 .hub-side-card{background:var(--bg-card);border-radius:12px;padding:14px 16px;box-shadow:0 2px 8px rgba(27,22,18,.08),0 0 0 1px rgba(27,22,18,.05)}
 .hub-side-hd{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:10px}
@@ -1304,6 +1313,14 @@ function renderOverview(){
 
   // Awaiting signature
   if(pendingBids.length){
+    // Trust strip — banked ABOVE the sign CTA so credibility lands before the ask.
+    // Curated to the chips we actually have data for (never a fabricated stat).
+    const _trust=[];
+    if(h.trustLicense)_trust.push('<span class="hub-trust-chip">'+svgIcon('🛡')+esc(h.trustLicense)+'</span>');
+    if(h.warrantyPeriod)_trust.push('<span class="hub-trust-chip">'+svgIcon('✓')+esc(h.warrantyPeriod)+' workmanship warranty</span>');
+    if(h.yearsInBusiness&&Number(h.yearsInBusiness)>0)_trust.push('<span class="hub-trust-chip">'+svgIcon('⭐')+esc(h.yearsInBusiness)+' yrs in business</span>');
+    if(h.reviewUrl)_trust.push('<a class="hub-trust-chip is-link" target="_top" href="'+esc(h.reviewUrl)+'">'+svgIcon('⭐')+'Read our reviews →</a>');
+    if(_trust.length)html+='<div class="hub-trust">'+_trust.slice(0,3).join('')+'</div>';
     html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';
     pendingBids.slice(0,3).forEach(b=>{
       html+='<div class="hub-bid-row">';
