@@ -5,6 +5,28 @@
 
 ---
 
+## What TradeDesk Is
+
+TradeDesk is a white-label, mobile-first CRM built for trade contractors — painting,
+electrical, plumbing, HVAC, landscaping, general contracting — covering the whole job
+lifecycle: lead intake → estimate/proposal (T&M, BYO/custom, fixed-scope) → e-sign →
+schedule → dispatch the crew → track time/mileage/materials on-site → invoice → collect
+payment (Stripe) → change orders → lien protection → tax/1099 tooling → crew
+geo-tracking. One account per contractor business; employees join as crew with
+permission-gated access to money/estimates.
+
+The product thesis: **out-execute ServiceTitan, Jobber, and Housecall Pro on UX** —
+fewer taps, faster flows, a genuinely pleasant mobile experience — not by matching
+their feature checklists line for line. §13's Flow Test Standard measures every click
+for exactly this reason: the click count against a hard-gated baseline IS the product.
+
+Backend: Supabase (Postgres + Auth + Storage + Edge Functions + Realtime). Frontend:
+vanilla JS, no framework, deployed as static files on Cloudflare Pages. E2E-tested with
+Playwright — offline-mocked shards gate every push; live-Supabase flow tests validate
+real behavior on demand.
+
+---
+
 ## Communication — plain English, always
 
 Talk to the owner like a person, not a compiler. Every reply:
@@ -38,6 +60,17 @@ How a change ships. Repeat until review is clean:
 5. **Smoke the preview** — a tiny check that the *deploy itself* is healthy: right version
    (not a stale cache), `/api` works, maps load. Dozens of requests, not thousands.
 6. **You review the live preview.** Anything off → back to step 1.
+
+**Step 0.5 — for anything with a visible surface, screenshot before you build a preview:**
+new element, moved/resized/restyled element, new screen, animation, or any copy change
+that shifts layout. Render the actual changed screen locally (headless-browser screenshot
+against a local server — no Cloudflare build) and send it in chat for a reaction. Iterate
+on the screenshot, not on live deploys. Skip this only when the change has no visual
+surface (backend logic, sync fixes, test-only changes) — those deploy on request as usual.
+Reason: a Cloudflare build plus the app's version-watchdog (polls every 15s, auto-reloads
+on any mismatch) means three quick visual fixes in a row is three forced reloads on
+whatever device the owner is holding mid-review. A screenshot costs nothing and iterates
+as fast as the conversation — save the deploy for the version already approved in principle.
 
 **Two different "clouds" — don't mix them up:**
 - *Cloud gate* = real **backend** (Supabase, Stripe). App runs on localhost. Cheap.
@@ -1152,3 +1185,32 @@ Every screen with a non-trivial layout gets an E2E layout assertion (run at mobi
 - Key containers stay within the viewport (`getBoundingClientRect().right <= innerWidth`).
 
 A layout regression fails CI like any other bug.
+
+---
+
+## 17. New Feature Research Standard — Every New Feature Is Backed By Research
+
+Building from assumption is banned for anything beyond a bug fix. Before writing code
+for a **new feature** (a new document type, workflow, or screen — not a bug fix, not a
+tweak to something that already exists), spin up research agents (Agent tool /
+deep-research skill) and answer, in writing, before the first line of implementation:
+
+1. **What do the competitors do?** ServiceTitan, Jobber, Housecall Pro, and any other
+   named competitor for this specific feature — how do they solve it, what does their
+   flow look like, what do *their own users* complain about in how they do it.
+2. **What do contractors actually want?** Real contractor feedback — trade-specific
+   forums/subreddits (r/electricians, r/HVAC, r/Construction, etc.), G2/Capterra/App
+   Store reviews of competitor products, contractor Facebook groups — not guesses about
+   what "seems useful."
+3. **What do contractors love and hate** about how existing tools (including ours)
+   handle this problem today. Both directions matter — copy what's loved, avoid what's
+   hated.
+
+The resulting design must cite what it's based on — which competitor pattern, which
+piece of contractor feedback — not "this seemed like the right approach." If the
+research turns up nothing decisive, say so explicitly and default to the simplest
+version that solves the stated problem, rather than skipping research because early
+findings looked thin.
+
+**Scope:** genuinely new features only. Bug fixes, refactors, and small UX polish on
+something that already exists don't need a research phase — just the normal Loop.
