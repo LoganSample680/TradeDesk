@@ -1205,10 +1205,6 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 
   <div id="dash-geo-perm" style="display:none"></div>
-  <!-- "You're at X's" is a physically-here-RIGHT-NOW moment — it always leads the
-       dashboard, ahead of every draggable widget (§ owner request 2026-07-10: must
-       be unmissable, never buried by a custom widget order). -->
-  <div id="dash-nearby" style="display:none;margin-bottom:12px"></div>
   <div id="dash-widget-root">
     <!-- Every REAL card is its own widget (data-dw) so it can be held-and-moved
          independently and rides the boot waterfall. Empty/hidden widgets collapse
@@ -1216,6 +1212,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="td-dw" data-dw="kpi">
       <div id="dash-kpi"></div>
       <div id="dash-hobby-warn" style="display:none"></div>
+      <!-- "You're at X's" is a physically-here-RIGHT-NOW moment — nested inside the
+           kpi widget (not a standalone draggable) so it always lands right under the
+           Profit/Avg Job tiles, the natural first-glance center of the screen (owner
+           call 2026-07-10: top-of-screen reads as header chrome and gets skipped). -->
+      <div id="dash-nearby" style="display:none;margin-top:12px"></div>
     </div>
     <div class="td-dw" data-dw="crew">
       <div id="dash-crew-today" style="display:none"></div>

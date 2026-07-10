@@ -314,10 +314,12 @@ function renderDash(){
     if(_nearbyJob&&!_activeTimer){
       // Owner request 2026-07-10: this is the single most time-critical card in the
       // app — the contractor is physically standing at the job site RIGHT NOW. It
-      // must be unmissable: pinned above every draggable widget (see index.html),
-      // bigger than a normal card, and a gentle looping pulse so it visually
-      // announces itself instead of blending into the feed. Entrance animation only
-      // plays on the hidden->visible transition, not on every renderDash re-render.
+      // must be unmissable: sits right under the Profit/Avg Job tiles (the natural
+      // first-glance center of the screen — top-of-screen read as header chrome and
+      // got skipped, see index.html), bigger than a normal card, and a gentle
+      // looping pulse so it visually announces itself instead of blending into the
+      // feed. Entrance animation only plays on the hidden->visible transition, not
+      // on every renderDash re-render.
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
       _nearbyEl.style.display='block';
       const nb=_nearbyJob;
