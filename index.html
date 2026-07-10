@@ -1205,6 +1205,10 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 
   <div id="dash-geo-perm" style="display:none"></div>
+  <!-- "You're at X's" is a physically-here-RIGHT-NOW moment — it always leads the
+       dashboard, ahead of every draggable widget (§ owner request 2026-07-10: must
+       be unmissable, never buried by a custom widget order). -->
+  <div id="dash-nearby" style="display:none;margin-bottom:12px"></div>
   <div id="dash-widget-root">
     <!-- Every REAL card is its own widget (data-dw) so it can be held-and-moved
          independently and rides the boot waterfall. Empty/hidden widgets collapse
@@ -1219,7 +1223,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="td-dw" data-dw="alerts">
       <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
       <div id="dash-resume" style="display:none;margin-bottom:10px"></div>
-      <div id="dash-nearby" style="display:none;margin-bottom:10px"></div>
     </div>
     <div class="td-dw" data-dw="contracts">
       <div id="dash-contracts" style="display:none;margin-bottom:10px"></div>

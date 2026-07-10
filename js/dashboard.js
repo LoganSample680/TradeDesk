@@ -312,23 +312,39 @@ function renderDash(){
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     if(_nearbyJob&&!_activeTimer){
+      // Owner request 2026-07-10: this is the single most time-critical card in the
+      // app — the contractor is physically standing at the job site RIGHT NOW. It
+      // must be unmissable: pinned above every draggable widget (see index.html),
+      // bigger than a normal card, and a gentle looping pulse so it visually
+      // announces itself instead of blending into the feed. Entrance animation only
+      // plays on the hidden->visible transition, not on every renderDash re-render.
+      const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
       _nearbyEl.style.display='block';
       const nb=_nearbyJob;
-      // Kind decides the action AND handler — clockin (active job today), collect
+      // Kind decides the CTA AND handler — clockin (active job today), collect
       // (a Closed Won bid with balance owed), or diagnostic (fallback for any other
       // client at this address: no job to clock into, nothing owed yet).
       const nbIcon=nb.kind==='collect'?'💰':nb.kind==='diagnostic'?'🔧':'🔨';
-      const nbAction=nb.kind==='collect'?fmt(nb.balance)+' owed · Tap to collect'
-        :nb.kind==='diagnostic'?'Tap to log a charge'
-        :'Tap to clock in';
+      const nbCta=nb.kind==='collect'?'Collect '+fmt(nb.balance):nb.kind==='diagnostic'?'Log charge':'Clock in';
       const nbHandler=nb.kind==='collect'?'openPayPanel('+nb.bidId+',\'final\')'
         :nb.kind==='diagnostic'?'openDiagnosticCharge('+nb.clientId+')'
         :'openClockInSheet('+nb.jobId+')';
-      _nearbyEl.innerHTML='<div style="background:linear-gradient(135deg,#1E4D2B,#2D7A44);border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="'+nbHandler+'">'+
-        '<span style="font-size:24px;display:inline-flex">'+svgIcon(nbIcon,{size:24,color:'#fff'})+'</span>'+
-        '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#fff">You\'re at '+escHtml(nb.clientName)+'\'s</div>'+
-        '<div style="font-size:12px;color:rgba(255,255,255,.75)">'+escHtml(nb.addr)+' · '+nbAction+'</div></div>'+
-        '<span style="font-size:20px;color:rgba(255,255,255,.6)">▶</span></div>';
+      if(!document.getElementById('_td-nearby-anim-style')){
+        const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
+        _s.textContent=
+          '@keyframes tdNearbyPulse{0%{box-shadow:0 0 0 0 rgba(30,77,43,.45)}70%{box-shadow:0 0 0 16px rgba(30,77,43,0)}100%{box-shadow:0 0 0 0 rgba(30,77,43,0)}}'+
+          '@keyframes tdNearbyIn{from{opacity:0;transform:scale(.96) translateY(6px)}to{opacity:1;transform:scale(1) translateY(0)}}';
+        document.head.appendChild(_s);
+      }
+      _nearbyEl.innerHTML='<div style="position:relative;background:linear-gradient(135deg,#1E4D2B,#2D7A44);border-radius:18px;padding:18px;display:flex;align-items:center;gap:14px;cursor:pointer;animation:tdNearbyPulse 2.4s cubic-bezier(.4,0,.6,1) infinite'+(_wasHidden?',tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'" onclick="'+nbHandler+'">'+
+        '<span style="width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;flex-shrink:0">'+svgIcon(nbIcon,{size:26,color:'#fff'})+'</span>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:#A7F3B8">You\'re here — right now</div>'+
+          '<div style="font-size:18px;font-weight:900;color:#fff;line-height:1.2;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(nb.clientName)+'\'s</div>'+
+          '<div style="font-size:12px;color:rgba(255,255,255,.75);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(nb.addr)+'</div>'+
+        '</div>'+
+        '<div style="background:#fff;color:#1E4D2B;font-size:13px;font-weight:800;padding:11px 16px;border-radius:999px;white-space:nowrap;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.25)">'+escHtml(nbCta)+' →</div>'+
+      '</div>';
     }else{_nearbyEl.style.display='none';}
   }
   // Update new nav badges
