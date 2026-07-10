@@ -1139,7 +1139,8 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.html).toContain("openPayPanel(555002,'final')");
-      expect(r.html).toContain('Collect $450');
+      expect(r.html).toContain('$450.00 owed');
+      expect(r.html).toContain('Collect →');
     });
 
     test('kind=diagnostic — wrench icon, "Log charge" CTA pill, handler opens the diagnostic-charge modal', async () => {

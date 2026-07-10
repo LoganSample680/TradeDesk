@@ -334,7 +334,7 @@ function renderDash(){
         :nb.kind==='diagnostic'?nb.addr+' · nothing scheduled here'
         :nb.addr+' · job scheduled today';
       const nbBtn=nb.kind==='collect'
-        ?'<button onclick="openPayPanel('+nb.bidId+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>'
+        ?'<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>'
         :nb.kind==='diagnostic'
         ?'<button onclick="openDiagnosticCharge('+nb.clientId+')" class="btn btn-sm" style="font-size:11px">'+svgIcon('🔧',{size:11})+' Log charge</button>'
         :'<button onclick="openClockInSheet('+nb.jobId+')" class="btn btn-sm" style="border-radius:20px">'+svgIcon('▶')+' Clock in</button>';
