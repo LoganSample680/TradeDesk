@@ -74,14 +74,21 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
 
   test.beforeEach(async ({ page }) => {
     resetLedger();
-    await signIn(page);
     // Quiesce the paced hub sweep: it repairs one drifted client hub per tick and
     // STAMPS the client row each time — real, correct writes that land inside this
     // spec's precision windows ("exactly 1 row" / "exactly 0 rows") on a suite
     // account with a deep repair backlog. Diagnosed 2026-07-03 via _deltaStats.rows:
-    // the "extra" uploads were 42 td_clients rows, all sweep stamps. Pausing here
-    // isolates the measurement; the sweep resumes when the page closes.
-    await page.evaluate(() => { window._hubSweepPause = true; });
+    // the "extra" uploads were 42 td_clients rows, all sweep stamps.
+    //
+    // MUST be addInitScript, not a post-signIn evaluate (root cause of the 2026-07-10
+    // red): the sweep starts 4s after cloud load and each tick fires an UN-AWAITED
+    // background hub upload that stamps clientHubHash on the client row when it
+    // resolves. A flag set after boot lands too late — ticks already launched stamp
+    // a client INSIDE the measurement window ("phantom" 1-row upload) — and a plain
+    // window flag is wiped by the reload tests below. addInitScript runs before any
+    // page script on EVERY navigation, so no tick ever dequeues in this page.
+    await page.addInitScript(() => { window._hubSweepPause = true; });
+    await signIn(page);
   });
 
   test('a single field edit uploads only that bid — not the bids table', async ({ page }) => {
@@ -254,6 +261,9 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
     const ctxB = await browser.newContext({ baseURL: BASE, bypassCSP: true });
     await scopeBypassHeader(ctxB, BASE);
     const pageB = await ctxB.newPage();
+    // B asserts upserts===0 on its own save — its hub sweep must be quiesced from
+    // first script too, or a pre-flag tick's async stamp fails B the same way.
+    await pageB.addInitScript(() => { window._hubSweepPause = true; });
     await signIn(pageB);
     await pageB.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
 

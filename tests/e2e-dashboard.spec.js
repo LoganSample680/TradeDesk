@@ -1103,6 +1103,79 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderDashCollect
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // ── Nearby banner (dash-nearby) — kind-driven action (owner decision 2026-07-10) ──
+  test.describe('renderDash: nearby banner', () => {
+    test('kind=clockin — clock icon, "Tap to clock in", handler opens the clock-in sheet', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { kind: 'clockin', jobId: 555001, clientName: 'Banner Clockin', addr: '1 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '', display: el ? el.style.display : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.display).toBe('block');
+      expect(r.html).toContain('openClockInSheet(555001)');
+      expect(r.html).toContain('Tap to clock in');
+      expect(r.html).toContain('Banner Clockin');
+    });
+
+    test('kind=collect — money icon, balance owed + "Tap to collect", handler opens the pay panel', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { kind: 'collect', bidId: 555002, clientName: 'Banner Collect', addr: '2 Test St', balance: 450 };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toContain("openPayPanel(555002,'final')");
+      expect(r.html).toContain('Tap to collect');
+      expect(r.html).toContain('$450');
+    });
+
+    test('kind=diagnostic — wrench icon, "Tap to log a charge", handler opens the diagnostic-charge modal', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { kind: 'diagnostic', clientId: 555003, clientName: 'Banner Diagnostic', addr: '3 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toContain('openDiagnosticCharge(555003)');
+      expect(r.html).toContain('Tap to log a charge');
+    });
+
+    test('an active timer suppresses the banner regardless of kind', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = { jobId: 1, scopeId: 'x', start: Date.now() };
+        _nearbyJob = { kind: 'collect', bidId: 555002, clientName: 'Suppressed', addr: '2 Test St', balance: 450 };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, display: el ? el.style.display : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.display).toBe('none');
+    });
+  });
+
   test('renderDashCollect: no DOM element — returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-collect');

@@ -1877,6 +1877,30 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
+    // Tap-to-pay slot reserved for the native app (owner decision 2026-07-10) — must
+    // not be a dead button (CLAUDE.md §14.1): tapping it shows an honest "coming
+    // soon" message pointing to what works today, not a silent no-op.
+    test('Tap to pay button is present, not a dead button, and does not claim to charge a card', async () => {
+      const r = await page.evaluate(() => {
+        document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove());
+        try { openPayPanel(77702, 'final'); } catch (_) {}
+        const btn = [...document.querySelectorAll('.pay-modal-overlay button')]
+          .find(b => b.getAttribute('onclick') === '_tapToPaySoon()');
+        const foundBtn = !!btn;
+        const label = btn ? btn.textContent : '';
+        btn && btn.click();
+        const modal = document.querySelector('.zmodal-overlay .zmodal-msg');
+        const modalText = modal ? modal.textContent : '';
+        document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove());
+        return { foundBtn, label, modalText };
+      });
+      expect(r.foundBtn, 'Tap to pay button must be present in the pay panel').toBe(true);
+      expect(r.label).toContain('Tap to pay');
+      expect(r.label.toLowerCase()).toContain('coming soon');
+      expect(r.modalText, 'tapping it must show a real message, not silently no-op').toContain('coming');
+      expect(r.modalText.toLowerCase()).not.toContain('charged');
+    });
+
     test('sets activePayBidId', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.pay-modal-overlay').forEach(e => e.remove());

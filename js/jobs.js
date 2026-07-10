@@ -90,7 +90,10 @@ function openClockInSheet(jobId){
         '<button onclick="document.getElementById(\'_cks-ov\')?.remove()" style="background:var(--bg2);border:none;color:var(--text2);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-family:inherit">✕</button>'+
       '</div>'+
       rows+
-      '<div style="padding:12px 16px">'+
+      '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px">'+
+        (bid&&getBidBalance(bid)>0.01
+          ?'<button onclick="openPayPanel('+bid.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💰')+' Collect '+fmt(getBidBalance(bid))+'</button>'
+          :'')+
         '<button onclick="_markJobComplete('+jobId+')" style="width:100%;padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">'+svgIcon('🏁')+' Mark job complete</button>'+
       '</div>';
   };
@@ -268,7 +271,12 @@ function doneForDay(){
   },150);
 }
 
-// ── Nearby job detection (home-page smart clock-in) ──────────────────────────
+// ── Nearby detection (home-page smart clock-in / collect / diagnostic) ───────
+// Any client with an address is a candidate — not just ones with a scheduled
+// job. What action gets offered depends on that client's state, in priority
+// order: an active job today (clock in) > a Closed Won bid with a balance
+// owed (collect) > anything else (log a diagnostic charge — the always-
+// available fallback, since that flow needs nothing but a client).
 let _nearbyJob=null;
 function _haversineKm(lat1,lon1,lat2,lon2){
   const R=6371,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
@@ -279,21 +287,64 @@ function _geocodeAddr(addr){
   return fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(addr),{headers:{'User-Agent':'TradeDesk/1.0'}})
     .then(r=>r.json()).then(d=>d[0]?{lat:parseFloat(d[0].lat),lon:parseFloat(d[0].lon)}:null).catch(()=>null);
 }
+// Nominatim's free tier caps lookups at ~1/sec, so every client's geocoded
+// coords are cached — keyed by client id, in a dedicated localStorage blob,
+// NEVER re-geocoded unless the address text changes. Deliberately NOT stored
+// on the client record / pushed through saveAll(): this is a disposable,
+// device-local optimization, not app data — routing it through the full
+// account-sync engine would fire a cloud round-trip on every newly-seen
+// address from a background heartbeat, for zero benefit (worst case on a
+// cache miss is just one extra geocode later). Brand-new/uncached addresses
+// are throttled to a small budget per call, spaced 1.1s apart, so a large
+// client book backfills over several boots/foreground-resumes instead of
+// bursting the API in one shot. Already-cached clients cost nothing and are
+// always checked, every call.
+const _NEARBY_GEOCODE_BUDGET=8;
+function _nearbyGeoCache(){try{return JSON.parse(localStorage.getItem('zp3_nearby_geo')||'{}');}catch(_e){return{};}}
+function _saveNearbyGeoCache(cache){try{localStorage.setItem('zp3_nearby_geo',JSON.stringify(cache));}catch(_e){}}
 async function checkNearbyJob(){
   if(!navigator.geolocation||!_supaUser)return;
-  geoIfGranted(async pos=>{
+  // `return` (not a bare call) so a caller that DOES await this — tests, mainly;
+  // production fires it and moves on — resolves only once the async callback
+  // below has actually run, not the instant geoIfGranted's sync half returns.
+  return geoIfGranted(async pos=>{
     const{latitude:myLat,longitude:myLon}=pos.coords;
-    const activeJobs=jobs.filter(j=>!j.completion_date&&j.status!=='done'&&j.status!=='canceled');
-    for(const j of activeJobs){
-      const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
-      if(bid&&bid.status!=='Closed Won')continue;
-      const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-      if(!c?.addr)continue;
-      const coords=await _geocodeAddr(c.addr);
+    const tk=todayKey();
+    const geoCache=_nearbyGeoCache();
+    let geocodeBudget=_NEARBY_GEOCODE_BUDGET,cacheDirty=false;
+    for(const c of clients){
+      if(!c.addr)continue;
+      let coords=null;
+      const cached=geoCache[c.id];
+      if(cached&&cached.addr===c.addr){
+        coords={lat:cached.lat,lon:cached.lon};
+      }else if(geocodeBudget>0){
+        geocodeBudget--;
+        coords=await _geocodeAddr(c.addr);
+        if(coords){geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;}
+        if(geocodeBudget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
+      }
       if(!coords)continue;
       const km=_haversineKm(myLat,myLon,coords.lat,coords.lon);
-      if(km<0.5){_nearbyJob={jobId:j.id,jobName:j.name,clientName:c.name,addr:c.addr.split(',')[0]};renderDash&&renderDash();return;}
+      if(km<0.5){
+        if(cacheDirty)_saveNearbyGeoCache(geoCache);
+        const addrShort=c.addr.split(',')[0];
+        const bid=bids.filter(b=>b.client_id===c.id&&b.status==='Closed Won').sort((a,b2)=>(b2.bid_date||'').localeCompare(a.bid_date||''))[0];
+        if(bid){
+          const st=getBidStage(bid);
+          if(st.stage==='active'){
+            const activeJob=(st.jobs||[]).find(j=>{const d=parseInt(j.days)||1;for(let i=0;i<d;i++)if(addDays(j.start,i)===tk)return true;return false;});
+            if(activeJob){_nearbyJob={kind:'clockin',jobId:activeJob.id,clientName:c.name,addr:addrShort};renderDash&&renderDash();return;}
+          }else if(st.stage==='balance_due'){
+            _nearbyJob={kind:'collect',bidId:bid.id,clientName:c.name,addr:addrShort,balance:getBidBalance(bid)};renderDash&&renderDash();return;
+          }
+        }
+        _nearbyJob={kind:'diagnostic',clientId:c.id,clientName:c.name,addr:addrShort};
+        renderDash&&renderDash();
+        return;
+      }
     }
+    if(cacheDirty)_saveNearbyGeoCache(geoCache);
     if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}
   },()=>{},{maximumAge:60000,timeout:8000});
 }
@@ -1471,7 +1522,7 @@ function markJobDone(jobId){
     :'')+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
-      '<button onclick="closeTopModal();showJobDebrief('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Complete job ✓</button>'+
+      '<button onclick="_startJobComplete('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Complete job ✓</button>'+
     '</div>';
   overlay.appendChild(box);
   document.body.appendChild(overlay);
@@ -1479,6 +1530,15 @@ function markJobDone(jobId){
   box._jobId=jobId;
 }
 let _adjType=null;
+// Root cause (found while wiring the price-increase signature gate below): the
+// old flow read #adj-amount/#adj-reason/#job-done-date from confirmJobDone,
+// but confirmJobDone only runs AFTER "Complete job" -> closeTopModal() removes
+// THIS modal -> showJobDebrief() (a separate modal) -> confirmMarkComplete().
+// By then this modal's inputs are detached from the document, so every read
+// silently returned nothing — completion date always fell back to today, and
+// price adjustments were dropped entirely, with no error. Captured here,
+// while the modal is still live, and threaded through instead.
+let _jobDoneCapture=null;
 function setAdjType(t){
   _adjType=t;
   const inc=document.getElementById('adj-inc');
@@ -1500,8 +1560,13 @@ function _previewAdjTotal(jobId){
   const color=_adjType==='increase'?'var(--blue)':'var(--green-mid)';
   preview.innerHTML='<span style="color:var(--text3)">'+fmt(bid.amount)+'</span> <span style="color:'+color+'">'+arrow+' '+fmt(newTotal)+'</span>';
 }
-async function confirmJobDone(jobId){
-  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+// Validates + captures the still-live markJobDone modal fields, then either
+// proceeds straight to the debrief step (no adjustment, or a price DECREASE —
+// the client owes less, nothing to protect against) or requires a client
+// signature first (a price INCREASE — the one case that needs the same
+// protection a signed change order gives: nothing on file yet says the client
+// agreed to owe more).
+function _startJobComplete(jobId){
   const dateStr=document.getElementById('job-done-date')?.value||todayKey();
   if(!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)){zAlert('Enter a valid date.',{title:'Invalid date'});return;}
   const adjFields=document.getElementById('adj-fields');
@@ -1520,6 +1585,72 @@ async function confirmJobDone(jobId){
       zAlert('Enter a reason for the price change (at least 5 characters).',{title:'Reason required'});return;
     }
   }
+  _jobDoneCapture={dateStr,adjType:adjOpen?_adjType:null,adjAmt,adjReason,signerName:'',sigData:''};
+  if(adjOpen&&_adjType==='increase'){_showJobDoneSignStep(jobId);return;}
+  closeTopModal();showJobDebrief(jobId);
+}
+let _jobSignCanvas=null,_jobSignCtx=null,_jobSignDrawing=false;
+function _showJobDoneSignStep(jobId){
+  const box=document.querySelector('.zmodal-overlay .zmodal');if(!box)return;
+  const j=jobs.find(x=>x.id===jobId);
+  const bid=j?.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  if(!bid){closeTopModal();showJobDebrief(jobId);return;}
+  const cap=_jobDoneCapture;
+  const newTotal=Math.round((bid.amount+cap.adjAmt)*100)/100;
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Confirm the price increase</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">A price increase needs the client\'s sign-off — same protection as a change order — so nobody\'s surprised by the final bill.</div>'+
+    '<div style="background:#EBF2FB;border:1.5px solid #93C5FD;border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
+      '<div style="font-size:11px;color:#1E3A8A;font-weight:700;text-transform:uppercase;margin-bottom:4px">'+escHtml(cap.adjReason)+'</div>'+
+      '<div style="font-size:13px;color:#1E3A8A">'+fmt(bid.amount)+' → <strong>'+fmt(newTotal)+'</strong></div>'+
+    '</div>'+
+    '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">Client signature</div>'+
+    '<canvas id="job-sign-canvas" width="500" height="130" style="width:100%;height:130px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>'+
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">'+
+      '<button type="button" onclick="_clearJobSignCanvas()" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button>'+
+    '</div>'+
+    '<div class="f" style="margin-bottom:16px">'+
+      '<label style="font-size:11px;font-weight:700;color:var(--text3)">Or type full name to confirm</label>'+
+      '<input type="text" id="job-sign-name" placeholder="Full name" autocomplete="off" style="width:100%;box-sizing:border-box;font-size:15px;padding:10px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+
+    '</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="markJobDone('+jobId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">← Back</button>'+
+      '<button onclick="_confirmJobDoneSign('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Confirm &amp; complete ✓</button>'+
+    '</div>';
+  setTimeout(()=>{
+    const canvas=document.getElementById('job-sign-canvas');if(!canvas)return;
+    _jobSignCanvas=canvas;_jobSignCtx=canvas.getContext('2d');
+    _jobSignCtx.strokeStyle='#111';_jobSignCtx.lineWidth=2;_jobSignCtx.lineCap='round';_jobSignCtx.lineJoin='round';
+    const getPos=e=>{const r=canvas.getBoundingClientRect();const src=e.touches?e.touches[0]:e;return{x:(src.clientX-r.left)*(canvas.width/r.width),y:(src.clientY-r.top)*(canvas.height/r.height)};};
+    canvas.addEventListener('mousedown',e=>{_jobSignDrawing=true;const p=getPos(e);_jobSignCtx.beginPath();_jobSignCtx.moveTo(p.x,p.y);});
+    canvas.addEventListener('mousemove',e=>{if(!_jobSignDrawing)return;const p=getPos(e);_jobSignCtx.lineTo(p.x,p.y);_jobSignCtx.stroke();});
+    canvas.addEventListener('mouseup',()=>_jobSignDrawing=false);
+    canvas.addEventListener('touchstart',e=>{e.preventDefault();_jobSignDrawing=true;const p=getPos(e);_jobSignCtx.beginPath();_jobSignCtx.moveTo(p.x,p.y);},{passive:false});
+    canvas.addEventListener('touchmove',e=>{e.preventDefault();if(!_jobSignDrawing)return;const p=getPos(e);_jobSignCtx.lineTo(p.x,p.y);_jobSignCtx.stroke();},{passive:false});
+    canvas.addEventListener('touchend',()=>_jobSignDrawing=false);
+  },80);
+}
+function _clearJobSignCanvas(){if(_jobSignCanvas&&_jobSignCtx)_jobSignCtx.clearRect(0,0,_jobSignCanvas.width,_jobSignCanvas.height);}
+function _confirmJobDoneSign(jobId){
+  const typed=(document.getElementById('job-sign-name')?.value||'').trim();
+  let sigData='';
+  if(_jobSignCanvas){
+    const d=_jobSignCtx.getImageData(0,0,_jobSignCanvas.width,_jobSignCanvas.height).data;
+    const hasSig=Array.from(d).some((v,i)=>i%4===3&&v>0);
+    if(hasSig)sigData=_jobSignCanvas.toDataURL('image/png');
+  }
+  if(!typed&&!sigData){zAlert('Type the client\'s name or have them sign in the box above.',{title:'Signature required'});return;}
+  if(_jobDoneCapture){_jobDoneCapture.signerName=typed;_jobDoneCapture.sigData=sigData;}
+  closeTopModal();showJobDebrief(jobId);
+}
+async function confirmJobDone(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  // Read from the capture taken in _startJobComplete while the modal was still
+  // live — by the time this runs (after the debrief step) that modal's inputs
+  // are long detached from the document (see root-cause note above _adjType).
+  const cap=_jobDoneCapture||{};
+  const dateStr=cap.dateStr||todayKey();
+  const adjType=cap.adjType,adjAmt=cap.adjAmt||0,adjReason=cap.adjReason||'';
   closeTopModal();
   j.status='done';
   j.completion_date=dateStr;
@@ -1527,11 +1658,30 @@ async function confirmJobDone(jobId){
     const b=bids.find(x=>x.id===j.bid_id);
     if(b){
       b.completion_date=dateStr;
-      if(_adjType&&adjAmt>0){
-        const delta=_adjType==='increase'?adjAmt:-adjAmt;
-        b.amount=Math.max(0,Math.round((b.amount+delta)*100)/100);
-        if(!b.adjustments)b.adjustments=[];
-        b.adjustments.push({type:_adjType,amount:adjAmt,reason:adjReason,ts:new Date().toISOString()});
+      if(adjType&&adjAmt>0){
+        if(adjType==='increase'){
+          // Routed through the SAME structure a normal signed change order
+          // uses (owner: "we have change orders... that's what protects
+          // everyone") — carries the signature captured in _confirmJobDoneSign.
+          // Shows up everywhere change orders already do: Documents tab,
+          // client hub, dashboard change-order rollups — no new UI needed.
+          const coNum=(b.changeOrders||[]).length+1;
+          const originalAmount=b.amount;
+          const newAmount=Math.max(0,Math.round((b.amount+adjAmt)*100)/100);
+          if(!b.changeOrders)b.changeOrders=[];
+          b.changeOrders.push({
+            id:Date.now(),coNum,date:dateStr,desc:adjReason,type:'addition',
+            amount:adjAmt,delta:adjAmt,originalAmount,newAmount,
+            signedAt:new Date().toISOString(),signerName:cap.signerName||'',sigData:cap.sigData||''
+          });
+          b.amount=newAmount;
+        }else{
+          // Decrease — client owes LESS, no dispute-protection need, same
+          // no-signature path as before.
+          b.amount=Math.max(0,Math.round((b.amount-adjAmt)*100)/100);
+          if(!b.adjustments)b.adjustments=[];
+          b.adjustments.push({type:adjType,amount:adjAmt,reason:adjReason,ts:new Date().toISOString()});
+        }
       }
     }
   } else {
@@ -1542,7 +1692,7 @@ async function confirmJobDone(jobId){
       j.bid_id=unlinkedWon[0].id;
     }
   }
-  _adjType=null;
+  _adjType=null;_jobDoneCapture=null;
   const jobMiles=getClientMileage(j.client_id).filter(m=>m.date>=j.start&&m.date<=addDays(dateStr,3));
   jobMiles.forEach(m=>{m.job_id=jobId;m.job_name=j.name;});
   saveAll();

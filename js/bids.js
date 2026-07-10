@@ -785,6 +785,32 @@ function printInvoice(bidId){
     zAlert('Allow pop-ups to open the invoice. In Safari: Settings → Safari → Block Pop-ups → Off');
   }
 }
+// ── Final invoice — one-tap "generate + collect" for a done job ─────────────
+// Research-backed design (owner, 2026-07-09): bid.amount is ALREADY the fully
+// reconciled total — every signed change order updates it the moment it's
+// signed (_submitCOSign sets b.amount=newAmount). So the common case is "the
+// invoice equals what the client already signed" — no extra step needed, just
+// generate the document and collect. The only case that needs a fresh
+// signature is an amount that's NOT backed by anything signed (an unsigned
+// price bump at closeout) — that's gated separately in confirmJobDone, which
+// routes any INCREASE through the same change-order signing flow instead of a
+// silent adjustment. By the time this runs, bid.amount is trustworthy.
+function openFinalInvoice(bidId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  // Change orders awaiting a client signature are NOT reflected in bid.amount
+  // yet — flag it so nobody invoices a total that's about to change.
+  const pending=(b.changeOrders||[]).filter(co=>!co.signedAt);
+  if(pending.length){
+    zAlert(pending.length+' change order'+(pending.length>1?'s are':' is')+' still awaiting the client’s signature and '+(pending.length>1?'aren’t':'isn’t')+' included in this total yet. Get '+(pending.length>1?'them':'it')+' signed first, or continue to invoice the current signed amount.',{title:'Pending change order'+(pending.length>1?'s':'')});
+  }
+  if(!b.completion_date){
+    const linkedJob=jobs.find(j=>j.bid_id===b.id);
+    if(linkedJob){markJobDone(linkedJob.id);return;} // existing close-job flow (handles the price-adjustment+signature gate)
+    b.completion_date=todayKey();saveAll();
+  }
+  printInvoice(bidId);
+  setTimeout(()=>openPayPanel(bidId,'final'),400);
+}
 function getBidLien(bidId){return liens.find(l=>l.bid_id===bidId);}
 function daysSince(dateStr){if(!dateStr)return 0;const d=new Date(dateStr+'T00:00:00Z');if(isNaN(d.getTime()))return 0;const now=new Date();const todayUTC=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate());return Math.round((todayUTC-d.getTime())/86400000);}
 function payStatus(bid){
@@ -865,6 +891,16 @@ function openPayPanel(bidId, autoType){
         stripeCompact+qrCompact+
       '</div>'
     :'';
+  // Tap their card in person — the reader-driven flow ships with the native app
+  // (owner decision 2026-07-10). Reserving the slot now so the native build only
+  // has to swap this handler for the real one, not design new pay-panel UI.
+  const tapToPayRow=balance>0.50
+    ?'<button type="button" onclick="_tapToPaySoon()" style="width:100%;margin-top:6px;padding:10px 12px;border-radius:var(--r);border:1.5px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;opacity:.75">'+
+        '<span style="font-size:16px">'+svgIcon('📶',{size:16})+'</span>'+
+        '<span style="font-size:12px;font-weight:700">Tap to pay</span>'+
+        '<span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:10px;background:var(--border2);color:var(--text3)">Coming soon</span>'+
+      '</button>'
+    :'';
   // Secondary: deposit + custom as small 2-col row
   const depositSecondary=rawPaid<0.01
     ?'<button type="button" id="mpay-btn-deposit" data-ptype="deposit" onclick="selectPayType(this,'+bidId+')" style="flex:1;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left">'+
@@ -883,7 +919,7 @@ function openPayPanel(bidId, autoType){
     '<div style="font-size:12px;opacity:.75;margin-top:2px">Full balance · tap to log payment</div></div>'+
     '<div style="font-size:24px;font-weight:900;opacity:.85">&#8594;</div>'+
   '</button>';
-  const typeButtons=collectBtn+sendClientRow+(showFinalOnly?'':secondaryRow);
+  const typeButtons=collectBtn+tapToPayRow+sendClientRow+(showFinalOnly?'':secondaryRow);
 
   overlay.innerHTML=
     '<div class="zmodal">'+
@@ -940,6 +976,12 @@ function openPayPanel(bidId, autoType){
 }
 function autoFillPayAmount(){
   // No-op — amounts are entered manually, not pre-filled
+}
+// Reader-driven tap-to-pay ships with the native app (owner decision 2026-07-10) —
+// native NFC requires a native shell, not buildable as a web app. This keeps the
+// pay-panel slot reserved now so native only has to swap this handler.
+function _tapToPaySoon(){
+  zAlert('Tap to pay is coming with the TradeDesk app. For now, tap Collect for cash/check, or send the client the QR code to pay by card.',{title:'Coming soon'});
 }
 function closePayPanel(){document.querySelectorAll('.pay-modal-overlay').forEach(e=>e.remove());const cdp=document.getElementById('cd-pay-panel');if(cdp)cdp.style.display='none';activePayBidId=null;}
 function showPayQr(bidId){

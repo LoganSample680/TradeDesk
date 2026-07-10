@@ -34,6 +34,9 @@
   --font-ui:'Inter Tight',-apple-system,sans-serif;
 }
 body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif);background:var(--bg);color:var(--text);min-height:100vh}
+/* Cross-document view transition — cross-fade hub ↔ sign page instead of a white
+   navigation flash (supported browsers; ignored elsewhere). */
+@view-transition{navigation:auto}
 
 /* ── Topbar ── */
 .topbar{position:fixed;top:0;left:0;right:0;height:52px;background:var(--ink);display:flex;align-items:center;padding:0 14px;gap:10px;z-index:100;border-bottom:1px solid rgba(255,255,255,.06)}
@@ -42,7 +45,6 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .topbar-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
 .topbar-icon-btn{background:rgba(255,255,255,.08);border:none;color:#fff;font-size:16px;line-height:1;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-family:inherit}
 .topbar-icon-btn:hover{background:rgba(255,255,255,.14)}
-.topbar-account-chip{display:flex;align-items:center;padding:4px 10px;border-radius:20px;border:1.5px solid rgba(255,255,255,.3);background:#fff;font-size:12px;font-weight:700;color:var(--ink);letter-spacing:-.1px;cursor:default;white-space:nowrap}
 
 /* ── Layout ── */
 .body-wrap{padding-top:52px;min-height:100vh}
@@ -333,7 +335,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 
 /* ── Proposal overlay ── */
 #prop-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
-.prop-wrap{max-width:680px;margin:0 auto;padding:32px 24px 60px}
+.prop-wrap{max-width:680px;margin:0 auto;padding:14px 12px 44px}
 /* The proposal card itself carries its own border+shadow (baked into the stored
    HTML at send time) — the 24px side padding above double-frames it on a phone
    screen, wasting width on a page a client is reading closely. Tighten to a
@@ -347,7 +349,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
    client-specific: contractor logo/name center stage, "Loading your client
    hub…" copy. Element IDs (boot-logo/boot-name/boot-bar) are unchanged — the
    load-progress JS drives the same widths on the same timings as before. */
-#boot-overlay{position:fixed;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity;overflow:hidden}
+#boot-overlay{position:fixed;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .75s cubic-bezier(.4,0,.2,1),transform .75s cubic-bezier(.4,0,.2,1),filter .75s cubic-bezier(.4,0,.2,1);will-change:opacity,transform,filter;overflow:hidden}
 .cbo-glow{position:absolute;width:130vmax;height:130vmax;left:50%;top:55%;background:radial-gradient(closest-side,rgba(45,93,168,.30),transparent 65%);animation:cbo-drift 9s ease-in-out infinite alternate;pointer-events:none}
 @keyframes cbo-drift{from{transform:translate(-56%,-52%) scale(1)}to{transform:translate(-44%,-46%) scale(1.14)}}
 .cbo-center{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:0 24px;position:relative}
@@ -358,7 +360,8 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 @keyframes cbo-halo{0%{opacity:.8;transform:scale(1)}70%{opacity:0;transform:scale(1.6)}100%{opacity:0;transform:scale(1.6)}}
 @keyframes cbo-breathe{0%,100%{box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.35);transform:scale(1)}50%{box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 16px 48px rgba(92,143,212,.55);transform:scale(1.045)}}
 .cbo-logo-frame{background:rgba(255,255,255,.97);border-radius:22px;padding:16px 24px;max-width:78vw;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 18px 50px rgba(0,0,0,.5);animation:cbo-logoin .55s cubic-bezier(.22,1,.36,1) both}
-.cbo-name{font-size:clamp(24px,6.4vw,36px);font-weight:900;letter-spacing:-1px;text-align:center;max-width:88vw;line-height:1.1;padding:0 16px;background:linear-gradient(100deg,#fff 42%,#a9c8f2 50%,#fff 58%);background-size:230% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:cbo-textsheen 2.6s ease-in-out 1s infinite}
+.cbo-name{font-size:clamp(24px,6.4vw,36px);font-weight:900;letter-spacing:-1px;text-align:center;max-width:88vw;line-height:1.1;padding:0 16px;background:linear-gradient(100deg,#fff 42%,#a9c8f2 50%,#fff 58%);background-size:230% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:cbo-namein .55s cubic-bezier(.22,1,.36,1) both,cbo-textsheen 2.6s ease-in-out 1s infinite}
+@keyframes cbo-namein{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
 @keyframes cbo-textsheen{0%{background-position:125% 0}100%{background-position:-125% 0}}
 .cbo-tag{font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.4);animation:cbo-fadeup .6s .3s cubic-bezier(.22,1,.36,1) both}
 @keyframes cbo-fadeup{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
@@ -371,26 +374,6 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 @media (prefers-reduced-motion:reduce){.cbo-mark,.cbo-mark::after,.cbo-sheen,.cbo-glow,.cbo-name{animation:none}}
 #inv-overlay,#prop-overlay{transition:opacity .22s ease;will-change:opacity}
 
-/* ── Notification panel ── */
-.notif-wrap{position:relative;display:flex}
-.notif-unread-dot{position:absolute;top:5px;right:5px;width:8px;height:8px;background:#ef4444;border-radius:50%;border:1.5px solid var(--ink);display:none;pointer-events:none}
-.notif-panel{position:absolute;right:-6px;top:calc(100% + 8px);width:300px;background:var(--bg-card);border-radius:14px;box-shadow:0 8px 30px rgba(27,22,18,.18),0 0 0 1px rgba(27,22,18,.06);z-index:300;overflow:hidden;display:none}
-/* On mobile a 300px panel anchored to the bell bled off the left edge. Span the
-   viewport with margins instead so it's always fully visible below the topbar. */
-@media(max-width:520px){
-  .notif-panel{position:fixed;top:58px;left:10px;right:10px;width:auto;max-height:calc(100vh - 74px);overflow-y:auto}
-}
-.notif-hd{display:flex;align-items:center;justify-content:space-between;padding:12px 14px 10px;border-bottom:1px solid var(--border)}
-.notif-hd-title{font-size:13px;font-weight:800}
-.notif-mark-read{font-size:11px;color:var(--denim);cursor:pointer;font-weight:600;background:none;border:none;font-family:inherit;padding:0}
-.notif-item{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s}
-.notif-item:last-child{border-bottom:none}
-.notif-item:hover{background:var(--bg)}
-.notif-item-dot{width:8px;height:8px;border-radius:50%;background:var(--denim);flex-shrink:0;margin-top:5px}
-.notif-item-dot.read{background:transparent;border:1.5px solid var(--border2)}
-.notif-item-title{font-size:13px;font-weight:700;color:var(--text)}
-.notif-item-time{font-size:11px;color:var(--text3);margin-top:2px}
-.notif-empty{padding:22px 14px;font-size:13px;color:var(--text3);text-align:center}
 
 /* ── Help drawer ── */
 .help-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:400;display:none;align-items:flex-end;justify-content:center}
@@ -404,17 +387,6 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .help-sec-hd{font-size:13px;font-weight:800;color:var(--ink);margin-bottom:7px}
 .help-sec-body{font-size:13px;color:var(--text2);line-height:1.75}
 
-/* ── Account chip & dropdown ── */
-.acct-wrap{position:relative;display:flex}
-.acct-chip{display:flex;align-items:center;gap:7px;cursor:pointer;padding:3px 8px 3px 3px;border-radius:22px;border:1.5px solid rgba(255,255,255,.18);transition:background .15s;background:transparent}
-.acct-chip:hover{background:rgba(255,255,255,.08)}
-.acct-avatar{width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#2D5DA8 0%,#5B8DE0 100%);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:900;color:#fff;flex-shrink:0;font-family:var(--font-display)}
-.acct-chip-name{font-size:12px;font-weight:700;color:rgba(255,255,255,.9);max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.acct-chevron{font-size:10px;color:rgba(255,255,255,.4);line-height:1}
-.acct-dropdown{position:absolute;right:0;top:calc(100% + 8px);width:182px;background:var(--bg-card);border-radius:12px;box-shadow:0 8px 30px rgba(27,22,18,.18),0 0 0 1px rgba(27,22,18,.06);z-index:300;overflow:hidden;display:none}
-.acct-menu-item{display:flex;align-items:center;gap:10px;padding:12px 14px;font-size:13px;font-weight:600;color:var(--text);cursor:pointer;border:none;background:none;font-family:inherit;width:100%;text-align:left;transition:background .12s}
-.acct-menu-item:hover{background:var(--bg)}
-.acct-menu-item:not(:last-child){border-bottom:1px solid var(--border)}
 
 /* ── Mobile contact strip (PR3) ── */
 /* Contact pair — Call (filled brand) + Text (warm brand-tonal). Research: 66% of
@@ -448,6 +420,19 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
    instead of a plain "Loading…" text block sitting there doing nothing. */
 .hub-spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--border2);border-top-color:var(--denim);margin:0 auto 12px;animation:hub-spin .8s linear infinite}
 @keyframes hub-spin{to{transform:rotate(360deg)}}
+
+/* Waterfall reveal for the hub home (Overview) — matches the proposal's
+   cascade (sign.html) and the app dashboard: once the boot overlay clears, the
+   overview's top-level blocks fade + rise in top-to-bottom sequence. Applied
+   as a one-shot class on the first hub reveal, not on tab switches. */
+@keyframes td-cascade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+#view-overview.hub-cascade>*{animation:td-cascade .83s cubic-bezier(.33,1,.68,1) both}
+#view-overview.hub-cascade>*:nth-child(1){animation-delay:.03s}
+#view-overview.hub-cascade>*:nth-child(2){animation-delay:.15s}
+#view-overview.hub-cascade>*:nth-child(3){animation-delay:.27s}
+#view-overview.hub-cascade>*:nth-child(4){animation-delay:.39s}
+#view-overview.hub-cascade>*:nth-child(n+5){animation-delay:.51s}
+@media (prefers-reduced-motion:reduce){#view-overview.hub-cascade>*{animation:none}}
 
 /* ── Change order signing modal ── */
 @keyframes hub-ov-fade{from{opacity:0}to{opacity:1}}
@@ -528,30 +513,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
   <img id="topbar-logo-img" class="topbar-logo-img" alt="Logo">
   <span id="topbar-name" class="topbar-name"></span>
   <div class="topbar-actions">
-    <div class="notif-wrap">
-      <button class="topbar-icon-btn" id="notif-btn" onclick="toggleNotifPanel(event)" aria-label="Notifications"><script>document.write(svgIcon('🔔',{size:20}))</script></button>
-      <span class="notif-unread-dot" id="notif-dot"></span>
-      <div class="notif-panel" id="notif-panel">
-        <div class="notif-hd">
-          <span class="notif-hd-title">Notifications</span>
-          <button class="notif-mark-read" onclick="markAllRead()">Mark all read</button>
-        </div>
-        <div id="notif-list"></div>
-      </div>
-    </div>
     <button class="topbar-icon-btn" onclick="openHelp()" aria-label="Help"><script>document.write(svgIcon('❓',{size:20}))</script></button>
-    <div class="acct-wrap" id="acct-wrap">
-      <button class="acct-chip" id="acct-chip" onclick="toggleAcctMenu(event)" aria-label="Account menu">
-        <div class="acct-avatar" id="acct-avatar"></div>
-        <span class="acct-chip-name" id="acct-chip-name"></span>
-        <span class="acct-chevron"><script>document.write(svgIcon('▾',{size:10}))</script></span>
-      </button>
-      <div class="acct-dropdown" id="acct-dropdown">
-        <button class="acct-menu-item" onclick="closeAcctMenu()"><script>document.write(svgIcon('👤'))</script> Profile</button>
-        <button class="acct-menu-item" onclick="toggleNotifPanel(event);closeAcctMenu()"><script>document.write(svgIcon('🔔'))</script> Notifications</button>
-        <button class="acct-menu-item" onclick="closeAcctMenu()" style="color:#c0392b"><script>document.write(svgIcon('🚪'))</script> Sign out</button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -655,8 +617,40 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:false,storageKey:'sb-hub-isolated'}});
 // _supaAuth exists only to read the contractor's session for view-tracking suppression.
 const _supaAuth=supabase.createClient(SUPA_URL,SUPA_KEY);
+// Boot overlay minimum dwell — the premium boot screen was dismissing the moment
+// hub data landed (~200ms on a warm load), so it flashed past. Hold it for at
+// least MIN_BOOT_MS so it reads as an intentional, polished load (owner). The
+// error/preview dismiss path stays instant. _bootStart is stamped at parse time
+// (≈ when the overlay first paints).
+// window (not const) so the dwell clock is resettable — the boot-dwell test
+// resets it to "now" to exercise the real min-dwell hold deterministically.
+window._bootStart=Date.now();
+const MIN_BOOT_MS=2800;
 // Kick off the boot bar pulse so it feels alive immediately
 setTimeout(()=>{const b=document.getElementById('boot-bar');if(b)b.style.width='35%';},60);
+// Set the boot business name and (re)play its entrance animation, so a name that
+// arrives late fades in smoothly instead of hard-cutting. No-op if unchanged.
+function _setBootName(name){
+  const bn=document.getElementById('boot-name');
+  if(!bn||!name||bn.textContent===name)return;
+  bn.textContent=name;
+  bn.style.animation='none';void bn.offsetWidth;bn.style.animation='';
+}
+// INSTANT name on repeat visits (PWA): show the last-known business name + brand
+// color from cache before the snapshot fetch returns, so it doesn't pop in later.
+(function(){
+  try{
+    // Keyed by CONTRACTOR (u), not client (c) — the business name is the same
+    // across all of a contractor's client hubs, so once ANY of their hubs has
+    // loaded on this device, every other one shows the name instantly.
+    const uid=new URLSearchParams(location.search).get('u');
+    const cached=uid&&JSON.parse(localStorage.getItem('td_hub_brand_'+uid)||'null');
+    if(cached&&cached.name){
+      _setBootName(cached.name);
+      const bb=document.getElementById('boot-bar');if(bb&&cached.color)bb.style.background=cached.color;
+    }
+  }catch(e){}
+})();
 // Set at parse time — renderAll() runs before init() finishes, so the flag must
 // exist before the first render or Review & Sign links miss the preview param.
 let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(location.search).get('preview')==='1';
@@ -1087,11 +1081,44 @@ function showQuoteInProgress(h){
   document.getElementById('pg-hub').style.display='block';
   _dismissBootOverlay(true); // overlay is fixed + z-9999 — without this the screen stays stuck on the loader
 }
+let _bootDismissTimers=[];
 function _dismissBootOverlay(fast){
   const ov=document.getElementById('boot-overlay');if(!ov)return;
-  const bb=document.getElementById('boot-bar');if(bb)bb.style.width='100%';
-  const delay=fast?0:220;
-  setTimeout(()=>{ov.style.opacity='0';setTimeout(()=>ov.style.display='none',450);},delay);
+  const bb=document.getElementById('boot-bar');
+  // Cancel any timers a prior dismiss scheduled. Without this, an earlier
+  // fast-path call (e.g. the mock boot's 220ms dismiss) leaves a pending
+  // display:none/opacity:0 timeout that fires ~1s later and hides the overlay
+  // out from under a later dwell call — a stale-timer race, not a timing bug.
+  _bootDismissTimers.forEach(clearTimeout);_bootDismissTimers=[];
+  // Hold the boot screen for a minimum dwell on the normal (hub-loaded) path so
+  // it doesn't flash past on a fast load. Errors/preview dismiss immediately.
+  // Under the E2E mock (window.__mockHubData) the dwell is skipped so hundreds of
+  // hub-booting specs aren't each slowed ~3s (the boot screen would also cover the
+  // hub they interact with); _forceBootDwell lets the dwell test opt back in.
+  const _testEnv=(typeof window.__mockHubData!=='undefined')&&!window._forceBootDwell;
+  const elapsed=Date.now()-_bootStart;
+  const delay=(fast||_testEnv)?(fast?0:220):Math.max(220,MIN_BOOT_MS-elapsed);
+  // Fill the progress bar smoothly across the remaining dwell, hitting 100% just
+  // before the fade instead of snapping.
+  if(bb){bb.style.width='92%';_bootDismissTimers.push(setTimeout(()=>{bb.style.width='100%';},Math.max(0,delay-300)));}
+  // Premium exit — same blur+scale fade as the TradeDesk app boot (index.html
+  // .td-fadeout), so the hub blooms into view rather than hard-cutting. As the
+  // overlay fades, waterfall the hub-home content in beneath it (same cascade
+  // as the proposal) so the home page reveals in sequence, not all at once.
+  _bootDismissTimers.push(setTimeout(()=>{ov.style.opacity='0';ov.style.transform='scale(1.05)';ov.style.filter='blur(10px)';_playHubCascade();_bootDismissTimers.push(setTimeout(()=>ov.style.display='none',780));},delay));
+}
+// One-shot waterfall for the hub home. Only fires when the Overview tab is the
+// one being revealed (not error/preview), and only once per load so switching
+// back to Overview later doesn't re-cascade.
+let _hubCascaded=false;
+function _playHubCascade(){
+  if(_hubCascaded)return;
+  const hub=document.getElementById('pg-hub');
+  const ov=document.getElementById('view-overview');
+  if(!hub||hub.style.display==='none'||!ov||_activeView!=='overview')return;
+  _hubCascaded=true;
+  ov.classList.remove('hub-cascade');void ov.offsetWidth; // restart if already applied
+  ov.classList.add('hub-cascade');
 }
 let _stateShown=false; // watchdog guard — set once boot resolves either way
 function showState(s){
@@ -1134,15 +1161,12 @@ function applyBranding(h){
     if(isSafeUrl)nf.innerHTML='<a href="'+esc(safeUrl)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(safeUrl.replace(/^https?:\/\//,''))+'</a>';
     else nf.textContent=safeUrl;
   }
-  // Account chip: avatar circle + first name + chevron
-  const fn=(h.clientName||'').split(' ')[0]||'?';
-  const avatar=document.getElementById('acct-avatar');
-  const chipName=document.getElementById('acct-chip-name');
-  if(avatar)avatar.textContent=fn.charAt(0).toUpperCase();
-  if(chipName)chipName.textContent=fn;
   // Populate + animate boot overlay — a contractor logo replaces the generic
   // house mark (same swap the app's boot screen does for white-label).
-  const bn=document.getElementById('boot-name');if(bn)bn.textContent=h.contractorName||'';
+  _setBootName(h.contractorName||'');
+  // Cache the business name + brand color (keyed by contractor) so the next visit
+  // to ANY of this contractor's hubs shows them instantly at boot (before fetch).
+  try{const _uid=new URLSearchParams(location.search).get('u');if(_uid)localStorage.setItem('td_hub_brand_'+_uid,JSON.stringify({name:h.contractorName||'',color:h.brandColor||''}));}catch(e){}
   const bl=document.getElementById('boot-logo'),blw=document.getElementById('boot-logo-wrap');
   if(bl&&blw&&h.logoData){
     bl.src=h.logoData;blw.style.display='flex';
@@ -1153,6 +1177,7 @@ function applyBranding(h){
 }
 function renderAll(){
   renderOverview();renderProject();renderPayments();renderDocuments();renderMessages();
+  _prefetchSignProps(); // warm the instant-open handoff for pending proposals
 }
 const _VIEWS=['overview','project','payments','documents','messages'];
 const _BN=['overview','project','payments','documents','messages'];
@@ -2134,7 +2159,10 @@ function renderDocuments(){
     // Collapsible body
     html+='<div id="db-'+bid.id+'" style="background:var(--bg-card);display:'+(autoOpen?'block':'none')+'">';
     html+='<div style="padding:0 16px">';
-    if(bid.completion_date){html+=_docRow(svgIcon('📄',{size:18}),'Invoice','View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">Invoice</span>','openInvoice('+bid.id+')','');}
+    if(bid.completion_date){
+      const _isDiag=bid.kind==='diagnostic';
+      html+=_docRow(svgIcon('📄',{size:18}),_isDiag?'Diagnostic Charge':'Invoice',_isDiag?(esc(bid.desc||'Diagnostic visit')):'View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">'+(_isDiag?'Diagnostic':'Invoice')+'</span>','openInvoice('+bid.id+')','');
+    }
     if(bid.proposalKey){
       const _sigMeta=bid.signedAt
         ?svgIcon('✍',{size:11})+' Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
@@ -2502,11 +2530,39 @@ function closeInvoice(){
   _ov.style.opacity='0';setTimeout(()=>_ov.style.display='none',250);
   history.replaceState(null,'',''+location.pathname+location.search);
 }
+// Instant-open handoff: pre-fetch each pending proposal's JSON and stash it in
+// sessionStorage keyed by the SAME storage key sign.html derives from its link,
+// so tapping "Review & Sign" paints the proposal with no network download-gap
+// (no white flash). Background, non-blocking, once per key per session.
+const _signStashed=new Set();
+function _signKeyFromUrl(u){
+  try{const q=new URL(u,location.href).searchParams;
+    const k=q.get('key');if(k)return k;
+    const t=q.get('t'),uu=q.get('u'),b=q.get('b');
+    if(t&&uu&&b)return 'proposals/'+uu+'/'+b+'_'+t+'.json';
+  }catch(_){}
+  return null;
+}
+function _prefetchSignProps(){
+  if(!_hub||!Array.isArray(_hub.bids))return;
+  _hub.bids.forEach(b=>{
+    if(b.status!=='Pending'||!b.signHubUrl||!b.proposalKey)return;
+    const key=_signKeyFromUrl(b.signHubUrl);
+    if(!key||_signStashed.has(key))return;
+    _signStashed.add(key);
+    _fetchStorageJson(b.proposalKey).then(({data,error})=>{
+      if(error||!data)return;
+      try{sessionStorage.setItem('tdsign:'+key,JSON.stringify(data));}catch(_){}
+    }).catch(()=>{});
+  });
+}
 async function openProposal(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
   if(!bid||!bid.proposalKey){alert('Proposal document not available. Please contact us.');return;}
   const ov=document.getElementById('prop-overlay'),ct=document.getElementById('prop-content');
-  ct.innerHTML='<div style="text-align:center;padding:60px 20px"><div class="hub-spinner"></div><div style="color:#999;font-size:16px">Loading proposal…</div></div>';
+  // No loading spinner on proposal open (owner) — clear any prior content and fade
+  // the overlay in; the proposal renders as soon as its JSON resolves.
+  ct.innerHTML='';
   ov.style.opacity='0';ov.style.display='block';requestAnimationFrame(()=>ov.style.opacity='1');scrollTo(0,0);
   try{
     const{data:propData,error}=await _fetchStorageJson(bid.proposalKey);
@@ -2720,89 +2776,14 @@ async function _attachChatFile(){
 }
 
 /* ── Topbar interactions ── */
-function _relTime(iso){
-  if(!iso)return'';
-  const diff=Date.now()-new Date(iso).getTime();
-  const m=Math.floor(diff/60000),h=Math.floor(m/60),d=Math.floor(h/24);
-  if(m<2)return'just now';
-  if(m<60)return m+'m ago';
-  if(h<24)return h+'h ago';
-  if(d<7)return d+'d ago';
-  return new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-}
-function _seedNotifs(){
-  if(!_hub)return[];
-  const now=Date.now();
-  return(_hub.notifications||[
-    {id:1,title:'New proposal sent',time:new Date(now-3600000).toISOString(),read:false},
-    {id:2,title:'Signature reminder',time:new Date(now-86400000).toISOString(),read:false},
-    {id:3,title:'Payment due today',time:new Date(now-172800000).toISOString(),read:true},
-    {id:4,title:'Photo uploaded',time:new Date(now-259200000).toISOString(),read:true},
-  ]);
-}
-function renderNotifPanel(){
-  const list=document.getElementById('notif-list');
-  if(!list)return;
-  const notifs=_seedNotifs();
-  if(!notifs.length){
-    list.innerHTML='<div class="notif-empty">You\'re all caught up '+svgIcon('🎉',{size:13})+'</div>';
-  }else{
-    list.innerHTML=notifs.map(n=>`
-      <div class="notif-item" onclick="markRead(${n.id})">
-        <span class="notif-item-dot${n.read?' read':''}"></span>
-        <div><div class="notif-item-title">${esc(n.title)}</div><div class="notif-item-time">${_relTime(n.time)}</div></div>
-      </div>`).join('');
-  }
-  const dot=document.getElementById('notif-dot');
-  if(dot)dot.style.display=notifs.some(n=>!n.read)?'block':'none';
-}
-function toggleNotifPanel(e){
-  if(e)e.stopPropagation();
-  const panel=document.getElementById('notif-panel');
-  if(!panel)return;
-  const open=panel.style.display==='block';
-  closeAcctMenu();
-  if(!open){renderNotifPanel();panel.style.display='block';}
-  else panel.style.display='none';
-}
-function closeNotifPanel(){
-  const panel=document.getElementById('notif-panel');
-  if(panel)panel.style.display='none';
-}
-function markRead(id){
-  if(!_hub)return;
-  const notifs=_seedNotifs();
-  const n=notifs.find(x=>x.id===id);
-  if(n)n.read=true;
-  renderNotifPanel();
-}
-function markAllRead(){
-  if(!_hub)return;
-  const notifs=_seedNotifs();
-  notifs.forEach(n=>n.read=true);
-  renderNotifPanel();
-}
 function openHelp(){
   const bd=document.getElementById('help-backdrop');
-  if(bd){bd.classList.add('open');closeNotifPanel();closeAcctMenu();}
+  if(bd){bd.classList.add('open');}
 }
 function closeHelp(){
   const bd=document.getElementById('help-backdrop');
   if(bd)bd.classList.remove('open');
 }
-function toggleAcctMenu(e){
-  if(e)e.stopPropagation();
-  const dd=document.getElementById('acct-dropdown');
-  if(!dd)return;
-  const open=dd.style.display==='block';
-  closeNotifPanel();
-  dd.style.display=open?'none':'block';
-}
-function closeAcctMenu(){
-  const dd=document.getElementById('acct-dropdown');
-  if(dd)dd.style.display='none';
-}
-document.addEventListener('click',()=>{closeNotifPanel();closeAcctMenu();});
 
 init();
 // Boot watchdog — if neither the hub nor the error state has been shown after

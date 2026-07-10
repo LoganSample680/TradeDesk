@@ -313,10 +313,21 @@ function renderDash(){
   if(_nearbyEl){
     if(_nearbyJob&&!_activeTimer){
       _nearbyEl.style.display='block';
-      _nearbyEl.innerHTML='<div style="background:linear-gradient(135deg,#1E4D2B,#2D7A44);border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="openClockInSheet('+_nearbyJob.jobId+')">'+
-        '<span style="font-size:24px;display:inline-flex">'+svgIcon('🔨',{size:24,color:'#fff'})+'</span>'+
-        '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#fff">You\'re at '+escHtml(_nearbyJob.clientName)+'\'s</div>'+
-        '<div style="font-size:12px;color:rgba(255,255,255,.75)">'+escHtml(_nearbyJob.addr)+' · Tap to clock in</div></div>'+
+      const nb=_nearbyJob;
+      // Kind decides the action AND handler — clockin (active job today), collect
+      // (a Closed Won bid with balance owed), or diagnostic (fallback for any other
+      // client at this address: no job to clock into, nothing owed yet).
+      const nbIcon=nb.kind==='collect'?'💰':nb.kind==='diagnostic'?'🔧':'🔨';
+      const nbAction=nb.kind==='collect'?fmt(nb.balance)+' owed · Tap to collect'
+        :nb.kind==='diagnostic'?'Tap to log a charge'
+        :'Tap to clock in';
+      const nbHandler=nb.kind==='collect'?'openPayPanel('+nb.bidId+',\'final\')'
+        :nb.kind==='diagnostic'?'openDiagnosticCharge('+nb.clientId+')'
+        :'openClockInSheet('+nb.jobId+')';
+      _nearbyEl.innerHTML='<div style="background:linear-gradient(135deg,#1E4D2B,#2D7A44);border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="'+nbHandler+'">'+
+        '<span style="font-size:24px;display:inline-flex">'+svgIcon(nbIcon,{size:24,color:'#fff'})+'</span>'+
+        '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#fff">You\'re at '+escHtml(nb.clientName)+'\'s</div>'+
+        '<div style="font-size:12px;color:rgba(255,255,255,.75)">'+escHtml(nb.addr)+' · '+nbAction+'</div></div>'+
         '<span style="font-size:20px;color:rgba(255,255,255,.6)">▶</span></div>';
     }else{_nearbyEl.style.display='none';}
   }
@@ -1128,7 +1139,7 @@ function renderTodayFeed(){
         '</div>'
       );
     } else {
-      // Deposit still needed — goes to Deposit & Schedule
+      // Deposit still needed — money owed, so it lives in the Collect section
       const depAmt=depositRequired?fmt(b.deposit):fmt(b.amount);
       const _dTypeLbl=(typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'';
       const subText=_dTypeLbl+(hasJob?'Job in progress · deposit not collected · '+depAmt:'Deposit required before scheduling · '+depAmt);
@@ -1335,8 +1346,8 @@ function renderTodayFeed(){
     const parts=[];
     if(showBuild&&buildItems.length)parts.push(buildItems.length+' to build');
     if(showPending&&pendingItems.length)parts.push(pendingItems.length+' pending');
-    if(showDepSched&&(depositItems.length+scheduleItems.length))parts.push((depositItems.length+scheduleItems.length)+' to deposit/schedule');
-    if(showFinalPay&&finalPayItems.length)parts.push(finalPayItems.length+' to collect');
+    if(showDepSched&&scheduleItems.length)parts.push(scheduleItems.length+' to schedule');
+    if(showFinalPay&&(finalPayItems.length+depositItems.length))parts.push((finalPayItems.length+depositItems.length)+' to collect');
     _feedSub.textContent=parts.join(' · ')||'all caught up';
   }
 
@@ -1344,8 +1355,12 @@ function renderTodayFeed(){
     (alertItems.length?'<div>'+alertItems.join('')+'</div>':'')+
     _sec('build',svgIcon('✏',{size:14}),'Build','var(--text2)',buildItems,showBuild)+
     _sec('pending',svgIcon('📨',{size:14}),'Pending','#7c3aed',pendingItems,showPending)+
-    _sec('dep-sched',svgIcon('💳',{size:14}),'Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched)+
-    _sec('collect',svgIcon('💰',{size:14}),'Collect','#A32D2D',finalPayItems,showFinalPay);
+    _sec('schedule',svgIcon('📅',{size:14}),'Schedule','var(--blue)',scheduleItems,showDepSched)+
+    // ONE money queue (owner decision 2026-07-10): Collect = every dollar owed right
+    // now — completed-job balances (red, overdue receivable) AND deposits not yet
+    // collected (blue, gates scheduling). Matches the qa-collect quick-action count,
+    // which already tallies ALL owed balances. Card colors keep the "why" visible.
+    _sec('collect',svgIcon('💰',{size:14}),'Collect','#A32D2D',[...finalPayItems,...depositItems],showFinalPay);
   _mmtFeedEnter(el);
 }
 

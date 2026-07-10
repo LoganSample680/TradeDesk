@@ -143,6 +143,45 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.unknownSafe).toBe(true);
   });
 
+  // Root cause (2026-07-10): _locallyDeletedIds was a hand-listed object literal
+  // that fell out of sync with _TD_TABLES — td_maintenance was missing, so
+  // deleteMaintenanceRecord's delete never propagated to the cloud sweep (the
+  // row resurrected on the next load). Now built FROM _TD_TABLES so this class
+  // of bug can't recur — this test is the tripwire: it fails the moment a new
+  // table is added to _TD_TABLES without _locallyDeletedIds picking it up.
+  test('_locallyDeletedIds — covers every table in _TD_TABLES (the exact bug: td_maintenance was missing)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _TD_TABLES === 'undefined' || typeof _locallyDeletedIds === 'undefined') return { skip: true };
+      const missing = _TD_TABLES.map(({ t }) => t).filter(t => !(_locallyDeletedIds[t] instanceof Set));
+      return { missing, total: _TD_TABLES.length, covered: Object.keys(_locallyDeletedIds).length };
+    });
+    if (r.skip) return;
+    expect(r.missing).toEqual([]);
+    expect(r.covered).toBe(r.total);
+  });
+
+  test('deleteMaintenanceRecord — the delete actually propagates to the cloud sweep (regression for the fixed bug)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof deleteMaintenanceRecord !== 'function' || typeof maintenance === 'undefined') return { skip: true };
+      const id = 555100;
+      maintenance.push({ id, vehicleName: 'Test Van', date: '2026-01-01', desc: 'Oil change', cost: 45 });
+      // deleteMaintenanceRecord asks for confirmation via zConfirm — stub it to
+      // auto-accept so the test drives the real delete path, not a mock.
+      const origConfirm = window.zConfirm;
+      let deleted = false;
+      window.zConfirm = (msg, onYes) => { onYes(); };
+      try {
+        deleteMaintenanceRecord(id);
+        deleted = !maintenance.some(m => m.id === id);
+      } finally { window.zConfirm = origConfirm; }
+      const swept = !!(_locallyDeletedIds.td_maintenance && _locallyDeletedIds.td_maintenance.has(String(id)));
+      return { deleted, swept };
+    });
+    if (r.skip) return;
+    expect(r.deleted).toBe(true);   // removed from the in-memory array
+    expect(r.swept).toBe(true);     // THE bug: this used to be false — the id was never recorded, so it never left the cloud
+  });
+
   // ── _setDeliberateWipe — flag setter ──────────────────────────────────────
   test('_setDeliberateWipe — coerces to boolean flag', async () => {
     const r = await page.evaluate(() => {

@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.08.26.7';
+const APP_VERSION='07.10.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1116,12 +1116,12 @@ window.__opSync=()=>{try{return _opSyncOps()||Promise.resolve();}catch(_e){retur
 // merely absent (a peer's, not-yet-synced) is never swept. Even bulk wipes
 // (clearAllData / clear*Only) just go through _userDelete, which records every id
 // that vanished — no special flag needed, and it survives the deferred async save.
-let _locallyDeletedIds={
-  td_clients:new Set(),td_bids:new Set(),td_jobs:new Set(),
-  td_income:new Set(),td_expenses:new Set(),td_mileage:new Set(),
-  td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
-  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
-};
+// _locallyDeletedIds itself is initialized further down, right after _TD_TABLES
+// (this object is BUILT FROM that list — see the note there) — _TD_TABLES is a
+// const declared later in this file, so referencing it here would throw before
+// the page even loads. The function declarations below are hoisted and safe to
+// keep here; only the data they touch needs to come after _TD_TABLES exists.
+let _locallyDeletedIds;
 // Record an explicit local delete so the next save propagates it (and ONLY it).
 // Call with the synced table name + the id(s) removed from that table's array —
 // INCLUDING cascade removals (deleting a client also removes its bids/jobs/… → record
@@ -1191,6 +1191,26 @@ const _TD_TABLES=[
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
+// Root cause (found 2026-07-10): this used to be a hand-listed object literal
+// that fell out of sync with _TD_TABLES above — td_maintenance was missing.
+// _recordLocalDelete no-ops silently for any table absent here
+// (`if(!_locallyDeletedIds[tbl])return;`), so deleteMaintenanceRecord's
+// _userDelete call recorded nothing: the cloud sweep never saw the id as
+// deleted, never soft-deleted it server-side, and the row resurrected on the
+// next load. Deleting a vehicle service record simply didn't stick. Built
+// FROM _TD_TABLES now so a future table can never repeat this class of bug.
+_locallyDeletedIds=Object.fromEntries(_TD_TABLES.map(({t})=>[t,new Set()]));
+// Dev-time guard: reports if _TD_TABLES ever gains a table this object
+// doesn't cover (the exact defect above) — a silent multi-week data-loss bug
+// turned into an immediate, loud console error instead. Self-checking since
+// the object is now derived, but stays as a permanent regression tripwire in
+// case anything ever re-hardcodes it.
+function _assertLocallyDeletedIdsComplete(){
+  const missing=_TD_TABLES.map(({t})=>t).filter(t=>!_locallyDeletedIds[t]);
+  if(missing.length)console.error('[_locallyDeletedIds] missing table(s) — deletes on '+missing.join(', ')+' will never sweep from the cloud:',missing);
+  return missing;
+}
+_assertLocallyDeletedIdsComplete();
 // True when a Supabase error means "this table doesn't exist in the DB yet" — e.g. a
 // new feature table on a deploy that runs ahead of its migration. Both preview and
 // production proxy to the SAME Supabase project, so an unmerged migration means the

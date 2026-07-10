@@ -25,6 +25,9 @@
  *           _sec() passed defaultOpen=true for dep-sched & collect, force-setting
  *           _mmtCol_<id>=false on first render. Fix: removed defaultOpen; every
  *           section defaults collapsed (undefined !== false ⇒ collapsed).
+ *           (2026-07-10: 'dep-sched' merged away — deposits owed now live in the
+ *           'collect' section and deposit-paid unscheduled bids in 'schedule'.
+ *           The default-collapsed guard now covers those ids.)
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
@@ -48,16 +51,17 @@ test.describe('MMT + persistence regressions', () => {
 
   // ── BUG 3: sections default CLOSED ──────────────────────────────────────────
 
-  test('BUG3: Collect & Deposit sections default collapsed on first render', async () => {
+  test('BUG3: Collect & Schedule sections default collapsed on first render', async () => {
     const r = await page.evaluate(() => {
       // Simulate a fresh boot: no _mmtCol_ state has been touched by the user.
-      ['build', 'pending', 'dep-sched', 'collect'].forEach(id => delete window['_mmtCol_' + id]);
+      ['build', 'pending', 'schedule', 'collect'].forEach(id => delete window['_mmtCol_' + id]);
       const cid = 990101, bidCollect = 990102, bidDep = 990103;
       clients.unshift({ id: cid, name: 'DefClosed Collect', phone: '3165550000' });
       // Collect section: Closed Won, completed, balance owed.
       bids.unshift({ id: bidCollect, client_id: cid, client_name: 'DefClosed Collect', amount: 5000,
         status: 'Closed Won', draft: false, completion_date: '2026-01-01', bid_date: '2025-12-01', surfaces: [] });
-      // Deposit & Schedule section: Closed Won, not completed, deposit required & unpaid.
+      // Deposit owed (Closed Won, not completed, deposit required & unpaid) — since the
+      // 2026-07-10 merge this ALSO lives in the Collect section (one money queue).
       bids.unshift({ id: bidDep, client_id: cid, client_name: 'DefClosed Dep', amount: 8000, deposit: 2000,
         status: 'Closed Won', draft: false, bid_date: '2025-12-05', surfaces: [] });
       let err = '';
@@ -68,27 +72,78 @@ test.describe('MMT + persistence regressions', () => {
         err,
         // The fix must NOT auto-set these to false (expanded).
         collectForcedOpen: window['_mmtCol_collect'] === false,
-        depForcedOpen: window['_mmtCol_dep-sched'] === false,
+        schedForcedOpen: window['_mmtCol_schedule'] === false,
         // Section headers render…
         hasCollectHdr: html.includes('Collect') && html.includes('mmt-sec'),
         // …but the card bodies are NOT in the HTML while collapsed.
         collectBodyHidden: !html.includes('DefClosed Collect'),
         depBodyHidden: !html.includes('DefClosed Dep'),
+        // The old split section is GONE (§7.1 deletion assertion).
+        oldDepSchedGone: !html.includes('Deposit & Schedule'),
         // Collapsed chevron present, expanded chevron absent for these sections.
         hasCollapsedChevron: html.includes('›'),
       };
       bids = bids.filter(b => b.id !== bidCollect && b.id !== bidDep);
       clients = clients.filter(c => c.id !== cid);
-      ['build', 'pending', 'dep-sched', 'collect'].forEach(id => delete window['_mmtCol_' + id]);
+      ['build', 'pending', 'schedule', 'collect'].forEach(id => delete window['_mmtCol_' + id]);
       try { renderTodayFeed(); } catch (e) {}
       return res;
     });
     expect(r.err, `renderTodayFeed threw: ${r.err}`).toBe('');
     expect(r.collectForcedOpen, 'Collect section must NOT be force-expanded on first render').toBe(false);
-    expect(r.depForcedOpen, 'Deposit & Schedule section must NOT be force-expanded on first render').toBe(false);
+    expect(r.schedForcedOpen, 'Schedule section must NOT be force-expanded on first render').toBe(false);
     expect(r.collectBodyHidden, 'Collect card body must be hidden (section collapsed by default)').toBe(true);
     expect(r.depBodyHidden, 'Deposit card body must be hidden (section collapsed by default)').toBe(true);
+    expect(r.oldDepSchedGone, 'the retired "Deposit & Schedule" section must not render').toBe(true);
     expect(r.hasCollapsedChevron, 'Collapsed sections must show the › chevron').toBe(true);
+  });
+
+  test('Collect is ONE money queue: deposit-due AND balance-due cards render under it', async () => {
+    // Owner decision 2026-07-10: "Collect = all things collecting dollars." A deposit
+    // not yet collected and a completed job's unpaid balance land in the SAME section;
+    // a deposit-paid unscheduled job goes to 'Schedule' (that's a task, not money).
+    const r = await page.evaluate(() => {
+      window._mmtCol_collect = false;   // expand Collect so its cards render (§11.6)
+      window._mmtCol_schedule = false;  // expand Schedule too
+      const cid = 990501;
+      clients.unshift({ id: cid, name: 'OneQueue Cust', phone: '3165553333' });
+      // balance-due: completed, owed in full
+      bids.unshift({ id: 990502, client_id: cid, client_name: 'OneQueue Cust', amount: 5000,
+        status: 'Closed Won', draft: false, completion_date: '2026-01-01', bid_date: '2025-12-01', surfaces: [] });
+      // deposit-due: not completed, deposit required & unpaid
+      bids.unshift({ id: 990503, client_id: cid, client_name: 'OneQueue Dep', amount: 8000, deposit: 2000,
+        status: 'Closed Won', draft: false, bid_date: '2025-12-05', surfaces: [] });
+      // deposit PAID, no job yet → Schedule section, NOT Collect
+      bids.unshift({ id: 990504, client_id: cid, client_name: 'OneQueue Sched', amount: 3000, deposit: 0,
+        status: 'Closed Won', draft: false, bid_date: '2025-12-06', surfaces: [] });
+      let err = '';
+      try { renderTodayFeed(); } catch (e) { err = e.message; }
+      const html = document.getElementById('dash-money-feed')?.innerHTML || '';
+      // Slice the feed into its sections by header to test WHERE each card landed.
+      const collectStart = html.indexOf("_mmtToggle('collect')");
+      const schedStart = html.indexOf("_mmtToggle('schedule')");
+      const collectHtml = collectStart >= 0 ? html.slice(collectStart) : '';
+      const schedHtml = (schedStart >= 0 && collectStart > schedStart) ? html.slice(schedStart, collectStart) : '';
+      const res = {
+        err,
+        collectHasBalance: collectHtml.includes('owed · '),          // balance-due card
+        collectHasDeposit: collectHtml.includes('Deposit required before scheduling'),
+        collectHasDepositBtn: collectHtml.includes("openPayPanel(990503,'deposit')"),
+        schedHasCard: schedHtml.includes('deposit paid · not yet scheduled'),
+        schedCardNotInCollect: !collectHtml.includes('deposit paid · not yet scheduled'),
+      };
+      bids = bids.filter(b => ![990502, 990503, 990504].includes(b.id));
+      clients = clients.filter(c => c.id !== cid);
+      ['schedule', 'collect'].forEach(id => delete window['_mmtCol_' + id]);
+      try { renderTodayFeed(); } catch (e) {}
+      return res;
+    });
+    expect(r.err, `renderTodayFeed threw: ${r.err}`).toBe('');
+    expect(r.collectHasBalance, 'completed-job balance card must render under Collect').toBe(true);
+    expect(r.collectHasDeposit, 'deposit-due card must render under Collect (the merge)').toBe(true);
+    expect(r.collectHasDepositBtn, 'deposit card keeps its Deposit action wired to openPayPanel').toBe(true);
+    expect(r.schedHasCard, 'deposit-paid unscheduled bid renders under Schedule').toBe(true);
+    expect(r.schedCardNotInCollect, 'schedule card must NOT duplicate into Collect').toBe(true);
   });
 
   test('BUG3: tapping a section header expands it (toggle still works)', async () => {

@@ -573,6 +573,55 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasJobName).toBe(true);
     });
 
+    test('bid with a balance owed — shows a Collect button wired to openPayPanel', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('_cks-ov')?.remove();
+          openClockInSheet(77701); // bid 78801: amount 3500, no payments -> balance 3500
+          const sheet = document.getElementById('_cks-sheet');
+          const html = sheet ? sheet.innerHTML : '';
+          document.getElementById('_cks-ov')?.remove();
+          return { ok: true, html };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toContain('openPayPanel(78801)');
+      expect(r.html).toContain('$3,500');
+    });
+
+    test('job with no linked bid — no Collect button (nothing to collect against)', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('_cks-ov')?.remove();
+          openClockInSheet(77703); // bid_id: null
+          const sheet = document.getElementById('_cks-sheet');
+          const html = sheet ? sheet.innerHTML : '';
+          document.getElementById('_cks-ov')?.remove();
+          return { ok: true, hasCollect: html.includes('openPayPanel(') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasCollect).toBe(false);
+    });
+
+    test('bid with zero balance — no Collect button', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          document.getElementById('_cks-ov')?.remove();
+          payments = (payments || []).filter(p => p.id !== 9995001);
+          payments.push({ id: 9995001, bid_id: 78802, client_id: 79902, amount: 1200, method: 'Cash', date: '2026-02-06' });
+          openClockInSheet(77702); // bid 78802: amount 1200, now fully paid
+          const sheet = document.getElementById('_cks-sheet');
+          const html = sheet ? sheet.innerHTML : '';
+          document.getElementById('_cks-ov')?.remove();
+          payments = payments.filter(p => p.id !== 9995001);
+          return { ok: true, hasCollect: html.includes('openPayPanel(') };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasCollect).toBe(false);
+    });
+
     test('concurrent calls — no throw, only 1 overlay', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
@@ -1354,6 +1403,139 @@ test.describe('jobs.js — exhaustive coverage', () => {
         return ok;
       });
       expect(r).toBe(5);
+    });
+
+    // Owner decision 2026-07-10: the nearby banner must fire for ANY client with
+    // an address, not just ones with a scheduled job — and the ACTION offered
+    // depends on that client's state (clock in / collect / log a diagnostic
+    // charge). geoIfGranted + _geocodeAddr are stubbed so every candidate
+    // resolves to the mocked position — deterministic, no real network/GPS.
+    // The shared page's clients/bids/jobs/payments arrays accumulate fixtures
+    // from every describe block in this file — checkNearbyJob's geocode BUDGET
+    // means unrelated addressed clients can consume it before reaching a test's
+    // own fixture, and getBidStage's client_id fallback can pick up an unrelated
+    // stray job. Every test below swaps ALL FOUR arrays down to just its own
+    // fixture for the call (restored after), so kind-selection is verified
+    // fully isolated from whatever else the shared page has accumulated.
+    test.describe('kind selection', () => {
+      test('client with an active job today — kind=clockin, jobId set', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          clients = [{ id: 79960, name: 'Nearby Clockin', addr: '10 Nearby Rd, Wichita KS' }];
+          bids = [{ id: 78860, client_id: 79960, amount: 2000, status: 'Closed Won', bid_date: '2026-01-01' }];
+          jobs = [{ id: 77760, client_id: 79960, bid_id: 78860, name: 'Nearby job today', eventType: 'job', status: 'scheduled', start: todayKey() }];
+          payments = [];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 37.69, longitude: -97.33, accuracy: 10 } });
+          window._geocodeAddr = async () => ({ lat: 37.69, lon: -97.33 });
+          return checkNearbyJob().then(() => {
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            const nb = _nearbyJob;
+            ({ clients, bids, jobs, payments } = orig);
+            return { nb };
+          });
+        });
+        expect(r.nb).toBeTruthy();
+        expect(r.nb.kind).toBe('clockin');
+        expect(r.nb.jobId).toBe(77760);
+        expect(r.nb.clientName).toBe('Nearby Clockin');
+      });
+
+      test('Closed Won bid, completed, balance owed, no active job — kind=collect', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          clients = [{ id: 79961, name: 'Nearby Collect', addr: '20 Nearby Rd, Wichita KS' }];
+          bids = [{ id: 78861, client_id: 79961, amount: 900, status: 'Closed Won', bid_date: '2025-12-01', completion_date: '2025-12-10' }];
+          jobs = [];
+          payments = [];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 37.70, longitude: -97.34, accuracy: 10 } });
+          window._geocodeAddr = async () => ({ lat: 37.70, lon: -97.34 });
+          return checkNearbyJob().then(() => {
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            const nb = _nearbyJob;
+            ({ clients, bids, jobs, payments } = orig);
+            return { nb };
+          });
+        });
+        expect(r.nb).toBeTruthy();
+        expect(r.nb.kind).toBe('collect');
+        expect(r.nb.bidId).toBe(78861);
+        expect(r.nb.balance).toBe(900);
+      });
+
+      test('client with no Closed Won bid — kind=diagnostic (the always-available fallback)', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          clients = [{ id: 79962, name: 'Nearby Diagnostic', addr: '30 Nearby Rd, Wichita KS' }];
+          bids = [];
+          jobs = [];
+          payments = [];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 37.71, longitude: -97.35, accuracy: 10 } });
+          window._geocodeAddr = async () => ({ lat: 37.71, lon: -97.35 });
+          return checkNearbyJob().then(() => {
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            const nb = _nearbyJob;
+            ({ clients, bids, jobs, payments } = orig);
+            return { nb };
+          });
+        });
+        expect(r.nb).toBeTruthy();
+        expect(r.nb.kind).toBe('diagnostic');
+        expect(r.nb.clientId).toBe(79962);
+      });
+
+      test('a fully-paid Closed Won bid does NOT trigger collect (falls through to diagnostic)', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          clients = [{ id: 79961, name: 'Nearby Paid Up', addr: '20 Nearby Rd, Wichita KS' }];
+          bids = [{ id: 78861, client_id: 79961, amount: 900, status: 'Closed Won', bid_date: '2025-12-01', completion_date: '2025-12-10' }];
+          jobs = [];
+          payments = [{ id: 9995010, bid_id: 78861, client_id: 79961, amount: 900, method: 'Cash', date: '2025-12-10' }];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 37.70, longitude: -97.34, accuracy: 10 } });
+          window._geocodeAddr = async () => ({ lat: 37.70, lon: -97.34 });
+          return checkNearbyJob().then(() => {
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            const nb = _nearbyJob;
+            ({ clients, bids, jobs, payments } = orig);
+            return { nb };
+          });
+        });
+        expect(r.nb).toBeTruthy();
+        expect(r.nb.kind).toBe('diagnostic');
+      });
+
+      test('a client’s geocoded coords are cached in localStorage (not on the record, not via saveAll) after one lookup', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          localStorage.removeItem('zp3_nearby_geo');
+          clients = [{ id: 79962, name: 'Cache Me', addr: '40 Nearby Rd, Wichita KS' }];
+          bids = [];
+          jobs = [];
+          payments = [];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          let geocodeCalls = 0;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 1, longitude: 1, accuracy: 10 } }); // far away — no match
+          window._geocodeAddr = async () => { geocodeCalls++; return { lat: 37.71, lon: -97.35 }; };
+          return checkNearbyJob().then(() => {
+            const c = clients[0];
+            const onRecord = c.geoLat != null || c.geoLon != null;
+            const stored = JSON.parse(localStorage.getItem('zp3_nearby_geo') || '{}');
+            const cached = stored[79962];
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            ({ clients, bids, jobs, payments } = orig);
+            localStorage.removeItem('zp3_nearby_geo');
+            return { geocodeCalls, cached, onRecord };
+          });
+        });
+        expect(r.onRecord, 'the client record itself must NOT carry geo fields (no saveAll/cloud-sync trigger)').toBe(false);
+        expect(r.geocodeCalls).toBe(1);
+        expect(r.cached).toBeTruthy();
+        expect(r.cached.lat).toBe(37.71);
+        expect(r.cached.addr).toBe('40 Nearby Rd, Wichita KS');
+      });
     });
   });
 

@@ -2952,7 +2952,7 @@ async function sendGenericProposal(previewOnly){
   // Legal party name for the Terms & Conditions — the business name, or generic "Contractor" when unset.
   const _party=bname||'Contractor';
   const _warrantyClause=_geiTrade==='painting'
-    ?`${_party} warrants workmanship against peeling, cracking, and finish defects for ${_warrantyPeriod} from substantial completion, provided surfaces were in sound condition and properly disclosed prior to work. Client-supplied paint carries no workmanship warranty on finish quality. Manufacturer warranties on materials pass through to Buyer.`
+    ?`${_party} warrants workmanship against peeling, cracking, and finish defects for ${_warrantyPeriod} from substantial completion, provided surfaces were in sound condition and properly disclosed prior to work. Client-supplied materials carry no workmanship warranty on finish quality. Manufacturer warranties on materials pass through to Buyer.`
     :_geiTrade==='landscaping'
       ?`${_party} warrants all plant material and hardscaping workmanship for ${_warrantyPeriod} from substantial completion. Living plant material is subject to proper watering and care by client after installation. Manufacturer warranties on materials pass through to Buyer.`
       :`${_party} warrants all workmanship against defects in labor and installation for ${_warrantyPeriod} from substantial completion. Manufacturer warranties on materials pass through to Buyer.`;

@@ -1897,7 +1897,10 @@ test.describe('sign.html — close-rate UX pass', () => {
     await expect(line).toBeVisible();
     const text = await line.textContent();
     expect(text).toContain('$594'); // MOCK_PROPOSAL.deposit — the action-sized number
-    expect(text).toContain('locks in your price and your spot on the schedule');
+    // Owner (2026-07-09): dropped "your price and" — the price-held chip above
+    // already communicates the 30-day price hold; the deposit buys the SLOT.
+    expect(text).toContain('locks in your spot on the schedule');
+    expect(text).not.toContain('locks in your price'); // redundant with the price-held chip
     expect(text).not.toContain('$2,375'); // never the full total at the commitment moment
   });
 
@@ -1906,8 +1909,15 @@ test.describe('sign.html — close-rate UX pass', () => {
     await expect(chip).toBeVisible();
     const text = await chip.textContent();
     expect(text).toContain('This price is held for you until');
-    // MOCK_PROPOSAL.createdAt is "now" → +30 days must render a real date
-    const expected = new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    // Root cause of a day-boundary flake: this used to recompute Date.now() fresh
+    // here, but the page derives the chip from MOCK_PROPOSAL.createdAt — a
+    // timestamp fixed once when helpers.js loaded, possibly minutes earlier in a
+    // long shard run. If a local-midnight boundary fell in that gap, the test's
+    // fresh "+30 days" landed on a different calendar day than the page's. Derive
+    // the expected date from the SAME timestamp the page actually used instead of
+    // an independent clock read — deterministic regardless of run length or when
+    // midnight falls.
+    const expected = new Date(new Date(MOCK_PROPOSAL.createdAt).getTime() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     expect(text).toContain(expected);
   });
 
@@ -2171,5 +2181,68 @@ test.describe('sign.html — proposal JSON cache bypass', () => {
     const body = await page.textContent('body');
     expect(body).toContain('Alice Smith');
     assertNoErrors(page, 'sign.html cache-bypass fetch');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proposal totals must not wrap mid-number. #prop-html used overflow-wrap:anywhere,
+// which drops table cells' min-content width to ~1 char and forced big totals like
+// $70,466.83 to break across two lines ("$70,46" / "6.83") on already-sent bids.
+// break-word keeps unbreakable long strings from bleeding without collapsing numbers.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('sign.html — proposal totals never break mid-number', () => {
+  test('#prop-html uses break-word, not anywhere (numeric column would collapse)', async ({ page }) => {
+    await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(1500);
+    const ow = await page.evaluate(() => {
+      const el = document.getElementById('prop-html');
+      return el ? getComputedStyle(el).overflowWrap : null;
+    });
+    // anywhere is the bug (collapses numeric table columns → mid-number wrap).
+    expect(ow, 'proposal container must not use overflow-wrap:anywhere').not.toBe('anywhere');
+    expect(ow, 'proposal container should use break-word so totals stay on one line').toBe('break-word');
+    // No horizontal bleed either (§16.1).
+    const bleed = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(bleed, 'no horizontal overflow on the sign page').toBeLessThanOrEqual(1);
+    assertNoErrors(page, 'sign.html total wrap regression');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proposal view: the "Scope & terms" label and the outer card padding were
+// removed so the proposal document fills the width (owner-requested — the label
+// was noise and the card added dead space around the self-styled proposal doc).
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('sign.html — proposal fills, no "Scope & terms" label / dead space', () => {
+  test('the Scope & terms label is gone and the proposal card has no padding frame', async ({ page }) => {
+    await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const bodyTxt = document.body.innerText || '';
+      const propCard = document.getElementById('prop-card');
+      const propHtml = document.getElementById('prop-html');
+      // No leftover .lbl inside the proposal card wrapper.
+      const lblInCard = propCard ? propCard.querySelector('.lbl') : null;
+      return {
+        hasPropCard: !!propCard,
+        hasPropHtml: !!propHtml,
+        scopeTermsLabel: /\bScope & terms\b/i.test(bodyTxt),
+        lblInCard: !!lblInCard,
+        pad: propCard ? getComputedStyle(propCard).paddingLeft : null,
+        bleed: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+    expect(r.hasPropCard, 'proposal wrapper present').toBe(true);
+    expect(r.hasPropHtml, 'proposal content container present').toBe(true);
+    expect(r.lblInCard, 'no "Scope & terms" label inside the proposal card').toBe(false);
+    expect(r.scopeTermsLabel, '"Scope & terms" label removed from the page').toBe(false);
+    expect(r.pad, 'proposal wrapper has no padding frame (dead space removed)').toBe('0px');
+    expect(r.bleed, 'no horizontal bleed').toBeLessThanOrEqual(1);
   });
 });

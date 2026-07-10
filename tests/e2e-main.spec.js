@@ -658,13 +658,8 @@ test.describe('sign.html — proposal signing page', () => {
       { waitUntil: 'domcontentloaded', timeout: 20000 }
     );
 
-    // Wait for boot overlay to dismiss and pg-sign to appear
-    try {
-      await page.waitForSelector('#sign-boot', { timeout: 3000 });
-    } catch (_) {}
-
-    // The page either shows pg-sign or pg-err depending on the mock
-    // Give it time to run init()
+    // No boot overlay anymore — init() reveals pg-sign directly with a fade.
+    // The page either shows pg-sign or pg-err depending on the mock; give init() time.
     await page.waitForTimeout(2000);
 
     const signVisible = await page.evaluate(() => {

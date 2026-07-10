@@ -1,15 +1,32 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- Inline bg on <html> matches the boot overlay's dark base so the first paint
+     — even before CSS parses — is the boot color, never white (same pre-paint
+     trick as index.html and client.html). -->
+<html lang="en" style="background:#1F2230">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Review & Sign Your Proposal</title>
 <link rel="icon" type="image/x-icon" href="favicon.ico">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://js.stripe.com/v3/"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Vendor JS (supabase, stripe) loads LAZILY, never at parse: a sync tag here
+     parser-blocked first paint (the white flash), and even `defer` evaluated
+     these chunky bundles at parse end — exactly the first frames of the entrance
+     waterfall, blocking the main thread mid-animation (the residual chop).
+     _whenSupaReady() injects them on demand (cold opens need them immediately to
+     fetch the proposal); stash opens don't touch Supabase until well after the
+     cascade settles, and a post-load backstop covers pages that never ask. -->
+<script>
+window._loadVendor=function(){if(window._vendorKick)return;window._vendorKick=1;
+  ['https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2','https://js.stripe.com/v3/'].forEach(function(u){var s=document.createElement('script');s.src=u;document.head.appendChild(s);});};
+addEventListener('load',function(){setTimeout(window._loadVendor,2000);});
+</script>
 <script src="js/icons.js"></script>
 <script src="js/legal.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<!-- Fonts load without blocking first paint (print-media swap trick); text renders
+     with the system fallback and upgrades when the webfont lands. -->
+<link id="font-css" href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
@@ -26,6 +43,62 @@
   --font-ui:'Inter Tight',-apple-system,sans-serif;
 }
 body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif);background:var(--bg);color:var(--text);min-height:100vh}
+/* Cross-document view transition — the browser cross-fades the hub → the sign
+   page's BOOT overlay (supported browsers). Snapshot backgrounds pinned dark to
+   match the boot so no white can show through the navigation gap. */
+@view-transition{navigation:auto}
+::view-transition-old(root),::view-transition-new(root){background:#1F2230}
+/* ── Boot overlay — the hub's exact premium boot treatment (client.html #boot-
+   overlay / cbo-*), proposal-specific copy: business name center stage,
+   "Loading your proposal…". Covers font load, layout, and raster; the
+   waterfall then runs on a fully-warmed page (owner: spinner, then waterfall). */
+#sign-boot{position:fixed;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .75s cubic-bezier(.4,0,.2,1),transform .75s cubic-bezier(.4,0,.2,1),filter .75s cubic-bezier(.4,0,.2,1);will-change:opacity,transform,filter;overflow:hidden}
+.cbo-glow{position:absolute;width:130vmax;height:130vmax;left:50%;top:55%;background:radial-gradient(closest-side,rgba(45,93,168,.30),transparent 65%);animation:cbo-drift 9s ease-in-out infinite alternate;pointer-events:none}
+@keyframes cbo-drift{from{transform:translate(-56%,-52%) scale(1)}to{transform:translate(-44%,-46%) scale(1.14)}}
+.cbo-center{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:0 24px;position:relative}
+@keyframes cbo-logoin{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:scale(1)}}
+.cbo-mark{position:relative;width:64px;height:64px;border-radius:16px;background:linear-gradient(155deg,#2D5DA8 0%,#1E3F73 100%);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.4);animation:cbo-logoin .5s cubic-bezier(.22,1,.36,1) both,cbo-breathe 2.8s ease-in-out .6s infinite}
+.cbo-mark svg{width:32px;height:32px;stroke:#FFF1E6;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.cbo-mark::after{content:'';position:absolute;inset:-7px;border-radius:20px;border:1.5px solid rgba(148,185,235,.55);opacity:0;animation:cbo-halo 2.2s cubic-bezier(.22,1,.36,1) 1.1s infinite}
+@keyframes cbo-halo{0%{opacity:.8;transform:scale(1)}70%{opacity:0;transform:scale(1.6)}100%{opacity:0;transform:scale(1.6)}}
+@keyframes cbo-breathe{0%,100%{box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.35);transform:scale(1)}50%{box-shadow:0 1px 0 rgba(255,255,255,.14) inset,0 16px 48px rgba(92,143,212,.55);transform:scale(1.045)}}
+.cbo-logo-frame{background:rgba(255,255,255,.97);border-radius:22px;padding:16px 24px;max-width:78vw;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 18px 50px rgba(0,0,0,.5);animation:cbo-logoin .55s cubic-bezier(.22,1,.36,1) both}
+.cbo-name{font-size:clamp(24px,6.4vw,36px);font-weight:900;letter-spacing:-1px;text-align:center;max-width:88vw;line-height:1.1;padding:0 16px;background:linear-gradient(100deg,#fff 42%,#a9c8f2 50%,#fff 58%);background-size:230% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:cbo-namein .55s cubic-bezier(.22,1,.36,1) both,cbo-textsheen 2.6s ease-in-out 1s infinite}
+@keyframes cbo-namein{from{opacity:0;transform:translateY(8px) scale(.96)}to{opacity:1;transform:none}}
+@keyframes cbo-textsheen{0%{background-position:125% 0}100%{background-position:-125% 0}}
+.cbo-tag{font-size:11px;font-weight:700;letter-spacing:.24em;text-transform:uppercase;color:rgba(255,255,255,.4);animation:cbo-fadeup .6s .3s cubic-bezier(.22,1,.36,1) both}
+@keyframes cbo-fadeup{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
+.cbo-foot{width:100%;padding:0 0 44px;display:flex;flex-direction:column;gap:13px}
+.cbo-track{position:relative;height:4px;background:rgba(255,255,255,.08);border-radius:99px;margin:0 40px;overflow:hidden}
+.cbo-bar{height:100%;width:0%;background:linear-gradient(90deg,#2D5DA8,#5C8FD4);border-radius:99px;box-shadow:0 0 12px rgba(92,143,212,.55);transition:width 1.4s cubic-bezier(.4,0,.2,1)}
+.cbo-sheen{position:absolute;inset:0;background:linear-gradient(100deg,transparent 32%,rgba(255,255,255,.32) 50%,transparent 68%);transform:translateX(-100%);animation:cbo-sheen 1.7s ease-in-out .5s infinite}
+@keyframes cbo-sheen{to{transform:translateX(100%)}}
+.cbo-hint{text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,.35);letter-spacing:.02em;animation:cbo-fadeup .5s .55s cubic-bezier(.22,1,.36,1) both}
+@media (prefers-reduced-motion:reduce){.cbo-mark,.cbo-mark::after,.cbo-sheen,.cbo-glow,.cbo-name{animation:none}}
+/* Waterfall reveal (matches the dashboard's cascade): once the page is revealed,
+   the proposal's sections fade + rise in top-to-bottom sequence — ~1.1s each with
+   a ~160ms stagger so the whole proposal loads in slowly (owner: double the time). */
+@keyframes td-cascade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+/* will-change pre-promotes every cascading block to its own compositor layer on
+   frame 1, so the waterfall keeps animating at full rate even if the main
+   thread hiccups — the big proposal card rasterizes once, up front, not
+   mid-animation. */
+body.revealed #pg-sign>*{animation:td-cascade .83s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
+/* During the entrance ONLY: the proposal document is several screens tall, and
+   animating it as one block forced layout+raster of ALL of it — the one child
+   that hung the waterfall. content-visibility skips everything below the fold
+   until .td-settled lands (~2s in, page idle, no motion), when the full
+   document lays out in one invisible pass. Print is exempt. */
+body:not(.td-settled) #prop-html{content-visibility:auto;contain-intrinsic-size:auto 1200px}
+@media print{#prop-html{content-visibility:visible!important}}
+body.revealed #pg-sign>*:nth-child(1){animation-delay:.03s}
+body.revealed #pg-sign>*:nth-child(2){animation-delay:.15s}
+body.revealed #pg-sign>*:nth-child(3){animation-delay:.27s}
+body.revealed #pg-sign>*:nth-child(4){animation-delay:.39s}
+body.revealed #pg-sign>*:nth-child(5){animation-delay:.51s}
+body.revealed #pg-sign>*:nth-child(6){animation-delay:.63s}
+body.revealed #pg-sign>*:nth-child(n+7){animation-delay:.75s}
+@media (prefers-reduced-motion:reduce){body.revealed #pg-sign>*{animation:none}}
 
 /* Topbar */
 .topbar{background:var(--ink);padding:13px 18px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100;border-bottom:1px solid rgba(255,255,255,.06)}
@@ -77,7 +150,7 @@ input[type=text]:focus{border-color:var(--denim)}
 /* Step dots */
 .step-dots{display:flex;gap:5px;margin-bottom:22px}
 .dot{height:5px;flex:1;border-radius:3px;background:var(--border2);transition:all .3s}
-.dot.active{background:var(--denim);flex:2}
+.dot.active{background:var(--denim)}
 .dot.done{background:var(--green-mid)}
 
 /* Portfolio offer — plain card, not a competing hero banner */
@@ -116,8 +189,6 @@ input[type=text]:focus{border-color:var(--denim)}
 .pg-status-badge.error{background:linear-gradient(135deg,#dc2626,#b91c1c)}
 .pg-status-badge.neutral{background:var(--bg);border:1.5px solid var(--border2)}
 .pg-status-badge.neutral svg{stroke:var(--text2)}
-.pg-spinner{width:40px;height:40px;border-radius:50%;border:3px solid var(--border2);border-top-color:var(--denim);margin:0 auto 18px;animation:pg-spin .8s linear infinite}
-@keyframes pg-spin{to{transform:rotate(360deg)}}
 
 /* Field wrapper */
 .sig-field{margin-bottom:14px}
@@ -173,11 +244,12 @@ input[type=text]:focus{border-color:var(--denim)}
 
 
 @media print{
-  .topbar,#sticky-bar,.step-dots,#portfolio-offer-card,.sig-pad,.btn,.btn-sec,button{display:none!important}
+  .topbar,#sticky-bar,.step-dots,#portfolio-offer-card,.sig-pad,.btn,.btn-sec,button,#sign-boot{display:none!important}
   /* Accordion-collapsed terms must always appear in the printed/PDF contract */
   #prop-html [data-terms-hdr],#prop-html [data-terms-body]{display:block!important}
   .wrap{padding:8px;max-width:100%}
-  body{background:#fff}
+  html{background:#fff!important}
+  body{background:#fff;opacity:1!important}
   .card{box-shadow:none;border:1px solid #ddd;break-inside:avoid;margin-bottom:10px}
   .amt-box{border:2px solid var(--denim)}
 }
@@ -185,18 +257,24 @@ input[type=text]:focus{border-color:var(--denim)}
 <style>
 @keyframes sig-pulse{0%,100%{box-shadow:0 0 0 0 rgba(22,163,74,.5);}60%{box-shadow:0 0 0 10px rgba(22,163,74,0);}}
 .sig-active{border:2px solid #16a34a !important;animation:sig-pulse 1.1s ease 3;}
-#sign-boot{position:fixed;inset:0;background:#1B1612;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s ease;will-change:opacity}
 </style>
 </head>
 <body>
-<!-- Boot overlay -->
+
+<!-- Boot overlay — covers font load, layout, and raster; the waterfall then
+     runs on a fully-warmed page. Same treatment as the client hub boot. -->
 <div id="sign-boot">
-  <div style="width:48px;height:48px;background:var(--denim);border-radius:13px;display:flex;align-items:center;justify-content:center;margin-bottom:18px;flex-shrink:0">
-    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+  <div class="cbo-glow"></div>
+  <div class="cbo-center">
+    <div id="sign-boot-logo-wrap" class="cbo-logo-frame" style="display:none"><img id="sign-boot-logo" style="max-height:96px;max-width:100%;object-fit:contain;display:block" alt=""></div>
+    <div id="sign-boot-mark" class="cbo-mark"><svg viewBox="0 0 24 24"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg></div>
+    <div id="sign-boot-name" class="cbo-name"></div>
+    <div class="cbo-tag">Secure proposal</div>
   </div>
-  <div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:-.3px;margin-bottom:6px">TradeDesk</div>
-  <div style="font-size:11px;color:rgba(255,255,255,.32);font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin-bottom:34px">Secure Proposal</div>
-  <div style="width:110px;height:2px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden"><div id="sign-boot-bar" style="height:100%;width:0%;background:var(--denim);border-radius:2px;transition:width 1.4s cubic-bezier(.4,0,.2,1)"></div></div>
+  <div class="cbo-foot">
+    <div class="cbo-track"><div id="sign-boot-bar" class="cbo-bar"></div><div class="cbo-sheen"></div></div>
+    <div class="cbo-hint">Loading your proposal…</div>
+  </div>
 </div>
 
 <div class="topbar">
@@ -207,7 +285,10 @@ input[type=text]:focus{border-color:var(--denim)}
 
 <div class="wrap" style="padding-bottom:90px">
   <!-- Loading -->
-  <div id="pg-load" class="pg-status"><div class="pg-spinner"></div><h2>Loading proposal...</h2><p>Just a moment.</p></div>
+  <!-- No loading spinner — the page stays on its quiet background while the
+       proposal JSON loads, then show('pg-sign') fades the proposal in (owner:
+       "just a smooth fade in to the proposal"). -->
+  <div id="pg-load" class="pg-status" style="display:none"></div>
 
   <!-- Step 1: Review -->
   <div id="pg-sign" style="display:none">
@@ -249,7 +330,7 @@ input[type=text]:focus{border-color:var(--denim)}
          project-details fine print. -->
     <div id="price-held-chip" style="display:none;align-items:center;gap:6px;justify-content:center;margin:-8px 0 14px;font-size:12px;font-weight:700;color:var(--text2)"></div>
 
-    <div class="card"><span class="lbl">Scope &amp; terms</span><div id="prop-html" style="font-size:13px;line-height:1.6;overflow-wrap:anywhere"></div></div>
+    <div id="prop-card" style="margin-bottom:14px"><div id="prop-html" style="font-size:13px;line-height:1.6;overflow-wrap:break-word"></div></div>
 
     <!-- Portfolio offer — shown only when isPortfolio=true. Sits after scope/terms,
          not before, so the client reads what they're buying before seeing an
@@ -517,9 +598,25 @@ const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 // a contractor opening their own link while logged into TradeDesk (same domain)
 // silently runs as `authenticated` and hits RLS paths clients never exercise
 // ("new row violates row-level security policy" on the cash/check confirm).
-const _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:false,storageKey:'sb-sign-isolated'}});
+// Created LAZILY: supabase-js is a deferred script (see head), so the clients
+// materialize the first time something needs them. The stash-handoff render path
+// touches no Supabase at all — the proposal paints before the CDN script even lands.
 // _supaAuth exists only to read the contractor's session for viewer detection.
-const _supaAuth=supabase.createClient(SUPA_URL,SUPA_KEY);
+let _supa=null,_supaAuth=null;
+function _initSupaClients(){
+  if(_supa)return true;
+  if(typeof supabase==='undefined'||!supabase||!supabase.createClient)return false;
+  _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:false,storageKey:'sb-sign-isolated'}});
+  _supaAuth=supabase.createClient(SUPA_URL,SUPA_KEY);
+  return true;
+}
+function _whenSupaReady(){
+  if(window._loadVendor)window._loadVendor(); // inject the vendor script on first demand
+  return new Promise(res=>{
+    if(_initSupaClients())return res();
+    const t=setInterval(()=>{if(_initSupaClients()){clearInterval(t);res();}},25);
+  });
+}
 let _prop=null,_sigData=null,_payOpt='card',_payFullAmount=false;
 let sigCanvas,sigCtx,signing=false,hasInk=false;
 window._portfolioAccepted=false;
@@ -527,25 +624,26 @@ let _portfolioStep=0;
 let _isPreview=new URLSearchParams(location.search).get('preview')==='1';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const pages=['pg-load','pg-sign','pg-color-pick','pg-sign-action','pg-pay','pg-epa','pg-done','pg-err','pg-declined'];
-let _bootGone=false;
-function _dismissSignBoot(){
-  if(_bootGone)return;_bootGone=true;
-  const ov=document.getElementById('sign-boot');if(!ov)return;
-  const bb=document.getElementById('sign-boot-bar');if(bb)bb.style.width='100%';
-  setTimeout(()=>{ov.style.opacity='0';setTimeout(()=>ov.remove(),420);},160);
-}
 function escHtmlN(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function show(id){
-  _dismissSignBoot();
+  // ONE animation system per entrance (owner: reveal cut in harshly). On the
+  // INITIAL reveal the body fade + td-cascade own the entire entrance — the
+  // per-page slide must not run underneath them (three stacked opacity ramps
+  // read as a glitchy double-fade). It still runs for LATER step changes.
+  const _initial=!_bodyRevealed;
   pages.forEach(p=>{
     const el=document.getElementById(p);if(!el)return;
     if(p===id){
-      el.style.opacity='0';el.style.transform='translateY(10px)';el.style.transition='';
-      el.style.display='block';
-      requestAnimationFrame(()=>requestAnimationFrame(()=>{
-        el.style.transition='opacity .25s ease,transform .25s ease';
-        el.style.opacity='1';el.style.transform='translateY(0)';
-      }));
+      if(_initial){
+        el.style.display='block';el.style.opacity='';el.style.transform='';el.style.transition='';
+      }else{
+        el.style.opacity='0';el.style.transform='translateY(12px)';el.style.transition='';
+        el.style.display='block';
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          el.style.transition='opacity .4s cubic-bezier(.22,1,.36,1),transform .4s cubic-bezier(.22,1,.36,1)';
+          el.style.opacity='1';el.style.transform='translateY(0)';
+        }));
+      }
     }else{el.style.display='none';el.style.opacity='';el.style.transform='';el.style.transition='';}
   });
   const onSign=id==='pg-sign';
@@ -553,12 +651,62 @@ function show(id){
   if(sb){
     if(onSign){
       sb.style.transform='translateY(100%)';sb.style.transition='';sb.style.display='flex';
-      requestAnimationFrame(()=>requestAnimationFrame(()=>{
-        sb.style.transition='transform .3s cubic-bezier(.4,0,.2,1)';sb.style.transform='translateY(0)';
-      }));
+      if(_initial){
+        // Parked off-screen; the boot dismiss slides it in as the cascade
+        // settles so the bar's arrival is part of the choreography.
+      }else{
+        requestAnimationFrame(()=>requestAnimationFrame(()=>{
+          sb.style.transition='transform .3s cubic-bezier(.4,0,.2,1)';sb.style.transform='translateY(0)';
+        }));
+      }
     }else{sb.style.display='none';sb.style.transform='';sb.style.transition='';}
   }
+  // Error/declined destinations drop the boot fast — never hold a dead page
+  // behind a 1.5s spinner. Real destinations get the full dwell.
+  _dismissSignBoot(id==='pg-err'||id==='pg-declined');
 }
+// ── Boot dismiss — the hub's exact recipe (client.html _dismissBootOverlay):
+// hold for a minimum dwell so the boot reads as intentional (and so fonts,
+// layout, and raster ALL finish underneath it), fill the bar, then the premium
+// blur+scale exit while the waterfall cascades in beneath. Pending timers are
+// cancelled on re-entry (the hub's stale-timer race fix).
+window._bootStart=Date.now();
+setTimeout(()=>{const b=document.getElementById('sign-boot-bar');if(b)b.style.width='78%';},40);
+let _bodyRevealed=false,_sbTimers=[];
+function _reveal(){
+  if(_bodyRevealed)return;_bodyRevealed=true;
+  document.body.classList.add('revealed'); // arms the waterfall
+  const sb=document.getElementById('sticky-bar');
+  if(sb&&sb.style.display==='flex'){
+    setTimeout(()=>{
+      sb.style.transition='transform .45s cubic-bezier(.22,1,.36,1)';
+      sb.style.transform='translateY(0)';
+    },650);
+  }
+  // Entrance over: release the proposal's content-visibility containment so
+  // the full document lays out in one pass while nothing is animating.
+  setTimeout(()=>document.body.classList.add('td-settled'),2000);
+}
+function _dismissSignBoot(fast){
+  const ov=document.getElementById('sign-boot');
+  if(!ov){_reveal();return;}
+  _sbTimers.forEach(clearTimeout);_sbTimers=[];
+  const bb=document.getElementById('sign-boot-bar');
+  // Under the E2E mock the dwell shrinks so hundreds of sign-booting specs
+  // aren't each slowed ~1.5s; _forceSignBootDwell opts a dwell test back in.
+  const _testEnv=(typeof window.__mockProposalData!=='undefined')&&!window._forceSignBootDwell;
+  const MIN_SIGN_BOOT_MS=1500;
+  const elapsed=Date.now()-window._bootStart;
+  const delay=fast?0:(_testEnv?120:Math.max(220,MIN_SIGN_BOOT_MS-elapsed));
+  if(bb){bb.style.width='92%';_sbTimers.push(setTimeout(()=>{bb.style.width='100%';},Math.max(0,delay-300)));}
+  _sbTimers.push(setTimeout(()=>{
+    ov.style.opacity='0';ov.style.transform='scale(1.05)';ov.style.filter='blur(10px)';
+    _reveal();
+    _sbTimers.push(setTimeout(()=>{ov.style.display='none';},780));
+  },delay));
+}
+// Safety net — never leave the boot up if init() throws before a show().
+setTimeout(()=>_dismissSignBoot(true),5000);
 
 function _showPortfolioOffer(){
   const pct=_prop.portfolioPct||15;
@@ -624,6 +772,29 @@ async function _fetchStorageJson(key){
     try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
   }
 }
+// "Already signed" terminal page — extracted from init so the stash-handoff path
+// can also reach it from its background signed-status verify.
+function _renderAlreadySigned(_sigRecord){
+  const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
+  const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—';
+  const payMethod=_sigRecord?.payment_method;
+  const payLabel=payMethod==='card'?'Card charged':payMethod==='ach'?'Bank transfer':payMethod==='cash'?'Cash on arrival':payMethod==='check'?'Check':'—';
+  document.getElementById('done-title').textContent='Already signed';
+  document.getElementById('done-msg').textContent='This proposal has already been signed. The contractor will be in touch to confirm your start date.';
+  document.getElementById('done-rows').innerHTML=
+    '<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+confNum+'</span></div>'+
+    '<div class="row"><span class="rl">Client</span><span class="rv">'+escHtmlN(_prop.clientName||_sigRecord?.client_signed_name||'')+'</span></div>'+
+    (_prop.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+escHtmlN(_prop.clientAddr)+'</span></div>'+
+      '<div class="row"><span class="rl">Directions</span><span class="rv"><a href="https://maps.google.com/?q='+encodeURIComponent(_prop.clientAddr)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;text-decoration:none">Open in Maps →</a></span></div>':'')+
+    '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop.amount)+'</span></div>'+
+    '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop.deposit)+'</span></div>'+
+    (payMethod?'<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>':'')+
+    '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>'+
+    (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
+  const _stamp=document.getElementById('done-stamp');
+  if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">'+svgIcon('✓',{size:14})+' Signed &amp; Approved</div>';_stamp.style.display='block';}
+  show('pg-done');
+}
 async function init(){
   const params=new URLSearchParams(location.search);
   const _hubReturnUrl=params.get('hub')||'';
@@ -639,9 +810,28 @@ async function init(){
   }
   if(!key){show('pg-err');return;}
   try{
-    const{data,error}=await _fetchStorageJson(key);
+    // Instant-open handoff: the hub pre-fetches pending proposals and stashes them
+    // in sessionStorage keyed by this exact storage key. When present, render from
+    // it with ZERO network round-trip so there's no white download-gap between the
+    // hub's "Review & Sign" tap and the proposal painting. One-shot — removed after
+    // read so a later re-open re-fetches fresh. Falls back to the network fetch when
+    // opened cold (email link, refresh) — behaviour there is unchanged.
+    let data=null,error=null,_fromStash=false;
+    try{const _stash=sessionStorage.getItem('tdsign:'+key);
+      if(_stash){data=JSON.parse(_stash);sessionStorage.removeItem('tdsign:'+key);_fromStash=true;}
+    }catch(_){}
+    if(!data){await _whenSupaReady();({data,error}=await _fetchStorageJson(key));}
     if(error||!data)throw error||new Error('no data returned');
     _prop=data;
+    // Boot overlay branding — business name (stash path: instantly at parse;
+    // cold path: as soon as the fetch lands), contractor logo when present
+    // (same swap the hub boot does for white-label).
+    {const _bn=document.getElementById('sign-boot-name');
+     if(_bn&&_prop.businessName)_bn.textContent=_prop.businessName;
+     if(_prop.logoData&&/^data:image\//.test(_prop.logoData)){
+       const _bl=document.getElementById('sign-boot-logo'),_blw=document.getElementById('sign-boot-logo-wrap'),_bm=document.getElementById('sign-boot-mark');
+       if(_bl&&_blw){_bl.src=_prop.logoData;_blw.style.display='flex';if(_bm)_bm.style.display='none';}
+     }}
     if(_prop.status==='voided'){
       document.querySelector('#pg-err h2').textContent='Proposal Updated';
       document.querySelector('#pg-err p').textContent='Your contractor has updated this proposal. Please request the new link to review and sign.';
@@ -651,36 +841,29 @@ async function init(){
       show('pg-declined');return;
     }
     // stripeConnectEnabled===false: _renderSignPayBtns() will show cash-only
-    // Check proposal JSON status AND signed_proposals table (table is authoritative — storage can be cached)
-    let alreadySigned=_prop.status==='signed'||_prop.status==='paid';
-    let _sigRecord=null;
-    if(!alreadySigned){
+    // Check proposal JSON status AND signed_proposals table (table is authoritative — storage can be cached).
+    // On the stash-handoff path this check must NOT block first paint: the hub only
+    // stashes PENDING proposals, so paint immediately and verify in the background —
+    // if a signature row exists (signed on another device moments ago), swap to the
+    // "Already signed" page then. Cold opens keep the blocking check: an emailed link
+    // can easily point at a signed proposal and must never flash the sign UI first.
+    if(_prop.status==='signed'||_prop.status==='paid'){
+      await _whenSupaReady();
       const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
-      if(sigRow){alreadySigned=true;_sigRecord=sigRow;}
-    } else {
-      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
-      _sigRecord=sigRow;
+      _renderAlreadySigned(sigRow);return;
     }
-    if(alreadySigned){
-      const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
-      const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—';
-      const payMethod=_sigRecord?.payment_method;
-      const payLabel=payMethod==='card'?'Card charged':payMethod==='ach'?'Bank transfer':payMethod==='cash'?'Cash on arrival':payMethod==='check'?'Check':'—';
-      document.getElementById('done-title').textContent='Already signed';
-      document.getElementById('done-msg').textContent='This proposal has already been signed. The contractor will be in touch to confirm your start date.';
-      document.getElementById('done-rows').innerHTML=
-        '<div class="row"><span class="rl">Confirmation</span><span class="rv" style="font-weight:700;color:var(--green)">'+confNum+'</span></div>'+
-        '<div class="row"><span class="rl">Client</span><span class="rv">'+escHtmlN(_prop.clientName||_sigRecord?.client_signed_name||'')+'</span></div>'+
-        (_prop.clientAddr?'<div class="row"><span class="rl">Address</span><span class="rv" style="text-align:right;max-width:220px">'+escHtmlN(_prop.clientAddr)+'</span></div>'+
-          '<div class="row"><span class="rl">Directions</span><span class="rv"><a href="https://maps.google.com/?q='+encodeURIComponent(_prop.clientAddr)+'" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;text-decoration:none">Open in Maps →</a></span></div>':'')+
-        '<div class="row"><span class="rl">Total</span><span class="rv">'+fmt(_prop.amount)+'</span></div>'+
-        '<div class="row"><span class="rl">Deposit</span><span class="rv">'+fmt(_prop.deposit)+'</span></div>'+
-        (payMethod?'<div class="row"><span class="rl">Payment</span><span class="rv">'+payLabel+'</span></div>':'')+
-        '<div class="row"><span class="rl">Signed</span><span class="rv">'+signedDate+'</span></div>'+
-        (_prop.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
-      const _stamp=document.getElementById('done-stamp');
-      if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">'+svgIcon('✓',{size:14})+' Signed &amp; Approved</div>';_stamp.style.display='block';}
-      show('pg-done');return;
+    if(_fromStash){
+      // Postponed past the entrance waterfall (~1.6s): _whenSupaReady injects +
+      // evaluates the vendor bundle, and that main-thread eval mid-cascade was
+      // the residual chop. The verify itself is not urgent — a signed-elsewhere
+      // race just swaps to the Already-signed page a beat later.
+      setTimeout(()=>{_whenSupaReady().then(async()=>{
+        const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
+        if(sigRow)_renderAlreadySigned(sigRow);
+      }).catch(()=>{});},1600);
+    }else{
+      const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
+      if(sigRow){_renderAlreadySigned(sigRow);return;}
     }
     // Log view via Edge Function — skip entirely when preview=1 (contractor previewing, not a real client open).
     // Also detects contractor via active session — belt-and-suspenders so logged-in previews
@@ -694,17 +877,21 @@ async function init(){
       document.body.style.paddingTop='44px';
     }
     if(!_isPreview&&_prop.contractorUserId&&_prop.id){
-      let _viewerType='client';
-      try{
-        const{data:{session}}=await _supaAuth.auth.getSession();
-        if(session?.user?.id&&session.user.id===_prop.contractorUserId)_viewerType='contractor';
-      }catch(_){}
-      window._viewerIsContractor=(_viewerType==='contractor');
-      fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
-        method:'POST',
-        headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
-        body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null,viewerType:_viewerType})
-      }).catch(()=>{});
+      // Fire-and-forget — must never delay first paint, and postponed past the
+      // waterfall so the vendor eval it triggers can't jank the animation.
+      setTimeout(()=>{_whenSupaReady().then(async()=>{
+        let _viewerType='client';
+        try{
+          const{data:{session}}=await _supaAuth.auth.getSession();
+          if(session?.user?.id&&session.user.id===_prop.contractorUserId)_viewerType='contractor';
+        }catch(_){}
+        window._viewerIsContractor=(_viewerType==='contractor');
+        fetch(SUPA_URL+'/functions/v1/log-proposal-view',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY},
+          body:JSON.stringify({contractorUserId:_prop.contractorUserId,bidId:String(_prop.id),clientId:_prop.clientId||null,viewerType:_viewerType})
+        }).catch(()=>{});
+      }).catch(()=>{});},1600);
     }
     const _biz=_prop.businessName||'Your Contractor';
     document.title='Review & Sign — '+_biz;
@@ -731,7 +918,7 @@ async function init(){
     // Deposit-first framing in the sticky bar — the action-sized number leads.
     const _sdl=document.getElementById('sticky-deposit-line');
     if(_sdl&&(_prop.deposit||0)>0){
-      _sdl.innerHTML='<strong style="color:var(--ink)">'+fmt(_prop.deposit)+' today</strong> locks in your price and your spot on the schedule';
+      _sdl.innerHTML='<strong style="color:var(--ink)">'+fmt(_prop.deposit)+' today</strong> locks in your spot on the schedule';
       _sdl.style.display='block';
     }
     // Price-held-until chip — surfaces the REAL 30-day validity window the
@@ -891,9 +1078,11 @@ async function init(){
     _applyTermsAccordion(document.getElementById('prop-html'));
     // If any legacy patches were applied, silently re-upload the corrected proposal to Supabase storage
     // so hub preview and all future views (client.html) reflect the correct state-specific terms.
-    if(!alreadySigned&&_proposalHtml!==_proposalHtmlOrig&&key){
+    // (Signed/paid proposals returned early above, so this only ever touches pending ones.
+    //  Background — the deferred supabase-js may not have landed yet on the stash path.)
+    if(_proposalHtml!==_proposalHtmlOrig&&key){
       const _patchedProp=Object.assign({},_prop,{proposalHtml:_proposalHtml,state:_propSt||_prop.state||'KS'});
-      _supa.storage.from('proposals').upload(key,JSON.stringify(_patchedProp),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(()=>{});
+      setTimeout(()=>{_whenSupaReady().then(()=>{_supa.storage.from('proposals').upload(key,JSON.stringify(_patchedProp),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(()=>{});}).catch(()=>{});},1600);
     }
     // Remove the embedded signature block from the proposal HTML — signing happens in sig-card below
     document.querySelectorAll('#prop-html .sig-block, #prop-html [class*="sig-block"], #prop-html .signature-section').forEach(el=>el.remove());
@@ -1357,8 +1546,6 @@ async function _confirmDecline(){
   show('pg-declined');scrollTo(0,0);
 }
 
-// Kick the boot bar to feel alive immediately
-setTimeout(()=>{const b=document.getElementById('sign-boot-bar');if(b)b.style.width='40%';},55);
 init();
 
 let _stripeInst=null,_stripeElements=null,_stripeAmt=0;
