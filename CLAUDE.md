@@ -19,6 +19,8 @@ The product thesis: **out-execute ServiceTitan, Jobber, and Housecall Pro on UX*
 fewer taps, faster flows, a genuinely pleasant mobile experience — not by matching
 their feature checklists line for line. §13's Flow Test Standard measures every click
 for exactly this reason: the click count against a hard-gated baseline IS the product.
+The full competitive set (QuoteIQ, DripJobs, FieldPulse, trade-specific tools, and
+more) is at §17.1 — check it before researching any new feature.
 
 Backend: Supabase (Postgres + Auth + Storage + Edge Functions + Realtime). Frontend:
 vanilla JS, no framework, deployed as static files on Cloudflare Pages. E2E-tested with
@@ -1195,9 +1197,9 @@ for a **new feature** (a new document type, workflow, or screen — not a bug fi
 tweak to something that already exists), spin up research agents (Agent tool /
 deep-research skill) and answer, in writing, before the first line of implementation:
 
-1. **What do the competitors do?** ServiceTitan, Jobber, Housecall Pro, and any other
-   named competitor for this specific feature — how do they solve it, what does their
-   flow look like, what do *their own users* complain about in how they do it.
+1. **What do the competitors do?** Check the relevant names from the competitive set
+   (§17.1) for this specific feature — how do they solve it, what does their flow look
+   like, what do *their own users* complain about in how they do it.
 2. **What do contractors actually want?** Real contractor feedback — trade-specific
    forums/subreddits (r/electricians, r/HVAC, r/Construction, etc.), G2/Capterra/App
    Store reviews of competitor products, contractor Facebook groups — not guesses about
@@ -1214,3 +1216,34 @@ findings looked thin.
 
 **Scope:** genuinely new features only. Bug fixes, refactors, and small UX polish on
 something that already exists don't need a research phase — just the normal Loop.
+
+### 17.1 The Competitive Set
+
+Compiled via research agent 2026-07-10 — not a guess, a real market scan (G2/Capterra
+category pages, "alternatives to X" roundups, contractor forum/review sentiment).
+
+**Primary — check for every feature.** Closest match on target customer (mobile-first,
+small-to-mid trade contractor) and full-lifecycle scope:
+- **Jobber** — clean workflow, fastest setup, the default "value" pick in every roundup.
+- **Housecall Pro** — best mobile field-tech UX of the big players — the exact axis
+  TradeDesk's UX thesis competes on.
+- **ServiceTitan** — the enterprise ceiling: what "full-featured" looks like at scale.
+- **QuoteIQ** — AI-forward, flat/budget pricing, same home-service segment.
+- **DripJobs** — painting-leaning, automation-heavy CRM; **no dedicated mobile app** —
+  a real gap to exploit.
+- **FieldPulse** — closest on multi-trade breadth (HVAC/plumbing/electrical/GC) at the
+  small-team tier.
+
+**Trade-specific — check when the feature is trade-specific:**
+- Roofing: AccuLynx, JobNimbus
+- General contracting / remodeling: Buildertrend, Contractor Foreman, Houzz Pro, Joist
+- Landscaping: Aspire (owned by ServiceTitan since 2021), LMN, Yardbook
+- Painting: PaintScout (now "Bolster Built"), EstimateRocket
+
+**Adjacent point-solutions — check when the feature overlaps their one job:**
+- CompanyCam (jobsite photo docs), Levelset (lien waivers — directly relevant to
+  §9.8/lien-protection work), Leap/SalesPro (in-home sales + financing).
+
+**Also worth a scan:** FieldEdge, Workiz, Service Fusion, ServiceM8, Kickserv, Tradify,
+simPRO (acquired by ServiceTitan in 2024 — verify current product relationship before
+citing as independent), mHelpDesk, Sera Systems.
