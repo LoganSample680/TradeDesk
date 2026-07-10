@@ -17,10 +17,10 @@ permission-gated access to money/estimates.
 
 The product thesis: **out-execute ServiceTitan, Jobber, and Housecall Pro on UX** —
 fewer taps, faster flows, a genuinely pleasant mobile experience — not by matching
-their feature checklists line for line. §13's Flow Test Standard measures every click
+their feature checklists line for line. §12's Flow Test Standard measures every click
 for exactly this reason: the click count against a hard-gated baseline IS the product.
 The full competitive set (QuoteIQ, DripJobs, FieldPulse, trade-specific tools, and
-more) is at §17.1 — check it before researching any new feature.
+more) is at §16.1 — check it before researching any new feature.
 
 Backend: Supabase (Postgres + Auth + Storage + Edge Functions + Realtime). Frontend:
 vanilla JS, no framework, deployed as static files on Cloudflare Pages. E2E-tested with
@@ -198,7 +198,7 @@ and what was changed. Nothing else.
 - **Never merge to `main` without explicit user permission.** Not even when CI is
   fully green. ONE exception, granted in writing by the owner: live-error hotfix
   PRs (`claude/hotfix-err-*` branches) merge autonomously when fully green — see
-  §14.1 for the exact rules. Everything else: no exceptions.
+  §13.1 for the exact rules. Everything else: no exceptions.
 
 - **Verify CI by re-polling** `get_check_runs` and confirming every shard shows
   `status: completed, conclusion: success` before reporting green. Do not rely
@@ -535,6 +535,18 @@ Survives conversation compacting so context is not lost between sessions.
 - Feeds sales tax calculation automatically
 - Files: `js/ai-classify.js` (new) + Supabase Edge Function `classify-line-item`
 
+### 9.4 TradeDesk Comms (SMS Infrastructure)
+
+**Own the messaging layer — no Twilio, no SendBlue subscription**
+- Build on Bandwidth API (Tier 1 carrier, not a reseller — ~$0.003-0.004/msg wholesale)
+- TradeDesk provisions and manages contractor phone numbers via Bandwidth API
+- Contractors see "TradeDesk Messaging," Bandwidth is invisible infrastructure
+- Automation triggers: proposal sent, 24h unopened follow-up, signed confirmation,
+  job day-before reminder, change order approval request, invoice overdue
+- iMessage delivery: Mac Mini on TradeDesk infra handles Apple protocol (no SendBlue)
+- Files: `js/messaging/engine.js`, `templates.js`, `numbers.js`, `webhooks.js`
+  + Supabase Edge Functions: `send-sms/`, `sms-webhook/`
+
 ### 9.5 Employee Geo-Tracking & Job Time-on-Site
 
 **Real-time location tracking with consent controls and business-hours gating**
@@ -561,18 +573,6 @@ Survives conversation compacting so context is not lost between sessions.
   - Files: `js/geo-track.js` (new), `js/cloud.js` (employee daily view hook),
     `js/jobs.js` (time-on-site display), Supabase Edge Function `track-location/`
   - New `location_pings` table: `{id, contractor_user_id, employee_user_id, lat, lon, job_id, arrived_at, departed_at, ts}`
-
-### 9.4 TradeDesk Comms (SMS Infrastructure)
-
-**Own the messaging layer — no Twilio, no SendBlue subscription**
-- Build on Bandwidth API (Tier 1 carrier, not a reseller — ~$0.003-0.004/msg wholesale)
-- TradeDesk provisions and manages contractor phone numbers via Bandwidth API
-- Contractors see "TradeDesk Messaging," Bandwidth is invisible infrastructure
-- Automation triggers: proposal sent, 24h unopened follow-up, signed confirmation,
-  job day-before reminder, change order approval request, invoice overdue
-- iMessage delivery: Mac Mini on TradeDesk infra handles Apple protocol (no SendBlue)
-- Files: `js/messaging/engine.js`, `templates.js`, `numbers.js`, `webhooks.js`
-  + Supabase Edge Functions: `send-sms/`, `sms-webhook/`
 
 ### 9.6 Employee Offer Letters & Employment Agreements (HR doc chain)
 
@@ -633,35 +633,13 @@ other's rows, and a row learned via realtime (`_applyRealtimeRecord` adds it to
   then never sweep-eligible.
 - **Blast radius:** every place an array shrinks (delete a bid/client/job/expense/…) must
   record the id. Miss one and a real delete won't propagate (row resurrects on other
-  devices) — so this is a careful, fully-tested refactor, not a quick patch (§11).
+  devices) — so this is a careful, fully-tested refactor, not a quick patch (§10).
 - Files: `js/cloud.js` (`supaSaveToCloud` sweep + `_applyRealtimeRecord`) + every delete
   call site. Re-enable the `offline-sync-race` spec when done.
 
 ---
 
-## 10. Credentials & Token Renewal Calendar
-
-Tokens that expire and must be rotated before the expiry date.
-
-### 10.1 Apple MapKit JS Tokens
-
-Both tokens are in **two files**: `js/mileage.js` and `intake.html`.
-Token selection is hostname-based: `pages.dev` → preview token, else → production token.
-
-| Environment | Domain | Expires | Key ID |
-|-------------|--------|---------|--------|
-| Preview | `*.tradedesk-cyp.pages.dev` | No expiry | `7KA9X8UR6L` |
-| Production | `tradedeskpro.app` | No expiry | `WC638S63G4` |
-
-**To rotate:** Go to [developer.apple.com](https://developer.apple.com) → Maps → Tokens → create new MapKit JS token with Domain restriction. Swap both the preview and production JWT strings in `js/mileage.js` and `intake.html`. Commit and push — no other files need changing. Revoke the old token from the portal after confirming the new one works.
-
-### 10.2 Supabase Anon Key
-
-The anon key in `index.html`, `intake.html`, `client.html`, and `sign.html` does not expire on its own but should be rotated if ever exposed in a breach. Rotation requires updating all four files.
-
----
-
-## 11. Patch-Chain Prohibition — No House-of-Cards Fixing
+## 10. Patch-Chain Prohibition — No House-of-Cards Fixing
 
 > "Fix A breaks B. Fix B breaks C. Fix C breaks A." — This loop is banned.
 
@@ -670,7 +648,7 @@ Every rule in this section is mandatory. Violating them is how 4-line fixes turn
 
 ---
 
-### 11.1 Root Cause First — No Symptom Patches
+### 10.1 Root Cause First — No Symptom Patches
 
 Before writing a single character of a fix, write this sentence:
 
@@ -690,7 +668,7 @@ Exception: when the test assertion was provably wrong from the start (document t
 
 ---
 
-### 11.2 Blast Radius Analysis — Before Any Change
+### 10.2 Blast Radius Analysis — Before Any Change
 
 Before modifying any file, enumerate:
 
@@ -703,7 +681,7 @@ If blast radius spans more than 2 spec files, state it explicitly before writing
 
 ---
 
-### 11.3 Shared Infrastructure Rule (`tests/helpers.js`)
+### 10.3 Shared Infrastructure Rule (`tests/helpers.js`)
 
 `helpers.js` is imported by every spec file. It is high-voltage infrastructure.
 
@@ -719,7 +697,7 @@ If blast radius spans more than 2 spec files, state it explicitly before writing
 
 ---
 
-### 11.4 Test Assertion Change Protocol
+### 10.4 Test Assertion Change Protocol
 
 When an assertion must change (the behavior intentionally changed, not a bug):
 
@@ -732,7 +710,7 @@ Never update one assertion in isolation when the same behavior is asserted in 5 
 
 ---
 
-### 11.5 The `addInitScript` Ordering Rule
+### 10.5 The `addInitScript` Ordering Rule
 
 `page.addInitScript()` calls run in the order they are added. Later calls overwrite earlier
 ones for the same variable. This is the #1 source of test-setting-overwrite bugs.
@@ -747,7 +725,7 @@ separate `addInitScript`.
 
 ---
 
-### 11.6 CSS/JS Section Collapse State
+### 10.6 CSS/JS Section Collapse State
 
 The `_mmtCol_<id>` window variables control whether Make Money Today sections render
 their item cards into `innerHTML`. Default is `undefined`, which means **collapsed**
@@ -765,7 +743,7 @@ section will always get 0. This is a known footgun — not a bug, by design for 
 
 ---
 
-### 11.7 Pre-Push Checklist — Non-Negotiable
+### 10.7 Pre-Push Checklist — Non-Negotiable
 
 Run this before every `git push`. If any answer is "unsure", stop and read more code.
 
@@ -781,13 +759,13 @@ Run this before every `git push`. If any answer is "unsure", stop and read more 
 
 ---
 
-## 12. Exhaustive Test Standard
+## 11. Exhaustive Test Standard
 
 **"Every major flow" is not enough. Every function gets tested.**
 
 ---
 
-### 12.1 Coverage Requirements
+### 11.1 Coverage Requirements
 
 For every global function in every `js/*.js` file, the test suite must cover:
 
@@ -804,7 +782,7 @@ For every global function in every `js/*.js` file, the test suite must cover:
 
 ---
 
-### 12.2 Race Condition Test Pattern
+### 11.2 Race Condition Test Pattern
 
 Every guard variable (`_renderDashRunning`, `_saveRunning`, etc.) gets a concurrent-call test:
 
@@ -823,7 +801,7 @@ test('guard prevents concurrent execution', async () => {
 
 ---
 
-### 12.3 LocalStorage Corruption Tests
+### 11.3 LocalStorage Corruption Tests
 
 Every function that reads localStorage gets a corruption test:
 
@@ -842,7 +820,7 @@ test('handles corrupted localStorage gracefully', async () => {
 
 ---
 
-## 13. Flow Test Standard & Performance Ratchet
+## 12. Flow Test Standard & Performance Ratchet
 
 > This is how we take down ServiceTitan: every click in the live app is measured,
 > validated, and budgeted in one pass. A flow test is not "did it work" — it is
@@ -857,7 +835,7 @@ copy its shape.
 
 ---
 
-### 13.1 `step()` Is the Heart of Every Flow — Mandatory
+### 12.1 `step()` Is the Heart of Every Flow — Mandatory
 
 Every user-facing action in a flow test goes through `step()` from
 `tests/flow/live-helpers.js`. It fuses validation and analytics into one pass so
@@ -882,7 +860,7 @@ await step(page, {
   the ratchet — count it honestly.
 - `rule` returns `{ok, got}`. On `!ok`, `step()` throws a one-line `finding()`
   ticket (`[role][page] control → RULE … expected/got/suspect`) — the exact
-  substrate the agentic self-heal loop (§14) reads to fix the bug.
+  substrate the agentic self-heal loop (§13) reads to fix the bug.
 - Every step is pushed to the `_LEDGER` with its ms + interaction count.
 
 **No raw `expect()` on a UI post-condition outside a `step()`.** If you are
@@ -893,7 +871,7 @@ Call `resetLedger()` in `beforeEach` so each test owns a clean ledger.
 
 ---
 
-### 13.2 The Performance Ratchet — Clicks Hard-Gate, Time Advises
+### 12.2 The Performance Ratchet — Clicks Hard-Gate, Time Advises
 
 Every flow ends with:
 
@@ -914,11 +892,11 @@ clicks) and grades total interactions against `tests/flow/perf-baseline.json`.
 flow's click count may only ever **ratchet DOWN** (the app gained leverage) or stay
 flat. It may go **up only** when a deliberate new step is added — and then you
 raise the baseline in the **same commit** with a one-line justification in the
-`note`. Silent baseline inflation is a banned patch-chain move (§11).
+`note`. Silent baseline inflation is a banned patch-chain move (§10).
 
 ---
 
-### 13.3 Baselines — `tests/flow/perf-baseline.json`
+### 12.3 Baselines — `tests/flow/perf-baseline.json`
 
 - A flow **listed** in the baseline is hard-gated on `clicks`.
 - A flow **not listed** is in **capture mode** — `report()` logs
@@ -932,7 +910,7 @@ raise the baseline in the **same commit** with a one-line justification in the
 
 ---
 
-### 13.4 Scale Benchmarks — Find Where the App Gives No Leverage
+### 12.4 Scale Benchmarks — Find Where the App Gives No Leverage
 
 Big-input flows exist to expose where the UX makes the user grind:
 20-room full repaint, T&M with no template, BYO/custom line items the estimator
@@ -943,7 +921,7 @@ finding, not a failure. The ledger tells us exactly which step costs the most.
 
 ---
 
-### 13.5 New Flow Checklist
+### 12.5 New Flow Checklist
 
 1. `resetLedger()` + `signIn(page)` in `beforeEach`.
 2. Every user action wrapped in `step()` with an honest interaction count, a
@@ -956,91 +934,7 @@ finding, not a failure. The ledger tells us exactly which step costs the most.
 
 ---
 
-### 13.7 Live Tests NEVER Clean Up Their Own Data — Leave It to Poke At
-
-**Mandatory: a live flow test must not delete, soft-delete, or restore the records
-it creates.** No end-of-test `bids = bids.filter(...)` + `supaSaveToCloud()`, no
-`_supa.from('td_*').delete()`, no "restore the original value" block. The seed data
-the test writes — bids, clients, jobs, expenses, vehicles, contracts, settings
-changes, everything — **stays in the dev account on purpose**, so the owner can open
-the app afterward and poke holes in exactly what the tests put in. The owner deletes
-it manually on their own schedule.
-
-- The ONLY data removal allowed is the explicit opt-in `teardownAll()` gated behind
-  `E2E_TEARDOWN=1` (off by default) — never inline per-test cleanup.
-- **Resource** cleanup is still fine and expected: closing extra browser
-  contexts/pages you opened (`ctx.close()`, `page.close()`) frees the runner and is
-  not data — keep it.
-- Use uniquely-tagged ids (`Date.now()*1000 + …`, `process.pid`) so the accumulating
-  seed data never collides across runs/viewports, since it is never cleaned up.
-- Rationale: cleanup hides the very thing the owner wants to inspect, and a failed
-  assertion mid-test can leave half-cleaned state that's more confusing than just
-  leaving it all. Leave everything; the owner curates the account by hand.
-
----
-
-## 14. Agentic Self-Heal Loop (Slack → Claude → Regression Test → PR)
-
-The endgame: a bug reported by a real user heals itself, forever.
-
-1. **Report** — a user hits a bug; it lands in Slack (`#20`), or CI/console/prod
-   surfaces a `console.error`.
-2. **Ticket** — the failure is already in `finding()` shape
-   (`[role][page] control → RULE … expected/got/suspect`) because every `step()`
-   throws that format. Claude reads the suspect file:line directly.
-3. **Fix** — Claude fixes the **root cause** (§11.1 — never the symptom, never the
-   test) on the feature branch.
-4. **Regression test that runs forever** — the same commit adds a `step()` to the
-   relevant flow asserting the bug can never return. This is non-negotiable: a fix
-   without a permanent guarding step is incomplete.
-5. **Push → CI → human approves merge.** Claude never merges without explicit
-   approval (§1.5). The test now runs on every PR, forever.
-
-The `finding()` → `suspect` → root-cause-fix → permanent-`step()` chain is what
-makes the loop reliable instead of a guess-and-hope patch machine.
-
-### 14.1 Hot Lane — Live-Error Hotfix PRs (standing merge authorization)
-
-> Two PR lanes, by owner decision (2026-07-03): **hotfix PRs run hot end-to-end
-> with no human in the loop; feature PRs still wait for explicit approval.**
-
-**The pipeline (fully automatic):**
-
-1. A live user hits an error (window error, unhandled rejection,
-   `console.error`, or a DEAD BUTTON — a control whose FIRST click produces
-   zero DOM/navigation/network effect — captured by `js/observability.js` →
-   `error_log`).
-2. `error-watch.yml` (INSTANT when the `GH_DISPATCH_TOKEN` function secret is
-   set — ingest-telemetry fires it the moment the row lands; 15-min cron as
-   the always-on fallback) opens a **hotfix PR** on a fresh
-   `claude/hotfix-err-<id>` branch off `main`, body = the finding-shaped error
-   report, and wakes the active agent session via a comment on the open
-   feature PR.
-3. The agent fixes the **root cause on the hotfix branch** (§11.1 — never the
-   symptom) and adds a **regression test in the same commit**. The test must
-   reproduce the error's conditions and assert zero console errors — red
-   before the fix, green after — so the error can never return silently.
-4. One push, full result set (§1.6). All shards green **first-attempt**.
-5. **The agent merges the hotfix PR autonomously.** This is the ONLY exception
-   to §1.4's no-merge rule, granted in writing by the owner and scoped
-   strictly to PRs whose head branch starts with `claude/hotfix-err-`. The
-   merge builds production — the fix ships live immediately (that's the point
-   of the lane). Never use `[CF-Pages-Skip]` on a hotfix merge.
-6. `hotfix-resolve.yml` marks the fixed `error_log` rows resolved on merge.
-   **The self-test:** if the same error ever fires again in production, it
-   lands as a new unresolved row and error-watch opens a fresh hotfix round
-   within 15 minutes — a fix that didn't hold surfaces itself.
-
-**Hard limits of the lane:**
-- Hotfix PRs contain the MINIMAL root-cause fix + its regression test.
-  Nothing else — no refactors, no features, no drive-by cleanups.
-- Feature work, migrations, and anything touching money flows or auth stay in
-  the feature lane with explicit owner approval (§1.4 unchanged there).
-- If the root cause is ambiguous, architecturally significant, or spans more
-  than a small blast radius (§11.2), the agent STOPS and asks the owner
-  instead of merging.
-
-### 13.6 Physical Interaction Standard — Real Thumb, Real Scroll, Real Devices
+### 12.6 Physical Interaction Standard — Real Thumb, Real Scroll, Real Devices
 
 Flow tests drive the app the way a person does: real taps, real key-by-key
 typing, and real scrolling — never `page.evaluate(() => someFn())` to shortcut a
@@ -1066,7 +960,95 @@ runs on all three.
 entered exactly as a user would — which also exercises the auto-capitalize-on-
 space behavior live.
 
-## 15. CI / Deploy Architecture & Cloudflare Build Cadence
+---
+
+### 12.7 Live Tests NEVER Clean Up Their Own Data — Leave It to Poke At
+
+**Mandatory: a live flow test must not delete, soft-delete, or restore the records
+it creates.** No end-of-test `bids = bids.filter(...)` + `supaSaveToCloud()`, no
+`_supa.from('td_*').delete()`, no "restore the original value" block. The seed data
+the test writes — bids, clients, jobs, expenses, vehicles, contracts, settings
+changes, everything — **stays in the dev account on purpose**, so the owner can open
+the app afterward and poke holes in exactly what the tests put in. The owner deletes
+it manually on their own schedule.
+
+- The ONLY data removal allowed is the explicit opt-in `teardownAll()` gated behind
+  `E2E_TEARDOWN=1` (off by default) — never inline per-test cleanup.
+- **Resource** cleanup is still fine and expected: closing extra browser
+  contexts/pages you opened (`ctx.close()`, `page.close()`) frees the runner and is
+  not data — keep it.
+- Use uniquely-tagged ids (`Date.now()*1000 + …`, `process.pid`) so the accumulating
+  seed data never collides across runs/viewports, since it is never cleaned up.
+- Rationale: cleanup hides the very thing the owner wants to inspect, and a failed
+  assertion mid-test can leave half-cleaned state that's more confusing than just
+  leaving it all. Leave everything; the owner curates the account by hand.
+
+---
+
+## 13. Agentic Self-Heal Loop (Slack → Claude → Regression Test → PR)
+
+The endgame: a bug reported by a real user heals itself, forever.
+
+1. **Report** — a user hits a bug; it lands in Slack (`#20`), or CI/console/prod
+   surfaces a `console.error`.
+2. **Ticket** — the failure is already in `finding()` shape
+   (`[role][page] control → RULE … expected/got/suspect`) because every `step()`
+   throws that format. Claude reads the suspect file:line directly.
+3. **Fix** — Claude fixes the **root cause** (§10.1 — never the symptom, never the
+   test) on the feature branch.
+4. **Regression test that runs forever** — the same commit adds a `step()` to the
+   relevant flow asserting the bug can never return. This is non-negotiable: a fix
+   without a permanent guarding step is incomplete.
+5. **Push → CI → human approves merge.** Claude never merges without explicit
+   approval (§1.5). The test now runs on every PR, forever.
+
+The `finding()` → `suspect` → root-cause-fix → permanent-`step()` chain is what
+makes the loop reliable instead of a guess-and-hope patch machine.
+
+### 13.1 Hot Lane — Live-Error Hotfix PRs (standing merge authorization)
+
+> Two PR lanes, by owner decision (2026-07-03): **hotfix PRs run hot end-to-end
+> with no human in the loop; feature PRs still wait for explicit approval.**
+
+**The pipeline (fully automatic):**
+
+1. A live user hits an error (window error, unhandled rejection,
+   `console.error`, or a DEAD BUTTON — a control whose FIRST click produces
+   zero DOM/navigation/network effect — captured by `js/observability.js` →
+   `error_log`).
+2. `error-watch.yml` (INSTANT when the `GH_DISPATCH_TOKEN` function secret is
+   set — ingest-telemetry fires it the moment the row lands; 15-min cron as
+   the always-on fallback) opens a **hotfix PR** on a fresh
+   `claude/hotfix-err-<id>` branch off `main`, body = the finding-shaped error
+   report, and wakes the active agent session via a comment on the open
+   feature PR.
+3. The agent fixes the **root cause on the hotfix branch** (§10.1 — never the
+   symptom) and adds a **regression test in the same commit**. The test must
+   reproduce the error's conditions and assert zero console errors — red
+   before the fix, green after — so the error can never return silently.
+4. One push, full result set (§1.6). All shards green **first-attempt**.
+5. **The agent merges the hotfix PR autonomously.** This is the ONLY exception
+   to §1.4's no-merge rule, granted in writing by the owner and scoped
+   strictly to PRs whose head branch starts with `claude/hotfix-err-`. The
+   merge builds production — the fix ships live immediately (that's the point
+   of the lane). Never use `[CF-Pages-Skip]` on a hotfix merge.
+6. `hotfix-resolve.yml` marks the fixed `error_log` rows resolved on merge.
+   **The self-test:** if the same error ever fires again in production, it
+   lands as a new unresolved row and error-watch opens a fresh hotfix round
+   within 15 minutes — a fix that didn't hold surfaces itself.
+
+**Hard limits of the lane:**
+- Hotfix PRs contain the MINIMAL root-cause fix + its regression test.
+  Nothing else — no refactors, no features, no drive-by cleanups.
+- Feature work, migrations, and anything touching money flows or auth stay in
+  the feature lane with explicit owner approval (§1.4 unchanged there).
+- If the root cause is ambiguous, architecturally significant, or spans more
+  than a small blast radius (§10.2), the agent STOPS and asks the owner
+  instead of merging.
+
+---
+
+## 14. CI / Deploy Architecture & Cloudflare Build Cadence
 
 Two independent systems — don't conflate them:
 
@@ -1089,7 +1071,7 @@ deployments → Build watch paths):
 **Per-commit skip:** put `[CF-Pages-Skip]` in the commit message to skip that
 build. Use it for test-only / migration-only / docs-only commits.
 
-### 15.1 Deploy Cadence — Default-Skip, Deploy On Request (MANDATORY)
+### 14.1 Deploy Cadence — Default-Skip, Deploy On Request (MANDATORY)
 
 Deployments are deliberate, never reflexive. The owner decides when the app
 rebuilds.
@@ -1107,7 +1089,7 @@ rebuilds.
   them into one intentional deploy instead of burning a Cloudflare build on every
   push. Respect that — never auto-deploy.
 
-### 15.2 The `/api` Proxy Is Load-Bearing — Never Remove It
+### 14.2 The `/api` Proxy Is Load-Bearing — Never Remove It
 
 `functions/api/[[path]].js` is a Cloudflare Pages Function that reverse-proxies
 `/api/*` → the Supabase project URL. The app sets `SUPA_URL = location.origin +
@@ -1130,9 +1112,9 @@ WebSocket — routes through it.
   the UTC-midnight reset (or until Workers Paid is enabled). Run live specs in
   small subsets, and only with the owner's go-ahead.
 
-### 15.3 Direct-Supabase Default + Auto-Fallback (validated 2026-06-28)
+### 14.3 Direct-Supabase Default + Auto-Fallback (validated 2026-06-28)
 
-§15.2's "never call Supabase directly — it re-breaks AT&T Fiber" was **empirically
+§14.2's "never call Supabase directly — it re-breaks AT&T Fiber" was **empirically
 retired**: direct mode was tested on AT&T Fiber (the exact network the proxy was built
 for) and a full lead→bid→send flow loaded fine and burned ZERO `/api` requests.
 
@@ -1150,13 +1132,13 @@ for) and a full lead→bid→send flow loaded fine and burned ZERO `/api` reques
 
 ---
 
-## 16. Layout & Visual Integrity Standard
+## 15. Layout & Visual Integrity Standard
 
 The app is judged on how it **looks and holds together**, not just whether it works.
 A render that bleeds off-screen, overlaps, or silently changes between commits is a
 **defect** — the same severity as a broken function.
 
-### 16.1 Hard Layout Rules — Every Screen, Every Device
+### 15.1 Hard Layout Rules — Every Screen, Every Device
 
 - **Nothing bleeds off-screen.** No element may overflow the viewport width or cause
   horizontal scroll on any supported device (mobile 390px, tablet 820px, desktop).
@@ -1170,14 +1152,14 @@ A render that bleeds off-screen, overlaps, or silently changes between commits i
 - **Fixed/sticky elements never cover content.** A `position:fixed` bar must reserve its
   space (padding on the scroll container) so it can't overlap the buttons beneath it.
 
-### 16.2 No Drastic Visual Change Without Explicit Approval
+### 15.2 No Drastic Visual Change Without Explicit Approval
 
 A screen's rendering **may not drastically change between commits** unless the owner
 explicitly approved that visual change in writing this session. Refactors, "cleanups,"
 and bug-fixes must preserve the existing look unless changing it **is** the point. If a
 change alters layout, say so and get a yes first.
 
-### 16.3 Layout Is Tested, Not Eyeballed
+### 15.3 Layout Is Tested, Not Eyeballed
 
 Every screen with a non-trivial layout gets an E2E layout assertion (run at mobile
 390px + desktop) proving:
@@ -1190,34 +1172,43 @@ A layout regression fails CI like any other bug.
 
 ---
 
-## 17. New Feature Research Standard — Every New Feature Is Backed By Research
+## 16. New Feature Workflow — Research → Build → Screenshot → Approve
 
-Building from assumption is banned for anything beyond a bug fix. Before writing code
-for a **new feature** (a new document type, workflow, or screen — not a bug fix, not a
-tweak to something that already exists), spin up research agents (Agent tool /
-deep-research skill) and answer, in writing, before the first line of implementation:
+Building from assumption is banned for anything beyond a bug fix. This is the full,
+ordered sequence for any genuinely new feature (a new document type, workflow, or
+screen — not a bug fix, not a tweak to something that already exists):
 
-1. **What do the competitors do?** Check the relevant names from the competitive set
-   (§17.1) for this specific feature — how do they solve it, what does their flow look
-   like, what do *their own users* complain about in how they do it.
-2. **What do contractors actually want?** Real contractor feedback — trade-specific
-   forums/subreddits (r/electricians, r/HVAC, r/Construction, etc.), G2/Capterra/App
-   Store reviews of competitor products, contractor Facebook groups — not guesses about
-   what "seems useful."
-3. **What do contractors love and hate** about how existing tools (including ours)
-   handle this problem today. Both directions matter — copy what's loved, avoid what's
-   hated.
-
-The resulting design must cite what it's based on — which competitor pattern, which
-piece of contractor feedback — not "this seemed like the right approach." If the
-research turns up nothing decisive, say so explicitly and default to the simplest
-version that solves the stated problem, rather than skipping research because early
-findings looked thin.
+1. **Understand the ask.** Restate what's actually being requested before researching
+   or building anything. Resolve scope ambiguity first — don't guess and build.
+2. **Research the competition.** Check the relevant names from the competitive set
+   (§16.1) for this specific feature — do they have it? If yes: how do they solve it,
+   what does their flow look like, what do *their own users* complain about doing it
+   their way. If no: that's a gap worth exploiting, say so. Also pull real contractor
+   feedback — trade-specific forums/subreddits (r/electricians, r/HVAC, r/Construction,
+   etc.), G2/Capterra/App Store reviews of competitor products, contractor Facebook
+   groups — not guesses about what "seems useful." Note what contractors love and hate
+   about how existing tools (including ours) handle this today — both directions matter.
+3. **Design how we beat them.** Synthesize the research into a concrete plan. The
+   design must cite what it's based on — which competitor pattern, which piece of
+   contractor feedback — not "this seemed like the right approach." If research turns
+   up nothing decisive, say so explicitly and default to the simplest version that
+   solves the stated problem, rather than skipping research because findings were thin.
+4. **Build it with tests in the same commit.** Feature code + E2E tests (happy path,
+   edge cases, `assertNoErrors()`) + live flow test coverage where the feature touches
+   a real user flow — written together, per §5.1, never after.
+5. **Run the tests and confirm they actually pass.** Offline shards clean, and the
+   cloud gate (real backend) clean, before moving on — per the Loop (§0).
+6. **Screenshot the UI/UX — not a live deploy.** Per §0 Step 0.5: render the actual
+   changed screen locally and send it in chat for a reaction.
+7. **The owner reviews the live screenshot.** "Yeah, that's good" → proceed to deploy
+   per the normal Loop. "No, needs changes/additions" → back to step 4 (or step 3, if
+   the direction itself needs to change) — iterate on screenshots, not deploys, until
+   approved.
 
 **Scope:** genuinely new features only. Bug fixes, refactors, and small UX polish on
-something that already exists don't need a research phase — just the normal Loop.
+something that already exists don't need this full sequence — just the normal Loop.
 
-### 17.1 The Competitive Set
+### 16.1 The Competitive Set
 
 Compiled via research agent 2026-07-10 — not a guess, a real market scan (G2/Capterra
 category pages, "alternatives to X" roundups, contractor forum/review sentiment).
