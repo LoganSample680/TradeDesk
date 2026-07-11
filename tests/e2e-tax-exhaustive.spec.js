@@ -644,40 +644,40 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 5. _getSsWageBase
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getSsWageBase', () => {
-    test('null — returns default 176100', async () => {
+    test('null — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
-    test('undefined — returns default 176100', async () => {
+    test('undefined — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
-    test('0 — returns default 176100', async () => {
+    test('0 — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(0) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
-    test('-1 — returns default 176100', async () => {
+    test('-1 — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(-1) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
     test('year 2024 — returns 168600', async () => {
@@ -698,13 +698,13 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(176100);
     });
 
-    test('year 2026 — returns 176100', async () => {
+    test('year 2026 — returns 184500 (SSA-confirmed 2026 wage base, not a copy of 2025)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
     test('year 2019 — returns 132900', async () => {
@@ -725,13 +725,13 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(160200);
     });
 
-    test('unknown future year 3000 — returns default 176100', async () => {
+    test('unknown future year 3000 — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(3000) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
     test('object type mismatch — does not throw', async () => {
@@ -741,7 +741,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       // parseInt({}) is NaN → falls back to default
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
     test('concurrent calls — consistent results', async () => {
@@ -822,7 +822,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeLessThan(35000);
     });
 
-    test('null year — uses default wage base 176100, does not throw', async () => {
+    test('null year — uses default wage base 184500, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(50000, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -874,6 +874,205 @@ test.describe('tax.js — exhaustive coverage', () => {
 
     test('concurrent calls — all succeed', async () => {
       const ok = await concurrent('_calcSeTax(50000, 2025)', 5);
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 6b. _calcPayrollLiability — employer W-2 FICA/FUTA liability per pay period.
+  // Deliberately NOT income-tax withholding (out of scope — see comment in
+  // tax.js). "Take gross wages + this number to your accountant."
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_calcPayrollLiability', () => {
+    test('golden path — $2,000 gross, fresh year (no prior wages), 2026', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(2000, 0, 0, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.grossWages).toBe(2000);
+      expect(r.result.employeeSS).toBe(124);       // 2000 * 0.062
+      expect(r.result.employerSS).toBe(124);
+      expect(r.result.employeeMedicare).toBe(29);   // 2000 * 0.0145
+      expect(r.result.employerMedicare).toBe(29);
+      expect(r.result.employeeAddlMedicare).toBe(0);
+      expect(r.result.employeeFica).toBe(153);      // 124 + 29
+      expect(r.result.employerFicaMatch).toBe(153);
+      expect(r.result.fica941Total).toBe(306);      // both sides
+      expect(r.result.futa940).toBe(12);            // 2000 * 0.006
+      expect(r.result.ssWageBaseHit).toBe(false);
+      expect(r.result.futaWageBaseHit).toBe(false);
+    });
+
+    test('zero gross wages — everything zero, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(0, 0, 0, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.fica941Total).toBe(0);
+      expect(r.result.futa940).toBe(0);
+    });
+
+    test('null/undefined gross wages — treated as 0, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          return {
+            ok: true,
+            nullResult: _calcPayrollLiability(null, 0, 0, 2026),
+            undefResult: _calcPayrollLiability(undefined, 0, 0, 2026),
+          };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.nullResult.fica941Total).toBe(0);
+      expect(r.undefResult.fica941Total).toBe(0);
+    });
+
+    test('negative gross wages — clamped to 0, never a negative liability', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(-500, 0, 0, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.grossWages).toBe(0);
+      expect(r.result.fica941Total).toBe(0);
+    });
+
+    test('SS wage base cap — this period straddles the cap, only the remaining room is taxed', async () => {
+      // 2026 cap is 184500. Employee already earned 184000 YTD, this period pays 2000 more.
+      // Only 500 of it should be SS-taxable; Medicare has no cap and taxes the full 2000.
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(2000, 184000, 0, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.employeeSS).toBe(31);   // 500 * 0.062
+      expect(r.result.employerSS).toBe(31);
+      expect(r.result.employeeMedicare).toBe(29); // full 2000 * 0.0145, Medicare uncapped
+      expect(r.result.ssWageBaseHit).toBe(true);
+    });
+
+    test('SS wage base already exhausted — zero SS tax this period, Medicare still applies', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(2000, 184500, 0, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.employeeSS).toBe(0);
+      expect(r.result.employerSS).toBe(0);
+      expect(r.result.employeeMedicare).toBe(29);
+      expect(r.result.ssWageBaseHit).toBe(true);
+    });
+
+    test('Additional Medicare — crosses the $200,000 threshold mid-period, only the excess is taxed at 0.9%', async () => {
+      // Employee at 199000 YTD, this period pays 3000 more → total 202000.
+      // The first 1000 of this period gets them TO the threshold; the remaining
+      // 2000 is above it and taxable.
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(3000, 199000, 0, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.employeeAddlMedicare).toBe(18); // 2000 * 0.009
+    });
+
+    test('Additional Medicare has no employer match — employerFicaMatch excludes it', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(5000, 250000, 0, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.employeeAddlMedicare).toBeGreaterThan(0);
+      // employerFicaMatch = employerSS + employerMedicare only, no Additional Medicare component
+      const expectedEmployerMatch = Math.round((r.result.employerSS + r.result.employerMedicare) * 100) / 100;
+      expect(r.result.employerFicaMatch).toBe(expectedEmployerMatch);
+    });
+
+    test('FUTA wage base cap — $7,000/year per employee, straddled period only taxes the remainder', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(1000, 0, 6500, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.futa940).toBe(3); // 500 remaining * 0.006
+      expect(r.result.futaWageBaseHit).toBe(true);
+    });
+
+    test('FUTA wage base already exhausted — zero FUTA this period', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(1000, 0, 7000, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.futa940).toBe(0);
+      expect(r.result.futaWageBaseHit).toBe(true);
+    });
+
+    test('SS cap and FUTA cap are independent — hitting one does not affect the other', async () => {
+      // SS cap far from hit, FUTA cap already exhausted.
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(1000, 5000, 7000, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.employeeSS).toBe(62); // full 1000 * 0.062, nowhere near SS cap
+      expect(r.result.futa940).toBe(0);     // FUTA cap already hit
+    });
+
+    test('missing year — falls back to the default SS wage base, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(2000, 0, 0, null) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.fica941Total).toBeGreaterThan(0);
+    });
+
+    test('type-mismatch string numeric inputs — coerced, not thrown', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability('2000', '0', '0', 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.grossWages).toBe(2000);
+    });
+
+    test('non-numeric garbage inputs — does not throw, degrades to 0', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability('abc', {}, [], 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result.grossWages).toBe(0);
+      expect(r.result.fica941Total).toBe(0);
+    });
+
+    test('very large gross wages — well past every cap, no overflow/NaN', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcPayrollLiability(10000000, 0, 0, 2026) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(Number.isFinite(r.result.fica941Total)).toBe(true);
+      expect(Number.isFinite(r.result.futa940)).toBe(true);
+      expect(r.result.ssWageBaseHit).toBe(true);
+      expect(r.result.futaWageBaseHit).toBe(true);
+    });
+
+    test('employeeFica + employerFicaMatch always equals fica941Total (internal consistency, every call)', async () => {
+      const r = await page.evaluate(() => {
+        const cases = [[500,0,0],[2000,180000,6800],[50000,0,0],[0,0,0],[3000,199500,7000]];
+        return cases.map(([g,s,f]) => {
+          const res = _calcPayrollLiability(g,s,f,2026);
+          return Math.abs((res.employeeFica+res.employerFicaMatch) - res.fica941Total) < 0.01;
+        });
+      });
+      expect(r.every(Boolean)).toBe(true);
+    });
+
+    test('concurrent calls — all succeed, no shared-state corruption', async () => {
+      const ok = await concurrent('_calcPayrollLiability(2000, 0, 0, 2026)', 5);
       expect(ok).toBe(5);
     });
   });

@@ -18869,40 +18869,40 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 5. _getSsWageBase
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getSsWageBase', () => {
-    test('null — returns default 176100', async () => {
+    test('null — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
-    test('undefined — returns default 176100', async () => {
+    test('undefined — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
-    test('0 — returns default 176100', async () => {
+    test('0 — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(0) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
-    test('-1 — returns default 176100', async () => {
+    test('-1 — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(-1) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
     test('year 2024 — returns 168600', async () => {
@@ -18923,13 +18923,13 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(176100);
     });
 
-    test('year 2026 — returns 176100', async () => {
+    test('year 2026 — returns 184500 (SSA-confirmed 2026 wage base, not a copy of 2025)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
     test('year 2019 — returns 132900', async () => {
@@ -18950,13 +18950,13 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(160200);
     });
 
-    test('unknown future year 3000 — returns default 176100', async () => {
+    test('unknown future year 3000 — returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(3000) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
     test('object type mismatch — does not throw', async () => {
@@ -18966,7 +18966,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       // parseInt({}) is NaN → falls back to default
-      expect(r.result).toBe(176100);
+      expect(r.result).toBe(184500);
     });
 
     test('concurrent calls — consistent results', async () => {
@@ -19047,7 +19047,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeLessThan(35000);
     });
 
-    test('null year — uses default wage base 176100, does not throw', async () => {
+    test('null year — uses default wage base 184500, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(50000, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
