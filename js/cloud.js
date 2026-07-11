@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.11.26.6';
+const APP_VERSION='07.11.26.9';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -2548,10 +2548,10 @@ async function _loadTeamComp(){
   const cid=_contractorUserId||_supaUser.id;
   try{
     const{data,error}=await _supa.from('team_members')
-      .select('email,pay_type,pay_rate,employment_type').eq('contractor_user_id',cid);
+      .select('email,pay_type,pay_rate').eq('contractor_user_id',cid);
     if(error||!data)return;
     const next={};
-    data.forEach(r=>{if(r.email)next[r.email.toLowerCase()]={pay_type:r.pay_type||'hourly',pay_rate:r.pay_rate||0,employment_type:r.employment_type||'w2'};});
+    data.forEach(r=>{if(r.email)next[r.email.toLowerCase()]={pay_type:r.pay_type||'hourly',pay_rate:r.pay_rate||0};});
     _teamComp=next;
   }catch(_e){}
 }
@@ -2559,7 +2559,7 @@ function _empPayTypeSync(){
   const t=document.getElementById('emp-pay-type')?.value;
   const lbl=document.getElementById('emp-pay-rate-lbl');
   const inp=document.getElementById('emp-pay-rate');
-  if(lbl)lbl.textContent=t==='salary'?'Annual salary':'Hourly rate';
+  if(lbl)lbl.textContent=t==='salary'?'Salary':'Rate';
   if(inp)inp.placeholder=t==='salary'?'55000':'28';
 }
 function _employeeModalHTML(emp,idx){
@@ -2569,7 +2569,7 @@ function _employeeModalHTML(emp,idx){
   const _legacyMap={employee:'tech',estimator:'tech',foreman:'manager',painter:'tech'};
   const _eRole=_legacyMap[e.role]||e.role||'tech';
   const _eClass=e.classification||'';
-  const _eComp=_teamComp[(e.email||'').toLowerCase()]||{pay_type:'hourly',pay_rate:0,employment_type:'w2'};
+  const _eComp=_teamComp[(e.email||'').toLowerCase()]||{pay_type:'hourly',pay_rate:0};
   return '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(isNew?'Add team member':'Edit '+escHtml(e.name||''))+'</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Full name</label><input id="emp-name" value="'+escHtml(e.name||'')+'" placeholder="John Smith" style="font-size:15px;padding:10px"></div>'+
@@ -2587,7 +2587,7 @@ function _employeeModalHTML(emp,idx){
           '<option value="manager"'+(_eRole==='manager'?' selected':'')+'>Manager</option>'+
           '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner / Admin</option>'+
         '</select></div>'+
-      '<div class="f" style="margin:0"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
+      '<div class="f" style="margin:0"><label>Classification</label>'+
         '<select id="emp-classification" style="font-size:14px;padding:10px">'+
           _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'"'+(c===_eClass?' selected':'')+'>'+escHtml(c||'— None —')+'</option>').join('')+
         '</select></div>'+
@@ -2600,21 +2600,13 @@ function _employeeModalHTML(emp,idx){
       '<div id="_pay-info-tip" style="display:none;font-size:12px;color:var(--text2);background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px;line-height:1.55">'+
         'Pay rates are stored securely and only visible to people with the <strong>Pay &amp; profit</strong> permission. Employees <em>never</em> see this — not in their daily view or anywhere else in the app. It\'s used to calculate loaded labor cost and profit margin on each job in the Job Profit report.'+
       '</div>'+
-      '<div class="f" style="margin-bottom:10px"><label>Employment type</label>'+
-        '<select id="emp-employment-type" style="font-size:14px;padding:10px">'+
-          '<option value="w2"'+(_eComp.employment_type!=='1099'?' selected':'')+'>Employee (W-2)</option>'+
-          '<option value="1099"'+(_eComp.employment_type==='1099'?' selected':'')+'>Subcontractor (1099)</option>'+
-        '</select>'+
-        '<div style="font-size:10px;color:var(--text3);margin-top:4px">Payroll tax liability (FICA/FUTA) is only calculated for W-2 employees — a 1099 sub covers their own self-employment tax.</div>'+
-      '</div>'+
-      '<div style="margin-bottom:8px"></div>'+
       '<div style="display:grid;grid-template-columns:140px 1fr;gap:10px;margin-bottom:14px">'+
         '<div class="f" style="margin:0"><label>Pay type</label>'+
           '<select id="emp-pay-type" onchange="_empPayTypeSync()" style="font-size:14px;padding:10px">'+
             '<option value="hourly"'+(_eComp.pay_type!=='salary'?' selected':'')+'>Hourly</option>'+
             '<option value="salary"'+(_eComp.pay_type==='salary'?' selected':'')+'>Salary</option>'+
           '</select></div>'+
-        '<div class="f" style="margin:0"><label id="emp-pay-rate-lbl">'+(_eComp.pay_type==='salary'?'Annual salary':'Hourly rate')+'</label>'+
+        '<div class="f" style="margin:0"><label id="emp-pay-rate-lbl">'+(_eComp.pay_type==='salary'?'Salary':'Rate')+'</label>'+
           '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:var(--text2);font-weight:600">$</span>'+
           '<input id="emp-pay-rate" type="text" inputmode="decimal" value="'+(_eComp.pay_rate?_moneyStr(_eComp.pay_rate).replace(/\.00$/,''):'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
@@ -2682,7 +2674,6 @@ async function _saveEmployee(idx){
   const _canComp=_canViewComp();
   const _payType=_canComp?(document.getElementById('emp-pay-type')?.value||'hourly'):null;
   const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
-  const _employmentType=_canComp?(document.getElementById('emp-employment-type')?.value||'w2'):null;
   const emp={id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms};
   if(!S.employees)S.employees=[];
   if(!isNew)S.employees[idx]=emp;else S.employees.push(emp);
@@ -2697,7 +2688,7 @@ async function _saveEmployee(idx){
     const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,permissions:emp.permissions||{},active:false,invited_at:new Date().toISOString()};
     // Pay is written ONLY when the editor can view comp — otherwise the columns are
     // omitted from the upsert so existing pay_rate is preserved, never clobbered to 0.
-    if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;tmRow.employment_type=_employmentType;_teamComp[email]={pay_type:_payType,pay_rate:_payRate,employment_type:_employmentType};}
+    if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;_teamComp[email]={pay_type:_payType,pay_rate:_payRate};}
     const{error}=await _supa.from('team_members').upsert(tmRow,{onConflict:'contractor_user_id,email'});
     if(error){console.warn('team_members upsert failed:',error);return;}
     // Auto-create employment agreement; signing IS the onboarding step

@@ -366,9 +366,9 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     });
     if (r.skip) return;
     expect(r.ok).toBe(true);
-    expect(r.salaryLbl).toBe('Annual salary');
+    expect(r.salaryLbl).toBe('Salary');
     expect(r.salaryPh).toBe('55000');
-    expect(r.hourlyLbl).toBe('Hourly rate');
+    expect(r.hourlyLbl).toBe('Rate');
     expect(r.hourlyPh).toBe('28');
   });
 

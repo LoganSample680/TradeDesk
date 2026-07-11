@@ -344,11 +344,19 @@ function _saveEditedTimeEntry(entryId){
   const start=startEl?new Date(startEl.value):null,end=endEl?new Date(endEl.value):null;
   const errEl=document.getElementById('tle-err');
   if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start){
-    if(errEl)errEl.style.display='block';
+    if(errEl){errEl.textContent='End must be after start.';errEl.style.display='block';}
+    return;
+  }
+  const minutes=Math.max(1,Math.round((end.getTime()-start.getTime())/60000));
+  // A single clock session can't legitimately run longer than a day — beyond
+  // that is almost certainly a fat-fingered date, not a real shift. Caught
+  // here so an edit can never silently produce an "impossible" day total.
+  if(minutes>1440){
+    if(errEl){errEl.textContent='That\'s over 24 hours for one entry — check the dates.';errEl.style.display='block';}
     return;
   }
   e.start_time=start.toISOString();e.end_time=end.toISOString();
-  e.minutes=Math.max(1,Math.round((end.getTime()-start.getTime())/60000));
+  e.minutes=minutes;
   e.date=dateKey(start);
   const{loggedByUid,loggedByName}=_tlLoggedByInfo();
   e.edited_by_uid=loggedByUid;e.edited_by_name=loggedByName;e.edited_at=new Date().toISOString();

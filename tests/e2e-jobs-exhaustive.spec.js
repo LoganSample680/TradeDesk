@@ -883,6 +883,46 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.errShown).toBe(true);
     });
 
+    test('_saveEditedTimeEntry rejects a single entry spanning over 24 hours — leaves the entry unchanged', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990107);
+        timeEntries.push({ id: 9990107, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, open: false });
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        try {
+          _openEditTimeEntry(9990107);
+          document.getElementById('tle-start').value = '2026-01-01T09:00';
+          document.getElementById('tle-end').value = '2026-01-03T10:00'; // 49 hours later — impossible for one entry
+          _saveEditedTimeEntry(9990107);
+          const e = timeEntries.find(x => x.id === 9990107);
+          return { ok: true, minutesUnchanged: e.minutes === 60, errShown: document.getElementById('tle-err')?.style.display === 'block', errText: document.getElementById('tle-err')?.textContent };
+        } catch (err) { return { ok: false, err: err.message }; }
+        finally { timeEntries = timeEntries.filter(e => e.id !== 9990107); document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.minutesUnchanged).toBe(true);
+      expect(r.errShown).toBe(true);
+      expect(r.errText).toContain('24 hours');
+    });
+
+    test('_saveEditedTimeEntry accepts a span of exactly 24 hours (boundary, not over)', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990108);
+        timeEntries.push({ id: 9990108, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, open: false });
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        try {
+          _openEditTimeEntry(9990108);
+          document.getElementById('tle-start').value = '2026-01-01T09:00';
+          document.getElementById('tle-end').value = '2026-01-02T09:00'; // exactly 24h later
+          _saveEditedTimeEntry(9990108);
+          const e = timeEntries.find(x => x.id === 9990108);
+          return { ok: true, minutes: e ? e.minutes : null };
+        } catch (err) { return { ok: false, err: err.message }; }
+        finally { timeEntries = timeEntries.filter(e => e.id !== 9990108); document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.minutes).toBe(1440);
+    });
+
     test('_openEditTimeEntry / deleteTimeEntry on a nonexistent id — do not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openEditTimeEntry(999999); _saveEditedTimeEntry(999999); deleteTimeEntry(999999); return true; }
