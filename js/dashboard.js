@@ -316,13 +316,17 @@ function renderDash(){
       // client's location RIGHT NOW, so this sits right under the Profit/Avg Job
       // tiles (the natural first-glance center of the screen). It reuses the same
       // .tf-card shape every other actionable dashboard card uses (icon square +
-      // name + colored subtext + a button row) so it reads as TradeDesk, not a
-      // bolted-on banner — the only thing that marks it "right now" is the
-      // green-tinted card background/border, same trick urgent Collect rows
-      // already use with red. Entrance animation only plays on hidden->visible.
-      // All 3 actions always show — Clock in, Start Estimate/Invoice, Collect —
-      // per owner: manual clock-in stays available until automatic geo tracking
-      // ships (§9.5), so it can't be gated behind "is a job scheduled today."
+      // name + colored subtext + a button row) so it reads as TradeDesk. A full
+      // color-tinted card background clashed with the rest of the app (nothing
+      // else fills a whole card in color) — dropped in favor of the same left
+      // accent-stripe trick .client-card uses for its active/bid state, so
+      // "right now" reads as one thin green line instead of a green block.
+      // Corner radius matches the financial stat tiles above it (var(--r-lg)),
+      // not the smaller default card radius. Entrance animation only plays on
+      // hidden->visible. All 3 actions always show — Clock in, Estimate/Invoice,
+      // Collect — per owner: manual clock-in stays available until automatic geo
+      // tracking ships (§9.5), so it can't be gated behind "is a job scheduled
+      // today."
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
       _nearbyEl.style.display='block';
       const nb=_nearbyJob;
@@ -335,18 +339,19 @@ function renderDash(){
         _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}';
         document.head.appendChild(_s);
       }
-      _nearbyEl.innerHTML='<div class="tf-card" style="background:var(--c-green-soft);border:1px solid var(--c-green-edge);border-radius:var(--r)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+      _nearbyEl.innerHTML='<div class="tf-card" style="position:relative;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-card)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+        '<span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c-green);border-radius:var(--r-lg) 0 0 var(--r-lg)"></span>'+
         '<div class="tf-icon t-green">'+svgIcon('📍',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">You\'re here — '+escHtml(nb.clientName)+'</div>'+
           '<div class="tf-sub" style="color:var(--c-green-deep)">'+escHtml(nbSub)+'</div>'+
         '</div>'+
-        '<div class="tf-acts">'+
-          '<button onclick="'+clockHandler+'" class="btn btn-sm" style="font-size:11px">'+svgIcon('▶',{size:11})+' Clock in</button>'+
-          '<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px">'+svgIcon('✏',{size:11})+' Estimate</button>'+
+        '<div class="tf-acts" style="padding-left:0;gap:5px">'+
+          '<button onclick="'+clockHandler+'" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('▶',{size:11})+' Clock in</button>'+
+          '<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px;padding:0 6px;flex:1.5 1 0">Estimate/Invoice</button>'+
           (hasBalance
-            ?'<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>'
-            :'<button disabled class="btn btn-sm" style="font-size:11px;opacity:.4;cursor:not-allowed">Collect →</button>')+
+            ?'<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px;padding:0 6px">Collect →</button>'
+            :'<button disabled class="btn btn-sm" style="font-size:11px;padding:0 6px;opacity:.4;cursor:not-allowed">Collect →</button>')+
         '</div>'+
       '</div>';
     }else{_nearbyEl.style.display='none';}

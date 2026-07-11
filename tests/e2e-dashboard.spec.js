@@ -1122,7 +1122,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.html).toContain('openClockInSheet(555011)');
       expect(r.html).toContain('Clock in');
       expect(r.html).toContain("_nearbyStartWork(555001)");
-      expect(r.html).toContain('Estimate');
+      expect(r.html).toContain('Estimate/Invoice');
       expect(r.html).toContain('disabled');
       expect(r.html).toContain('Banner Clockin');
       expect(r.html).toContain("You're here");
@@ -1193,7 +1193,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.html).toContain('_nearbyStartWork(555005)');
-      expect(r.html).toContain('Estimate');
+      expect(r.html).toContain('Estimate/Invoice');
     });
 
     test('the pulse/entrance keyframes are injected once, not duplicated across renders', async () => {
