@@ -2134,12 +2134,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-title">Time Log</div>
     <div id="tl-total" style="font-size:12px;font-weight:700;color:var(--text3)"></div>
   </div>
-  <div class="fbar" id="tl-range-bar" style="margin-bottom:14px;padding-left:2px">
-    <button type="button" class="fb" data-range="today" onclick="renderTimeLog('today')">Today</button>
-    <button type="button" class="fb active" data-range="week" onclick="renderTimeLog('week')">This week</button>
-    <button type="button" class="fb" data-range="month" onclick="renderTimeLog('month')">This month</button>
-    <button type="button" class="fb" data-range="all" onclick="renderTimeLog('all')">All time</button>
-  </div>
+  <select id="tl-year-sel" onchange="setTimeLogYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%;margin-bottom:14px"></select>
   <div style="padding:0 12px 80px" id="tl-list"></div>
 </div>
 <div class="pg" id="pg-dispatch"></div>

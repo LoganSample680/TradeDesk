@@ -6,17 +6,14 @@
 //   2. job_time_entries (Supabase, via _fetchCrewLabor) — GPS arrival/
 //      departure auto-tracking (js/geo-track.js), already carries
 //      employee_user_id.
-// This is an activity log (name/date/job/address/duration), not a cost
-// report — no permission gate to see your OWN entries. Job Profit and Crew
-// Cost are the $ views; they read the same rows so cost isn't blind to
-// manually-clocked time.
-function _tlSinceISO(range){
-  const now=new Date();
-  if(range==='today'){const d=new Date(now);d.setHours(0,0,0,0);return d.toISOString();}
-  if(range==='week'){const d=new Date(now);d.setDate(d.getDate()-7);return d.toISOString();}
-  if(range==='month'){const d=new Date(now);d.setDate(d.getDate()-30);return d.toISOString();}
-  return null; // 'all'
-}
+// Owner call 2026-07-11: structure follows Books exactly — a year selector,
+// then month accordions (newest month first, current/future open by
+// default), then day accordions within each month (newest day first) — the
+// same _bkTogMonth/_bkTogDay/_bkRenderDays machinery Income and Expenses
+// already use (js/finance.js), just summing minutes instead of dollars. This
+// is an activity log, not a cost report — no permission gate to see your OWN
+// entries. Job Profit and Crew Cost are the $ views; they read the same rows
+// so cost isn't blind to manually-clocked time.
 function _tlJobClientInfo(jobId){
   const j=jobs.find(x=>x.id===jobId);
   const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
@@ -48,41 +45,72 @@ async function _timeLogRows(sinceISO){
   });
   return rows.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
 }
-let _tlRange='week';
-async function renderTimeLog(range){
-  if(range)_tlRange=range;
-  document.querySelectorAll('#tl-range-bar .fb').forEach(b=>b.classList.toggle('active',b.dataset.range===_tlRange));
+function _tlYears(rows){
+  const years=[...new Set(rows.map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort((a,b)=>b.localeCompare(a));
+  if(!years.length)years.push(String(new Date().getFullYear()));
+  return years;
+}
+let _tlYear=null;
+function _tlPopulateYearSel(years){
+  const sel=document.getElementById('tl-year-sel');if(!sel)return;
+  const cur=(_tlYear&&years.includes(_tlYear))?_tlYear:years[0];
+  _tlYear=cur;
+  sel.innerHTML=years.map(y=>'<option value="'+y+'"'+(y===cur?' selected':'')+'>'+y+'</option>').join('');
+}
+function setTimeLogYear(yr){_tlYear=String(yr);renderTimeLog();}
+function _tlRow(r){
+  return '<tr data-lp-id="'+r.id+'" data-lp-type="timelog" data-lp-label="'+escHtml(r.personName+' · '+r.clientName)+'">'+
+    '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
+    '<td data-label="Client">'+escHtml(r.clientName)+(r.addr?' <span style="color:var(--text3);font-weight:400">· '+escHtml(r.addr)+'</span>':'')+'</td>'+
+    '<td class="mute" data-label="Job">'+escHtml(r.jobName)+(r.detail?' · '+escHtml(r.detail):'')+'</td>'+
+    '<td data-label="Source">'+(r.source==='auto'?svgIcon('📍',{size:11})+' Auto':svgIcon('▶',{size:11})+' Manual')+'</td>'+
+    '<td class="bold" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+'</td>'+
+  '</tr>';
+}
+async function renderTimeLog(){
   const el=document.getElementById('tl-list');if(!el)return;
   const totalEl=document.getElementById('tl-total');
   el.innerHTML='<div class="empty">Loading…</div>';
-  let rows;
-  try{rows=await _timeLogRows(_tlSinceISO(_tlRange));}
+  let allRows;
+  try{allRows=await _timeLogRows(null);}
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
   const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
-  const visible=(typeof _canViewComp==='function'&&_canViewComp())?rows:rows.filter(r=>r.personUid===myUid);
-  if(!visible.length){
-    el.innerHTML='<div class="empty">No time logged in this range.</div>';
+  const visible=(typeof _canViewComp==='function'&&_canViewComp())?allRows:allRows.filter(r=>r.personUid===myUid);
+  const years=_tlYears(visible);
+  _tlPopulateYearSel(years);
+  const yr=_tlYear;
+  const rows=visible.filter(r=>(r.date||'').startsWith(yr));
+  if(!rows.length){
+    el.innerHTML='<div class="empty">No time logged in '+yr+'.</div>';
     if(totalEl)totalEl.textContent='';
     return;
   }
-  const totalMin=visible.reduce((s,r)=>s+(r.minutes||0),0);
-  if(totalEl)totalEl.textContent=(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m')+' total';
-  el.innerHTML=visible.map(r=>
-    '<div class="card" style="margin-bottom:8px">'+
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">'+
-        '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.personName)+'</div>'+
-        '<div style="font-size:13px;font-weight:800;color:var(--text);flex-shrink:0">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+'</div>'+
+  const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
+  if(totalEl)totalEl.textContent=(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m')+' total in '+yr;
+  const byMonth={};
+  rows.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(r);});
+  const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
+  const curMo=new Date().toISOString().slice(0,7);
+  el.innerHTML='<div class="bk-months">'+months.map(mo=>{
+    const moRows=byMonth[mo];
+    const moMin=moRows.reduce((s,r)=>s+(r.minutes||0),0);
+    const[y,m]=mo.split('-');
+    const moLabel=(y&&m)?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
+    const isOpen=/^\d{4}-\d{2}$/.test(mo)&&mo>=curMo;
+    return '<div id="bk-tl-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
+      '<button class="bk-month-hd" onclick="_bkTogMonth(\'tl\',\''+mo+'\')">'+
+        '<div style="flex:1;text-align:left">'+
+          '<div class="bk-month-title">'+moLabel+'</div>'+
+          '<div class="bk-month-sub">'+moRows.length+' entr'+(moRows.length!==1?'ies':'y')+'</div>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:10px">'+
+          '<div style="font-size:15px;font-weight:900;color:var(--text);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+(typeof _fmtMin==='function'?_fmtMin(moMin):moMin+'m')+'</div>'+
+          '<div class="bk-month-chev">▸</div>'+
+        '</div>'+
+      '</button>'+
+      '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
+        _bkRenderDays('tl',mo,moRows,['Person','Client','Job','Source','Duration'],_tlRow,560,'var(--text)',r=>r.minutes||0,typeof _fmtMin==='function'?_fmtMin:(m=>m+'m'))+
       '</div>'+
-      '<div style="font-size:12px;color:var(--text2);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.clientName)+(r.addr?' · '+escHtml(r.addr):'')+'</div>'+
-      '<div style="display:flex;justify-content:space-between;gap:8px;margin-top:4px">'+
-        '<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.jobName)+(r.detail?' · '+escHtml(r.detail):'')+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);flex-shrink:0;display:flex;align-items:center;gap:4px">'+(r.source==='auto'?svgIcon('📍',{size:10})+' Auto':svgIcon('▶',{size:10})+' Manual')+' · '+escHtml(_tlDateLabel(r.date))+'</div>'+
-      '</div>'+
-    '</div>'
-  ).join('');
-}
-function _tlDateLabel(dateStr){
-  if(!dateStr)return'';
-  try{return parseD(dateStr).toLocaleDateString('en-US',{month:'short',day:'numeric'});}
-  catch(_e){return dateStr;}
+    '</div>';
+  }).join('')+'</div>';
 }

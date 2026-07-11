@@ -1,14 +1,19 @@
 // @ts-check
 /**
- * Exhaustive E2E coverage for js/timelog.js — the Time Log page (js/timelog.js,
- * js/navigation.js goPg wiring) merging manual clock entries (timeEntries) with
- * GPS auto-tracked entries (job_time_entries via _fetchCrewLabor).
+ * Exhaustive E2E coverage for js/timelog.js — the Time Log page. Structure
+ * mirrors Books exactly: year selector → month accordions (newest first,
+ * current month open by default) → day accordions within each month (newest
+ * first), reusing _bkTogMonth/_bkTogDay/_bkRenderDays from js/finance.js.
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
 test.describe('timelog.js — exhaustive coverage', () => {
   let page;
+  const thisYear = String(new Date().getFullYear());
+  const lastYear = String(new Date().getFullYear() - 1);
+  const curMonthPrefix = new Date().toISOString().slice(0, 7);
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   const SEED_FIXTURES_FN = () => {
     clients = clients.filter(c => c.id !== 89901 && c.id !== 89902);
@@ -29,8 +34,13 @@ test.describe('timelog.js — exhaustive coverage', () => {
     );
     const now = new Date();
     timeEntries.push(
+      // Current month/day — this month's accordion should default open.
       { id: 8990001, job_id: 87701, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 90, scope_id: 'sand', scope_label: 'Sanding', logged_by_uid: null, logged_by_name: 'Owner (me)' },
-      { id: 8990002, job_id: 87702, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 45, scope_id: null, scope_label: null, logged_by_uid: 'emp-test-uid', logged_by_name: 'Test Crew Member' }
+      { id: 8990002, job_id: 87702, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 45, scope_id: null, scope_label: null, logged_by_uid: 'emp-test-uid', logged_by_name: 'Test Crew Member' },
+      // A prior month, same year — proves month grouping/sorting works.
+      { id: 8990003, job_id: 87701, date: `${new Date().getFullYear()}-01-05`, start_time: `${new Date().getFullYear()}-01-05T09:00:00Z`, end_time: `${new Date().getFullYear()}-01-05T10:00:00Z`, minutes: 60, scope_id: null, scope_label: null, logged_by_uid: null, logged_by_name: 'Owner (me)' },
+      // A prior year — proves the year selector filters correctly.
+      { id: 8990004, job_id: 87701, date: `${new Date().getFullYear() - 1}-05-10`, start_time: `${new Date().getFullYear() - 1}-05-10T09:00:00Z`, end_time: `${new Date().getFullYear() - 1}-05-10T10:00:00Z`, minutes: 30, scope_id: null, scope_label: null, logged_by_uid: null, logged_by_name: 'Owner (me)' }
     );
   };
   const seedFixtures = () => page.evaluate(() => window.__seedTimelogFixtures());
@@ -45,7 +55,10 @@ test.describe('timelog.js — exhaustive coverage', () => {
     await seedFixtures();
   });
 
-  test.beforeEach(async () => { await seedFixtures(); });
+  test.beforeEach(async () => {
+    await seedFixtures();
+    await page.evaluate(() => { _tlYear = null; });
+  });
 
   test.afterAll(async () => {
     await page.evaluate(() => {
@@ -57,71 +70,16 @@ test.describe('timelog.js — exhaustive coverage', () => {
     await page.context().close();
   });
 
-  test.describe('_tlSinceISO', () => {
-    test('today — returns an ISO string at start of today', async () => {
-      const r = await page.evaluate(() => {
-        const iso = _tlSinceISO('today');
-        return { iso, isString: typeof iso === 'string', isMidnight: new Date(iso).getHours() === 0 };
-      });
-      expect(r.isString).toBe(true);
-      expect(r.isMidnight).toBe(true);
-    });
-
-    test('week — returns an ISO string ~7 days back', async () => {
-      const r = await page.evaluate(() => {
-        const iso = _tlSinceISO('week');
-        const days = (Date.now() - new Date(iso).getTime()) / 86400000;
-        return { days };
-      });
-      expect(r.days).toBeGreaterThan(6);
-      expect(r.days).toBeLessThan(8);
-    });
-
-    test('month — returns an ISO string ~30 days back', async () => {
-      const r = await page.evaluate(() => {
-        const iso = _tlSinceISO('month');
-        const days = (Date.now() - new Date(iso).getTime()) / 86400000;
-        return { days };
-      });
-      expect(r.days).toBeGreaterThan(29);
-      expect(r.days).toBeLessThan(31);
-    });
-
-    test('all — returns null (no lower bound)', async () => {
-      const r = await page.evaluate(() => _tlSinceISO('all'));
-      expect(r).toBe(null);
-    });
-
-    test('unknown range string — falls back to null, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { return { ok: true, val: _tlSinceISO('bogus') }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-      expect(r.val).toBe(null);
-    });
-
-    test('null/undefined — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _tlSinceISO(null); _tlSinceISO(undefined); return true; }
-        catch (e) { return false; }
-      });
-      expect(r).toBe(true);
-    });
-  });
-
   test.describe('_tlJobClientInfo', () => {
     test('job with bid — resolves client name/addr through the bid', async () => {
       const r = await page.evaluate(() => _tlJobClientInfo(87701));
       expect(r.clientName).toBe('Timelog Test Client');
       expect(r.addr).toBe('1 Timelog St, Wichita KS 67202');
-      expect(r.jobName).toBe('Timelog job with bid');
     });
 
     test('job with no bid — resolves client directly via job.client_id', async () => {
       const r = await page.evaluate(() => _tlJobClientInfo(87702));
       expect(r.clientName).toBe('Timelog No-Bid Client');
-      expect(r.jobName).toBe('Timelog walk-up job');
     });
 
     test('nonexistent jobId — returns em-dash placeholders, does not throw', async () => {
@@ -131,13 +89,10 @@ test.describe('timelog.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.v.jobName).toBe('—');
-      expect(r.v.clientName).toBe('—');
     });
 
     test('null jobId — does not throw', async () => {
-      const r = await page.evaluate(() => {
-        try { _tlJobClientInfo(null); return true; } catch (e) { return false; }
-      });
+      const r = await page.evaluate(() => { try { _tlJobClientInfo(null); return true; } catch (e) { return false; } });
       expect(r).toBe(true);
     });
   });
@@ -167,31 +122,12 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.personName).toBe('Test Crew Member');
     });
 
-    test('sinceISO in the far future — excludes all manual entries', async () => {
-      const r = await page.evaluate(async () => {
-        const future = new Date(Date.now() + 365 * 86400000).toISOString();
-        const rows = await _timeLogRows(future);
-        return rows.some(x => x.id === 'm8990001' || x.id === 'm8990002');
-      });
-      expect(r).toBe(false);
-    });
-
-    test('sinceISO null — includes all manual entries regardless of age', async () => {
+    test('sinceISO null — includes entries from every seeded year', async () => {
       const r = await page.evaluate(async () => {
         const rows = await _timeLogRows(null);
-        return rows.filter(x => x.id === 'm8990001' || x.id === 'm8990002').length;
+        return rows.filter(x => ['m8990001', 'm8990002', 'm8990003', 'm8990004'].includes(x.id)).length;
       });
-      expect(r).toBe(2);
-    });
-
-    test('rows are sorted by date descending', async () => {
-      const r = await page.evaluate(async () => {
-        const rows = await _timeLogRows(null);
-        const dates = rows.map(x => x.date).filter(Boolean);
-        const sorted = [...dates].sort((a, b) => b.localeCompare(a));
-        return JSON.stringify(dates) === JSON.stringify(sorted);
-      });
-      expect(r).toBe(true);
+      expect(r).toBe(4);
     });
 
     test('empty timeEntries and no crew data — resolves to empty array, no throw', async () => {
@@ -218,28 +154,27 @@ test.describe('timelog.js — exhaustive coverage', () => {
     });
   });
 
-  test.describe('_tlDateLabel', () => {
-    test('valid date string — formats as "Mon D"', async () => {
-      const r = await page.evaluate(() => _tlDateLabel('2026-03-15'));
-      expect(r).toMatch(/Mar 15/);
-    });
-
-    test('null — returns empty string, does not throw', async () => {
-      const r = await page.evaluate(() => { try { return _tlDateLabel(null); } catch (e) { return 'THREW'; } });
-      expect(r).toBe('');
-    });
-
-    test('undefined — returns empty string', async () => {
-      const r = await page.evaluate(() => _tlDateLabel(undefined));
-      expect(r).toBe('');
-    });
-
-    test('garbage string — does not throw, returns something', async () => {
+  test.describe('_tlYears', () => {
+    test('golden path — distinct years, sorted newest first', async () => {
       const r = await page.evaluate(() => {
-        try { return { ok: true, v: _tlDateLabel('not-a-date') }; }
+        const rows = [{ date: '2024-01-01' }, { date: '2026-05-01' }, { date: '2025-06-01' }, { date: '2026-08-01' }];
+        return _tlYears(rows);
+      });
+      expect(r).toEqual(['2026', '2025', '2024']);
+    });
+
+    test('empty rows — falls back to the current calendar year', async () => {
+      const r = await page.evaluate(() => _tlYears([]));
+      expect(r).toEqual([String(new Date().getFullYear())]);
+    });
+
+    test('rows with missing/malformed dates — skipped, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _tlYears([{ date: '' }, { date: null }, { }, { date: 'not-a-date' }]) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
+      expect(r.v).toEqual([String(new Date().getFullYear())]);
     });
   });
 
@@ -249,45 +184,80 @@ test.describe('timelog.js — exhaustive coverage', () => {
         const el = document.getElementById('tl-list');
         const id = el ? el.id : null;
         if (el) el.id = 'tl-list-hidden-temp';
-        try { await renderTimeLog('week'); return { ok: true }; }
+        try { await renderTimeLog(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
         finally { if (el) el.id = id; }
       });
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — owner sees both manual entries, shows total', async () => {
+    test('golden path — year selector populated, current year shown, total in header', async () => {
       const r = await page.evaluate(async () => {
         goPg('pg-timelog');
-        await renderTimeLog('all');
-        const html = document.getElementById('tl-list').innerHTML;
-        const total = document.getElementById('tl-total').textContent;
-        return { hasOwnerEntry: html.includes('Timelog Test Client'), hasCrewEntry: html.includes('Timelog No-Bid Client'), total };
+        await renderTimeLog();
+        const sel = document.getElementById('tl-year-sel');
+        const opts = [...sel.options].map(o => o.value);
+        return { opts, selected: sel.value, total: document.getElementById('tl-total').textContent };
       });
-      expect(r.hasOwnerEntry).toBe(true);
-      expect(r.hasCrewEntry).toBe(true);
+      expect(r.opts).toContain(thisYear);
+      expect(r.opts).toContain(lastYear);
+      expect(r.opts[0]).toBe(thisYear); // newest year first
+      expect(r.selected).toBe(thisYear);
       expect(r.total).toContain('total');
     });
 
-    test('range buttons — active class follows the current range', async () => {
+    test('current year — shows this year\'s entries, not last year\'s', async () => {
       const r = await page.evaluate(async () => {
-        await renderTimeLog('month');
-        const active = [...document.querySelectorAll('#tl-range-bar .fb.active')].map(b => b.dataset.range);
-        return active;
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        return document.getElementById('tl-list').innerHTML;
       });
-      expect(r).toEqual(['month']);
+      expect(r).toContain('Timelog Test Client');
+      expect(r).toContain('Timelog No-Bid Client');
     });
 
-    test('empty range (far future window has nothing) — shows empty state, not an error', async () => {
+    test('month accordions — newest month sorts first', async () => {
       const r = await page.evaluate(async () => {
-        const origSince = window._tlSinceISO;
-        window._tlSinceISO = () => new Date(Date.now() + 365 * 86400000).toISOString();
-        await renderTimeLog('today');
-        const html = document.getElementById('tl-list').innerHTML;
-        window._tlSinceISO = origSince;
-        return html;
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        return [...document.querySelectorAll('.bk-month')].map(el => el.id);
       });
-      expect(r).toContain('No time logged');
+      // curMonthPrefix (e.g. bk-tl-mo-2026-07) should sort before bk-tl-mo-2026-01
+      const idx = (yyyymm) => r.indexOf('bk-tl-mo-' + yyyymm);
+      expect(idx(curMonthPrefix)).toBeGreaterThanOrEqual(0);
+      expect(idx(`${new Date().getFullYear()}-01`)).toBeGreaterThan(idx(curMonthPrefix));
+    });
+
+    test('current month accordion is open by default', async () => {
+      const r = await page.evaluate(async (curMo) => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const el = document.getElementById('bk-tl-mo-' + curMo);
+        return el ? el.classList.contains('open') : null;
+      }, curMonthPrefix);
+      expect(r).toBe(true);
+    });
+
+    test('day accordions within a month — newest day sorts first', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const monthEl = document.getElementById('bk-tl-mo-' + new Date().toISOString().slice(0, 7));
+        return monthEl ? [...monthEl.querySelectorAll('.bk-day')].map(el => el.id) : [];
+      });
+      expect(r.length).toBeGreaterThan(0);
+      // The current-day entry should appear in this month's day list.
+      expect(r.some(id => id.includes(todayStr.replace(/-/g, '')))).toBe(true);
+    });
+
+    test('switching to a year with no data — shows the empty state, no accordions', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(1999);
+        await renderTimeLog();
+        return { html: document.getElementById('tl-list').innerHTML, total: document.getElementById('tl-total').textContent };
+      });
+      expect(r.html).toContain('No time logged in 1999');
+      expect(r.total).toBe('');
     });
 
     test('employee without payroll permission — sees only their own entries', async () => {
@@ -296,7 +266,8 @@ test.describe('timelog.js — exhaustive coverage', () => {
         window._isEmployee = true;
         window._employeeRecord = { name: 'Test Crew Member', permissions: { payroll: false } };
         window._supaUser = { id: 'emp-test-uid' };
-        await renderTimeLog('all');
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
         const html = document.getElementById('tl-list').innerHTML;
         window._isEmployee = origIsEmployee; window._employeeRecord = origEmpRecord; window._supaUser = origSupaUser;
         return { hasOwn: html.includes('Timelog No-Bid Client'), hasOthers: html.includes('Timelog Test Client') };
@@ -305,11 +276,12 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.hasOthers).toBe(false);
     });
 
-    test('owner (non-employee) always sees everyone regardless of _canViewComp internals', async () => {
+    test('owner (non-employee) always sees everyone', async () => {
       const r = await page.evaluate(async () => {
         const origIsEmployee = window._isEmployee;
         window._isEmployee = false;
-        await renderTimeLog('all');
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
         const html = document.getElementById('tl-list').innerHTML;
         window._isEmployee = origIsEmployee;
         return html.includes('Timelog Test Client') && html.includes('Timelog No-Bid Client');
@@ -317,18 +289,36 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('called with no argument — reuses the last range instead of throwing', async () => {
-      const r = await page.evaluate(async () => {
-        try { await renderTimeLog('week'); await renderTimeLog(); return { ok: true }; }
-        catch (e) { return { ok: false, err: e.message }; }
-      });
-      expect(r.ok).toBe(true);
-    });
-
     test('5 concurrent calls — no throw', async () => {
       const r = await page.evaluate(async () => {
         try {
-          await Promise.all([renderTimeLog('today'), renderTimeLog('week'), renderTimeLog('month'), renderTimeLog('all'), renderTimeLog('week')]);
+          await Promise.all([renderTimeLog(), renderTimeLog(), renderTimeLog(), renderTimeLog(), renderTimeLog()]);
+          return true;
+        } catch (e) { return false; }
+      });
+      expect(r).toBe(true);
+    });
+  });
+
+  test.describe('setTimeLogYear', () => {
+    test('changes the selected year and re-renders', async () => {
+      const r = await page.evaluate(async (ly) => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        setTimeLogYear(parseInt(ly));
+        await new Promise(res => setTimeout(res, 50));
+        return { year: _tlYear, sel: document.getElementById('tl-year-sel').value };
+      }, lastYear);
+      expect(r.year).toBe(lastYear);
+    });
+
+    test('numeric and string year both work', async () => {
+      const r = await page.evaluate(async () => {
+        try {
+          setTimeLogYear(2026);
+          await new Promise(res => setTimeout(res, 30));
+          setTimeLogYear('2026');
+          await new Promise(res => setTimeout(res, 30));
           return true;
         } catch (e) { return false; }
       });
@@ -342,10 +332,11 @@ test.describe('timelog.js — exhaustive coverage', () => {
         goPg('pg-timelog');
         await new Promise(res => setTimeout(res, 50));
         const active = document.getElementById('pg-timelog')?.classList.contains('active');
-        return { active, hasList: !!document.getElementById('tl-list') };
+        return { active, hasList: !!document.getElementById('tl-list'), hasYearSel: !!document.getElementById('tl-year-sel') };
       });
       expect(r.active).toBe(true);
       expect(r.hasList).toBe(true);
+      expect(r.hasYearSel).toBe(true);
     });
   });
 

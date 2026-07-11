@@ -3032,18 +3032,22 @@ function _bkDayLabel(d){
 }
 // Render a month's rows grouped into per-day accordions (each day its own dropdown,
 // default open). rowFn is the month's local row renderer (_incRow / _expRow).
-function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor){
+// sumFn/fmtFn are optional — default to the original $-amount behavior so Income
+// and Expenses (the only callers before Time Log) are unaffected; Time Log passes
+// a minutes-sum + duration formatter instead of $ since it isn't a money view.
+function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn){
+  sumFn=sumFn||(r=>r.amount||0);fmtFn=fmtFn||fmt;
   const byDay={};
   rows.forEach(r=>{const d=(r.date||'').slice(0,10)||'unknown';(byDay[d]||(byDay[d]=[])).push(r);});
   const days=Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
   return days.map(day=>{
     const dr=byDay[day];
-    const dayTotal=dr.reduce((s,r)=>s+(r.amount||0),0);
+    const dayTotal=dr.reduce((s,r)=>s+sumFn(r),0);
     const safe=day.replace(/[^0-9]/g,'')||'x';
     return '<div class="bk-day open" id="bk-'+tab+'-day-'+mo+'-'+safe+'">'+
       '<button class="bk-day-hd" onclick="_bkTogDay(\''+tab+'\',\''+mo+'\',\''+safe+'\')">'+
         '<span class="bk-day-title">'+_bkDayLabel(day)+'</span>'+
-        '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+dr.length+' · '+fmt(dayTotal)+'</span>'+
+        '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+dr.length+' · '+fmtFn(dayTotal)+'</span>'+
         '<span class="bk-day-chev">▾</span>'+
       '</button>'+
       '<div class="bk-day-body">'+
