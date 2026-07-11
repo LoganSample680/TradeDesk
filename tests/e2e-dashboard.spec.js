@@ -1105,7 +1105,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
 
   // ── Nearby banner (dash-nearby) — kind-driven action (owner decision 2026-07-10) ──
   test.describe('renderDash: nearby banner', () => {
-    test('active job today — Clock in targets it directly, Collect disabled (no balance owed)', async () => {
+    test('active job today — Clock in targets it directly, Collect is absent (no balance owed)', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1123,7 +1123,9 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.html).toContain('Clock in');
       expect(r.html).toContain("_nearbyStartWork(555001)");
       expect(r.html).toContain('Estimate/Invoice');
-      expect(r.html).toContain('disabled');
+      // No dead controls: nothing owed means no Collect button at all, not a
+      // disabled ghost — a permanently-inert button reads as broken.
+      expect(r.html).not.toContain('Collect');
       expect(r.html).toContain('Banner Clockin');
       expect(r.html).toContain("You're here");
     });
@@ -1144,7 +1146,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.html).toContain('openClockInSheet(555012)');
     });
 
-    test('no open job at all — Clock in opens the client detail page instead', async () => {
+    test('no open job at all — Clock in is absent, not a dead-end redirect to the client page', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1157,10 +1159,16 @@ test.describe('dashboard.js — exhaustive coverage', () => {
         finally { _nearbyJob = origNb; _activeTimer = origTimer; }
       });
       expect(r.ok).toBe(true);
-      expect(r.html).toContain("openClientDetail(555003,'dash')");
+      // Tapping Clock in with nothing to clock into used to dead-end on the
+      // client profile page — confusing, since the user asked to clock in and
+      // landed on an unrelated screen. The button is simply absent now; only
+      // Estimate/Invoice (always applicable) shows.
+      expect(r.html).not.toContain('Clock in');
+      expect(r.html).not.toContain('openClientDetail');
+      expect(r.html).toContain('_nearbyStartWork(555003)');
     });
 
-    test('balance owed — Collect is enabled and opens the pay panel with autoType final', async () => {
+    test('balance owed — Collect shows and opens the pay panel with autoType final', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1177,6 +1185,25 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.html).toContain('$450.00 owed');
       expect(r.html).toContain('Collect →');
       expect(r.html).not.toContain('disabled');
+    });
+
+    test('no job and no balance — only Estimate/Invoice shows', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { clientId: 555007, jobId: null, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Banner ColdWalkup', addr: '7 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '', btnCount: el ? el.querySelectorAll('.tf-acts button').length : -1 };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.btnCount).toBe(1);
+      expect(r.html).toContain('_nearbyStartWork(555007)');
+      expect(r.html).not.toContain('Clock in');
+      expect(r.html).not.toContain('Collect');
     });
 
     test('Estimate button always shows and opens the start-work picker', async () => {

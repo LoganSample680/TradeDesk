@@ -312,53 +312,48 @@ function renderDash(){
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     if(_nearbyJob&&!_activeTimer){
-      // Owner request 2026-07-10/11: the contractor is physically standing at the
-      // client's location RIGHT NOW, so this sits right under the Profit/Avg Job
-      // tiles (the natural first-glance center of the screen). It reuses the same
-      // .tf-card shape every other actionable dashboard card uses (icon square +
-      // name + colored subtext + a button row) so it reads as TradeDesk. A full
-      // color-tinted card background clashed with the rest of the app (nothing
-      // else fills a whole card in color) — dropped in favor of the same left
-      // accent-stripe trick .client-card uses for its active/bid state, so
-      // "right now" reads as one thin green line instead of a green block.
-      // Corner radius matches the financial stat tiles above it (var(--r-lg)),
-      // not the smaller default card radius. Entrance animation only plays on
-      // hidden->visible. All 3 actions always show — Clock in, Estimate/Invoice,
-      // Collect — per owner: manual clock-in stays available until automatic geo
-      // tracking ships (§9.5), so it can't be gated behind "is a job scheduled
-      // today."
+      // Owner request 2026-07-10/11, revised 2026-07-11 after live testing: a
+      // permanently-disabled Collect button and a Clock-in that dead-ends on the
+      // client profile page (when there's no job to clock into) both read as
+      // broken, not as "not applicable right now." Nielsen/NN-style disabled-
+      // control guidance applies here too — a control that NEVER does anything
+      // in some state is worse than not showing it at all. So each button is now
+      // conditionally included, not conditionally disabled: Estimate/Invoice is
+      // the only one that's always available (needs nothing but a client — walk
+      // up, log the charge, it auto-drops into Collect for you). Clock in only
+      // shows when there's an actual job target (today's job or the client's
+      // nearest open one). Collect only shows when there's a real balance owed.
+      // Remaining buttons split the row evenly via the existing .tf-acts>.btn
+      // flex:1 rule — no dead ghosts, no confusing redirects.
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
       _nearbyEl.style.display='block';
       const nb=_nearbyJob;
       const clockTarget=nb.jobId||nb.fallbackJobId;
-      const clockHandler=clockTarget?'openClockInSheet('+clockTarget+')':'openClientDetail('+nb.clientId+',\'dash\')';
       const hasBalance=nb.balance>0.01;
       const nbSub=nb.addr+(hasBalance?' · '+fmt(nb.balance)+' owed':'');
       if(!document.getElementById('_td-nearby-anim-style')){
         const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
-        // Elevated shadow (var(--shadow-lift), same weight as the sign-flow header)
-        // makes the card visually pop off the page — a subtle live-indicator dot
-        // pulse does the rest, instead of the whole card glowing/tinting like
-        // before. The dot is a small, standard "this is live right now" convention
-        // (recording/online-status badges), not a foreign animation.
+        // A subtle live-indicator dot pulse signals "right now" — a small,
+        // standard convention (recording/online-status badges), not a foreign
+        // animation. The card itself uses the exact same background/shadow as
+        // every other dashboard card (only the left accent stripe differs), so
+        // it doesn't read as a different-colored card.
         _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
           '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}';
         document.head.appendChild(_s);
       }
-      _nearbyEl.innerHTML='<div class="tf-card" style="position:relative;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-lift)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+      const nbBtns=[];
+      if(clockTarget)nbBtns.push('<button onclick="openClockInSheet('+clockTarget+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('▶',{size:11})+' Clock in</button>');
+      nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('📋',{size:11})+' Estimate/Invoice</button>');
+      if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px;padding:0 6px">'+svgIcon('💰',{size:11})+' Collect →</button>');
+      _nearbyEl.innerHTML='<div class="tf-card" style="position:relative;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
         '<span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c-green);border-radius:var(--r-lg) 0 0 var(--r-lg)"></span>'+
         '<div class="tf-icon t-green">'+svgIcon('📍',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c-green);margin-right:6px;animation:tdNearbyDot 1.6s ease-in-out infinite"></span>You\'re here — '+escHtml(nb.clientName)+'</div>'+
           '<div class="tf-sub" style="color:var(--c-green-deep)">'+escHtml(nbSub)+'</div>'+
         '</div>'+
-        '<div class="tf-acts" style="padding-left:0;gap:5px">'+
-          '<button onclick="'+clockHandler+'" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('▶',{size:11})+' Clock in</button>'+
-          '<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px;padding:0 6px;flex:1.6 1 0">'+svgIcon('📋',{size:11})+' Estimate/Invoice</button>'+
-          (hasBalance
-            ?'<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px;padding:0 6px">'+svgIcon('💰',{size:11})+' Collect →</button>'
-            :'<button disabled class="btn btn-sm" style="font-size:11px;padding:0 6px;opacity:.4;cursor:not-allowed">'+svgIcon('💰',{size:11})+' Collect →</button>')+
-        '</div>'+
+        '<div class="tf-acts" style="padding-left:0;gap:5px">'+nbBtns.join('')+'</div>'+
       '</div>';
     }else{_nearbyEl.style.display='none';}
   }

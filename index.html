@@ -1215,8 +1215,12 @@ body.dark .cal-cell.other{background:var(--cream)}
       <!-- "You're at X's" is a physically-here-RIGHT-NOW moment — nested inside the
            kpi widget (not a standalone draggable) so it always lands right under the
            Profit/Avg Job tiles, the natural first-glance center of the screen (owner
-           call 2026-07-10: top-of-screen reads as header chrome and gets skipped). -->
-      <div id="dash-nearby" style="display:none;margin-top:12px"></div>
+           call 2026-07-10: top-of-screen reads as header chrome and gets skipped).
+           No margin-top: .mets already contributes margin-bottom:16px above this,
+           so a separate top margin doubled up into a bigger gap above the card than
+           below it (2026-07-11 fix — margin-bottom here matches .card's 14px so the
+           gap below is the same weight as everywhere else on the dashboard). -->
+      <div id="dash-nearby" style="display:none;margin-bottom:14px"></div>
     </div>
     <div class="td-dw" data-dw="crew">
       <div id="dash-crew-today" style="display:none"></div>
