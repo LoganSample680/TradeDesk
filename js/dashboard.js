@@ -312,44 +312,42 @@ function renderDash(){
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     if(_nearbyJob&&!_activeTimer){
-      // Owner request 2026-07-10: the contractor is physically standing at the job
-      // site RIGHT NOW, so this sits right under the Profit/Avg Job tiles (the
-      // natural first-glance center of the screen). It reuses the same .tf-card
-      // shape every other actionable dashboard card uses (icon square + name +
-      // colored subtext + a button row of its own) so it reads as TradeDesk, not
-      // a bolted-on banner — the only thing that marks it "right now" is the
+      // Owner request 2026-07-10/11: the contractor is physically standing at the
+      // client's location RIGHT NOW, so this sits right under the Profit/Avg Job
+      // tiles (the natural first-glance center of the screen). It reuses the same
+      // .tf-card shape every other actionable dashboard card uses (icon square +
+      // name + colored subtext + a button row) so it reads as TradeDesk, not a
+      // bolted-on banner — the only thing that marks it "right now" is the
       // green-tinted card background/border, same trick urgent Collect rows
-      // already use with red. Entrance animation only plays on the hidden->visible
-      // transition, not on every renderDash re-render.
+      // already use with red. Entrance animation only plays on hidden->visible.
+      // All 3 actions always show — Clock in, Start Estimate/Invoice, Collect —
+      // per owner: manual clock-in stays available until automatic geo tracking
+      // ships (§9.5), so it can't be gated behind "is a job scheduled today."
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
       _nearbyEl.style.display='block';
       const nb=_nearbyJob;
-      // Kind decides the icon, subtext, and action button — clockin (active job
-      // today) reuses the exact "Clock in" button already used on the dispatch
-      // board and client hub; collect reuses the Collect button from the Collect
-      // feed card; diagnostic reuses the Diagnostic charge button from the client
-      // detail panel. No new button styles invented here.
-      const nbIcon=nb.kind==='collect'?'💰':nb.kind==='diagnostic'?'🔧':'🔨';
-      const nbSub=nb.kind==='collect'?fmt(nb.balance)+' owed · '+nb.addr
-        :nb.kind==='diagnostic'?nb.addr+' · nothing scheduled here'
-        :nb.addr+' · job scheduled today';
-      const nbBtn=nb.kind==='collect'
-        ?'<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>'
-        :nb.kind==='diagnostic'
-        ?'<button onclick="openDiagnosticCharge('+nb.clientId+')" class="btn btn-sm" style="font-size:11px">'+svgIcon('🔧',{size:11})+' Log charge</button>'
-        :'<button onclick="openClockInSheet('+nb.jobId+')" class="btn btn-sm" style="border-radius:20px">'+svgIcon('▶')+' Clock in</button>';
+      const clockTarget=nb.jobId||nb.fallbackJobId;
+      const clockHandler=clockTarget?'openClockInSheet('+clockTarget+')':'openClientDetail('+nb.clientId+',\'dash\')';
+      const hasBalance=nb.balance>0.01;
+      const nbSub=nb.addr+(hasBalance?' · '+fmt(nb.balance)+' owed':'');
       if(!document.getElementById('_td-nearby-anim-style')){
         const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
         _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}';
         document.head.appendChild(_s);
       }
       _nearbyEl.innerHTML='<div class="tf-card" style="background:var(--c-green-soft);border:1px solid var(--c-green-edge);border-radius:var(--r)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
-        '<div class="tf-icon t-green">'+svgIcon(nbIcon,{size:18})+'</div>'+
+        '<div class="tf-icon t-green">'+svgIcon('📍',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">You\'re here — '+escHtml(nb.clientName)+'</div>'+
           '<div class="tf-sub" style="color:var(--c-green-deep)">'+escHtml(nbSub)+'</div>'+
         '</div>'+
-        '<div class="tf-acts">'+nbBtn+'</div>'+
+        '<div class="tf-acts">'+
+          '<button onclick="'+clockHandler+'" class="btn btn-sm" style="font-size:11px">'+svgIcon('▶',{size:11})+' Clock in</button>'+
+          '<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px">'+svgIcon('✏',{size:11})+' Estimate</button>'+
+          (hasBalance
+            ?'<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>'
+            :'<button disabled class="btn btn-sm" style="font-size:11px;opacity:.4;cursor:not-allowed">Collect →</button>')+
+        '</div>'+
       '</div>';
     }else{_nearbyEl.style.display='none';}
   }

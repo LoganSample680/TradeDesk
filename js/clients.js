@@ -40,6 +40,27 @@ function openEstimateForClient(){
 // client record — shows in Documents/timeline/invoice like any other job),
 // then straight into the existing payment-collection panel (card link, QR,
 // or log cash/check) — reusing openPayPanel exactly as a normal job would.
+// Owner request 2026-07-11: the nearby-banner "Start Estimate/Invoice" button
+// covers two different jobs — a quick trip-fee/diagnostic charge for work
+// already done (openDiagnosticCharge), or a full estimate for a bigger job
+// that needs a formal quote (openEstimateForClient). One button, one tap to
+// pick which, since the banner only has room for 3 buttons total.
+function _nearbyStartWork(clientId){
+  const c=getClientById(clientId);if(!c)return;
+  document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Start work for '+escHtml(c.name)+'</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">Quick invoice for something you just did, or a full estimate for a bigger job?</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px">'+
+      '<button onclick="closeTopModal();openDiagnosticCharge('+clientId+')" class="btn btn-p" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('🔧',{size:16})+' Quick invoice</button>'+
+      '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" class="btn" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('✏',{size:16})+' Start estimate</button>'+
+      '<button onclick="closeTopModal()" style="padding:10px;border:none;background:none;color:var(--text3);font-size:13px;font-family:inherit;cursor:pointer">Cancel</button>'+
+    '</div>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+}
 function openDiagnosticCharge(clientId){
   const c=getClientById(clientId);if(!c)return;
   document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());

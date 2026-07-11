@@ -1405,20 +1405,24 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r).toBe(5);
     });
 
-    // Owner decision 2026-07-10: the nearby banner must fire for ANY client with
-    // an address, not just ones with a scheduled job — and the ACTION offered
-    // depends on that client's state (clock in / collect / log a diagnostic
-    // charge). geoIfGranted + _geocodeAddr are stubbed so every candidate
-    // resolves to the mocked position — deterministic, no real network/GPS.
-    // The shared page's clients/bids/jobs/payments arrays accumulate fixtures
-    // from every describe block in this file — checkNearbyJob's geocode BUDGET
-    // means unrelated addressed clients can consume it before reaching a test's
-    // own fixture, and getBidStage's client_id fallback can pick up an unrelated
+    // Owner decision 2026-07-10/11: the nearby banner must fire for ANY client
+    // with an address, not just ones with a scheduled job — and it always
+    // surfaces all 3 possible actions (Clock in, Start Estimate/Invoice,
+    // Collect), so checkNearbyJob computes every action's TARGET rather than
+    // picking a single winning "kind": jobId (active job today), fallbackJobId
+    // (nearest open job when nothing's active today), bidId+balance (most
+    // recent Closed Won bid with money owed). geoIfGranted + _geocodeAddr are
+    // stubbed so every candidate resolves to the mocked position —
+    // deterministic, no real network/GPS. The shared page's
+    // clients/bids/jobs/payments arrays accumulate fixtures from every
+    // describe block in this file — checkNearbyJob's geocode BUDGET means
+    // unrelated addressed clients can consume it before reaching a test's own
+    // fixture, and getBidStage's client_id fallback can pick up an unrelated
     // stray job. Every test below swaps ALL FOUR arrays down to just its own
-    // fixture for the call (restored after), so kind-selection is verified
+    // fixture for the call (restored after), so target selection is verified
     // fully isolated from whatever else the shared page has accumulated.
-    test.describe('kind selection', () => {
-      test('client with an active job today — kind=clockin, jobId set', async () => {
+    test.describe('action target selection', () => {
+      test('client with an active job today — jobId set, no fallback, no balance', async () => {
         const r = await page.evaluate(() => {
           const orig = { clients, bids, jobs, payments };
           clients = [{ id: 79960, name: 'Nearby Clockin', addr: '10 Nearby Rd, Wichita KS' }];
@@ -1436,12 +1440,14 @@ test.describe('jobs.js — exhaustive coverage', () => {
           });
         });
         expect(r.nb).toBeTruthy();
-        expect(r.nb.kind).toBe('clockin');
         expect(r.nb.jobId).toBe(77760);
+        expect(r.nb.fallbackJobId).toBe(null);
+        expect(r.nb.bidId).toBe(null);
+        expect(r.nb.balance).toBe(0);
         expect(r.nb.clientName).toBe('Nearby Clockin');
       });
 
-      test('Closed Won bid, completed, balance owed, no active job — kind=collect', async () => {
+      test('Closed Won bid, completed, balance owed, no active job — bidId+balance set, no job target', async () => {
         const r = await page.evaluate(() => {
           const orig = { clients, bids, jobs, payments };
           clients = [{ id: 79961, name: 'Nearby Collect', addr: '20 Nearby Rd, Wichita KS' }];
@@ -1459,12 +1465,13 @@ test.describe('jobs.js — exhaustive coverage', () => {
           });
         });
         expect(r.nb).toBeTruthy();
-        expect(r.nb.kind).toBe('collect');
         expect(r.nb.bidId).toBe(78861);
         expect(r.nb.balance).toBe(900);
+        expect(r.nb.jobId).toBe(null);
+        expect(r.nb.fallbackJobId).toBe(null);
       });
 
-      test('client with no Closed Won bid — kind=diagnostic (the always-available fallback)', async () => {
+      test('client with no Closed Won bid — all targets null except clientId (Estimate/Invoice is the always-available action)', async () => {
         const r = await page.evaluate(() => {
           const orig = { clients, bids, jobs, payments };
           clients = [{ id: 79962, name: 'Nearby Diagnostic', addr: '30 Nearby Rd, Wichita KS' }];
@@ -1482,11 +1489,14 @@ test.describe('jobs.js — exhaustive coverage', () => {
           });
         });
         expect(r.nb).toBeTruthy();
-        expect(r.nb.kind).toBe('diagnostic');
         expect(r.nb.clientId).toBe(79962);
+        expect(r.nb.jobId).toBe(null);
+        expect(r.nb.fallbackJobId).toBe(null);
+        expect(r.nb.bidId).toBe(null);
+        expect(r.nb.balance).toBe(0);
       });
 
-      test('a fully-paid Closed Won bid does NOT trigger collect (falls through to diagnostic)', async () => {
+      test('a fully-paid Closed Won bid does NOT set bidId/balance (nothing left to collect)', async () => {
         const r = await page.evaluate(() => {
           const orig = { clients, bids, jobs, payments };
           clients = [{ id: 79961, name: 'Nearby Paid Up', addr: '20 Nearby Rd, Wichita KS' }];
@@ -1504,7 +1514,30 @@ test.describe('jobs.js — exhaustive coverage', () => {
           });
         });
         expect(r.nb).toBeTruthy();
-        expect(r.nb.kind).toBe('diagnostic');
+        expect(r.nb.bidId).toBe(null);
+        expect(r.nb.balance).toBe(0);
+      });
+
+      test('a job is scheduled but not active today — fallbackJobId is set instead of jobId', async () => {
+        const r = await page.evaluate(() => {
+          const orig = { clients, bids, jobs, payments };
+          clients = [{ id: 79963, name: 'Nearby Fallback', addr: '50 Nearby Rd, Wichita KS' }];
+          bids = [{ id: 78863, client_id: 79963, amount: 1200, status: 'Closed Won', bid_date: '2026-01-01' }];
+          jobs = [{ id: 77763, client_id: 79963, bid_id: 78863, name: 'Job next week', eventType: 'job', status: 'scheduled', start: addDays(todayKey(), 5) }];
+          payments = [];
+          const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 37.72, longitude: -97.36, accuracy: 10 } });
+          window._geocodeAddr = async () => ({ lat: 37.72, lon: -97.36 });
+          return checkNearbyJob().then(() => {
+            window.geoIfGranted = origGeo; window._geocodeAddr = origGeocode;
+            const nb = _nearbyJob;
+            ({ clients, bids, jobs, payments } = orig);
+            return { nb };
+          });
+        });
+        expect(r.nb).toBeTruthy();
+        expect(r.nb.jobId).toBe(null);
+        expect(r.nb.fallbackJobId).toBe(77763);
       });
 
       test('a client’s geocoded coords are cached in localStorage (not on the record, not via saveAll) after one lookup', async () => {

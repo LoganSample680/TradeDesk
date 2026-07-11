@@ -273,10 +273,13 @@ function doneForDay(){
 
 // ── Nearby detection (home-page smart clock-in / collect / diagnostic) ───────
 // Any client with an address is a candidate — not just ones with a scheduled
-// job. What action gets offered depends on that client's state, in priority
-// order: an active job today (clock in) > a Closed Won bid with a balance
-// owed (collect) > anything else (log a diagnostic charge — the always-
-// available fallback, since that flow needs nothing but a client).
+// job. Owner request 2026-07-11: always surface all 3 possible actions —
+// Clock in, Start Estimate/Invoice, Collect — not just the single highest-
+// priority one. Start Estimate/Invoice needs nothing but a client, so it's
+// always available. Clock in targets today's active job if there is one,
+// else falls back to the client's nearest open (non-done) job so manual
+// clock-in stays available before automatic geo clock-in/out ships (§9.5).
+// Collect targets the most recent Closed Won bid with a balance owed.
 let _nearbyJob=null;
 function _haversineKm(lat1,lon1,lat2,lon2){
   const R=6371,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
@@ -330,16 +333,19 @@ async function checkNearbyJob(){
         if(cacheDirty)_saveNearbyGeoCache(geoCache);
         const addrShort=c.addr.split(',')[0];
         const bid=bids.filter(b=>b.client_id===c.id&&b.status==='Closed Won').sort((a,b2)=>(b2.bid_date||'').localeCompare(a.bid_date||''))[0];
+        let jobId=null,fallbackJobId=null,bidId=null,balance=0;
         if(bid){
           const st=getBidStage(bid);
-          if(st.stage==='active'){
-            const activeJob=(st.jobs||[]).find(j=>{const d=parseInt(j.days)||1;for(let i=0;i<d;i++)if(addDays(j.start,i)===tk)return true;return false;});
-            if(activeJob){_nearbyJob={kind:'clockin',jobId:activeJob.id,clientName:c.name,addr:addrShort};renderDash&&renderDash();return;}
-          }else if(st.stage==='balance_due'){
-            _nearbyJob={kind:'collect',bidId:bid.id,clientName:c.name,addr:addrShort,balance:getBidBalance(bid)};renderDash&&renderDash();return;
+          const activeJob=(st.jobs||[]).find(j=>{const d=parseInt(j.days)||1;for(let i=0;i<d;i++)if(addDays(j.start,i)===tk)return true;return false;});
+          if(activeJob)jobId=activeJob.id;
+          else{
+            const nearestJob=(st.jobs||[]).slice().sort((a,b2)=>String(a.start).localeCompare(String(b2.start)))[0];
+            if(nearestJob)fallbackJobId=nearestJob.id;
           }
+          const bal=getBidBalance(bid);
+          if(bid.completion_date&&bal>0.01){bidId=bid.id;balance=bal;}
         }
-        _nearbyJob={kind:'diagnostic',clientId:c.id,clientName:c.name,addr:addrShort};
+        _nearbyJob={clientId:c.id,clientName:c.name,addr:addrShort,jobId,fallbackJobId,bidId,balance};
         renderDash&&renderDash();
         return;
       }
