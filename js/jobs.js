@@ -305,6 +305,23 @@ function _geocodeAddr(addr){
 const _NEARBY_GEOCODE_BUDGET=8;
 function _nearbyGeoCache(){try{return JSON.parse(localStorage.getItem('zp3_nearby_geo')||'{}');}catch(_e){return{};}}
 function _saveNearbyGeoCache(cache){try{localStorage.setItem('zp3_nearby_geo',JSON.stringify(cache));}catch(_e){}}
+function _nearbyResolveClient(c,myLat,myLon,tk){
+  const addrShort=c.addr.split(',')[0];
+  const bid=bids.filter(b=>b.client_id===c.id&&b.status==='Closed Won').sort((a,b2)=>(b2.bid_date||'').localeCompare(a.bid_date||''))[0];
+  let jobId=null,fallbackJobId=null,bidId=null,balance=0;
+  if(bid){
+    const st=getBidStage(bid);
+    const activeJob=(st.jobs||[]).find(j=>{const d=parseInt(j.days)||1;for(let i=0;i<d;i++)if(addDays(j.start,i)===tk)return true;return false;});
+    if(activeJob)jobId=activeJob.id;
+    else{
+      const nearestJob=(st.jobs||[]).slice().sort((a,b2)=>String(a.start).localeCompare(String(b2.start)))[0];
+      if(nearestJob)fallbackJobId=nearestJob.id;
+    }
+    const bal=getBidBalance(bid);
+    if(bid.completion_date&&bal>0.01){bidId=bid.id;balance=bal;}
+  }
+  return{clientId:c.id,clientName:c.name,addr:addrShort,jobId,fallbackJobId,bidId,balance};
+}
 async function checkNearbyJob(){
   if(!navigator.geolocation||!_supaUser)return;
   // `return` (not a bare call) so a caller that DOES await this — tests, mainly;
@@ -314,41 +331,44 @@ async function checkNearbyJob(){
     const{latitude:myLat,longitude:myLon}=pos.coords;
     const tk=todayKey();
     const geoCache=_nearbyGeoCache();
-    let geocodeBudget=_NEARBY_GEOCODE_BUDGET,cacheDirty=false;
+    // Root cause of the old 5s+ banner delay: a single loop interleaved cached
+    // (instant) and uncached (network geocode + 1.1s throttle sleep) clients in
+    // raw array order, so ANY uncached client positioned before the real match
+    // forced a live geocode round-trip before the next candidate was even
+    // checked. Cached clients are the common case (same client book every day)
+    // and cost nothing — check ALL of them first, with zero network/delay, before
+    // ever touching the throttled uncached path.
+    const uncached=[];
     for(const c of clients){
       if(!c.addr)continue;
-      let coords=null;
       const cached=geoCache[c.id];
       if(cached&&cached.addr===c.addr){
-        coords={lat:cached.lat,lon:cached.lon};
-      }else if(geocodeBudget>0){
-        geocodeBudget--;
-        coords=await _geocodeAddr(c.addr);
-        if(coords){geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;}
-        if(geocodeBudget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
-      }
-      if(!coords)continue;
-      const km=_haversineKm(myLat,myLon,coords.lat,coords.lon);
-      if(km<0.5){
-        if(cacheDirty)_saveNearbyGeoCache(geoCache);
-        const addrShort=c.addr.split(',')[0];
-        const bid=bids.filter(b=>b.client_id===c.id&&b.status==='Closed Won').sort((a,b2)=>(b2.bid_date||'').localeCompare(a.bid_date||''))[0];
-        let jobId=null,fallbackJobId=null,bidId=null,balance=0;
-        if(bid){
-          const st=getBidStage(bid);
-          const activeJob=(st.jobs||[]).find(j=>{const d=parseInt(j.days)||1;for(let i=0;i<d;i++)if(addDays(j.start,i)===tk)return true;return false;});
-          if(activeJob)jobId=activeJob.id;
-          else{
-            const nearestJob=(st.jobs||[]).slice().sort((a,b2)=>String(a.start).localeCompare(String(b2.start)))[0];
-            if(nearestJob)fallbackJobId=nearestJob.id;
-          }
-          const bal=getBidBalance(bid);
-          if(bid.completion_date&&bal>0.01){bidId=bid.id;balance=bal;}
+        if(_haversineKm(myLat,myLon,cached.lat,cached.lon)<0.5){
+          _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
+          renderDash&&renderDash();
+          return;
         }
-        _nearbyJob={clientId:c.id,clientName:c.name,addr:addrShort,jobId,fallbackJobId,bidId,balance};
+      }else{
+        uncached.push(c);
+      }
+    }
+    // No cached client is nearby — fall back to throttled geocoding of the rest.
+    // Still respects Nominatim's ~1 req/sec limit, but this path only runs (and
+    // only costs real seconds) the first time a client's address is seen, not
+    // on every dashboard load once the cache is warm.
+    let geocodeBudget=_NEARBY_GEOCODE_BUDGET,cacheDirty=false;
+    for(const c of uncached){
+      if(geocodeBudget<=0)break;
+      geocodeBudget--;
+      const coords=await _geocodeAddr(c.addr);
+      if(coords){geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;}
+      if(coords&&_haversineKm(myLat,myLon,coords.lat,coords.lon)<0.5){
+        if(cacheDirty)_saveNearbyGeoCache(geoCache);
+        _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
         renderDash&&renderDash();
         return;
       }
+      if(geocodeBudget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
     }
     if(cacheDirty)_saveNearbyGeoCache(geoCache);
     if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}

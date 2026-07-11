@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.10.26.14';
+const APP_VERSION='07.10.26.15';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -4924,7 +4924,11 @@ async function supaLoadFromCloud({silent=false}={}){
       // This fires immediately in the contractor's open TradeDesk tab — no polling delay.
       window.addEventListener('storage',e=>{if(e.key==='zp3_sig_notify'&&e.newValue)checkNewSignatures();});
       setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
-      setTimeout(()=>checkNearbyJob(),4000);
+      // Was 4000ms — checkNearbyJob's cache-first rewrite (js/jobs.js) makes the
+      // common case (client book already geocoded from a prior day) resolve
+      // near-instantly, so this only needs to trail the location-permission
+      // request above, not pad extra wait time on top of it.
+      setTimeout(()=>checkNearbyJob(),1500);
     }
 
     try{

@@ -336,14 +336,20 @@ function renderDash(){
       const nbSub=nb.addr+(hasBalance?' · '+fmt(nb.balance)+' owed':'');
       if(!document.getElementById('_td-nearby-anim-style')){
         const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
-        _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}';
+        // Elevated shadow (var(--shadow-lift), same weight as the sign-flow header)
+        // makes the card visually pop off the page — a subtle live-indicator dot
+        // pulse does the rest, instead of the whole card glowing/tinting like
+        // before. The dot is a small, standard "this is live right now" convention
+        // (recording/online-status badges), not a foreign animation.
+        _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
+          '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}';
         document.head.appendChild(_s);
       }
-      _nearbyEl.innerHTML='<div class="tf-card" style="position:relative;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-card)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+      _nearbyEl.innerHTML='<div class="tf-card" style="position:relative;background:var(--bg-card);border:1px solid var(--line);border-radius:var(--r-lg);box-shadow:var(--shadow-lift)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
         '<span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c-green);border-radius:var(--r-lg) 0 0 var(--r-lg)"></span>'+
         '<div class="tf-icon t-green">'+svgIcon('📍',{size:18})+'</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">You\'re here — '+escHtml(nb.clientName)+'</div>'+
+          '<div class="tf-name"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c-green);margin-right:6px;animation:tdNearbyDot 1.6s ease-in-out infinite"></span>You\'re here — '+escHtml(nb.clientName)+'</div>'+
           '<div class="tf-sub" style="color:var(--c-green-deep)">'+escHtml(nbSub)+'</div>'+
         '</div>'+
         '<div class="tf-acts" style="padding-left:0;gap:5px">'+
