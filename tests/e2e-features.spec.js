@@ -756,6 +756,29 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
       if (result.entriesAfter > -1) expect(result.entriesAfter).toBeGreaterThanOrEqual(result.entriesBefore);
     }
   });
+
+  test('clockOut — tags the saved entry with who logged it (feeds Time Log)', async () => {
+    const result = await page.evaluate(([jobId]) => {
+      if (typeof clockIn !== 'function' || typeof clockOut !== 'function') return null;
+      const origBanner = window.showClockBanner, origHide = window.hideClockBanner;
+      const origRender = window.renderJobsPage, origSave = window.saveAll, origToast = window.showToast;
+      window.showClockBanner = () => {}; window.hideClockBanner = () => {};
+      window.renderJobsPage = () => {}; window.saveAll = () => {}; window.showToast = () => {};
+      try {
+        clockIn(jobId, 'walls', 'Walls');
+        clockOut(true, true);
+      } catch (e) { return { error: e.message }; }
+      window.showClockBanner = origBanner; window.hideClockBanner = origHide;
+      window.renderJobsPage = origRender; window.saveAll = origSave; window.showToast = origToast;
+      const latest = timeEntries.filter(e => e.job_id === jobId).sort((a, b) => b.id - a.id)[0];
+      return { hasLoggedByName: !!(latest && latest.logged_by_name), loggedByUid: latest ? latest.logged_by_uid : 'MISSING' };
+    }, [JOB_ID]);
+    if (result && !result.error) {
+      expect(result.hasLoggedByName).toBe(true);
+      // Owner session (this test suite never signs in as an employee) — null uid means owner.
+      expect(result.loggedByUid).toBe(null);
+    }
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3313,10 +3336,75 @@ test.describe('Workforce time intelligence', () => {
     if (r && !r.error) expect(r.shown).toBe(true);
   });
 
+  // Crew Cost now folds in manually-clocked time too — same fix as Job Profit
+  // above, verified independently since it aggregates differently (by
+  // employee, not by bid).
+  test('_crewCostRender counts manual timeEntries even with zero GPS entries', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _crewCostRender !== 'function') return null;
+      const orig = { timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser, ownerPayType: S.ownerPayType, ownerPayRate: S.ownerPayRate };
+      const now = new Date();
+      timeEntries = timeEntries.filter(e => e.id !== 8970002);
+      timeEntries.push({ id: 8970002, job_id: 1, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 60, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+      S.ownerPayType = 'hourly'; S.ownerPayRate = 25;
+      const makeQ = () => { const q = { _data: { data: [] } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      window._supa = { from: () => makeQ() };
+      window.supaEnabled = () => true;
+      window._supaUser = window._supaUser || { id: 'test-uid' };
+      document.getElementById('_crew-cost-ov')?.remove();
+      try { _openCrewCost(); await _crewCostRender('today'); } catch (e) { return { error: e.message }; }
+      const html = document.getElementById('_crew-cost-body')?.innerHTML || '';
+      document.getElementById('_crew-cost-ov')?.remove();
+      timeEntries = orig.timeEntries; window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser;
+      S.ownerPayType = orig.ownerPayType; S.ownerPayRate = orig.ownerPayRate;
+      return { html };
+    });
+    // 'No tracked time today yet' is the empty-state string — its absence proves
+    // the manual entry (mocked GPS entries are all empty) registered as cost.
+    if (r && !r.error) expect(r.html).not.toContain('No tracked time today');
+  });
+
   // ── Job Profit: source filter excludes drive minutes from labor cost ─────
   test('_openJobProfit is a function', async () => {
     const ok = await page.evaluate(() => typeof _openJobProfit === 'function');
     expect(ok).toBe(true);
+  });
+
+  // ── Job Profit now folds in manually-clocked time (js/jobs.js clockOut →
+  // timeEntries), not just GPS-tracked job_time_entries — a walk-up job clocked
+  // via the nearby-banner Clock in button used to be invisible here entirely.
+  test('_openJobProfit counts manual timeEntries as tracked labor even with zero GPS entries', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _openJobProfit !== 'function') return null;
+      const orig = { clients, bids, jobs, timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser, ownerPayType: S.ownerPayType, ownerPayRate: S.ownerPayRate };
+      clients = clients.filter(c => c.id !== 89801);
+      clients.push({ id: 89801, name: 'JobProfit Manual Test', addr: '1 JP St' });
+      bids = bids.filter(b => b.id !== 88701);
+      bids.push({ id: 88701, client_id: 89801, client_name: 'JobProfit Manual Test', amount: 1000, status: 'Closed Won', bid_date: '2026-01-01' });
+      jobs = jobs.filter(j => j.id !== 87801);
+      jobs.push({ id: 87801, client_id: 89801, bid_id: 88701, name: 'JP job', eventType: 'job', status: 'scheduled', start: '2099-01-01', days: 1, actualHours: 0 });
+      timeEntries = timeEntries.filter(e => e.job_id !== 87801);
+      timeEntries.push({ id: 8970001, job_id: 87801, date: '2026-01-01', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T11:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+      S.ownerPayType = 'hourly'; S.ownerPayRate = 30;
+      const makeQ = (data) => { const q = { _data: { data } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      window._supa = { from: (t) => makeQ([]) }; // no GPS-tracked entries or team_members at all
+      window.supaEnabled = () => true;
+      window._supaUser = window._supaUser || { id: 'test-uid' };
+      document.getElementById('_job-pl-ov')?.remove();
+      try { await _openJobProfit(); } catch (e) { return { error: e.message }; }
+      const html = document.getElementById('_job-pl-body')?.innerHTML || '';
+      document.getElementById('_job-pl-ov')?.remove();
+      ({ clients, bids, jobs, timeEntries } = orig);
+      window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser;
+      S.ownerPayType = orig.ownerPayType; S.ownerPayRate = orig.ownerPayRate;
+      return { html };
+    });
+    if (r && !r.error) {
+      expect(r.html).toContain('JobProfit Manual Test');
+      // 120 manual minutes = 2.0h tracked — proves the manual entry, not just
+      // GPS job_time_entries (mocked empty above), fed the labor calculation.
+      expect(r.html).toMatch(/2\.0h/);
+    }
   });
 
   // ── Overtime detection logic ─────────────────────────────────────────────

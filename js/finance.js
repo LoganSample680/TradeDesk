@@ -2502,6 +2502,11 @@ async function _openJobProfit(){
     const{data:te}=await _supa.from('job_time_entries').select('employee_user_id,job_id,minutes,source').eq('contractor_user_id',cid);
     entries=te||[];
   }catch(_e){}
+  // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries) — without
+  // this, a walk-up job clocked via the nearby-banner Clock in button was
+  // invisible to Job Profit entirely, even though the time was really saved.
+  // null logged_by_uid means the owner, whose rate already keys off cid above.
+  entries=entries.concat(timeEntries.map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,source:'manual'})));
   // Labor $ by bid id (on-site time only; drive is overhead, not job labor)
   const laborByBid={};
   entries.forEach(en=>{
@@ -2672,7 +2677,15 @@ async function _crewCostRender(range){
   // Fetch with 1-day UTC buffer before period start; CT-date comparison is the authoritative filter
   const sinceISO=new Date(new Date(sinceStr+'T00:00:00Z').getTime()-86400000).toISOString();
   const data=await _fetchCrewLabor(sinceISO);
-  const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
+  // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries) alongside
+  // GPS-tracked entries — mapped into the same {employee_user_id,job_id,minutes,
+  // arrived_at,source} shape so the aggregation below treats both identically.
+  // null logged_by_uid means the owner; _fetchCrewLabor already resolves the
+  // owner's rate/name under cid.
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(_supaUser&&_supaUser.id);
+  const manualEnts=timeEntries.filter(e=>e.start_time&&_ctDateStr(new Date(e.start_time))>=sinceStr)
+    .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,source:'manual'}));
+  const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
   const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
   if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
   // Business day length for unaccounted estimate

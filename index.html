@@ -2129,6 +2129,19 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 </div>
+<div class="pg" id="pg-timelog">
+  <div class="tbar">
+    <div class="tbar-title">Time Log</div>
+    <div id="tl-total" style="font-size:12px;font-weight:700;color:var(--text3)"></div>
+  </div>
+  <div class="fbar" id="tl-range-bar" style="margin-bottom:14px;padding-left:2px">
+    <button type="button" class="fb" data-range="today" onclick="renderTimeLog('today')">Today</button>
+    <button type="button" class="fb active" data-range="week" onclick="renderTimeLog('week')">This week</button>
+    <button type="button" class="fb" data-range="month" onclick="renderTimeLog('month')">This month</button>
+    <button type="button" class="fb" data-range="all" onclick="renderTimeLog('all')">All time</button>
+  </div>
+  <div style="padding:0 12px 80px" id="tl-list"></div>
+</div>
 <div class="pg" id="pg-dispatch"></div>
 <div class="pg" id="pg-tracker">
   <div class="tbar" style="flex-direction:column;align-items:stretch;gap:8px">
@@ -3293,6 +3306,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <span>Contracts</span>
   </button>
 
+  <button class="nb" id="nb-timelog" onclick="goPg('pg-timelog')">
+    <div class="bx"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+    <span>Time Log</span>
+  </button>
+
   <div id="nav-trade-switcher" style="display:none;padding:6px 10px 4px;border-top:1px solid var(--nav-border)">
     <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.25);padding:0 4px 5px">Active trade</div>
     <div id="nav-trade-pills" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 2px 4px"></div>
@@ -3389,6 +3407,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button class="mmi" id="mmi-contracts" onclick="mobileNavTo('pg-contracts')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Contracts
     </button>
+    <button class="mmi" id="mmi-timelog" onclick="mobileNavTo('pg-timelog')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Time Log
+    </button>
     <button class="mmi" id="mmi-settings" onclick="mobileNavTo('pg-settings')">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
     </button>
@@ -3430,6 +3451,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/sales-tax.js"></script>
 <script src="js/tax.js"></script>
 <script src="js/finance.js"></script>
+<script src="js/timelog.js"></script>
 <script src="js/generic-estimate.js"></script>
 <script src="js/contracts.js"></script>
 <script src="js/agreements.js"></script>

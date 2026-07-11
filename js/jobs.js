@@ -211,7 +211,13 @@ function clockOut(saveEntry,silent){
   const scopeId=_activeTimer.scopeId;
   const scopeLabel=_activeTimer.scopeLabel;
   if(saveEntry!==false){
-    timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:scopeId,scope_label:scopeLabel});
+    // Tags WHO logged this — previously untracked, so a shared account's manual
+    // clock entries were indistinguishable between the owner and any crew member.
+    // null loggedByUid means the owner (their own account has no separate
+    // employee-user id); an employee's own auth id otherwise. Feeds the Time Log.
+    const loggedByUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+    const loggedByName=loggedByUid?(_employeeRecord?.name||'Crew'):((typeof getOwnerName==='function'&&getOwnerName())||(typeof S!=='undefined'&&S.ownerName)||'Owner (me)');
+    timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:scopeId,scope_label:scopeLabel,logged_by_uid:loggedByUid,logged_by_name:loggedByName});
     const j=jobs.find(x=>x.id===jobId);
     if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
     saveAll();
