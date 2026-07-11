@@ -663,7 +663,13 @@ test.describe('jobs.js — exhaustive coverage', () => {
             matchesActiveTimer: open ? open.id === _activeTimer.entryId : null,
           };
         } catch (e) { return { ok: false, err: e.message }; }
-        finally { window.showClockBanner = origBanner; window.showToast = origToast; }
+        finally {
+          window.showClockBanner = origBanner; window.showToast = origToast;
+          // Leaving _activeTimer set here would make the NEXT test's clockIn()
+          // hit the "already tracking this task" guard (js/jobs.js:196) and
+          // silently no-op — reset state so tests stay isolated.
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); clockOut(false, true); }
+        }
       });
       expect(r.ok).toBe(true);
       expect(r.found).toBe(true);

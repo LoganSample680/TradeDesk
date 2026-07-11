@@ -69,6 +69,54 @@ function _tlYears(rows){
   if(!years.length)years.push(String(new Date().getFullYear()));
   return years;
 }
+// Sunday of the week containing dateStr — the grouping key for weekly totals
+// and overtime. Payroll periods vary (weekly/biweekly/semimonthly), but every
+// one of them is built from calendar weeks, so this is the one grouping that's
+// never wrong to offer.
+function _tlWeekKey(dateStr){
+  if(!dateStr)return '';
+  const d=new Date(dateStr+'T00:00:00');
+  if(isNaN(d.getTime()))return '';
+  d.setDate(d.getDate()-d.getDay());
+  return d.toISOString().slice(0,10);
+}
+// Overtime: federal (FLSA) is per-person, per-week, over 40 hours — the one
+// rule that's true everywhere. Daily OT (e.g. CA/AK/NV/CO over 8hrs/day) is
+// state-specific; asserting it as a default would be actively wrong for most
+// contractors, so this deliberately only flags the universal rule and leaves
+// the rest to "verify with your state," same disclaimer pattern as the tax
+// tool. Mutates rows in place (adds weekOT) — cheap, avoids a second pass in
+// every row renderer.
+function _tlComputeOT(rows){
+  const byWeek={};
+  rows.forEach(r=>{
+    const key=(r.personUid||'owner')+'|'+_tlWeekKey(r.date);
+    byWeek[key]=(byWeek[key]||0)+(r.minutes||0);
+  });
+  rows.forEach(r=>{
+    const key=(r.personUid||'owner')+'|'+_tlWeekKey(r.date);
+    r.weekOT=byWeek[key]>2400;
+  });
+}
+let _tlLastRows=[];
+function _tlExportCSV(){
+  if(!_tlLastRows.length){typeof showToast==='function'&&showToast('No time entries to export for '+_tlYear,'📋');return;}
+  const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
+  const header=['Date','Person','Client','Address','Job','Task','Source','Minutes','Duration','Overtime'];
+  const lines=[header.map(esc).join(',')];
+  _tlLastRows.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(r=>{
+    lines.push([
+      r.date||'',r.personName||'',r.clientName||'',r.addr||'',r.jobName||'',r.detail||'',
+      r.source==='auto'?'Auto (GPS)':'Manual',r.minutes||0,
+      typeof _fmtMin==='function'?_fmtMin(r.minutes):(r.minutes||0)+'m',
+      r.weekOT?'40+ hrs/wk':''
+    ].map(esc).join(','));
+  });
+  const biz=(typeof S!=='undefined'&&S.bname)?S.bname:'TradeDesk';
+  const fname=(biz+'_TimeLog_'+_tlYear+'.csv').replace(/[/,\s]+/g,'_');
+  if(typeof downloadFile==='function')downloadFile(fname,lines.join('\n'),'text/csv');
+  typeof showToast==='function'&&showToast('Time Log exported — '+_tlYear,'📋');
+}
 let _tlYear=null;
 function _tlPopulateYearSel(years){
   const sel=document.getElementById('tl-year-sel');if(!sel)return;
@@ -94,7 +142,9 @@ function _tlRow(r){
     '<td data-label="Client">'+escHtml(r.clientName)+(r.addr?' <span style="color:var(--text3);font-weight:400">· '+escHtml(r.addr)+'</span>':'')+'</td>'+
     '<td class="mute" data-label="Job">'+escHtml(r.jobName)+(r.detail?' · '+escHtml(r.detail):'')+'</td>'+
     '<td data-label="Source">'+(r.source==='auto'?svgIcon('📍',{size:11})+' Auto':svgIcon('▶',{size:11})+' Manual')+'</td>'+
-    '<td class="bold" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+'</td>'+
+    '<td class="bold" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+
+      (r.weekOT?' <span title="'+escHtml(r.personName)+' logged 40+ hrs the week of '+_tlWeekKey(r.date)+' — verify overtime eligibility with your state; not payroll advice" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-amber-soft);color:var(--c-amber-deep);margin-left:4px;white-space:nowrap">OT WK</span>':'')+
+    '</td>'+
     '<td data-label="">'+(canEdit?
       '<button onclick="_openEditTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600;margin-right:4px">Edit</button>'+
       '<button onclick="if(confirm(\'Delete this time entry?\'))deleteTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:#A32D2D;cursor:pointer;font-family:inherit;font-weight:600">Delete</button>'
@@ -117,14 +167,17 @@ function _tlRenderOpenBanner(){
   el.innerHTML='<div class="card" style="margin-bottom:14px;border:1px solid var(--c-green-edge);background:var(--c-green-soft)">'+
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--c-green-deep);margin-bottom:6px">'+svgIcon('▶',{size:12})+' Currently clocked in</div>'+
     visible.map(r=>
+      // 10+ hrs still open is almost always a forgotten clock-out, not a real
+      // shift — flag it so a manager (or the person themselves) notices
+      // before it silently becomes a wrong payroll number.
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--c-green-edge)">'+
         '<div style="min-width:0">'+
-          '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.personName)+'</div>'+
+          '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.personName)+(r.elapsedMin>600?' <span title="Clocked in 10+ hours — likely a forgotten clock-out" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-red-soft);color:var(--c-red-deep);margin-left:4px">LONG SHIFT</span>':'')+'</div>'+
           '<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.clientName)+(r.jobName?' · '+escHtml(r.jobName):'')+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">since '+new Date(r.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
-          '<div style="font-size:13px;font-weight:800">'+(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m')+'</div>'+
+          '<div style="font-size:13px;font-weight:800'+(r.elapsedMin>600?';color:var(--c-red-deep)':'')+'">'+(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m')+'</div>'+
           (canForce&&r.personUid!==myUid?'<button onclick="forceClockOutEntry('+r.rawId+')" class="btn btn-sm" style="font-size:11px">Clock out</button>':'')+
         '</div>'+
       '</div>'
@@ -150,6 +203,17 @@ async function renderTimeLog(){
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
   const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
   const visible=(typeof _canViewComp==='function'&&_canViewComp())?allRows:allRows.filter(r=>r.personUid===myUid);
+  // "This week" is a live indicator, not tied to the year selector — a
+  // contractor running payroll cares about the current pay period regardless
+  // of what year's history they happen to be scrolled to.
+  const weekEl=document.getElementById('tl-week-total');
+  if(weekEl){
+    const wkStart=new Date();wkStart.setHours(0,0,0,0);wkStart.setDate(wkStart.getDate()-wkStart.getDay());
+    const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
+    const wkStartStr=wkStart.toISOString().slice(0,10),wkEndStr=wkEnd.toISOString().slice(0,10);
+    const wkMin=visible.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr).reduce((s,r)=>s+(r.minutes||0),0);
+    weekEl.textContent=(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+' this week (Sun–Sat)';
+  }
   const years=_tlYears(visible);
   _tlPopulateYearSel(years);
   const yr=_tlYear;
@@ -157,8 +221,11 @@ async function renderTimeLog(){
   if(!rows.length){
     el.innerHTML='<div class="empty">No time logged in '+yr+'.</div>';
     if(totalEl)totalEl.textContent='';
+    _tlLastRows=[];
     return;
   }
+  _tlComputeOT(rows);
+  _tlLastRows=rows;
   const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
   if(totalEl)totalEl.textContent=(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m')+' total in '+yr;
   const byMonth={};

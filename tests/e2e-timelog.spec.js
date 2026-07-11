@@ -245,6 +245,165 @@ test.describe('timelog.js — exhaustive coverage', () => {
     });
   });
 
+  test.describe('_tlWeekKey', () => {
+    test('golden path — returns the Sunday of the week containing the date', async () => {
+      // 2026-07-15 is a Wednesday; the Sunday before it is 2026-07-12.
+      const r = await page.evaluate(() => _tlWeekKey('2026-07-15'));
+      expect(r).toBe('2026-07-12');
+    });
+
+    test('a Sunday maps to itself', async () => {
+      const r = await page.evaluate(() => _tlWeekKey('2026-07-12'));
+      expect(r).toBe('2026-07-12');
+    });
+
+    test('week spanning a month boundary resolves correctly', async () => {
+      // 2026-08-01 is a Saturday; its week starts 2026-07-26.
+      const r = await page.evaluate(() => _tlWeekKey('2026-08-01'));
+      expect(r).toBe('2026-07-26');
+    });
+
+    test('empty/null/malformed date — returns empty string, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: [_tlWeekKey(''), _tlWeekKey(null), _tlWeekKey(undefined), _tlWeekKey('not-a-date')] }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toEqual(['', '', '', '']);
+    });
+  });
+
+  test.describe('_tlComputeOT', () => {
+    test('flags every row for a person whose week totals over 40 hours (2400 min)', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-07-13', minutes: 1300 }, // Mon
+          { personUid: 'u1', date: '2026-07-14', minutes: 1300 }, // Tue — total 2600 > 2400
+        ];
+        _tlComputeOT(rows);
+        return rows.map(r => r.weekOT);
+      });
+      expect(r).toEqual([true, true]);
+    });
+
+    test('does not flag a week at or under 40 hours', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-07-13', minutes: 1200 },
+          { personUid: 'u1', date: '2026-07-14', minutes: 1200 }, // total 2400 — not over
+        ];
+        _tlComputeOT(rows);
+        return rows.map(r => r.weekOT);
+      });
+      expect(r).toEqual([false, false]);
+    });
+
+    test('different people in the same week are tracked independently', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-07-13', minutes: 2500 },
+          { personUid: 'u2', date: '2026-07-13', minutes: 100 },
+        ];
+        _tlComputeOT(rows);
+        return { u1: rows[0].weekOT, u2: rows[1].weekOT };
+      });
+      expect(r.u1).toBe(true);
+      expect(r.u2).toBe(false);
+    });
+
+    test('the same person\'s hours in different weeks do not combine', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-07-05', minutes: 1300 }, // week of 6/28
+          { personUid: 'u1', date: '2026-07-13', minutes: 1300 }, // week of 7/12
+        ];
+        _tlComputeOT(rows);
+        return rows.map(r => r.weekOT);
+      });
+      expect(r).toEqual([false, false]);
+    });
+
+    test('null personUid (owner) is grouped as its own bucket, not mixed with employees', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: null, date: '2026-07-13', minutes: 2500 },
+          { personUid: 'u1', date: '2026-07-13', minutes: 2500 },
+        ];
+        _tlComputeOT(rows);
+        return rows.map(r => r.weekOT);
+      });
+      expect(r).toEqual([true, true]);
+    });
+
+    test('empty array — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tlComputeOT([]); return true; } catch (e) { return false; }
+      });
+      expect(r).toBe(true);
+    });
+  });
+
+  test.describe('_tlExportCSV', () => {
+    test('no rows for the selected year — shows a toast, does not call downloadFile', async () => {
+      const r = await page.evaluate(() => {
+        const orig = window.downloadFile, origToast = window.showToast;
+        let downloadCalled = false, toastMsg = null;
+        window.downloadFile = () => { downloadCalled = true; };
+        window.showToast = (msg) => { toastMsg = msg; };
+        const origRows = _tlLastRows;
+        _tlLastRows = [];
+        try { _tlExportCSV(); return { downloadCalled, toastMsg }; }
+        finally { _tlLastRows = origRows; window.downloadFile = orig; window.showToast = origToast; }
+      });
+      expect(r.downloadCalled).toBe(false);
+      expect(r.toastMsg).toContain('No time entries');
+    });
+
+    test('golden path — builds a CSV with header, escaped fields, and an OT marker', async () => {
+      const r = await page.evaluate(() => {
+        const orig = window.downloadFile, origToast = window.showToast;
+        let captured = null;
+        window.downloadFile = (filename, content, type) => { captured = { filename, content, type }; };
+        window.showToast = () => {};
+        const origRows = _tlLastRows, origYear = _tlYear;
+        _tlYear = '2026';
+        _tlLastRows = [
+          { date: '2026-07-13', personName: 'Owner (me)', clientName: 'Client, "The" Best', addr: '1 Main St', jobName: 'Job A', detail: 'Sanding', source: 'manual', minutes: 90, weekOT: false },
+          { date: '2026-07-14', personName: 'Crew A', clientName: 'Other Client', addr: '', jobName: 'Job B', detail: '', source: 'auto', minutes: 2500, weekOT: true },
+        ];
+        try { _tlExportCSV(); return captured; }
+        finally { _tlLastRows = origRows; _tlYear = origYear; window.downloadFile = orig; window.showToast = origToast; }
+      });
+      expect(r).toBeTruthy();
+      expect(r.type).toBe('text/csv');
+      expect(r.filename).toContain('2026');
+      expect(r.filename).toContain('.csv');
+      expect(r.content).toContain('"Date","Person","Client","Address","Job","Task","Source","Minutes","Duration","Overtime"');
+      // Embedded comma+quote in client name must be CSV-escaped, not break the row.
+      expect(r.content).toContain('"Client, ""The"" Best"');
+      expect(r.content).toContain('Auto (GPS)');
+      expect(r.content).toContain('40+ hrs/wk');
+    });
+
+    test('rows are exported sorted by date', async () => {
+      const r = await page.evaluate(() => {
+        const orig = window.downloadFile, origToast = window.showToast;
+        let captured = null;
+        window.downloadFile = (filename, content) => { captured = content; };
+        window.showToast = () => {};
+        const origRows = _tlLastRows, origYear = _tlYear;
+        _tlYear = '2026';
+        _tlLastRows = [
+          { date: '2026-07-14', personName: 'B', clientName: '', addr: '', jobName: '', detail: '', source: 'manual', minutes: 30 },
+          { date: '2026-07-10', personName: 'A', clientName: '', addr: '', jobName: '', detail: '', source: 'manual', minutes: 30 },
+        ];
+        try { _tlExportCSV(); return captured; }
+        finally { _tlLastRows = origRows; _tlYear = origYear; window.downloadFile = orig; window.showToast = origToast; }
+      });
+      expect(r.indexOf('2026-07-10')).toBeLessThan(r.indexOf('2026-07-14'));
+    });
+  });
+
   test.describe('_tlCanEdit', () => {
     const restore = async () => page.evaluate(() => {
       window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
@@ -346,6 +505,22 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).not.toContain('_openEditTimeEntry');
       expect(r).not.toContain('deleteTimeEntry');
     });
+
+    test('weekOT true — renders the "OT WK" badge', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'm7', rawId: 7, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, date: '2026-07-13', weekOT: true });
+      });
+      expect(r).toContain('OT WK');
+    });
+
+    test('weekOT false/undefined — no "OT WK" badge', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'm8', rawId: 8, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, date: '2026-07-13', weekOT: false });
+      });
+      expect(r).not.toContain('OT WK');
+    });
   });
 
   test.describe('_tlRenderOpenBanner / open-refresh lifecycle', () => {
@@ -392,6 +567,27 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.html).toContain('Currently clocked in');
       expect(r.html).toContain('Timelog Test Client');
       expect(r.html).not.toContain('forceClockOutEntry');
+      expect(r.html).not.toContain('LONG SHIFT');
+    });
+
+    test('an entry open 10+ hours is flagged "LONG SHIFT" (likely a forgotten clock-out)', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 11 * 3600000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        window._isEmployee = false;
+        _tlRenderOpenBanner();
+        return document.getElementById('tl-open').innerHTML;
+      }, OPEN_ID);
+      expect(r).toContain('LONG SHIFT');
+    });
+
+    test('an entry open under 10 hours is NOT flagged', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 2 * 3600000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        window._isEmployee = false;
+        _tlRenderOpenBanner();
+        return document.getElementById('tl-open').innerHTML;
+      }, OPEN_ID);
+      expect(r).not.toContain('LONG SHIFT');
     });
 
     test('employee without payroll permission — cannot see someone else\'s open entry', async () => {
@@ -602,6 +798,50 @@ test.describe('timelog.js — exhaustive coverage', () => {
       });
       expect(r.inBanner).toBe(true);
       expect(r.inHistory).toBe(false);
+    });
+
+    test('#tl-week-total reflects the live current-week total, independent of the year selector', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = timeEntries;
+        const now = new Date();
+        timeEntries = [
+          { id: 9990201, job_id: 87701, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 90, open: false, logged_by_uid: null, logged_by_name: 'Owner (me)' },
+          { id: 9990202, job_id: 87701, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 45, open: false, logged_by_uid: null, logged_by_name: 'Owner (me)' },
+        ];
+        try {
+          setTimeLogYear(now.getFullYear());
+          await renderTimeLog();
+          return document.getElementById('tl-week-total').textContent;
+        } finally { timeEntries = orig; }
+      });
+      expect(r).toContain('2h 15m');
+      expect(r).toContain('this week');
+    });
+
+    test('week total excludes entries outside the current calendar week', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = timeEntries;
+        timeEntries = [
+          { id: 9990203, job_id: 87701, date: '2020-01-01', start_time: '2020-01-01T09:00:00Z', end_time: '2020-01-01T10:00:00Z', minutes: 500, open: false, logged_by_uid: null, logged_by_name: 'Owner (me)' },
+        ];
+        try {
+          setTimeLogYear(2020);
+          await renderTimeLog();
+          return document.getElementById('tl-week-total').textContent;
+        } finally { timeEntries = orig; }
+      });
+      expect(r).not.toContain('500');
+      expect(r).not.toContain('8h'); // 500min = 8h20m — must not leak into the current-week total
+      expect(r).toContain('this week');
+    });
+
+    test('renders the Export CSV button', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        return !!document.querySelector('button[onclick="_tlExportCSV()"]');
+      });
+      expect(r).toBe(true);
     });
   });
 

@@ -2134,7 +2134,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-title">Time Log</div>
     <div id="tl-total" style="font-size:12px;font-weight:700;color:var(--text3)"></div>
   </div>
-  <select id="tl-year-sel" onchange="setTimeLogYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%;margin-bottom:14px"></select>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+    <select id="tl-year-sel" onchange="setTimeLogYear(parseInt(this.value))" style="flex:1;min-width:0;font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer"></select>
+    <button class="btn btn-sm" onclick="_tlExportCSV()" style="flex-shrink:0">⬇ Export</button>
+  </div>
+  <div id="tl-week-total" style="font-size:11px;color:var(--text3);margin-bottom:14px"></div>
   <div style="padding:0 12px 80px">
     <div id="tl-open" style="display:none"></div>
     <div id="tl-list"></div>
