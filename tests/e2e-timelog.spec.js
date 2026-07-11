@@ -474,26 +474,28 @@ test.describe('timelog.js — exhaustive coverage', () => {
   });
 
   test.describe('_tlRow — Edit/Delete controls', () => {
-    test('editable row — renders Edit and Delete buttons wired to the right entry id', async () => {
+    test('editable row — renders an Edit button and the long-press delete attributes, wired to the right entry id', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         const html = _tlRow({ id: 'm123', rawId: 123, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 });
         return html;
       });
       expect(r).toContain('_openEditTimeEntry(123)');
-      expect(r).toContain('deleteTimeEntry(123)');
+      expect(r).toContain('data-lp-id="123"');
+      expect(r).toContain('data-lp-type="timelog"');
+      expect(r).not.toContain('>Delete<'); // no visible Delete button — long-press only
     });
 
-    test('non-editable row (auto/GPS source) — no Edit/Delete buttons', async () => {
+    test('non-editable row (auto/GPS source) — no Edit button, no long-press attributes', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         return _tlRow({ id: 'a1', rawId: 1, source: 'auto', personName: 'Crew', personUid: 'someone', clientName: 'X', addr: '', jobName: 'Y', detail: 'geo', minutes: 60 });
       });
       expect(r).not.toContain('_openEditTimeEntry');
-      expect(r).not.toContain('deleteTimeEntry');
+      expect(r).not.toContain('data-lp-id');
     });
 
-    test('non-editable row (someone else\'s manual entry, no permission) — no Edit/Delete buttons', async () => {
+    test('non-editable row (someone else\'s manual entry, no permission) — no Edit button, no long-press attributes', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = true;
         window._employeeRecord = { permissions: { payroll: false } };
@@ -503,7 +505,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
         return html;
       });
       expect(r).not.toContain('_openEditTimeEntry');
-      expect(r).not.toContain('deleteTimeEntry');
+      expect(r).not.toContain('data-lp-id');
     });
 
     test('weekOT true — renders the "OT WK" badge', async () => {
@@ -520,6 +522,62 @@ test.describe('timelog.js — exhaustive coverage', () => {
         return _tlRow({ id: 'm8', rawId: 8, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, date: '2026-07-13', weekOT: false });
       });
       expect(r).not.toContain('OT WK');
+    });
+  });
+
+  test.describe('_lpDoDelete(type="timelog") — long-press delete dispatch', () => {
+    // Every other [data-lp-id] type is DEV-ONLY (gated on _canDelete()) — see
+    // tests/e2e-features.spec.js "long-press delete is DEV-ONLY". timelog is
+    // the deliberate exception: real contractors/employees use this gesture,
+    // so these tests prove it works WITHOUT the dev bypass flag.
+    test('deletes a manual entry the caller owns, with NO _e2eAllowDelete / dev flag set', async () => {
+      const r = await page.evaluate(() => {
+        const id = 8990301;
+        const savedFlag = window._e2eAllowDelete;
+        window._e2eAllowDelete = false; // explicitly simulate a real, non-dev account
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: new Date().toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
+        try { _lpDoDelete(String(id), 'timelog'); return { gone: !timeEntries.find(e => e.id === id) }; }
+        finally { window._e2eAllowDelete = savedFlag; timeEntries = timeEntries.filter(e => e.id !== id); }
+      });
+      expect(r.gone).toBe(true);
+    });
+
+    test('does NOT delete someone else\'s entry when the caller lacks payroll permission (deleteTimeEntry\'s own check still applies)', async () => {
+      const r = await page.evaluate(() => {
+        const id = 8990302;
+        window._isEmployee = true;
+        window._employeeRecord = { permissions: { payroll: false } };
+        window._supaUser = { id: 'emp-test-uid' };
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: new Date().toISOString(), minutes: 30, logged_by_uid: 'someone-else', logged_by_name: 'Someone Else', open: false });
+        try { _lpDoDelete(String(id), 'timelog'); return { stillThere: !!timeEntries.find(e => e.id === id) }; }
+        finally {
+          window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
+          timeEntries = timeEntries.filter(e => e.id !== id);
+        }
+      });
+      expect(r.stillThere).toBe(true);
+    });
+
+    test('nonexistent id — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _lpDoDelete('999999', 'timelog'); return true; } catch (e) { return false; }
+      });
+      expect(r).toBe(true);
+    });
+
+    test('does not touch the dev-only hard-purge path for other types (no cross-contamination)', async () => {
+      // Regression guard for the _lpDoDelete refactor: type='job' must still be
+      // fully dev-gated after adding the timelog early-return.
+      const r = await page.evaluate(() => {
+        const jid = 8990303;
+        const savedFlag = window._e2eAllowDelete;
+        window._e2eAllowDelete = false;
+        jobs = jobs.filter(j => j.id !== jid);
+        jobs.push({ id: jid, client_id: 89901, name: 'LP Gate Regression Job', start: '2026-07-01', days: 1, eventType: 'job' });
+        try { _lpDoDelete(String(jid), 'job'); return { stillThere: jobs.some(j => j.id === jid) }; }
+        finally { window._e2eAllowDelete = savedFlag; jobs = jobs.filter(j => j.id !== jid); }
+      });
+      expect(r.stillThere).toBe(true);
     });
   });
 

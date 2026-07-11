@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.11.26.2';
+const APP_VERSION='07.11.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1260,9 +1260,17 @@ let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
   s.textContent='[data-lp-id]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;}';
   (document.head||document.documentElement).appendChild(s);
   function _lpStart(e){
-    if(typeof _canDelete==='function'&&!_canDelete())return; // DEV-ONLY: gesture is inert for everyone else
     const row=e.target.closest('[data-lp-id]');
     if(!row)return;
+    // Every other [data-lp-id] row is a DEV-ONLY hard-purge gesture, inert for
+    // real users. Time Log rows are the one exception — the gesture there
+    // calls deleteTimeEntry(), a real soft-delete that already re-checks
+    // ownership/permission itself (js/jobs.js) and is only rendered onto rows
+    // _tlCanEdit() already approved (js/timelog.js _tlRow), so it's safe to
+    // let regular contractors/employees use it, not just dev mode.
+    const devOk=typeof _canDelete==='function'&&_canDelete();
+    const timelogOk=row.dataset.lpType==='timelog';
+    if(!devOk&&!timelogOk)return;
     if(e.target.closest('button,select,input,a,label'))return;
     clearTimeout(_lpTimer);_lpFired=false;
     const t=e.touches?e.touches[0]:e;
@@ -1307,6 +1315,10 @@ function _showLpDeletePopup(row){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _lpDoDelete(id,type){
+  // timelog is the one non-dev-gated type (see _lpStart) — deleteTimeEntry()
+  // is a real soft-delete that re-checks ownership/permission itself, unlike
+  // every other branch below which is a dev-only hard purge.
+  if(type==='timelog'){if(typeof deleteTimeEntry==='function')deleteTimeEntry(parseInt(id,10));return;}
   if(typeof _canDelete==='function'&&!_canDelete())return; // DEV-ONLY (defense in depth)
   const nid=parseInt(id,10);
   // DEV HARD DELETE (owner directive): the long-press purges the ACTUAL row(s) via

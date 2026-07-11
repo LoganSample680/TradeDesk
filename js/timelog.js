@@ -137,7 +137,13 @@ function _tlCanEdit(r){
 }
 function _tlRow(r){
   const canEdit=_tlCanEdit(r);
-  return '<tr data-lp-id="'+r.id+'" data-lp-type="timelog" data-lp-label="'+escHtml(r.personName+' · '+r.clientName)+'">'+
+  // Delete isn't a button here — it's the same 3s hold-to-confirm gesture used
+  // everywhere else in the app ([data-lp-id], js/cloud.js). The attributes are
+  // only emitted when canEdit is true, so the gesture is simply absent (does
+  // nothing) on GPS/auto rows and on entries this person isn't allowed to
+  // touch — same visibility rule the Edit button already follows.
+  const lpAttrs=canEdit?' data-lp-id="'+r.rawId+'" data-lp-type="timelog" data-lp-label="'+escHtml(r.personName+' · '+r.clientName)+'"':'';
+  return '<tr'+lpAttrs+'>'+
     '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
     '<td data-label="Client">'+escHtml(r.clientName)+(r.addr?' <span style="color:var(--text3);font-weight:400">· '+escHtml(r.addr)+'</span>':'')+'</td>'+
     '<td class="mute" data-label="Job">'+escHtml(r.jobName)+(r.detail?' · '+escHtml(r.detail):'')+'</td>'+
@@ -146,8 +152,7 @@ function _tlRow(r){
       (r.weekOT?' <span title="'+escHtml(r.personName)+' logged 40+ hrs the week of '+_tlWeekKey(r.date)+' — verify overtime eligibility with your state; not payroll advice" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-amber-soft);color:var(--c-amber-deep);margin-left:4px;white-space:nowrap">OT WK</span>':'')+
     '</td>'+
     '<td data-label="">'+(canEdit?
-      '<button onclick="_openEditTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600;margin-right:4px">Edit</button>'+
-      '<button onclick="if(confirm(\'Delete this time entry?\'))deleteTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:#A32D2D;cursor:pointer;font-family:inherit;font-weight:600">Delete</button>'
+      '<button onclick="_openEditTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button>'
       :'')+'</td>'+
   '</tr>';
 }
