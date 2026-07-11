@@ -354,10 +354,10 @@ function renderDash(){
         '</div>'+
         '<div class="tf-acts" style="padding-left:0;gap:5px">'+
           '<button onclick="'+clockHandler+'" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('▶',{size:11})+' Clock in</button>'+
-          '<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px;padding:0 6px;flex:1.5 1 0">Estimate/Invoice</button>'+
+          '<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px;padding:0 6px;flex:1.6 1 0">'+svgIcon('📋',{size:11})+' Estimate/Invoice</button>'+
           (hasBalance
-            ?'<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px;padding:0 6px">Collect →</button>'
-            :'<button disabled class="btn btn-sm" style="font-size:11px;padding:0 6px;opacity:.4;cursor:not-allowed">Collect →</button>')+
+            ?'<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px;padding:0 6px">'+svgIcon('💰',{size:11})+' Collect →</button>'
+            :'<button disabled class="btn btn-sm" style="font-size:11px;padding:0 6px;opacity:.4;cursor:not-allowed">'+svgIcon('💰',{size:11})+' Collect →</button>')+
         '</div>'+
       '</div>';
     }else{_nearbyEl.style.display='none';}
