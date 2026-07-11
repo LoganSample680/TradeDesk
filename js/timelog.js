@@ -20,13 +20,32 @@ function _tlJobClientInfo(jobId){
   const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
   return{jobName:j?j.name:'—',clientName:c?c.name:(j?j.name:'—'),addr:c?c.addr:(j&&j.addr)||''};
 }
+// Still-running entries — clocked in, never closed. Separate from the history
+// below: an open entry has no minutes yet, so mixing it into the month/day
+// accordions would just show a confusing "0m" row. This is also the visibility
+// a manager needs to force-close a forgotten clock (§ owner request 2026-07-11).
+function _tlOpenEntries(){
+  const rows=[];
+  timeEntries.forEach(e=>{
+    if(!e.open)return;
+    const info=_tlJobClientInfo(e.job_id);
+    const elapsedMin=Math.max(0,Math.round((Date.now()-new Date(e.start_time).getTime())/60000));
+    rows.push({
+      rawId:e.id,personName:e.logged_by_name||((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)'),
+      personUid:e.logged_by_uid||null,clientName:info.clientName,addr:info.addr,jobName:info.jobName,
+      detail:e.scope_label||'',startTime:e.start_time,elapsedMin
+    });
+  });
+  return rows.sort((a,b)=>(a.startTime||'').localeCompare(b.startTime||''));
+}
 async function _timeLogRows(sinceISO){
   const rows=[];
   timeEntries.forEach(e=>{
+    if(e.open)return; // still running — shown separately, see _tlOpenEntries
     if(sinceISO&&e.start_time&&e.start_time<sinceISO)return;
     const info=_tlJobClientInfo(e.job_id);
     rows.push({
-      id:'m'+e.id,source:'manual',date:e.date,minutes:e.minutes||0,
+      id:'m'+e.id,rawId:e.id,source:'manual',date:e.date,minutes:e.minutes||0,
       personName:e.logged_by_name||((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)'),
       personUid:e.logged_by_uid||null,
       clientName:info.clientName,addr:info.addr,jobName:info.jobName,detail:e.scope_label||''
@@ -58,17 +77,72 @@ function _tlPopulateYearSel(years){
   sel.innerHTML=years.map(y=>'<option value="'+y+'"'+(y===cur?' selected':'')+'>'+y+'</option>').join('');
 }
 function setTimeLogYear(yr){_tlYear=String(yr);renderTimeLog();}
+// Manual entries only — GPS-verified auto entries aren't user-editable, same as
+// every competitor researched (editing GPS-verified data would defeat its
+// purpose). Own entries always editable/deletable; others' only with the same
+// payroll permission Job Profit/Crew Cost already gate on.
+function _tlCanEdit(r){
+  if(r.source!=='manual')return false;
+  if(typeof _canViewComp==='function'&&_canViewComp())return true;
+  const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  return r.personUid===myUid;
+}
 function _tlRow(r){
+  const canEdit=_tlCanEdit(r);
   return '<tr data-lp-id="'+r.id+'" data-lp-type="timelog" data-lp-label="'+escHtml(r.personName+' · '+r.clientName)+'">'+
     '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
     '<td data-label="Client">'+escHtml(r.clientName)+(r.addr?' <span style="color:var(--text3);font-weight:400">· '+escHtml(r.addr)+'</span>':'')+'</td>'+
     '<td class="mute" data-label="Job">'+escHtml(r.jobName)+(r.detail?' · '+escHtml(r.detail):'')+'</td>'+
     '<td data-label="Source">'+(r.source==='auto'?svgIcon('📍',{size:11})+' Auto':svgIcon('▶',{size:11})+' Manual')+'</td>'+
     '<td class="bold" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+'</td>'+
+    '<td data-label="">'+(canEdit?
+      '<button onclick="_openEditTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600;margin-right:4px">Edit</button>'+
+      '<button onclick="if(confirm(\'Delete this time entry?\'))deleteTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:#A32D2D;cursor:pointer;font-family:inherit;font-weight:600">Delete</button>'
+      :'')+'</td>'+
   '</tr>';
+}
+// Still-clocked-in banner — separate from the year/month/day history below,
+// refreshed on its own 30s tick while this page is open so elapsed time keeps
+// moving without re-rendering the whole accordion tree. Stops itself the
+// moment the page is no longer active (no leaked timers on other pages).
+let _tlOpenRefreshTimer=null;
+function _tlRenderOpenBanner(){
+  const el=document.getElementById('tl-open');if(!el)return;
+  const open=_tlOpenEntries();
+  const canForce=typeof _canViewComp==='function'&&_canViewComp();
+  const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  const visible=canForce?open:open.filter(r=>r.personUid===myUid);
+  if(!visible.length){el.innerHTML='';el.style.display='none';return;}
+  el.style.display='block';
+  el.innerHTML='<div class="card" style="margin-bottom:14px;border:1px solid var(--c-green-edge);background:var(--c-green-soft)">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--c-green-deep);margin-bottom:6px">'+svgIcon('▶',{size:12})+' Currently clocked in</div>'+
+    visible.map(r=>
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--c-green-edge)">'+
+        '<div style="min-width:0">'+
+          '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.personName)+'</div>'+
+          '<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.clientName)+(r.jobName?' · '+escHtml(r.jobName):'')+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">since '+new Date(r.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})+'</div>'+
+        '</div>'+
+        '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
+          '<div style="font-size:13px;font-weight:800">'+(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m')+'</div>'+
+          (canForce&&r.personUid!==myUid?'<button onclick="forceClockOutEntry('+r.rawId+')" class="btn btn-sm" style="font-size:11px">Clock out</button>':'')+
+        '</div>'+
+      '</div>'
+    ).join('')+
+  '</div>';
+}
+function _tlStopOpenRefresh(){if(_tlOpenRefreshTimer){clearInterval(_tlOpenRefreshTimer);_tlOpenRefreshTimer=null;}}
+function _tlStartOpenRefresh(){
+  _tlStopOpenRefresh();
+  _tlRenderOpenBanner();
+  _tlOpenRefreshTimer=setInterval(()=>{
+    if(!document.getElementById('pg-timelog')?.classList.contains('active')){_tlStopOpenRefresh();return;}
+    _tlRenderOpenBanner();
+  },30000);
 }
 async function renderTimeLog(){
   const el=document.getElementById('tl-list');if(!el)return;
+  _tlStartOpenRefresh();
   const totalEl=document.getElementById('tl-total');
   el.innerHTML='<div class="empty">Loading…</div>';
   let allRows;

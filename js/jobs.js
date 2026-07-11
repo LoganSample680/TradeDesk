@@ -176,6 +176,20 @@ function _markJobComplete(jobId){
   },{title:'Complete job',yes:'Mark complete',danger:false});
 }
 
+// Tags WHO is clocking in/editing — previously untracked, so a shared account's
+// manual clock entries were indistinguishable between the owner and any crew
+// member. null loggedByUid means the owner (their own account has no separate
+// employee-user id); an employee's own auth id otherwise. Feeds the Time Log.
+function _tlLoggedByInfo(){
+  const loggedByUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  const loggedByName=loggedByUid?(_employeeRecord?.name||'Crew'):((typeof getOwnerName==='function'&&getOwnerName())||(typeof S!=='undefined'&&S.ownerName)||'Owner (me)');
+  return{loggedByUid,loggedByName};
+}
+function _isMyTimeEntry(e){
+  const{loggedByUid}=_tlLoggedByInfo();
+  return(e.logged_by_uid||null)===loggedByUid;
+}
+
 function clockIn(jobId,scopeId,scopeLabel){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   if(_activeTimer){
@@ -195,7 +209,20 @@ function clockIn(jobId,scopeId,scopeLabel){
   }
   const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
   const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null};
+  // Owner request 2026-07-11 ("bulletproof"): persist the entry the INSTANT the
+  // clock starts, not only when it stops. Before this, clockOut() was the only
+  // place a timeEntries row was ever created — a crashed tab, a dead phone, or
+  // just forgetting to clock out meant the ENTIRE session was never saved
+  // anywhere, silently. Now an "open" row (end_time/minutes null) is written and
+  // synced immediately; clockOut() finds and closes this same row instead of
+  // creating a new one. This open row is also what makes force-clock-out and
+  // reload-survival possible — it's the one source of truth for "is anyone
+  // still clocked in," visible to every device, not just the one that's running.
+  const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+  const entryId=Date.now();
+  timeEntries.push({id:entryId,job_id:jobId,date:todayKey(),start_time:new Date().toISOString(),end_time:null,minutes:null,scope_id:scopeId||null,scope_label:scopeLabel||null,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:true});
+  saveAll();
+  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null,entryId};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
   renderJobsPage&&renderJobsPage();
@@ -208,16 +235,18 @@ function clockOut(saveEntry,silent){
   const minutes=Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000));
   const jobId=_activeTimer.jobId;
   const jobName=_activeTimer.jobName;
-  const scopeId=_activeTimer.scopeId;
   const scopeLabel=_activeTimer.scopeLabel;
+  const openEntry=_activeTimer.entryId!=null?timeEntries.find(e=>e.id===_activeTimer.entryId):null;
   if(saveEntry!==false){
-    // Tags WHO logged this — previously untracked, so a shared account's manual
-    // clock entries were indistinguishable between the owner and any crew member.
-    // null loggedByUid means the owner (their own account has no separate
-    // employee-user id); an employee's own auth id otherwise. Feeds the Time Log.
-    const loggedByUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
-    const loggedByName=loggedByUid?(_employeeRecord?.name||'Crew'):((typeof getOwnerName==='function'&&getOwnerName())||(typeof S!=='undefined'&&S.ownerName)||'Owner (me)');
-    timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:scopeId,scope_label:scopeLabel,logged_by_uid:loggedByUid,logged_by_name:loggedByName});
+    if(openEntry){
+      openEntry.end_time=new Date().toISOString();openEntry.minutes=minutes;openEntry.open=false;
+    }else{
+      // Defensive fallback only — the open row should always exist (written by
+      // clockIn above). Never silently drop real logged time if it's somehow
+      // missing (deleted mid-timer, or a session from before this fix).
+      const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+      timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:_activeTimer.scopeId,scope_label:scopeLabel,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:false});
+    }
     const j=jobs.find(x=>x.id===jobId);
     if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
     saveAll();
@@ -225,11 +254,107 @@ function clockOut(saveEntry,silent){
       const label=scopeLabel?scopeLabel+' — '+jobName:jobName;
       showToast(_fmtMin(minutes)+' logged · '+label,'⏱');
     }
+  }else if(openEntry){
+    // Explicit discard (saveEntry===false): the open row must not be left
+    // stranded open forever just because this session chose not to keep it.
+    timeEntries=timeEntries.filter(e=>e.id!==openEntry.id);
+    saveAll();
   }
   _activeTimer=null;
   hideClockBanner();
   renderJobsPage&&renderJobsPage();
   renderDash&&setTimeout(renderDash,300);
+}
+
+// On boot, an open entry (clocked in, never closed) belonging to THIS person on
+// THIS account means either: (a) this device reloaded mid-timer — _activeTimer
+// (a `let`, not persisted) doesn't survive a reload, but the open row does, so
+// this reconnects the live banner/interval to it; or (b) another device force-
+// closed it while this one was away — in which case there's no longer a
+// matching open row and nothing to rehydrate. Either way the data was never at
+// risk; this only restores the LIVE UI state.
+function _rehydrateActiveTimer(){
+  if(_activeTimer||!timeEntries||!timeEntries.length)return;
+  const{loggedByUid}=_tlLoggedByInfo();
+  const mine=timeEntries.find(e=>e.open&&(e.logged_by_uid||null)===loggedByUid);
+  if(!mine)return;
+  const j=jobs.find(x=>x.id===mine.job_id);if(!j)return;
+  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+  _activeTimer={jobId:j.id,jobName:j.name,clientName:c?c.name:j.name,scopeId:mine.scope_id||null,scopeLabel:mine.scope_label||null,startTime:new Date(mine.start_time).getTime(),timerInterval:null,entryId:mine.id};
+  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  showClockBanner();
+}
+
+// Owner request 2026-07-11 ("bulletproof" — matches Jobber's #1 timesheet
+// complaint, "admin can't force-stop a forgotten clock"): a manager can close
+// someone else's still-open entry from Time Log. Marks who force-closed it —
+// never silently rewrite whose clock this was.
+function forceClockOutEntry(entryId){
+  if(typeof _canViewComp==='function'&&!_canViewComp())return;
+  const e=timeEntries.find(x=>x.id===entryId&&x.open);if(!e)return;
+  const minutes=Math.max(1,Math.round((Date.now()-new Date(e.start_time).getTime())/60000));
+  e.end_time=new Date().toISOString();e.minutes=minutes;e.open=false;
+  const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+  e.force_closed_by_uid=loggedByUid;e.force_closed_by_name=loggedByName;
+  const j=jobs.find(x=>x.id===e.job_id);
+  if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
+  saveAll();
+  showToast('Clocked out · '+_fmtMin(minutes),'⏱');
+  typeof renderTimeLog==='function'&&renderTimeLog();
+}
+
+// Owner request 2026-07-11 ("bulletproof" — matches Jobber's other top
+// complaint, "totals don't add up and I can't fix them"). Manual entries only
+// — GPS-verified auto entries aren't user-editable once §9.5 ships, same as
+// every competitor researched. Own entries always editable; others' only with
+// the payroll permission (same gate as Job Profit/Crew Cost).
+function deleteTimeEntry(entryId){
+  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
+  if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  timeEntries=timeEntries.filter(x=>x.id!==entryId);
+  saveAll();
+  typeof renderTimeLog==='function'&&renderTimeLog();
+}
+function _openEditTimeEntry(entryId){
+  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
+  if(e.open)return; // still running — clock out first, then edit
+  if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  const toLocalInput=iso=>{try{const d=new Date(iso);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16);}catch(_e){return'';}};
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Edit time entry</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(e.logged_by_name||'')+'</div>'+
+    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Start</label>'+
+      '<input type="datetime-local" id="tle-start" value="'+toLocalInput(e.start_time)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
+    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">End</label>'+
+      '<input type="datetime-local" id="tle-end" value="'+toLocalInput(e.end_time)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
+    '<div id="tle-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="_saveEditedTimeEntry('+entryId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
+}
+function _saveEditedTimeEntry(entryId){
+  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
+  const startEl=document.getElementById('tle-start'),endEl=document.getElementById('tle-end');
+  const start=startEl?new Date(startEl.value):null,end=endEl?new Date(endEl.value):null;
+  const errEl=document.getElementById('tle-err');
+  if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start){
+    if(errEl)errEl.style.display='block';
+    return;
+  }
+  e.start_time=start.toISOString();e.end_time=end.toISOString();
+  e.minutes=Math.max(1,Math.round((end.getTime()-start.getTime())/60000));
+  e.date=dateKey(start);
+  const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+  e.edited_by_uid=loggedByUid;e.edited_by_name=loggedByName;e.edited_at=new Date().toISOString();
+  saveAll();
+  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+  typeof renderTimeLog==='function'&&renderTimeLog();
 }
 
 function updateClockTimer(){

@@ -152,6 +152,73 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.allSameLength).toBe(true);
     });
+
+    test('still-open (currently clocked in) entries are excluded — they belong in the banner, not the history', async () => {
+      const r = await page.evaluate(async () => {
+        timeEntries.push({ id: 8990099, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        try {
+          const rows = await _timeLogRows(null);
+          return { ok: true, found: rows.some(x => x.rawId === 8990099) };
+        } finally { timeEntries = timeEntries.filter(e => e.id !== 8990099); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.found).toBe(false);
+    });
+  });
+
+  test.describe('_tlOpenEntries', () => {
+    const OPEN_ID = 8990010;
+    test.afterEach(async () => {
+      await page.evaluate((id) => { timeEntries = timeEntries.filter(e => e.id !== id); }, OPEN_ID);
+    });
+
+    test('golden path — a clocked-in entry shows elapsed minutes and resolved client/job info', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 15 * 60000).toISOString(), end_time: null, minutes: null, open: true, scope_label: 'Sanding', logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        const rows = _tlOpenEntries();
+        const mine = rows.find(x => x.rawId === id);
+        return mine ? { found: true, clientName: mine.clientName, elapsedMin: mine.elapsedMin, detail: mine.detail } : { found: false };
+      }, OPEN_ID);
+      expect(r.found).toBe(true);
+      expect(r.clientName).toBe('Timelog Test Client');
+      expect(r.elapsedMin).toBeGreaterThanOrEqual(14);
+      expect(r.detail).toBe('Sanding');
+    });
+
+    test('closed entries are excluded', async () => {
+      const r = await page.evaluate(() => _tlOpenEntries().some(x => x.rawId === 8990001));
+      expect(r).toBe(false);
+    });
+
+    test('no open entries — returns empty array, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, len: _tlOpenEntries().length }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.len).toBe(0);
+    });
+
+    test('sorted oldest-first (earliest clock-in shown first)', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push(
+          { id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 5 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' },
+          { id: id + 1, job_id: 87702, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 30 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: 'emp-test-uid', logged_by_name: 'Test Crew Member' }
+        );
+        try { return _tlOpenEntries().map(x => x.rawId); }
+        finally { timeEntries = timeEntries.filter(e => e.id !== id + 1); }
+      }, OPEN_ID);
+      expect(r.indexOf(OPEN_ID + 1)).toBeLessThan(r.indexOf(OPEN_ID));
+    });
+
+    test('missing/malformed start_time — does not throw', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: 87701, date: '', start_time: null, end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        try { const rows = _tlOpenEntries(); return { ok: true, elapsed: rows.find(x => x.rawId === id)?.elapsedMin }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      }, OPEN_ID);
+      expect(r.ok).toBe(true);
+    });
   });
 
   test.describe('_tlYears', () => {
@@ -175,6 +242,209 @@ test.describe('timelog.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.v).toEqual([String(new Date().getFullYear())]);
+    });
+  });
+
+  test.describe('_tlCanEdit', () => {
+    const restore = async () => page.evaluate(() => {
+      window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
+    });
+    test.afterEach(restore);
+
+    test('auto (GPS) source — never editable, even for the owner', async () => {
+      const r = await page.evaluate(() => _tlCanEdit({ source: 'auto', personUid: null }));
+      expect(r).toBe(false);
+    });
+
+    test('auto (GPS) source — never editable, even with payroll permission', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = true;
+        window._employeeRecord = { permissions: { payroll: true } };
+        window._supaUser = { id: 'emp-test-uid' };
+        return _tlCanEdit({ source: 'auto', personUid: 'emp-test-uid' });
+      });
+      expect(r).toBe(false);
+    });
+
+    test('manual entry — owner (non-employee) can always edit, including others\' entries', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlCanEdit({ source: 'manual', personUid: 'someone-else' });
+      });
+      expect(r).toBe(true);
+    });
+
+    test('manual entry — employee without payroll permission can edit their OWN entry', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = true;
+        window._employeeRecord = { permissions: { payroll: false } };
+        window._supaUser = { id: 'emp-test-uid' };
+        return _tlCanEdit({ source: 'manual', personUid: 'emp-test-uid' });
+      });
+      expect(r).toBe(true);
+    });
+
+    test('manual entry — employee without payroll permission CANNOT edit someone else\'s entry', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = true;
+        window._employeeRecord = { permissions: { payroll: false } };
+        window._supaUser = { id: 'emp-test-uid' };
+        return _tlCanEdit({ source: 'manual', personUid: 'someone-else' });
+      });
+      expect(r).toBe(false);
+    });
+
+    test('manual entry — employee WITH payroll permission can edit someone else\'s entry', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = true;
+        window._employeeRecord = { permissions: { payroll: true } };
+        window._supaUser = { id: 'emp-test-uid' };
+        return _tlCanEdit({ source: 'manual', personUid: 'someone-else' });
+      });
+      expect(r).toBe(true);
+    });
+
+    test('missing personUid/source — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _tlCanEdit({}) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe(false);
+    });
+  });
+
+  test.describe('_tlRow — Edit/Delete controls', () => {
+    test('editable row — renders Edit and Delete buttons wired to the right entry id', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        const html = _tlRow({ id: 'm123', rawId: 123, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 });
+        return html;
+      });
+      expect(r).toContain('_openEditTimeEntry(123)');
+      expect(r).toContain('deleteTimeEntry(123)');
+    });
+
+    test('non-editable row (auto/GPS source) — no Edit/Delete buttons', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'a1', rawId: 1, source: 'auto', personName: 'Crew', personUid: 'someone', clientName: 'X', addr: '', jobName: 'Y', detail: 'geo', minutes: 60 });
+      });
+      expect(r).not.toContain('_openEditTimeEntry');
+      expect(r).not.toContain('deleteTimeEntry');
+    });
+
+    test('non-editable row (someone else\'s manual entry, no permission) — no Edit/Delete buttons', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = true;
+        window._employeeRecord = { permissions: { payroll: false } };
+        window._supaUser = { id: 'emp-test-uid' };
+        const html = _tlRow({ id: 'm5', rawId: 5, source: 'manual', personName: 'Someone Else', personUid: 'someone-else', clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 });
+        window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
+        return html;
+      });
+      expect(r).not.toContain('_openEditTimeEntry');
+      expect(r).not.toContain('deleteTimeEntry');
+    });
+  });
+
+  test.describe('_tlRenderOpenBanner / open-refresh lifecycle', () => {
+    const OPEN_ID = 8990020;
+    test.afterEach(async () => {
+      await page.evaluate((id) => {
+        timeEntries = timeEntries.filter(e => e.id !== id);
+        window._isEmployee = false; window._employeeRecord = undefined; window._supaUser = undefined;
+        if (typeof _tlStopOpenRefresh === 'function') _tlStopOpenRefresh();
+      }, OPEN_ID);
+    });
+
+    test('missing #tl-open DOM — no throw', async () => {
+      const r = await page.evaluate(() => {
+        const el = document.getElementById('tl-open');
+        const id = el ? el.id : null;
+        if (el) el.id = 'tl-open-hidden-temp';
+        try { _tlRenderOpenBanner(); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { if (el) el.id = id; }
+      });
+      expect(r.ok).toBe(true);
+    });
+
+    test('no open entries — banner is hidden and empty', async () => {
+      const r = await page.evaluate(() => {
+        _tlRenderOpenBanner();
+        const el = document.getElementById('tl-open');
+        return { display: el.style.display, html: el.innerHTML };
+      });
+      expect(r.display).toBe('none');
+      expect(r.html).toBe('');
+    });
+
+    test('my own open entry — shown with person name, client, and elapsed time, no "Clock out" button', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 10 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        window._isEmployee = false;
+        _tlRenderOpenBanner();
+        const el = document.getElementById('tl-open');
+        return { display: el.style.display, html: el.innerHTML };
+      }, OPEN_ID);
+      expect(r.display).toBe('block');
+      expect(r.html).toContain('Currently clocked in');
+      expect(r.html).toContain('Timelog Test Client');
+      expect(r.html).not.toContain('forceClockOutEntry');
+    });
+
+    test('employee without payroll permission — cannot see someone else\'s open entry', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: 'someone-else', logged_by_name: 'Someone Else' });
+        window._isEmployee = true;
+        window._employeeRecord = { permissions: { payroll: false } };
+        window._supaUser = { id: 'emp-test-uid' };
+        _tlRenderOpenBanner();
+        const el = document.getElementById('tl-open');
+        return { display: el.style.display, html: el.innerHTML };
+      }, OPEN_ID);
+      expect(r.display).toBe('none');
+      expect(r.html).toBe('');
+    });
+
+    test('manager with payroll permission — sees others\' open entries with a "Clock out" force button', async () => {
+      const r = await page.evaluate((id) => {
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: 'someone-else', logged_by_name: 'Someone Else' });
+        window._isEmployee = true;
+        window._employeeRecord = { permissions: { payroll: true } };
+        window._supaUser = { id: 'emp-test-uid' };
+        _tlRenderOpenBanner();
+        const el = document.getElementById('tl-open');
+        return { display: el.style.display, hasForceBtn: el.innerHTML.includes('forceClockOutEntry(' + id + ')') };
+      }, OPEN_ID);
+      expect(r.display).toBe('block');
+      expect(r.hasForceBtn).toBe(true);
+    });
+
+    test('_tlStartOpenRefresh sets a live interval; _tlStopOpenRefresh clears it', async () => {
+      const r = await page.evaluate(() => {
+        _tlStartOpenRefresh();
+        const runningAfterStart = _tlOpenRefreshTimer !== null;
+        _tlStopOpenRefresh();
+        const clearedAfterStop = _tlOpenRefreshTimer === null;
+        return { runningAfterStart, clearedAfterStop };
+      });
+      expect(r.runningAfterStart).toBe(true);
+      expect(r.clearedAfterStop).toBe(true);
+    });
+
+    test('calling _tlStartOpenRefresh twice does not leak a second interval', async () => {
+      const r = await page.evaluate(() => {
+        _tlStartOpenRefresh();
+        const first = _tlOpenRefreshTimer;
+        _tlStartOpenRefresh();
+        const second = _tlOpenRefreshTimer;
+        _tlStopOpenRefresh();
+        return { changed: first !== second, clearedAfter: _tlOpenRefreshTimer === null };
+      });
+      expect(r.changed).toBe(true);
+      expect(r.clearedAfter).toBe(true);
     });
   });
 
@@ -316,6 +586,22 @@ test.describe('timelog.js — exhaustive coverage', () => {
         } catch (e) { return false; }
       });
       expect(r).toBe(true);
+    });
+
+    test('an open (clocked-in) entry appears in the open banner, not in the year/month/day history', async () => {
+      const r = await page.evaluate(async () => {
+        const id = 8990030;
+        timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+        try {
+          setTimeLogYear(new Date().getFullYear());
+          await renderTimeLog();
+          const bannerHtml = document.getElementById('tl-open').innerHTML;
+          const listHtml = document.getElementById('tl-list').innerHTML;
+          return { inBanner: bannerHtml.includes('Currently clocked in'), inHistory: listHtml.includes('_openEditTimeEntry(' + id + ')') };
+        } finally { timeEntries = timeEntries.filter(e => e.id !== id); }
+      });
+      expect(r.inBanner).toBe(true);
+      expect(r.inHistory).toBe(false);
     });
   });
 

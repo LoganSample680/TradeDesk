@@ -3052,7 +3052,7 @@ function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn
       '</button>'+
       '<div class="bk-day-body">'+
         '<div class="bk-tbl-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl bk-tbl" style="min-width:'+minWidth+'px"><thead><tr>'+
-          headers.map(h=>'<th>'+h+'</th>').join('')+(tab==='exp'?'<th></th>':'')+'</tr></thead><tbody>'+
+          headers.map(h=>'<th>'+h+'</th>').join('')+((tab==='exp'||tab==='tl')?'<th></th>':'')+'</tr></thead><tbody>'+
           dr.map(rowFn).join('')+
         '</tbody></table></div>'+
       '</div>'+

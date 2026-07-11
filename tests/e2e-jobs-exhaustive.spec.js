@@ -638,6 +638,255 @@ test.describe('jobs.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // clockIn/clockOut — "bulletproof" persistence (owner request 2026-07-11).
+  // Before this, clockOut() was the ONLY place a timeEntries row was ever
+  // written — a crashed tab, dead phone, or forgotten clock-out meant the
+  // entire session was silently lost, with no trace anywhere. Now clockIn()
+  // itself persists an "open" row immediately; clockOut() closes that same
+  // row instead of creating a new one. This block proves the data survives
+  // even when clockOut never runs, and covers the new admin/edit tooling
+  // this enables: forceClockOutEntry, deleteTimeEntry, edit, rehydration.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('clockIn/clockOut bulletproof persistence', () => {
+    test('CRITICAL: clockIn alone (no clockOut) already persists a real timeEntries row', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origToast = window.showToast;
+        window.showClockBanner = () => {}; window.showToast = () => {};
+        try {
+          clockOut(false, true); // ensure clean slate
+          timeEntries = timeEntries.filter(e => e.job_id !== 77701 || !e.open);
+          clockIn(77701, 'sand', 'Sanding');
+          const open = timeEntries.find(e => e.job_id === 77701 && e.open);
+          return {
+            ok: true, found: !!open, hasStartTime: !!(open && open.start_time),
+            endTimeNull: open ? open.end_time === null : null, entryId: open ? open.id : null,
+            matchesActiveTimer: open ? open.id === _activeTimer.entryId : null,
+          };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { window.showClockBanner = origBanner; window.showToast = origToast; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.found).toBe(true);
+      expect(r.hasStartTime).toBe(true);
+      expect(r.endTimeNull).toBe(true);
+      expect(r.matchesActiveTimer).toBe(true);
+    });
+
+    test('clockOut closes the SAME open row in place — does not create a duplicate', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origHide = window.hideClockBanner;
+        const origRender = window.renderJobsPage, origToast = window.showToast;
+        window.showClockBanner = () => {}; window.hideClockBanner = () => {};
+        window.renderJobsPage = () => {}; window.showToast = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => e.job_id !== 77701);
+          clockIn(77701, 'sand', 'Sanding');
+          const openId = _activeTimer.entryId;
+          const countAfterClockIn = timeEntries.filter(e => e.job_id === 77701).length;
+          clockOut(true, true);
+          const countAfterClockOut = timeEntries.filter(e => e.job_id === 77701).length;
+          const closed = timeEntries.find(e => e.id === openId);
+          return {
+            ok: true, countAfterClockIn, countAfterClockOut,
+            sameRowClosed: !!(closed && closed.open === false && closed.end_time && typeof closed.minutes === 'number'),
+          };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { window.showClockBanner = origBanner; window.hideClockBanner = origHide; window.renderJobsPage = origRender; window.showToast = origToast; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.countAfterClockIn).toBe(1);
+      expect(r.countAfterClockOut).toBe(1); // still 1 — updated in place, not duplicated
+      expect(r.sameRowClosed).toBe(true);
+    });
+
+    test('clockOut(false) — explicit discard removes the open row instead of stranding it open', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner, origHide = window.hideClockBanner, origRender = window.renderJobsPage;
+        window.showClockBanner = () => {}; window.hideClockBanner = () => {}; window.renderJobsPage = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => e.job_id !== 77701);
+          clockIn(77701, 'sand', 'Sanding');
+          clockOut(false, true);
+          return { ok: true, remaining: timeEntries.filter(e => e.job_id === 77701).length };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { window.showClockBanner = origBanner; window.hideClockBanner = origHide; window.renderJobsPage = origRender; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.remaining).toBe(0);
+    });
+
+    test('_rehydrateActiveTimer restores _activeTimer from a persisted open entry (simulates reload mid-timer)', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner;
+        window.showClockBanner = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => e.job_id !== 77701);
+          clockIn(77701, 'sand', 'Sanding');
+          const entryId = _activeTimer.entryId;
+          clearInterval(_activeTimer.timerInterval);
+          _activeTimer = null; // simulate a reload — the `let` binding does not survive
+          _rehydrateActiveTimer();
+          return { ok: true, restored: !!_activeTimer, entryId: _activeTimer ? _activeTimer.entryId : null, expectedId: entryId, jobId: _activeTimer ? _activeTimer.jobId : null };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { window.showClockBanner = origBanner; if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); } }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.restored).toBe(true);
+      expect(r.entryId).toBe(r.expectedId);
+      expect(r.jobId).toBe(77701);
+    });
+
+    test('_rehydrateActiveTimer does nothing when there is no open entry', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          timeEntries = timeEntries.filter(e => !e.open);
+          _activeTimer = null;
+          _rehydrateActiveTimer();
+          return { ok: true, activeTimer: _activeTimer };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.activeTimer).toBe(null);
+    });
+
+    test('_rehydrateActiveTimer does not clobber an already-running local timer', async () => {
+      const r = await page.evaluate(() => {
+        const origBanner = window.showClockBanner;
+        window.showClockBanner = () => {};
+        try {
+          timeEntries = timeEntries.filter(e => e.job_id !== 77701 && e.job_id !== 77702);
+          clockIn(77701, 'sand', 'Sanding');
+          const firstEntryId = _activeTimer.entryId;
+          _rehydrateActiveTimer(); // should be a no-op since _activeTimer is already set
+          return { ok: true, entryId: _activeTimer.entryId, unchanged: _activeTimer.entryId === firstEntryId };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          window.showClockBanner = origBanner;
+          if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); clockOut(false, true); }
+        }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.unchanged).toBe(true);
+    });
+
+    test('forceClockOutEntry closes an open entry and marks who force-closed it', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990101);
+        timeEntries.push({ id: 9990101, job_id: 77701, date: todayKey(), start_time: new Date(Date.now() - 3600000).toISOString(), end_time: null, minutes: null, scope_id: null, scope_label: null, logged_by_uid: 'someone-else', logged_by_name: 'Someone Else', open: true });
+        try {
+          forceClockOutEntry(9990101);
+          const e = timeEntries.find(x => x.id === 9990101);
+          return { ok: true, closed: e.open === false, hasMinutes: typeof e.minutes === 'number' && e.minutes > 0, hasForceClosedBy: !!e.force_closed_by_name };
+        } catch (err) { return { ok: false, err: err.message }; }
+        finally { timeEntries = timeEntries.filter(e => e.id !== 9990101); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.closed).toBe(true);
+      expect(r.hasMinutes).toBe(true);
+      expect(r.hasForceClosedBy).toBe(true);
+    });
+
+    test('forceClockOutEntry on a nonexistent id — does not throw', async () => {
+      const r = await page.evaluate(() => { try { forceClockOutEntry(999999); return true; } catch (e) { return false; } });
+      expect(r).toBe(true);
+    });
+
+    test('forceClockOutEntry on an already-closed entry — no-op, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990102);
+        timeEntries.push({ id: 9990102, job_id: 77701, date: todayKey(), start_time: new Date().toISOString(), end_time: new Date().toISOString(), minutes: 30, open: false });
+        try { forceClockOutEntry(9990102); const e = timeEntries.find(x => x.id === 9990102); return { ok: true, minutesUnchanged: e.minutes === 30 }; }
+        catch (err) { return { ok: false, err: err.message }; }
+        finally { timeEntries = timeEntries.filter(e => e.id !== 9990102); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.minutesUnchanged).toBe(true);
+    });
+
+    test('deleteTimeEntry removes an entry the caller owns', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990103);
+        timeEntries.push({ id: 9990103, job_id: 77701, date: todayKey(), start_time: new Date().toISOString(), end_time: new Date().toISOString(), minutes: 30, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
+        try { deleteTimeEntry(9990103); return { ok: true, gone: !timeEntries.find(e => e.id === 9990103) }; }
+        catch (err) { return { ok: false, err: err.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.gone).toBe(true);
+    });
+
+    test('deleteTimeEntry null/nonexistent id — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { deleteTimeEntry(null); deleteTimeEntry(999999); return true; } catch (e) { return false; }
+      });
+      expect(r).toBe(true);
+    });
+
+    test('_openEditTimeEntry on a still-open entry — refuses (must clock out first)', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990104);
+        timeEntries.push({ id: 9990104, job_id: 77701, date: todayKey(), start_time: new Date().toISOString(), end_time: null, minutes: null, logged_by_uid: null, open: true });
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        try { _openEditTimeEntry(9990104); return { ok: true, modalShown: !!document.querySelector('.zmodal-overlay') }; }
+        catch (err) { return { ok: false, err: err.message }; }
+        finally { timeEntries = timeEntries.filter(e => e.id !== 9990104); document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.modalShown).toBe(false);
+    });
+
+    test('_openEditTimeEntry / _saveEditedTimeEntry — golden path updates start/end/minutes and marks who edited it', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990105);
+        timeEntries.push({ id: 9990105, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        try {
+          _openEditTimeEntry(9990105);
+          const startEl = document.getElementById('tle-start'), endEl = document.getElementById('tle-end');
+          startEl.value = '2026-01-01T09:00';
+          endEl.value = '2026-01-01T11:30'; // extend by 90 minutes
+          _saveEditedTimeEntry(9990105);
+          const e = timeEntries.find(x => x.id === 9990105);
+          return { ok: true, minutes: e.minutes, hasEditedBy: !!e.edited_by_name, hasEditedAt: !!e.edited_at, modalClosed: !document.querySelector('.zmodal-overlay') };
+        } catch (err) { return { ok: false, err: err.message }; }
+        finally { timeEntries = timeEntries.filter(e => e.id !== 9990105); document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.minutes).toBe(150);
+      expect(r.hasEditedBy).toBe(true);
+      expect(r.hasEditedAt).toBe(true);
+      expect(r.modalClosed).toBe(true);
+    });
+
+    test('_saveEditedTimeEntry rejects end time before/equal to start — leaves the entry unchanged', async () => {
+      const r = await page.evaluate(() => {
+        timeEntries = timeEntries.filter(e => e.id !== 9990106);
+        timeEntries.push({ id: 9990106, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, open: false });
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        try {
+          _openEditTimeEntry(9990106);
+          document.getElementById('tle-start').value = '2026-01-01T11:00';
+          document.getElementById('tle-end').value = '2026-01-01T10:00'; // before start — invalid
+          _saveEditedTimeEntry(9990106);
+          const e = timeEntries.find(x => x.id === 9990106);
+          return { ok: true, minutesUnchanged: e.minutes === 60, errShown: document.getElementById('tle-err')?.style.display === 'block' };
+        } catch (err) { return { ok: false, err: err.message }; }
+        finally { timeEntries = timeEntries.filter(e => e.id !== 9990106); document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.minutesUnchanged).toBe(true);
+      expect(r.errShown).toBe(true);
+    });
+
+    test('_openEditTimeEntry / deleteTimeEntry on a nonexistent id — do not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _openEditTimeEntry(999999); _saveEditedTimeEntry(999999); deleteTimeEntry(999999); return true; }
+        catch (e) { return false; }
+      });
+      expect(r).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // _nearbyClockIn — nearby-banner Clock in handler. Unlike openClockInSheet
   // (which requires an existing job), this always succeeds: given a null
   // jobId it creates a minimal walk-up job for the client on the spot so

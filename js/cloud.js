@@ -507,7 +507,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.10.26.22';
+const APP_VERSION='07.10.26.23';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -4929,6 +4929,11 @@ async function supaLoadFromCloud({silent=false}={}){
       // near-instantly, so this only needs to trail the location-permission
       // request above, not pad extra wait time on top of it.
       setTimeout(()=>checkNearbyJob(),1500);
+      // Reconnects the clock banner/interval to an open (still-clocked-in) entry
+      // this person owns, if this device reloaded mid-timer — see
+      // _rehydrateActiveTimer (js/jobs.js) for why this is safe/necessary now
+      // that clock-in persists immediately instead of only at clock-out.
+      typeof _rehydrateActiveTimer==='function'&&_rehydrateActiveTimer();
     }
 
     try{
