@@ -174,6 +174,32 @@ function _calcPayrollLiability(grossWages,ytdSsWages,ytdFutaWages,yr){
   };
 }
 
+// Actual PAYROLL gross wages for one pay period — distinct from
+// _empEffectiveHourly (js/cloud.js), which derives an hourly-equivalent from
+// salary but is explicitly for JOB-COSTING only (labor cost per job hour). A
+// salaried W-2 employee's paycheck is a FIXED amount every pay period
+// regardless of hours worked — using the job-costing conversion here would
+// make their pay incorrectly track their clocked hours.
+//
+// comp = {pay_type:'hourly'|'salary', pay_rate}. periodRegularMin/periodOtMin
+// are this person's already-split regular vs overtime minutes for the period
+// (hourly only — salary ignores hours entirely). payPeriodsPerYear: how many
+// times a year the salary is divided (52 weekly, 26 biweekly, 24
+// semimonthly, 12 monthly). otMultiplier defaults to time-and-a-half.
+function _calcGrossWages(comp,periodRegularMin,periodOtMin,payPeriodsPerYear,otMultiplier){
+  const r2=v=>Math.round(v*100)/100;
+  const payType=comp&&comp.pay_type==='salary'?'salary':'hourly';
+  const rate=Math.max(0,Number(comp&&comp.pay_rate)||0);
+  if(payType==='salary'){
+    const periods=Math.max(1,Number(payPeriodsPerYear)||52);
+    return r2(rate/periods);
+  }
+  const mult=Number(otMultiplier)>0?Number(otMultiplier):1.5;
+  const regHrs=Math.max(0,Number(periodRegularMin)||0)/60;
+  const otHrs=Math.max(0,Number(periodOtMin)||0)/60;
+  return r2(regHrs*rate+otHrs*rate*mult);
+}
+
 // Estimate state income tax on an apportioned income amount using STATE_TAX data.
 // Used for non-resident (out-of-state job) portions — no standard deduction applied
 // since deduction is pro-rated to near-zero for small income fractions.

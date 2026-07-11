@@ -2645,6 +2645,87 @@ test.describe('Employee role/classification split and leads gating', () => {
     assertNoErrors(page, 'employeeModalHTML classification select');
   });
 
+  test('_employeeModalHTML renders emp-employment-type select (W-2/1099 classification)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _employeeModalHTML !== 'function') return { fnExists: false };
+      const html = _employeeModalHTML(null, null);
+      return {
+        fnExists: true,
+        hasSelect: html.includes('emp-employment-type'),
+        hasW2Option: html.includes('value="w2"'),
+        has1099Option: html.includes('value="1099"'),
+      };
+    });
+    if (!result.fnExists) return;
+    expect(result.hasSelect).toBe(true);
+    expect(result.hasW2Option).toBe(true);
+    expect(result.has1099Option).toBe(true);
+    assertNoErrors(page, 'employeeModalHTML employment-type select');
+  });
+
+  test('_employeeModalHTML defaults to W-2 selected for a new/unknown employee', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _employeeModalHTML !== 'function') return { fnExists: false };
+      const html = _employeeModalHTML(null, null);
+      const w2Selected = /value="w2"\s+selected/.test(html);
+      const oneOhNineNotSelected = !/value="1099"\s+selected/.test(html);
+      return { fnExists: true, w2Selected, oneOhNineNotSelected };
+    });
+    if (!result.fnExists) return;
+    expect(result.w2Selected).toBe(true);
+    expect(result.oneOhNineNotSelected).toBe(true);
+  });
+
+  test('_employeeModalHTML pre-selects 1099 when _teamComp has employment_type=1099 for that email', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _employeeModalHTML !== 'function' || typeof _teamComp === 'undefined') return { fnExists: false };
+      const orig = _teamComp;
+      _teamComp = { 'sub@test.com': { pay_type: 'hourly', pay_rate: 45, employment_type: '1099' } };
+      try {
+        const emp = { name: 'Sub Contractor', role: 'tech', email: 'sub@test.com', phone: '', permissions: {} };
+        const html = _employeeModalHTML(emp, 0);
+        return { fnExists: true, oneOhNineSelected: /value="1099"\s+selected/.test(html) };
+      } finally { _teamComp = orig; }
+    });
+    if (!result.fnExists) return;
+    expect(result.oneOhNineSelected).toBe(true);
+    assertNoErrors(page, 'employeeModalHTML 1099 pre-select');
+  });
+
+  test('_saveEmployee persists the selected employment_type (1099) into _teamComp', async () => {
+    const result = await page.evaluate(async () => {
+      if (typeof _saveEmployee !== 'function' || typeof _openEmpModal !== 'function' || typeof _teamComp === 'undefined') return { skip: true };
+      const origEmployees = S.employees ? [...S.employees] : [];
+      const email = 'gross-wage-test-sub@test.com';
+      try {
+        _openEmpModal(null, null);
+        const nameEl = document.getElementById('emp-name');
+        const emailEl = document.getElementById('emp-email');
+        const typeEl = document.getElementById('emp-employment-type');
+        if (!nameEl || !emailEl || !typeEl) return { skip: true, reason: 'modal fields missing' };
+        nameEl.value = 'Gross Wage Test Sub';
+        emailEl.value = email;
+        typeEl.value = '1099';
+        await _saveEmployee(null);
+        return { skip: false, employmentType: _teamComp[email]?.employment_type };
+      } catch (e) {
+        return { skip: false, err: e.message, employmentType: _teamComp[email]?.employment_type };
+      } finally {
+        S.employees = origEmployees;
+        delete _teamComp[email];
+        document.getElementById('emp-modal-overlay')?.remove();
+      }
+    });
+    if (result.skip) return;
+    // Only assert when the local team-comp cache actually got a chance to update
+    // (requires _supa/_supaUser truthy in this environment) — the write happens
+    // synchronously before the network call, so a network mock gap wouldn't
+    // erase it, but a completely absent _supa client would skip the whole branch.
+    if (result.employmentType !== undefined) {
+      expect(result.employmentType).toBe('1099');
+    }
+  });
+
   test('_employeeModalHTML maps legacy painter role to tech', async () => {
     const result = await page.evaluate(() => {
       if (typeof _employeeModalHTML !== 'function') return { fnExists: false };

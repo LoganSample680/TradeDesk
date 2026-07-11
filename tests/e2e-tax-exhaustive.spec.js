@@ -1078,6 +1078,159 @@ test.describe('tax.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // 6c. _calcGrossWages — hourly (hours×rate+OT) vs salary (fixed per period,
+  // NEVER hours-driven). Distinct from _empEffectiveHourly (js/cloud.js),
+  // which is explicitly job-costing only.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_calcGrossWages', () => {
+    test('hourly golden path — 40 regular hours at $25/hr, no OT', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, 2400, 0, 52) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(1000); // 40 * 25
+    });
+
+    test('hourly with OT — 40 regular + 5 OT hours at $25/hr, 1.5x default multiplier', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, 2400, 300, 52) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(1187.5); // 1000 + (5 * 25 * 1.5)
+    });
+
+    test('hourly with custom OT multiplier (2x, double-time)', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, 2400, 300, 52, 2) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(1250); // 1000 + (5 * 25 * 2)
+    });
+
+    test('salary — fixed per-period pay, weekly (52/yr), COMPLETELY IGNORES hours', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          const fewHours = _calcGrossWages({ pay_type: 'salary', pay_rate: 52000 }, 600, 0, 52);   // 10 hrs
+          const manyHours = _calcGrossWages({ pay_type: 'salary', pay_rate: 52000 }, 4800, 600, 52); // 80 + 10 OT hrs
+          return { ok: true, fewHours, manyHours };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.fewHours).toBe(1000);  // 52000 / 52
+      expect(r.manyHours).toBe(1000); // identical — salary does not move with hours
+    });
+
+    test('salary — biweekly (26/yr) divides correctly', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'salary', pay_rate: 52000 }, 0, 0, 26) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(2000); // 52000 / 26
+    });
+
+    test('salary — monthly (12/yr) divides correctly', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'salary', pay_rate: 60000 }, 0, 0, 12) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(5000); // 60000 / 12
+    });
+
+    test('null/undefined comp — treated as hourly $0, returns 0, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try {
+          return { ok: true, nullResult: _calcGrossWages(null, 2400, 0, 52), undefResult: _calcGrossWages(undefined, 2400, 0, 52) };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.nullResult).toBe(0);
+      expect(r.undefResult).toBe(0);
+    });
+
+    test('missing pay_rate — returns 0, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly' }, 2400, 0, 52) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(0);
+    });
+
+    test('negative pay_rate — clamped to 0, never negative pay', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: -25 }, 2400, 0, 52) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(0);
+    });
+
+    test('negative minutes — clamped to 0, does not produce negative gross', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, -600, -300, 52) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(0);
+    });
+
+    test('zero hours, hourly — returns 0, no throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, 0, 0, 52) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(0);
+    });
+
+    test('missing payPeriodsPerYear — salary falls back to 52 (weekly)', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'salary', pay_rate: 52000 }, 0, 0, null) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(1000); // 52000 / 52
+    });
+
+    test('unknown pay_type — treated as hourly, not thrown', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'weird', pay_rate: 25 }, 2400, 0, 52) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(1000);
+    });
+
+    test('type-mismatch string inputs — coerced, not thrown', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: '25' }, '2400', '0', '52') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.result).toBe(1000);
+    });
+
+    test('very large hours — no overflow/NaN', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, 999999999, 0, 52) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(Number.isFinite(r.result)).toBe(true);
+    });
+
+    test('concurrent calls — all succeed', async () => {
+      const ok = await concurrent("_calcGrossWages({pay_type:'hourly',pay_rate:25}, 2400, 0, 52)", 5);
+      expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // 7. _calcStateEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_calcStateEstimate', () => {
