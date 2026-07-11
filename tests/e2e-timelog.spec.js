@@ -95,6 +95,25 @@ test.describe('timelog.js — exhaustive coverage', () => {
       const r = await page.evaluate(() => { try { _tlJobClientInfo(null); return true; } catch (e) { return false; } });
       expect(r).toBe(true);
     });
+
+    test('bid.addr (job-site address) takes precedence over the client\'s billing address — property managers/multi-site accounts', async () => {
+      const r = await page.evaluate(() => {
+        bids.push({ id: 889011, client_id: 89901, client_name: 'Timelog Test Client', amount: 500, status: 'Closed Won', bid_date: '2026-01-01', addr: '99 Job Site Rd, Wichita KS 67203' });
+        jobs.push({ id: 877011, client_id: 89901, bid_id: 889011, name: 'Job-site addr test', eventType: 'job', status: 'scheduled', start: '2099-06-01', actualHours: 0 });
+        try { return _tlJobClientInfo(877011); }
+        finally { bids = bids.filter(b => b.id !== 889011); jobs = jobs.filter(j => j.id !== 877011); }
+      });
+      expect(r.addr).toBe('99 Job Site Rd, Wichita KS 67203');
+    });
+
+    test('falls back to job.addr when there\'s no bid-level address', async () => {
+      const r = await page.evaluate(() => {
+        jobs.push({ id: 877012, client_id: 89901, bid_id: null, name: 'Job addr fallback test', eventType: 'job', status: 'scheduled', start: '2099-06-01', actualHours: 0, addr: '42 Snapshot Ave, Wichita KS 67204' });
+        try { return _tlJobClientInfo(877012); }
+        finally { jobs = jobs.filter(j => j.id !== 877012); }
+      });
+      expect(r.addr).toBe('42 Snapshot Ave, Wichita KS 67204');
+    });
   });
 
   test.describe('_timeLogRows', () => {
@@ -163,6 +182,17 @@ test.describe('timelog.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.found).toBe(false);
+    });
+
+    test('manual entries carry startTime/endTime through for the Clock In / Clock Out columns', async () => {
+      const r = await page.evaluate(async () => {
+        const rows = await _timeLogRows(null);
+        const mine = rows.find(x => x.id === 'm8990001');
+        return mine ? { startTime: mine.startTime, hasEndTime: mine.endTime != null } : null;
+      });
+      expect(r).toBeTruthy();
+      expect(r.startTime).toBeTruthy();
+      expect(r.hasEndTime).toBe(true);
     });
   });
 
@@ -343,6 +373,115 @@ test.describe('timelog.js — exhaustive coverage', () => {
     });
   });
 
+  test.describe('_tlComputeWeeklyRunning', () => {
+    test('accumulates day-by-day through the week, chronologically, regardless of input order', async () => {
+      const r = await page.evaluate(() => {
+        // Deliberately out of order — newest first, matching how rows actually render.
+        const rows = [
+          { personUid: 'u1', date: '2026-07-15', minutes: 480 }, // Wed
+          { personUid: 'u1', date: '2026-07-13', minutes: 480 }, // Mon
+          { personUid: 'u1', date: '2026-07-14', minutes: 480 }, // Tue
+        ];
+        _tlComputeWeeklyRunning(rows);
+        return rows.map(r => ({ date: r.date, running: r.weekRunningMin }));
+      });
+      const byDate = Object.fromEntries(r.map(x => [x.date, x.running]));
+      expect(byDate['2026-07-13']).toBe(480);
+      expect(byDate['2026-07-14']).toBe(960);
+      expect(byDate['2026-07-15']).toBe(1440);
+    });
+
+    test('multiple entries the same day sum into that day\'s running total', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-07-13', minutes: 200 },
+          { personUid: 'u1', date: '2026-07-13', minutes: 100 },
+        ];
+        _tlComputeWeeklyRunning(rows);
+        return rows.map(r => r.weekRunningMin);
+      });
+      expect(r).toEqual([300, 300]);
+    });
+
+    test('different people are tracked independently', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-07-13', minutes: 500 },
+          { personUid: 'u2', date: '2026-07-13', minutes: 100 },
+        ];
+        _tlComputeWeeklyRunning(rows);
+        return { u1: rows[0].weekRunningMin, u2: rows[1].weekRunningMin };
+      });
+      expect(r.u1).toBe(500);
+      expect(r.u2).toBe(100);
+    });
+
+    test('resets across a week boundary', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: 'u1', date: '2026-07-11', minutes: 480 }, // Sat, end of prior week
+          { personUid: 'u1', date: '2026-07-12', minutes: 480 }, // Sun, new week starts
+        ];
+        _tlComputeWeeklyRunning(rows);
+        return rows.map(r => r.weekRunningMin);
+      });
+      // Both entries are in DIFFERENT weeks — neither accumulates onto the other.
+      expect(r).toEqual([480, 480]);
+    });
+
+    test('null personUid (owner) is its own bucket', async () => {
+      const r = await page.evaluate(() => {
+        const rows = [
+          { personUid: null, date: '2026-07-13', minutes: 300 },
+          { personUid: 'u1', date: '2026-07-13', minutes: 100 },
+        ];
+        _tlComputeWeeklyRunning(rows);
+        return rows.map(r => r.weekRunningMin);
+      });
+      expect(r).toEqual([300, 100]);
+    });
+
+    test('empty array — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tlComputeWeeklyRunning([]); return true; } catch (e) { return false; }
+      });
+      expect(r).toBe(true);
+    });
+
+    test('rows with missing/malformed dates — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _tlComputeWeeklyRunning([{ personUid: 'u1', date: '', minutes: 30 }, { personUid: 'u1', date: null, minutes: 30 }]); return true; }
+        catch (e) { return false; }
+      });
+      expect(r).toBe(true);
+    });
+  });
+
+  test.describe('_tlFmtTime', () => {
+    test('golden path — formats an ISO timestamp as a plain clock time', async () => {
+      const r = await page.evaluate(() => _tlFmtTime('2026-07-13T13:05:00.000Z'));
+      expect(r).toMatch(/\d{1,2}:\d{2}\s?[AP]M/i);
+    });
+
+    test('null/undefined/empty — returns empty string, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: [_tlFmtTime(null), _tlFmtTime(undefined), _tlFmtTime('')] }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toEqual(['', '', '']);
+    });
+
+    test('malformed timestamp — returns empty string, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, v: _tlFmtTime('not-a-date') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.v).toBe('');
+    });
+  });
+
   test.describe('_tlExportCSV', () => {
     test('no rows for the selected year — shows a toast, does not call downloadFile', async () => {
       const r = await page.evaluate(() => {
@@ -368,8 +507,8 @@ test.describe('timelog.js — exhaustive coverage', () => {
         const origRows = _tlLastRows, origYear = _tlYear;
         _tlYear = '2026';
         _tlLastRows = [
-          { date: '2026-07-13', personName: 'Owner (me)', clientName: 'Client, "The" Best', addr: '1 Main St', jobName: 'Job A', detail: 'Sanding', source: 'manual', minutes: 90, weekOT: false },
-          { date: '2026-07-14', personName: 'Crew A', clientName: 'Other Client', addr: '', jobName: 'Job B', detail: '', source: 'auto', minutes: 2500, weekOT: true },
+          { date: '2026-07-13', personName: 'Owner (me)', clientName: 'Client, "The" Best', addr: '1 Main St', jobName: 'Job A', detail: 'Sanding', source: 'manual', minutes: 90, weekOT: false, weekRunningMin: 90, startTime: '2026-07-13T08:00:00.000Z', endTime: '2026-07-13T09:30:00.000Z' },
+          { date: '2026-07-14', personName: 'Crew A', clientName: 'Other Client', addr: '', jobName: 'Job B', detail: '', source: 'auto', minutes: 2500, weekOT: true, weekRunningMin: 2500, startTime: '2026-07-14T08:00:00.000Z', endTime: null },
         ];
         try { _tlExportCSV(); return captured; }
         finally { _tlLastRows = origRows; _tlYear = origYear; window.downloadFile = orig; window.showToast = origToast; }
@@ -378,11 +517,15 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.type).toBe('text/csv');
       expect(r.filename).toContain('2026');
       expect(r.filename).toContain('.csv');
-      expect(r.content).toContain('"Date","Person","Client","Address","Job","Task","Source","Minutes","Duration","Overtime"');
+      expect(r.content).toContain('"Date","Person","Job Address","Client","Job","Task","Source","Clock In","Clock Out","Minutes","Duration","Week Total","Overtime"');
       // Embedded comma+quote in client name must be CSV-escaped, not break the row.
       expect(r.content).toContain('"Client, ""The"" Best"');
       expect(r.content).toContain('Auto (GPS)');
       expect(r.content).toContain('40+ hrs/wk');
+      expect(r.content).toContain('"1 Main St"');
+      expect(r.content).toContain('41h 40m'); // week-running total for the auto row (2500min)
+      // A missing endTime (still-mid-fetch GPS row) must not throw or break the row.
+      expect(r.content.split('\n').length).toBe(3); // header + 2 rows, no stray line breaks
     });
 
     test('rows are exported sorted by date', async () => {
@@ -523,6 +666,69 @@ test.describe('timelog.js — exhaustive coverage', () => {
       });
       expect(r).not.toContain('OT WK');
     });
+
+    test('job-site address renders as the primary line, with client/job/source folded into the muted line below', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'm9', rawId: 9, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'Riverside Remodel', addr: '410 Riverside Dr', jobName: 'Kitchen repaint', detail: 'Sanding', minutes: 60 });
+      });
+      expect(r).toContain('data-label="Job site"');
+      expect(r).toContain('410 Riverside Dr');
+      expect(r).toContain('Riverside Remodel');
+      expect(r).toContain('Kitchen repaint');
+      expect(r).toContain('Sanding');
+      expect(r).toContain('Manual');
+    });
+
+    test('no address on file — falls back to client/job/source only, no empty address line', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'm10', rawId: 10, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'No-Addr Client', addr: '', jobName: 'Some Job', detail: '', minutes: 60 });
+      });
+      expect(r).toContain('No-Addr Client');
+      expect(r).toContain('Auto');
+      expect(r).not.toContain('style="font-weight:700">'); // the bold address <div> is only emitted when addr is truthy
+    });
+
+    test('renders Clock In / Clock Out columns from startTime/endTime', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'm11', rawId: 11, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 90, startTime: '2026-07-13T13:00:00.000Z', endTime: '2026-07-13T14:30:00.000Z' });
+      });
+      expect(r).toContain('data-label="Clock In"');
+      expect(r).toContain('data-label="Clock Out"');
+      expect(r).not.toContain('data-label="Clock In">—<'); // a real time was provided, not the em-dash fallback
+    });
+
+    test('missing startTime/endTime — Clock In/Out show an em-dash placeholder, not blank or throw', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        try { return { ok: true, html: _tlRow({ id: 'm12', rawId: 12, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 30, startTime: null, endTime: null }) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toContain('data-label="Clock In">—<');
+      expect(r.html).toContain('data-label="Clock Out">—<');
+    });
+
+    test('renders the Week total column from weekRunningMin', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        return _tlRow({ id: 'm13', rawId: 13, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, weekRunningMin: 2415 });
+      });
+      expect(r).toContain('data-label="Week total"');
+      expect(r).toContain('40h 15m');
+    });
+
+    test('missing weekRunningMin — Week total defaults to 0, does not throw', async () => {
+      const r = await page.evaluate(() => {
+        window._isEmployee = false;
+        try { return { ok: true, html: _tlRow({ id: 'm14', rawId: 14, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 }) }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toContain('data-label="Week total"');
+    });
   });
 
   test.describe('_lpDoDelete(type="timelog") — long-press delete dispatch', () => {
@@ -613,7 +819,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.html).toBe('');
     });
 
-    test('my own open entry — shown with person name, client, and elapsed time, no "Clock out" button', async () => {
+    test('my own open entry — shown with person name, client, and elapsed time, with a real clockOut() button (not the manager force-close)', async () => {
       const r = await page.evaluate((id) => {
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 10 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
         window._isEmployee = false;
@@ -624,7 +830,8 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
       expect(r.html).toContain('Currently clocked in');
       expect(r.html).toContain('Timelog Test Client');
-      expect(r.html).not.toContain('forceClockOutEntry');
+      expect(r.html).toContain('onclick="clockOut();_tlRenderOpenBanner()"');
+      expect(r.html).not.toContain('forceClockOutEntry'); // own entry never uses the manager force-close path
       expect(r.html).not.toContain('LONG SHIFT');
     });
 

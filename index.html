@@ -424,6 +424,11 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
   /* Vendor/Client + Amount are the headline of each card */
   .bk-tbl td[data-label="Client"],.bk-tbl td[data-label="Vendor"]{font-size:15px;font-weight:800}
   .bk-tbl td[data-label="Amount"]{font-size:15px;font-weight:800}
+  /* Time Log's job-site cell carries a full address + a second line — the
+     generic label-left/value-right flex row squeezes that into a narrow
+     wrapped column. Stack label above value instead, full width. */
+  .bk-tbl td[data-label="Job site"]{display:block;text-align:left}
+  .bk-tbl td[data-label="Job site"]::before{display:block;margin-bottom:4px}
 }
 .row-bb{padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}
 .row-bb:last-child{border:none}

@@ -18,7 +18,12 @@ function _tlJobClientInfo(jobId){
   const j=jobs.find(x=>x.id===jobId);
   const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
   const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
-  return{jobName:j?j.name:'—',clientName:c?c.name:(j?j.name:'—'),addr:c?c.addr:(j&&j.addr)||''};
+  // Job-site address, not billing address — a bid's own addr (when set) is the
+  // actual property being worked, which can differ from the client's address
+  // (property managers, rentals, multi-site commercial accounts). Same
+  // precedence js/jobs.js already uses for job cards (bid.addr||client.addr).
+  const addr=(bid&&bid.addr)||(j&&j.addr)||(c&&c.addr)||'';
+  return{jobName:j?j.name:'—',clientName:c?c.name:(j?j.name:'—'),addr};
 }
 // Still-running entries — clocked in, never closed. Separate from the history
 // below: an open entry has no minutes yet, so mixing it into the month/day
@@ -48,7 +53,8 @@ async function _timeLogRows(sinceISO){
       id:'m'+e.id,rawId:e.id,source:'manual',date:e.date,minutes:e.minutes||0,
       personName:e.logged_by_name||((typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)'),
       personUid:e.logged_by_uid||null,
-      clientName:info.clientName,addr:info.addr,jobName:info.jobName,detail:e.scope_label||''
+      clientName:info.clientName,addr:info.addr,jobName:info.jobName,detail:e.scope_label||'',
+      startTime:e.start_time||null,endTime:e.end_time||null
     });
   });
   const crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
@@ -59,7 +65,8 @@ async function _timeLogRows(sinceISO){
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,
       source:'auto',date:(typeof _ctDateStr==='function')?_ctDateStr(new Date(e.arrived_at)):e.arrived_at.slice(0,10),
       minutes:e.minutes||0,personName:crew.name[e.employee_user_id]||'Crew',personUid:e.employee_user_id,
-      clientName:info.clientName,addr:info.addr,jobName:info.jobName,detail:e.source||'geo'
+      clientName:info.clientName,addr:info.addr,jobName:info.jobName,detail:e.source||'geo',
+      startTime:e.arrived_at||null,endTime:e.departed_at||null
     });
   });
   return rows.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -98,17 +105,64 @@ function _tlComputeOT(rows){
     r.weekOT=byWeek[key]>2400;
   });
 }
+// Running weekly total for payroll: "as of this day, how many hours has this
+// person logged so far this week" — computed chronologically (oldest day
+// first) per person per week regardless of display order (rows render
+// newest-first). Granularity is per-DAY, not per-entry: every entry on the
+// same day for the same person shows the same running total (the total
+// through the end of that day), since GPS entries don't always carry a
+// reliable intra-day ordering to split on. Mutates rows in place.
+function _tlComputeWeeklyRunning(rows){
+  const dayTotals={}; // 'person|date' -> minutes that day
+  rows.forEach(r=>{
+    const k=(r.personUid||'owner')+'|'+r.date;
+    dayTotals[k]=(dayTotals[k]||0)+(r.minutes||0);
+  });
+  const weekDays={}; // 'person|weekKey' -> Set of dates
+  Object.keys(dayTotals).forEach(k=>{
+    const sep=k.indexOf('|');
+    const person=k.slice(0,sep),date=k.slice(sep+1);
+    const wk=person+'|'+_tlWeekKey(date);
+    (weekDays[wk]=weekDays[wk]||new Set()).add(date);
+  });
+  const runningThroughDay={}; // 'person|date' -> cumulative minutes through that day
+  Object.keys(weekDays).forEach(wk=>{
+    const person=wk.slice(0,wk.indexOf('|'));
+    const dates=[...weekDays[wk]].sort();
+    let running=0;
+    dates.forEach(date=>{
+      running+=dayTotals[person+'|'+date]||0;
+      runningThroughDay[person+'|'+date]=running;
+    });
+  });
+  rows.forEach(r=>{
+    const k=(r.personUid||'owner')+'|'+r.date;
+    r.weekRunningMin=runningThroughDay[k]||0;
+  });
+}
+// Formats an ISO timestamp as a plain clock time ("8:02 AM"). Used for both
+// the Clock In/Clock Out columns and the CSV export — one place so the two
+// never drift out of format with each other.
+function _tlFmtTime(iso){
+  if(!iso)return '';
+  const d=new Date(iso);
+  if(isNaN(d.getTime()))return '';
+  return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+}
 let _tlLastRows=[];
 function _tlExportCSV(){
   if(!_tlLastRows.length){typeof showToast==='function'&&showToast('No time entries to export for '+_tlYear,'📋');return;}
   const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
-  const header=['Date','Person','Client','Address','Job','Task','Source','Minutes','Duration','Overtime'];
+  const header=['Date','Person','Job Address','Client','Job','Task','Source','Clock In','Clock Out','Minutes','Duration','Week Total','Overtime'];
   const lines=[header.map(esc).join(',')];
   _tlLastRows.slice().sort((a,b)=>(a.date||'').localeCompare(b.date||'')).forEach(r=>{
     lines.push([
-      r.date||'',r.personName||'',r.clientName||'',r.addr||'',r.jobName||'',r.detail||'',
-      r.source==='auto'?'Auto (GPS)':'Manual',r.minutes||0,
+      r.date||'',r.personName||'',r.addr||'',r.clientName||'',r.jobName||'',r.detail||'',
+      r.source==='auto'?'Auto (GPS)':'Manual',
+      _tlFmtTime(r.startTime),_tlFmtTime(r.endTime),
+      r.minutes||0,
       typeof _fmtMin==='function'?_fmtMin(r.minutes):(r.minutes||0)+'m',
+      typeof _fmtMin==='function'?_fmtMin(r.weekRunningMin||0):(r.weekRunningMin||0)+'m',
       r.weekOT?'40+ hrs/wk':''
     ].map(esc).join(','));
   });
@@ -143,14 +197,23 @@ function _tlRow(r){
   // nothing) on GPS/auto rows and on entries this person isn't allowed to
   // touch — same visibility rule the Edit button already follows.
   const lpAttrs=canEdit?' data-lp-id="'+r.rawId+'" data-lp-type="timelog" data-lp-label="'+escHtml(r.personName+' · '+r.clientName)+'"':'';
+  // Job address is the primary line (owner request 2026-07-11: "show the day,
+  // job address, person...") — client name/job/task fold into a muted second
+  // line along with the manual-vs-GPS source tag, which used to be its own column.
+  const jobLine=[r.clientName,(r.jobName&&r.jobName!==r.clientName)?r.jobName:null,r.detail||null].filter(Boolean).map(escHtml).join(' · ');
+  const sourceTag=r.source==='auto'?svgIcon('📍',{size:10})+' Auto':svgIcon('▶',{size:10})+' Manual';
   return '<tr'+lpAttrs+'>'+
     '<td class="bold" data-label="Person">'+escHtml(r.personName)+'</td>'+
-    '<td data-label="Client">'+escHtml(r.clientName)+(r.addr?' <span style="color:var(--text3);font-weight:400">· '+escHtml(r.addr)+'</span>':'')+'</td>'+
-    '<td class="mute" data-label="Job">'+escHtml(r.jobName)+(r.detail?' · '+escHtml(r.detail):'')+'</td>'+
-    '<td data-label="Source">'+(r.source==='auto'?svgIcon('📍',{size:11})+' Auto':svgIcon('▶',{size:11})+' Manual')+'</td>'+
+    '<td data-label="Job site">'+
+      (r.addr?'<div style="font-weight:700">'+escHtml(r.addr)+'</div>':'')+
+      '<div class="mute" style="font-size:11px;margin-top:'+(r.addr?'2px':'0')+'">'+jobLine+(jobLine?' · ':'')+sourceTag+'</div>'+
+    '</td>'+
+    '<td data-label="Clock In">'+(_tlFmtTime(r.startTime)||'—')+'</td>'+
+    '<td data-label="Clock Out">'+(_tlFmtTime(r.endTime)||'—')+'</td>'+
     '<td class="bold" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+
       (r.weekOT?' <span title="'+escHtml(r.personName)+' logged 40+ hrs the week of '+_tlWeekKey(r.date)+' — verify overtime eligibility with your state; not payroll advice" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-amber-soft);color:var(--c-amber-deep);margin-left:4px;white-space:nowrap">OT WK</span>':'')+
     '</td>'+
+    '<td data-label="Week total" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.weekRunningMin||0):(r.weekRunningMin||0)+'m')+'</td>'+
     '<td data-label="">'+(canEdit?
       '<button onclick="_openEditTimeEntry('+r.rawId+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button>'
       :'')+'</td>'+
@@ -183,7 +246,12 @@ function _tlRenderOpenBanner(){
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
           '<div style="font-size:13px;font-weight:800'+(r.elapsedMin>600?';color:var(--c-red-deep)':'')+'">'+(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m')+'</div>'+
-          (canForce&&r.personUid!==myUid?'<button onclick="forceClockOutEntry('+r.rawId+')" class="btn btn-sm" style="font-size:11px">Clock out</button>':'')+
+          // Own entry: a real clockOut() — matches _activeTimer by construction
+          // (either this device's live session, or restored by
+          // _rehydrateActiveTimer() on boot). Someone else's entry: the
+          // manager-only force-close, which audit-tags who closed it.
+          (r.personUid===myUid?'<button onclick="clockOut();_tlRenderOpenBanner()" class="btn btn-sm" style="font-size:11px">Clock out</button>'
+            :canForce?'<button onclick="forceClockOutEntry('+r.rawId+')" class="btn btn-sm" style="font-size:11px">Clock out</button>':'')+
         '</div>'+
       '</div>'
     ).join('')+
@@ -230,6 +298,7 @@ async function renderTimeLog(){
     return;
   }
   _tlComputeOT(rows);
+  _tlComputeWeeklyRunning(rows);
   _tlLastRows=rows;
   const totalMin=rows.reduce((s,r)=>s+(r.minutes||0),0);
   if(totalEl)totalEl.textContent=(typeof _fmtMin==='function'?_fmtMin(totalMin):totalMin+'m')+' total in '+yr;
@@ -255,7 +324,7 @@ async function renderTimeLog(){
         '</div>'+
       '</button>'+
       '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
-        _bkRenderDays('tl',mo,moRows,['Person','Client','Job','Source','Duration'],_tlRow,560,'var(--text)',r=>r.minutes||0,typeof _fmtMin==='function'?_fmtMin:(m=>m+'m'))+
+        _bkRenderDays('tl',mo,moRows,['Person','Job site','Clock In','Clock Out','Duration','Week total'],_tlRow,680,'var(--text)',r=>r.minutes||0,typeof _fmtMin==='function'?_fmtMin:(m=>m+'m'))+
       '</div>'+
     '</div>';
   }).join('')+'</div>';
