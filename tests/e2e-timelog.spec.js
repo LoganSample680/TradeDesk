@@ -250,13 +250,32 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.some(id => id.includes(todayStr.replace(/-/g, '')))).toBe(true);
     });
 
-    test('switching to a year with no data — shows the empty state, no accordions', async () => {
+    test('requesting a year with no data clamps back to the newest year that has data (matches Books\' own year-selector behavior)', async () => {
+      // The dropdown itself only ever lists years present in the data (same as
+      // Books' tracker-year-sel/getTrackerYears) — 1999 can never be a real
+      // selection, so _tlPopulateYearSel snaps it back to years[0] rather than
+      // rendering a state the UI can't otherwise reach.
       const r = await page.evaluate(async () => {
         setTimeLogYear(1999);
         await renderTimeLog();
-        return { html: document.getElementById('tl-list').innerHTML, total: document.getElementById('tl-total').textContent };
+        return { year: _tlYear, sel: document.getElementById('tl-year-sel').value };
       });
-      expect(r.html).toContain('No time logged in 1999');
+      expect(r.year).not.toBe('1999');
+      expect(r.sel).not.toBe('1999');
+    });
+
+    test('no time entries at all — shows the empty state for the fallback (current) year', async () => {
+      const r = await page.evaluate(async () => {
+        const orig = timeEntries;
+        timeEntries = [];
+        _tlYear = null;
+        try {
+          await renderTimeLog();
+          return { html: document.getElementById('tl-list').innerHTML, total: document.getElementById('tl-total').textContent, year: _tlYear };
+        } finally { timeEntries = orig; }
+      });
+      expect(r.year).toBe(thisYear);
+      expect(r.html).toContain('No time logged in ' + thisYear);
       expect(r.total).toBe('');
     });
 
