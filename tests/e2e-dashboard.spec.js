@@ -1119,7 +1119,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.display).toBe('block');
-      expect(r.html).toContain('openClockInSheet(555011)');
+      expect(r.html).toContain('_nearbyClockIn(555001,555011)');
       expect(r.html).toContain('Clock in');
       expect(r.html).toContain("_nearbyStartWork(555001)");
       expect(r.html).toContain('Estimate/Invoice');
@@ -1143,10 +1143,10 @@ test.describe('dashboard.js — exhaustive coverage', () => {
         finally { _nearbyJob = origNb; _activeTimer = origTimer; }
       });
       expect(r.ok).toBe(true);
-      expect(r.html).toContain('openClockInSheet(555012)');
+      expect(r.html).toContain('_nearbyClockIn(555002,555012)');
     });
 
-    test('no open job at all — Clock in is absent, not a dead-end redirect to the client page', async () => {
+    test('no open job at all — Clock in still shows (being on site is reason enough), passes null target', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1159,11 +1159,13 @@ test.describe('dashboard.js — exhaustive coverage', () => {
         finally { _nearbyJob = origNb; _activeTimer = origTimer; }
       });
       expect(r.ok).toBe(true);
-      // Tapping Clock in with nothing to clock into used to dead-end on the
-      // client profile page — confusing, since the user asked to clock in and
-      // landed on an unrelated screen. The button is simply absent now; only
-      // Estimate/Invoice (always applicable) shows.
-      expect(r.html).not.toContain('Clock in');
+      // Hiding Clock in here was the wrong call (owner correction 2026-07-11):
+      // physically being on site is reason enough to want to track time even
+      // with no job record yet. It always shows; _nearbyClockIn(js/jobs.js)
+      // handles the no-target case by creating a walk-up job on the fly
+      // instead of dead-ending on the client profile page.
+      expect(r.html).toContain('Clock in');
+      expect(r.html).toContain('_nearbyClockIn(555003,null)');
       expect(r.html).not.toContain('openClientDetail');
       expect(r.html).toContain('_nearbyStartWork(555003)');
     });
@@ -1187,7 +1189,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.html).not.toContain('disabled');
     });
 
-    test('no job and no balance — only Estimate/Invoice shows', async () => {
+    test('cold walk-up, no job and no balance — Clock in + Estimate/Invoice show, Collect does not', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1200,9 +1202,9 @@ test.describe('dashboard.js — exhaustive coverage', () => {
         finally { _nearbyJob = origNb; _activeTimer = origTimer; }
       });
       expect(r.ok).toBe(true);
-      expect(r.btnCount).toBe(1);
+      expect(r.btnCount).toBe(2);
       expect(r.html).toContain('_nearbyStartWork(555007)');
-      expect(r.html).not.toContain('Clock in');
+      expect(r.html).toContain('_nearbyClockIn(555007,null)');
       expect(r.html).not.toContain('Collect');
     });
 

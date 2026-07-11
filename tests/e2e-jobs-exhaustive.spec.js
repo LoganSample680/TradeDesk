@@ -638,6 +638,75 @@ test.describe('jobs.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // _nearbyClockIn — nearby-banner Clock in handler. Unlike openClockInSheet
+  // (which requires an existing job), this always succeeds: given a null
+  // jobId it creates a minimal walk-up job for the client on the spot so
+  // "you're on site, clock in" never dead-ends.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_nearbyClockIn', () => {
+    test('existing jobId — opens the sheet directly, creates no new job', async () => {
+      const r = await page.evaluate(() => {
+        const beforeCount = jobs.length;
+        try {
+          document.getElementById('_cks-ov')?.remove();
+          _nearbyClockIn(79901, 77701);
+          const exists = !!document.getElementById('_cks-ov');
+          document.getElementById('_cks-ov')?.remove();
+          return { ok: true, exists, jobsAdded: jobs.length - beforeCount };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.exists).toBe(true);
+      expect(r.jobsAdded).toBe(0);
+    });
+
+    test('null jobId, valid client — creates a walk-up job and opens the sheet for it', async () => {
+      const r = await page.evaluate(() => {
+        const orig = { clients, jobs };
+        clients = clients.filter(c => c.id !== 79970);
+        clients.push({ id: 79970, name: 'Walkup Client', addr: '99 Walkup Ln, Wichita KS' });
+        jobs = jobs.filter(j => j.client_id !== 79970);
+        try {
+          document.getElementById('_cks-ov')?.remove();
+          _nearbyClockIn(79970, null);
+          const created = jobs.find(j => j.client_id === 79970);
+          const sheetExists = !!document.getElementById('_cks-ov');
+          const result = { ok: true, created: created ? { id: created.id, bid_id: created.bid_id, name: created.name, start: created.start } : null, sheetExists, today: todayKey() };
+          document.getElementById('_cks-ov')?.remove();
+          return result;
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { ({ clients, jobs } = orig); }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.created).toBeTruthy();
+      expect(r.created.bid_id).toBe(null);
+      expect(r.created.name).toBe('Walkup Client');
+      expect(r.created.start).toBe(r.today);
+      expect(r.sheetExists).toBe(true);
+    });
+
+    test('null jobId, nonexistent client — returns early without throw, no job created', async () => {
+      const r = await page.evaluate(() => {
+        const beforeCount = jobs.length;
+        try {
+          _nearbyClockIn(999999, null);
+          return { ok: true, jobsAdded: jobs.length - beforeCount };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.jobsAdded).toBe(0);
+    });
+
+    test('null jobId, null client — does not throw', async () => {
+      const r = await page.evaluate(() => {
+        try { _nearbyClockIn(null, null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // _clockAddTask
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clockAddTask', () => {

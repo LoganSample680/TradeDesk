@@ -38,6 +38,24 @@ function _fmtMin(m){
   return (h?h+'h ':'')+(rem?rem+'m':'');
 }
 
+// Owner correction 2026-07-11: hiding Clock in when there's no job was
+// backwards — you'd still want to clock in because you're physically on
+// site, job record or not. The real bug was that tapping it with nothing to
+// clock into dead-ended on the client profile page instead of doing
+// anything. Fix: always offer Clock in; if there's no existing job target,
+// create a minimal walk-up job for this client (same shape schedule.js/
+// proposals.js already use for ad-hoc jobs) and clock into that — no new
+// data model, just reuses the existing job-scoped time-tracking machinery.
+function _nearbyClockIn(clientId,jobId){
+  if(!jobId){
+    const c=getClientById(clientId);if(!c)return;
+    const j={id:Date.now(),bid_id:null,client_id:clientId,name:c.name,addr:c.addr||'',start:todayKey(),days:1,buffer:0,value:0,color:'#6366F1',eventType:'job',allowWeekend:true,time:null,hours:null,notes:'',status:'upcoming'};
+    jobs.push(j);
+    saveAll();
+    jobId=j.id;
+  }
+  openClockInSheet(jobId);
+}
 function openClockInSheet(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;

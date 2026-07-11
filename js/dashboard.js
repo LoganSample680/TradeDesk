@@ -312,19 +312,23 @@ function renderDash(){
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     if(_nearbyJob&&!_activeTimer){
-      // Owner request 2026-07-10/11, revised 2026-07-11 after live testing: a
-      // permanently-disabled Collect button and a Clock-in that dead-ends on the
-      // client profile page (when there's no job to clock into) both read as
-      // broken, not as "not applicable right now." Nielsen/NN-style disabled-
-      // control guidance applies here too — a control that NEVER does anything
-      // in some state is worse than not showing it at all. So each button is now
-      // conditionally included, not conditionally disabled: Estimate/Invoice is
-      // the only one that's always available (needs nothing but a client — walk
-      // up, log the charge, it auto-drops into Collect for you). Clock in only
-      // shows when there's an actual job target (today's job or the client's
-      // nearest open one). Collect only shows when there's a real balance owed.
-      // Remaining buttons split the row evenly via the existing .tf-acts>.btn
-      // flex:1 rule — no dead ghosts, no confusing redirects.
+      // Owner request 2026-07-10/11, revised twice on 2026-07-11 after live
+      // testing: a permanently-disabled Collect button read as broken, not
+      // "not applicable right now" (Nielsen/NN disabled-control guidance
+      // applies here — a control that never does anything is worse than not
+      // showing it). Collect is now conditionally INCLUDED, not disabled: it
+      // only renders when there's a real balance owed. Clock in is different —
+      // it always shows, full stop, because being physically on site is
+      // reason enough to want to track time whether or not a job record
+      // exists yet. What was actually broken was the FALLBACK: it used to
+      // dead-end on the client profile page instead of doing anything.
+      // _nearbyClockIn() (js/jobs.js) fixes that properly — with no job
+      // target it creates a minimal walk-up job for this client on the spot
+      // and clocks straight into that, reusing the existing job-scoped
+      // time-tracking machinery instead of a dead redirect. Estimate/Invoice
+      // always shows too — needs nothing but a client, and already routes
+      // into Collect once the charge is saved. Remaining buttons split the
+      // row evenly via the existing .tf-acts>.btn flex:1 rule.
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
       _nearbyEl.style.display='block';
       const nb=_nearbyJob;
@@ -343,7 +347,7 @@ function renderDash(){
         document.head.appendChild(_s);
       }
       const nbBtns=[];
-      if(clockTarget)nbBtns.push('<button onclick="openClockInSheet('+clockTarget+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('▶',{size:11})+' Clock in</button>');
+      nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('▶',{size:11})+' Clock in</button>');
       nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('📋',{size:11})+' Estimate/Invoice</button>');
       if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px;padding:0 6px">'+svgIcon('💰',{size:11})+' Collect →</button>');
       _nearbyEl.innerHTML='<div class="tf-card" style="position:relative;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
