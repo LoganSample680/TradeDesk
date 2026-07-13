@@ -643,5 +643,41 @@ test.describe('layout integrity — mobile', () => {
     expect(r.editVisible, 'the Edit button must be visible by default, not hover-only').toBe(true);
   });
 
+  // Regression (owner-reported): the preview overlay's body was flex:1, forcing
+  // it to fill the full remaining viewport height no matter how short the card
+  // is. Once T&C stopped being appended to the preview (owner directive
+  // 2026-07-13, part 2), short proposals left a slab of flat gray dead space
+  // below the card. The body must now hug its own content height instead.
+  test('preview overlay body hugs the card height — no dead space slab below a short proposal', async () => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const r = await page.evaluate(async () => {
+      const c = { id: 79120, name: 'Short Card Client', addr: '1 Short Rd' };
+      clients = clients.filter(x => x.id !== 79120).concat([c]);
+      bids = bids.filter(x => x.client_id !== 79120);
+      openGenericEstimate(c, null, 'general');
+      _geiIsFreeForm = true;
+      _geiIsTM = false;
+      _byoItems = [{ id: 1, section: 'Interior', label: 'Small repair', price: 200, on: true }];
+      let err = null;
+      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      const ov = document.getElementById('_prop-preview-ov');
+      const body = ov ? ov.lastElementChild : null;
+      const res = {
+        err,
+        hasOverlay: !!ov,
+        // The card (body) must be meaningfully shorter than the viewport for a
+        // 1-line proposal — if it still stretches to fill the screen, the bug
+        // is back.
+        bodyHeight: body ? body.getBoundingClientRect().height : null,
+        viewportHeight: window.innerHeight,
+      };
+      ov?.remove();
+      return res;
+    });
+    expect(r.err).toBe(null);
+    expect(r.hasOverlay).toBe(true);
+    expect(r.bodyHeight, 'a 1-line proposal card must not stretch to fill the full viewport height').toBeLessThan(r.viewportHeight * 0.7);
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

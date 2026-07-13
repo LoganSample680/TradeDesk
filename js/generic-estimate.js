@@ -1719,7 +1719,10 @@ function _showProposalPreviewOverlay(proposalHtml){
   hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0';
   hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview — how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
   const body=document.createElement('div');
-  body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
+  // flex:0 1 auto (not flex:1) — the card hugs its own content height instead
+  // of stretching to fill the screen. Short proposals no longer leave a slab
+  // of flat gray dead space below the card; long ones still scroll normally.
+  body.style.cssText='flex:0 1 auto;overflow-y:auto;max-height:calc(100vh - 56px);padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
   body.innerHTML=proposalHtml;
   ov.appendChild(hdr);ov.appendChild(body);
   document.body.appendChild(ov);
