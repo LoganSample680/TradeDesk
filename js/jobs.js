@@ -1815,7 +1815,10 @@ function _showJobDoneSignStep(jobId){
       '<button onclick="_confirmJobDoneSign('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Confirm &amp; complete ✓</button>'+
     '</div>';
   // Shared e-sign pad (esign.js) — same markup + capture code as every signing surface.
-  setTimeout(()=>esignWire('job-sign'),80);
+  // Wired synchronously: the canvas is already in the DOM the instant box.innerHTML
+  // above runs, so deferring this via setTimeout only opens a window where a fast
+  // confirm click finds no registered pad yet (esignResult returns "no-pad").
+  esignWire('job-sign');
 }
 function _confirmJobDoneSign(jobId){
   // Typed name OR a drawn signature satisfies the sign-off (same rule as

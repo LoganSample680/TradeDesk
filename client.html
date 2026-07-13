@@ -1969,11 +1969,14 @@ function _showCODoc(bidId,coNum){
   ov.innerHTML=h;
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   document.body.appendChild(ov);
-  if(!signed)setTimeout(()=>{
+  if(!signed){
     // Shared e-sign pad (esign.js) — markup, listeners, typed-preview all live there.
+    // Wired synchronously — the canvas is already in the DOM by this point, and
+    // deferring via setTimeout only opens a window where a fast submit finds no
+    // registered pad yet (esignResult returns "no-pad").
     esignWire('co-hub',{nameId:'co-hub-sign-name',errId:'co-hub-err'});
     setTimeout(()=>document.getElementById('co-hub-sign-name')?.focus(),300);
-  },100);
+  }
 }
 async function _submitCOHubSign(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;

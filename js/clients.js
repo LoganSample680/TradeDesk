@@ -158,10 +158,11 @@ function _openDiagnosticSign(bidId,clientId){
     '</div>';
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
-  setTimeout(()=>{
-    esignWire('diag-sign'); // shared pad — markup, listeners, typed-preview all live in esign.js
-    document.getElementById('diag-sign-name')?.focus();
-  },100);
+  // Wired synchronously — the canvas is already in the DOM by this point, and
+  // deferring via setTimeout only opens a window where a fast submit finds no
+  // registered pad yet (esignResult returns "no-pad").
+  esignWire('diag-sign');
+  setTimeout(()=>document.getElementById('diag-sign-name')?.focus(),100);
 }
 function _submitDiagnosticSign(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;

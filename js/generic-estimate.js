@@ -3615,10 +3615,11 @@ function _geiSignInPerson(){
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
-  setTimeout(()=>{
-    // Shared e-sign pad (esign.js) — markup, listeners, typed-preview all live there.
-    esignWire('gei-ip',{nameId:'gei-ip-pname',onInk:()=>_geiIpCheckReady(),onType:()=>_geiIpCheckReady(),onClear:()=>_geiIpCheckReady()});
-  },150);
+  // Shared e-sign pad (esign.js) — markup, listeners, typed-preview all live there.
+  // Wired synchronously — the canvas is already in the DOM by this point, and
+  // deferring via setTimeout only opens a window where a fast confirm finds no
+  // registered pad yet (esignResult returns "no-pad").
+  esignWire('gei-ip',{nameId:'gei-ip-pname',onInk:()=>_geiIpCheckReady(),onType:()=>_geiIpCheckReady(),onClear:()=>_geiIpCheckReady()});
 }
 function _geiIpClearSig(){esignClear('gei-ip');}
 function _geiIpCheckReady(){

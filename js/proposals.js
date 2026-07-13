@@ -1313,7 +1313,10 @@ function _showCOSignDocument(b,c,coData,clientId){
   // Store CO data on the element for retrieval
   ov.dataset.coData=JSON.stringify(coData);
   // Shared e-sign pad (esign.js): markup, listeners, typed-preview all live there.
-  setTimeout(()=>esignWire('co-sign'),100);
+  // Wired synchronously — the canvas is already in the DOM by this point, and
+  // deferring via setTimeout only opens a window where a fast submit finds no
+  // registered pad yet (esignResult returns "no-pad").
+  esignWire('co-sign');
 }
 
 function _submitCOSign(bidId,clientId){

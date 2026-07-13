@@ -916,6 +916,13 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
 
   test('checkReady — sign-btn enabled with name + ueta (no EPA checkbox required)', async () => {
     await page.evaluate(() => {
+      // The pad (#sig-name/#sig-canvas) only renders once the sign step is
+      // actually reached — for an EPA proposal that's via the EPA review
+      // page's Continue button, same as a real client would click.
+      if (typeof _continueFromEpaReview === 'function') _continueFromEpaReview();
+    });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
       const uetaEl = document.getElementById('sig-ck');
       if (nameEl) { nameEl.value = 'Alice Smith'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
