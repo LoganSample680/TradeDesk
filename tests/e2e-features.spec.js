@@ -5667,12 +5667,12 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'general');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
-      // Intercept preview overlay to capture HTML
+      // T&C is no longer part of the proposal document/preview — it only shows
+      // in the accordion under the signature at the actual sign step (owner
+      // directive 2026-07-13). Read the clause text from the same builder
+      // function that feeds that accordion.
       let captured = '';
-      const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = (html) => { captured = html; };
-      try { await sendGenericProposal(true); } catch(e) {}
-      window._showProposalPreviewOverlay = orig;
+      try { captured = _geiBuildTermsHtml(); } catch(e) {}
       return {
         hasWarranty: captured.includes('Workmanship Warranty'),
         hasPermit: captured.includes('Permits'),
@@ -5699,12 +5699,10 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'general');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
+      // T&C is no longer part of the proposal document/preview — read it from
+      // the builder function that feeds the sign-step accordion instead.
       let captured = '';
-      const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = (html) => { captured = html; };
-      try { await sendGenericProposal(true); } catch(e) {}
-      window._showProposalPreviewOverlay = orig;
-      // Isolate just the Terms & Conditions / pay-terms region for the "no Contractor" check.
+      try { captured = _geiBuildTermsHtml(); } catch(e) {}
       return {
         warrantyHasBiz: captured.includes('Brushstroke Pros LLC warrants'),
         insuranceHasBiz: captured.includes('Brushstroke Pros LLC maintains general liability'),
@@ -5748,11 +5746,10 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'painting');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 300, on: true }];
+      // T&C is no longer part of the proposal document/preview — read it from
+      // the builder function that feeds the sign-step accordion instead.
       let captured = '';
-      const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = (html) => { captured = html; };
-      try { await sendGenericProposal(true); } catch(e) {}
-      window._showProposalPreviewOverlay = orig;
+      try { captured = _geiBuildTermsHtml(); } catch(e) {}
       return {
         permitText: captured.includes('does not typically require') || captured.includes('Standard painting'),
         warrantyText: captured.includes('peeling') || captured.includes('finish defects'),
@@ -5772,11 +5769,10 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'electrical');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Panel upgrade', price: 1800, on: true }];
+      // T&C is no longer part of the proposal document/preview — read it from
+      // the builder function that feeds the sign-step accordion instead.
       let captured = '';
-      const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = (html) => { captured = html; };
-      try { await sendGenericProposal(true); } catch(e) {}
-      window._showProposalPreviewOverlay = orig;
+      try { captured = _geiBuildTermsHtml(); } catch(e) {}
       return { hasObtainPermit: captured.includes('shall obtain all permits') };
     });
     if (r === null) return;
