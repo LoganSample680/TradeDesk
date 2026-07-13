@@ -1721,10 +1721,6 @@ function _showProposalPreviewOverlay(proposalHtml){
   const body=document.createElement('div');
   body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
   body.innerHTML=proposalHtml;
-  // Same accordion sign.html applies to the real client-facing page (js/legal.js)
-  // — without this the preview showed the full uncollapsed T&C wall of text,
-  // which isn't actually "how they'll see it" per the header above.
-  if(typeof _applyTermsAccordion==='function')_applyTermsAccordion(body);
   ov.appendChild(hdr);ov.appendChild(body);
   document.body.appendChild(ov);
 }
@@ -2943,19 +2939,6 @@ function _geiBuildTermsHtml(){
     :'';
   return _clausesHtml+_customTermsBlock;
 }
-// Read-only terms accordion for the contractor's own "Preview" overlay — same
-// esignToggleTerms() toggle sign.html uses, no signature pad attached (this
-// is a document review, not a live sign flow) so the contractor sees the
-// exact shape the client will get.
-function _geiPreviewTermsHtml(termsHtml){
-  return '<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc">'+
-    '<button type="button" onclick="esignToggleTerms(\'gei-preview\')" style="display:flex;align-items:center;width:100%;background:#fff;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 12px;font-family:inherit;cursor:pointer">'+
-      '<span style="flex:1;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1a365d;text-align:left">Terms &amp; Conditions</span>'+
-      '<span id="gei-preview-terms-hint" style="font-size:11px;font-weight:600;color:#94a3b8;white-space:nowrap;margin-left:8px">Tap to view ›</span>'+
-    '</button>'+
-    '<div id="gei-preview-terms-body" style="display:none;font-size:11px;color:#6b7280;line-height:1.6;padding:10px 2px 0">'+termsHtml+'</div>'+
-  '</div>';
-}
 
 async function sendGenericProposal(previewOnly){
   saveGenericEstimate(true); // draft=true skips navigation — modal shows over estimate page
@@ -3144,9 +3127,11 @@ async function sendGenericProposal(previewOnly){
     ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
     :`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
   const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
-  // Preview shows the exact same accordion sign.html will — not the raw
-  // clause list dumped inline — so what the contractor reviews matches what ships.
-  if(previewOnly){_showProposalPreviewOverlay(proposalHtml+_geiPreviewTermsHtml(_fullTermsHtml));return;}
+  // Terms & Conditions is NOT part of the document the client reviews first —
+  // it only appears in the accordion under the signature on the actual sign
+  // step (owner directive 2026-07-13). The preview mirrors that: it shows
+  // only the document, same as sign.html's Review step before Approve & Sign.
+  if(previewOnly){_showProposalPreviewOverlay(proposalHtml);return;}
   const bidId=_geiEditBidId;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;

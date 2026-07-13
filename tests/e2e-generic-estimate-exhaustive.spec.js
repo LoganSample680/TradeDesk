@@ -2725,18 +2725,24 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
           { id: 2, section: 'Materials', label: 'Supplies', price: 100, on: true },
         ];
       }
-      let captured = '';
+      // T&C is no longer part of the proposal document/preview at all — it
+      // only shows in the accordion under the signature at the actual sign
+      // step (owner directive 2026-07-13). Capture the clause list straight
+      // from the builder function that feeds the sign-step accordion, and
+      // the deposit row separately from the actual document preview.
+      let doc = '';
       const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = html => { captured = html; };
+      window._showProposalPreviewOverlay = html => { doc = html; };
       let err = null;
-      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      let captured = '';
+      try { await sendGenericProposal(true); captured = _geiBuildTermsHtml(); } catch (e) { err = e.message; }
       window._showProposalPreviewOverlay = orig;
       _geiIsTM = false;
       const clauses = [];
       const re = /<div>(\d+)\. <strong>(.*?):<\/strong> ([\s\S]*?)<\/div>/g;
       let m;
       while ((m = re.exec(captured)) !== null) clauses.push({ n: +m[1], title: m[2], body: m[3] });
-      return { err, clauses, hasDepRow: captured.includes('Due Before Work Begins') };
+      return { err, clauses, hasDepRow: doc.includes('Due Before Work Begins') };
     }, { isTM, clientId });
 
     test('T&M and BYO T&C come from the same clause list — shared clauses are byte-identical, mode clauses differ, numbering intact', async () => {
@@ -2776,12 +2782,12 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       }
     });
 
-    test('regression: preview overlay shows the full T&C behind the same collapsed accordion sign.html uses (was a raw uncollapsed dump — not actually "how they\'ll see it")', async () => {
-      // Owner directive 2026-07-13: the T&C section moved out of the document
-      // body entirely, into the accordion under the signature — the preview
-      // overlay appends that exact same esignConsentHTML()-style accordion
-      // (via _geiPreviewTermsHtml) rather than _applyTermsAccordion collapsing
-      // an embedded header, since there's no embedded header left to collapse.
+    test('regression: preview overlay shows ONLY the document — no Terms & Conditions accordion (T&C belongs on the sign step only)', async () => {
+      // Owner directive 2026-07-13 (part 2): T&C isn't part of what the client
+      // reviews before signing at all — attaching it under the document (even
+      // collapsed) misrepresented the real flow, where it only ever appears in
+      // the accordion under the signature on the actual sign step. The preview
+      // must mirror that: document only, same as sign.html's Review step.
       const r = await page.evaluate(async () => {
         const c = { id: 88904, name: 'Accordion Client', addr: '1 Accordion Rd' };
         clients = clients.filter(x => x.id !== 88904).concat([c]);
@@ -2792,24 +2798,21 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
         await sendGenericProposal(true);
         const ov = document.getElementById('_prop-preview-ov');
-        const body = document.getElementById('gei-preview-terms-body');
-        const btn = [...(ov?.querySelectorAll('button') || [])].find(b => b.textContent.includes('Terms & Conditions'));
+        const html = ov ? ov.innerHTML : '';
         const res = {
-          isFn: typeof _geiPreviewTermsHtml === 'function',
-          hasToggleBtn: !!btn,
-          termsBodyHiddenByDefault: body ? body.style.display === 'none' : false,
+          previewFnDeleted: typeof _geiPreviewTermsHtml === 'undefined',
+          hasTermsBodyEl: !!document.getElementById('gei-preview-terms-body'),
+          hasTermsToggleText: html.includes('Terms &amp; Conditions') || html.includes('Terms & Conditions'),
+          hasEstimatedTotal: html.includes('ESTIMATED TOTAL') || html.includes('TOTAL'),
         };
-        // Click the toggle and confirm it reveals the numbered clause list.
-        btn?.click();
-        res.revealsClauses = document.getElementById('gei-preview-terms-body')?.textContent.includes('Mechanic') || false;
         ov?.remove();
         _geiIsTM = false;
         return res;
       });
-      expect(r.isFn).toBe(true);
-      expect(r.hasToggleBtn).toBe(true);
-      expect(r.termsBodyHiddenByDefault).toBe(true);
-      expect(r.revealsClauses).toBe(true);
+      expect(r.previewFnDeleted, '_geiPreviewTermsHtml must be deleted, not left dead').toBe(true);
+      expect(r.hasTermsBodyEl).toBe(false);
+      expect(r.hasTermsToggleText, 'no Terms & Conditions accordion may render in the proposal preview').toBe(false);
+      expect(r.hasEstimatedTotal).toBe(true);
     });
 
     test('regression: selected scope-chip descriptions carry into the proposal even when BYO has line items (was silently dropped by an if/else)', async () => {
