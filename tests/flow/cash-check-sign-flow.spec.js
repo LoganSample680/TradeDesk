@@ -35,7 +35,7 @@ async function signAndPay(p, ctx, bidId, method) {
     // Type the legal name + accept UETA → Continue to payment unlocks.
     await signPage.locator('#sig-name').click({ timeout: 8000 }).catch(() => {});
     await signPage.locator('#sig-name').pressSequentially('Jordan E Client', { delay: 0 }).catch(() => {});
-    const ck = signPage.locator('#sig-ueta-ck');
+    const ck = signPage.locator('#sig-ck');
     if (await ck.count()) await ck.check({ timeout: 5000 }).catch(() => {});
     await signPage.waitForTimeout(300);
     if (!(await signPage.locator('#sign-btn').isEnabled().catch(() => false))) { got = `attempt=${i + 1} Continue-to-payment never enabled`; await signPage.waitForTimeout(1500); continue; }

@@ -191,24 +191,6 @@ input[type=text]:focus{border-color:var(--denim)}
 .pg-status-badge.neutral{background:var(--bg);border:1.5px solid var(--border2)}
 .pg-status-badge.neutral svg{stroke:var(--text2)}
 
-/* Field wrapper */
-.sig-field{margin-bottom:14px}
-.sig-label{display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-bottom:6px}
-
-/* Signature pad */
-.sig-pad{background:#fff;border:1.5px solid var(--border2);border-radius:10px;min-height:130px;position:relative;overflow:hidden;margin-bottom:6px;touch-action:none;cursor:crosshair}
-.sig-pad canvas{display:block;width:100%;height:130px}
-.sig-pad-baseline{position:absolute;bottom:28px;left:20px;right:20px;height:1.5px;background:var(--ink);opacity:.1}
-.sig-pad .sig-ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:13px;pointer-events:none;text-align:center;padding:0 20px}
-
-/* Checkbox */
-.sig-checkbox{display:flex;align-items:flex-start;gap:12px;padding:14px;background:var(--bg);border:1.5px solid var(--border2);border-radius:10px;cursor:pointer;margin-bottom:20px}
-.sig-checkbox:has(input:checked){border-color:var(--ink)}
-.sig-checkbox input[type=checkbox]{width:20px;height:20px;min-width:20px;accent-color:var(--ink);margin-top:1px;cursor:pointer}
-.sig-checkbox-text{flex:1}
-.sig-checkbox-title{font-size:13px;font-weight:700;color:var(--text);margin-bottom:4px}
-.sig-checkbox-body{font-size:11px;color:var(--text3);line-height:1.7}
-
 /* Payment option label */
 .sig-pay-opts-label{font-size:13px;font-weight:700;color:var(--text);margin-bottom:12px}
 
@@ -245,7 +227,7 @@ input[type=text]:focus{border-color:var(--denim)}
 
 
 @media print{
-  .topbar,#sticky-bar,.step-dots,#portfolio-offer-card,.sig-pad,.btn,.btn-sec,button,#sign-boot{display:none!important}
+  .topbar,#sticky-bar,.step-dots,#portfolio-offer-card,#sig-pad-mount,.btn,.btn-sec,button,#sign-boot{display:none!important}
   /* Accordion-collapsed terms must always appear in the printed/PDF contract */
   #prop-html [data-terms-hdr],#prop-html [data-terms-body]{display:block!important}
   .wrap{padding:8px;max-width:100%}
@@ -396,21 +378,9 @@ input[type=text]:focus{border-color:var(--denim)}
       <span class="sig-eyebrow">Agreement</span>
       <h1 class="sig-title">Review &amp; Sign</h1>
 
-      <!-- Name field -->
-      <div class="sig-field">
-        <label class="sig-label" for="sig-name">Full name *</label>
-        <input type="text" id="sig-name" placeholder="Type your full legal name" oninput="updateTypedSigPreview();checkReady()">
-      </div>
-
-      <!-- Signature pad -->
-      <div class="sig-pad" id="sig-pad-wrap">
-        <canvas id="sig-canvas"></canvas>
-        <div class="sig-pad-baseline"></div>
-        <div class="sig-ph" id="sig-ph">Signature appears here as you type — or draw below</div>
-      </div>
-      <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
-        <button class="btn-ghost" onclick="clearSig()">Clear drawing</button>
-      </div>
+      <!-- The ONE shared signing pad (esign.js) — rendered by JS so this is
+           the literal same markup every in-app signing surface uses. -->
+      <div id="sig-pad-mount"></div>
 
       <!-- EPA notice shown in sig-card when epaRequired; one signature covers both documents -->
       <div id="epa-section" style="display:none;background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
@@ -423,26 +393,9 @@ input[type=text]:focus{border-color:var(--denim)}
         <div id="cancel-notice-body" style="font-size:11px;color:var(--text3);line-height:1.6"></div>
       </div>
 
-      <!-- Risk reversal — signing anxiety is a risk calculation; answer it at the
-           exact moment it spikes. Every line is already true and data-driven
-           (cancel window from state law on the proposal, contract terms as
-           written, ESIGN) — this only surfaces existing protections, no new
-           claims. Styled as a quiet hairline list, not a colored callout box —
-           reassurance should read like part of the document, not a sales badge. -->
-      <div id="risk-reversal-strip" style="border-top:1px solid var(--border);padding:12px 2px 4px;margin-bottom:12px">
-        <div id="rr-cancel" style="display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:var(--text2);line-height:1.5;margin-bottom:7px"></div>
-        <div style="display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:var(--text2);line-height:1.5;margin-bottom:7px"><span id="rr-ck2" style="flex-shrink:0;color:var(--green-mid)"></span>Price and scope locked exactly as written — changes only with your signed approval</div>
-        <div style="display:flex;align-items:flex-start;gap:9px;font-size:12px;font-weight:600;color:var(--text2);line-height:1.5"><span id="rr-ck3" style="flex-shrink:0;color:var(--green-mid)"></span>Secure, legally binding e-signature</div>
-      </div>
-
-      <!-- UETA checkbox -->
-      <label class="sig-checkbox">
-        <input type="checkbox" id="sig-ueta-ck" onchange="checkReady()">
-        <div class="sig-checkbox-text">
-          <div class="sig-checkbox-title">I agree to this electronic agreement</div>
-          <div class="sig-checkbox-body">By checking this box, I confirm I have read and understood the cancellation notice above, accept the total price, scope of work, and all terms. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins; remaining balance is due on completion.</div>
-        </div>
-      </label>
+      <!-- The ONE shared consent block (esign.js) — same checkbox + terms
+           accordion shape as every other signing surface in the app. -->
+      <div id="sig-consent-mount"></div>
 
       <div id="sign-ready-hint" style="display:block;font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px">Type your name or draw your signature above to continue.</div>
       <button class="btn" id="sign-btn" disabled onclick="goToPayment()">Continue to payment →</button>
@@ -934,17 +887,6 @@ async function init(){
         _phc.style.display='flex';
       }
     }
-    // Risk-reversal strip — populate the state-specific cancellation window and
-    // the check icons. Cancel row hides if the proposal carries no window.
-    const _rrCancel=document.getElementById('rr-cancel');
-    if(_rrCancel){
-      const _rrDays=_prop.cancelDays!=null?_prop.cancelDays:3;
-      if(_rrDays>0)_rrCancel.innerHTML='<span style="flex-shrink:0;color:var(--green-mid)">'+svgIcon('✓',{size:13})+'</span>'+_rrDays+'-day right to cancel — no questions asked';
-      else _rrCancel.style.display='none';
-    }
-    const _rrCk2=document.getElementById('rr-ck2'),_rrCk3=document.getElementById('rr-ck3');
-    if(_rrCk2)_rrCk2.innerHTML=svgIcon('✓',{size:13});
-    if(_rrCk3)_rrCk3.innerHTML=svgIcon('✓',{size:13});
     // Update cash section with actual business name
     const _cashMsg=document.getElementById('cash-confirm-msg');
     if(_cashMsg)_cashMsg.textContent=' Your proposal is signed — you’re locked in on the schedule. '+_biz+' will collect the deposit when they arrive.';
@@ -1094,20 +1036,23 @@ async function init(){
       const _d1Lbl=document.getElementById('epa-doc1-label');
       if(_d1Lbl)_d1Lbl.style.display='block';
     }
-    // Update UETA checkbox and Notice of Cancellation with state-specific citations
-    const _uetaBody=document.querySelector('.sig-checkbox-body');
+    // Shared consent block (esign.js) — same checkbox + terms accordion shape
+    // as every other signing surface (owner directive 2026-07-13). Lien
+    // rights are already the "Mechanic's Lien" numbered clause inside the
+    // full proposal document rendered above this card — this box never
+    // restates them, same rule as deposit timing and "the notice above".
+    const _consentMount=document.getElementById('sig-consent-mount');
     const _cancelNotice=document.getElementById('cancel-notice-section');
     const _cancelNoticeBody=document.getElementById('cancel-notice-body');
-    if(_uetaBody||_cancelNotice){
+    if(_consentMount||_cancelNotice){
       const _cd=_prop.cancelDays||3;
       const _cancelRule=(typeof STATE_CANCEL!=='undefined'&&_propSt&&STATE_CANCEL[_propSt])||null;
-      const _lienRule=(typeof STATE_LIEN!=='undefined'&&_propSt&&STATE_LIEN[_propSt])||null;
       const _cs=_cancelRule?_cancelRule.statute:(_prop.cancelStatute||'16 CFR Part 429');
-      const _ls=_lienRule?_lienRule.statute:(_prop.lienStatute||'applicable mechanic\'s lien statutes');
       const _bizName=_prop.businessName||'Your Contractor';
       const _bizPhone=_prop.businessPhone||'';
-      if(_uetaBody)_uetaBody.textContent='By checking this box, I confirm I have read the Notice of Cancellation below, accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.). A deposit is due before work begins and before a start date is scheduled; remaining balance is due on completion. '+_bizName+' retains lien rights under '+_ls.replace(/\.+$/,'')+'.';
-      if(_prop.epaRequired&&_uetaBody)_uetaBody.textContent='By checking this box, I confirm I have read this proposal (Document 1 of 2) and the EPA Pre-Renovation Disclosure (Document 2 of 2), accept the total price, scope of work, and all terms. This electronic signature applies to both documents under applicable state and federal law (15 U.S.C. §7001 et seq.). A deposit is due before work begins; remaining balance is due on completion. '+_bizName+' retains lien rights under '+_ls.replace(/\.+$/,'')+'.';
+      let _termsText='By checking this box, I confirm I accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).';
+      if(_prop.epaRequired)_termsText='By checking this box, I confirm I have read this proposal (Document 1 of 2) and the EPA Pre-Renovation Disclosure (Document 2 of 2), accept the total price, scope of work, and all terms. This electronic signature applies to both documents under applicable state and federal law (15 U.S.C. §7001 et seq.).';
+      if(_consentMount)_consentMount.innerHTML=esignConsentHTML('sig',_termsText,{onChange:'checkReady()'});
       if(_cancelNoticeBody){
         // FTC 16 CFR Part 429: business day = any day except Sunday and federal legal holidays (Saturdays count)
         // Use local calendar dates — avoids UTC offset shifting the date for US timezones
@@ -1139,29 +1084,15 @@ async function init(){
 }
 
 function initCanvas(){
-  // Shared e-sign pad (esign.js) — the SAME capture code as the in-app pads.
-  const c=document.getElementById('sig-canvas');
-  c.width=500;c.height=130;
-  esignWire('sig',{canvasId:'sig-canvas',nameId:'sig-name',clearOnFirstInk:true,
-    onInk:()=>{hasInk=true;document.getElementById('sig-ph').style.display='none';checkReady();},
-    onClear:()=>{hasInk=false;document.getElementById('sig-ph').style.display='';checkReady();}});
+  // Shared e-sign pad (esign.js) — the literal same markup + capture code as
+  // every in-app signing surface. Re-rendered fresh each time this step opens.
+  document.getElementById('sig-pad-mount').innerHTML=esignPadHTML('sig');
+  esignWire('sig',{clearOnFirstInk:true,
+    onInk:()=>{hasInk=true;checkReady();},
+    onClear:()=>{hasInk=false;checkReady();},
+    onType:()=>checkReady()});
 }
 function clearSig(){esignClear('sig');}
-
-function updateTypedSigPreview(){
-  const val=document.getElementById('sig-name')?.value||'';
-  const pad=(typeof _ESIGN_PADS!=='undefined')?_ESIGN_PADS['sig']:null;
-  if(pad&&!pad.ink&&val.length>2){
-    esignTypedToCanvas('sig',val);
-    document.getElementById('sig-ph').style.display='none';
-  }
-  // Update meta name and initials
-  const metaName=document.getElementById('sig-meta-name');
-  if(metaName)metaName.textContent=val||'—';
-  const initials=val.split(/\s+/).filter(Boolean).map(w=>w[0]?.toUpperCase()||'').join('');
-  const metaInitials=document.getElementById('sig-meta-initials');
-  if(metaInitials)metaInitials.textContent=initials||'—';
-}
 
 // ── Sign-flow step funnel ─────────────────────────────────────────────────
 // Fire-and-forget ping per milestone so the contractor sees exactly how far
@@ -1264,8 +1195,6 @@ function _backFromSign(){
   else{show('pg-sign');scrollTo(0,0);}
 }
 function _openSignPad(){
-  const metaDate=document.getElementById('sig-meta-date');
-  if(metaDate)metaDate.textContent=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const el=document.getElementById('sign-act-total');
   if(el)el.textContent=fmt(_prop?.amount||0);
   show('pg-sign-action');
@@ -1277,7 +1206,7 @@ function _openSignPad(){
 
 function checkReady(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
-  const uetaOk=!!(document.getElementById('sig-ueta-ck')?.checked);
+  const uetaOk=!!(document.getElementById('sig-ck')?.checked);
   const hasSig=typedOk||hasInk;
   const btn=document.getElementById('sign-btn');
   if(btn)btn.disabled=!hasSig||!uetaOk;
@@ -1291,10 +1220,10 @@ function checkReady(){
 }
 
 function goToPayment(){
-  const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
-  if(!typedOk&&!hasInk){document.getElementById('sign-err').textContent='Type your full name or draw your signature above.';return;}
-  const _sigR=esignResult('sig',{requireTyped:false,typedAsSig:true});
-  _sigData=_sigR.sigData;
+  const r=esignResult('sig',{requireTyped:false,typedAsSig:true,requireConsent:true,errId:'sign-err',consentErr:'Check the agreement box above to continue.'});
+  if(!r.ok){document.getElementById('sign-err').textContent=r.err;return;}
+  if(!r.signerName&&!r.sigData){document.getElementById('sign-err').textContent='Type your full name or draw your signature above.';return;}
+  _sigData=r.sigData;
   _logStep('payment_viewed');
   show('pg-pay');scrollTo(0,0);
   _renderPayTiles();

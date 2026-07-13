@@ -768,7 +768,7 @@ test.describe('sign.html — complete cash signing flow', () => {
   test('checkReady — sign-btn enabled after name + UETA checked', async () => {
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
-      const uetaEl = document.getElementById('sig-ueta-ck');
+      const uetaEl = document.getElementById('sig-ck');
       if (nameEl) { nameEl.value = 'Bob Garcia'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
       if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
@@ -917,7 +917,7 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
   test('checkReady — sign-btn enabled with name + ueta (no EPA checkbox required)', async () => {
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
-      const uetaEl = document.getElementById('sig-ueta-ck');
+      const uetaEl = document.getElementById('sig-ck');
       if (nameEl) { nameEl.value = 'Alice Smith'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
       if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
@@ -1238,7 +1238,7 @@ test.describe('sign.html — Stripe payment flow', () => {
 
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
-      const uetaEl = document.getElementById('sig-ueta-ck');
+      const uetaEl = document.getElementById('sig-ck');
       if (nameEl) { nameEl.value = 'Bob Garcia'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
       if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
@@ -1935,22 +1935,27 @@ test.describe('sign.html — close-rate UX pass', () => {
     });
   });
 
-  test('risk-reversal strip sits in the sig card with the state cancel window populated', async () => {
+  test('Notice of Cancellation sits in the sig card, above the shared consent block, with the state cancel window populated', async () => {
+    // Owner directive 2026-07-13: the risk-reversal strip's "X-day right to
+    // cancel — no questions asked" reassurance line was removed outright —
+    // it only restated what this legally-required Notice of Cancellation
+    // section (and the full Terms & Conditions) already state with the exact
+    // deadline and statute. This is the one surviving cancellation disclosure.
     const r = await page.evaluate(() => {
-      const strip = document.getElementById('risk-reversal-strip');
+      const notice = document.getElementById('cancel-notice-section');
       const sigCard = document.getElementById('sig-card');
-      const ueta = document.querySelector('.sig-checkbox');
+      const consentMount = document.getElementById('sig-consent-mount');
       return {
-        inSigCard: !!(strip && sigCard && sigCard.contains(strip)),
-        beforeUeta: !!(strip && ueta && (strip.compareDocumentPosition(ueta) & Node.DOCUMENT_POSITION_FOLLOWING)),
-        cancelText: document.getElementById('rr-cancel')?.textContent || '',
-        hasSvgChecks: (strip?.querySelectorAll('svg').length || 0) >= 3,
+        inSigCard: !!(notice && sigCard && sigCard.contains(notice)),
+        beforeConsent: !!(notice && consentMount && (notice.compareDocumentPosition(consentMount) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        noticeText: document.getElementById('cancel-notice-body')?.textContent || '',
+        riskReversalStripGone: document.getElementById('risk-reversal-strip') === null,
       };
     });
     expect(r.inSigCard).toBe(true);
-    expect(r.beforeUeta, 'strip must sit above the agreement checkbox — where signing anxiety spikes').toBe(true);
-    expect(r.cancelText).toContain('3-day right to cancel'); // MOCK_PROPOSAL has no cancelDays → default 3
-    expect(r.hasSvgChecks).toBe(true);
+    expect(r.beforeConsent, 'notice must sit above the agreement checkbox — where signing anxiety spikes').toBe(true);
+    expect(r.noticeText).toContain('Right to cancel'); // MOCK_PROPOSAL has no cancelDays → default 3
+    expect(r.riskReversalStripGone, 'the redundant risk-reversal strip must be deleted, not hidden').toBe(true);
   });
 
   test('peak-end — done page shows "What happens next" with three concrete steps', async () => {
@@ -2015,7 +2020,7 @@ test.describe('sign.html — step funnel analytics', () => {
       if (typeof _goToSignPad === 'function') _goToSignPad(); else _openSignPad();
     });
     await page.fill('#sig-name', 'Alice Smith');
-    await page.check('#sig-ueta-ck');
+    await page.check('#sig-ck');
     await page.waitForTimeout(200);
     await page.evaluate(() => { goToPayment(); });
     await page.evaluate(() => { _paySign('cash'); });

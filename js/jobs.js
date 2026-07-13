@@ -1807,27 +1807,23 @@ function _showJobDoneSignStep(jobId){
       '<div style="font-size:11px;color:#1E3A8A;font-weight:700;text-transform:uppercase;margin-bottom:4px">'+escHtml(cap.adjReason)+'</div>'+
       '<div style="font-size:13px;color:#1E3A8A">'+fmt(bid.amount)+' → <strong>'+fmt(newTotal)+'</strong></div>'+
     '</div>'+
-    '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">Client signature</div>'+
-    '<canvas id="job-sign-canvas" width="500" height="130" style="width:100%;height:130px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>'+
-    '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">'+
-      '<button type="button" onclick="esignClear(\'job-sign\')" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button>'+
-    '</div>'+
-    '<div class="f" style="margin-bottom:16px">'+
-      '<label style="font-size:11px;font-weight:700;color:var(--text3)">Or type full name to confirm</label>'+
-      '<input type="text" id="job-sign-name" placeholder="Full name" autocomplete="off" style="width:100%;box-sizing:border-box;font-size:15px;padding:10px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+
-    '</div>'+
+    esignPadHTML('job-sign')+
+    // Literal same consent block as a change order — this IS one.
+    esignConsentHTML('job-sign',ESIGN_NOTE_CHANGE_ORDER)+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="markJobDone('+jobId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">← Back</button>'+
       '<button onclick="_confirmJobDoneSign('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Confirm &amp; complete ✓</button>'+
     '</div>';
-  // Shared e-sign pad (esign.js) — same capture code as every signing surface.
-  setTimeout(()=>esignWire('job-sign',{nameId:'job-sign-name'}),80);
+  // Shared e-sign pad (esign.js) — same markup + capture code as every signing surface.
+  setTimeout(()=>esignWire('job-sign'),80);
 }
 function _confirmJobDoneSign(jobId){
-  // Typed name OR a drawn signature satisfies the sign-off (same rule as before).
-  const r=esignResult('job-sign',{requireTyped:false});
+  // Typed name OR a drawn signature satisfies the sign-off (same rule as
+  // before) — but the consent box is always required, same as every surface.
+  const r=esignResult('job-sign',{requireTyped:false,requireConsent:true});
+  if(!r.ok){zAlert(r.err,{title:'Agreement required'});return;}
   const typed=(document.getElementById('job-sign-name')?.value||'').trim();
-  const sigData=r.ok?r.sigData:'';
+  const sigData=r.sigData;
   if(!typed&&!sigData){zAlert('Type the client\'s name or have them sign in the box above.',{title:'Signature required'});return;}
   if(_jobDoneCapture){_jobDoneCapture.signerName=typed;_jobDoneCapture.sigData=sigData;}
   closeTopModal();showJobDebrief(jobId);

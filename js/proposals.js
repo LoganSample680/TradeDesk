@@ -1295,23 +1295,11 @@ function _showCOSignDocument(b,c,coData,clientId){
         '<div style="font-size:13px;font-weight:700;color:#166534">New Contract Total</div>'+
         '<div style="font-size:26px;font-weight:800;color:#166534">'+fmt(newAmount)+'</div>'+
       '</div>'+
-      // Legal
-      '<div style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:20px;padding:12px;background:#f9fafb;border-radius:8px">'+
-        'By signing below, both parties agree to modify the original contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).'+
-      '</div>'+
-      // Signature canvas
-      '<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:6px">Client signature</div>'+
-      '<canvas id="co-sign-canvas" width="500" height="140" '+
-        'style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>'+
-      '<div style="display:flex;justify-content:flex-end;margin-bottom:14px">'+
-        '<button onclick="esignClear(\'co-sign\')" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button>'+
-      '</div>'+
-      // Typed name
-      '<div style="margin-bottom:20px">'+
-        '<label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:6px">Type full name to confirm</label>'+
-        '<input type="text" id="co-sign-name" placeholder="Full name" autocomplete="off" '+
-          'style="width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-family:inherit;color:#111">'+
-      '</div>'+
+      // The ONE shared signing pad (esign.js) — name on top, canvas below.
+      esignPadHTML('co-sign')+
+      // The ONE shared consent block — same text as the job price-increase
+      // sign-off, which is the same kind of document.
+      esignConsentHTML('co-sign',ESIGN_NOTE_CHANGE_ORDER)+
       // Action buttons
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+
         '<button onclick="this.closest(\'[style*=fixed]\').remove();showChangeOrderModal('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:1.5px solid #d1d5db;background:#f9fafb;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:#374151">← Back</button>'+
@@ -1324,15 +1312,16 @@ function _showCOSignDocument(b,c,coData,clientId){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   // Store CO data on the element for retrieval
   ov.dataset.coData=JSON.stringify(coData);
-  // Shared e-sign pad (esign.js): listeners + AbortController teardown live there.
-  setTimeout(()=>esignWire('co-sign',{nameId:'co-sign-name'}),100);
+  // Shared e-sign pad (esign.js): markup, listeners, typed-preview all live there.
+  setTimeout(()=>esignWire('co-sign'),100);
 }
 
 function _submitCOSign(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const r=esignResult('co-sign',{requireDrawn:true});
+  const r=esignResult('co-sign',{requireDrawn:true,requireConsent:true});
   if(!r.ok){
     if(/name/i.test(r.err)){const el=document.getElementById('co-sign-name');if(el){el.style.borderColor='#A32D2D';el.focus();}zAlert('Type the client\'s full name to confirm.',{title:'Name required'});}
+    else if(/check the box/i.test(r.err))zAlert(r.err,{title:'Agreement required'});
     else zAlert('Client needs to sign in the box above.',{title:'Signature required'});
     return;
   }

@@ -125,9 +125,12 @@ test.describe('Client hub — pending change order surfaces for approval', () =>
   });
 
   test('legal text says "original contract" — never "painting contract"', async ({ page }) => {
+    // Lives inside the shared esignConsentHTML() terms accordion now (owner
+    // directive 2026-07-13) — collapsed by default, but textContent reads it
+    // regardless of display:none.
     await bootHub(page, hubWith({ changeOrders: [PENDING_CO] }));
     await openCOModal(page);
-    const legal = await page.textContent('#co-hub-legal');
+    const legal = await page.textContent('#co-hub-terms-body');
     expect(legal).toContain('modify the original contract');
     expect(legal, 'app serves all trades — no painting-specific contract language').not.toContain('painting contract');
     expect(legal).toContain('15 U.S.C.');
@@ -143,6 +146,25 @@ test.describe('Client hub — pending change order surfaces for approval', () =>
     assertNoErrors(page, 'CO sign name guard');
   });
 
+  test('signing with name + signature but no agreement checkbox is rejected — shared consent gate (owner directive 2026-07-13)', async ({ page }) => {
+    await bootHub(page, hubWith({ changeOrders: [PENDING_CO] }));
+    await openCOModal(page);
+    await page.evaluate(() => {
+      const c = document.getElementById('co-hub-canvas');
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#111';
+      ctx.fillRect(20, 20, 80, 30);
+    });
+    await page.fill('#co-hub-sign-name', 'Logan Sample');
+    // Checkbox deliberately left unchecked
+    await page.click('#co-hub-sign-btn');
+    const err = await page.textContent('#co-hub-err');
+    expect(err, 'must ask the client to agree before signing').toContain('agree');
+    const modal = await page.textContent('#co-hub-ov');
+    expect(modal, 'must not advance to the confirmation screen without consent').not.toContain("You're all set!");
+    assertNoErrors(page, 'CO sign consent guard');
+  });
+
   test('signing with drawn signature + typed name shows the signed state everywhere', async ({ page }) => {
     await bootHub(page, hubWith({ changeOrders: [PENDING_CO] }));
     await openCOModal(page);
@@ -154,6 +176,7 @@ test.describe('Client hub — pending change order surfaces for approval', () =>
       ctx.fillRect(20, 20, 80, 30);
     });
     await page.fill('#co-hub-sign-name', 'Logan Sample');
+    await page.check('#co-hub-ck');
     await page.click('#co-hub-sign-btn');
     await page.waitForTimeout(600);
     // Modal shows "You're all set!" confirmation screen

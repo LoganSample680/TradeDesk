@@ -360,7 +360,7 @@ test.describe('sign.html — UETA checkbox text has no double period', () => {
 
   test('UETA checkbox label has no double period (..)', async () => {
     const label = await page.evaluate(() => {
-      const ck = document.getElementById('sig-ueta-ck');
+      const ck = document.getElementById('sig-ck');
       const lbl = ck ? (ck.closest('label') || ck.parentElement) : null;
       return lbl ? lbl.textContent : null;
     });

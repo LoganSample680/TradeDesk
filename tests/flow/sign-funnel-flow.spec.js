@@ -76,7 +76,7 @@ test.describe('client signing funnel (UI-driven)', () => {
             // Type the legal name key-by-key, then tick the UETA consent checkbox.
             await signPage.locator('#sig-name').click({ timeout: 8000 }).catch(() => {});
             await signPage.locator('#sig-name').pressSequentially('Jordan E Client', { delay: 0 }).catch(() => {});
-            const ck = signPage.locator('#sig-ueta-ck');
+            const ck = signPage.locator('#sig-ck');
             if (await ck.count()) await ck.check({ timeout: 5000 }).catch(() => {});
             await signPage.waitForTimeout(400);
             unlocked = await signPage.locator('#sign-btn').isEnabled().catch(() => false);

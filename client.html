@@ -1914,16 +1914,8 @@ function _showEpaDoc(bidId){
 }
 // ── Change Order — remote review & e-signature ───────────────────────────────
 // Pending: CO badge, original contract, change requested, adjustment, new total,
-// legal paragraph, signature canvas + typed name. Signed: renders as a signed
-// document (signature image + signer + date/time), like the EPA disclosure.
-// Live typed-signature preview — shared pad (esign.js): typing the name renders
-// it in the one cursive face; drawing replaces it (clearOnFirstInk).
-function _coHubTypedPreview(){
-  const pad=_ESIGN_PADS['co-hub'];
-  if(!pad||pad.ink)return;
-  const val=(document.getElementById('co-hub-sign-name')?.value||'').trim();
-  esignTypedToCanvas('co-hub',val.length>2?val:'');
-}
+// legal paragraph, the ONE shared signing pad (esign.js). Signed: renders as a
+// signed document (signature image + signer + date/time), like the EPA disclosure.
 function _showCODoc(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co)return;
@@ -1958,23 +1950,15 @@ function _showCODoc(bidId,coNum){
   h+='<div style="font-size:13px;font-weight:700;color:#166534">New Contract Total</div>';
   h+='<div style="font-size:26px;font-weight:800;color:#166534">'+fmt(co.newAmount)+'</div>';
   h+='</div>';
-  // Legal
-  h+='<div id="co-hub-legal" style="font-size:11px;color:#6b7280;line-height:1.5;margin-bottom:18px;padding:12px;background:#f9fafb;border-radius:8px">'+
-    'By signing below, both parties agree to modify the original contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).'+
-  '</div>';
   if(signed){
     // Shared signed-doc block (esign.js) — same component as proposals + the
     // owner's record. Update once, updates everywhere.
     h+=esignSigBlockHTML({title:'Approved & Signed',marginTop:'0',sigData:sigImgData,signerName:co.signerName||'Client',signedAt:co.signedAt});
   }else{
-    h+='<div style="margin-bottom:14px">';
-    h+='<label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:6px">Full name *</label>';
-    h+='<input type="text" id="co-hub-sign-name" placeholder="Type your full legal name" autocomplete="off" oninput="_coHubTypedPreview()" style="width:100%;box-sizing:border-box;font-size:16px;padding:10px 12px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;font-family:inherit;color:#111">';
-    h+='</div>';
-    h+='<div style="font-size:11px;font-weight:700;color:#374151;margin-bottom:2px">Your signature</div>';
-    h+='<div style="font-size:11px;color:#6b7280;margin-bottom:6px">Your typed name becomes your signature — or draw it below.</div>';
-    h+='<canvas id="co-hub-canvas" width="500" height="140" style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>';
-    h+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px"><button onclick="_clearCOHubCanvas()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button></div>';
+    h+=esignPadHTML('co-hub',{nameId:'co-hub-sign-name'});
+    // The ONE shared consent block — literal same text as the in-person CO
+    // sign and the job price-increase sign-off.
+    h+=esignConsentHTML('co-hub',ESIGN_NOTE_CHANGE_ORDER,{consentId:'co-hub-ck'});
     h+='<div id="co-hub-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:6px"></div>';
     h+='<button id="co-hub-sign-btn" onclick="_submitCOHubSign('+bid.id+','+co.coNum+')" style="width:100%;padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:14})+' Sign Change Order</button>';
   }
@@ -1986,20 +1970,16 @@ function _showCODoc(bidId,coNum){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   document.body.appendChild(ov);
   if(!signed)setTimeout(()=>{
-    // Shared e-sign pad (esign.js) — first stroke clears the typed preview.
-    esignWire('co-hub',{nameId:'co-hub-sign-name',errId:'co-hub-err',clearOnFirstInk:true});
+    // Shared e-sign pad (esign.js) — markup, listeners, typed-preview all live there.
+    esignWire('co-hub',{nameId:'co-hub-sign-name',errId:'co-hub-err'});
     setTimeout(()=>document.getElementById('co-hub-sign-name')?.focus(),300);
   },100);
-}
-function _clearCOHubCanvas(){
-  esignClear('co-hub');
-  _coHubTypedPreview(); // re-render the typed name, matching sign.html behavior
 }
 async function _submitCOHubSign(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co||co.signedAt)return;
   const errEl=document.getElementById('co-hub-err');
-  const r=esignResult('co-hub',{minNameLen:3,typedAsSig:true,nameErr:'Type your full name to sign this change order.'});
+  const r=esignResult('co-hub',{minNameLen:3,typedAsSig:true,requireConsent:true,nameErr:'Type your full name to sign this change order.'});
   if(!r.ok){if(errEl)errEl.textContent=r.err;return;}
   const name=r.signerName,sigData=r.sigData;
   const btn=document.getElementById('co-hub-sign-btn');

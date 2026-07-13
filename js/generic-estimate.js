@@ -3605,37 +3605,20 @@ function _geiSignInPerson(){
             :'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Due on completion</span><strong>'+fmt(total)+'</strong></div>'
           )+
         '</div>'+
-        '<div style="margin-bottom:14px">'+
-          '<label style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);display:block;margin-bottom:5px">Client name &amp; signature <span style="font-weight:400">(required)</span></label>'+
-          '<input id="gei-ip-pname" placeholder="Type full name to sign..." oninput="_geiIpUpdateTypedSig()" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
-          '<div id="gei-ip-typed-preview" style="font-family:\'Dancing Script\',cursive;font-size:36px;color:#185FA5;min-height:52px;display:flex;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:var(--bg)"></div>'+
-        '</div>'+
-        '<details style="margin-bottom:14px">'+
-          '<summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:4px 0">Or draw signature instead</summary>'+
-          '<div style="margin-top:8px">'+
-            '<canvas id="gei-ip-canvas" style="width:100%;border:1.5px solid var(--border2);border-radius:var(--r);background:#fff;touch-action:none;display:block"></canvas>'+
-            '<div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px">Draw with finger or stylus</div>'+
-            '<div style="margin-top:6px"><button class="btn btn-sm" onclick="_geiIpClearSig()">Clear</button></div>'+
-          '</div>'+
-        '</details>'+
+        // The ONE shared signing pad + the ONE shared consent block (esign.js)
+        // — same layout, same capture code, same substance as sign.html's
+        // remote signature for this exact document.
+        esignPadHTML('gei-ip',{nameId:'gei-ip-pname'})+
+        esignConsentHTML('gei-ip',ESIGN_NOTE_ESTIMATE,{consentId:'gei-ip-ck',onChange:'_geiIpCheckReady()'})+
         '<button id="gei-ip-confirm-btn" onclick="_geiConfirmInPerson()" disabled style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--bg2);color:var(--text3);font-size:16px;font-weight:700;cursor:not-allowed;font-family:inherit;margin-bottom:10px;transition:background .15s,color .15s">Confirm &amp; close job</button>'+
         '<button onclick="document.getElementById(\'_gei-ip-ov\').remove()" style="width:100%;padding:11px;border-radius:var(--rl,12px);border:none;background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
   setTimeout(()=>{
-    const canvas=document.getElementById('gei-ip-canvas');
-    if(!canvas)return;
-    canvas.width=500;canvas.height=140;canvas.style.height='120px';
-    // Shared e-sign pad (esign.js) — same capture code as every signing surface.
-    esignWire('gei-ip',{canvasId:'gei-ip-canvas',nameId:'gei-ip-pname',onInk:()=>_geiIpCheckReady(),onClear:()=>_geiIpCheckReady()});
+    // Shared e-sign pad (esign.js) — markup, listeners, typed-preview all live there.
+    esignWire('gei-ip',{nameId:'gei-ip-pname',onInk:()=>_geiIpCheckReady(),onType:()=>_geiIpCheckReady(),onClear:()=>_geiIpCheckReady()});
   },150);
-}
-function _geiIpUpdateTypedSig(){
-  const val=(document.getElementById('gei-ip-pname')?.value||'').trim();
-  const prev=document.getElementById('gei-ip-typed-preview');
-  if(prev)prev.textContent=val;
-  _geiIpCheckReady();
 }
 function _geiIpClearSig(){esignClear('gei-ip');}
 function _geiIpCheckReady(){
@@ -3643,7 +3626,8 @@ function _geiIpCheckReady(){
   if(!btn)return;
   const nameOk=(document.getElementById('gei-ip-pname')?.value||'').trim().length>2;
   const sigOk=nameOk||(typeof esignHasInk==='function'&&esignHasInk('gei-ip'));
-  const ready=sigOk;
+  const consentOk=!!document.getElementById('gei-ip-ck')?.checked;
+  const ready=sigOk&&consentOk;
   btn.disabled=!ready;
   btn.style.background=ready?'var(--green)':'var(--bg2)';
   btn.style.color=ready?'#fff':'var(--text3)';
@@ -3653,6 +3637,7 @@ async function _geiConfirmInPerson(){
   const pname=(document.getElementById('gei-ip-pname')?.value||'').trim();
   const typed=pname;
   if(!pname&&!(typeof esignHasInk==='function'&&esignHasInk('gei-ip'))){showToast('Type your name or draw a signature above','⚠️');return;}
+  if(!document.getElementById('gei-ip-ck')?.checked){showToast('Check the box to agree before signing','⚠️');return;}
   const bid=bids.find(x=>x.id===_geiEditBidId);
   if(!bid){showToast('Bid not found','⚠️');return;}
   const{total}=calcGeiTotal();
@@ -3671,7 +3656,7 @@ async function _geiConfirmInPerson(){
   localStorage.setItem('zp3_schedule_alerts',JSON.stringify(_alerts));
   // Signature image for the DB record — shared result path (typed name renders
   // in the one cursive face when nothing was drawn).
-  const _sigR=esignResult('gei-ip',{requireTyped:false,typedAsSig:true});
+  const _sigR=esignResult('gei-ip',{requireTyped:false,typedAsSig:true,requireConsent:true});
   const sigData=_sigR.ok?_sigR.sigData:'';
   // Show confirmation screen immediately
   const ov=document.getElementById('_gei-ip-ov');

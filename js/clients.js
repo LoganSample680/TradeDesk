@@ -147,11 +147,10 @@ function _openDiagnosticSign(bidId,clientId){
       '<div style="font-size:13px;color:var(--text);line-height:1.45;margin-bottom:6px">'+escHtml(b.desc||'Diagnostic charge')+'</div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border2);padding-top:7px"><span style="font-size:12px;color:var(--text3)">Amount</span><span style="font-size:20px;font-weight:800">'+fmt(b.amount||0)+'</span></div>'+
     '</div>'+
-    '<div style="font-size:11px;color:var(--text3);line-height:1.4;margin-bottom:8px">By signing, '+escHtml(c.name||'the client')+' approves this charge. Legally binding upon signature (15 U.S.C. §7001 et seq.).</div>'+
-    '<canvas id="diag-sign-canvas" width="500" height="130" style="width:100%;height:130px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>'+
-    '<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="esignClear(\'diag-sign\')" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button></div>'+
-    '<div class="f" style="margin-bottom:8px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Type full name to confirm</label>'+
-      '<input type="text" id="diag-sign-name" placeholder="Client full name" autocomplete="off" style="font-size:16px;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit"></div>'+
+    esignPadHTML('diag-sign')+
+    esignConsentHTML('diag-sign',
+      '<div style="margin-bottom:10px">By signing, '+escHtml(c.name||'the client')+' approves this charge. Legally binding upon signature ('+ESIGN_CITE+').</div>'+
+      _coreProtectionTermsHtml((typeof detectStateFromAddr==='function'?detectStateFromAddr(c.addr||''):null)||(S&&S.state)||'KS',S.bname||getBusinessName()||''))+
     '<div id="diag-sign-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:8px"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
@@ -160,13 +159,13 @@ function _openDiagnosticSign(bidId,clientId){
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   setTimeout(()=>{
-    esignWire('diag-sign',{nameId:'diag-sign-name'}); // shared pad — listeners + teardown live in esign.js
+    esignWire('diag-sign'); // shared pad — markup, listeners, typed-preview all live in esign.js
     document.getElementById('diag-sign-name')?.focus();
   },100);
 }
 function _submitDiagnosticSign(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const r=esignResult('diag-sign',{requireDrawn:true,nameErr:'Type the client’s full name to confirm.',drawErr:'Client needs to sign in the box above.'});
+  const r=esignResult('diag-sign',{requireDrawn:true,requireConsent:true,nameErr:'Type the client’s full name to confirm.',drawErr:'Client needs to sign in the box above.',consentErr:'Check the box to agree before signing.'});
   if(!r.ok)return;
   // The protective record: who signed, when, drawn signature, against this charge.
   b.signedAt=r.signedAt;b.signerName=r.signerName;b.sigData=r.sigData;b.signed=true;
