@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://js.stripe.com/v3/"></script>
 <script src="js/icons.js"></script>
+<script src="js/esign.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&family=Geist:wght@700;800;900&family=Inter+Tight:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -1915,20 +1916,13 @@ function _showEpaDoc(bidId){
 // Pending: CO badge, original contract, change requested, adjustment, new total,
 // legal paragraph, signature canvas + typed name. Signed: renders as a signed
 // document (signature image + signer + date/time), like the EPA disclosure.
-let _coHubCanvas=null,_coHubCtx=null,_coHubDrawing=false,_coHubInk=false;
-// Live typed-signature preview — exact same UX as sign.html: typing the name
-// renders it in the canvas as a cursive signature; drawing replaces it.
+// Live typed-signature preview — shared pad (esign.js): typing the name renders
+// it in the one cursive face; drawing replaces it (clearOnFirstInk).
 function _coHubTypedPreview(){
-  if(!_coHubCtx||_coHubInk)return;
+  const pad=_ESIGN_PADS['co-hub'];
+  if(!pad||pad.ink)return;
   const val=(document.getElementById('co-hub-sign-name')?.value||'').trim();
-  _coHubCtx.clearRect(0,0,_coHubCanvas.width,_coHubCanvas.height);
-  if(val.length>2){
-    _coHubCtx.font='46px Dancing Script, cursive';
-    _coHubCtx.fillStyle='#1a1a18';
-    _coHubCtx.textAlign='center';
-    _coHubCtx.textBaseline='middle';
-    _coHubCtx.fillText(val,_coHubCanvas.width/2,_coHubCanvas.height/2);
-  }
+  esignTypedToCanvas('co-hub',val.length>2?val:'');
 }
 function _showCODoc(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
@@ -1969,13 +1963,9 @@ function _showCODoc(bidId,coNum){
     'By signing below, both parties agree to modify the original contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature per applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).'+
   '</div>';
   if(signed){
-    h+='<div style="border-top:2px solid #1a1a18;padding-top:14px">';
-    h+='<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:8px">Approved &amp; Signed</div>';
-    if(sigImgData)h+='<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:12px 0;text-align:center"><img src="'+esc(sigImgData||'')+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>';
-    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">';
-    h+='<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Signed By</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(co.signerName||'Client')+'</div></div>';
-    h+='<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Date &amp; Time</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(dt||'—')+'</div></div>';
-    h+='</div></div>';
+    // Shared signed-doc block (esign.js) — same component as proposals + the
+    // owner's record. Update once, updates everywhere.
+    h+=esignSigBlockHTML({title:'Approved & Signed',marginTop:'0',sigData:sigImgData,signerName:co.signerName||'Client',signedAt:co.signedAt});
   }else{
     h+='<div style="margin-bottom:14px">';
     h+='<label style="font-size:11px;font-weight:700;color:#374151;display:block;margin-bottom:6px">Full name *</label>';
@@ -1996,47 +1986,22 @@ function _showCODoc(bidId,coNum){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   document.body.appendChild(ov);
   if(!signed)setTimeout(()=>{
-    const canvas=document.getElementById('co-hub-canvas');if(!canvas)return;
-    _coHubCanvas=canvas;_coHubCtx=canvas.getContext('2d');
-    _coHubCtx.strokeStyle='#111';_coHubCtx.lineWidth=2;_coHubCtx.lineCap='round';_coHubCtx.lineJoin='round';
-    const getPos=(e)=>{const r=canvas.getBoundingClientRect();const src=e.touches?e.touches[0]:e;return{x:(src.clientX-r.left)*(canvas.width/r.width),y:(src.clientY-r.top)*(canvas.height/r.height)};};
-    _coHubInk=false;
-    const _startInk=()=>{if(!_coHubInk){_coHubInk=true;_coHubCtx.clearRect(0,0,canvas.width,canvas.height);}};
-    canvas.addEventListener('mousedown',e=>{_coHubDrawing=true;_startInk();const p=getPos(e);_coHubCtx.beginPath();_coHubCtx.moveTo(p.x,p.y);});
-    canvas.addEventListener('mousemove',e=>{if(!_coHubDrawing)return;const p=getPos(e);_coHubCtx.lineTo(p.x,p.y);_coHubCtx.stroke();});
-    canvas.addEventListener('mouseup',()=>_coHubDrawing=false);
-    canvas.addEventListener('touchstart',e=>{e.preventDefault();_coHubDrawing=true;_startInk();const p=getPos(e);_coHubCtx.beginPath();_coHubCtx.moveTo(p.x,p.y);},{passive:false});
-    canvas.addEventListener('touchmove',e=>{e.preventDefault();if(!_coHubDrawing)return;const p=getPos(e);_coHubCtx.lineTo(p.x,p.y);_coHubCtx.stroke();},{passive:false});
-    canvas.addEventListener('touchend',()=>_coHubDrawing=false);
+    // Shared e-sign pad (esign.js) — first stroke clears the typed preview.
+    esignWire('co-hub',{nameId:'co-hub-sign-name',errId:'co-hub-err',clearOnFirstInk:true});
     setTimeout(()=>document.getElementById('co-hub-sign-name')?.focus(),300);
   },100);
 }
 function _clearCOHubCanvas(){
-  if(_coHubCanvas&&_coHubCtx)_coHubCtx.clearRect(0,0,_coHubCanvas.width,_coHubCanvas.height);
-  _coHubInk=false;
+  esignClear('co-hub');
   _coHubTypedPreview(); // re-render the typed name, matching sign.html behavior
 }
 async function _submitCOHubSign(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co||co.signedAt)return;
   const errEl=document.getElementById('co-hub-err');
-  const name=(document.getElementById('co-hub-sign-name')?.value||'').trim();
-  if(name.length<3){if(errEl)errEl.textContent='Type your full name to sign this change order.';return;}
-  let sigData='';
-  if(_coHubCanvas&&_coHubCtx){
-    const d=_coHubCtx.getImageData(0,0,_coHubCanvas.width,_coHubCanvas.height).data;
-    let hasSig=false;for(let i=3;i<d.length;i+=4){if(d[i]>0){hasSig=true;break;}}
-    if(!hasSig){
-      // Canvas blank but name typed — render the typed name as the signature
-      // (same cursive face the live preview and sign.html use).
-      _coHubCtx.font='46px Dancing Script, cursive';
-      _coHubCtx.fillStyle='#1a1a18';
-      _coHubCtx.textAlign='center';
-      _coHubCtx.textBaseline='middle';
-      _coHubCtx.fillText(name,_coHubCanvas.width/2,_coHubCanvas.height/2);
-    }
-    sigData=_coHubCanvas.toDataURL('image/png');
-  }
+  const r=esignResult('co-hub',{minNameLen:3,typedAsSig:true,nameErr:'Type your full name to sign this change order.'});
+  if(!r.ok){if(errEl)errEl.textContent=r.err;return;}
+  const name=r.signerName,sigData=r.sigData;
   const btn=document.getElementById('co-hub-sign-btn');
   if(btn){btn.disabled=true;btn.textContent='Submitting…';}
   const ts=new Date().toISOString();
@@ -2161,7 +2126,13 @@ function renderDocuments(){
     html+='<div style="padding:0 16px">';
     if(bid.completion_date){
       const _isDiag=bid.kind==='diagnostic';
-      html+=_docRow(svgIcon('📄',{size:18}),_isDiag?'Diagnostic Charge':'Invoice',_isDiag?(esc(bid.desc||'Diagnostic visit')):'View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">'+(_isDiag?'Diagnostic':'Invoice')+'</span>','openInvoice('+bid.id+')','');
+      if(_isDiag&&(bid.signedAt||bid.signed)){
+        // Signed diagnostic charge — a real signed document (notes + date + signature).
+        const _dgMeta=svgIcon('✍',{size:11})+' Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
+        html+=_docRow(svgIcon('📄',{size:18}),'Diagnostic Charge',_dgMeta,'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Signed</span>','openDiagnosticDoc('+bid.id+')','');
+      }else{
+        html+=_docRow(svgIcon('📄',{size:18}),_isDiag?'Diagnostic Charge':'Invoice',_isDiag?(esc(bid.desc||'Diagnostic visit')):'View or print a detailed invoice','<span class="hub-doc-tag hub-doc-tag-invoice" style="margin-left:6px">'+(_isDiag?'Diagnostic':'Invoice')+'</span>','openInvoice('+bid.id+')','');
+      }
     }
     if(bid.proposalKey){
       const _sigMeta=bid.signedAt
@@ -2481,6 +2452,33 @@ function showPaymentSuccess(bidId){
   document.body.appendChild(banner);setTimeout(()=>banner.remove(),6000);
   if(bid){bid.paymentStatus='paid';bid.balance=0;renderAll();}
 }
+// Signed diagnostic-charge document — what you found (notes), the fee, the
+// dates, and the client's signature, rendered with the SHARED signed-doc block.
+function openDiagnosticDoc(bidId){
+  const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
+  document.getElementById('diag-doc-ov')?.remove();
+  const dts=bid.bid_date?new Date(bid.bid_date+'T12:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'';
+  let h='<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;margin:auto;padding:22px 20px 26px;box-sizing:border-box;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch">';
+  h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">';
+  h+='<div style="font-size:13px;font-weight:800;color:#1a365d">'+svgIcon('📄',{size:13})+' Diagnostic Charge</div>';
+  h+='<button onclick="document.getElementById(\'diag-doc-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1" aria-label="Close">'+svgIcon('✕',{size:22})+'</button>';
+  h+='</div>';
+  if(dts)h+='<div style="display:inline-block;background:#EBF2FB;color:#1a365d;font-size:12px;font-weight:800;padding:4px 12px;border-radius:20px;margin-bottom:16px">'+esc(dts)+'</div>';
+  h+='<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1.5px solid #e5e7eb">';
+  h+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:#6b7280;margin-bottom:8px">What was found</div>';
+  h+='<div style="font-size:14px;color:#111;line-height:1.5">'+esc(bid.desc||'Diagnostic visit')+'</div></div>';
+  h+='<div style="background:#f0fdf4;border:2px solid #86efac;border-radius:10px;padding:14px 18px;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">';
+  h+='<div style="font-size:13px;font-weight:700;color:#166534">Diagnostic Fee</div>';
+  h+='<div style="font-size:26px;font-weight:800;color:#166534">'+fmt(bid.amount||0)+'</div></div>';
+  h+=esignSigBlockHTML({title:'Approved & Signed',marginTop:'0',sigData:bid.sigData||bid.signatureData||'',signerName:bid.signerName||'Client',signedAt:bid.signedAt});
+  h+='</div>';
+  const ov=document.createElement('div');
+  ov.id='diag-doc-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px';
+  ov.innerHTML=h;
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov);
+}
 function openInvoice(bidId){
   const h=_hub,bid=h.bids.find(b=>b.id===bidId);if(!bid)return;
   const job=h.jobs.find(j=>j.bid_id===bidId);
@@ -2589,16 +2587,12 @@ async function openProposal(bidId){
     else if(propData.status==='signed'&&propData.signerName){
       const sigDate=propData.signedAt?new Date(propData.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
       const payLabel=(propData.paymentMethod||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-      sigBlock='<div style="margin-top:32px;border-top:2px solid var(--ink,#1a1a18);padding-top:24px">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:16px">Client Signature</div>'+
-        (propData.signatureDataUrl?'<div style="background:#fff;border:1.5px solid #e0e0dc;border-radius:10px;padding:12px;margin-bottom:16px;text-align:center"><img src="'+esc(propData.signatureDataUrl||'')+'" style="max-width:100%;max-height:120px" alt="Client signature"></div>':'')+
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px">'+
-          '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Signed By</div><div style="font-size:14px;font-weight:700;color:#1a1a18">'+escHtml(propData.signerName)+'</div></div>'+
-          '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Date</div><div style="font-size:14px;font-weight:700;color:#1a1a18">'+escHtml(sigDate)+'</div></div>'+
-          '<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Amount</div><div style="font-size:14px;font-weight:700;color:#1a1a18">$'+(propData.finalAmount||propData.amount||0).toLocaleString('en-US',{minimumFractionDigits:2})+'</div></div>'+
-          (payLabel?'<div><div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:4px">Payment Method</div><div style="font-size:14px;font-weight:700;color:#1a1a18">'+escHtml(payLabel)+'</div></div>':'')+
-        '</div>'+
-      '</div>';
+      // Shared signed-doc block (esign.js) — same component as COs + the
+      // owner's record. Update once, updates everywhere.
+      sigBlock=esignSigBlockHTML({marginTop:'32px',sigData:propData.signatureDataUrl||'',
+        signerName:propData.signerName,signedAt:propData.signedAt||'',
+        cells:[{label:'Amount',value:'$'+(propData.finalAmount||propData.amount||0).toLocaleString('en-US',{minimumFractionDigits:2})}]
+          .concat(payLabel?[{label:'Payment Method',value:payLabel}]:[])});
     }
     ct.innerHTML=(propData.proposalHtml?sanitizeHtml(propData.proposalHtml||''):'<p style="color:#999;padding:20px">Proposal content not available.</p>')+sigBlock+
       '<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">'+

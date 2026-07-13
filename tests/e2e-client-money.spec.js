@@ -273,6 +273,73 @@ test.describe('Client management — CRUD and validation', () => {
     }
   });
 
+  test('diagnostic charge — protected quick path: client SIGNS before payment is ever collected', async () => {
+    const result = await page.evaluate(async () => {
+      const savedB = bids.slice(), savedC = clients.slice(), savedPay = window.openPayPanel;
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      let payOpened = null; window.openPayPanel = (id, stage) => { payOpened = { id, stage }; };
+      clients.length = 0; bids.length = 0;
+      clients.push({ id: 501, name: 'Karen Doe', addr: '44 Lot Way, Austin, TX' });
+
+      // 1. Charge modal: green "signs before you collect" note, no unsigned warning.
+      openDiagnosticCharge(501);
+      let modal = document.querySelector('.zmodal-overlay .zmodal');
+      const chargeHtml = modal ? modal.innerHTML : '';
+      document.getElementById('diag-desc').value = 'No-heat — diagnosed failed igniter';
+      document.getElementById('diag-amount').value = '150';
+      saveDiagnosticCharge(501);
+
+      // 2. Charge saved → the SIGN step opens (not the pay panel).
+      await new Promise(r => setTimeout(r, 170));
+      modal = document.querySelector('.zmodal-overlay .zmodal');
+      const signHtml = modal ? modal.innerHTML : '';
+      const bid = bids.find(b => b.kind === 'diagnostic');
+
+      // 3a. Try to finish with NO signature → rejected, nothing signed, pay never opens.
+      _submitDiagnosticSign(bid.id, 501);
+      const rejected = bid.signed !== true && payOpened === null;
+
+      // 3b. Draw a signature + type the name → signed, THEN pay opens.
+      document.getElementById('diag-sign-name').value = 'Karen Doe';
+      if (_ESIGN_PADS['diag-sign']) _ESIGN_PADS['diag-sign'].ctx.fillRect(10, 10, 60, 40); // simulate a drawn stroke via the SHARED pad (alpha>0)
+      _submitDiagnosticSign(bid.id, 501);
+
+      const out = {
+        bidId: bid.id,
+        // Owner reframe 2026-07-13: the modal hand-holds the NARROW use case —
+        // estimate given, client declined, charging the trip + diagnosis.
+        chargeHasProtectionNote: /declined/.test(chargeHtml) && /trip out/.test(chargeHtml),
+        chargeNoUnsignedWarning: !/isn.t a signed contract/.test(chargeHtml),
+        chargeContinueToSign: /Continue to sign/.test(chargeHtml),
+        signHasCanvas: /diag-sign-canvas/.test(signHtml),
+        signHasName: /diag-sign-name/.test(signHtml),
+        signHasCollect: /Sign &amp; collect/.test(signHtml),
+        rejectedNoSig: rejected,
+        signedName: bid.signerName,
+        signedFlag: bid.signed === true,
+        hasSigData: typeof bid.sigData === 'string' && bid.sigData.indexOf('data:image') === 0,
+        payOpened,
+      };
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      window.openPayPanel = savedPay;
+      bids.length = 0; savedB.forEach(b => bids.push(b));
+      clients.length = 0; savedC.forEach(c => clients.push(c));
+      return out;
+    });
+    expect(result.chargeHasProtectionNote).toBe(true);   // "client signs before you collect"
+    expect(result.chargeNoUnsignedWarning).toBe(true);   // the old unsigned-invoice warning is gone
+    expect(result.chargeContinueToSign).toBe(true);      // button leads to the sign step
+    expect(result.signHasCanvas).toBe(true);             // signature pad present
+    expect(result.signHasName).toBe(true);
+    expect(result.signHasCollect).toBe(true);
+    expect(result.rejectedNoSig).toBe(true);             // no signature → NOT signed, pay never opens
+    expect(result.signedName).toBe('Karen Doe');
+    expect(result.signedFlag).toBe(true);                // signature recorded on the charge
+    expect(result.hasSigData).toBe(true);                // drawn signature captured (data URL)
+    expect(result.payOpened && result.payOpened.id).toBe(result.bidId); // pay opens ONLY after signing
+    expect(result.payOpened.stage).toBe('final');
+  });
+
   test('no console errors during client management tests', async () => {
     assertNoErrors(page, 'client management');
   });
@@ -1675,7 +1742,7 @@ test.describe('Multi-line-item estimate — BYO lines accumulate (replaces the o
 // kind:'diagnostic'), it just skips the signing portal entirely.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Diagnostic charge — quick entry, no signature, straight to payment', () => {
+test.describe('Diagnostic charge — quick entry, client signs, then payment', () => {
   const DIAG_CLIENT_ID = 910001;
   let page;
 
@@ -1737,17 +1804,21 @@ test.describe('Diagnostic charge — quick entry, no signature, straight to paym
     await page.evaluate(() => closeTopModal());
   });
 
-  test('saveDiagnosticCharge — creates a Closed Won bid, no signature, opens the pay panel', async () => {
+  test('saveDiagnosticCharge — creates the Closed Won bid then opens the SIGN step (pay panel comes AFTER signing)', async () => {
     const r = await page.evaluate(([cid]) => {
+      document.querySelectorAll('.zmodal-overlay,.pay-modal-overlay').forEach(e => e.remove());
       openDiagnosticCharge(cid);
       document.getElementById('diag-desc').value = 'No-heat call — diagnosed failed igniter, needs replacement';
       document.getElementById('diag-amount').value = '89.00';
       saveDiagnosticCharge(cid);
       const b = bids.filter(x => x.client_id === cid).sort((a, z) => z.id - a.id)[0];
+      const signModal = document.querySelector('.zmodal-overlay .zmodal');
       return {
         bid: b ? { kind: b.kind, type: b.type, amount: b.amount, status: b.status, draft: b.draft, hasCompletion: !!b.completion_date, desc: b.desc } : null,
-        payPanelOpen: !!document.querySelector('.pay-modal-overlay'),
-        // Never routed through the e-sign portal — no signingToken, no proposalKey.
+        signStepOpen: !!signModal && /diag-sign-canvas/.test(signModal.innerHTML), // sign FIRST
+        payPanelOpen: !!document.querySelector('.pay-modal-overlay'),               // NOT yet
+        notSignedYet: !b?.signed,
+        // Diagnostic sign uses an on-device signature (sigData), not the e-sign portal token.
         noSignArtifacts: !b?.signingToken && !b?.proposalKey,
       };
     }, [DIAG_CLIENT_ID]);
@@ -1759,7 +1830,9 @@ test.describe('Diagnostic charge — quick entry, no signature, straight to paym
     expect(r.bid.draft).toBe(false);
     expect(r.bid.hasCompletion).toBe(true);
     expect(r.bid.desc).toContain('failed igniter');
-    expect(r.payPanelOpen).toBe(true);
+    expect(r.signStepOpen).toBe(true);    // client signs before anything is collected
+    expect(r.payPanelOpen).toBe(false);   // pay panel does NOT open until the charge is signed
+    expect(r.notSignedYet).toBe(true);
     expect(r.noSignArtifacts).toBe(true);
     await page.evaluate(() => { document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove()); });
   });

@@ -1470,6 +1470,9 @@ function setTrackerYear(yr){
 function renderTrackerTab(){
   populateTrackerYearSel();
   setTrTab(trackerTab,document.getElementById('tr-t-'+trackerTab));
+  // Live pipe: opening Books checks for freshly-landed payments/jobs from
+  // linked contractors (debounced inside; re-renders this tab if any land).
+  if(typeof _ingestPipeInbox==='function')_ingestPipeInbox();
 }
 function renderMonthlyPL(){
   const el=document.getElementById('monthly-pl-list');if(!el)return;

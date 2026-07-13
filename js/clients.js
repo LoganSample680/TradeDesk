@@ -61,6 +61,19 @@ function _nearbyStartWork(clientId){
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
 }
+// Diagnostic / service-call charge — the ONE narrow quick path (owner, 2026-07-13).
+// It is NOT a general quick invoice. Use it ONLY for the specific case: you built
+// the client an estimate, they DECLINED it, and you're charging for the trip out +
+// the diagnosis you already did. Real work always goes through the full, signed
+// estimate — so this needs no separate signature (the declined estimate is the
+// paper trail). The modal STATES that scope plainly (owner: "hand-hold it") so it
+// can't be misused as an unsigned-invoice shortcut for actual work.
+function _diagChargeContext(){
+  return '<div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:9px 11px;margin-bottom:14px">'+
+    '<div style="flex:none">'+svgIcon('ℹ️',{size:14})+'</div>'+
+    '<div style="font-size:11px;color:var(--text2);line-height:1.45">Only for when you gave an estimate, the client <strong>declined</strong>, and you’re charging for the trip out + diagnosis. Doing actual work? Build a full estimate they sign instead.</div>'+
+  '</div>';
+}
 function openDiagnosticCharge(clientId){
   const c=getClientById(clientId);if(!c)return;
   document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());
@@ -79,10 +92,12 @@ function openDiagnosticCharge(clientId){
       '<input type="text" id="diag-amount" placeholder="0.00" inputmode="decimal" oninput="_fmtMoneyInput(this)" style="font-size:22px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
       '<div id="diag-amount-err" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px">Enter the fee amount.</div>'+
     '</div>'+
+    _diagChargeContext()+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
-      '<button onclick="saveDiagnosticCharge('+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Charge &amp; collect →</button>'+
-    '</div>';
+      '<button onclick="saveDiagnosticCharge('+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Continue to sign →</button>'+
+    '</div>'+
+    '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" style="width:100%;margin-top:8px;padding:10px;border:none;background:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Doing actual work? Build a full estimate instead ›</button>';
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   setTimeout(()=>document.getElementById('diag-desc')?.focus(),60);
@@ -111,7 +126,65 @@ function saveDiagnosticCharge(clientId){
   emitEvent('diagnostic_charge_created',clientId,{bid_id:bid.id,amount:bid.amount});
   closeTopModal();
   renderClientDetail();renderCDBids();renderCDTimeline();renderDash();
-  openPayPanel(bid.id,'final');
+  // Protection before payment: client signs the charge in person, THEN collect.
+  _openDiagnosticSign(bid.id,clientId);
+}
+// In-person signature step for a diagnostic charge — the SHARED e-sign pad
+// (js/esign.js), same code as estimates/COs, displayed here. Shows the charge
+// the client is signing for, captures the signature, records it on the bid,
+// pushes it to the client hub as a signed document, and only THEN opens pay.
+function _openDiagnosticSign(bidId,clientId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const c=getClientById(clientId)||{};
+  document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:2px">'+svgIcon('✍️')+' Client signs to approve</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Hand your phone to '+escHtml(c.name||'the client')+' to sign before you collect.</div>'+
+    // What they're signing for
+    '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:11px 13px;margin-bottom:12px">'+
+      '<div style="font-size:13px;color:var(--text);line-height:1.45;margin-bottom:6px">'+escHtml(b.desc||'Diagnostic charge')+'</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border2);padding-top:7px"><span style="font-size:12px;color:var(--text3)">Amount</span><span style="font-size:20px;font-weight:800">'+fmt(b.amount||0)+'</span></div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);line-height:1.4;margin-bottom:8px">By signing, '+escHtml(c.name||'the client')+' approves this charge. Legally binding upon signature (15 U.S.C. §7001 et seq.).</div>'+
+    '<canvas id="diag-sign-canvas" width="500" height="130" style="width:100%;height:130px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>'+
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:10px"><button onclick="esignClear(\'diag-sign\')" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button></div>'+
+    '<div class="f" style="margin-bottom:8px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Type full name to confirm</label>'+
+      '<input type="text" id="diag-sign-name" placeholder="Client full name" autocomplete="off" style="font-size:16px;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit"></div>'+
+    '<div id="diag-sign-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:8px"></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="_submitDiagnosticSign('+bidId+','+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Sign &amp; collect →</button>'+
+    '</div>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  setTimeout(()=>{
+    esignWire('diag-sign',{nameId:'diag-sign-name'}); // shared pad — listeners + teardown live in esign.js
+    document.getElementById('diag-sign-name')?.focus();
+  },100);
+}
+function _submitDiagnosticSign(bidId,clientId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const r=esignResult('diag-sign',{requireDrawn:true,nameErr:'Type the client’s full name to confirm.',drawErr:'Client needs to sign in the box above.'});
+  if(!r.ok)return;
+  // The protective record: who signed, when, drawn signature, against this charge.
+  b.signedAt=r.signedAt;b.signerName=r.signerName;b.sigData=r.sigData;b.signed=true;
+  saveAll();
+  if(typeof emitEvent==='function')emitEvent('diagnostic_charge_signed',clientId,{bid_id:bidId});
+  // Land it in the client hub as a SIGNED document (notes + dates + signature),
+  // and mirror to signed_proposals like the in-person estimate sign does.
+  try{
+    if(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa){
+      _supa.from('signed_proposals').upsert({bid_id:String(bidId),contractor_user_id:_supaUser.id,
+        client_name:b.client_name||'',client_signed_name:r.signerName,amount:b.amount||0,deposit:0,
+        signed_at:r.signedAt,signature_data:r.sigData},{onConflict:'bid_id'}).then(()=>{});
+    }
+    if(typeof _refreshClientHub==='function')_refreshClientHub(clientId);
+  }catch(_e){}
+  closeTopModal();
+  if(typeof showToast==='function')showToast('Signed — collecting payment','✍️');
+  openPayPanel(bidId,'final');
 }
 // Popup shown when a non-estimate employee taps a (greyed) estimate entry point:
 // offer to request access from the owner/manager.
@@ -1949,17 +2022,14 @@ function _cpOpen(bidId,view){
   // Signature block pinned at the bottom of the client view — image from the stored
   // proposal JSON when available, falling back to the name/timestamp on the bid so the
   // block still shows when the storage write was missed at signing time.
+  // Owner-record signature display — the SHARED signed-doc block (esign.js),
+  // same component the client hub renders. Update once, updates everywhere.
   function _cpSigBlock(prop){
-    const name=(prop&&prop.signerName)||b.signedName||'';
     const at=(prop&&prop.signedAt)||b.signedAt||'';
     if(!at)return '';
-    const dt=new Date(at).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-    const _sigUrl=(prop&&prop.signatureDataUrl)||b.signatureData||null;
-    const img=_sigUrl?'<div style="background:#fff;border:1.5px solid var(--border2);border-radius:10px;padding:12px;margin:10px 0;text-align:center"><img src="'+_sigUrl+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>':'';
-    return '<div id="cp-sig-block" style="margin-top:20px;border-top:2px solid var(--border2);padding-top:14px">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Client Signature</div>'+img+
-      '<div style="font-size:13px;color:var(--text2)"><strong>'+escHtml(name||'—')+'</strong> · '+dt+'</div>'+
-    '</div>';
+    return esignSigBlockHTML({blockId:'cp-sig-block',
+      signerName:(prop&&prop.signerName)||b.signedName||'',signedAt:at,
+      sigData:(prop&&prop.signatureDataUrl)||b.signatureData||''});
   }
   function _cpRenderProp(html,colorTop){propPane.innerHTML=(colorTop||'')+_cpSignedBadge+html+_cpSigBlock(null);}
   if(b.proposalHtml){

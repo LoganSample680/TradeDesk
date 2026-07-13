@@ -1710,6 +1710,15 @@ async function obSubmit(){
     await _supa.from('zj_data').insert({user_id:uid,account_id:acct.id});
 
     S.bname=_ob.businessName;S.bphone=_ob.phone;S.blic=_ob.licenseInfo;S.state=_ob.state||'KS';S.warrantyPeriod=_ob.warrantyPeriod||'1 year';
+    // Arrived via a sub-invite referral link? Record who brought them in, then
+    // redeem the grant (single-use RPC): the inviter lands as this brand-new
+    // account's first client/lead, and everything the inviter logged as paid
+    // to them becomes the opening income ledger — books start ready.
+    if(typeof _claimSubReferralAttribution==='function')_claimSubReferralAttribution();
+    if(typeof _redeemSubInviteGrant==='function'){
+      setProgress('Loading your books...');
+      try{await _redeemSubInviteGrant();}catch(_e){}
+    }
     S.settingsTs=Date.now(); // onboarding-entered business info must win the settings sync
     _user={id:uid,email:_ob.email,name:_ob.name,role:_ob.role,account_id:acct.id};setOwnerName(_ob.name);saveAll();
     _vehicles=_ob.vehicles;

@@ -153,6 +153,9 @@ function _buildClientHubSnapshot(clientId){
     const financeCharge=balance>0.01&&_fcDaysOverdue>0?Math.round(balance*_fcRate*_fcDaysOverdue*100)/100:0;
     const daysOverdue=balance>0.01?_fcDaysOverdue:0;
     return {id:b.id,amount:b.amount||0,deposit:b.deposit!=null?b.deposit:Math.round((b.amount||0)*0.25*100)/100,status:b.status,type:_hubType,bid_date:b.bid_date||'',completion_date:b.completion_date||'',paid,balance,financeCharge,daysOverdue,signedAt:b.signedAt||'',
+      // Signed-document fields (diagnostic charges + any bid signed in person):
+      // the hub renders these through the shared esign signed-doc block.
+      kind:b.kind||'',desc:b.desc||'',signed:!!b.signed,signerName:b.signerName||'',sigData:b.sigData||'',
       lostReason:b.lostReason||'',lostNote:b.lostNote||'',lostAt:b.lostAt||'',
       proposalKey:propKey,signingToken:signToken||null,changeOrders:_hubCOs,
       signHubUrl:signBase?(signBase+(hubUrl?'&hub='+encodeURIComponent(hubUrl):'')):null};
@@ -653,43 +656,6 @@ async function _sendEmailFromCompose(){
   if(_ctx&&_ctx.opts.onSent){_ecContext=null;setTimeout(()=>_ctx.opts.onSent(),400);}
   else setTimeout(()=>_commitProposalSent(),400);
 }
-function clearSig(){if(sigCtx&&sigCanvas){const d=window.devicePixelRatio||1;sigCtx.clearRect(0,0,sigCanvas.width/d,sigCanvas.height/d);checkConfirmReady();}}
-function updateTypedSig(){
-  const val=document.getElementById('sig-typed')?.value||'';
-  const prev=document.getElementById('sig-typed-preview');
-  if(prev)prev.textContent=val;
-  checkConfirmReady();
-}
-function checkConfirmReady(){
-  const btn=document.getElementById('confirm-btn');
-  if(!btn)return;
-  const nameOk=(document.getElementById('sig-pname')||{}).value?.trim().length>0;
-  const typedOk=(document.getElementById('sig-typed')||{}).value?.trim().length>2;
-  const sigOk=typedOk||hasSignature();
-  const ready=nameOk&&sigOk;
-  btn.disabled=!ready;
-  if(ready){
-    btn.style.background='var(--green)';
-    btn.style.color='#fff';
-    btn.style.borderColor='var(--green)';
-    btn.style.cursor='pointer';
-  } else {
-    btn.style.background='var(--bg2)';
-    btn.style.color='var(--text3)';
-    btn.style.borderColor='var(--border2)';
-    btn.style.cursor='not-allowed';
-  }
-}
-function hasSignature(){
-  if(!sigCanvas||!sigCtx)return false;
-  const dpr=window.devicePixelRatio||1;
-  const w=Math.floor(sigCanvas.width),h=Math.floor(sigCanvas.height);
-  try{
-    const data=sigCtx.getImageData(0,0,w,h).data;
-    for(let i=3;i<data.length;i+=4){if(data[i]>10)return true;}
-  }catch(e){}
-  return false;
-}
 function markFieldFilled(el){
   if(el.value&&el.value.trim()){
     el.style.borderColor='var(--border2)';
@@ -1183,7 +1149,7 @@ function showWorkflowGate(msg,btnLabel,btnAction){
   o.addEventListener('click',e=>{if(e.target===o)o.remove();});
 }
 // ── Change Order System ───────────────────────────────────────────────────────
-let _coBidId=null,_coClientId=null,_coType=null,_coSignCanvas=null,_coSignCtx=null,_coSignDrawing=false;
+let _coBidId=null,_coClientId=null,_coType=null;
 
 function showChangeOrderModal(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
@@ -1284,7 +1250,6 @@ function _reviewCO(bidId,clientId){
 }
 
 function _showCOSignDocument(b,c,coData,clientId){
-  _coSignDrawing=false; // reset stale drag state from any previous invocation
   const {desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
   const biz=S.bname||'TradeDesk';
   const dateStr=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
@@ -1339,7 +1304,7 @@ function _showCOSignDocument(b,c,coData,clientId){
       '<canvas id="co-sign-canvas" width="500" height="140" '+
         'style="width:100%;height:140px;border:1.5px solid #d1d5db;border-radius:8px;background:#fafafa;touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>'+
       '<div style="display:flex;justify-content:flex-end;margin-bottom:14px">'+
-        '<button onclick="_clearCOCanvas()" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button>'+
+        '<button onclick="esignClear(\'co-sign\')" style="font-size:11px;color:#6b7280;background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button>'+
       '</div>'+
       // Typed name
       '<div style="margin-bottom:20px">'+
@@ -1356,46 +1321,22 @@ function _showCOSignDocument(b,c,coData,clientId){
       '<button id="co-send-hub-btn" onclick="_sendCOToHub('+b.id+','+clientId+')" style="width:100%;margin-top:10px;padding:13px;border-radius:8px;border:1.5px solid #2563eb;background:#EFF6FF;color:#1d4ed8;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📤')+' Send to Client Hub — client signs remotely</button>'+
     '</div>';
   ov.appendChild(doc);document.body.appendChild(ov);
-  ov.addEventListener('click',e=>{if(e.target===ov){_coSignDrawing=false;ov.remove();}});
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   // Store CO data on the element for retrieval
   ov.dataset.coData=JSON.stringify(coData);
-  // Wire up signature canvas — AbortController ensures listeners die with the overlay
-  const _coSignAc=new AbortController();
-  const _coSignSig={signal:_coSignAc.signal};
-  ov.addEventListener('remove',()=>{_coSignAc.abort();_coSignDrawing=false;},{once:true});
-  // Abort when overlay is removed from DOM (MutationObserver watches for detach)
-  const _coSignObs=new MutationObserver(()=>{if(!document.contains(ov)){_coSignAc.abort();_coSignDrawing=false;_coSignObs.disconnect();}});
-  _coSignObs.observe(document.body,{childList:true,subtree:true});
-  setTimeout(()=>{
-    const canvas=document.getElementById('co-sign-canvas');if(!canvas)return;
-    _coSignCanvas=canvas;_coSignCtx=canvas.getContext('2d');
-    _coSignCtx.strokeStyle='#111';_coSignCtx.lineWidth=2;_coSignCtx.lineCap='round';_coSignCtx.lineJoin='round';
-    const getPos=(e)=>{const r=canvas.getBoundingClientRect();const src=e.touches?e.touches[0]:e;return{x:(src.clientX-r.left)*(canvas.width/r.width),y:(src.clientY-r.top)*(canvas.height/r.height)};};
-    canvas.addEventListener('mousedown',e=>{_coSignDrawing=true;const p=getPos(e);_coSignCtx.beginPath();_coSignCtx.moveTo(p.x,p.y);},_coSignSig);
-    canvas.addEventListener('mousemove',e=>{if(!_coSignDrawing)return;const p=getPos(e);_coSignCtx.lineTo(p.x,p.y);_coSignCtx.stroke();},_coSignSig);
-    canvas.addEventListener('mouseup',()=>_coSignDrawing=false,_coSignSig);
-    canvas.addEventListener('touchstart',e=>{e.preventDefault();_coSignDrawing=true;const p=getPos(e);_coSignCtx.beginPath();_coSignCtx.moveTo(p.x,p.y);},{passive:false,signal:_coSignAc.signal});
-    canvas.addEventListener('touchmove',e=>{e.preventDefault();if(!_coSignDrawing)return;const p=getPos(e);_coSignCtx.lineTo(p.x,p.y);_coSignCtx.stroke();},{passive:false,signal:_coSignAc.signal});
-    canvas.addEventListener('touchend',()=>_coSignDrawing=false,_coSignSig);
-  },100);
-}
-
-function _clearCOCanvas(){
-  if(_coSignCanvas&&_coSignCtx)_coSignCtx.clearRect(0,0,_coSignCanvas.width,_coSignCanvas.height);
+  // Shared e-sign pad (esign.js): listeners + AbortController teardown live there.
+  setTimeout(()=>esignWire('co-sign',{nameId:'co-sign-name'}),100);
 }
 
 function _submitCOSign(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const signerName=(document.getElementById('co-sign-name')?.value||'').trim();
-  if(!signerName){const el=document.getElementById('co-sign-name');if(el){el.style.borderColor='#A32D2D';el.focus();}zAlert('Type the client\'s full name to confirm.',{title:'Name required'});return;}
-  // Check canvas has something drawn
-  let sigData='';
-  if(_coSignCanvas){
-    const d=_coSignCtx.getImageData(0,0,_coSignCanvas.width,_coSignCanvas.height).data;
-    const hasSig=Array.from(d).some((v,i)=>i%4===3&&v>0);
-    if(!hasSig){zAlert('Client needs to sign in the box above.',{title:'Signature required'});return;}
-    sigData=_coSignCanvas.toDataURL('image/png');
+  const r=esignResult('co-sign',{requireDrawn:true});
+  if(!r.ok){
+    if(/name/i.test(r.err)){const el=document.getElementById('co-sign-name');if(el){el.style.borderColor='#A32D2D';el.focus();}zAlert('Type the client\'s full name to confirm.',{title:'Name required'});}
+    else zAlert('Client needs to sign in the box above.',{title:'Signature required'});
+    return;
   }
+  const signerName=r.signerName,sigData=r.sigData;
   // Retrieve coData stored on overlay
   const ov=document.getElementById('co-sign-canvas')?.closest('[style*=fixed]');
   const coData=ov?.dataset?.coData?JSON.parse(ov.dataset.coData):null;

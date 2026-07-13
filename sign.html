@@ -23,6 +23,7 @@ window._loadVendor=function(){if(window._vendorKick)return;window._vendorKick=1;
 addEventListener('load',function(){setTimeout(window._loadVendor,2000);});
 </script>
 <script src="js/icons.js"></script>
+<script src="js/esign.js"></script>
 <script src="js/legal.js"></script>
 <!-- Fonts load without blocking first paint (print-media swap trick); text renders
      with the system fallback and upgrades when the webfont lands. -->
@@ -618,7 +619,7 @@ function _whenSupaReady(){
   });
 }
 let _prop=null,_sigData=null,_payOpt='card',_payFullAmount=false;
-let sigCanvas,sigCtx,signing=false,hasInk=false;
+let hasInk=false; // (canvas state now lives in the shared esign.js pad)
 window._portfolioAccepted=false;
 let _portfolioStep=0;
 let _isPreview=new URLSearchParams(location.search).get('preview')==='1';
@@ -1138,33 +1139,20 @@ async function init(){
 }
 
 function initCanvas(){
-  sigCanvas=document.getElementById('sig-canvas');
-  const dpr=window.devicePixelRatio||1,w=sigCanvas.parentElement.offsetWidth||340;
-  sigCanvas.width=w*dpr;sigCanvas.height=130*dpr;
-  sigCtx=sigCanvas.getContext('2d');
-  sigCtx.scale(dpr,dpr);sigCtx.lineCap='round';sigCtx.lineJoin='round';sigCtx.lineWidth=2.5;sigCtx.strokeStyle='#1a1a18';
-  const pos=e=>{const r=sigCanvas.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};};
-  sigCanvas.addEventListener('mousedown',e=>{signing=true;const p=pos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);});
-  sigCanvas.addEventListener('touchstart',e=>{e.preventDefault();signing=true;const p=pos(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);},{passive:false});
-  sigCanvas.addEventListener('mousemove',e=>{if(!signing)return;const p=pos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();ink();});
-  sigCanvas.addEventListener('touchmove',e=>{e.preventDefault();if(!signing)return;const p=pos(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();ink();},{passive:false});
-  ['mouseup','touchend','mouseleave'].forEach(ev=>sigCanvas.addEventListener(ev,()=>signing=false));
+  // Shared e-sign pad (esign.js) — the SAME capture code as the in-app pads.
+  const c=document.getElementById('sig-canvas');
+  c.width=500;c.height=130;
+  esignWire('sig',{canvasId:'sig-canvas',nameId:'sig-name',clearOnFirstInk:true,
+    onInk:()=>{hasInk=true;document.getElementById('sig-ph').style.display='none';checkReady();},
+    onClear:()=>{hasInk=false;document.getElementById('sig-ph').style.display='';checkReady();}});
 }
-function ink(){hasInk=true;document.getElementById('sig-ph').style.display='none';checkReady();}
-function clearSig(){if(!sigCtx)return;sigCtx.clearRect(0,0,sigCanvas.width,sigCanvas.height);hasInk=false;document.getElementById('sig-ph').style.display='';checkReady();}
+function clearSig(){esignClear('sig');}
 
 function updateTypedSigPreview(){
   const val=document.getElementById('sig-name')?.value||'';
-  if(sigCtx&&val.length>2){
-    const dpr=window.devicePixelRatio||1;
-    const logW=sigCanvas.width/dpr;  // logical width after DPR scale
-    sigCtx.clearRect(0,0,logW,130);
-    sigCtx.font='46px Dancing Script, cursive';  // logical px in already-scaled context
-    sigCtx.fillStyle='#1a1a18';
-    sigCtx.textAlign='center';
-    sigCtx.textBaseline='middle';
-    sigCtx.fillText(val,logW/2,65);  // center of 130px-tall canvas
-    hasInk=false;
+  const pad=(typeof _ESIGN_PADS!=='undefined')?_ESIGN_PADS['sig']:null;
+  if(pad&&!pad.ink&&val.length>2){
+    esignTypedToCanvas('sig',val);
     document.getElementById('sig-ph').style.display='none';
   }
   // Update meta name and initials
@@ -1305,7 +1293,8 @@ function checkReady(){
 function goToPayment(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
   if(!typedOk&&!hasInk){document.getElementById('sign-err').textContent='Type your full name or draw your signature above.';return;}
-  _sigData=sigCanvas.toDataURL('image/png');
+  const _sigR=esignResult('sig',{requireTyped:false,typedAsSig:true});
+  _sigData=_sigR.sigData;
   _logStep('payment_viewed');
   show('pg-pay');scrollTo(0,0);
   _renderPayTiles();

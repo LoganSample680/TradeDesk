@@ -385,6 +385,14 @@ function _geiClearActive(){try{localStorage.removeItem('zp3_active_estimate');}c
 // the open: stale marker (>12h), different account, employee account, bid gone,
 // or bid already sent/decided — in all of those, boot lands on the dashboard.
 function _maybeResumeActiveEstimate(){
+  // Already inside the estimate editor → nothing to resume. Bail WITHOUT
+  // clearing the marker (it belongs to the editor that's open right now).
+  // Without this guard, the boot timer that schedules this (cloud.js, 120ms
+  // after reveal) can fire AFTER the user has already navigated into an
+  // estimate — re-opening it underneath them and reassigning _geiLines,
+  // which discards any unsaved in-memory edits. Same race the WebKit CI
+  // shards kept tripping when a spec opened an estimate right after boot.
+  if(document.querySelector('.pg.active')?.id==='pg-est-generic')return false;
   let m=null;
   try{m=JSON.parse(localStorage.getItem('zp3_active_estimate')||'null');}catch(_e){}
   if(!m||!m.bidId)return false;
@@ -2902,6 +2910,24 @@ async function sendGenericProposal(previewOnly){
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const v=id=>{const _e=document.getElementById(id);return _e?(_e.value||''):'';};
   const{total}=calcGeiTotal();
+  // GC-bid mode: this estimate is a sub's itemized bid to a LINKED GC, not a
+  // homeowner proposal. Route it to the GC as a signable bid (amount + scope +
+  // line count) and stop — never mint a client sign-link. Fires only when
+  // _openBidBuilder stamped the context; normal client sends skip this entirely.
+  if(!previewOnly&&typeof window!=='undefined'&&window._gcBidCtx&&typeof _maybeRouteGcBid==='function'){
+    // Stale-context guard: route as a GC bid ONLY if THIS estimate's client is
+    // the linked GC's card. If the sub abandoned a bid and started a normal
+    // estimate, the client won't match — clear the context and send normally.
+    const _cliCard=(typeof clients!=='undefined')?clients.find(c=>c&&String(c.id)===String(_geiClientId)):null;
+    if(_cliCard&&String(_cliCard.gcLinkId||'')===String(window._gcBidCtx.gcUid)){
+      const _bidScope=(_geiScopeChips&&_geiScopeChips.length)?_geiScopeChips.join(', '):(v('gei-desc')||'');
+      const _bidLines=_geiIsFreeForm?_byoItems.filter(it=>it.on).length:_geiLines.length;
+      const _routed=await _maybeRouteGcBid(total,_bidScope,_bidLines);
+      if(!_routed&&typeof zAlert==='function')zAlert('Couldn\'t send the bid to the GC. Check your connection and try again.',{title:'Bid not sent'});
+      return;
+    }
+    window._gcBidCtx=null; // stale — fall through to the normal client send
+  }
   const trade=_geiTrade||getActiveTrade();
   const bname=escHtml(S.bname||getBusinessName()||'');
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
@@ -3567,7 +3593,7 @@ function _geiSignInPerson(){
     '<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-sizing:border-box">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border)">'+
         '<div style="font-size:17px;font-weight:800">'+svgIcon('✍',{size:17})+' Sign in person</div>'+
-        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0;line-height:1">×</button>'+
+        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove()" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0;line-height:1">×</button>'+
       '</div>'+
       '<div style="padding:14px 18px 28px">'+
         '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
@@ -3593,26 +3619,16 @@ function _geiSignInPerson(){
           '</div>'+
         '</details>'+
         '<button id="gei-ip-confirm-btn" onclick="_geiConfirmInPerson()" disabled style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--bg2);color:var(--text3);font-size:16px;font-weight:700;cursor:not-allowed;font-family:inherit;margin-bottom:10px;transition:background .15s,color .15s">Confirm &amp; close job</button>'+
-        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="width:100%;padding:11px;border-radius:var(--rl,12px);border:none;background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
+        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove()" style="width:100%;padding:11px;border-radius:var(--rl,12px);border:none;background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
   setTimeout(()=>{
     const canvas=document.getElementById('gei-ip-canvas');
     if(!canvas)return;
-    sigCanvas=canvas;
-    const dpr=window.devicePixelRatio||1;
-    const w=canvas.offsetWidth||300;
-    canvas.width=w*dpr;canvas.height=120*dpr;
-    canvas.style.width=w+'px';canvas.style.height='120px';
-    sigCtx=canvas.getContext('2d');
-    sigCtx.scale(dpr,dpr);
-    sigCtx.strokeStyle='#185FA5';sigCtx.lineWidth=2.5;sigCtx.lineCap='round';sigCtx.lineJoin='round';
-    let _ipDn=false;
-    const gp=e=>{const r=canvas.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};};
-    canvas.onmousedown=canvas.ontouchstart=e=>{e.preventDefault();_ipDn=true;const p=gp(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);};
-    canvas.onmousemove=canvas.ontouchmove=e=>{e.preventDefault();if(!_ipDn)return;const p=gp(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();};
-    canvas.onmouseup=canvas.ontouchend=()=>{_ipDn=false;_geiIpCheckReady();};
+    canvas.width=500;canvas.height=140;canvas.style.height='120px';
+    // Shared e-sign pad (esign.js) — same capture code as every signing surface.
+    esignWire('gei-ip',{canvasId:'gei-ip-canvas',nameId:'gei-ip-pname',onInk:()=>_geiIpCheckReady(),onClear:()=>_geiIpCheckReady()});
   },150);
 }
 function _geiIpUpdateTypedSig(){
@@ -3621,15 +3637,12 @@ function _geiIpUpdateTypedSig(){
   if(prev)prev.textContent=val;
   _geiIpCheckReady();
 }
-function _geiIpClearSig(){
-  if(sigCtx&&sigCanvas){const d=window.devicePixelRatio||1;sigCtx.clearRect(0,0,sigCanvas.width/d,sigCanvas.height/d);}
-  _geiIpCheckReady();
-}
+function _geiIpClearSig(){esignClear('gei-ip');}
 function _geiIpCheckReady(){
   const btn=document.getElementById('gei-ip-confirm-btn');
   if(!btn)return;
   const nameOk=(document.getElementById('gei-ip-pname')?.value||'').trim().length>2;
-  const sigOk=nameOk||(typeof hasSignature==='function'&&hasSignature());
+  const sigOk=nameOk||(typeof esignHasInk==='function'&&esignHasInk('gei-ip'));
   const ready=sigOk;
   btn.disabled=!ready;
   btn.style.background=ready?'var(--green)':'var(--bg2)';
@@ -3639,7 +3652,7 @@ function _geiIpCheckReady(){
 async function _geiConfirmInPerson(){
   const pname=(document.getElementById('gei-ip-pname')?.value||'').trim();
   const typed=pname;
-  if(!pname&&!(typeof hasSignature==='function'&&hasSignature())){showToast('Type your name or draw a signature above','⚠️');return;}
+  if(!pname&&!(typeof esignHasInk==='function'&&esignHasInk('gei-ip'))){showToast('Type your name or draw a signature above','⚠️');return;}
   const bid=bids.find(x=>x.id===_geiEditBidId);
   if(!bid){showToast('Bid not found','⚠️');return;}
   const{total}=calcGeiTotal();
@@ -3656,15 +3669,10 @@ async function _geiConfirmInPerson(){
   const _alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
   _alerts.push({name:clientName,bidId:bid.id,clientId:bid.client_id,isPaid:false});
   localStorage.setItem('zp3_schedule_alerts',JSON.stringify(_alerts));
-  // Generate signature image for DB record
-  let sigData='';
-  if(sigCanvas&&typeof hasSignature==='function'&&hasSignature()){sigData=sigCanvas.toDataURL('image/png');}
-  else if(typed){
-    const tc=document.createElement('canvas');tc.width=400;tc.height=100;
-    const tx=tc.getContext('2d');tx.font='46px "Dancing Script",cursive';
-    tx.fillStyle='#1a1a18';tx.textAlign='center';tx.textBaseline='middle';
-    tx.fillText(typed,200,50);sigData=tc.toDataURL('image/png');
-  }
+  // Signature image for the DB record — shared result path (typed name renders
+  // in the one cursive face when nothing was drawn).
+  const _sigR=esignResult('gei-ip',{requireTyped:false,typedAsSig:true});
+  const sigData=_sigR.ok?_sigR.sigData:'';
   // Show confirmation screen immediately
   const ov=document.getElementById('_gei-ip-ov');
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3681,7 +3689,7 @@ async function _geiConfirmInPerson(){
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Signed by</span><strong>'+escHtml(pname)+'</strong></div>'+
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0"><span style="color:#374151">Date &amp; time</span><span>'+dtFmt+'</span></div>'+
       '</div>'+
-      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null;goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('🏠',{size:16,color:'#fff'})+' Back to home</button>'+
+      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('🏠',{size:16,color:'#fff'})+' Back to home</button>'+
     '</div>';
   }
   // Background: write to signed_proposals + upload client hub

@@ -1356,7 +1356,7 @@ function openAssignSubModal(jobId,clientId){
       '<input id="asub-amount" type="number" min="0" step="0.01" placeholder="0.00" style="font-size:15px;padding:10px;font-weight:700"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="document.getElementById(\'_asub-ov\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
-      '<button onclick="_saveSubAssignment('+jobId+','+clientId+')" style="padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Assign</button>'+
+      '<button id="asub-save" onclick="_saveSubAssignment('+jobId+','+clientId+')" style="padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Assign</button>'+
     '</div>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -1371,6 +1371,13 @@ function _saveSubAssignment(jobId,clientId){
   if(!j.subs)j.subs=[];
   j.subs.push({subId:sub.id,subName:sub.name,desc,amount,paid:false,paidDate:''});
   saveAll();
+  // The live pipe: a linked sub gets the job ADDRESS + start date the moment
+  // they're assigned — that's when they need it (mileage, routing). Address
+  // only: never the job name, description, amount, or client details.
+  if(typeof _offerJobToLinkedSub==='function'&&sub.id){
+    const _asBid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+    _offerJobToLinkedSub(sub.id,{addr:j.addr||(_asBid&&_asBid.addr)||'',date:j.start||''});
+  }
   document.getElementById('_asub-ov')?.remove();
   showToast(sub.name+' assigned','✓');
   openJobSheet(clientId);
@@ -1396,6 +1403,20 @@ function markSubPaid(jobId,subIdx,clientId){
     expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   }
   saveAll();showToast('Marked paid — logged as contract-labor expense','✓');
+  // The live pipe: if this sub runs their own TradeDesk account (linked at
+  // invite redemption), offer them this payment for THEIR books. Fire-and-
+  // forget — a no-op for unlinked subs, and never blocks the local flow.
+  // Scope is deliberately tight: amount + date + job ADDRESS only (the sub
+  // needs the address for mileage records). Never job names/descriptions —
+  // those can carry the GC's client details.
+  if(typeof _offerPaymentToLinkedSub==='function'&&sp.subId){
+    const _spBid2=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+    // Prefer the job's OWN address, fall back to its bid's — mirrors the
+    // assignment path (_saveSubAssignment). A job with a direct address and no
+    // bid (pipe-sourced or hand-scheduled) must still send its address so the
+    // sub's mileage records stay accurate.
+    _offerPaymentToLinkedSub(sp.subId,{amount:sp.amount,date:sp.paidDate,addr:j.addr||(_spBid2&&_spBid2.addr)||''});
+  }
   openJobSheet(clientId);
 }
 
@@ -1772,7 +1793,6 @@ function _startJobComplete(jobId){
   if(adjOpen&&_adjType==='increase'){_showJobDoneSignStep(jobId);return;}
   closeTopModal();showJobDebrief(jobId);
 }
-let _jobSignCanvas=null,_jobSignCtx=null,_jobSignDrawing=false;
 function _showJobDoneSignStep(jobId){
   const box=document.querySelector('.zmodal-overlay .zmodal');if(!box)return;
   const j=jobs.find(x=>x.id===jobId);
@@ -1790,7 +1810,7 @@ function _showJobDoneSignStep(jobId){
     '<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:6px">Client signature</div>'+
     '<canvas id="job-sign-canvas" width="500" height="130" style="width:100%;height:130px;border:1.5px solid var(--border2);border-radius:var(--r);background:var(--bg2);touch-action:none;cursor:crosshair;display:block;margin-bottom:4px"></canvas>'+
     '<div style="display:flex;justify-content:flex-end;margin-bottom:10px">'+
-      '<button type="button" onclick="_clearJobSignCanvas()" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button>'+
+      '<button type="button" onclick="esignClear(\'job-sign\')" style="font-size:11px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;text-decoration:underline">Clear</button>'+
     '</div>'+
     '<div class="f" style="margin-bottom:16px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">Or type full name to confirm</label>'+
@@ -1800,28 +1820,14 @@ function _showJobDoneSignStep(jobId){
       '<button onclick="markJobDone('+jobId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">← Back</button>'+
       '<button onclick="_confirmJobDoneSign('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Confirm &amp; complete ✓</button>'+
     '</div>';
-  setTimeout(()=>{
-    const canvas=document.getElementById('job-sign-canvas');if(!canvas)return;
-    _jobSignCanvas=canvas;_jobSignCtx=canvas.getContext('2d');
-    _jobSignCtx.strokeStyle='#111';_jobSignCtx.lineWidth=2;_jobSignCtx.lineCap='round';_jobSignCtx.lineJoin='round';
-    const getPos=e=>{const r=canvas.getBoundingClientRect();const src=e.touches?e.touches[0]:e;return{x:(src.clientX-r.left)*(canvas.width/r.width),y:(src.clientY-r.top)*(canvas.height/r.height)};};
-    canvas.addEventListener('mousedown',e=>{_jobSignDrawing=true;const p=getPos(e);_jobSignCtx.beginPath();_jobSignCtx.moveTo(p.x,p.y);});
-    canvas.addEventListener('mousemove',e=>{if(!_jobSignDrawing)return;const p=getPos(e);_jobSignCtx.lineTo(p.x,p.y);_jobSignCtx.stroke();});
-    canvas.addEventListener('mouseup',()=>_jobSignDrawing=false);
-    canvas.addEventListener('touchstart',e=>{e.preventDefault();_jobSignDrawing=true;const p=getPos(e);_jobSignCtx.beginPath();_jobSignCtx.moveTo(p.x,p.y);},{passive:false});
-    canvas.addEventListener('touchmove',e=>{e.preventDefault();if(!_jobSignDrawing)return;const p=getPos(e);_jobSignCtx.lineTo(p.x,p.y);_jobSignCtx.stroke();},{passive:false});
-    canvas.addEventListener('touchend',()=>_jobSignDrawing=false);
-  },80);
+  // Shared e-sign pad (esign.js) — same capture code as every signing surface.
+  setTimeout(()=>esignWire('job-sign',{nameId:'job-sign-name'}),80);
 }
-function _clearJobSignCanvas(){if(_jobSignCanvas&&_jobSignCtx)_jobSignCtx.clearRect(0,0,_jobSignCanvas.width,_jobSignCanvas.height);}
 function _confirmJobDoneSign(jobId){
+  // Typed name OR a drawn signature satisfies the sign-off (same rule as before).
+  const r=esignResult('job-sign',{requireTyped:false});
   const typed=(document.getElementById('job-sign-name')?.value||'').trim();
-  let sigData='';
-  if(_jobSignCanvas){
-    const d=_jobSignCtx.getImageData(0,0,_jobSignCanvas.width,_jobSignCanvas.height).data;
-    const hasSig=Array.from(d).some((v,i)=>i%4===3&&v>0);
-    if(hasSig)sigData=_jobSignCanvas.toDataURL('image/png');
-  }
+  const sigData=r.ok?r.sigData:'';
   if(!typed&&!sigData){zAlert('Type the client\'s name or have them sign in the box above.',{title:'Signature required'});return;}
   if(_jobDoneCapture){_jobDoneCapture.signerName=typed;_jobDoneCapture.sigData=sigData;}
   closeTopModal();showJobDebrief(jobId);

@@ -985,6 +985,40 @@ it manually on their own schedule.
 
 ---
 
+### 12.8 Every New Feature or Change Gets a Local-Runner Flow Test — Architected Together, Run Locally Before Ship (MANDATORY)
+
+> Owner mandate (2026-07-13): offline shards prove functions in isolation; a live
+> flow test on the **self-hosted local runner** (localhost:8788 → real Dev
+> Supabase, `playwright.flow.config.js` / `flow-tests-selfhosted.yml`) is what
+> proves the feature actually works end-to-end against the real backend. Both,
+> every time — not one or the other.
+
+For **every new feature AND every change to an existing flow**, before it's "good
+to go":
+
+1. **Architect the flow test together.** Claude proposes the flow-test design —
+   which real user journey it drives, the `step()`s, the `rule`/`suspect` for each,
+   the privacy/edge assertions — and confirms that shape **with the owner** before
+   building it. This is a "you and I" step, not a Claude-only decision: the owner
+   signs off on what the test covers so it exercises the journey that actually
+   matters, not just the happy path Claude assumed.
+2. **Build it against the real backend.** New `tests/flow/*.spec.js` following the
+   `estimate-build.spec.js` reference shape (§12.1–12.6): `step()` on every action,
+   honest interaction counts, `report()` + baseline gate, leaves its seed data
+   (§12.7). Wire two-account/role journeys where the feature crosses accounts.
+3. **Run it on the LOCAL RUNNER and confirm green** — the self-hosted runner
+   (localhost → real Supabase, zero Cloudflare cost), NOT the cloud flow job and NOT
+   just the offline shards. Report the actual green result. A feature is not "good
+   to go" until its local-runner flow test passes for real.
+4. **Then** proceed through the normal Loop (§0): offline shards + this flow run
+   green → screenshot → owner review → deploy on request.
+
+Skip this only for changes with genuinely no runtime user-flow surface (pure docs,
+comments, a test-only edit). Everything a real user can touch gets a local-runner
+flow test architected with the owner and run green first.
+
+---
+
 ## 13. Agentic Self-Heal Loop (Slack → Claude → Regression Test → PR)
 
 The endgame: a bug reported by a real user heals itself, forever.

@@ -2634,6 +2634,40 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.sentBid, 'a sent bid must never be auto-resumed into').toBe(false);
     });
 
+    // Regression guard for the WebKit CI race: the boot chain schedules
+    // _maybeResumeActiveEstimate on a 120ms timer (cloud.js). If the user (or
+    // a spec) opens an estimate BEFORE that timer fires, the hijack used to
+    // re-open the same bid underneath them — reassigning _geiLines and
+    // discarding unsaved in-memory rows. The fix: an already-active estimate
+    // editor is never hijacked, and the marker survives untouched.
+    test('auto-resume: never hijacks while the estimate editor is already open (late boot timer)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90112, name: 'Open Editor Client', addr: '12 Open Rd' };
+        clients = clients.filter(x => x.id !== 90112).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90112);
+        localStorage.removeItem('zp3_active_estimate');
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2); // estimate page active + auto-resume marker written
+        _geiLines.push({ id: 991, desc: 'Seeded row', qty: 1, price: 500 });
+        const linesBefore = _geiLines.length;
+        const linesRef = _geiLines;
+        // The late boot timer fires while the editor is open — must be a no-op
+        const resumed = _maybeResumeActiveEstimate();
+        const out = {
+          resumed,
+          stillOnEstimate: document.querySelector('.pg.active')?.id === 'pg-est-generic',
+          markerKept: !!localStorage.getItem('zp3_active_estimate'),
+          linesUntouched: _geiLines === linesRef && _geiLines.length === linesBefore,
+        };
+        goPg('pg-dash'); // deliberate exit — clean up editor + marker for later tests
+        return out;
+      });
+      expect(r.resumed, 'late boot timer must not hijack an already-open editor').toBe(false);
+      expect(r.stillOnEstimate).toBe(true);
+      expect(r.markerKept, 'marker must survive — it belongs to the open editor').toBe(true);
+      expect(r.linesUntouched, 'in-memory lines must never be reassigned by the late timer').toBe(true);
+    });
+
     test('_estimateTypeLabel — spelled out, never an acronym', async () => {
       const r = await page.evaluate(() => ({
         tm: _estimateTypeLabel({ isTM: true }),

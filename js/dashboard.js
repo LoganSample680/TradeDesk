@@ -447,6 +447,15 @@ function _empToggleTask(jobId,taskId){
   saveAll();renderDash();
 }
 
+// One-tap mileage log for a pipe-landed job — the whole reason a linked
+// contractor's address crosses the pipe is so the drive there gets tracked.
+// Looks the job up by id (not baked into the onclick string) so the address/
+// client name never need HTML+JS double-escaping.
+function _dashLogPipeMileage(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const c=getClientById(j.client_id);
+  if(typeof openLogTripModal==='function')openLogTripModal({toAddress:j.addr||'',clientId:j.client_id||'',clientName:(c&&c.name)||'',purpose:'Job site'});
+}
 function renderDashToday(){
   const el=document.getElementById('dash-today');if(!el)return;
   const tk=todayKey();
@@ -486,6 +495,19 @@ function renderDashToday(){
     const c=getClientById(j.client_id);
     const isEst=j.eventType==='estimate';
     const isActive=j.start<=tk&&addDays(j.start,(parseInt(j.days)||1)-1)>=tk;
+    // One-tap mileage shortcut, appended to whichever crew-row branch
+    // renders below — pipe-landed jobs only, and only when the job itself
+    // carries an address (j.addr is what the modal prefills — the client
+    // card's address is deliberately NOT a fallback here, since pipe payer
+    // cards never store addresses).
+    const _mileBtn=(j.pipeSourced&&j.addr)?
+      '<button onclick="event.stopPropagation();_dashLogPipeMileage('+j.id+')" style="margin-left:8px;padding:4px 10px;border-radius:20px;border:1px solid var(--green-mid,#0E6B39);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--green-mid,#0E6B39);white-space:nowrap">'+svgIcon('🚗',{size:11})+' Log mileage</button>':'';
+    // Sub side: bid your piece back to the GC — the job address arrived via the
+    // pipe, so the composer opens with it prefilled (no searching). Flips to a
+    // "Bid sent" pill once sent. Same pipe-sourced + has-address gate as mileage.
+    const _bidBtn=(j.pipeSourced&&j.addr)?(j.bidSentAt
+      ?'<span style="margin-left:8px;padding:4px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);font-size:11px;font-weight:700;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid sent</span>'
+      :'<button onclick="event.stopPropagation();typeof _openBidBuilder===\'function\'&&_openBidBuilder('+j.id+')" style="margin-left:8px;padding:4px 10px;border-radius:20px;border:1px solid var(--blue);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid this job</button>'):'';
     // Quick crew assignment row (owner only, non-estimate jobs)
     const _crewRow=(!_isEmployee&&!isEst)?(()=>{
       if(_crewEmps.length>0){
@@ -495,12 +517,14 @@ function renderDashToday(){
           (_aEmp?'<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">'+svgIcon('👤',{size:11})+' '+escHtml(_aEmp.name)+'</span>':
                  '<span style="font-size:11px;color:var(--text3)">No crew assigned</span>')+
           '<button onclick="_openCrewAssignSheet('+j.id+')" style="margin-left:auto;padding:4px 12px;border-radius:20px;border:1px solid var(--border2);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue)">+ Assign</button>'+
+          _mileBtn+
         '</div>';
       }
       const _days=parseInt(j.days)||1;
       return '<div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">'+
         '<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">'+svgIcon('👤',{size:11})+' You</span>'+
         '<span style="font-size:11px;color:var(--text3);margin-left:2px">'+_days+' day'+(_days!==1?'s':'')+' on schedule</span>'+
+        _mileBtn+
       '</div>';
     })():'';
     return '<div style="padding:11px 0;border-bottom:1px solid var(--border)">'+
@@ -1092,6 +1116,15 @@ function _markDepositCash(bidId){
 function renderTodayFeed(){
   const el=document.getElementById('dash-money-feed');if(!el)return;
   const tk=todayKey();
+  // GC side: a linked sub's bid awaiting Review & Sign is an ACTION-REQUIRED
+  // item pinned to the very top of the feed (research-backed: authenticated
+  // in-app action for a repeat platform user, not a sent link). Kick the async
+  // load once; re-render when it lands. Harmless for accounts with no bids ([]).
+  if(typeof _subBids!=='undefined'&&_subBids===null&&!window._subBidsKicked&&typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser){
+    window._subBidsKicked=true;
+    if(typeof _loadSubBids==='function')_loadSubBids().then(()=>renderTodayFeed());
+  }
+  const _bidInbox=(typeof _subBidInboxHTML==='function')?_subBidInboxHTML(typeof _subBids!=='undefined'?_subBids:null):'';
   const finalPayItems=[],depositItems=[],scheduleItems=[],pendingItems=[],buildItems=[],alertItems=[];
 
   // ALERTS — License expiring/expired (always first, outside sections)
@@ -1366,8 +1399,9 @@ function renderTodayFeed(){
 
   if(!totalShown){
     const msg='You\'re caught up — nothing to chase right now.';
-    el.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text3)">'+msg+'</div>';
-    if(_feedSub)_feedSub.textContent='all caught up';
+    // A pending bid still needs the GC even when everything else is clear.
+    el.innerHTML=_bidInbox||('<div style="padding:14px;font-size:13px;color:var(--text3)">'+msg+'</div>');
+    if(_feedSub)_feedSub.textContent=_bidInbox?'1 bid to sign':'all caught up';
     _mmtFeedEnter(el);
     return;
   }
@@ -1382,6 +1416,7 @@ function renderTodayFeed(){
   }
 
   el.innerHTML=
+    _bidInbox+
     (alertItems.length?'<div>'+alertItems.join('')+'</div>':'')+
     _sec('build',svgIcon('✏',{size:14}),'Build','var(--text2)',buildItems,showBuild)+
     _sec('pending',svgIcon('📨',{size:14}),'Pending','#7c3aed',pendingItems,showPending)+

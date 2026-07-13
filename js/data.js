@@ -27,7 +27,7 @@ Object.defineProperty(window,'editClientId',{get:()=>editClientId,set:v=>{editCl
 let estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
 let _pendingSignToken=null; // {bidId,token,proposalKey} — committed to bid only when SMS/email is actually sent
 let _pendingShareData=null; // {url,cname,bname,cphone,cemail} for the just-generated proposal link — read by _proposalShareData()
-let sigCanvas,sigCtx,isSigning=false;
+// (sigCanvas/sigCtx/isSigning globals deleted — all signature pads now live in js/esign.js)
 let trackerTab='income',cdTab='overview',trackerYear=new Date().getFullYear();
 let selectedColor='#185FA5';
 let schedType='estimate';

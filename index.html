@@ -690,7 +690,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 @media (prefers-reduced-motion:reduce){.zmodal{animation:none}}
 .zmodal-title{font-size:16px;font-weight:800;margin-bottom:8px}
 .zmodal-msg{font-size:14px;color:var(--text-2);line-height:1.5;margin-bottom:18px}
-.zmodal-btns{display:flex;gap:8px;justify-content:flex-end}
+.zmodal-btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .overdue-banner{background:var(--c-red-soft);border:1px solid var(--c-red-edge);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 .lien-banner{background:var(--c-deep);color:var(--c-deep-soft);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 
@@ -2103,7 +2103,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-title">Fleet &amp; Team</div>
     <div style="display:flex;gap:6px">
       <button id="fleet-add-btn" class="btn btn-sm btn-p" onclick="openAddVehicleModal(-1)" style="display:none">+ Vehicle</button>
-      <button id="team-add-btn" class="btn btn-sm btn-p" onclick="openAddEmployeeModal()">+ Add member</button>
+      <button id="team-add-btn" class="btn btn-sm btn-p" onclick="openAddEmployeeModal()">+ Add W-2 Employee</button>
     </div>
   </div>
   <div class="fbar" style="margin-bottom:16px;padding-left:2px">
@@ -2118,10 +2118,11 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Employees</div>
       <div id="team-page-list"></div>
     </div>
+    <div class="card" style="margin-top:12px;display:none" id="payroll-setup-card"></div>
     <div class="card" style="margin-top:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Subcontractors</div>
-        <button onclick="openAddSubModal()" class="btn btn-sm btn-p" style="font-size:11px">+ Add sub</button>
+        <button onclick="openAddSubModal()" class="btn btn-sm btn-p" style="font-size:11px">+ Add 1099 Sub Contractor</button>
       </div>
       <div id="team-page-subs"></div>
     </div>
@@ -2171,7 +2172,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)"><span data-ico="👥" data-ico-size="14"></span> Hiring</button>
   </div>
   <div id="tr-income">
-    
     <input type="hidden" id="inc-date"><input type="hidden" id="inc-client-sel">
     <input type="hidden" id="inc-type"><input type="hidden" id="inc-amount">
     <input type="hidden" id="inc-pay"><input type="hidden" id="inc-inv">
@@ -2253,10 +2253,14 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong><span data-ico="⚠" data-ico-size="13"></span> Not a licensed tax tool.</strong> These numbers are estimates only — not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
   <div class="fbs" style="margin-bottom:14px">
     <button type="button" class="fb active" id="tx-tab-current" onclick="setTaxTab('current',this)">Current year</button>
+    <button type="button" class="fb" id="tx-tab-payroll" onclick="setTaxTab('payroll',this);renderPayrollSummary()">Payroll</button>
+  </div>
+  <div id="tx-payroll-pane" style="display:none">
+    <div id="pay-summary-body"></div>
   </div>
   <div id="tx-current-pane">
 
-  
+
   <div id="tx-reserve-banner" style="margin-bottom:10px"></div>
 
   
@@ -3443,6 +3447,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 </script>
 <script src="js/constants.js"></script>
 <script src="js/utils.js"></script>
+<script src="js/esign.js"></script>
 <script src="js/data.js"></script>
 <script src="js/navigation.js"></script>
 <script src="js/cloud.js"></script>
@@ -3457,8 +3462,10 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/proposals.js"></script>
 <script src="js/sales-tax.js"></script>
 <script src="js/tax.js"></script>
+<script src="js/payroll-onboarding.js"></script>
 <script src="js/finance.js"></script>
 <script src="js/timelog.js"></script>
+<script src="js/payroll-summary.js"></script>
 <script src="js/generic-estimate.js"></script>
 <script src="js/contracts.js"></script>
 <script src="js/agreements.js"></script>
