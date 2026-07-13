@@ -2993,13 +2993,16 @@ async function sendGenericProposal(previewOnly){
   // sign.html's legacy-proposal patcher keys on the "<div>N. <strong>Title:"
   // shape — preserved verbatim by the renderer below.
   const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
+  // Deposit amount/percentage is already shown on the proposal itself (the
+  // deposit/balance summary line) — not restated here as its own clause,
+  // same rule as lien rights and the cancellation-notice reference (owner
+  // directive 2026-07-13). "Cancellation & Deposits" stays: it explains what
+  // happens to the deposit on cancellation, not what the deposit IS.
   const _modeTerms=_geiIsTM?[
     ['Contract type',`Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
-    ['Mobilization deposit',`${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.`],
     ['Cancellation &amp; Deposits',_cancelClause],
     ['Billing',`${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.`],
   ]:[
-    ['Deposit',`${_tmDepPct}% due before work begins and before a start date is scheduled. Balance due upon completion.`],
     ['Cancellation &amp; Deposits',_cancelClause],
   ];
   const _termsClauses=[

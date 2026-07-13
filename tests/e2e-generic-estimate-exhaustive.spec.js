@@ -2748,16 +2748,19 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(byo.hasDepRow).toBe(true);
 
       // Numbering: generated from array order, sequential from 1 in both modes.
-      expect(tm.clauses.length).toBe(13);
-      expect(byo.clauses.length).toBe(11);
+      // Deposit amount/percentage is NOT its own clause — it's already shown
+      // as its own line in the proposal's deposit/balance summary, so restating
+      // it in Terms & Conditions would be redundant (owner directive 2026-07-13).
+      expect(tm.clauses.length).toBe(12);
+      expect(byo.clauses.length).toBe(10);
       tm.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
       byo.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
 
       // Mode-specific heads (sign.html's legacy patcher depends on these shapes).
       expect(tm.clauses[0].title).toBe('Contract type');
-      expect(tm.clauses[1].title).toBe('Mobilization deposit');
-      expect(tm.clauses[3].title).toBe('Billing');
-      expect(byo.clauses[0].title).toBe('Deposit');
+      expect(tm.clauses[1].title).toBe('Cancellation &amp; Deposits');
+      expect(tm.clauses[2].title).toBe('Billing');
+      expect(byo.clauses[0].title).toBe('Cancellation &amp; Deposits');
 
       // Shared tail: same titles in the same order in both modes...
       const sharedTitles = ['Cancellation &amp; Deposits', 'Change Orders', 'Limitation of Liability', 'Mechanic&#39;s Lien', 'Finance Charges', 'Workmanship Warranty', 'Permits &amp; Inspections', 'Schedule &amp; Delays', 'Insurance', 'Dispute Resolution'];
