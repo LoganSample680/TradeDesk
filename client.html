@@ -1958,7 +1958,7 @@ function _showCODoc(bidId,coNum){
     h+=esignPadHTML('co-hub',{nameId:'co-hub-sign-name'});
     // The ONE shared consent block — literal same text as the in-person CO
     // sign and the job price-increase sign-off.
-    h+=esignConsentHTML('co-hub',ESIGN_NOTE_CHANGE_ORDER,{consentId:'co-hub-ck'});
+    h+=esignConsentHTML('co-hub',ESIGN_NOTE_CHANGE_ORDER);
     h+='<div id="co-hub-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:6px"></div>';
     h+='<button id="co-hub-sign-btn" onclick="_submitCOHubSign('+bid.id+','+co.coNum+')" style="width:100%;padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:14})+' Sign Change Order</button>';
   }
@@ -1982,7 +1982,7 @@ async function _submitCOHubSign(bidId,coNum){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   const co=(bid.changeOrders||[]).find(x=>x.coNum===coNum);if(!co||co.signedAt)return;
   const errEl=document.getElementById('co-hub-err');
-  const r=esignResult('co-hub',{minNameLen:3,typedAsSig:true,requireConsent:true,nameErr:'Type your full name to sign this change order.'});
+  const r=esignResult('co-hub',{minNameLen:3,typedAsSig:true,nameErr:'Type your full name to sign this change order.'});
   if(!r.ok){if(errEl)errEl.textContent=r.err;return;}
   const name=r.signerName,sigData=r.sigData;
   const btn=document.getElementById('co-hub-sign-btn');

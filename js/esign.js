@@ -24,26 +24,24 @@
 //           uppercase label, signature image card, Signed By / Date grid,
 //           optional extra cells) — used by the client hub docs, sign.html,
 //           and the contractor's own record views.
-//           esignConsentHTML(prefix,terms) → THE consent block (owner
-//           directive 2026-07-13): a required "I agree" checkbox + the terms
-//           collapsed behind a click-to-expand accordion (same visual as the
-//           proposal's own Terms & Conditions toggle) so the disclosure never
-//           crowds the signature. Pass requireConsent:true to esignResult to
-//           gate on it. The SENTENCE differs by document (a change order
-//           modifies a contract, an estimate IS the contract, a diagnostic
-//           charge is a one-line approval) — that's necessarily different text
-//           — but every one ends in the same E-SIGN citation, sits in the same
-//           checkbox+accordion shape, and never restates deposit/cancellation
-//           terms that are already in the document's own Terms & Conditions.
+//           esignConsentHTML(prefix,terms) → THE terms block (owner
+//           directive 2026-07-13): a plain "by signing above, you agree to
+//           the terms below" line, then the terms collapsed behind a
+//           click-to-expand accordion (same visual as the proposal's own
+//           Terms & Conditions toggle). No separate "I agree" checkbox — the
+//           signature itself is the affirmative consent under E-SIGN/UETA;
+//           a checkbox next to it was redundant friction, not extra
+//           protection. For a full proposal (estimate) the accordion holds
+//           the ENTIRE numbered Terms & Conditions clause list (deposit
+//           excluded — that's its own line in the proposal summary, not
+//           restated here); for a change order / job sign-off / diagnostic
+//           charge, which don't establish new terms of their own, it's the
+//           short document-specific sentence below.
 const ESIGN_CITE = '15 U.S.C. §7001 et seq.';
-// Shared verbatim sentences — a change order and a job price-increase are the
+// Shared verbatim sentence — a change order and a job price-increase are the
 // SAME kind of document (modifying an existing contract), so they carry the
 // literal same disclosure, not just the same box.
 const ESIGN_NOTE_CHANGE_ORDER = 'You agree to modify the original contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature under applicable state and federal electronic transaction law (' + ESIGN_CITE + ').';
-// Deposit/balance timing and cancellation rights are already stated in full in
-// the document's own Terms & Conditions — this box is deliberately short and
-// never repeats them (owner directive 2026-07-13: no redundant restating).
-const ESIGN_NOTE_ESTIMATE = 'You agree to the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (' + ESIGN_CITE + ').';
 
 const _ESIGN_PADS = {};
 
@@ -201,29 +199,24 @@ function esignResult(prefix, opts){
   if (!inked && opts.typedAsSig && signerName) { esignTypedToCanvas(prefix, signerName); inked = true; }
   if (opts.requireDrawn && !inked)
     return fail(opts.drawErr || 'Sign in the box above.');
-  if (opts.requireConsent) {
-    const ck = document.getElementById(opts.consentId || (prefix + '-ck'));
-    if (!ck || !ck.checked) return fail(opts.consentErr || 'Check the box to agree before signing.');
-  }
   const sigData = inked ? pad.canvas.toDataURL('image/png') : '';
   return { ok: true, err: '', sigData, signerName, signedAt: new Date().toISOString() };
 }
 
-// The ONE consent block: required "I agree" checkbox + the terms collapsed
-// behind a click-to-expand accordion (same visual language as the proposal's
-// own Terms & Conditions toggle in legal.js _applyTermsAccordion) so the
-// disclosure never crowds the signature pad above it.
+// The ONE terms block (owner directive 2026-07-13): a plain "by signing above,
+// you agree to the terms below" line, then the terms collapsed behind a
+// click-to-expand accordion (same visual language as the proposal's own
+// Terms & Conditions toggle in legal.js _applyTermsAccordion) so the
+// disclosure never crowds the signature pad above it. No separate "I agree"
+// checkbox — the signature itself IS the affirmative consent; a checkbox
+// next to it was redundant friction, not extra protection.
 function esignConsentHTML(prefix, termsHtml, opts){
   opts = opts || {};
-  const ckId = opts.consentId || (prefix + '-ck');
-  const title = opts.title || 'I agree to this electronic agreement';
-  return '<div style="padding:14px;background:var(--bg,#fff);border:1.5px solid var(--border2,#d1d5db);border-radius:10px;margin-bottom:20px">' +
-    '<label style="display:flex;align-items:flex-start;gap:12px;cursor:pointer;margin-bottom:10px">' +
-      '<input type="checkbox" id="' + _esignEsc(ckId) + '"' + (opts.onChange ? ' onchange="' + _esignEsc(opts.onChange) + '"' : '') + ' style="width:20px;height:20px;min-width:20px;accent-color:var(--ink,#1a1a18);margin-top:1px;cursor:pointer">' +
-      '<div style="font-size:13px;font-weight:700;color:var(--text,#111)">' + _esignEsc(title) + '</div>' +
-    '</label>' +
+  const lead = opts.lead || 'By signing above, you agree to the terms below.';
+  return '<div style="font-size:12px;color:var(--text3,#6b7280);margin-bottom:10px;padding:0 2px">' + _esignEsc(lead) + '</div>' +
+    '<div style="padding:14px;background:var(--bg,#fff);border:1.5px solid var(--border2,#d1d5db);border-radius:10px;margin-bottom:20px">' +
     '<button type="button" onclick="esignToggleTerms(\'' + prefix + '\')" style="display:flex;align-items:center;width:100%;background:#f8fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:9px 12px;font-family:inherit;cursor:pointer;transition:background .15s,border-color .15s">' +
-      '<span style="flex:1;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1a365d;text-align:left">Terms</span>' +
+      '<span style="flex:1;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1a365d;text-align:left">Terms &amp; Conditions</span>' +
       '<span id="' + prefix + '-terms-hint" style="font-size:11px;font-weight:600;color:#94a3b8;white-space:nowrap;margin-left:8px">Tap to view ›</span>' +
     '</button>' +
     '<div id="' + prefix + '-terms-body" style="display:none;font-size:11px;color:var(--text3,#6b7280);line-height:1.6;padding:10px 2px 0">' + termsHtml + '</div>' +

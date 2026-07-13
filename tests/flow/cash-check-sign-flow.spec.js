@@ -32,11 +32,9 @@ async function signAndPay(p, ctx, bidId, method) {
     if (onColor) await signPage.locator('#pg-color-pick button.btn').click({ timeout: 8000 }).catch(() => {});
     const padReady = await signPage.waitForSelector('#sig-name', { state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
     if (!padReady) { got = `attempt=${i + 1} sign pad never revealed`; await signPage.waitForTimeout(2000); continue; }
-    // Type the legal name + accept UETA → Continue to payment unlocks.
+    // Type the legal name → Continue to payment unlocks (no separate agreement checkbox).
     await signPage.locator('#sig-name').click({ timeout: 8000 }).catch(() => {});
     await signPage.locator('#sig-name').pressSequentially('Jordan E Client', { delay: 0 }).catch(() => {});
-    const ck = signPage.locator('#sig-ck');
-    if (await ck.count()) await ck.check({ timeout: 5000 }).catch(() => {});
     await signPage.waitForTimeout(300);
     if (!(await signPage.locator('#sign-btn').isEnabled().catch(() => false))) { got = `attempt=${i + 1} Continue-to-payment never enabled`; await signPage.waitForTimeout(1500); continue; }
     await signPage.locator('#sign-btn').click({ timeout: 8000 }).catch(() => {});            // → pg-pay

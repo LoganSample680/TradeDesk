@@ -757,7 +757,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (actionOn !== null) expect(actionOn || colorPickOn).toBe(true);
   });
 
-  test('checkReady — sign-btn disabled before name/UETA filled', async () => {
+  test('checkReady — sign-btn disabled before a name/signature is entered', async () => {
     const disabled = await page.evaluate(() => {
       const btn = document.getElementById('sign-btn');
       return btn ? btn.disabled : null;
@@ -765,12 +765,10 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (disabled !== null) expect(disabled).toBe(true);
   });
 
-  test('checkReady — sign-btn enabled after name + UETA checked', async () => {
+  test('checkReady — sign-btn enabled once a name is typed (no separate agreement checkbox)', async () => {
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
-      const uetaEl = document.getElementById('sig-ck');
       if (nameEl) { nameEl.value = 'Bob Garcia'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
-      if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
     });
     await page.waitForTimeout(200);
@@ -914,7 +912,7 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
     expect(count).toBe(0);
   });
 
-  test('checkReady — sign-btn enabled with name + ueta (no EPA checkbox required)', async () => {
+  test('checkReady — sign-btn enabled with just a typed name (no EPA checkbox, no agreement checkbox)', async () => {
     await page.evaluate(() => {
       // The pad (#sig-name/#sig-canvas) only renders once the sign step is
       // actually reached — for an EPA proposal that's via the EPA review
@@ -924,9 +922,7 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
     await page.waitForTimeout(200);
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
-      const uetaEl = document.getElementById('sig-ck');
       if (nameEl) { nameEl.value = 'Alice Smith'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
-      if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
     });
     const disabled = await page.evaluate(() => document.getElementById('sign-btn')?.disabled ?? null);
@@ -1245,9 +1241,7 @@ test.describe('sign.html — Stripe payment flow', () => {
 
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
-      const uetaEl = document.getElementById('sig-ck');
       if (nameEl) { nameEl.value = 'Bob Garcia'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
-      if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
     });
     await page.waitForTimeout(200);
@@ -2027,7 +2021,6 @@ test.describe('sign.html — step funnel analytics', () => {
       if (typeof _goToSignPad === 'function') _goToSignPad(); else _openSignPad();
     });
     await page.fill('#sig-name', 'Alice Smith');
-    await page.check('#sig-ck');
     await page.waitForTimeout(200);
     await page.evaluate(() => { goToPayment(); });
     await page.evaluate(() => { _paySign('cash'); });

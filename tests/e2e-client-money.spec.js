@@ -299,10 +299,9 @@ test.describe('Client management — CRUD and validation', () => {
       _submitDiagnosticSign(bid.id, 501);
       const rejected = bid.signed !== true && payOpened === null;
 
-      // 3b. Draw a signature + type the name + tick the agreement box → signed, THEN pay opens.
+      // 3b. Draw a signature + type the name → signed, THEN pay opens.
       document.getElementById('diag-sign-name').value = 'Karen Doe';
       if (_ESIGN_PADS['diag-sign']) _ESIGN_PADS['diag-sign'].ctx.fillRect(10, 10, 60, 40); // simulate a drawn stroke via the SHARED pad (alpha>0)
-      const diagCk = document.getElementById('diag-sign-ck'); if (diagCk) diagCk.checked = true;
       _submitDiagnosticSign(bid.id, 501);
 
       const out = {
@@ -1993,7 +1992,6 @@ test.describe('Job completion — price change signature gate', () => {
       document.getElementById('adj-reason').value = 'Client added a second wall';
       _startJobComplete(jId);
       document.getElementById('job-sign-name').value = 'Alice Homeowner';
-      const ck = document.getElementById('job-sign-ck'); if (ck) ck.checked = true;
       _confirmJobDoneSign(jId);
       const b = bids.find(x => x.id === bId);
       return {
@@ -2038,7 +2036,6 @@ test.describe('Job completion — price change signature gate', () => {
       document.getElementById('adj-reason').value = 'Added outlet';
       _startJobComplete(jId);
       document.getElementById('job-sign-name').value = 'Bob Client';
-      const ck = document.getElementById('job-sign-ck'); if (ck) ck.checked = true;
       _confirmJobDoneSign(jId);
     }, [BID_ID, JOB_ID]);
     const co = await page.evaluate(([bId]) => {

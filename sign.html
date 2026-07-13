@@ -1050,9 +1050,22 @@ async function init(){
       const _cs=_cancelRule?_cancelRule.statute:(_prop.cancelStatute||'16 CFR Part 429');
       const _bizName=_prop.businessName||'Your Contractor';
       const _bizPhone=_prop.businessPhone||'';
-      let _termsText='By checking this box, I confirm I accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).';
-      if(_prop.epaRequired)_termsText='By checking this box, I confirm I have read this proposal (Document 1 of 2) and the EPA Pre-Renovation Disclosure (Document 2 of 2), accept the total price, scope of work, and all terms. This electronic signature applies to both documents under applicable state and federal law (15 U.S.C. §7001 et seq.).';
-      if(_consentMount)_consentMount.innerHTML=esignConsentHTML('sig',_termsText,{onChange:'checkReady()'});
+      // New proposals carry the full Terms & Conditions clause list (owner
+      // directive 2026-07-13: moved out of the document body, into this
+      // accordion). Legacy proposals saved before that change have no
+      // termsHtml field — they fall back to the short summary sentence they
+      // always had, so nothing breaks for proposals already in flight.
+      let _termsText;
+      if(_prop.termsHtml){
+        _termsText=(_prop.epaRequired
+          ?'<div style="margin-bottom:10px">By signing, you confirm you have read this proposal (Document 1 of 2) and the EPA Pre-Renovation Disclosure (Document 2 of 2) — this signature applies to both documents.</div>'
+          :'')+_prop.termsHtml;
+      }else{
+        _termsText=_prop.epaRequired
+          ?'By checking this box, I confirm I have read this proposal (Document 1 of 2) and the EPA Pre-Renovation Disclosure (Document 2 of 2), accept the total price, scope of work, and all terms. This electronic signature applies to both documents under applicable state and federal law (15 U.S.C. §7001 et seq.).'
+          :'By checking this box, I confirm I accept the total price, scope of work, and all terms above. This constitutes a binding electronic signature under applicable state and federal electronic transaction law (15 U.S.C. §7001 et seq.).';
+      }
+      if(_consentMount)_consentMount.innerHTML=esignConsentHTML('sig',_termsText);
       if(_cancelNoticeBody){
         // FTC 16 CFR Part 429: business day = any day except Sunday and federal legal holidays (Saturdays count)
         // Use local calendar dates — avoids UTC offset shifting the date for US timezones
@@ -1206,21 +1219,19 @@ function _openSignPad(){
 
 function checkReady(){
   const typedOk=document.getElementById('sig-name')?.value.trim().length>2;
-  const uetaOk=!!(document.getElementById('sig-ck')?.checked);
   const hasSig=typedOk||hasInk;
   const btn=document.getElementById('sign-btn');
-  if(btn)btn.disabled=!hasSig||!uetaOk;
-  if(hasSig&&uetaOk)_logStep('signature_ready');
+  if(btn)btn.disabled=!hasSig;
+  if(hasSig)_logStep('signature_ready');
   const hint=document.getElementById('sign-ready-hint');
   if(hint){
     if(!hasSig){hint.textContent='Type your name or draw your signature above to continue.';hint.style.display='block';}
-    else if(!uetaOk){hint.textContent='Check the agreement box above to continue.';hint.style.display='block';}
     else{hint.style.display='none';}
   }
 }
 
 function goToPayment(){
-  const r=esignResult('sig',{requireTyped:false,typedAsSig:true,requireConsent:true,errId:'sign-err',consentErr:'Check the agreement box above to continue.'});
+  const r=esignResult('sig',{requireTyped:false,typedAsSig:true,errId:'sign-err'});
   if(!r.ok){document.getElementById('sign-err').textContent=r.err;return;}
   if(!r.signerName&&!r.sigData){document.getElementById('sign-err').textContent='Type your full name or draw your signature above.';return;}
   _sigData=r.sigData;

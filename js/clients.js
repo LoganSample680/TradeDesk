@@ -166,7 +166,7 @@ function _openDiagnosticSign(bidId,clientId){
 }
 function _submitDiagnosticSign(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const r=esignResult('diag-sign',{requireDrawn:true,requireConsent:true,nameErr:'Type the client’s full name to confirm.',drawErr:'Client needs to sign in the box above.',consentErr:'Check the box to agree before signing.'});
+  const r=esignResult('diag-sign',{requireDrawn:true,nameErr:'Type the client’s full name to confirm.',drawErr:'Client needs to sign in the box above.'});
   if(!r.ok)return;
   // The protective record: who signed, when, drawn signature, against this charge.
   b.signedAt=r.signedAt;b.signerName=r.signerName;b.sigData=r.sigData;b.signed=true;

@@ -1321,10 +1321,9 @@ function _showCOSignDocument(b,c,coData,clientId){
 
 function _submitCOSign(bidId,clientId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
-  const r=esignResult('co-sign',{requireDrawn:true,requireConsent:true});
+  const r=esignResult('co-sign',{requireDrawn:true});
   if(!r.ok){
     if(/name/i.test(r.err)){const el=document.getElementById('co-sign-name');if(el){el.style.borderColor='#A32D2D';el.focus();}zAlert('Type the client\'s full name to confirm.',{title:'Name required'});}
-    else if(/check the box/i.test(r.err))zAlert(r.err,{title:'Agreement required'});
     else zAlert('Client needs to sign in the box above.',{title:'Signature required'});
     return;
   }

@@ -2776,7 +2776,12 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       }
     });
 
-    test('regression: preview overlay applies the same T&C accordion as sign.html (was a raw uncollapsed dump — not actually "how they\'ll see it")', async () => {
+    test('regression: preview overlay shows the full T&C behind the same collapsed accordion sign.html uses (was a raw uncollapsed dump — not actually "how they\'ll see it")', async () => {
+      // Owner directive 2026-07-13: the T&C section moved out of the document
+      // body entirely, into the accordion under the signature — the preview
+      // overlay appends that exact same esignConsentHTML()-style accordion
+      // (via _geiPreviewTermsHtml) rather than _applyTermsAccordion collapsing
+      // an embedded header, since there's no embedded header left to collapse.
       const r = await page.evaluate(async () => {
         const c = { id: 88904, name: 'Accordion Client', addr: '1 Accordion Rd' };
         clients = clients.filter(x => x.id !== 88904).concat([c]);
@@ -2785,23 +2790,26 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         _geiIsTM = true; _geiIsFreeForm = false;
         _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
-        await sendGenericProposal(true); // real _showProposalPreviewOverlay runs — no interception this time
+        await sendGenericProposal(true);
         const ov = document.getElementById('_prop-preview-ov');
+        const body = document.getElementById('gei-preview-terms-body');
+        const btn = [...(ov?.querySelectorAll('button') || [])].find(b => b.textContent.includes('Terms & Conditions'));
         const res = {
-          isFn: typeof _applyTermsAccordion === 'function',
-          hasToggleBtn: !!ov?.querySelector('[data-terms-toggle]'),
-          termsHeaderHidden: (() => {
-            const hdr = [...(ov?.querySelectorAll('div') || [])].find(d => d.dataset.termsHdr === '1');
-            return hdr ? hdr.style.display === 'none' : false;
-          })(),
+          isFn: typeof _geiPreviewTermsHtml === 'function',
+          hasToggleBtn: !!btn,
+          termsBodyHiddenByDefault: body ? body.style.display === 'none' : false,
         };
+        // Click the toggle and confirm it reveals the numbered clause list.
+        btn?.click();
+        res.revealsClauses = document.getElementById('gei-preview-terms-body')?.textContent.includes('Mechanic') || false;
         ov?.remove();
         _geiIsTM = false;
         return res;
       });
       expect(r.isFn).toBe(true);
       expect(r.hasToggleBtn).toBe(true);
-      expect(r.termsHeaderHidden).toBe(true);
+      expect(r.termsBodyHiddenByDefault).toBe(true);
+      expect(r.revealsClauses).toBe(true);
     });
 
     test('regression: selected scope-chip descriptions carry into the proposal even when BYO has line items (was silently dropped by an if/else)', async () => {

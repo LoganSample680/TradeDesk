@@ -1821,10 +1821,8 @@ function _showJobDoneSignStep(jobId){
   esignWire('job-sign');
 }
 function _confirmJobDoneSign(jobId){
-  // Typed name OR a drawn signature satisfies the sign-off (same rule as
-  // before) — but the consent box is always required, same as every surface.
-  const r=esignResult('job-sign',{requireTyped:false,requireConsent:true});
-  if(!r.ok){zAlert(r.err,{title:'Agreement required'});return;}
+  // Typed name OR a drawn signature satisfies the sign-off (same rule as before).
+  const r=esignResult('job-sign',{requireTyped:false});
   const typed=(document.getElementById('job-sign-name')?.value||'').trim();
   const sigData=r.sigData;
   if(!typed&&!sigData){zAlert('Type the client\'s name or have them sign in the box above.',{title:'Signature required'});return;}
