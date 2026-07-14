@@ -1335,6 +1335,68 @@ test.describe('sign.html — Stripe payment flow', () => {
     expect(r.method, '_paySign(later) sets the method to later').toBe('later');
     expect(r.agnostic, 'the confirm copy must be method-agnostic (no cash/check lock-in)').toBe(true);
   });
+
+  // Payment-method opt-in (owner directive 2026-07-14): the contractor chooses in
+  // onboarding / Settings → How you get paid which manual options a client sees.
+  // The proposal snapshot carries acceptCash / acceptCheck / allowPayLater and
+  // _renderSignPayBtns() renders only the enabled ones. Undefined stays true so
+  // proposals sent before this shipped are unchanged.
+  function _renderWithFlags(page, flags) {
+    return page.evaluate((f) => {
+      if (typeof _renderSignPayBtns !== 'function') return { skip: true };
+      // _prop / _payFullAmount are top-level `let`s in sign.html — bare assignment
+      // resolves to those bindings; `window._prop` would create a separate property
+      // the renderer never reads.
+      _prop = Object.assign({ id: 1, amount: 2600, deposit: 650, businessName: 'ZJ Pro', stripeConnectEnabled: true, clientName: 'Client' }, f);
+      _payFullAmount = false;
+      _renderSignPayBtns();
+      const c = document.getElementById('sign-pay-btns');
+      const btns = [...c.querySelectorAll('button')];
+      const has = re => btns.some(b => re.test(b.textContent.trim()));
+      const grid = c.querySelector('div[style*="grid-template-columns"]');
+      const cols = grid ? (grid.style.gridTemplateColumns.match(/repeat\((\d+)/) || [])[1] : null;
+      return {
+        hasLater: has(/pay later/i), hasCash: has(/^cash$/i), hasCheck: has(/^check$/i),
+        optionCount: btns.filter(b => /pay later|^cash$|^check$/i.test(b.textContent.trim())).length,
+        cols: cols ? Number(cols) : null,
+      };
+    }, flags);
+  }
+
+  test('opt-in — a disabled method never renders, grid columns match the count', async () => {
+    // Contractor turned OFF check; cash + pay-later remain → 2 evenly-spaced cols.
+    const r = await _renderWithFlags(page, { acceptCheck: false });
+    if (r.skip) return;
+    expect(r.hasCheck, 'check is off → hidden').toBe(false);
+    expect(r.hasCash && r.hasLater, 'cash + pay-later still shown').toBe(true);
+    expect(r.optionCount, 'exactly 2 manual options').toBe(2);
+    expect(r.cols, 'grid columns track the visible count').toBe(2);
+  });
+
+  test('opt-in — pay-later off hides it; only enabled options show', async () => {
+    const r = await _renderWithFlags(page, { allowPayLater: false, acceptCash: false });
+    if (r.skip) return;
+    expect(r.hasLater, 'pay-later off → hidden').toBe(false);
+    expect(r.hasCash, 'cash off → hidden').toBe(false);
+    expect(r.hasCheck, 'check still on').toBe(true);
+    expect(r.optionCount, 'only check remains').toBe(1);
+    expect(r.cols, 'single-column grid').toBe(1);
+  });
+
+  test('opt-in — never dead-ends: all manual off + no Stripe falls back to Pay Later', async () => {
+    const r = await _renderWithFlags(page, { acceptCash: false, acceptCheck: false, allowPayLater: false, stripeConnectEnabled: false });
+    if (r.skip) return;
+    expect(r.hasLater, 'fallback keeps Pay Later so signing can complete').toBe(true);
+    expect(r.optionCount, 'exactly the one fallback option').toBe(1);
+  });
+
+  test('opt-in — old proposals (no flags) still show all three', async () => {
+    const r = await _renderWithFlags(page, {});
+    if (r.skip) return;
+    expect(r.hasLater && r.hasCash && r.hasCheck, 'undefined flags default to shown').toBe(true);
+    expect(r.optionCount).toBe(3);
+    expect(r.cols).toBe(3);
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

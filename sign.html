@@ -1503,16 +1503,28 @@ function _renderSignPayBtns(){
       '</button>'+
       (surchargeOn?'<div style="font-size:11px;color:#b45309;text-align:center;margin-bottom:16px">'+pct+'% fee on credit cards · debit cards &amp; bank transfer are free</div>':'');
   }
-  // Three identical, evenly-spaced options under the hero button (owner
-  // 2026-07-14): Pay Later · Check · Cash — same style, one equal grid.
-  // "Pay Later" is method-agnostic: signs now, records the balance as owed, and
-  // leaves every payment channel open afterward.
+  // Identical, evenly-spaced options under the hero button (owner 2026-07-14):
+  // Pay Later · Check · Cash — same style, one equal grid. "Pay Later" is
+  // method-agnostic: signs now, records the balance as owed, and leaves every
+  // payment channel open afterward.
+  //
+  // The contractor opts into each manual option (Settings → How you get paid).
+  // Default-true (undefined→shown) so proposals sent before this shipped are
+  // unchanged; an option the contractor turned off never renders. Only the
+  // enabled ones fill the grid, and the column count matches so the row stays
+  // evenly spaced whether there are 1, 2, or 3.
+  let showLater=_prop?.allowPayLater!==false;
+  const showCheck=_prop?.acceptCheck!==false;
+  const showCash=_prop?.acceptCash!==false;
+  // Never dead-end the client: if the contractor disabled every manual option
+  // AND has no card checkout, keep Pay Later so signing can still complete.
+  if(!stripeOk&&!showLater&&!showCheck&&!showCash)showLater=true;
   const _optBtn=(m,label)=>'<button onclick="_paySign(\''+m+'\')" style="padding:11px 8px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">'+label+'</button>';
-  html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:2px">'+
-    _optBtn('later','Pay Later')+
-    _optBtn('check','Check')+
-    _optBtn('cash','Cash')+
-  '</div>';
+  const opts=[];
+  if(showLater)opts.push(_optBtn('later','Pay Later'));
+  if(showCheck)opts.push(_optBtn('check','Check'));
+  if(showCash)opts.push(_optBtn('cash','Cash'));
+  if(opts.length)html+='<div style="display:grid;grid-template-columns:repeat('+opts.length+',1fr);gap:8px;margin-top:2px">'+opts.join('')+'</div>';
   container.innerHTML=html;
 }
 async function _paySign(method){

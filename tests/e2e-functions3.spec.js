@@ -3213,6 +3213,51 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Payment-method opt-in step (owner 2026-07-14): onboarding step 9 lets the
+  // contractor choose which manual pay options a client sees at signing.
+  test('obStep8 — renders the three payment-method toggles, all default ON', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStep8 !== 'function') return { skip: true };
+      _ob.acceptCash = true; _ob.acceptCheck = true; _ob.allowPayLater = true;
+      const el = document.createElement('div');
+      el.id = 'ob-body'; document.body.appendChild(el);
+      obStep8(el);
+      const cash = el.querySelector('#obpay-acceptCash input');
+      const check = el.querySelector('#obpay-acceptCheck input');
+      const later = el.querySelector('#obpay-allowPayLater input');
+      const cards = el.querySelector('#obpay-wantCards input');
+      const r = {
+        hasAll: !!(cash && check && later),
+        allChecked: !!(cash && cash.checked && check && check.checked && later && later.checked),
+        // "Take cards" intent toggle present + on by default → obSubmit auto-launches Stripe.
+        hasCards: !!cards, cardsChecked: !!(cards && cards.checked),
+        askCopy: /how do you want to get paid/i.test(el.textContent),
+      };
+      el.remove();
+      return r;
+    });
+    if (result.skip) return;
+    expect(result.hasAll, 'all three toggles render').toBe(true);
+    expect(result.allChecked, 'default ON').toBe(true);
+    expect(result.hasCards, 'take-cards intent toggle renders').toBe(true);
+    expect(result.cardsChecked, 'take-cards defaults ON').toBe(true);
+    expect(result.askCopy, 'step asks how they want to get paid').toBe(true);
+  });
+
+  test('obTogglePay — flips the _ob flag off and re-renders the row', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obTogglePay !== 'function' || typeof obStep8 !== 'function') return { skip: true };
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      _ob.acceptCheck = true; obStep8(el);
+      obTogglePay('acceptCheck', false);
+      const off = _ob.acceptCheck === false;
+      el.remove();
+      return { off };
+    });
+    if (result.skip) return;
+    expect(result.off, 'toggling a method off records false on _ob').toBe(true);
+  });
+
   test('no console errors during cloud realtime/LP/onboarding tests', async () => {
     assertNoErrors(page, 'cloud realtime/LP/onboarding');
   });

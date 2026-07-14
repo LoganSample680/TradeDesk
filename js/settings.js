@@ -771,6 +771,11 @@ function loadSettingsForm(){
   _updateBootPreview();
   sf('set-bwebsite',S.bwebsite||'');
   const hoEl=document.getElementById('set-home-office');if(hoEl)hoEl.checked=!!S.homeOffice;
+  // Payment methods default ON for any account that never set them (undefined→true),
+  // so existing contractors keep every option they had before this toggle shipped.
+  const _pmCash=document.getElementById('set-accept-cash');if(_pmCash)_pmCash.checked=S.acceptCash!==false;
+  const _pmCheck=document.getElementById('set-accept-check');if(_pmCheck)_pmCheck.checked=S.acceptCheck!==false;
+  const _pmLater=document.getElementById('set-allow-pay-later');if(_pmLater)_pmLater.checked=S.allowPayLater!==false;
   const ccEl=document.getElementById('set-cc-surcharge-enabled');if(ccEl){ccEl.checked=!!S.ccSurchargeEnabled;const pctWrap=document.getElementById('set-cc-surcharge-pct-wrap');if(pctWrap)pctWrap.style.display=S.ccSurchargeEnabled?'block':'none';}
   const ccPctEl=document.getElementById('set-cc-surcharge-pct');if(ccPctEl)ccPctEl.value=S.ccSurchargePct||3;
   const fcPctEl=document.getElementById('set-finance-charge-pct');if(fcPctEl)fcPctEl.value=S.financeChargePct!=null?S.financeChargePct:1.5;
@@ -803,6 +808,9 @@ function saveSettings(){
     ownerPayType:gs('set-owner-pay-type')||'hourly',
     ownerPayRate:gf('set-owner-pay-rate')||0,
     customTerms:gs('set-custom-terms')||'',coTerms:gs('set-co-terms')||'',
+    acceptCash:document.getElementById('set-accept-cash')?document.getElementById('set-accept-cash').checked:(S.acceptCash!==false),
+    acceptCheck:document.getElementById('set-accept-check')?document.getElementById('set-accept-check').checked:(S.acceptCheck!==false),
+    allowPayLater:document.getElementById('set-allow-pay-later')?document.getElementById('set-allow-pay-later').checked:(S.allowPayLater!==false),
     ccSurchargeEnabled:!!(document.getElementById('set-cc-surcharge-enabled')?document.getElementById('set-cc-surcharge-enabled').checked:false),
     ccSurchargePct:parseFloat((document.getElementById('set-cc-surcharge-pct')?document.getElementById('set-cc-surcharge-pct').value:'3')||'3')||3,
     financeChargePct:parseFloat((document.getElementById('set-finance-charge-pct')?document.getElementById('set-finance-charge-pct').value:'1.5')||'1.5')||1.5,
@@ -1232,7 +1240,7 @@ async function devSwitchTrade(type){
 }
 
 // ── Onboarding ────────────────────────────────────────────────────────
-let _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:''};
+let _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:'',acceptCash:true,acceptCheck:true,allowPayLater:true,wantCards:true};
 
 async function showOnboarding(){
   _removeBootOverlay();
@@ -1254,9 +1262,10 @@ function renderObStep(){
     {icon:'⚡',title:'Your role',sub:'Controls what you can see'},
     {icon:'🚗',title:'Vehicles',sub:'For mileage tracking'},
     {icon:'👥',title:'Your team',sub:'Add crew members'},
+    {icon:'💳',title:'Payments',sub:'How you get paid'},
     {icon:'✓',title:'All set',sub:'Review and create'},
   ];
-  const pct=Math.round((_ob.step/9)*100);
+  const pct=Math.round((_ob.step/10)*100);
   const cur=steps[_ob.step-1];
 
   ov.innerHTML=
@@ -1299,7 +1308,7 @@ function renderObStep(){
           '</div>'+
           '<span class="brand-logo-slot" style="font-size:15px;font-weight:800;color:var(--text)">TradeDesk</span>'+
         '</div>'+
-        '<span style="font-size:12px;color:var(--text3);font-weight:600">'+_ob.step+' of 9</span>'+
+        '<span style="font-size:12px;color:var(--text3);font-weight:600">'+_ob.step+' of 10</span>'+
       '</div>'+
       // Progress bar
       '<div style="height:3px;background:var(--border)"><div style="height:100%;width:'+pct+'%;background:var(--blue);transition:width .4s ease"></div></div>'+
@@ -1627,19 +1636,38 @@ function obAddTeam(){
   obStep7(document.getElementById('ob-body'));
 }
 
+function obPayRow(key,label,desc){
+  const on=_ob[key]!==false;
+  return '<label style="display:flex;align-items:flex-start;gap:12px;padding:14px;border:1.5px solid '+(on?'var(--blue)':'var(--border2)')+';border-radius:var(--r);background:'+(on?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;user-select:none;margin-bottom:10px;transition:border-color .15s,background .15s" id="obpay-'+key+'">'+
+    '<input type="checkbox" '+(on?'checked':'')+' onchange="obTogglePay(\''+key+'\',this.checked)" style="width:19px;height:19px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">'+
+    '<div><div style="font-size:14px;font-weight:700;color:var(--text)">'+label+'</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-top:2px;line-height:1.5">'+desc+'</div></div>'+
+  '</label>';
+}
+function obTogglePay(key,on){
+  _ob[key]=!!on;
+  const row=document.getElementById('obpay-'+key);
+  if(!row)return;
+  // The "take cards" card is green; the cash/check/later rows are blue.
+  if(key==='wantCards'){row.style.borderColor=on?'#86efac':'var(--border2)';}
+  else{row.style.borderColor=on?'var(--blue)':'var(--border2)';row.style.background=on?'var(--blue-lt)':'var(--bg2)';}
+}
 function obStep8(el){
   el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('💳',{size:28})+'</div>'+
-    '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Accept card payments</div>'+
-    '<div style="font-size:14px;color:var(--text3)">Optional — clients can always pay cash if you skip this</div></div>'+
-    '<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:var(--r);padding:14px;margin-bottom:16px;font-size:13px;color:#166534;line-height:1.7">'+
-    '<strong>How it works:</strong> Clients pay their deposit directly to your bank via Stripe. Card payments include a 2.9% + $0.30 fee — auto-logged as a tax deductible expense.'+
-    '</div>'+
-    '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:14px;margin-bottom:16px;font-size:13px;color:var(--text2);line-height:1.6">'+
-    'After signing up, go to <strong>Settings → Stripe Connect</strong> and tap <strong>"Connect Stripe Account"</strong> to link your bank. No keys to copy — takes about 2 minutes.'+
-    '</div>'+
+    '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('💳',{size:28})+'</div>'+
+    '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">How do you want to get paid?</div>'+
+    '<div style="font-size:14px;color:var(--text3)">Turn on the ways you accept payment. Clients only see the options you enable when they sign — change any of this later in Settings.</div></div>'+
+    obPayRow('acceptCash','Cash','Client can tell you they\'ll pay cash in person.')+
+    obPayRow('acceptCheck','Check','Client can tell you they\'ll pay by check.')+
+    obPayRow('allowPayLater','Pay later','Client signs now and settles up any way that works before the job\'s done — no money due at signing.')+
+    '<div style="border-top:1px solid var(--border);margin:20px 0 16px"></div>'+
+    '<label id="obpay-wantCards" style="display:flex;align-items:flex-start;gap:12px;padding:14px;border:1.5px solid '+(_ob.wantCards!==false?'#86efac':'var(--border2)')+';border-radius:var(--r);background:#f0fdf4;margin-bottom:8px;cursor:pointer;user-select:none">'+
+      '<input type="checkbox" '+(_ob.wantCards!==false?'checked':'')+' onchange="obTogglePay(\'wantCards\',this.checked)" style="width:19px;height:19px;margin-top:1px;accent-color:#16a34a;flex-shrink:0">'+
+      '<div><div style="font-size:14px;font-weight:700;color:#166534">Take cards & bank transfers</div>'+
+      '<div style="font-size:12px;color:#166534;margin-top:2px;line-height:1.6">Clients pay their deposit straight to your bank. Card fee 2.9% + $0.30, auto-logged as a deductible expense. Leave this on and we\'ll open Stripe right after you create your account (~2 min; have your EIN or SSN and bank info handy). You can always do it later in <strong>Settings → Stripe Connect</strong>.</div></div>'+
+    '</label>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
-    obBtn('Got it — continue','_ob.step=10;renderObStep()')+
+    obBtn('Continue','_ob.step=10;renderObStep()')+
     obBtn('Back','_ob.step=8;renderObStep()',true);
 }
 function obStep9(el){
@@ -1710,6 +1738,10 @@ async function obSubmit(){
     await _supa.from('zj_data').insert({user_id:uid,account_id:acct.id});
 
     S.bname=_ob.businessName;S.bphone=_ob.phone;S.blic=_ob.licenseInfo;S.state=_ob.state||'KS';S.warrantyPeriod=_ob.warrantyPeriod||'1 year';
+    // Payment methods the contractor chose on the "How do you want to get paid?"
+    // step. Stored as explicit booleans so an unchecked box is a real false, not
+    // an undefined that the default-true reader would flip back on.
+    S.acceptCash=_ob.acceptCash!==false;S.acceptCheck=_ob.acceptCheck!==false;S.allowPayLater=_ob.allowPayLater!==false;
     // Arrived via a sub-invite referral link? Record who brought them in, then
     // redeem the grant (single-use RPC): the inviter lands as this brand-new
     // account's first client/lead, and everything the inviter logged as paid
@@ -1728,6 +1760,16 @@ async function obSubmit(){
     document.getElementById('onboarding-overlay')?.remove();
     window._obInProgress=false;
     saveAll();applyPermissions();renderDash();goPg('pg-dash');
+    // Owner chose auto-launch (2026-07-14): if they left "Take cards" on, kick
+    // off Stripe Connect now that the account row exists (it can't run earlier —
+    // there's nothing to attach Stripe to until obSubmit creates the account).
+    // startStripeConnect() redirects to Stripe's hosted onboarding on success; on
+    // error it just alerts and leaves them on the dashboard. Never blocks — a
+    // contractor without their EIN can bail and reconnect from Settings later.
+    if(_ob.wantCards!==false&&typeof startStripeConnect==='function'){
+      showToast&&showToast('Account created — let’s connect Stripe for card payments…','💳',5000);
+      setTimeout(()=>{try{startStripeConnect();}catch(_e){console.warn('[onboarding] Stripe auto-launch skipped:',_e);}},900);
+    }
   }catch(e){
     window._obInProgress=false;
     console.error('Onboarding failed:',e);
