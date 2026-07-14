@@ -112,13 +112,92 @@ function _populateTaxYearSel(){
 }
 function setTaxYear(yr){_taxPageYear=yr;const hd=document.getElementById('tx-data-hd');if(hd)hd.textContent=yr+' income & deductions';calcTax();}
 
-// Social Security wage base by year — SS portion (12.4%) is capped, Medicare (2.9%) is not
-const _SS_WAGE_BASE={2019:132900,2020:137700,2021:142800,2022:147000,2023:160200,2024:168600,2025:176100,2026:176100};
-function _getSsWageBase(yr){return _SS_WAGE_BASE[parseInt(yr)]||176100;}
+// Social Security wage base by year — SS portion (12.4% SE / 6.2%+6.2% payroll)
+// is capped at this amount, Medicare (2.9% SE / 1.45%+1.45% payroll) is not.
+// 2026 confirmed via SSA's official Oct 2025 COLA announcement (ssa.gov/news/en/cola/factsheets/2026.html) —
+// was previously a stale copy of the 2025 figure. Unlike the income-tax brackets below,
+// this table is NOT yet wired into autoRefreshTaxBrackets()'s yearly auto-update — it's a
+// static table a developer edits each year until that's added.
+const _SS_WAGE_BASE={2019:132900,2020:137700,2021:142800,2022:147000,2023:160200,2024:168600,2025:176100,2026:184500};
+function _getSsWageBase(yr){return _SS_WAGE_BASE[parseInt(yr)]||184500;}
 function _calcSeTax(netSelf,yr){
   const seBase=netSelf*0.9235;
   const ssBase=Math.min(seBase,_getSsWageBase(yr));
   return Math.ceil(ssBase*0.124+seBase*0.029); // SS capped + Medicare uncapped
+}
+
+// Employer W-2 payroll tax LIABILITY for one employee, one pay period.
+// Deliberately NOT federal/state income tax withholding — that requires the
+// literal IRS Pub 15-T percentage-method bracket table, which this app has no
+// verified source for (network-blocked in dev; not something to guess at for
+// real payroll dollars). This is scoped to the flat-rate federal payroll
+// taxes every employer owes regardless of the employee's W-4: FICA (both the
+// amount withheld from the employee and the employer's own match) and FUTA.
+// "Take the gross wages + this number to your accountant" is the intended
+// use — not a replacement for one.
+//
+// ytdSsWages/ytdFutaWages = this employee's SS-taxable / FUTA-taxable wages
+// already paid THIS CALENDAR YEAR, before this period — required so the caps
+// (SS wage base, $7,000 FUTA base) land in the right pay period instead of
+// every period independently assuming it starts the year at $0.
+const _ADDL_MEDICARE_THRESHOLD=200000; // flat federal threshold — same for every filing status on the EMPLOYER withholding side (IRC §3101(b)(2)); the employee reconciles their actual status on Form 8959
+const _FUTA_WAGE_BASE=7000;
+function _calcPayrollLiability(grossWages,ytdSsWages,ytdFutaWages,yr){
+  const gw=Math.max(0,Number(grossWages)||0);
+  const priorSs=Math.max(0,Number(ytdSsWages)||0);
+  const priorFuta=Math.max(0,Number(ytdFutaWages)||0);
+  const ssBase=_getSsWageBase(yr);
+  const ssTaxable=Math.max(0,Math.min(gw,ssBase-priorSs));
+  const employeeSS=ssTaxable*0.062;
+  const employerSS=ssTaxable*0.062;
+  const employeeMedicare=gw*0.0145;
+  const employerMedicare=gw*0.0145;
+  // Additional Medicare is employee-only (no employer match) and only kicks in
+  // once THIS employee's cumulative wages for the year cross the threshold —
+  // the portion of this period's wages that falls above the line is taxed.
+  const addlMedicareTaxable=Math.max(0,Math.min(gw,(priorSs+gw)-_ADDL_MEDICARE_THRESHOLD));
+  const employeeAddlMedicare=addlMedicareTaxable*0.009;
+  const futaTaxable=Math.max(0,Math.min(gw,_FUTA_WAGE_BASE-priorFuta));
+  const futa=futaTaxable*0.006; // net rate assuming timely state SUTA payment (standard 5.4% credit) — see FUTA credit-reduction-state caveat below
+  const r2=v=>Math.round(v*100)/100;
+  const employeeFica=r2(employeeSS+employeeMedicare+employeeAddlMedicare);
+  const employerFicaMatch=r2(employerSS+employerMedicare);
+  return{
+    grossWages:r2(gw),
+    employeeSS:r2(employeeSS),employeeMedicare:r2(employeeMedicare),employeeAddlMedicare:r2(employeeAddlMedicare),
+    employerSS:r2(employerSS),employerMedicare:r2(employerMedicare),
+    employeeFica,employerFicaMatch,
+    fica941Total:r2(employeeFica+employerFicaMatch), // FICA portion of the Form 941 deposit (income tax withholding NOT included — out of scope)
+    futa940:r2(futa), // separate — Form 940, typically quarterly/annual, not bundled with the 941 deposit
+    ssWageBaseHit:ssTaxable<gw, // this period's wages exceeded the remaining SS cap — worth surfacing so a mid-year cap crossing isn't silently invisible
+    futaWageBaseHit:futaTaxable<gw
+  };
+}
+
+// Actual PAYROLL gross wages for one pay period — distinct from
+// _empEffectiveHourly (js/cloud.js), which derives an hourly-equivalent from
+// salary but is explicitly for JOB-COSTING only (labor cost per job hour). A
+// salaried W-2 employee's paycheck is a FIXED amount every pay period
+// regardless of hours worked — using the job-costing conversion here would
+// make their pay incorrectly track their clocked hours.
+//
+// comp = {pay_type:'hourly'|'salary', pay_rate}. periodRegularMin/periodOtMin
+// are this person's already-split regular vs overtime minutes for the period
+// (hourly only — salary ignores hours entirely). payPeriodsPerYear: how many
+// times a year the salary is divided (52 weekly, 26 biweekly, 24
+// semimonthly, 12 monthly). otMultiplier defaults to time-and-a-half.
+function _calcGrossWages(comp,periodRegularMin,periodOtMin,payPeriodsPerYear,otMultiplier){
+  const r2=v=>Math.round(v*100)/100;
+  const payType=comp&&comp.pay_type==='salary'?'salary':'hourly';
+  const rate=Math.max(0,Number(comp&&comp.pay_rate)||0);
+  if(payType==='salary'){
+    const periods=Math.max(1,Number(payPeriodsPerYear)||52);
+    return r2(rate/periods);
+  }
+  const mult=Number(otMultiplier)>0?Number(otMultiplier):1.5;
+  const regHrs=Math.max(0,Number(periodRegularMin)||0)/60;
+  const otHrs=Math.max(0,Number(periodOtMin)||0)/60;
+  return r2(regHrs*rate+otHrs*rate*mult);
 }
 
 // Estimate state income tax on an apportioned income amount using STATE_TAX data.

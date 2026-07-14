@@ -38,6 +38,24 @@ function _fmtMin(m){
   return (h?h+'h ':'')+(rem?rem+'m':'');
 }
 
+// Owner correction 2026-07-11: hiding Clock in when there's no job was
+// backwards — you'd still want to clock in because you're physically on
+// site, job record or not. The real bug was that tapping it with nothing to
+// clock into dead-ended on the client profile page instead of doing
+// anything. Fix: always offer Clock in; if there's no existing job target,
+// create a minimal walk-up job for this client (same shape schedule.js/
+// proposals.js already use for ad-hoc jobs) and clock into that — no new
+// data model, just reuses the existing job-scoped time-tracking machinery.
+function _nearbyClockIn(clientId,jobId){
+  if(!jobId){
+    const c=getClientById(clientId);if(!c)return;
+    const j={id:Date.now(),bid_id:null,client_id:clientId,name:c.name,addr:c.addr||'',start:todayKey(),days:1,buffer:0,value:0,color:'#6366F1',eventType:'job',allowWeekend:true,time:null,hours:null,notes:'',status:'upcoming'};
+    jobs.push(j);
+    saveAll();
+    jobId=j.id;
+  }
+  openClockInSheet(jobId);
+}
 function openClockInSheet(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
@@ -90,7 +108,10 @@ function openClockInSheet(jobId){
         '<button onclick="document.getElementById(\'_cks-ov\')?.remove()" style="background:var(--bg2);border:none;color:var(--text2);font-size:18px;cursor:pointer;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-family:inherit">✕</button>'+
       '</div>'+
       rows+
-      '<div style="padding:12px 16px">'+
+      '<div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px">'+
+        (bid&&getBidBalance(bid)>0.01
+          ?'<button onclick="openPayPanel('+bid.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('💰')+' Collect '+fmt(getBidBalance(bid))+'</button>'
+          :'')+
         '<button onclick="_markJobComplete('+jobId+')" style="width:100%;padding:13px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">'+svgIcon('🏁')+' Mark job complete</button>'+
       '</div>';
   };
@@ -155,6 +176,20 @@ function _markJobComplete(jobId){
   },{title:'Complete job',yes:'Mark complete',danger:false});
 }
 
+// Tags WHO is clocking in/editing — previously untracked, so a shared account's
+// manual clock entries were indistinguishable between the owner and any crew
+// member. null loggedByUid means the owner (their own account has no separate
+// employee-user id); an employee's own auth id otherwise. Feeds the Time Log.
+function _tlLoggedByInfo(){
+  const loggedByUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+  const loggedByName=loggedByUid?(_employeeRecord?.name||'Crew'):((typeof getOwnerName==='function'&&getOwnerName())||(typeof S!=='undefined'&&S.ownerName)||'Owner (me)');
+  return{loggedByUid,loggedByName};
+}
+function _isMyTimeEntry(e){
+  const{loggedByUid}=_tlLoggedByInfo();
+  return(e.logged_by_uid||null)===loggedByUid;
+}
+
 function clockIn(jobId,scopeId,scopeLabel){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   if(_activeTimer){
@@ -174,7 +209,20 @@ function clockIn(jobId,scopeId,scopeLabel){
   }
   const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
   const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null};
+  // Owner request 2026-07-11 ("bulletproof"): persist the entry the INSTANT the
+  // clock starts, not only when it stops. Before this, clockOut() was the only
+  // place a timeEntries row was ever created — a crashed tab, a dead phone, or
+  // just forgetting to clock out meant the ENTIRE session was never saved
+  // anywhere, silently. Now an "open" row (end_time/minutes null) is written and
+  // synced immediately; clockOut() finds and closes this same row instead of
+  // creating a new one. This open row is also what makes force-clock-out and
+  // reload-survival possible — it's the one source of truth for "is anyone
+  // still clocked in," visible to every device, not just the one that's running.
+  const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+  const entryId=Date.now();
+  timeEntries.push({id:entryId,job_id:jobId,date:todayKey(),start_time:new Date().toISOString(),end_time:null,minutes:null,scope_id:scopeId||null,scope_label:scopeLabel||null,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:true});
+  saveAll();
+  _activeTimer={jobId,jobName:j.name,clientName:c?c.name:j.name,scopeId:scopeId||null,scopeLabel:scopeLabel||null,startTime:Date.now(),timerInterval:null,entryId};
   _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
   showClockBanner();
   renderJobsPage&&renderJobsPage();
@@ -187,10 +235,18 @@ function clockOut(saveEntry,silent){
   const minutes=Math.max(1,Math.round((Date.now()-_activeTimer.startTime)/60000));
   const jobId=_activeTimer.jobId;
   const jobName=_activeTimer.jobName;
-  const scopeId=_activeTimer.scopeId;
   const scopeLabel=_activeTimer.scopeLabel;
+  const openEntry=_activeTimer.entryId!=null?timeEntries.find(e=>e.id===_activeTimer.entryId):null;
   if(saveEntry!==false){
-    timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:scopeId,scope_label:scopeLabel});
+    if(openEntry){
+      openEntry.end_time=new Date().toISOString();openEntry.minutes=minutes;openEntry.open=false;
+    }else{
+      // Defensive fallback only — the open row should always exist (written by
+      // clockIn above). Never silently drop real logged time if it's somehow
+      // missing (deleted mid-timer, or a session from before this fix).
+      const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+      timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:_activeTimer.scopeId,scope_label:scopeLabel,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:false});
+    }
     const j=jobs.find(x=>x.id===jobId);
     if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
     saveAll();
@@ -198,11 +254,115 @@ function clockOut(saveEntry,silent){
       const label=scopeLabel?scopeLabel+' — '+jobName:jobName;
       showToast(_fmtMin(minutes)+' logged · '+label,'⏱');
     }
+  }else if(openEntry){
+    // Explicit discard (saveEntry===false): the open row must not be left
+    // stranded open forever just because this session chose not to keep it.
+    timeEntries=timeEntries.filter(e=>e.id!==openEntry.id);
+    saveAll();
   }
   _activeTimer=null;
   hideClockBanner();
   renderJobsPage&&renderJobsPage();
   renderDash&&setTimeout(renderDash,300);
+}
+
+// On boot, an open entry (clocked in, never closed) belonging to THIS person on
+// THIS account means either: (a) this device reloaded mid-timer — _activeTimer
+// (a `let`, not persisted) doesn't survive a reload, but the open row does, so
+// this reconnects the live banner/interval to it; or (b) another device force-
+// closed it while this one was away — in which case there's no longer a
+// matching open row and nothing to rehydrate. Either way the data was never at
+// risk; this only restores the LIVE UI state.
+function _rehydrateActiveTimer(){
+  if(_activeTimer||!timeEntries||!timeEntries.length)return;
+  const{loggedByUid}=_tlLoggedByInfo();
+  const mine=timeEntries.find(e=>e.open&&(e.logged_by_uid||null)===loggedByUid);
+  if(!mine)return;
+  const j=jobs.find(x=>x.id===mine.job_id);if(!j)return;
+  const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
+  _activeTimer={jobId:j.id,jobName:j.name,clientName:c?c.name:j.name,scopeId:mine.scope_id||null,scopeLabel:mine.scope_label||null,startTime:new Date(mine.start_time).getTime(),timerInterval:null,entryId:mine.id};
+  _activeTimer.timerInterval=setInterval(updateClockTimer,1000);
+  showClockBanner();
+}
+
+// Owner request 2026-07-11 ("bulletproof" — matches Jobber's #1 timesheet
+// complaint, "admin can't force-stop a forgotten clock"): a manager can close
+// someone else's still-open entry from Time Log. Marks who force-closed it —
+// never silently rewrite whose clock this was.
+function forceClockOutEntry(entryId){
+  if(typeof _canViewComp==='function'&&!_canViewComp())return;
+  const e=timeEntries.find(x=>x.id===entryId&&x.open);if(!e)return;
+  const minutes=Math.max(1,Math.round((Date.now()-new Date(e.start_time).getTime())/60000));
+  e.end_time=new Date().toISOString();e.minutes=minutes;e.open=false;
+  const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+  e.force_closed_by_uid=loggedByUid;e.force_closed_by_name=loggedByName;
+  const j=jobs.find(x=>x.id===e.job_id);
+  if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
+  saveAll();
+  showToast('Clocked out · '+_fmtMin(minutes),'⏱');
+  typeof renderTimeLog==='function'&&renderTimeLog();
+}
+
+// Owner request 2026-07-11 ("bulletproof" — matches Jobber's other top
+// complaint, "totals don't add up and I can't fix them"). Manual entries only
+// — GPS-verified auto entries aren't user-editable once §9.5 ships, same as
+// every competitor researched. Own entries always editable; others' only with
+// the payroll permission (same gate as Job Profit/Crew Cost).
+function deleteTimeEntry(entryId){
+  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
+  if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  timeEntries=timeEntries.filter(x=>x.id!==entryId);
+  saveAll();
+  typeof renderTimeLog==='function'&&renderTimeLog();
+}
+function _openEditTimeEntry(entryId){
+  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
+  if(e.open)return; // still running — clock out first, then edit
+  if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
+  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  const toLocalInput=iso=>{try{const d=new Date(iso);d.setMinutes(d.getMinutes()-d.getTimezoneOffset());return d.toISOString().slice(0,16);}catch(_e){return'';}};
+  box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('✏',{size:18})+' Edit time entry</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(e.logged_by_name||'')+'</div>'+
+    '<div class="f" style="margin-bottom:12px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Start</label>'+
+      '<input type="datetime-local" id="tle-start" value="'+toLocalInput(e.start_time)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
+    '<div class="f" style="margin-bottom:16px"><label style="font-size:11px;font-weight:700;color:var(--text3)">End</label>'+
+      '<input type="datetime-local" id="tle-end" value="'+toLocalInput(e.end_time)+'" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
+    '<div id="tle-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:10px">End must be after start.</div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="_saveEditedTimeEntry('+entryId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
+    '</div>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  overlay.addEventListener('click',ev=>{if(ev.target===overlay)overlay.remove();});
+}
+function _saveEditedTimeEntry(entryId){
+  const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
+  const startEl=document.getElementById('tle-start'),endEl=document.getElementById('tle-end');
+  const start=startEl?new Date(startEl.value):null,end=endEl?new Date(endEl.value):null;
+  const errEl=document.getElementById('tle-err');
+  if(!start||!end||isNaN(start.getTime())||isNaN(end.getTime())||end<=start){
+    if(errEl){errEl.textContent='End must be after start.';errEl.style.display='block';}
+    return;
+  }
+  const minutes=Math.max(1,Math.round((end.getTime()-start.getTime())/60000));
+  // A single clock session can't legitimately run longer than a day — beyond
+  // that is almost certainly a fat-fingered date, not a real shift. Caught
+  // here so an edit can never silently produce an "impossible" day total.
+  if(minutes>1440){
+    if(errEl){errEl.textContent='That\'s over 24 hours for one entry — check the dates.';errEl.style.display='block';}
+    return;
+  }
+  e.start_time=start.toISOString();e.end_time=end.toISOString();
+  e.minutes=minutes;
+  e.date=dateKey(start);
+  const{loggedByUid,loggedByName}=_tlLoggedByInfo();
+  e.edited_by_uid=loggedByUid;e.edited_by_name=loggedByName;e.edited_at=new Date().toISOString();
+  saveAll();
+  document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
+  typeof renderTimeLog==='function'&&renderTimeLog();
 }
 
 function updateClockTimer(){
@@ -268,7 +428,15 @@ function doneForDay(){
   },150);
 }
 
-// ── Nearby job detection (home-page smart clock-in) ──────────────────────────
+// ── Nearby detection (home-page smart clock-in / collect / diagnostic) ───────
+// Any client with an address is a candidate — not just ones with a scheduled
+// job. Owner request 2026-07-11: always surface all 3 possible actions —
+// Clock in, Start Estimate/Invoice, Collect — not just the single highest-
+// priority one. Start Estimate/Invoice needs nothing but a client, so it's
+// always available. Clock in targets today's active job if there is one,
+// else falls back to the client's nearest open (non-done) job so manual
+// clock-in stays available before automatic geo clock-in/out ships (§9.5).
+// Collect targets the most recent Closed Won bid with a balance owed.
 let _nearbyJob=null;
 function _haversineKm(lat1,lon1,lat2,lon2){
   const R=6371,dLat=(lat2-lat1)*Math.PI/180,dLon=(lon2-lon1)*Math.PI/180;
@@ -279,21 +447,87 @@ function _geocodeAddr(addr){
   return fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(addr),{headers:{'User-Agent':'TradeDesk/1.0'}})
     .then(r=>r.json()).then(d=>d[0]?{lat:parseFloat(d[0].lat),lon:parseFloat(d[0].lon)}:null).catch(()=>null);
 }
+// Nominatim's free tier caps lookups at ~1/sec, so every client's geocoded
+// coords are cached — keyed by client id, in a dedicated localStorage blob,
+// NEVER re-geocoded unless the address text changes. Deliberately NOT stored
+// on the client record / pushed through saveAll(): this is a disposable,
+// device-local optimization, not app data — routing it through the full
+// account-sync engine would fire a cloud round-trip on every newly-seen
+// address from a background heartbeat, for zero benefit (worst case on a
+// cache miss is just one extra geocode later). Brand-new/uncached addresses
+// are throttled to a small budget per call, spaced 1.1s apart, so a large
+// client book backfills over several boots/foreground-resumes instead of
+// bursting the API in one shot. Already-cached clients cost nothing and are
+// always checked, every call.
+const _NEARBY_GEOCODE_BUDGET=8;
+function _nearbyGeoCache(){try{return JSON.parse(localStorage.getItem('zp3_nearby_geo')||'{}');}catch(_e){return{};}}
+function _saveNearbyGeoCache(cache){try{localStorage.setItem('zp3_nearby_geo',JSON.stringify(cache));}catch(_e){}}
+function _nearbyResolveClient(c,myLat,myLon,tk){
+  const addrShort=c.addr.split(',')[0];
+  const bid=bids.filter(b=>b.client_id===c.id&&b.status==='Closed Won').sort((a,b2)=>(b2.bid_date||'').localeCompare(a.bid_date||''))[0];
+  let jobId=null,fallbackJobId=null,bidId=null,balance=0;
+  if(bid){
+    const st=getBidStage(bid);
+    const activeJob=(st.jobs||[]).find(j=>{const d=parseInt(j.days)||1;for(let i=0;i<d;i++)if(addDays(j.start,i)===tk)return true;return false;});
+    if(activeJob)jobId=activeJob.id;
+    else{
+      const nearestJob=(st.jobs||[]).slice().sort((a,b2)=>String(a.start).localeCompare(String(b2.start)))[0];
+      if(nearestJob)fallbackJobId=nearestJob.id;
+    }
+    const bal=getBidBalance(bid);
+    if(bid.completion_date&&bal>0.01){bidId=bid.id;balance=bal;}
+  }
+  return{clientId:c.id,clientName:c.name,addr:addrShort,jobId,fallbackJobId,bidId,balance};
+}
 async function checkNearbyJob(){
   if(!navigator.geolocation||!_supaUser)return;
-  geoIfGranted(async pos=>{
+  // `return` (not a bare call) so a caller that DOES await this — tests, mainly;
+  // production fires it and moves on — resolves only once the async callback
+  // below has actually run, not the instant geoIfGranted's sync half returns.
+  return geoIfGranted(async pos=>{
     const{latitude:myLat,longitude:myLon}=pos.coords;
-    const activeJobs=jobs.filter(j=>!j.completion_date&&j.status!=='done'&&j.status!=='canceled');
-    for(const j of activeJobs){
-      const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
-      if(bid&&bid.status!=='Closed Won')continue;
-      const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-      if(!c?.addr)continue;
-      const coords=await _geocodeAddr(c.addr);
-      if(!coords)continue;
-      const km=_haversineKm(myLat,myLon,coords.lat,coords.lon);
-      if(km<0.5){_nearbyJob={jobId:j.id,jobName:j.name,clientName:c.name,addr:c.addr.split(',')[0]};renderDash&&renderDash();return;}
+    const tk=todayKey();
+    const geoCache=_nearbyGeoCache();
+    // Root cause of the old 5s+ banner delay: a single loop interleaved cached
+    // (instant) and uncached (network geocode + 1.1s throttle sleep) clients in
+    // raw array order, so ANY uncached client positioned before the real match
+    // forced a live geocode round-trip before the next candidate was even
+    // checked. Cached clients are the common case (same client book every day)
+    // and cost nothing — check ALL of them first, with zero network/delay, before
+    // ever touching the throttled uncached path.
+    const uncached=[];
+    for(const c of clients){
+      if(!c.addr)continue;
+      const cached=geoCache[c.id];
+      if(cached&&cached.addr===c.addr){
+        if(_haversineKm(myLat,myLon,cached.lat,cached.lon)<0.5){
+          _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
+          renderDash&&renderDash();
+          return;
+        }
+      }else{
+        uncached.push(c);
+      }
     }
+    // No cached client is nearby — fall back to throttled geocoding of the rest.
+    // Still respects Nominatim's ~1 req/sec limit, but this path only runs (and
+    // only costs real seconds) the first time a client's address is seen, not
+    // on every dashboard load once the cache is warm.
+    let geocodeBudget=_NEARBY_GEOCODE_BUDGET,cacheDirty=false;
+    for(const c of uncached){
+      if(geocodeBudget<=0)break;
+      geocodeBudget--;
+      const coords=await _geocodeAddr(c.addr);
+      if(coords){geoCache[c.id]={lat:coords.lat,lon:coords.lon,addr:c.addr};cacheDirty=true;}
+      if(coords&&_haversineKm(myLat,myLon,coords.lat,coords.lon)<0.5){
+        if(cacheDirty)_saveNearbyGeoCache(geoCache);
+        _nearbyJob=_nearbyResolveClient(c,myLat,myLon,tk);
+        renderDash&&renderDash();
+        return;
+      }
+      if(geocodeBudget>0)await new Promise(r=>setTimeout(r,1100)); // stay under Nominatim's ~1 req/sec
+    }
+    if(cacheDirty)_saveNearbyGeoCache(geoCache);
     if(_nearbyJob){_nearbyJob=null;renderDash&&renderDash();}
   },()=>{},{maximumAge:60000,timeout:8000});
 }
@@ -1122,7 +1356,7 @@ function openAssignSubModal(jobId,clientId){
       '<input id="asub-amount" type="number" min="0" step="0.01" placeholder="0.00" style="font-size:15px;padding:10px;font-weight:700"></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="document.getElementById(\'_asub-ov\').remove()" style="padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
-      '<button onclick="_saveSubAssignment('+jobId+','+clientId+')" style="padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Assign</button>'+
+      '<button id="asub-save" onclick="_saveSubAssignment('+jobId+','+clientId+')" style="padding:11px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Assign</button>'+
     '</div>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -1137,6 +1371,13 @@ function _saveSubAssignment(jobId,clientId){
   if(!j.subs)j.subs=[];
   j.subs.push({subId:sub.id,subName:sub.name,desc,amount,paid:false,paidDate:''});
   saveAll();
+  // The live pipe: a linked sub gets the job ADDRESS + start date the moment
+  // they're assigned — that's when they need it (mileage, routing). Address
+  // only: never the job name, description, amount, or client details.
+  if(typeof _offerJobToLinkedSub==='function'&&sub.id){
+    const _asBid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+    _offerJobToLinkedSub(sub.id,{addr:j.addr||(_asBid&&_asBid.addr)||'',date:j.start||''});
+  }
   document.getElementById('_asub-ov')?.remove();
   showToast(sub.name+' assigned','✓');
   openJobSheet(clientId);
@@ -1162,6 +1403,20 @@ function markSubPaid(jobId,subIdx,clientId){
     expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   }
   saveAll();showToast('Marked paid — logged as contract-labor expense','✓');
+  // The live pipe: if this sub runs their own TradeDesk account (linked at
+  // invite redemption), offer them this payment for THEIR books. Fire-and-
+  // forget — a no-op for unlinked subs, and never blocks the local flow.
+  // Scope is deliberately tight: amount + date + job ADDRESS only (the sub
+  // needs the address for mileage records). Never job names/descriptions —
+  // those can carry the GC's client details.
+  if(typeof _offerPaymentToLinkedSub==='function'&&sp.subId){
+    const _spBid2=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
+    // Prefer the job's OWN address, fall back to its bid's — mirrors the
+    // assignment path (_saveSubAssignment). A job with a direct address and no
+    // bid (pipe-sourced or hand-scheduled) must still send its address so the
+    // sub's mileage records stay accurate.
+    _offerPaymentToLinkedSub(sp.subId,{amount:sp.amount,date:sp.paidDate,addr:j.addr||(_spBid2&&_spBid2.addr)||''});
+  }
   openJobSheet(clientId);
 }
 
@@ -1471,7 +1726,7 @@ function markJobDone(jobId){
     :'')+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
-      '<button onclick="closeTopModal();showJobDebrief('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Complete job ✓</button>'+
+      '<button onclick="_startJobComplete('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Complete job ✓</button>'+
     '</div>';
   overlay.appendChild(box);
   document.body.appendChild(overlay);
@@ -1479,6 +1734,15 @@ function markJobDone(jobId){
   box._jobId=jobId;
 }
 let _adjType=null;
+// Root cause (found while wiring the price-increase signature gate below): the
+// old flow read #adj-amount/#adj-reason/#job-done-date from confirmJobDone,
+// but confirmJobDone only runs AFTER "Complete job" -> closeTopModal() removes
+// THIS modal -> showJobDebrief() (a separate modal) -> confirmMarkComplete().
+// By then this modal's inputs are detached from the document, so every read
+// silently returned nothing — completion date always fell back to today, and
+// price adjustments were dropped entirely, with no error. Captured here,
+// while the modal is still live, and threaded through instead.
+let _jobDoneCapture=null;
 function setAdjType(t){
   _adjType=t;
   const inc=document.getElementById('adj-inc');
@@ -1500,8 +1764,13 @@ function _previewAdjTotal(jobId){
   const color=_adjType==='increase'?'var(--blue)':'var(--green-mid)';
   preview.innerHTML='<span style="color:var(--text3)">'+fmt(bid.amount)+'</span> <span style="color:'+color+'">'+arrow+' '+fmt(newTotal)+'</span>';
 }
-async function confirmJobDone(jobId){
-  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+// Validates + captures the still-live markJobDone modal fields, then either
+// proceeds straight to the debrief step (no adjustment, or a price DECREASE —
+// the client owes less, nothing to protect against) or requires a client
+// signature first (a price INCREASE — the one case that needs the same
+// protection a signed change order gives: nothing on file yet says the client
+// agreed to owe more).
+function _startJobComplete(jobId){
   const dateStr=document.getElementById('job-done-date')?.value||todayKey();
   if(!dateStr.match(/^\d{4}-\d{2}-\d{2}$/)){zAlert('Enter a valid date.',{title:'Invalid date'});return;}
   const adjFields=document.getElementById('adj-fields');
@@ -1520,6 +1789,54 @@ async function confirmJobDone(jobId){
       zAlert('Enter a reason for the price change (at least 5 characters).',{title:'Reason required'});return;
     }
   }
+  _jobDoneCapture={dateStr,adjType:adjOpen?_adjType:null,adjAmt,adjReason,signerName:'',sigData:''};
+  if(adjOpen&&_adjType==='increase'){_showJobDoneSignStep(jobId);return;}
+  closeTopModal();showJobDebrief(jobId);
+}
+function _showJobDoneSignStep(jobId){
+  const box=document.querySelector('.zmodal-overlay .zmodal');if(!box)return;
+  const j=jobs.find(x=>x.id===jobId);
+  const bid=j?.bid_id?bids.find(b=>b.id===j.bid_id):null;
+  if(!bid){closeTopModal();showJobDebrief(jobId);return;}
+  const cap=_jobDoneCapture;
+  const newTotal=Math.round((bid.amount+cap.adjAmt)*100)/100;
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Confirm the price increase</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">A price increase needs the client\'s sign-off — same protection as a change order — so nobody\'s surprised by the final bill.</div>'+
+    '<div style="background:#EBF2FB;border:1.5px solid #93C5FD;border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
+      '<div style="font-size:11px;color:#1E3A8A;font-weight:700;text-transform:uppercase;margin-bottom:4px">'+escHtml(cap.adjReason)+'</div>'+
+      '<div style="font-size:13px;color:#1E3A8A">'+fmt(bid.amount)+' → <strong>'+fmt(newTotal)+'</strong></div>'+
+    '</div>'+
+    esignPadHTML('job-sign')+
+    // Literal same consent block as a change order — this IS one.
+    esignConsentHTML('job-sign',ESIGN_NOTE_CHANGE_ORDER)+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="markJobDone('+jobId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">← Back</button>'+
+      '<button onclick="_confirmJobDoneSign('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Confirm &amp; complete ✓</button>'+
+    '</div>';
+  // Shared e-sign pad (esign.js) — same markup + capture code as every signing surface.
+  // Wired synchronously: the canvas is already in the DOM the instant box.innerHTML
+  // above runs, so deferring this via setTimeout only opens a window where a fast
+  // confirm click finds no registered pad yet (esignResult returns "no-pad").
+  esignWire('job-sign');
+}
+function _confirmJobDoneSign(jobId){
+  // Typed name OR a drawn signature satisfies the sign-off (same rule as before).
+  const r=esignResult('job-sign',{requireTyped:false});
+  const typed=(document.getElementById('job-sign-name')?.value||'').trim();
+  const sigData=r.sigData;
+  if(!typed&&!sigData){zAlert('Type the client\'s name or have them sign in the box above.',{title:'Signature required'});return;}
+  if(_jobDoneCapture){_jobDoneCapture.signerName=typed;_jobDoneCapture.sigData=sigData;}
+  closeTopModal();showJobDebrief(jobId);
+}
+async function confirmJobDone(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  // Read from the capture taken in _startJobComplete while the modal was still
+  // live — by the time this runs (after the debrief step) that modal's inputs
+  // are long detached from the document (see root-cause note above _adjType).
+  const cap=_jobDoneCapture||{};
+  const dateStr=cap.dateStr||todayKey();
+  const adjType=cap.adjType,adjAmt=cap.adjAmt||0,adjReason=cap.adjReason||'';
   closeTopModal();
   j.status='done';
   j.completion_date=dateStr;
@@ -1527,11 +1844,30 @@ async function confirmJobDone(jobId){
     const b=bids.find(x=>x.id===j.bid_id);
     if(b){
       b.completion_date=dateStr;
-      if(_adjType&&adjAmt>0){
-        const delta=_adjType==='increase'?adjAmt:-adjAmt;
-        b.amount=Math.max(0,Math.round((b.amount+delta)*100)/100);
-        if(!b.adjustments)b.adjustments=[];
-        b.adjustments.push({type:_adjType,amount:adjAmt,reason:adjReason,ts:new Date().toISOString()});
+      if(adjType&&adjAmt>0){
+        if(adjType==='increase'){
+          // Routed through the SAME structure a normal signed change order
+          // uses (owner: "we have change orders... that's what protects
+          // everyone") — carries the signature captured in _confirmJobDoneSign.
+          // Shows up everywhere change orders already do: Documents tab,
+          // client hub, dashboard change-order rollups — no new UI needed.
+          const coNum=(b.changeOrders||[]).length+1;
+          const originalAmount=b.amount;
+          const newAmount=Math.max(0,Math.round((b.amount+adjAmt)*100)/100);
+          if(!b.changeOrders)b.changeOrders=[];
+          b.changeOrders.push({
+            id:Date.now(),coNum,date:dateStr,desc:adjReason,type:'addition',
+            amount:adjAmt,delta:adjAmt,originalAmount,newAmount,
+            signedAt:new Date().toISOString(),signerName:cap.signerName||'',sigData:cap.sigData||''
+          });
+          b.amount=newAmount;
+        }else{
+          // Decrease — client owes LESS, no dispute-protection need, same
+          // no-signature path as before.
+          b.amount=Math.max(0,Math.round((b.amount-adjAmt)*100)/100);
+          if(!b.adjustments)b.adjustments=[];
+          b.adjustments.push({type:adjType,amount:adjAmt,reason:adjReason,ts:new Date().toISOString()});
+        }
       }
     }
   } else {
@@ -1542,7 +1878,7 @@ async function confirmJobDone(jobId){
       j.bid_id=unlinkedWon[0].id;
     }
   }
-  _adjType=null;
+  _adjType=null;_jobDoneCapture=null;
   const jobMiles=getClientMileage(j.client_id).filter(m=>m.date>=j.start&&m.date<=addDays(dateStr,3));
   jobMiles.forEach(m=>{m.job_id=jobId;m.job_name=j.name;});
   saveAll();

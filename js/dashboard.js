@@ -312,12 +312,53 @@ function renderDash(){
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     if(_nearbyJob&&!_activeTimer){
+      // Owner request 2026-07-10/11, revised twice on 2026-07-11 after live
+      // testing: a permanently-disabled Collect button read as broken, not
+      // "not applicable right now" (Nielsen/NN disabled-control guidance
+      // applies here — a control that never does anything is worse than not
+      // showing it). Collect is now conditionally INCLUDED, not disabled: it
+      // only renders when there's a real balance owed. Clock in is different —
+      // it always shows, full stop, because being physically on site is
+      // reason enough to want to track time whether or not a job record
+      // exists yet. What was actually broken was the FALLBACK: it used to
+      // dead-end on the client profile page instead of doing anything.
+      // _nearbyClockIn() (js/jobs.js) fixes that properly — with no job
+      // target it creates a minimal walk-up job for this client on the spot
+      // and clocks straight into that, reusing the existing job-scoped
+      // time-tracking machinery instead of a dead redirect. Estimate/Invoice
+      // always shows too — needs nothing but a client, and already routes
+      // into Collect once the charge is saved. Remaining buttons split the
+      // row evenly via the existing .tf-acts>.btn flex:1 rule.
+      const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
       _nearbyEl.style.display='block';
-      _nearbyEl.innerHTML='<div style="background:linear-gradient(135deg,#1E4D2B,#2D7A44);border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="openClockInSheet('+_nearbyJob.jobId+')">'+
-        '<span style="font-size:24px;display:inline-flex">'+svgIcon('🔨',{size:24,color:'#fff'})+'</span>'+
-        '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:800;color:#fff">You\'re at '+escHtml(_nearbyJob.clientName)+'\'s</div>'+
-        '<div style="font-size:12px;color:rgba(255,255,255,.75)">'+escHtml(_nearbyJob.addr)+' · Tap to clock in</div></div>'+
-        '<span style="font-size:20px;color:rgba(255,255,255,.6)">▶</span></div>';
+      const nb=_nearbyJob;
+      const clockTarget=nb.jobId||nb.fallbackJobId;
+      const hasBalance=nb.balance>0.01;
+      const nbSub=nb.addr+(hasBalance?' · '+fmt(nb.balance)+' owed':'');
+      if(!document.getElementById('_td-nearby-anim-style')){
+        const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
+        // A subtle live-indicator dot pulse signals "right now" — a small,
+        // standard convention (recording/online-status badges), not a foreign
+        // animation. The card itself uses the exact same background/shadow as
+        // every other dashboard card (only the left accent stripe differs), so
+        // it doesn't read as a different-colored card.
+        _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
+          '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}';
+        document.head.appendChild(_s);
+      }
+      const nbBtns=[];
+      nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('▶',{size:11})+' Clock in</button>');
+      nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('📋',{size:11})+' Estimate/Invoice</button>');
+      if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px;padding:0 6px">'+svgIcon('💰',{size:11})+' Collect →</button>');
+      _nearbyEl.innerHTML='<div class="tf-card" style="position:relative;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+        '<span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c-green);border-radius:var(--r-lg) 0 0 var(--r-lg)"></span>'+
+        '<div class="tf-icon t-green">'+svgIcon('📍',{size:18})+'</div>'+
+        '<div class="tf-body">'+
+          '<div class="tf-name"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c-green);margin-right:6px;animation:tdNearbyDot 1.6s ease-in-out infinite"></span>You\'re here — '+escHtml(nb.clientName)+'</div>'+
+          '<div class="tf-sub" style="color:var(--c-green-deep)">'+escHtml(nbSub)+'</div>'+
+        '</div>'+
+        '<div class="tf-acts" style="padding-left:0;gap:5px">'+nbBtns.join('')+'</div>'+
+      '</div>';
     }else{_nearbyEl.style.display='none';}
   }
   // Update new nav badges
@@ -406,6 +447,15 @@ function _empToggleTask(jobId,taskId){
   saveAll();renderDash();
 }
 
+// One-tap mileage log for a pipe-landed job — the whole reason a linked
+// contractor's address crosses the pipe is so the drive there gets tracked.
+// Looks the job up by id (not baked into the onclick string) so the address/
+// client name never need HTML+JS double-escaping.
+function _dashLogPipeMileage(jobId){
+  const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  const c=getClientById(j.client_id);
+  if(typeof openLogTripModal==='function')openLogTripModal({toAddress:j.addr||'',clientId:j.client_id||'',clientName:(c&&c.name)||'',purpose:'Job site'});
+}
 function renderDashToday(){
   const el=document.getElementById('dash-today');if(!el)return;
   const tk=todayKey();
@@ -445,6 +495,19 @@ function renderDashToday(){
     const c=getClientById(j.client_id);
     const isEst=j.eventType==='estimate';
     const isActive=j.start<=tk&&addDays(j.start,(parseInt(j.days)||1)-1)>=tk;
+    // One-tap mileage shortcut, appended to whichever crew-row branch
+    // renders below — pipe-landed jobs only, and only when the job itself
+    // carries an address (j.addr is what the modal prefills — the client
+    // card's address is deliberately NOT a fallback here, since pipe payer
+    // cards never store addresses).
+    const _mileBtn=(j.pipeSourced&&j.addr)?
+      '<button onclick="event.stopPropagation();_dashLogPipeMileage('+j.id+')" style="margin-left:8px;padding:4px 10px;border-radius:20px;border:1px solid var(--green-mid,#0E6B39);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--green-mid,#0E6B39);white-space:nowrap">'+svgIcon('🚗',{size:11})+' Log mileage</button>':'';
+    // Sub side: bid your piece back to the GC — the job address arrived via the
+    // pipe, so the composer opens with it prefilled (no searching). Flips to a
+    // "Bid sent" pill once sent. Same pipe-sourced + has-address gate as mileage.
+    const _bidBtn=(j.pipeSourced&&j.addr)?(j.bidSentAt
+      ?'<span style="margin-left:8px;padding:4px 10px;border-radius:20px;background:var(--blue-lt,#e6f0fb);font-size:11px;font-weight:700;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid sent</span>'
+      :'<button onclick="event.stopPropagation();typeof _openBidBuilder===\'function\'&&_openBidBuilder('+j.id+')" style="margin-left:8px;padding:4px 10px;border-radius:20px;border:1px solid var(--blue);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue);white-space:nowrap">'+svgIcon('📤',{size:11})+' Bid this job</button>'):'';
     // Quick crew assignment row (owner only, non-estimate jobs)
     const _crewRow=(!_isEmployee&&!isEst)?(()=>{
       if(_crewEmps.length>0){
@@ -454,12 +517,14 @@ function renderDashToday(){
           (_aEmp?'<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">'+svgIcon('👤',{size:11})+' '+escHtml(_aEmp.name)+'</span>':
                  '<span style="font-size:11px;color:var(--text3)">No crew assigned</span>')+
           '<button onclick="_openCrewAssignSheet('+j.id+')" style="margin-left:auto;padding:4px 12px;border-radius:20px;border:1px solid var(--border2);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--blue)">+ Assign</button>'+
+          _mileBtn+
         '</div>';
       }
       const _days=parseInt(j.days)||1;
       return '<div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">'+
         '<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">'+svgIcon('👤',{size:11})+' You</span>'+
         '<span style="font-size:11px;color:var(--text3);margin-left:2px">'+_days+' day'+(_days!==1?'s':'')+' on schedule</span>'+
+        _mileBtn+
       '</div>';
     })():'';
     return '<div style="padding:11px 0;border-bottom:1px solid var(--border)">'+
@@ -1051,6 +1116,15 @@ function _markDepositCash(bidId){
 function renderTodayFeed(){
   const el=document.getElementById('dash-money-feed');if(!el)return;
   const tk=todayKey();
+  // GC side: a linked sub's bid awaiting Review & Sign is an ACTION-REQUIRED
+  // item pinned to the very top of the feed (research-backed: authenticated
+  // in-app action for a repeat platform user, not a sent link). Kick the async
+  // load once; re-render when it lands. Harmless for accounts with no bids ([]).
+  if(typeof _subBids!=='undefined'&&_subBids===null&&!window._subBidsKicked&&typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser){
+    window._subBidsKicked=true;
+    if(typeof _loadSubBids==='function')_loadSubBids().then(()=>renderTodayFeed());
+  }
+  const _bidInbox=(typeof _subBidInboxHTML==='function')?_subBidInboxHTML(typeof _subBids!=='undefined'?_subBids:null):'';
   const finalPayItems=[],depositItems=[],scheduleItems=[],pendingItems=[],buildItems=[],alertItems=[];
 
   // ALERTS — License expiring/expired (always first, outside sections)
@@ -1128,7 +1202,7 @@ function renderTodayFeed(){
         '</div>'
       );
     } else {
-      // Deposit still needed — goes to Deposit & Schedule
+      // Deposit still needed — money owed, so it lives in the Collect section
       const depAmt=depositRequired?fmt(b.deposit):fmt(b.amount);
       const _dTypeLbl=(typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'';
       const subText=_dTypeLbl+(hasJob?'Job in progress · deposit not collected · '+depAmt:'Deposit required before scheduling · '+depAmt);
@@ -1325,8 +1399,9 @@ function renderTodayFeed(){
 
   if(!totalShown){
     const msg='You\'re caught up — nothing to chase right now.';
-    el.innerHTML='<div style="padding:14px;font-size:13px;color:var(--text3)">'+msg+'</div>';
-    if(_feedSub)_feedSub.textContent='all caught up';
+    // A pending bid still needs the GC even when everything else is clear.
+    el.innerHTML=_bidInbox||('<div style="padding:14px;font-size:13px;color:var(--text3)">'+msg+'</div>');
+    if(_feedSub)_feedSub.textContent=_bidInbox?'1 bid to sign':'all caught up';
     _mmtFeedEnter(el);
     return;
   }
@@ -1335,17 +1410,22 @@ function renderTodayFeed(){
     const parts=[];
     if(showBuild&&buildItems.length)parts.push(buildItems.length+' to build');
     if(showPending&&pendingItems.length)parts.push(pendingItems.length+' pending');
-    if(showDepSched&&(depositItems.length+scheduleItems.length))parts.push((depositItems.length+scheduleItems.length)+' to deposit/schedule');
-    if(showFinalPay&&finalPayItems.length)parts.push(finalPayItems.length+' to collect');
+    if(showDepSched&&scheduleItems.length)parts.push(scheduleItems.length+' to schedule');
+    if(showFinalPay&&(finalPayItems.length+depositItems.length))parts.push((finalPayItems.length+depositItems.length)+' to collect');
     _feedSub.textContent=parts.join(' · ')||'all caught up';
   }
 
   el.innerHTML=
+    _bidInbox+
     (alertItems.length?'<div>'+alertItems.join('')+'</div>':'')+
     _sec('build',svgIcon('✏',{size:14}),'Build','var(--text2)',buildItems,showBuild)+
     _sec('pending',svgIcon('📨',{size:14}),'Pending','#7c3aed',pendingItems,showPending)+
-    _sec('dep-sched',svgIcon('💳',{size:14}),'Deposit & Schedule','var(--blue)',[...depositItems,...scheduleItems],showDepSched)+
-    _sec('collect',svgIcon('💰',{size:14}),'Collect','#A32D2D',finalPayItems,showFinalPay);
+    _sec('schedule',svgIcon('📅',{size:14}),'Schedule','var(--blue)',scheduleItems,showDepSched)+
+    // ONE money queue (owner decision 2026-07-10): Collect = every dollar owed right
+    // now — completed-job balances (red, overdue receivable) AND deposits not yet
+    // collected (blue, gates scheduling). Matches the qa-collect quick-action count,
+    // which already tallies ALL owed balances. Card colors keep the "why" visible.
+    _sec('collect',svgIcon('💰',{size:14}),'Collect','#A32D2D',[...finalPayItems,...depositItems],showFinalPay);
   _mmtFeedEnter(el);
 }
 

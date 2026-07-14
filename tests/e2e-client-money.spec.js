@@ -150,15 +150,9 @@ test.describe('Client management — CRUD and validation', () => {
   });
 
   test('saveClient — duplicate name is rejected', async () => {
-    // First save a client with a known name
     const uid = 'DupeTest_' + Date.now();
-    await page.evaluate(name => {
-      if (typeof clients !== 'undefined') {
-        clients.push({ id: Date.now(), name, phone: '3165550001', source: 'Word of mouth' });
-      }
-    }, uid);
 
-    // Now try to save another with the same name
+    // Fill the form for a client whose name will collide with the seeded dupe
     await page.evaluate(name => {
       _submitting = false;
       if (typeof openNewClient === 'function') openNewClient();
@@ -172,7 +166,18 @@ test.describe('Client management — CRUD and validation', () => {
       } else if (s) { s.value = 'Word of mouth'; }
     }, uid);
     await page.waitForTimeout(100);
-    await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
+    // Seed the duplicate IN THE SAME evaluate that calls saveClient — a late
+    // background cloud load reassigns `clients` on slow WebKit workers, and a
+    // dupe seeded in an earlier evaluate was dropped before the save ran
+    // (task #22 fixture-seeding race). Idempotent: filter-then-push.
+    await page.evaluate(name => {
+      if (typeof clients !== 'undefined') {
+        clients = clients.filter(c => c.name !== name);
+        clients.push({ id: 987654321001, name, phone: '3165550001', source: 'Word of mouth' });
+      }
+      _submitting = false;
+      if (typeof saveClient === 'function') saveClient();
+    }, uid);
     await page.waitForTimeout(150);
 
     const errVisible = await page.evaluate(() => {
@@ -266,6 +271,73 @@ test.describe('Client management — CRUD and validation', () => {
         expect(result.currentId).toBe(clientId);
       }
     }
+  });
+
+  test('diagnostic charge — protected quick path: client SIGNS before payment is ever collected', async () => {
+    const result = await page.evaluate(async () => {
+      const savedB = bids.slice(), savedC = clients.slice(), savedPay = window.openPayPanel;
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      let payOpened = null; window.openPayPanel = (id, stage) => { payOpened = { id, stage }; };
+      clients.length = 0; bids.length = 0;
+      clients.push({ id: 501, name: 'Karen Doe', addr: '44 Lot Way, Austin, TX' });
+
+      // 1. Charge modal: green "signs before you collect" note, no unsigned warning.
+      openDiagnosticCharge(501);
+      let modal = document.querySelector('.zmodal-overlay .zmodal');
+      const chargeHtml = modal ? modal.innerHTML : '';
+      document.getElementById('diag-desc').value = 'No-heat — diagnosed failed igniter';
+      document.getElementById('diag-amount').value = '150';
+      saveDiagnosticCharge(501);
+
+      // 2. Charge saved → the SIGN step opens (not the pay panel).
+      await new Promise(r => setTimeout(r, 170));
+      modal = document.querySelector('.zmodal-overlay .zmodal');
+      const signHtml = modal ? modal.innerHTML : '';
+      const bid = bids.find(b => b.kind === 'diagnostic');
+
+      // 3a. Try to finish with NO signature → rejected, nothing signed, pay never opens.
+      _submitDiagnosticSign(bid.id, 501);
+      const rejected = bid.signed !== true && payOpened === null;
+
+      // 3b. Draw a signature + type the name → signed, THEN pay opens.
+      document.getElementById('diag-sign-name').value = 'Karen Doe';
+      if (_ESIGN_PADS['diag-sign']) _ESIGN_PADS['diag-sign'].ctx.fillRect(10, 10, 60, 40); // simulate a drawn stroke via the SHARED pad (alpha>0)
+      _submitDiagnosticSign(bid.id, 501);
+
+      const out = {
+        bidId: bid.id,
+        // Owner reframe 2026-07-13: the modal hand-holds the NARROW use case —
+        // estimate given, client declined, charging the trip + diagnosis.
+        chargeHasProtectionNote: /declined/.test(chargeHtml) && /trip out/.test(chargeHtml),
+        chargeNoUnsignedWarning: !/isn.t a signed contract/.test(chargeHtml),
+        chargeContinueToSign: /Continue to sign/.test(chargeHtml),
+        signHasCanvas: /diag-sign-canvas/.test(signHtml),
+        signHasName: /diag-sign-name/.test(signHtml),
+        signHasCollect: /Sign &amp; collect/.test(signHtml),
+        rejectedNoSig: rejected,
+        signedName: bid.signerName,
+        signedFlag: bid.signed === true,
+        hasSigData: typeof bid.sigData === 'string' && bid.sigData.indexOf('data:image') === 0,
+        payOpened,
+      };
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      window.openPayPanel = savedPay;
+      bids.length = 0; savedB.forEach(b => bids.push(b));
+      clients.length = 0; savedC.forEach(c => clients.push(c));
+      return out;
+    });
+    expect(result.chargeHasProtectionNote).toBe(true);   // "client signs before you collect"
+    expect(result.chargeNoUnsignedWarning).toBe(true);   // the old unsigned-invoice warning is gone
+    expect(result.chargeContinueToSign).toBe(true);      // button leads to the sign step
+    expect(result.signHasCanvas).toBe(true);             // signature pad present
+    expect(result.signHasName).toBe(true);
+    expect(result.signHasCollect).toBe(true);
+    expect(result.rejectedNoSig).toBe(true);             // no signature → NOT signed, pay never opens
+    expect(result.signedName).toBe('Karen Doe');
+    expect(result.signedFlag).toBe(true);                // signature recorded on the charge
+    expect(result.hasSigData).toBe(true);                // drawn signature captured (data URL)
+    expect(result.payOpened && result.payOpened.id).toBe(result.bidId); // pay opens ONLY after signing
+    expect(result.payOpened.stage).toBe('final');
   });
 
   test('no console errors during client management tests', async () => {
@@ -1661,4 +1733,371 @@ test.describe('Multi-line-item estimate — BYO lines accumulate (replaces the o
 // ═══════════════════════════════════════════════════════════════════════════════
 // BATCH A: Data utilities — getClientById, getClientBids, parseD, todayKey, fmt, fmtPhone
 // ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Diagnostic charge — fast on-site "I came, I diagnosed X, the fee is $Y"
+// Research-backed (owner, 2026-07-09): no client signature — every source
+// treats a diagnostic/trip fee as a plain charge-and-receipt moment. It's
+// still a real document on the client record (a Closed Won bid with
+// kind:'diagnostic'), it just skips the signing portal entirely.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Diagnostic charge — quick entry, client signs, then payment', () => {
+  const DIAG_CLIENT_ID = 910001;
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+    await page.evaluate(([cid]) => {
+      clients = clients.filter(c => c.id !== cid);
+      clients.push({ id: cid, name: 'Diag Test Client', phone: '316-555-9001', addr: '1 Diag St' });
+      bids = bids.filter(b => b.client_id !== cid);
+    }, [DIAG_CLIENT_ID]);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('openDiagnosticCharge — modal renders with description + amount fields', async () => {
+    const r = await page.evaluate(([cid]) => {
+      openDiagnosticCharge(cid);
+      return {
+        overlay: !!document.querySelector('.zmodal-overlay'),
+        descEl: !!document.getElementById('diag-desc'),
+        amtEl: !!document.getElementById('diag-amount'),
+      };
+    }, [DIAG_CLIENT_ID]);
+    expect(r.overlay).toBe(true);
+    expect(r.descEl).toBe(true);
+    expect(r.amtEl).toBe(true);
+    await page.evaluate(() => closeTopModal());
+  });
+
+  test('saveDiagnosticCharge — rejects empty description', async () => {
+    const r = await page.evaluate(([cid]) => {
+      openDiagnosticCharge(cid);
+      document.getElementById('diag-desc').value = '';
+      document.getElementById('diag-amount').value = '89';
+      const before = bids.length;
+      saveDiagnosticCharge(cid);
+      return { created: bids.length > before, errShown: document.getElementById('diag-desc-err')?.style.display === 'block' };
+    }, [DIAG_CLIENT_ID]);
+    expect(r.created).toBe(false);
+    expect(r.errShown).toBe(true);
+    await page.evaluate(() => closeTopModal());
+  });
+
+  test('saveDiagnosticCharge — rejects zero/blank amount', async () => {
+    const r = await page.evaluate(([cid]) => {
+      openDiagnosticCharge(cid);
+      document.getElementById('diag-desc').value = 'No-heat call — failed igniter';
+      document.getElementById('diag-amount').value = '';
+      const before = bids.length;
+      saveDiagnosticCharge(cid);
+      return { created: bids.length > before, errShown: document.getElementById('diag-amount-err')?.style.display === 'block' };
+    }, [DIAG_CLIENT_ID]);
+    expect(r.created).toBe(false);
+    expect(r.errShown).toBe(true);
+    await page.evaluate(() => closeTopModal());
+  });
+
+  test('saveDiagnosticCharge — creates the Closed Won bid then opens the SIGN step (pay panel comes AFTER signing)', async () => {
+    const r = await page.evaluate(([cid]) => {
+      document.querySelectorAll('.zmodal-overlay,.pay-modal-overlay').forEach(e => e.remove());
+      openDiagnosticCharge(cid);
+      document.getElementById('diag-desc').value = 'No-heat call — diagnosed failed igniter, needs replacement';
+      document.getElementById('diag-amount').value = '89.00';
+      saveDiagnosticCharge(cid);
+      const b = bids.filter(x => x.client_id === cid).sort((a, z) => z.id - a.id)[0];
+      const signModal = document.querySelector('.zmodal-overlay .zmodal');
+      return {
+        bid: b ? { kind: b.kind, type: b.type, amount: b.amount, status: b.status, draft: b.draft, hasCompletion: !!b.completion_date, desc: b.desc } : null,
+        signStepOpen: !!signModal && /diag-sign-canvas/.test(signModal.innerHTML), // sign FIRST
+        payPanelOpen: !!document.querySelector('.pay-modal-overlay'),               // NOT yet
+        notSignedYet: !b?.signed,
+        // Diagnostic sign uses an on-device signature (sigData), not the e-sign portal token.
+        noSignArtifacts: !b?.signingToken && !b?.proposalKey,
+      };
+    }, [DIAG_CLIENT_ID]);
+    expect(r.bid).not.toBeNull();
+    expect(r.bid.kind).toBe('diagnostic');
+    expect(r.bid.type).toBe('Diagnostic charge');
+    expect(r.bid.amount).toBeCloseTo(89, 2);
+    expect(r.bid.status).toBe('Closed Won');
+    expect(r.bid.draft).toBe(false);
+    expect(r.bid.hasCompletion).toBe(true);
+    expect(r.bid.desc).toContain('failed igniter');
+    expect(r.signStepOpen).toBe(true);    // client signs before anything is collected
+    expect(r.payPanelOpen).toBe(false);   // pay panel does NOT open until the charge is signed
+    expect(r.notSignedYet).toBe(true);
+    expect(r.noSignArtifacts).toBe(true);
+    await page.evaluate(() => { document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove()); });
+  });
+
+  test('a diagnostic-charge bid shows the "Schedule" / "Revise bid" / "Supply list" actions hidden on the client detail bid row', async () => {
+    const r = await page.evaluate(([cid]) => {
+      currentClientId = cid;
+      renderCDBids();
+      const html = document.getElementById('cd-bids-list')?.innerHTML || '';
+      return {
+        hasSchedule: html.includes('Schedule →'),
+        hasRevise: html.includes('Revise bid'),
+        hasSupply: html.includes('Supply list'),
+        hasFinalInvoiceBtn: html.includes('openFinalInvoice('),
+      };
+    }, [DIAG_CLIENT_ID]);
+    expect(r.hasSchedule).toBe(false);
+    expect(r.hasRevise).toBe(false);
+    expect(r.hasSupply).toBe(false);
+    expect(r.hasFinalInvoiceBtn).toBe(false); // final invoice is for real jobs, not a one-line charge
+  });
+
+  test('no console errors during diagnostic charge tests', async () => {
+    assertNoErrors(page, 'diagnostic charge');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Job completion — price increase requires a client signature (routed through
+// the same change-order structure), price decrease does not.
+//
+// Regression coverage for a root-cause bug found while building this: the old
+// flow read #adj-amount/#adj-reason/#job-done-date INSIDE confirmJobDone, but
+// confirmJobDone only runs after "Complete job" -> closeTopModal() removes
+// that modal -> showJobDebrief() (a different modal) -> confirmMarkComplete().
+// By then the original modal's inputs are detached from the document, so
+// every read silently returned nothing: the completion date always fell back
+// to today, and a typed price adjustment was dropped with no error, no
+// console warning, nothing. _startJobComplete now captures those fields while
+// the modal is still live, before anything closes.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+test.describe('Job completion — price change signature gate', () => {
+  const JC_CLIENT_ID = 910002;
+  let page;
+
+  async function seedJob(bidId, jobId, amount) {
+    await page.evaluate(([cid, bId, jId, amt]) => {
+      clients = clients.filter(c => c.id !== cid);
+      clients.push({ id: cid, name: 'Job Complete Client', phone: '316-555-9002', addr: '2 Job St' });
+      bids = bids.filter(b => b.id !== bId);
+      bids.push({ id: bId, client_id: cid, client_name: 'Job Complete Client', amount: amt, status: 'Closed Won', draft: false, bid_date: '2026-06-01' });
+      jobs = jobs.filter(j => j.id !== jId);
+      jobs.push({ id: jId, client_id: cid, bid_id: bId, name: 'Job complete test', status: 'scheduled', start: '2026-06-05' });
+      _adjType = null; _jobDoneCapture = null;
+    }, [JC_CLIENT_ID, bidId, jobId, amount]);
+  }
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('no adjustment: completing the job applies the captured date, no signature step', async () => {
+    const BID_ID = 920001, JOB_ID = 930001;
+    await seedJob(BID_ID, JOB_ID, 1000);
+    const r = await page.evaluate(([bId, jId]) => {
+      markJobDone(jId);
+      document.getElementById('job-done-date').value = '2026-06-10';
+      _startJobComplete(jId);
+      // No scope rooms on this bid -> showJobDebrief calls confirmMarkComplete synchronously.
+      const b = bids.find(x => x.id === bId);
+      return { completionDate: b.completion_date, amount: b.amount, signStepShown: !!document.getElementById('job-sign-canvas') };
+    }, [BID_ID, JOB_ID]);
+    expect(r.signStepShown).toBe(false);
+    expect(r.completionDate).toBe('2026-06-10');
+    expect(r.amount).toBe(1000); // unchanged
+  });
+
+  test('price DECREASE: applies immediately, no signature required, recorded in bid.adjustments', async () => {
+    const BID_ID = 920002, JOB_ID = 930002;
+    await seedJob(BID_ID, JOB_ID, 1000);
+    const r = await page.evaluate(([bId, jId]) => {
+      markJobDone(jId);
+      setAdjType('decrease');
+      document.getElementById('adj-amount').value = '100';
+      document.getElementById('adj-reason').value = 'Finished early, used less material';
+      _startJobComplete(jId);
+      const b = bids.find(x => x.id === bId);
+      return {
+        signStepShown: !!document.getElementById('job-sign-canvas'),
+        amount: b.amount,
+        adjustments: b.adjustments || [],
+        changeOrders: b.changeOrders || [],
+      };
+    }, [BID_ID, JOB_ID]);
+    expect(r.signStepShown).toBe(false); // decreases never gate on a signature
+    expect(r.amount).toBeCloseTo(900, 2);
+    expect(r.adjustments.length).toBe(1);
+    expect(r.adjustments[0].type).toBe('decrease');
+    expect(r.changeOrders.length).toBe(0); // decreases don't touch change orders
+  });
+
+  test('price INCREASE: "Complete job" routes to the signature step FIRST — bid.amount NOT yet changed', async () => {
+    const BID_ID = 920003, JOB_ID = 930003;
+    await seedJob(BID_ID, JOB_ID, 1000);
+    const r = await page.evaluate(([bId, jId]) => {
+      markJobDone(jId);
+      setAdjType('increase');
+      document.getElementById('adj-amount').value = '150';
+      document.getElementById('adj-reason').value = 'Client added a second wall';
+      _startJobComplete(jId);
+      const b = bids.find(x => x.id === bId);
+      return {
+        signStepShown: !!document.getElementById('job-sign-canvas'),
+        nameInputShown: !!document.getElementById('job-sign-name'),
+        amountStillOriginal: b.amount === 1000,
+        completionDateStillUnset: !b.completion_date, // job isn't actually done until signed
+      };
+    }, [BID_ID, JOB_ID]);
+    expect(r.signStepShown).toBe(true);
+    expect(r.nameInputShown).toBe(true);
+    expect(r.amountStillOriginal).toBe(true);
+    expect(r.completionDateStillUnset).toBe(true);
+  });
+
+  test('price INCREASE without a name or signature — blocked, cannot complete', async () => {
+    const BID_ID = 920004, JOB_ID = 930004;
+    await seedJob(BID_ID, JOB_ID, 1000);
+    const r = await page.evaluate(([bId, jId]) => {
+      markJobDone(jId);
+      setAdjType('increase');
+      document.getElementById('adj-amount').value = '150';
+      document.getElementById('adj-reason').value = 'Client added a second wall';
+      _startJobComplete(jId);
+      document.getElementById('job-sign-name').value = ''; // left blank, no canvas drawing either
+      _confirmJobDoneSign(jId);
+      const b = bids.find(x => x.id === bId);
+      return { stillOnSignStep: !!document.getElementById('job-sign-canvas'), amountUnchanged: b.amount === 1000 };
+    }, [BID_ID, JOB_ID]);
+    expect(r.stillOnSignStep).toBe(true);
+    expect(r.amountUnchanged).toBe(true);
+  });
+
+  test('price INCREASE with a typed name — completes, amount updates, routed through bid.changeOrders (signed)', async () => {
+    const BID_ID = 920005, JOB_ID = 930005;
+    await seedJob(BID_ID, JOB_ID, 1000);
+    const r = await page.evaluate(([bId, jId]) => {
+      markJobDone(jId);
+      setAdjType('increase');
+      document.getElementById('adj-amount').value = '150';
+      document.getElementById('adj-reason').value = 'Client added a second wall';
+      _startJobComplete(jId);
+      document.getElementById('job-sign-name').value = 'Alice Homeowner';
+      _confirmJobDoneSign(jId);
+      const b = bids.find(x => x.id === bId);
+      return {
+        amount: b.amount,
+        completionDate: b.completion_date,
+        changeOrders: (b.changeOrders || []).map(co => ({ desc: co.desc, delta: co.delta, newAmount: co.newAmount, signerName: co.signerName, hasSignedAt: !!co.signedAt })),
+        adjustments: b.adjustments || [],
+      };
+    }, [BID_ID, JOB_ID]);
+    expect(r.amount).toBeCloseTo(1150, 2); // THE ROOT-CAUSE BUG: this used to stay 1000 — the adjustment was silently dropped
+    expect(r.completionDate).toBeTruthy();
+    expect(r.changeOrders.length).toBe(1);
+    expect(r.changeOrders[0].delta).toBeCloseTo(150, 2);
+    expect(r.changeOrders[0].newAmount).toBeCloseTo(1150, 2);
+    expect(r.changeOrders[0].signerName).toBe('Alice Homeowner');
+    expect(r.changeOrders[0].hasSignedAt).toBe(true);
+    expect(r.adjustments.length).toBe(0); // increases go through changeOrders, not the old silent adjustments array
+  });
+
+  test('a custom completion date typed in the modal survives all the way through (the other half of the root-cause bug)', async () => {
+    const BID_ID = 920006, JOB_ID = 930006;
+    await seedJob(BID_ID, JOB_ID, 500);
+    const r = await page.evaluate(([bId, jId]) => {
+      markJobDone(jId);
+      document.getElementById('job-done-date').value = '2026-05-15';
+      _startJobComplete(jId);
+      const b = bids.find(x => x.id === bId);
+      const j = jobs.find(x => x.id === jId);
+      return { bidDate: b.completion_date, jobDate: j.completion_date };
+    }, [BID_ID, JOB_ID]);
+    expect(r.bidDate).toBe('2026-05-15');
+    expect(r.jobDate).toBe('2026-05-15');
+  });
+
+  test('signed change orders from a price increase show up as a "Change Order" document (reuses existing surfacing, no new UI)', async () => {
+    const BID_ID = 920007, JOB_ID = 930007;
+    await seedJob(BID_ID, JOB_ID, 1000);
+    await page.evaluate(([bId, jId]) => {
+      markJobDone(jId);
+      setAdjType('increase');
+      document.getElementById('adj-amount').value = '75';
+      document.getElementById('adj-reason').value = 'Added outlet';
+      _startJobComplete(jId);
+      document.getElementById('job-sign-name').value = 'Bob Client';
+      _confirmJobDoneSign(jId);
+    }, [BID_ID, JOB_ID]);
+    const co = await page.evaluate(([bId]) => {
+      const b = bids.find(x => x.id === bId);
+      return b.changeOrders[0];
+    }, [BID_ID]);
+    expect(co.coNum).toBe(1);
+    expect(co.type).toBe('addition');
+    expect(co.desc).toBe('Added outlet');
+  });
+
+  test('openFinalInvoice — warns about pending (unsigned) change orders before generating', async () => {
+    const BID_ID = 920008, JOB_ID = 930008;
+    await seedJob(BID_ID, JOB_ID, 1000);
+    await page.evaluate(([bId]) => {
+      const b = bids.find(x => x.id === bId);
+      b.completion_date = '2026-06-01';
+      b.changeOrders = [{ id: 1, coNum: 1, date: '2026-06-01', desc: 'Extra outlet', amount: 50, delta: 50, originalAmount: 1000, newAmount: 1050 }]; // no signedAt — pending
+    }, [BID_ID]);
+    let alertShown = false;
+    page.once('dialog', d => { alertShown = true; d.accept(); });
+    const r = await page.evaluate(([bId]) => {
+      const orig = window.open;
+      window.open = () => ({ document: { write: () => {}, close: () => {} } }); // stub the print window
+      let zAlertCalled = false;
+      const origZAlert = window.zAlert;
+      window.zAlert = (msg) => { zAlertCalled = true; window._lastZAlertMsg = msg; };
+      openFinalInvoice(bId);
+      window.open = orig;
+      const called = zAlertCalled; window.zAlert = origZAlert;
+      return { zAlertCalled: called, msg: window._lastZAlertMsg || '' };
+    }, [BID_ID]);
+    expect(r.zAlertCalled).toBe(true);
+    expect(r.msg).toContain('change order');
+  });
+
+  test('openFinalInvoice — no pending change orders: generates straight through, opens the pay panel', async () => {
+    const BID_ID = 920009, JOB_ID = 930009;
+    await seedJob(BID_ID, JOB_ID, 1000);
+    await page.evaluate(([bId]) => {
+      const b = bids.find(x => x.id === bId);
+      b.completion_date = '2026-06-01';
+    }, [BID_ID]);
+    const r = await page.evaluate(([bId]) => {
+      const orig = window.open;
+      let openCalled = false;
+      window.open = () => { openCalled = true; return { document: { write: () => {}, close: () => {} } }; };
+      return new Promise(resolve => {
+        openFinalInvoice(bId);
+        setTimeout(() => {
+          window.open = orig;
+          resolve({ openCalled, payPanelOpen: !!document.querySelector('.pay-modal-overlay') });
+        }, 500);
+      });
+    }, [BID_ID]);
+    expect(r.openCalled).toBe(true);
+    expect(r.payPanelOpen).toBe(true);
+    await page.evaluate(() => { document.querySelectorAll('.pay-modal-overlay,.zmodal-overlay').forEach(e => e.remove()); });
+  });
+
+  test('no console errors during job-completion signature gate tests', async () => {
+    assertNoErrors(page, 'job completion signature gate');
+  });
+});
 

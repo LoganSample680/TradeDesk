@@ -328,6 +328,24 @@ function _cancelCitation(state){
   return rule?rule.statute:'16 CFR Part 429 (federal)';
 }
 
+// The reduced set of protective clauses that apply to ANY signed document,
+// not just a full estimate — lien rights, finance charges on late balances,
+// and dispute resolution. Rolled into small documents (diagnostic charge /
+// quick invoice) that skip the estimate-only clauses (deposit, cancellation,
+// warranty, permits — none of which apply to a flat one-time fee for work
+// already done). Owner directive 2026-07-13: "already handle that in terms
+// and conditions" — same protection, no matter how small the document.
+function _coreProtectionTermsHtml(state,party){
+  const _fcPct=(typeof S!=='undefined'&&S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
+  const _fcApr=Math.round(_fcPct*12*10)/10;
+  const clauses=[
+    ['Mechanic\'s Lien',_lienNotice(state,party)],
+    ['Finance Charges','Unpaid balances remaining 30 days after this charge is billed are subject to a finance charge of '+_fcPct+'% per month ('+_fcApr+'% APR) on the outstanding balance, accruing monthly until paid in full.'],
+    ['Dispute Resolution','In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney\'s fees and costs, to the extent permitted by law.'],
+  ];
+  return '<div style="font-size:11px;color:var(--text3,#6b7280);line-height:1.8">'+clauses.map((c,i)=>'<div>'+(i+1)+'. <strong>'+c[0]+':</strong> '+c[1]+'</div>').join('')+'</div>';
+}
+
 // ── Terms & Conditions accordion ─────────────────────────────────────────────
 // Every terms section ("Terms & Conditions" + legacy "Payment Terms" headers)
 // merges under ONE "Terms & Conditions" toggle at the first section's position.

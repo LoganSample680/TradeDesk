@@ -757,7 +757,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (actionOn !== null) expect(actionOn || colorPickOn).toBe(true);
   });
 
-  test('checkReady — sign-btn disabled before name/UETA filled', async () => {
+  test('checkReady — sign-btn disabled before a name/signature is entered', async () => {
     const disabled = await page.evaluate(() => {
       const btn = document.getElementById('sign-btn');
       return btn ? btn.disabled : null;
@@ -765,12 +765,10 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (disabled !== null) expect(disabled).toBe(true);
   });
 
-  test('checkReady — sign-btn enabled after name + UETA checked', async () => {
+  test('checkReady — sign-btn enabled once a name is typed (no separate agreement checkbox)', async () => {
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
-      const uetaEl = document.getElementById('sig-ueta-ck');
       if (nameEl) { nameEl.value = 'Bob Garcia'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
-      if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
     });
     await page.waitForTimeout(200);
@@ -914,12 +912,17 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
     expect(count).toBe(0);
   });
 
-  test('checkReady — sign-btn enabled with name + ueta (no EPA checkbox required)', async () => {
+  test('checkReady — sign-btn enabled with just a typed name (no EPA checkbox, no agreement checkbox)', async () => {
+    await page.evaluate(() => {
+      // The pad (#sig-name/#sig-canvas) only renders once the sign step is
+      // actually reached — for an EPA proposal that's via the EPA review
+      // page's Continue button, same as a real client would click.
+      if (typeof _continueFromEpaReview === 'function') _continueFromEpaReview();
+    });
+    await page.waitForTimeout(200);
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
-      const uetaEl = document.getElementById('sig-ueta-ck');
       if (nameEl) { nameEl.value = 'Alice Smith'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
-      if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
     });
     const disabled = await page.evaluate(() => document.getElementById('sign-btn')?.disabled ?? null);
@@ -1238,9 +1241,7 @@ test.describe('sign.html — Stripe payment flow', () => {
 
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
-      const uetaEl = document.getElementById('sig-ueta-ck');
       if (nameEl) { nameEl.value = 'Bob Garcia'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
-      if (uetaEl) { uetaEl.checked = true; uetaEl.dispatchEvent(new Event('change', { bubbles: true })); }
       if (typeof checkReady === 'function') checkReady();
     });
     await page.waitForTimeout(200);
@@ -1897,7 +1898,10 @@ test.describe('sign.html — close-rate UX pass', () => {
     await expect(line).toBeVisible();
     const text = await line.textContent();
     expect(text).toContain('$594'); // MOCK_PROPOSAL.deposit — the action-sized number
-    expect(text).toContain('locks in your price and your spot on the schedule');
+    // Owner (2026-07-09): dropped "your price and" — the price-held chip above
+    // already communicates the 30-day price hold; the deposit buys the SLOT.
+    expect(text).toContain('locks in your spot on the schedule');
+    expect(text).not.toContain('locks in your price'); // redundant with the price-held chip
     expect(text).not.toContain('$2,375'); // never the full total at the commitment moment
   });
 
@@ -1906,8 +1910,15 @@ test.describe('sign.html — close-rate UX pass', () => {
     await expect(chip).toBeVisible();
     const text = await chip.textContent();
     expect(text).toContain('This price is held for you until');
-    // MOCK_PROPOSAL.createdAt is "now" → +30 days must render a real date
-    const expected = new Date(Date.now() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    // Root cause of a day-boundary flake: this used to recompute Date.now() fresh
+    // here, but the page derives the chip from MOCK_PROPOSAL.createdAt — a
+    // timestamp fixed once when helpers.js loaded, possibly minutes earlier in a
+    // long shard run. If a local-midnight boundary fell in that gap, the test's
+    // fresh "+30 days" landed on a different calendar day than the page's. Derive
+    // the expected date from the SAME timestamp the page actually used instead of
+    // an independent clock read — deterministic regardless of run length or when
+    // midnight falls.
+    const expected = new Date(new Date(MOCK_PROPOSAL.createdAt).getTime() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     expect(text).toContain(expected);
   });
 
@@ -1925,22 +1936,27 @@ test.describe('sign.html — close-rate UX pass', () => {
     });
   });
 
-  test('risk-reversal strip sits in the sig card with the state cancel window populated', async () => {
+  test('Notice of Cancellation sits in the sig card, above the shared consent block, with the state cancel window populated', async () => {
+    // Owner directive 2026-07-13: the risk-reversal strip's "X-day right to
+    // cancel — no questions asked" reassurance line was removed outright —
+    // it only restated what this legally-required Notice of Cancellation
+    // section (and the full Terms & Conditions) already state with the exact
+    // deadline and statute. This is the one surviving cancellation disclosure.
     const r = await page.evaluate(() => {
-      const strip = document.getElementById('risk-reversal-strip');
+      const notice = document.getElementById('cancel-notice-section');
       const sigCard = document.getElementById('sig-card');
-      const ueta = document.querySelector('.sig-checkbox');
+      const consentMount = document.getElementById('sig-consent-mount');
       return {
-        inSigCard: !!(strip && sigCard && sigCard.contains(strip)),
-        beforeUeta: !!(strip && ueta && (strip.compareDocumentPosition(ueta) & Node.DOCUMENT_POSITION_FOLLOWING)),
-        cancelText: document.getElementById('rr-cancel')?.textContent || '',
-        hasSvgChecks: (strip?.querySelectorAll('svg').length || 0) >= 3,
+        inSigCard: !!(notice && sigCard && sigCard.contains(notice)),
+        beforeConsent: !!(notice && consentMount && (notice.compareDocumentPosition(consentMount) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        noticeText: document.getElementById('cancel-notice-body')?.textContent || '',
+        riskReversalStripGone: document.getElementById('risk-reversal-strip') === null,
       };
     });
     expect(r.inSigCard).toBe(true);
-    expect(r.beforeUeta, 'strip must sit above the agreement checkbox — where signing anxiety spikes').toBe(true);
-    expect(r.cancelText).toContain('3-day right to cancel'); // MOCK_PROPOSAL has no cancelDays → default 3
-    expect(r.hasSvgChecks).toBe(true);
+    expect(r.beforeConsent, 'notice must sit above the agreement checkbox — where signing anxiety spikes').toBe(true);
+    expect(r.noticeText).toContain('Right to cancel'); // MOCK_PROPOSAL has no cancelDays → default 3
+    expect(r.riskReversalStripGone, 'the redundant risk-reversal strip must be deleted, not hidden').toBe(true);
   });
 
   test('peak-end — done page shows "What happens next" with three concrete steps', async () => {
@@ -2005,7 +2021,6 @@ test.describe('sign.html — step funnel analytics', () => {
       if (typeof _goToSignPad === 'function') _goToSignPad(); else _openSignPad();
     });
     await page.fill('#sig-name', 'Alice Smith');
-    await page.check('#sig-ueta-ck');
     await page.waitForTimeout(200);
     await page.evaluate(() => { goToPayment(); });
     await page.evaluate(() => { _paySign('cash'); });
@@ -2171,5 +2186,68 @@ test.describe('sign.html — proposal JSON cache bypass', () => {
     const body = await page.textContent('body');
     expect(body).toContain('Alice Smith');
     assertNoErrors(page, 'sign.html cache-bypass fetch');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proposal totals must not wrap mid-number. #prop-html used overflow-wrap:anywhere,
+// which drops table cells' min-content width to ~1 char and forced big totals like
+// $70,466.83 to break across two lines ("$70,46" / "6.83") on already-sent bids.
+// break-word keeps unbreakable long strings from bleeding without collapsing numbers.
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('sign.html — proposal totals never break mid-number', () => {
+  test('#prop-html uses break-word, not anywhere (numeric column would collapse)', async ({ page }) => {
+    await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(1500);
+    const ow = await page.evaluate(() => {
+      const el = document.getElementById('prop-html');
+      return el ? getComputedStyle(el).overflowWrap : null;
+    });
+    // anywhere is the bug (collapses numeric table columns → mid-number wrap).
+    expect(ow, 'proposal container must not use overflow-wrap:anywhere').not.toBe('anywhere');
+    expect(ow, 'proposal container should use break-word so totals stay on one line').toBe('break-word');
+    // No horizontal bleed either (§16.1).
+    const bleed = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(bleed, 'no horizontal overflow on the sign page').toBeLessThanOrEqual(1);
+    assertNoErrors(page, 'sign.html total wrap regression');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Proposal view: the "Scope & terms" label and the outer card padding were
+// removed so the proposal document fills the width (owner-requested — the label
+// was noise and the card added dead space around the self-styled proposal doc).
+// ─────────────────────────────────────────────────────────────────────────────
+test.describe('sign.html — proposal fills, no "Scope & terms" label / dead space', () => {
+  test('the Scope & terms label is gone and the proposal card has no padding frame', async ({ page }) => {
+    await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
+    await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
+      { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(1500);
+    const r = await page.evaluate(() => {
+      const bodyTxt = document.body.innerText || '';
+      const propCard = document.getElementById('prop-card');
+      const propHtml = document.getElementById('prop-html');
+      // No leftover .lbl inside the proposal card wrapper.
+      const lblInCard = propCard ? propCard.querySelector('.lbl') : null;
+      return {
+        hasPropCard: !!propCard,
+        hasPropHtml: !!propHtml,
+        scopeTermsLabel: /\bScope & terms\b/i.test(bodyTxt),
+        lblInCard: !!lblInCard,
+        pad: propCard ? getComputedStyle(propCard).paddingLeft : null,
+        bleed: document.documentElement.scrollWidth - window.innerWidth,
+      };
+    });
+    expect(r.hasPropCard, 'proposal wrapper present').toBe(true);
+    expect(r.hasPropHtml, 'proposal content container present').toBe(true);
+    expect(r.lblInCard, 'no "Scope & terms" label inside the proposal card').toBe(false);
+    expect(r.scopeTermsLabel, '"Scope & terms" label removed from the page').toBe(false);
+    expect(r.pad, 'proposal wrapper has no padding frame (dead space removed)').toBe('0px');
+    expect(r.bleed, 'no horizontal bleed').toBeLessThanOrEqual(1);
   });
 });

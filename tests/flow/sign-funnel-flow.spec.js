@@ -73,11 +73,9 @@ test.describe('client signing funnel (UI-driven)', () => {
           }
           const padReady = await signPage.waitForSelector('#sig-name', { state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
           if (padReady) {
-            // Type the legal name key-by-key, then tick the UETA consent checkbox.
+            // Type the legal name key-by-key (no separate agreement checkbox — the signature is the consent).
             await signPage.locator('#sig-name').click({ timeout: 8000 }).catch(() => {});
             await signPage.locator('#sig-name').pressSequentially('Jordan E Client', { delay: 0 }).catch(() => {});
-            const ck = signPage.locator('#sig-ueta-ck');
-            if (await ck.count()) await ck.check({ timeout: 5000 }).catch(() => {});
             await signPage.waitForTimeout(400);
             unlocked = await signPage.locator('#sign-btn').isEnabled().catch(() => false);
             got = `attempt=${i + 1} signBtnEnabled=${unlocked}`;

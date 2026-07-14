@@ -30,6 +30,162 @@ function openEstimateForClient(){
   }
   _rrpGateThenEstimate(c);
 }
+
+// ── Diagnostic charge — fast on-site "I came, I diagnosed X, the fee is $Y" ──
+// Research-backed design (owner, 2026-07-09): a diagnostic/trip fee is small-
+// dollar ($70-200 typical) and every source treats it as a plain charge-and-
+// receipt moment, not a contract moment — no client signature anywhere in the
+// industry. So this is deliberately NOT routed through sign.html/e-sign: type
+// the finding + fee, it becomes a closed bid (still a real document on the
+// client record — shows in Documents/timeline/invoice like any other job),
+// then straight into the existing payment-collection panel (card link, QR,
+// or log cash/check) — reusing openPayPanel exactly as a normal job would.
+// Owner request 2026-07-11: the nearby-banner "Start Estimate/Invoice" button
+// covers two different jobs — a quick trip-fee/diagnostic charge for work
+// already done (openDiagnosticCharge), or a full estimate for a bigger job
+// that needs a formal quote (openEstimateForClient). One button, one tap to
+// pick which, since the banner only has room for 3 buttons total.
+function _nearbyStartWork(clientId){
+  const c=getClientById(clientId);if(!c)return;
+  document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Start work for '+escHtml(c.name)+'</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">Quick invoice for something you just did, or a full estimate for a bigger job?</div>'+
+    '<div style="display:flex;flex-direction:column;gap:8px">'+
+      '<button onclick="closeTopModal();openDiagnosticCharge('+clientId+')" class="btn btn-p" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('🔧',{size:16})+' Quick invoice</button>'+
+      '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" class="btn" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('✏',{size:16})+' Start estimate</button>'+
+      '<button onclick="closeTopModal()" style="padding:10px;border:none;background:none;color:var(--text3);font-size:13px;font-family:inherit;cursor:pointer">Cancel</button>'+
+    '</div>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+}
+// Diagnostic / service-call charge — the ONE narrow quick path (owner, 2026-07-13).
+// It is NOT a general quick invoice. Use it ONLY for the specific case: you built
+// the client an estimate, they DECLINED it, and you're charging for the trip out +
+// the diagnosis you already did. Real work always goes through the full, signed
+// estimate — so this needs no separate signature (the declined estimate is the
+// paper trail). The modal STATES that scope plainly (owner: "hand-hold it") so it
+// can't be misused as an unsigned-invoice shortcut for actual work.
+function _diagChargeContext(){
+  return '<div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:9px 11px;margin-bottom:14px">'+
+    '<div style="flex:none">'+svgIcon('ℹ️',{size:14})+'</div>'+
+    '<div style="font-size:11px;color:var(--text2);line-height:1.45">Only for when you gave an estimate, the client <strong>declined</strong>, and you’re charging for the trip out + diagnosis. Doing actual work? Build a full estimate they sign instead.</div>'+
+  '</div>';
+}
+function openDiagnosticCharge(clientId){
+  const c=getClientById(clientId);if(!c)return;
+  document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('🔧')+' Diagnostic charge</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+'</div>'+
+    '<div class="f" style="margin-bottom:12px">'+
+      '<label style="font-size:11px;font-weight:700;color:var(--text3)">What did you find?</label>'+
+      '<textarea id="diag-desc" rows="3" placeholder="e.g. No-heat call — diagnosed failed igniter, needs replacement" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;resize:none;background:var(--bg2);color:var(--text)"></textarea>'+
+      '<div id="diag-desc-err" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px">Type what you found.</div>'+
+    '</div>'+
+    '<div class="f" style="margin-bottom:16px">'+
+      '<label style="font-size:11px;font-weight:700;color:var(--text3)">Diagnostic fee ($)</label>'+
+      '<input type="text" id="diag-amount" placeholder="0.00" inputmode="decimal" oninput="_fmtMoneyInput(this)" style="font-size:22px;font-weight:800;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit;text-align:center">'+
+      '<div id="diag-amount-err" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px">Enter the fee amount.</div>'+
+    '</div>'+
+    _diagChargeContext()+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="saveDiagnosticCharge('+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Continue to sign →</button>'+
+    '</div>'+
+    '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" style="width:100%;margin-top:8px;padding:10px;border:none;background:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Doing actual work? Build a full estimate instead ›</button>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  setTimeout(()=>document.getElementById('diag-desc')?.focus(),60);
+}
+function saveDiagnosticCharge(clientId){
+  const c=getClientById(clientId);if(!c)return;
+  const descEl=document.getElementById('diag-desc'),amtEl=document.getElementById('diag-amount');
+  const desc=(descEl?.value||'').trim();
+  const amount=parseFloat((amtEl?.value||'').replace(/,/g,''));
+  let ok=true;
+  const descErr=document.getElementById('diag-desc-err'),amtErr=document.getElementById('diag-amount-err');
+  if(!desc){if(descEl)descEl.style.borderColor='#A32D2D';if(descErr)descErr.style.display='block';ok=false;}
+  else{if(descEl)descEl.style.borderColor='';if(descErr)descErr.style.display='none';}
+  if(!amount||amount<=0){if(amtEl)amtEl.style.borderColor='#A32D2D';if(amtErr)amtErr.style.display='block';ok=false;}
+  else{if(amtEl)amtEl.style.borderColor='';if(amtErr)amtErr.style.display='none';}
+  if(!ok)return;
+  const bid={
+    id:Date.now(),client_id:clientId,client_name:c.name,addr:c.addr||'',
+    type:'Diagnostic charge',kind:'diagnostic',desc,
+    amount:Math.round(amount*100)/100,deposit:0,
+    status:'Closed Won',draft:false,
+    bid_date:todayKey(),completion_date:todayKey(),
+  };
+  bids.push(bid);
+  saveAll();
+  emitEvent('diagnostic_charge_created',clientId,{bid_id:bid.id,amount:bid.amount});
+  closeTopModal();
+  renderClientDetail();renderCDBids();renderCDTimeline();renderDash();
+  // Protection before payment: client signs the charge in person, THEN collect.
+  _openDiagnosticSign(bid.id,clientId);
+}
+// In-person signature step for a diagnostic charge — the SHARED e-sign pad
+// (js/esign.js), same code as estimates/COs, displayed here. Shows the charge
+// the client is signing for, captures the signature, records it on the bid,
+// pushes it to the client hub as a signed document, and only THEN opens pay.
+function _openDiagnosticSign(bidId,clientId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const c=getClientById(clientId)||{};
+  document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';
+  box.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:2px">'+svgIcon('✍️')+' Client signs to approve</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:12px">Hand your phone to '+escHtml(c.name||'the client')+' to sign before you collect.</div>'+
+    // What they're signing for
+    '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:11px 13px;margin-bottom:12px">'+
+      '<div style="font-size:13px;color:var(--text);line-height:1.45;margin-bottom:6px">'+escHtml(b.desc||'Diagnostic charge')+'</div>'+
+      '<div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--border2);padding-top:7px"><span style="font-size:12px;color:var(--text3)">Amount</span><span style="font-size:20px;font-weight:800">'+fmt(b.amount||0)+'</span></div>'+
+    '</div>'+
+    esignPadHTML('diag-sign')+
+    esignConsentHTML('diag-sign',
+      '<div style="margin-bottom:10px">By signing, '+escHtml(c.name||'the client')+' approves this charge. Legally binding upon signature ('+ESIGN_CITE+').</div>'+
+      _coreProtectionTermsHtml((typeof detectStateFromAddr==='function'?detectStateFromAddr(c.addr||''):null)||(S&&S.state)||'KS',S.bname||getBusinessName()||''))+
+    '<div id="diag-sign-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:8px"></div>'+
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
+      '<button onclick="_submitDiagnosticSign('+bidId+','+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Sign &amp; collect →</button>'+
+    '</div>';
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  // Wired synchronously — the canvas is already in the DOM by this point, and
+  // deferring via setTimeout only opens a window where a fast submit finds no
+  // registered pad yet (esignResult returns "no-pad").
+  esignWire('diag-sign');
+  setTimeout(()=>document.getElementById('diag-sign-name')?.focus(),100);
+}
+function _submitDiagnosticSign(bidId,clientId){
+  const b=bids.find(x=>x.id===bidId);if(!b)return;
+  const r=esignResult('diag-sign',{requireDrawn:true,nameErr:'Type the client’s full name to confirm.',drawErr:'Client needs to sign in the box above.'});
+  if(!r.ok)return;
+  // The protective record: who signed, when, drawn signature, against this charge.
+  b.signedAt=r.signedAt;b.signerName=r.signerName;b.sigData=r.sigData;b.signed=true;
+  saveAll();
+  if(typeof emitEvent==='function')emitEvent('diagnostic_charge_signed',clientId,{bid_id:bidId});
+  // Land it in the client hub as a SIGNED document (notes + dates + signature),
+  // and mirror to signed_proposals like the in-person estimate sign does.
+  try{
+    if(typeof supaEnabled==='function'&&supaEnabled()&&typeof _supaUser!=='undefined'&&_supaUser&&typeof _supa!=='undefined'&&_supa){
+      _supa.from('signed_proposals').upsert({bid_id:String(bidId),contractor_user_id:_supaUser.id,
+        client_name:b.client_name||'',client_signed_name:r.signerName,amount:b.amount||0,deposit:0,
+        signed_at:r.signedAt,signature_data:r.sigData},{onConflict:'bid_id'}).then(()=>{});
+    }
+    if(typeof _refreshClientHub==='function')_refreshClientHub(clientId);
+  }catch(_e){}
+  closeTopModal();
+  if(typeof showToast==='function')showToast('Signed — collecting payment','✍️');
+  openPayPanel(bidId,'final');
+}
 // Popup shown when a non-estimate employee taps a (greyed) estimate entry point:
 // offer to request access from the owner/manager.
 function _showEstimateRequestModal(){
@@ -466,7 +622,7 @@ function _previewClientHub(url,clientName,clientId){
       '</button>'+
       '<div style="font-size:13px;color:rgba(255,255,255,.6);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(clientName?escHtml(clientName)+' — Hub preview':'Hub preview')+'</div>'+
     '</div>'+
-    '<iframe src="'+previewUrl+'" style="flex:1;border:none;width:100%" allow="payment"></iframe>';
+    '<iframe src="'+previewUrl+'" style="flex:1;border:none;width:100%;background:#F4F5F7" allow="payment"></iframe>';
   ov.style.display='flex';
 }
 function _clientHubCopy(url,btn){
@@ -1136,6 +1292,7 @@ function renderClientDetail(){
       (c.email?'<button class="btn" onclick="emailClient()">'+svgIcon('✉️')+' Email</button>':'')+
       (!gps.active?'<button class="btn" onclick="startDriveToClient()">'+svgIcon('🚗')+' Drive there</button>':'')+
       '<button class="btn" onclick="showHubMenu('+c.id+')">'+svgIcon('🔗')+' Client hub</button>'+
+      '<button class="btn" onclick="openDiagnosticCharge('+c.id+')">'+svgIcon('🔧')+' Diagnostic charge</button>'+
       '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':svgIcon('🔒')+' ')+'+ New estimate</button>'+
     '</div>'+
     '';
@@ -1367,7 +1524,7 @@ function renderCDTimeline(){
       const noteText=h.note&&h.note!==stageLabel?h.note:'';
       events.push({date:dateStr,type:'coll',label:'Collection: '+stageLabel,meta:escHtml(noteText)+(noteText?' · ':'')+fmt(b.amount)+' job',color:'coll'});
     });
-    if(b.completion_date)events.push({date:b.completion_date,type:'complete',label:'Job completed — '+fmt(b.amount),meta:escHtml(b.type||'Painting job'),color:'active'});
+    if(b.completion_date)events.push({date:b.completion_date,type:'complete',label:(b.kind==='diagnostic'?'Diagnostic charge — ':'Job completed — ')+fmt(b.amount),meta:b.kind==='diagnostic'?escHtml(b.desc||'Diagnostic visit'):escHtml(b.type||'Painting job'),color:'active'});
   });
   const allPays=payments.filter(p=>cbids.some(b=>b.id===p.bid_id));
   allPays.forEach(p=>{
@@ -1566,6 +1723,7 @@ function renderCDBids(){
       }
     }
     const actBtns=[];
+    const isDiag=b.kind==='diagnostic';
     if(isWon){
       // Close job button — when won but not yet marked complete
       if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">'+svgIcon('✓')+' Close job</button>');}
@@ -1574,8 +1732,17 @@ function renderCDBids(){
       if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">'+svgIcon('📲')+' Request pay</a>');}}
       if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">'+svgIcon('↩')+' Issue refund</button>');
       actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
+      // "Final invoice" only for real jobs — a diagnostic charge is already a
+      // one-line receipt (Print invoice below covers it fine, no reconciliation
+      // to do: no change orders, nothing that could be pending).
+      if(!isDiag)actBtns.push('<button class="btn btn-sm" onclick="openFinalInvoice('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('🧾')+' Final invoice</button>');
       actBtns.push('<button class="btn btn-sm" onclick="printInvoice('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128438; Print invoice</button>');
-      if(!scheduledIds.has(b.id))actBtns.push('<button class="btn btn-sm btn-p" onclick="schedFromBid('+b.id+')">Schedule →</button>');
+      // Schedule/Revise/Supply list don't apply to a diagnostic charge — it's
+      // already done, it's a fee not a scope of work, nothing to build a
+      // supply list for.
+      if(!isDiag){
+        if(!scheduledIds.has(b.id))actBtns.push('<button class="btn btn-sm btn-p" onclick="schedFromBid('+b.id+')">Schedule →</button>');
+      }
       if(!lien&&balance>0.01&&days>=14)actBtns.push('<button class="btn btn-sm btn-r" onclick="showFileLienDirect('+b.id+')">'+svgIcon('⚖️')+' File lien</button>');
       else if(lien&&lien.status!=='resolved')actBtns.push('<button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">Lien status</button>');
       // SMS escalation buttons based on days overdue
@@ -1585,8 +1752,10 @@ function renderCDBids(){
       if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('✓')+' Release lien</button>');
       // Recordable release doc — reachable any time after release (re-file, lost copy).
       if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('📄')+' Release doc</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">'+svgIcon('📦')+' Supply list</button>');
+      if(!isDiag){
+        actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
+        actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">'+svgIcon('📦')+' Supply list</button>');
+      }
       actBtns.push('');
     }
     if(!isWon){
@@ -1853,17 +2022,14 @@ function _cpOpen(bidId,view){
   // Signature block pinned at the bottom of the client view — image from the stored
   // proposal JSON when available, falling back to the name/timestamp on the bid so the
   // block still shows when the storage write was missed at signing time.
+  // Owner-record signature display — the SHARED signed-doc block (esign.js),
+  // same component the client hub renders. Update once, updates everywhere.
   function _cpSigBlock(prop){
-    const name=(prop&&prop.signerName)||b.signedName||'';
     const at=(prop&&prop.signedAt)||b.signedAt||'';
     if(!at)return '';
-    const dt=new Date(at).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-    const _sigUrl=(prop&&prop.signatureDataUrl)||b.signatureData||null;
-    const img=_sigUrl?'<div style="background:#fff;border:1.5px solid var(--border2);border-radius:10px;padding:12px;margin:10px 0;text-align:center"><img src="'+_sigUrl+'" style="max-width:100%;max-height:110px" alt="Client signature"></div>':'';
-    return '<div id="cp-sig-block" style="margin-top:20px;border-top:2px solid var(--border2);padding-top:14px">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Client Signature</div>'+img+
-      '<div style="font-size:13px;color:var(--text2)"><strong>'+escHtml(name||'—')+'</strong> · '+dt+'</div>'+
-    '</div>';
+    return esignSigBlockHTML({blockId:'cp-sig-block',
+      signerName:(prop&&prop.signerName)||b.signedName||'',signedAt:at,
+      sigData:(prop&&prop.signatureDataUrl)||b.signatureData||''});
   }
   function _cpRenderProp(html,colorTop){propPane.innerHTML=(colorTop||'')+_cpSignedBadge+html+_cpSigBlock(null);}
   if(b.proposalHtml){

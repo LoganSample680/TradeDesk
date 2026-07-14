@@ -222,23 +222,17 @@ test.describe('Notice of Cancellation — 3-step friction flow', () => {
     assertNoErrors(page, 'cancelled bid clears balance in overview');
   });
 
-  test('regression: account-menu chevron and invoice "Save as PDF" render SVG icons, not bare glyphs', async ({ page }) => {
-    // Two more call sites the emoji→SVG sweep missed — static topbar markup (▾)
-    // and a JS-built invoice button string (⬇). Both caught by manual audit.
+  test('regression: invoice "Save as PDF" renders an SVG icon, not a bare glyph', async ({ page }) => {
+    // A JS-built invoice button string (⬇) the emoji→SVG sweep missed; caught by
+    // manual audit. (This test also covered the topbar account-menu chevron, but
+    // the account pill was removed in the owner's hub cleanup, so only the invoice
+    // check remains.)
     await bootHub(page, hubWith());
-    const chevron = page.locator('.acct-chevron');
-    expect(await chevron.innerHTML()).toContain('<svg');
-    // .innerText, not .innerHTML — the chevron hydrates via document.write(), which
-    // leaves the original (inert, never re-run) <script> tag in the DOM afterward
-    // with its JS source as literal child text; innerHTML picks up that source's
-    // '▾' even though the SVG renders correctly on screen. innerText reflects only
-    // what's actually visible, same fix as the nav-icon regression test above.
-    expect(await chevron.innerText()).not.toContain('▾');
     await page.evaluate(id => openInvoice(id), FAKE_BID_ID_1);
     const invHtml = await page.locator('#inv-content').innerHTML();
     expect(invHtml).toContain('Save as PDF');
     expect(invHtml).not.toContain('⬇');
-    assertNoErrors(page, 'chevron + invoice PDF button icon regression');
+    assertNoErrors(page, 'invoice PDF button icon regression');
   });
 });
 
@@ -303,6 +297,53 @@ test.describe('Declined proposal — never rendered as signed', () => {
     expect(html).not.toContain('Client Signature');
     expect(html).not.toContain('Signed By');
     assertNoErrors(page, 'declined proposal viewer');
+  });
+
+  test('opening a proposal shows no loading spinner — content only (owner)', async ({ page }) => {
+    await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
+    await page.evaluate(id => openProposal(id), FAKE_BID_ID_1);
+    const early = await page.locator('#prop-content').innerHTML();   // just after the tap
+    await page.waitForTimeout(600);
+    const late = await page.locator('#prop-content').innerHTML();    // after content resolves
+    const ovDisplay = await page.evaluate(() => getComputedStyle(document.getElementById('prop-overlay')).display);
+    expect(early).not.toContain('hub-spinner');       // no spinner at open
+    expect(early).not.toContain('Loading proposal');
+    expect(late).not.toContain('hub-spinner');         // no spinner after load either
+    expect(ovDisplay).toBe('block');                   // overlay opened straight to content
+    assertNoErrors(page, 'proposal open no spinner');
+  });
+
+  test('boot overlay holds for a minimum dwell on a real (non-test) load — never flashes past', async ({ page }) => {
+    // Owner: the hub boot screen was way too fast. It now holds ≥ MIN_BOOT_MS.
+    // The dwell is skipped under the mock so the wider suite stays fast;
+    // _forceBootDwell opts this one test back into the real timing path.
+    await bootHub(page, hubWith({ status: 'Pending' }));
+    await page.evaluate(() => {
+      const ov = document.getElementById('boot-overlay');
+      window._forceBootDwell = true;
+      window._bootStart = Date.now();                  // reset the clock to "now"
+      ov.style.display = 'flex'; ov.style.opacity = '1';
+      _dismissBootOverlay(false);                      // request dismiss — should be held, not instant
+    });
+    // Wait via Playwright's (Node-side) timer, NOT an in-page setTimeout —
+    // webkit throttles page timers on CI, which could fire a 700ms in-page wait
+    // AFTER the 2.8s dwell elapsed and flake this "still held" check.
+    await page.waitForTimeout(700);                    // 700ms « MIN_BOOT_MS
+    const stillUp = await page.evaluate(() => {
+      const ov = document.getElementById('boot-overlay');
+      return getComputedStyle(ov).display !== 'none' && ov.style.opacity !== '0';
+    });
+    expect(stillUp).toBe(true);   // still visible well after the old ~220ms dismiss would have fired
+    // And it must eventually dismiss (not stick forever). Poll rather than a fixed
+    // wait — the dwell (~2.8s) plus the premium blur+scale exit fade (~.75s) means
+    // display:none lands ~3.6s in, and webkit's throttled CI timers add jitter.
+    await page.waitForFunction(
+      () => { const ov = document.getElementById('boot-overlay'); return ov && getComputedStyle(ov).display === 'none'; },
+      { timeout: 6000 }
+    );
+    const gone = await page.evaluate(() => getComputedStyle(document.getElementById('boot-overlay')).display === 'none');
+    expect(gone).toBe(true);
+    assertNoErrors(page, 'boot dwell');
   });
 
   test('a light brand color in the hub snapshot is clamped to a WCAG-compliant accent', async ({ page }) => {

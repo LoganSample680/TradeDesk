@@ -385,6 +385,14 @@ function _geiClearActive(){try{localStorage.removeItem('zp3_active_estimate');}c
 // the open: stale marker (>12h), different account, employee account, bid gone,
 // or bid already sent/decided — in all of those, boot lands on the dashboard.
 function _maybeResumeActiveEstimate(){
+  // Already inside the estimate editor → nothing to resume. Bail WITHOUT
+  // clearing the marker (it belongs to the editor that's open right now).
+  // Without this guard, the boot timer that schedules this (cloud.js, 120ms
+  // after reveal) can fire AFTER the user has already navigated into an
+  // estimate — re-opening it underneath them and reassigning _geiLines,
+  // which discards any unsaved in-memory edits. Same race the WebKit CI
+  // shards kept tripping when a spec opened an estimate right after boot.
+  if(document.querySelector('.pg.active')?.id==='pg-est-generic')return false;
   let m=null;
   try{m=JSON.parse(localStorage.getItem('zp3_active_estimate')||'null');}catch(_e){}
   if(!m||!m.bidId)return false;
@@ -756,7 +764,12 @@ function _geiRenderProfitGauge(prefix,costOninput){
     '<input type="number" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
     '<div id="'+prefix+'-gauge-hint" style="display:none"></div>'+
     '<div id="'+prefix+'-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
-      '<div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 58%,#F59E0B 72%,#EF4444 100%);margin:14px 10px 26px">'+
+      // Hard-edged stops at the EXACT _updateMarginGauge breakpoints (22/35/55%) so
+      // the dot always sits on a track color matching its own computed color — no
+      // blend zone where the number renders amber over a still-green track (or
+      // vice versa). 55%+ is amber all the way to 100%, matching the JS: past the
+      // green cap, margin is never re-flagged as red, only "double-check" amber.
+      '<div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 2%,#EF4444 22%,#F59E0B 22%,#F59E0B 35%,#22C55E 35%,#22C55E 55%,#F59E0B 55%,#F59E0B 100%);margin:14px 10px 26px">'+
         '<div id="'+prefix+'-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>'+
       '</div>'+
       '<div style="text-align:center;padding-bottom:12px">'+
@@ -1711,12 +1724,11 @@ function _showProposalPreviewOverlay(proposalHtml){
   hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0';
   hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview — how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
   const body=document.createElement('div');
-  body.style.cssText='flex:1;overflow-y:auto;padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
+  // flex:0 1 auto (not flex:1) — the card hugs its own content height instead
+  // of stretching to fill the screen. Short proposals no longer leave a slab
+  // of flat gray dead space below the card; long ones still scroll normally.
+  body.style.cssText='flex:0 1 auto;overflow-y:auto;max-height:calc(100vh - 56px);padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
   body.innerHTML=proposalHtml;
-  // Same accordion sign.html applies to the real client-facing page (js/legal.js)
-  // — without this the preview showed the full uncollapsed T&C wall of text,
-  // which isn't actually "how they'll see it" per the header above.
-  if(typeof _applyTermsAccordion==='function')_applyTermsAccordion(body);
   ov.appendChild(hdr);ov.appendChild(body);
   document.body.appendChild(ov);
 }
@@ -2879,6 +2891,63 @@ function saveGenericEstimate(draft){
   if(!draft)goPg('pg-clients');
 }
 
+// Full Terms & Conditions — ONE clause list for both T&M and BYO, built fresh
+// from live estimate state (owner directive 2026-07-13: moved out of the
+// proposal body and into the signature step's accordion, so the numbered
+// clauses live in exactly one place — the accordion right where the client
+// signs — instead of a wall of legal text before it). Called both when
+// sending a proposal (stored as proposalData.termsHtml, read back by
+// sign.html) and when signing in person (_geiSignInPerson, same live
+// session) so the two paths can never drift apart. Deposit amount/percentage
+// is deliberately NOT a clause here — it's already its own line in the
+// proposal's deposit/balance summary.
+function _geiBuildTermsHtml(){
+  const bname=S.bname||getBusinessName()||'';
+  const _party=bname||'Contractor';
+  const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
+  const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
+  const _fcPct=(S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
+  const _fcApr=Math.round(_fcPct*12*10)/10;
+  const _warrantyPeriod=S?.warrantyPeriod||'1 year';
+  const _warrantyClause=_geiTrade==='painting'
+    ?`${_party} warrants workmanship against peeling, cracking, and finish defects for ${_warrantyPeriod} from substantial completion, provided surfaces were in sound condition and properly disclosed prior to work. Client-supplied materials carry no workmanship warranty on finish quality. Manufacturer warranties on materials pass through to Buyer.`
+    :_geiTrade==='landscaping'
+      ?`${_party} warrants all plant material and hardscaping workmanship for ${_warrantyPeriod} from substantial completion. Living plant material is subject to proper watering and care by client after installation. Manufacturer warranties on materials pass through to Buyer.`
+      :`${_party} warrants all workmanship against defects in labor and installation for ${_warrantyPeriod} from substantial completion. Manufacturer warranties on materials pass through to Buyer.`;
+  const _permitClause=_geiTrade==='painting'
+    ?`Painting and surface work does not typically require permits for standard residential repainting. If your municipality requires a permit for your specific project, ${_party} will notify you in advance. Any permit fees will be billed at cost with prior approval.`
+    :`${_party} shall obtain all permits and inspections required for this scope of work in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
+  // sign.html's legacy-proposal patcher keys on the "<div>N. <strong>Title:"
+  // shape — preserved verbatim by the renderer below.
+  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
+  const _modeTerms=_geiIsTM?[
+    ['Contract type',`Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
+    ['Cancellation &amp; Deposits',_cancelClause],
+    ['Billing',`${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.`],
+  ]:[
+    ['Cancellation &amp; Deposits',_cancelClause],
+  ];
+  const _termsClauses=[
+    ..._modeTerms,
+    ['Change Orders','Any additional work not described herein requires a written change order approved and signed by the client.'],
+    ['Limitation of Liability',`${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.`],
+    ['Mechanic&#39;s Lien',_lienNotice(_stateKey,_party)],
+    ['Finance Charges',`Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.`],
+    ['Workmanship Warranty',_warrantyClause],
+    ['Permits &amp; Inspections',_permitClause],
+    ['Schedule &amp; Delays',`Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.`],
+    ['Insurance',`${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.`],
+    ['Dispute Resolution','In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.'],
+  ];
+  const _clausesHtml='<div style="font-size:11px;color:#2d3748;line-height:2">'+_termsClauses.map((c,i)=>`<div>${i+1}. <strong>${c[0]}:</strong> ${c[1]}</div>`).join('')+'</div>';
+  const _byoTermsEl2=document.getElementById('byo-custom-terms');
+  const _byoTermsText=(_byoTermsEl2?_byoTermsEl2.value:(_byoCustomTerms||'')).trim();
+  const _customTermsBlock=_byoTermsText
+    ?`<div style="margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#1a365d;margin-bottom:8px">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere">${escHtml(_byoTermsText)}</div></div>`
+    :'';
+  return _clausesHtml+_customTermsBlock;
+}
+
 async function sendGenericProposal(previewOnly){
   saveGenericEstimate(true); // draft=true skips navigation — modal shows over estimate page
   _saveToLineHistory();
@@ -2902,6 +2971,24 @@ async function sendGenericProposal(previewOnly){
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
   const v=id=>{const _e=document.getElementById(id);return _e?(_e.value||''):'';};
   const{total}=calcGeiTotal();
+  // GC-bid mode: this estimate is a sub's itemized bid to a LINKED GC, not a
+  // homeowner proposal. Route it to the GC as a signable bid (amount + scope +
+  // line count) and stop — never mint a client sign-link. Fires only when
+  // _openBidBuilder stamped the context; normal client sends skip this entirely.
+  if(!previewOnly&&typeof window!=='undefined'&&window._gcBidCtx&&typeof _maybeRouteGcBid==='function'){
+    // Stale-context guard: route as a GC bid ONLY if THIS estimate's client is
+    // the linked GC's card. If the sub abandoned a bid and started a normal
+    // estimate, the client won't match — clear the context and send normally.
+    const _cliCard=(typeof clients!=='undefined')?clients.find(c=>c&&String(c.id)===String(_geiClientId)):null;
+    if(_cliCard&&String(_cliCard.gcLinkId||'')===String(window._gcBidCtx.gcUid)){
+      const _bidScope=(_geiScopeChips&&_geiScopeChips.length)?_geiScopeChips.join(', '):(v('gei-desc')||'');
+      const _bidLines=_geiIsFreeForm?_byoItems.filter(it=>it.on).length:_geiLines.length;
+      const _routed=await _maybeRouteGcBid(total,_bidScope,_bidLines);
+      if(!_routed&&typeof zAlert==='function')zAlert('Couldn\'t send the bid to the GC. Check your connection and try again.',{title:'Bid not sent'});
+      return;
+    }
+    window._gcBidCtx=null; // stale — fall through to the normal client send
+  }
   const trade=_geiTrade||getActiveTrade();
   const bname=escHtml(S.bname||getBusinessName()||'');
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
@@ -2946,55 +3033,10 @@ async function sendGenericProposal(previewOnly){
   // One deposit-row template for both modes — only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
   const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
-  const _fcPct=(S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
-  const _fcApr=Math.round(_fcPct*12*10)/10;
-  const _warrantyPeriod=S?.warrantyPeriod||'1 year';
-  // Legal party name for the Terms & Conditions — the business name, or generic "Contractor" when unset.
-  const _party=bname||'Contractor';
-  const _warrantyClause=_geiTrade==='painting'
-    ?`${_party} warrants workmanship against peeling, cracking, and finish defects for ${_warrantyPeriod} from substantial completion, provided surfaces were in sound condition and properly disclosed prior to work. Client-supplied paint carries no workmanship warranty on finish quality. Manufacturer warranties on materials pass through to Buyer.`
-    :_geiTrade==='landscaping'
-      ?`${_party} warrants all plant material and hardscaping workmanship for ${_warrantyPeriod} from substantial completion. Living plant material is subject to proper watering and care by client after installation. Manufacturer warranties on materials pass through to Buyer.`
-      :`${_party} warrants all workmanship against defects in labor and installation for ${_warrantyPeriod} from substantial completion. Manufacturer warranties on materials pass through to Buyer.`;
-  const _permitClause=_geiTrade==='painting'
-    ?`Painting and surface work does not typically require permits for standard residential repainting. If your municipality requires a permit for your specific project, ${_party} will notify you in advance. Any permit fees will be billed at cost with prior approval.`
-    :`${_party} shall obtain all permits and inspections required for this scope of work in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
-  // Terms & Conditions — ONE clause list for both modes. Every clause shared by
-  // T&M and BYO exists exactly once below; only the payment terms at the top
-  // genuinely differ (contract type + mobilization deposit + billing cadence for
-  // T&M vs a simple deposit for BYO). Numbering is generated from array order,
-  // so adding/removing a clause can never desync the two modes again.
-  // sign.html's legacy-proposal patcher keys on the "<div>N. <strong>Title:"
-  // shape — preserved verbatim by the renderer below.
-  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
-  const _modeTerms=_geiIsTM?[
-    ['Contract type',`Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
-    ['Mobilization deposit',`${_tmDepPct}% (${depositFmt}) due before work begins and before a start date is scheduled.`],
-    ['Cancellation &amp; Deposits',_cancelClause],
-    ['Billing',`${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.`],
-  ]:[
-    ['Deposit',`${_tmDepPct}% due before work begins and before a start date is scheduled. Balance due upon completion.`],
-    ['Cancellation &amp; Deposits',_cancelClause],
-  ];
-  const _termsClauses=[
-    ..._modeTerms,
-    ['Change Orders','Any additional work not described herein requires a written change order approved and signed by the client.'],
-    ['Limitation of Liability',`${_party} is not responsible for pre-existing conditions or damage not disclosed prior to the start of work.`],
-    ['Mechanic&#39;s Lien',_lienNotice(_stateKey,_party)],
-    ['Finance Charges',`Unpaid balances remaining 30 days after job completion are subject to a finance charge of ${_fcPct}% per month (${_fcApr}% APR) on the outstanding balance, accruing monthly until paid in full. Finance charges will appear as a separate line item on the client account.`],
-    ['Workmanship Warranty',_warrantyClause],
-    ['Permits &amp; Inspections',_permitClause],
-    ['Schedule &amp; Delays',`Completion dates are good-faith estimates and may be extended due to weather, material shortages, inspection delays, subcontractor availability, or other circumstances beyond ${_party}&apos;s reasonable control. ${_party} will provide timely written or verbal notice of any material delay.`],
-    ['Insurance',`${_party} maintains general liability insurance and, where required by law, workers&apos; compensation insurance. A certificate of insurance will be provided to Buyer upon written request prior to commencement of work.`],
-    ['Dispute Resolution','In the event of a dispute, both parties agree to attempt good-faith negotiation before pursuing arbitration or litigation. The prevailing party in any legal proceeding to enforce this agreement shall be entitled to recover reasonable attorney&apos;s fees and costs, to the extent permitted by law.'],
-  ];
-  const _tmPayTerms='<div style="font-size:11px;color:#2d3748;line-height:2">'+_termsClauses.map((c,i)=>`<div>${i+1}. <strong>${c[0]}:</strong> ${c[1]}</div>`).join('')+'</div>';
-  // Safari lazy-parses function bodies on first call — extract ?.?? to plain variables
-  const _byoTermsEl2=document.getElementById('byo-custom-terms');
-  const _byoTermsText=(_byoTermsEl2?_byoTermsEl2.value:(_byoCustomTerms||'')).trim();
-  const _customTermsBlock=_byoTermsText
-    ?`<div style="padding:16px 24px;border-top:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Additional Terms</div><div style="font-size:11px;color:#2d3748;line-height:1.8;white-space:pre-wrap;overflow-wrap:anywhere">${escHtml(_byoTermsText)}</div></div>`
-    :'';
+  // Full Terms & Conditions — built once, shared by the stored proposal
+  // (accordion under the signature in sign.html) and the contractor's own
+  // Preview overlay below. No longer embedded in the proposal document body.
+  const _fullTermsHtml=_geiBuildTermsHtml();
   // Owner directive: the client-facing proposal shows exactly two dollar figures —
   // the final TOTAL and the deposit due — never a per-room, per-material, or tax/markup
   // breakdown. Research on painting/remodeling proposals backs this: a visible price per
@@ -3092,8 +3134,11 @@ async function sendGenericProposal(previewOnly){
   const _lineItemsSection=_geiIsFreeForm
     ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
     :`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div>${_tmPayTerms}</div>${_customTermsBlock}</div>`;
-  // Preview-only mode — show proposal in a fullscreen overlay, no upload
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
+  // Terms & Conditions is NOT part of the document the client reviews first —
+  // it only appears in the accordion under the signature on the actual sign
+  // step (owner directive 2026-07-13). The preview mirrors that: it shows
+  // only the document, same as sign.html's Review step before Approve & Sign.
   if(previewOnly){_showProposalPreviewOverlay(proposalHtml);return;}
   const bidId=_geiEditBidId;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
@@ -3104,7 +3149,7 @@ async function sendGenericProposal(previewOnly){
     id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),
     contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
     clientId:_geiClientId||null,
-    proposalHtml,clientAddr:v('gei-addr'),
+    proposalHtml,termsHtml:_fullTermsHtml,clientAddr:v('gei-addr'),
     amount:total,deposit:_tmDepAmt,
     createdAt:new Date().toISOString(),status:'pending',
     notifyEmail:_supaUser.email,businessPhone:S.bphone||'',
@@ -3567,7 +3612,7 @@ function _geiSignInPerson(){
     '<div style="background:var(--bg-card,#fff);border-radius:18px 18px 0 0;width:100%;max-width:520px;max-height:92vh;overflow-y:auto;box-sizing:border-box">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid var(--border)">'+
         '<div style="font-size:17px;font-weight:800">'+svgIcon('✍',{size:17})+' Sign in person</div>'+
-        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0;line-height:1">×</button>'+
+        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove()" style="background:none;border:none;font-size:22px;color:var(--text3);cursor:pointer;padding:0;line-height:1">×</button>'+
       '</div>'+
       '<div style="padding:14px 18px 28px">'+
         '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
@@ -3579,58 +3624,29 @@ function _geiSignInPerson(){
             :'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0"><span style="color:var(--text3)">Due on completion</span><strong>'+fmt(total)+'</strong></div>'
           )+
         '</div>'+
-        '<div style="margin-bottom:14px">'+
-          '<label style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);display:block;margin-bottom:5px">Client name &amp; signature <span style="font-weight:400">(required)</span></label>'+
-          '<input id="gei-ip-pname" placeholder="Type full name to sign..." oninput="_geiIpUpdateTypedSig()" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:var(--r);border:1.5px solid var(--border2);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
-          '<div id="gei-ip-typed-preview" style="font-family:\'Dancing Script\',cursive;font-size:36px;color:#185FA5;min-height:52px;display:flex;align-items:center;padding:6px 10px;border:1px solid var(--border);border-radius:var(--r);margin-top:6px;background:var(--bg)"></div>'+
-        '</div>'+
-        '<details style="margin-bottom:14px">'+
-          '<summary style="font-size:11px;color:var(--text3);cursor:pointer;padding:4px 0">Or draw signature instead</summary>'+
-          '<div style="margin-top:8px">'+
-            '<canvas id="gei-ip-canvas" style="width:100%;border:1.5px solid var(--border2);border-radius:var(--r);background:#fff;touch-action:none;display:block"></canvas>'+
-            '<div style="font-size:10px;color:var(--text3);text-align:center;margin-top:4px">Draw with finger or stylus</div>'+
-            '<div style="margin-top:6px"><button class="btn btn-sm" onclick="_geiIpClearSig()">Clear</button></div>'+
-          '</div>'+
-        '</details>'+
+        // The ONE shared signing pad + the ONE shared terms block (esign.js)
+        // — same layout, same capture code, same substance as sign.html's
+        // remote signature for this exact document. Full clause list, not a
+        // one-line summary — this in-person signature IS the contract.
+        esignPadHTML('gei-ip',{nameId:'gei-ip-pname'})+
+        esignConsentHTML('gei-ip',_geiBuildTermsHtml())+
         '<button id="gei-ip-confirm-btn" onclick="_geiConfirmInPerson()" disabled style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--bg2);color:var(--text3);font-size:16px;font-weight:700;cursor:not-allowed;font-family:inherit;margin-bottom:10px;transition:background .15s,color .15s">Confirm &amp; close job</button>'+
-        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null" style="width:100%;padding:11px;border-radius:var(--rl,12px);border:none;background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
+        '<button onclick="document.getElementById(\'_gei-ip-ov\').remove()" style="width:100%;padding:11px;border-radius:var(--rl,12px);border:none;background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>'+
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
-  setTimeout(()=>{
-    const canvas=document.getElementById('gei-ip-canvas');
-    if(!canvas)return;
-    sigCanvas=canvas;
-    const dpr=window.devicePixelRatio||1;
-    const w=canvas.offsetWidth||300;
-    canvas.width=w*dpr;canvas.height=120*dpr;
-    canvas.style.width=w+'px';canvas.style.height='120px';
-    sigCtx=canvas.getContext('2d');
-    sigCtx.scale(dpr,dpr);
-    sigCtx.strokeStyle='#185FA5';sigCtx.lineWidth=2.5;sigCtx.lineCap='round';sigCtx.lineJoin='round';
-    let _ipDn=false;
-    const gp=e=>{const r=canvas.getBoundingClientRect(),s=e.touches?e.touches[0]:e;return{x:s.clientX-r.left,y:s.clientY-r.top};};
-    canvas.onmousedown=canvas.ontouchstart=e=>{e.preventDefault();_ipDn=true;const p=gp(e);sigCtx.beginPath();sigCtx.moveTo(p.x,p.y);};
-    canvas.onmousemove=canvas.ontouchmove=e=>{e.preventDefault();if(!_ipDn)return;const p=gp(e);sigCtx.lineTo(p.x,p.y);sigCtx.stroke();};
-    canvas.onmouseup=canvas.ontouchend=()=>{_ipDn=false;_geiIpCheckReady();};
-  },150);
+  // Shared e-sign pad (esign.js) — markup, listeners, typed-preview all live there.
+  // Wired synchronously — the canvas is already in the DOM by this point, and
+  // deferring via setTimeout only opens a window where a fast confirm finds no
+  // registered pad yet (esignResult returns "no-pad").
+  esignWire('gei-ip',{nameId:'gei-ip-pname',onInk:()=>_geiIpCheckReady(),onType:()=>_geiIpCheckReady(),onClear:()=>_geiIpCheckReady()});
 }
-function _geiIpUpdateTypedSig(){
-  const val=(document.getElementById('gei-ip-pname')?.value||'').trim();
-  const prev=document.getElementById('gei-ip-typed-preview');
-  if(prev)prev.textContent=val;
-  _geiIpCheckReady();
-}
-function _geiIpClearSig(){
-  if(sigCtx&&sigCanvas){const d=window.devicePixelRatio||1;sigCtx.clearRect(0,0,sigCanvas.width/d,sigCanvas.height/d);}
-  _geiIpCheckReady();
-}
+function _geiIpClearSig(){esignClear('gei-ip');}
 function _geiIpCheckReady(){
   const btn=document.getElementById('gei-ip-confirm-btn');
   if(!btn)return;
   const nameOk=(document.getElementById('gei-ip-pname')?.value||'').trim().length>2;
-  const sigOk=nameOk||(typeof hasSignature==='function'&&hasSignature());
-  const ready=sigOk;
+  const ready=nameOk||(typeof esignHasInk==='function'&&esignHasInk('gei-ip'));
   btn.disabled=!ready;
   btn.style.background=ready?'var(--green)':'var(--bg2)';
   btn.style.color=ready?'#fff':'var(--text3)';
@@ -3639,7 +3655,7 @@ function _geiIpCheckReady(){
 async function _geiConfirmInPerson(){
   const pname=(document.getElementById('gei-ip-pname')?.value||'').trim();
   const typed=pname;
-  if(!pname&&!(typeof hasSignature==='function'&&hasSignature())){showToast('Type your name or draw a signature above','⚠️');return;}
+  if(!pname&&!(typeof esignHasInk==='function'&&esignHasInk('gei-ip'))){showToast('Type your name or draw a signature above','⚠️');return;}
   const bid=bids.find(x=>x.id===_geiEditBidId);
   if(!bid){showToast('Bid not found','⚠️');return;}
   const{total}=calcGeiTotal();
@@ -3656,15 +3672,10 @@ async function _geiConfirmInPerson(){
   const _alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
   _alerts.push({name:clientName,bidId:bid.id,clientId:bid.client_id,isPaid:false});
   localStorage.setItem('zp3_schedule_alerts',JSON.stringify(_alerts));
-  // Generate signature image for DB record
-  let sigData='';
-  if(sigCanvas&&typeof hasSignature==='function'&&hasSignature()){sigData=sigCanvas.toDataURL('image/png');}
-  else if(typed){
-    const tc=document.createElement('canvas');tc.width=400;tc.height=100;
-    const tx=tc.getContext('2d');tx.font='46px "Dancing Script",cursive';
-    tx.fillStyle='#1a1a18';tx.textAlign='center';tx.textBaseline='middle';
-    tx.fillText(typed,200,50);sigData=tc.toDataURL('image/png');
-  }
+  // Signature image for the DB record — shared result path (typed name renders
+  // in the one cursive face when nothing was drawn).
+  const _sigR=esignResult('gei-ip',{requireTyped:false,typedAsSig:true});
+  const sigData=_sigR.ok?_sigR.sigData:'';
   // Show confirmation screen immediately
   const ov=document.getElementById('_gei-ip-ov');
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3681,7 +3692,7 @@ async function _geiConfirmInPerson(){
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #dcfce7"><span style="color:#374151">Signed by</span><strong>'+escHtml(pname)+'</strong></div>'+
         '<div style="font-size:12px;display:flex;justify-content:space-between;padding:4px 0"><span style="color:#374151">Date &amp; time</span><span>'+dtFmt+'</span></div>'+
       '</div>'+
-      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();sigCanvas=null;sigCtx=null;goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('🏠',{size:16,color:'#fff'})+' Back to home</button>'+
+      '<button onclick="document.getElementById(\'_gei-ip-ov\').remove();goPg(\'pg-dash\');setTimeout(showScheduleAlerts,400)" style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('🏠',{size:16,color:'#fff'})+' Back to home</button>'+
     '</div>';
   }
   // Background: write to signed_proposals + upload client hub

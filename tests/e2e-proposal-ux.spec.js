@@ -242,6 +242,196 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     return () => capturedBody;
   }
 
+  // Owner (IMG_1110): the 5-step progress bar rendered with unequal segment
+  // widths because .dot.active carried flex:2 (double width). It's a universal
+  // 5-step process — every segment must be the same width; color alone marks
+  // done/active/upcoming. This guards that the active segment never fattens again.
+  test('the 5 step-dot segments are all equal width (active is not fattened)', async ({ page }) => {
+    await mountSignRoutes(page, null);
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
+    await page.waitForLoadState('networkidle');
+
+    // Reveal the Review step so its .step-dots row lays out (it boots hidden).
+    const widths = await page.evaluate(() => {
+      const sign = document.getElementById('pg-sign');
+      if (sign) sign.style.display = 'block';
+      const row = document.querySelector('#pg-sign .step-dots');
+      if (!row) return null;
+      return [...row.querySelectorAll('.dot')].map(d => Math.round(d.getBoundingClientRect().width));
+    });
+    expect(widths).not.toBeNull();
+    expect(widths.length).toBe(5);
+    // All five within 1px of each other — no double-width active segment.
+    const min = Math.min(...widths), max = Math.max(...widths);
+    expect(max - min).toBeLessThanOrEqual(1);
+    // And the active segment's flex-grow must equal a plain dot's (1), not 2.
+    const grows = await page.evaluate(() => {
+      const g = sel => getComputedStyle(document.querySelector(sel)).flexGrow;
+      return { plain: g('#pg-sign .step-dots .dot:not(.active):not(.done)'), active: g('#pg-sign .step-dots .dot.active') };
+    });
+    expect(grows.active).toBe(grows.plain);
+    assertNoErrors(page, 'equal-width step dots');
+  });
+
+  // Owner: kill the white flash between the hub's "Review & Sign" tap and the
+  // proposal painting. The hub pre-fetches pending proposals and stashes them in
+  // sessionStorage keyed by the storage key; sign.html renders from the stash with
+  // NO network round-trip. This proves the stash is used (unique business name),
+  // and that the one-shot stash is removed after read.
+  test('instant-open handoff: sign.html renders from the sessionStorage stash with no network fetch', async ({ page }) => {
+    await mountSignRoutes(page, null);
+    const key = `proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`;
+    const stashed = { ...MOCK_PROPOSAL, businessName: 'HANDOFF STASH CO', status: 'pending' };
+    // Seed the stash before any page script runs.
+    await page.addInitScript(([k, v]) => {
+      try { sessionStorage.setItem('tdsign:' + k, JSON.stringify(v)); } catch (_) {}
+    }, [key, stashed]);
+
+    await page.goto(`/sign.html?key=${key}`);
+    await page.waitForLoadState('networkidle');
+
+    // Rendered from the stash: the hero shows the stash's unique business name.
+    // (A cold network open here would return the mock's default, not this name.)
+    await expect(page.locator('#hero-biz-name')).toHaveText('HANDOFF STASH CO');
+    // One-shot: the stash entry is consumed so a later re-open re-fetches fresh.
+    const leftover = await page.evaluate(k => sessionStorage.getItem('tdsign:' + k), key);
+    expect(leftover).toBeNull();
+    assertNoErrors(page, 'instant-open handoff');
+  });
+
+  // Owner: the white flash persisted because first paint was serialized behind the
+  // signed_proposals status query (plus parser-blocking CDN scripts, asserted below).
+  // On the stash path that check now runs in the BACKGROUND: even with the
+  // signed_proposals response delayed 3s, the page must reveal well before it.
+  test('stash reveal does not wait for the signed-status check (3s-delayed response)', async ({ page }) => {
+    await mountSignRoutes(page, null);
+    // Registered after mountSignRoutes so it wins for this URL: hold the
+    // signed-status response for 3s, then return "not signed".
+    await page.route('**/rest/v1/signed_proposals**', async route => {
+      await new Promise(r => setTimeout(r, 3000));
+      return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+    });
+    const key = `proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`;
+    await page.addInitScript(([k, v]) => {
+      try { sessionStorage.setItem('tdsign:' + k, JSON.stringify(v)); } catch (_) {}
+    }, [key, { ...MOCK_PROPOSAL, status: 'pending' }]);
+
+    await page.goto(`/sign.html?key=${key}`);
+    // Revealed after the boot dwell (~1.5s) but long before the 3s status
+    // response — the check does not gate the entrance.
+    await expect(page.locator('body')).toHaveClass(/revealed/, { timeout: 3000 });
+    await expect(page.locator('#pg-sign')).toBeVisible();
+    // And once the delayed "not signed" answer lands, the sign page must remain
+    // (no bogus swap to the Already-signed screen).
+    await page.waitForTimeout(3200);
+    await expect(page.locator('#pg-sign')).toBeVisible();
+    await expect(page.locator('#pg-done')).toBeHidden();
+    assertNoErrors(page, 'stash reveal not gated by signed check');
+  });
+
+  // The head must never regress to parser-blocking third-party scripts or a
+  // render-blocking font stylesheet — those held first paint (the white flash)
+  // no matter how fast the proposal data arrived.
+  test('vendor scripts are never parser-blocking and the font stylesheet is non-blocking', async ({ page }) => {
+    // Parser-blocking vendor tags held first paint (the white flash), and even
+    // `defer` evaluated the bundles during the waterfall's first frames (the
+    // chop). Vendor JS is now injected lazily via _loadVendor — any tag present
+    // must be non-parser-blocking (dynamically injected scripts are async).
+    await mountSignRoutes(page, null);
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
+    const head = await page.evaluate(() => {
+      const nonBlocking = sel => {
+        const s = document.querySelector(sel);
+        return !s || !!(s.defer || s.async); // absent (lazy, not yet demanded) or async/defer
+      };
+      return {
+        supaOk: nonBlocking('script[src*="supabase-js"], script[src*="@supabase"]'),
+        stripeOk: nonBlocking('script[src*="js.stripe.com"]'),
+        lazyLoader: typeof window._loadVendor === 'function', // the on-demand injector exists
+        fontNonBlocking: (() => {
+          // rel="stylesheet" specifically — a rel="preconnect" to the same host
+          // also matches on href and has no media attribute.
+          const l = document.querySelector('link[rel="stylesheet"][href*="fonts.googleapis.com"]');
+          return !!l && l.getAttribute('media') !== null; // print-media swap trick applied
+        })(),
+      };
+    });
+    expect(head.supaOk).toBe(true);
+    expect(head.stripeOk).toBe(true);
+    expect(head.lazyLoader).toBe(true);
+    expect(head.fontNonBlocking).toBe(true);
+    assertNoErrors(page, 'lazy vendor scripts');
+  });
+
+  // The proposal document is several screens tall — animating it as one block
+  // forced full layout+raster and hung the waterfall. During the entrance it
+  // must carry content-visibility:auto (below-fold content skipped), released
+  // via body.td-settled once the cascade is over so the full doc lays out on
+  // an idle, motionless frame.
+  test('proposal body is containment-scoped during the entrance and released after', async ({ page }) => {
+    await mountSignRoutes(page, null);
+    await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
+    await expect(page.locator('body')).toHaveClass(/revealed/, { timeout: 3000 });
+    const during = await page.evaluate(() =>
+      getComputedStyle(document.getElementById('prop-html')).contentVisibility);
+    expect(during).toBe('auto');
+    // Cascade ends ~1.6s in; td-settled lands at reveal+2s and releases it.
+    await expect(page.locator('body')).toHaveClass(/td-settled/, { timeout: 6000 });
+    const after = await page.evaluate(() =>
+      getComputedStyle(document.getElementById('prop-html')).contentVisibility);
+    expect(after).toBe('visible');
+    assertNoErrors(page, 'entrance containment lifecycle');
+  });
+
+  // Owner: a branded boot moment ("Loading your proposal…", business name, then
+  // waterfall) replaces chasing an instant reveal — the dwell absorbs fonts,
+  // layout, and raster so nothing ever flashes or chops. Same treatment as the
+  // client hub boot. This pins the full lifecycle.
+  test('sign boot: business name + loading copy shown, holds, then dismisses into the waterfall', async ({ page }) => {
+    await mountSignRoutes(page, null);
+    const key = `proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`;
+    await page.addInitScript(([k, v]) => {
+      try { sessionStorage.setItem('tdsign:' + k, JSON.stringify(v)); } catch (_) {}
+    }, [key, { ...MOCK_PROPOSAL, businessName: 'BOOT BRAND CO', status: 'pending' }]);
+    await page.goto(`/sign.html?key=${key}`);
+
+    // Boot is up immediately with the branding and loading copy (stash path
+    // populates the name at parse time — before any network).
+    await expect(page.locator('#sign-boot')).toBeVisible();
+    const boot = await page.evaluate(() => ({
+      name: document.getElementById('sign-boot-name')?.textContent,
+      hint: document.querySelector('#sign-boot .cbo-hint')?.textContent,
+    }));
+    expect(boot.name).toBe('BOOT BRAND CO');
+    expect(boot.hint).toContain('Loading your proposal');
+    // Still holding well before the ~1.5s dwell elapses.
+    await page.waitForTimeout(600);
+    const held = await page.evaluate(() => {
+      const ov = document.getElementById('sign-boot');
+      return getComputedStyle(ov).display !== 'none' && ov.style.opacity !== '0';
+    });
+    expect(held).toBe(true);
+    // Then it dismisses (premium exit) and the waterfall arms (body.revealed).
+    await page.waitForFunction(
+      () => getComputedStyle(document.getElementById('sign-boot')).display === 'none',
+      { timeout: 6000 }
+    );
+    await expect(page.locator('body')).toHaveClass(/revealed/);
+    await expect(page.locator('#pg-sign')).toBeVisible();
+    assertNoErrors(page, 'sign boot lifecycle');
+  });
+
+  test('sign boot: error destination drops the boot fast (no spinner over a dead page)', async ({ page }) => {
+    await mountSignRoutes(page, null);
+    await page.goto('/sign.html'); // no key -> pg-err immediately
+    await page.waitForFunction(
+      () => getComputedStyle(document.getElementById('sign-boot')).display === 'none',
+      { timeout: 2500 }
+    );
+    await expect(page.locator('#pg-err')).toBeVisible();
+    assertNoErrors(page, 'sign boot error fast-drop');
+  });
+
   test('sends viewer_type=client when no auth session (real client opening)', async ({ page }) => {
     // No session — simulates a client opening the link on their own device
     const getBody = await mountSignRoutes(page, null);
@@ -250,7 +440,9 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     // The ?storage= format is NOT recognised by sign.html and causes an error page.
     await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(800);
+    // View logging is deliberately postponed ~1.6s past the entrance waterfall
+    // (vendor eval mid-cascade was the chop) — poll instead of a fixed wait.
+    await expect.poll(getBody, { timeout: 6000 }).not.toBeNull();
 
     const body = getBody();
     expect(body).not.toBeNull();
@@ -264,7 +456,9 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
     await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(800);
+    // View logging is deliberately postponed ~1.6s past the entrance waterfall
+    // (vendor eval mid-cascade was the chop) — poll instead of a fixed wait.
+    await expect.poll(getBody, { timeout: 6000 }).not.toBeNull();
 
     const body = getBody();
     expect(body).not.toBeNull();
@@ -278,7 +472,9 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
     await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
     await page.waitForLoadState('networkidle');
-    await page.waitForTimeout(800);
+    // View logging is deliberately postponed ~1.6s past the entrance waterfall
+    // (vendor eval mid-cascade was the chop) — poll instead of a fixed wait.
+    await expect.poll(getBody, { timeout: 6000 }).not.toBeNull();
 
     const body = getBody();
     expect(body).not.toBeNull();

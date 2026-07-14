@@ -22,3 +22,9 @@ verify_jwt = false
 # function verifies it), so it must be callable without a Supabase JWT.
 [functions.cancel-proposal]
 verify_jwt = false
+
+# Sub referral invite emails. POST verifies the caller's JWT inside the
+# function; GET is the unsubscribe link clicked from an email, which carries
+# no JWT — so gateway verification must be off.
+[functions.send-sub-invite-email]
+verify_jwt = false

@@ -125,9 +125,12 @@ test.describe('Client hub — pending change order surfaces for approval', () =>
   });
 
   test('legal text says "original contract" — never "painting contract"', async ({ page }) => {
+    // Lives inside the shared esignConsentHTML() terms accordion now (owner
+    // directive 2026-07-13) — collapsed by default, but textContent reads it
+    // regardless of display:none.
     await bootHub(page, hubWith({ changeOrders: [PENDING_CO] }));
     await openCOModal(page);
-    const legal = await page.textContent('#co-hub-legal');
+    const legal = await page.textContent('#co-hub-terms-body');
     expect(legal).toContain('modify the original contract');
     expect(legal, 'app serves all trades — no painting-specific contract language').not.toContain('painting contract');
     expect(legal).toContain('15 U.S.C.');
@@ -141,6 +144,16 @@ test.describe('Client hub — pending change order surfaces for approval', () =>
     const err = await page.textContent('#co-hub-err');
     expect(err, 'must ask for full name').toContain('full name');
     assertNoErrors(page, 'CO sign name guard');
+  });
+
+  test('no separate "I agree" checkbox — the signature itself is the consent (owner directive 2026-07-13)', async ({ page }) => {
+    await bootHub(page, hubWith({ changeOrders: [PENDING_CO] }));
+    await openCOModal(page);
+    const ckCount = await page.locator('#co-hub-ck').count();
+    expect(ckCount, 'checkbox must be deleted, not just hidden').toBe(0);
+    // Terms accordion is still there, just collapsed — the terms didn't vanish, only the checkbox did.
+    await expect(page.locator('button:has-text("Terms & Conditions")')).toBeVisible();
+    assertNoErrors(page, 'CO consent checkbox deletion proof');
   });
 
   test('signing with drawn signature + typed name shows the signed state everywhere', async ({ page }) => {

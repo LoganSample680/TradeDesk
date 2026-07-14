@@ -358,14 +358,15 @@ test.describe('sign.html — UETA checkbox text has no double period', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('UETA checkbox label has no double period (..)', async () => {
-    const label = await page.evaluate(() => {
-      const ck = document.getElementById('sig-ueta-ck');
-      const lbl = ck ? (ck.closest('label') || ck.parentElement) : null;
-      return lbl ? lbl.textContent : null;
-    });
-    if (label && label.length > 0) {
-      expect(label, 'UETA label must not contain ..').not.toContain('..');
+  test('no separate UETA agreement checkbox — the signature is the consent (owner directive 2026-07-13)', async () => {
+    const ckCount = await page.locator('#sig-ck').count();
+    expect(ckCount, 'checkbox must be deleted, not just hidden').toBe(0);
+  });
+
+  test('Terms & Conditions accordion body has no double period (..)', async () => {
+    const body = await page.evaluate(() => document.getElementById('sig-terms-body')?.textContent || null);
+    if (body && body.length > 0) {
+      expect(body, 'terms body must not contain ..').not.toContain('..');
     }
   });
 

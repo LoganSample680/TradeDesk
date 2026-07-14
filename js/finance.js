@@ -1470,6 +1470,9 @@ function setTrackerYear(yr){
 function renderTrackerTab(){
   populateTrackerYearSel();
   setTrTab(trackerTab,document.getElementById('tr-t-'+trackerTab));
+  // Live pipe: opening Books checks for freshly-landed payments/jobs from
+  // linked contractors (debounced inside; re-renders this tab if any land).
+  if(typeof _ingestPipeInbox==='function')_ingestPipeInbox();
 }
 function renderMonthlyPL(){
   const el=document.getElementById('monthly-pl-list');if(!el)return;
@@ -2502,6 +2505,11 @@ async function _openJobProfit(){
     const{data:te}=await _supa.from('job_time_entries').select('employee_user_id,job_id,minutes,source').eq('contractor_user_id',cid);
     entries=te||[];
   }catch(_e){}
+  // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries) — without
+  // this, a walk-up job clocked via the nearby-banner Clock in button was
+  // invisible to Job Profit entirely, even though the time was really saved.
+  // null logged_by_uid means the owner, whose rate already keys off cid above.
+  entries=entries.concat(timeEntries.map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,source:'manual'})));
   // Labor $ by bid id (on-site time only; drive is overhead, not job labor)
   const laborByBid={};
   entries.forEach(en=>{
@@ -2595,7 +2603,7 @@ async function _fetchCrewLabor(sinceISO){
     out.loaded[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(_oc):0;
     out.wage[cid]=(typeof _empEffectiveHourly==='function')?_empEffectiveHourly(_oc):0;
     out.name[cid]=S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)';
-    let q=_supa.from('job_time_entries').select('employee_user_id,job_id,minutes,arrived_at,source').eq('contractor_user_id',cid);
+    let q=_supa.from('job_time_entries').select('employee_user_id,job_id,minutes,arrived_at,departed_at,source').eq('contractor_user_id',cid);
     if(sinceISO)q=q.gte('arrived_at',sinceISO);
     const{data:te}=await q;
     out.entries=te||[];
@@ -2672,7 +2680,15 @@ async function _crewCostRender(range){
   // Fetch with 1-day UTC buffer before period start; CT-date comparison is the authoritative filter
   const sinceISO=new Date(new Date(sinceStr+'T00:00:00Z').getTime()-86400000).toISOString();
   const data=await _fetchCrewLabor(sinceISO);
-  const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
+  // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries) alongside
+  // GPS-tracked entries — mapped into the same {employee_user_id,job_id,minutes,
+  // arrived_at,source} shape so the aggregation below treats both identically.
+  // null logged_by_uid means the owner; _fetchCrewLabor already resolves the
+  // owner's rate/name under cid.
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(_supaUser&&_supaUser.id);
+  const manualEnts=timeEntries.filter(e=>e.start_time&&_ctDateStr(new Date(e.start_time))>=sinceStr)
+    .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,source:'manual'}));
+  const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
   const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
   if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
   // Business day length for unaccounted estimate
@@ -3019,23 +3035,27 @@ function _bkDayLabel(d){
 }
 // Render a month's rows grouped into per-day accordions (each day its own dropdown,
 // default open). rowFn is the month's local row renderer (_incRow / _expRow).
-function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor){
+// sumFn/fmtFn are optional — default to the original $-amount behavior so Income
+// and Expenses (the only callers before Time Log) are unaffected; Time Log passes
+// a minutes-sum + duration formatter instead of $ since it isn't a money view.
+function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn){
+  sumFn=sumFn||(r=>r.amount||0);fmtFn=fmtFn||fmt;
   const byDay={};
   rows.forEach(r=>{const d=(r.date||'').slice(0,10)||'unknown';(byDay[d]||(byDay[d]=[])).push(r);});
   const days=Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
   return days.map(day=>{
     const dr=byDay[day];
-    const dayTotal=dr.reduce((s,r)=>s+(r.amount||0),0);
+    const dayTotal=dr.reduce((s,r)=>s+sumFn(r),0);
     const safe=day.replace(/[^0-9]/g,'')||'x';
     return '<div class="bk-day open" id="bk-'+tab+'-day-'+mo+'-'+safe+'">'+
       '<button class="bk-day-hd" onclick="_bkTogDay(\''+tab+'\',\''+mo+'\',\''+safe+'\')">'+
         '<span class="bk-day-title">'+_bkDayLabel(day)+'</span>'+
-        '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+dr.length+' · '+fmt(dayTotal)+'</span>'+
+        '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+dr.length+' · '+fmtFn(dayTotal)+'</span>'+
         '<span class="bk-day-chev">▾</span>'+
       '</button>'+
       '<div class="bk-day-body">'+
         '<div class="bk-tbl-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl bk-tbl" style="min-width:'+minWidth+'px"><thead><tr>'+
-          headers.map(h=>'<th>'+h+'</th>').join('')+(tab==='exp'?'<th></th>':'')+'</tr></thead><tbody>'+
+          headers.map(h=>'<th>'+h+'</th>').join('')+((tab==='exp'||tab==='tl')?'<th></th>':'')+'</tr></thead><tbody>'+
           dr.map(rowFn).join('')+
         '</tbody></table></div>'+
       '</div>'+

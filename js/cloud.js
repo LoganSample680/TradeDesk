@@ -1,7 +1,19 @@
 let _stripeConnectStatus=null; // cached: {connected, charges_enabled, details_submitted, stripe_account_id}
 Object.defineProperty(window,'_stripeConnectStatus',{get:()=>_stripeConnectStatus,set:v=>{_stripeConnectStatus=v;},configurable:true});
 
-// ── Employee invite URL handling ─────────────────────────────────────────────
+// ── Invite URL handling (employee + sub referral) ────────────────────────────
+// ?sub_invite= is a REFERRAL, not an access grant: it carries only marketing
+// prefill (inviter's business name, the sub's name/trade) for the signup
+// screen. The sub creates their own completely separate account — nothing in
+// the payload links to the inviter's data, so forgeable base64 is fine here,
+// unlike ?emp_invite= which mints server-verified claim tokens.
+function _parseSubInvitePayload(raw){
+  try{
+    const inv=JSON.parse(atob(raw));
+    if(inv&&(inv.bn||inv.n))return{bn:String(inv.bn||''),n:String(inv.n||''),t:String(inv.t||'')};
+  }catch(_e){}
+  return null;
+}
 (function(){
   const params=new URLSearchParams(window.location.search);
   const raw=params.get('emp_invite');
@@ -10,8 +22,18 @@ Object.defineProperty(window,'_stripeConnectStatus',{get:()=>_stripeConnectStatu
       const inv=JSON.parse(atob(raw));
       if(inv.cid&&inv.eid)localStorage.setItem('_pendingEmpInvite',JSON.stringify(inv));
     }catch(_e){}
-    history.replaceState(null,'',window.location.pathname);
   }
+  const subRaw=params.get('sub_invite');
+  if(subRaw){
+    const si=_parseSubInvitePayload(subRaw);
+    if(si)localStorage.setItem('_pendingSubInvite',JSON.stringify(si));
+  }
+  // &grant= rides alongside ?sub_invite=: an opaque single-use token for the
+  // server-side snapshot (inviter-as-lead + payment history). The data itself
+  // never travels in the URL — redemption happens post-signup via RPC.
+  const grantTok=params.get('grant');
+  if(grantTok&&/^[a-f0-9]{16,64}$/i.test(grantTok))localStorage.setItem('_pendingSubInviteGrant',grantTok);
+  if(raw||subRaw||grantTok)history.replaceState(null,'',window.location.pathname);
 })();
 
 async function _fetchStripeConnectStatus(){
@@ -507,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.08.26.7';
+const APP_VERSION='07.13.26.23';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1116,12 +1138,12 @@ window.__opSync=()=>{try{return _opSyncOps()||Promise.resolve();}catch(_e){retur
 // merely absent (a peer's, not-yet-synced) is never swept. Even bulk wipes
 // (clearAllData / clear*Only) just go through _userDelete, which records every id
 // that vanished — no special flag needed, and it survives the deferred async save.
-let _locallyDeletedIds={
-  td_clients:new Set(),td_bids:new Set(),td_jobs:new Set(),
-  td_income:new Set(),td_expenses:new Set(),td_mileage:new Set(),
-  td_payments:new Set(),td_liens:new Set(),td_time_entries:new Set(),
-  td_licenses:new Set(),td_events:new Set(),td_contracts:new Set(),td_agreements:new Set(),td_photos:new Set()
-};
+// _locallyDeletedIds itself is initialized further down, right after _TD_TABLES
+// (this object is BUILT FROM that list — see the note there) — _TD_TABLES is a
+// const declared later in this file, so referencing it here would throw before
+// the page even loads. The function declarations below are hoisted and safe to
+// keep here; only the data they touch needs to come after _TD_TABLES exists.
+let _locallyDeletedIds;
 // Record an explicit local delete so the next save propagates it (and ONLY it).
 // Call with the synced table name + the id(s) removed from that table's array —
 // INCLUDING cascade removals (deleting a client also removes its bids/jobs/… → record
@@ -1191,6 +1213,26 @@ const _TD_TABLES=[
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
+// Root cause (found 2026-07-10): this used to be a hand-listed object literal
+// that fell out of sync with _TD_TABLES above — td_maintenance was missing.
+// _recordLocalDelete no-ops silently for any table absent here
+// (`if(!_locallyDeletedIds[tbl])return;`), so deleteMaintenanceRecord's
+// _userDelete call recorded nothing: the cloud sweep never saw the id as
+// deleted, never soft-deleted it server-side, and the row resurrected on the
+// next load. Deleting a vehicle service record simply didn't stick. Built
+// FROM _TD_TABLES now so a future table can never repeat this class of bug.
+_locallyDeletedIds=Object.fromEntries(_TD_TABLES.map(({t})=>[t,new Set()]));
+// Dev-time guard: reports if _TD_TABLES ever gains a table this object
+// doesn't cover (the exact defect above) — a silent multi-week data-loss bug
+// turned into an immediate, loud console error instead. Self-checking since
+// the object is now derived, but stays as a permanent regression tripwire in
+// case anything ever re-hardcodes it.
+function _assertLocallyDeletedIdsComplete(){
+  const missing=_TD_TABLES.map(({t})=>t).filter(t=>!_locallyDeletedIds[t]);
+  if(missing.length)console.error('[_locallyDeletedIds] missing table(s) — deletes on '+missing.join(', ')+' will never sweep from the cloud:',missing);
+  return missing;
+}
+_assertLocallyDeletedIdsComplete();
 // True when a Supabase error means "this table doesn't exist in the DB yet" — e.g. a
 // new feature table on a deploy that runs ahead of its migration. Both preview and
 // production proxy to the SAME Supabase project, so an unmerged migration means the
@@ -1240,9 +1282,17 @@ let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
   s.textContent='[data-lp-id]{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;}';
   (document.head||document.documentElement).appendChild(s);
   function _lpStart(e){
-    if(typeof _canDelete==='function'&&!_canDelete())return; // DEV-ONLY: gesture is inert for everyone else
     const row=e.target.closest('[data-lp-id]');
     if(!row)return;
+    // Every other [data-lp-id] row is a DEV-ONLY hard-purge gesture, inert for
+    // real users. Time Log rows are the one exception — the gesture there
+    // calls deleteTimeEntry(), a real soft-delete that already re-checks
+    // ownership/permission itself (js/jobs.js) and is only rendered onto rows
+    // _tlCanEdit() already approved (js/timelog.js _tlRow), so it's safe to
+    // let regular contractors/employees use it, not just dev mode.
+    const devOk=typeof _canDelete==='function'&&_canDelete();
+    const timelogOk=row.dataset.lpType==='timelog';
+    if(!devOk&&!timelogOk)return;
     if(e.target.closest('button,select,input,a,label'))return;
     clearTimeout(_lpTimer);_lpFired=false;
     const t=e.touches?e.touches[0]:e;
@@ -1287,6 +1337,10 @@ function _showLpDeletePopup(row){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _lpDoDelete(id,type){
+  // timelog is the one non-dev-gated type (see _lpStart) — deleteTimeEntry()
+  // is a real soft-delete that re-checks ownership/permission itself, unlike
+  // every other branch below which is a dev-only hard purge.
+  if(type==='timelog'){if(typeof deleteTimeEntry==='function')deleteTimeEntry(parseInt(id,10));return;}
   if(typeof _canDelete==='function'&&!_canDelete())return; // DEV-ONLY (defense in depth)
   const nid=parseInt(id,10);
   // DEV HARD DELETE (owner directive): the long-press purges the ACTUAL row(s) via
@@ -1455,6 +1509,10 @@ function _removeBootOverlay(){
       // (same account, fresh, bid still unsent) live in the function.
       setTimeout(()=>{if(typeof _maybeResumeActiveEstimate==='function')_maybeResumeActiveEstimate();},120);
     }
+    // The pipe inbox: payments/job addresses from linked GCs land
+    // automatically — kicked shortly after boot so it never competes with
+    // the boot render. No-op for accounts with no links.
+    setTimeout(()=>{if(typeof _ingestPipeInbox==='function')_ingestPipeInbox(true);},1800);
     // Restore any unsaved form fields that were open when auto-update fired
     try{
       const raw=localStorage.getItem('_form_snap');
@@ -1672,6 +1730,9 @@ async function supaInit(){
           // written into the incoming account's delta_meta (owner guards the read, but
           // the in-memory cursor is global). Next load rebuilds it for this account.
           _deltaCursor=null;
+          // Pipe/bid caches are keyed to the outgoing account — drop them so the
+          // incoming account re-loads its OWN links + incoming bids (no cross-bleed).
+          _subBids=null;window._subBidsKicked=false;
           // Previous user's settings timestamp must never beat this user's cloud copy
           S.settingsTs=0;
         }
@@ -1745,6 +1806,15 @@ async function supaInit(){
           renderDash();
           supaSetStatus('cloud');
           goPg('pg-dash');
+        }
+        // Existing-account sub-invite: a contractor who already runs TradeDesk
+        // arrived via a referral link and SIGNED IN (not onboarded — new
+        // accounts are suppressed by the _obInProgress return at the top, and
+        // obSubmit redeems their grant itself). Forge the link + accrue the
+        // referrer's reward now, and OFFER their payment history. Runs after the
+        // load above so the payer card lands in the right account's data.
+        if(localStorage.getItem('_pendingSubInviteGrant')){
+          try{await _redeemSubInviteGrantForExisting();}catch(_e){}
         }
       } else if(event==='TOKEN_REFRESHED'){
         // Token silently refreshed — update user ref. If we were in offline/cache mode,
@@ -2411,6 +2481,12 @@ function renderTeam(){
     }).join('');
   if(el)el.innerHTML=_reqHtml+empHtml;
   if(el2)el2.innerHTML=_reqHtml+empHtml;
+  const _psCard=document.getElementById('payroll-setup-card');
+  if(_psCard){
+    const _hasW2=emps.some(e=>e.role!=='owner');
+    if(!_isEmployee&&_hasW2){_psCard.style.display='block';if(typeof renderPayrollSetupCard==='function')renderPayrollSetupCard();}
+    else _psCard.style.display='none';
+  }
   // Devices
   const devs=S.devices||[];
   const myId=_initDeviceId();
@@ -2447,8 +2523,21 @@ function renderTeam(){
   // Subcontractors
   const subs=S.subcontractors||[];
   const subEl=document.getElementById('team-page-subs');
+  // Lazy-load standing business links once, then re-render so linked subs get
+  // their "On TradeDesk" badge (mirrors the _teamCompLoaded pattern above).
+  if(subEl&&subs.length&&_bizLinks===null&&!window._bizLinksKicked&&supaEnabled()&&_supaUser){
+    window._bizLinksKicked=true;_loadBizLinks().then(()=>renderTeam());
+  }
+  // Referral earnings: lazy-load the referrer's reward ledger once, then
+  // re-render so the "free months earned" card appears (mirrors the _bizLinks
+  // pattern above). Only fires for signed-in accounts; card is empty until a
+  // referral converts, so it's invisible for everyone who hasn't referred.
+  if(subEl&&_referralRewards===null&&!window._refRewardsKicked&&supaEnabled()&&_supaUser){
+    window._refRewardsKicked=true;_loadReferralRewards().then(()=>renderTeam());
+  }
   if(subEl){
-    subEl.innerHTML=!subs.length
+    const _refCard=_referralRewardCardHTML(_referralRewards||[]);
+    subEl.innerHTML=_refCard+(!subs.length
       ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No subs yet. Add a subcontractor to assign them to jobs and track what you owe.</div>'
       :('<button onclick="open1099Report()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt,rgba(45,93,168,.06));color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📋')+' 1099 payments report — who you paid, per job</button>')+
        subs.map((s,i)=>
@@ -2461,12 +2550,17 @@ function renderTeam(){
                   (s.trade?'<div style="font-size:11px;color:var(--text3)">'+escHtml(s.trade)+'</div>':'')+
                 '</div>'+
               '</div>'+
-              '<button onclick="openEditSubModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>'+
+              '<div style="display:flex;gap:6px;flex-shrink:0;align-items:center">'+
+                (_bizLinkForRosterId(s.id)
+                  ?'<span style="font-size:10px;font-weight:800;background:#ECFDF5;color:var(--green-mid,#0E6B39);padding:3px 9px;border-radius:10px;white-space:nowrap">'+svgIcon('🔗',{size:10})+' On TradeDesk</span>'
+                  :'<button onclick="_inviteSubToTradeDesk('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid '+(s.tdInvitedAt?'var(--border2)':'var(--blue)')+';background:none;color:'+(s.tdInvitedAt?'var(--text3)':'var(--blue)')+';cursor:pointer;font-family:inherit;font-weight:600">'+(s.tdInvitedAt?'Re-invite':'Invite to TradeDesk')+'</button>')+
+                '<button onclick="openEditSubModal('+i+')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>'+
+              '</div>'+
             '</div>'+
             (s.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(s.phone)+'</div>':'')+
             (s.rate?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+svgIcon('💰')+' '+escHtml(s.rate)+'</div>':'')+
           '</div>'
-        ).join('');
+        ).join(''));
   }
 }
 function _timeAgo(iso){
@@ -2527,7 +2621,7 @@ function _empPayTypeSync(){
   const t=document.getElementById('emp-pay-type')?.value;
   const lbl=document.getElementById('emp-pay-rate-lbl');
   const inp=document.getElementById('emp-pay-rate');
-  if(lbl)lbl.textContent=t==='salary'?'Annual salary':'Hourly rate';
+  if(lbl)lbl.textContent=t==='salary'?'Salary':'Rate';
   if(inp)inp.placeholder=t==='salary'?'55000':'28';
 }
 function _employeeModalHTML(emp,idx){
@@ -2538,7 +2632,8 @@ function _employeeModalHTML(emp,idx){
   const _eRole=_legacyMap[e.role]||e.role||'tech';
   const _eClass=e.classification||'';
   const _eComp=_teamComp[(e.email||'').toLowerCase()]||{pay_type:'hourly',pay_rate:0};
-  return '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(isNew?'Add team member':'Edit '+escHtml(e.name||''))+'</div>'+
+  return '<div style="font-size:17px;font-weight:800;margin-bottom:'+(isNew?'4px':'14px')+'">'+(isNew?'Add W-2 Employee':'Edit '+escHtml(e.name||''))+'</div>'+
+    (isNew?'<div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.4">You control how, when, and where they work — you set the hours, direct the job, provide the tools. That\'s an employee.</div>':'')+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Full name</label><input id="emp-name" value="'+escHtml(e.name||'')+'" placeholder="John Smith" style="font-size:15px;padding:10px"></div>'+
       '<div class="f"><label>Phone</label><input id="emp-phone" type="tel" value="'+escHtml(e.phone||'')+'" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this)" style="font-size:15px;padding:10px"></div>'+
@@ -2555,7 +2650,7 @@ function _employeeModalHTML(emp,idx){
           '<option value="manager"'+(_eRole==='manager'?' selected':'')+'>Manager</option>'+
           '<option value="owner"'+(_eRole==='owner'?' selected':'')+'>Owner / Admin</option>'+
         '</select></div>'+
-      '<div class="f" style="margin:0"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
+      '<div class="f" style="margin:0"><label>Classification</label>'+
         '<select id="emp-classification" style="font-size:14px;padding:10px">'+
           _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'"'+(c===_eClass?' selected':'')+'>'+escHtml(c||'— None —')+'</option>').join('')+
         '</select></div>'+
@@ -2568,14 +2663,13 @@ function _employeeModalHTML(emp,idx){
       '<div id="_pay-info-tip" style="display:none;font-size:12px;color:var(--text2);background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px;line-height:1.55">'+
         'Pay rates are stored securely and only visible to people with the <strong>Pay &amp; profit</strong> permission. Employees <em>never</em> see this — not in their daily view or anywhere else in the app. It\'s used to calculate loaded labor cost and profit margin on each job in the Job Profit report.'+
       '</div>'+
-      '<div style="margin-bottom:8px"></div>'+
       '<div style="display:grid;grid-template-columns:140px 1fr;gap:10px;margin-bottom:14px">'+
         '<div class="f" style="margin:0"><label>Pay type</label>'+
           '<select id="emp-pay-type" onchange="_empPayTypeSync()" style="font-size:14px;padding:10px">'+
             '<option value="hourly"'+(_eComp.pay_type!=='salary'?' selected':'')+'>Hourly</option>'+
             '<option value="salary"'+(_eComp.pay_type==='salary'?' selected':'')+'>Salary</option>'+
           '</select></div>'+
-        '<div class="f" style="margin:0"><label id="emp-pay-rate-lbl">'+(_eComp.pay_type==='salary'?'Annual salary':'Hourly rate')+'</label>'+
+        '<div class="f" style="margin:0"><label id="emp-pay-rate-lbl">'+(_eComp.pay_type==='salary'?'Salary':'Rate')+'</label>'+
           '<div style="display:flex;align-items:center;gap:6px"><span style="font-size:14px;color:var(--text2);font-weight:600">$</span>'+
           '<input id="emp-pay-rate" type="text" inputmode="decimal" value="'+(_eComp.pay_rate?_moneyStr(_eComp.pay_rate).replace(/\.00$/,''):'')+'" placeholder="'+(_eComp.pay_type==='salary'?'55000':'28')+'" oninput="_fmtMoneyInput(this)" style="font-size:14px;padding:10px;flex:1"></div></div>'+
       '</div>'
@@ -2645,8 +2739,13 @@ async function _saveEmployee(idx){
   const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
   const emp={id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms};
   if(!S.employees)S.employees=[];
+  // Captured before the push so it reflects the roster as it was walking in —
+  // picks the prompt's framing: first-ever hire gets full business setup,
+  // every later hire leads with that person's own W-4/I-9/new-hire paperwork.
+  const _priorNonOwnerCount=S.employees.filter(e=>e.role!=='owner').length;
   if(!isNew)S.employees[idx]=emp;else S.employees.push(emp);
   _settingsChanged();document.getElementById('emp-modal-overlay')?.remove();renderTeam();
+  if(isNew&&_empRole!=='owner'&&typeof _showPayrollSetupPrompt==='function')_showPayrollSetupPrompt(_empId,_priorNonOwnerCount===0);
   // Sync to Supabase team_members and send invite if email provided
   if(email&&_supa&&_supaUser){
     // permissions MUST ride along: has_team_perm() and the load_account_data RPC
@@ -2720,7 +2819,11 @@ function removeEmployee(idx){
 function _subModalHTML(sub,idx){
   const isNew=idx==null;
   const s=sub||{name:'',trade:'',phone:'',email:'',rate:'',ein:'',addr:'',w9:false};
-  return '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(isNew?'Add subcontractor':'Edit '+escHtml(s.name||'Sub'))+'</div>'+
+  return '<div style="font-size:17px;font-weight:800;margin-bottom:'+(isNew?'4px':'14px')+'">'+(isNew?'Add 1099 Sub Contractor':'Edit '+escHtml(s.name||'Sub'))+'</div>'+
+    (isNew?'<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.4">They run their own business — their own schedule, their own tools, their own insurance. You\'re paying a business, not directing an employee.</div>'+
+    '<div style="background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px;color:#7A4A00;line-height:1.5">'+
+      '<strong>Misclassifying an employee as a 1099 is one of the most audited issues at the IRS and state labor boards</strong> — back taxes, penalties up to 100% of what you owed, and the owner held personally liable. The test: do you control how/when/where they work? Do they carry their own insurance and business risk? If you\'re supervising them like staff, they\'re staff — not a 1099. Not sure? Ask your accountant before you guess wrong.'+
+    '</div>':'')+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Full name</label><input id="sub-name" value="'+escHtml(s.name||'')+'" placeholder="Mike Garcia" style="font-size:15px;padding:10px"></div>'+
       '<div class="f"><label>Trade</label><input id="sub-trade" value="'+escHtml(s.trade||'')+'" placeholder="Drywall, Electrical, Plumbing..." style="font-size:14px;padding:10px"></div>'+
@@ -2778,11 +2881,715 @@ function _saveSub(idx){
   if(idx==null)S.subcontractors.push(sub);else S.subcontractors[idx]=sub;
   _settingsChanged();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
   showToast(idx==null?'Subcontractor added':'Saved','✓');
+  // The invite moment: a brand-new sub with a phone or email is a warm
+  // referral — they run a trade business too. One tap sends it: email goes
+  // out behind the scenes (CAN-SPAM-guarded server-side); phone opens their
+  // own texting app (TCPA: the contractor must be the one who hits send).
+  if(idx==null&&(sub.phone||sub.email)&&typeof zConfirm==='function'){
+    const _first=(sub.name||'').split(/\s+/)[0]||'They';
+    zConfirm('You already trust '+_first+' on your jobs — set them up with the same tools you run on, free for them. They start with a head start: everything you\'ve paid them is already on their books, so it feels like home from day one. And it stays your world — your clients and numbers never cross over.\n\nRefer businesses that stick with TradeDesk and earn free months.',
+      ()=>_inviteSubToTradeDesk(S.subcontractors.length-1),
+      {title:'Set '+_first+' up on TradeDesk?',yes:(sub.email?'Email':'Text')+' '+_first+' the invite',no:'Maybe later',danger:false});
+  }
 }
 function _removeSub(idx){
   if(!S.subcontractors)return;
   S.subcontractors.splice(idx,1);
   _settingsChanged();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
+}
+
+// ── Invite a sub to get their OWN TradeDesk account ──────────────────────────
+// The growth loop: every 1099 sub is itself a trade business — the exact
+// customer TradeDesk is for. This is NOT the employee invite (?emp_invite=,
+// which links a crew login into THIS account); the sub gets a referral link
+// to create a completely separate account of their own.
+function _subInviteLink(sub,grantToken){
+  const payload={bn:S.bname||'',n:(sub&&sub.name)||'',t:(sub&&sub.trade)||''};
+  return window.location.origin+window.location.pathname+'?sub_invite='+btoa(JSON.stringify(payload))+(grantToken?'&grant='+grantToken:'');
+}
+// Navigation isolated so tests can stub it without triggering a real sms: intent.
+function _subInviteNavigate(href){window.location.href=href;}
+function _subInviteMsg(sub,link){
+  const first=(sub&&sub.name?sub.name:'').split(/\s+/)[0];
+  return 'Hey'+(first?' '+first:'')+' — I run my business on TradeDesk (estimates, invoices, getting paid, all of it). Figured you\'d want it for yours too. Free to set up: '+(link||_subInviteLink(sub));
+}
+function _subInviteSms(sub,link){
+  _subInviteNavigate('sms:'+String(sub.phone||'').replace(/\D/g,'')+'&body='+encodeURIComponent(_subInviteMsg(sub,link)));
+}
+// Everything this contractor has logged as paid to ONE sub, across all years —
+// the same two sources as _sub1099Report (sub-category expenses + legacy
+// job.subs[] paid rows, deduped by subPayKey), matched by subId or vendor name.
+function _subPaymentHistory(sub){
+  if(!sub)return[];
+  const rows=[];
+  const _addr=(bidId,clientId)=>{
+    const b=bidId?bids.find(x=>x.id===bidId):null;
+    if(b&&b.addr)return b.addr;
+    const c=getClientById(clientId||(b&&b.client_id));
+    return (c&&c.addr)||'';
+  };
+  const nameMatch=v=>!!(v&&sub.name&&String(v).toLowerCase()===String(sub.name).toLowerCase());
+  // What crosses to the sub is deliberately tight: date + amount + job
+  // ADDRESS only (the address keeps their mileage records accurate). Never
+  // job names/descriptions — those can carry the GC's client details.
+  expenses.filter(e=>_isSubExpense(e)&&((sub.id&&e.subId===sub.id)||(!e.subId&&nameMatch(e.vendor)))).forEach(e=>{
+    rows.push({date:e.date||'',amount:e.amount||0,addr:_addr(e.job_id,e.client_id)});
+  });
+  jobs.forEach(j=>{
+    (j.subs||[]).forEach((sp,i)=>{
+      if(!sp.paid||!sp.paidDate)return;
+      if(expenses.some(e=>e.subPayKey===j.id+':'+i))return;
+      if(!((sub.id&&sp.subId===sub.id)||nameMatch(sp.subName)))return;
+      rows.push({date:sp.paidDate,amount:sp.amount||0,addr:_addr(j.bid_id,j.client_id)});
+    });
+  });
+  rows.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  return rows.slice(-500); // cap: newest 500 rows, keeps the grant payload sane
+}
+// Server-side snapshot for the invite: the inviter's business card + payment
+// history with this sub, stored under a random single-use token (the LINK
+// carries only the token — see sub_invite_grants migration). Returns the
+// token, or null offline/on failure — the invite still goes out either way,
+// just without the pre-loaded books.
+async function _createSubInviteGrant(sub){
+  if(!sub||typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return null;
+  try{
+    const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
+    const payload={v:1,
+      business:{name:S.bname||'',phone:S.bphone||'',email:S.bemail||'',addr:[S.baddr,S.bcity,S.state,S.bzip].filter(Boolean).join(', ')},
+      payments:_subPaymentHistory(sub),
+      // rosterId lets redemption tie the standing business link back to THIS
+      // roster row, so future payments the GC logs to it can flow as offers.
+      sub:{name:sub.name||'',trade:sub.trade||'',rosterId:String(sub.id||'')}};
+    if(!payload.business.name)return null; // nothing to seed a lead from
+    const{error}=await _supa.from('sub_invite_grants').insert({token,contractor_user_id:_supaUser.id,payload});
+    return error?null:token;
+  }catch(_e){return null;}
+}
+// Post-signup redemption (called from obSubmit): single-use RPC returns the
+// snapshot, which seeds the brand-new account — inviter as first client/lead,
+// payments as the opening income ledger.
+async function _redeemSubInviteGrant(){
+  const token=localStorage.getItem('_pendingSubInviteGrant');
+  if(!token)return false;
+  localStorage.removeItem('_pendingSubInviteGrant'); // one attempt, never re-fires
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return false;
+  try{
+    // p_sub_business: the sub's just-entered business name — stored on the
+    // standing business_links row the RPC forges alongside the redemption.
+    const{data,error}=await _supa.rpc('redeem_sub_invite_grant',{p_token:token,p_sub_business:S.bname||''});
+    if(error||!data)return false;
+    return _seedFromSubInviteGrant(data);
+  }catch(_e){return false;}
+}
+function _seedFromSubInviteGrant(g){
+  if(!g||!g.business||!g.business.name)return false;
+  const cid=Date.now();
+  // gcLinkId: the redemption RPC stamps the inviter's account id into the
+  // payload — the live pipe uses it as the payer card's stable identity
+  // (survives renames, never merges two same-name GCs).
+  clients.push({id:cid,name:g.business.name,phone:g.business.phone||'',email:g.business.email||'',
+    addr:g.business.addr||'',created:new Date().toISOString(),
+    notes:'Invited you to TradeDesk — imported automatically',
+    extraAddresses:[],clientToken:'',clientHubKey:'',gcLinkId:String(g.gcUserId||'')});
+  // .slice defends the RECEIVING account too — a tampered payload can't dump
+  // thousands of rows into a brand-new sub's books (creation caps at 500).
+  (Array.isArray(g.payments)?g.payments.slice(0,500):[]).forEach((p,i)=>{
+    if(!p||!(Number(p.amount)>0))return;
+    income.push({id:cid+i+1,bid_id:null,client_id:cid,client_name:g.business.name,
+      date:String(p.date||'').replace(/-/g,'').slice(0,8),type:'Job payment',amount:Number(p.amount),
+      method:'',notes:('Imported from '+g.business.name+(p.addr?' — job @ '+p.addr:'')).slice(0,200),
+      created_at:new Date().toISOString()});
+  });
+  return true;
+}
+// Existing-account redemption: a contractor who ALREADY runs TradeDesk arrived
+// via a sub-invite link and signed in (the "I already use TradeDesk" path) —
+// never onboarded, so obSubmit's _redeemSubInviteGrant never fired. We still
+// want the standing link forged and the inviter's reward accrued (both happen
+// server-side in the RPC), and the payer card created so live-pipe payments
+// have a home. The one difference from a brand-new account: we OFFER the
+// payment-history import instead of force-seeding it — this account already has
+// its own books, and silently dumping months of income into them would be
+// alarming, not warm. Called from the SIGNED_IN handler after the account load.
+async function _redeemSubInviteGrantForExisting(){
+  const token=localStorage.getItem('_pendingSubInviteGrant');
+  if(!token)return false;
+  localStorage.removeItem('_pendingSubInviteGrant'); // one attempt, never re-fires
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return false;
+  try{
+    const{data,error}=await _supa.rpc('redeem_sub_invite_grant',{p_token:token,p_sub_business:S.bname||''});
+    if(error||!data||!data.business||!data.business.name)return false;
+    // Link forged + referrer reward accrued server-side. Ensure the payer card
+    // exists (keyed on the inviter's account id, rename-proof) so future
+    // payments/assignments from them land on one clean card.
+    const gcUid=String(data.gcUserId||'');
+    const c=_pipePayerClient(data.business.name,gcUid);
+    if(c){
+      if(!c.phone&&data.business.phone)c.phone=data.business.phone;
+      if(!c.email&&data.business.email)c.email=data.business.email;
+      if(!c.addr&&data.business.addr)c.addr=data.business.addr;
+    }
+    saveAll();
+    if(typeof renderTeam==='function')renderTeam();
+    const pays=(Array.isArray(data.payments)?data.payments:[]).filter(p=>p&&Number(p.amount)>0).slice(0,500);
+    const bn=data.business.name;
+    if(pays.length&&c&&typeof zConfirm==='function'){
+      const tot=pays.reduce((s,p)=>s+Number(p.amount),0);
+      const totStr=(typeof fmt==='function')?fmt(tot):('$'+tot);
+      // OFFER — never force. escHtml the business name: zConfirm renders via innerHTML.
+      zConfirm('You\'re linked with '+escHtml(bn)+' — anything they pay you now lands here on its own.\n\nThey\'ve already paid you '+totStr+' across '+pays.length+' job'+(pays.length!==1?'s':'')+'. Want that added to your income too? Skip it if it\'s already on your books.',
+        ()=>_importPipeHistory(bn,c.id,pays),
+        {title:'Add your history with '+bn+'?',yes:'Add '+totStr+' to my books',no:'No, just link us',danger:false});
+    }else{
+      showToast('Linked with '+escHtml(bn)+' — their payments now land here automatically','🔗');
+    }
+    return true;
+  }catch(_e){return false;}
+}
+// Import the offered payment history onto an EXISTING account, tied to the
+// linked GC's payer card. Collision-proof ids (an established account already
+// has income rows). Same tight scope as the seed path: amount + date + address.
+function _importPipeHistory(bizName,clientId,pays){
+  if(!Array.isArray(pays)||!pays.length)return;
+  let base=Date.now();
+  pays.forEach(p=>{
+    if(!p||!(Number(p.amount)>0))return;
+    let id=base++;while(income.some(x=>x&&x.id===id))id++;
+    income.push({id,bid_id:null,client_id:clientId,client_name:bizName,
+      date:String(p.date||'').replace(/-/g,'').slice(0,8),type:'Job payment',amount:Number(p.amount),
+      method:'',notes:('Imported from '+bizName+(p.addr?' — job @ '+p.addr:'')).slice(0,200),
+      created_at:new Date().toISOString()});
+  });
+  saveAll();
+  if(typeof renderTrackerTab==='function')renderTrackerTab();
+  if(typeof renderDash==='function')renderDash();
+  showToast(pays.length+' payment'+(pays.length!==1?'s':'')+' from '+escHtml(bizName)+' added to your books','💵');
+}
+// Fires the invite email behind the scenes via the send-sub-invite-email edge
+// function (Resend). Server enforces the CAN-SPAM guardrails: suppression
+// list, postal-address footer, unsubscribe link, max 3 sends 7 days apart.
+async function _sendSubInviteEmail(sub,link){
+  if(!sub||!sub.email)return{ok:false,reason:'no-email'};
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return{ok:false,reason:'offline'};
+  try{
+    const{data:{session}}=await _supa.auth.getSession();
+    const token=session?.access_token;
+    if(!token)return{ok:false,reason:'no-session'};
+    const res=await fetch(SUPA_URL+'/functions/v1/send-sub-invite-email',{
+      method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({
+        to:sub.email,subName:sub.name||'',businessName:S.bname||'',trade:sub.trade||'',
+        inviteUrl:link||_subInviteLink(sub),replyTo:S.bemail||undefined,
+        postalAddress:[S.baddr,S.bcity,S.state,S.bzip].filter(Boolean).join(', ')||undefined
+      })
+    });
+    const data=await res.json().catch(()=>({}));
+    if(res.ok&&data.suppressed)return{ok:false,reason:'suppressed'};
+    return res.ok?{ok:true,id:data.id}:{ok:false,reason:data.error||('http-'+res.status)};
+  }catch(_e){return{ok:false,reason:'network'};}
+}
+async function _inviteSubToTradeDesk(idx){
+  const sub=(S.subcontractors||[])[idx];
+  if(!sub)return;
+  sub.tdInvitedAt=new Date().toISOString();
+  _settingsChanged();renderTeam();
+  const first=(sub.name||'').split(/\s+/)[0]||'them';
+  // Snapshot grant first: the link then carries a token that pre-loads the
+  // sub's new account (this business as their first lead + payment history).
+  // Offline or on failure the invite still goes out — just without the seed.
+  let _grantTok=null;
+  try{_grantTok=await _createSubInviteGrant(sub);}catch(_e){}
+  const link=_subInviteLink(sub,_grantTok);
+  // Email on file → fire it behind the scenes. LEGAL LINE (researched, FCC
+  // 2015 Glide/TextMe rulings): auto-sending EMAIL is CAN-SPAM-compliant with
+  // the server's guardrails, but auto-sending the TEXT would make TradeDesk
+  // the TCPA "initiator" of a marketing text with no recipient consent
+  // ($500-$1,500 per text, private right of action). Texts therefore stay
+  // person-to-person from the contractor's own phone, permanently.
+  if(sub.email){
+    showToast('Emailing '+first+' their invite…','📧');
+    const r=await _sendSubInviteEmail(sub,link);
+    if(r.ok)showToast('Invite emailed to '+first+' ✓','📧');
+    else if(r.reason==='suppressed')showToast(first+' has unsubscribed from TradeDesk invites'+(sub.phone?' — text them instead':''),'⚠️');
+    else if(r.reason==='recently-invited'||r.reason==='send-limit-reached')showToast('Already invited recently — give it a few days','📧');
+    else if(sub.phone)_subInviteSms(sub,link); // email failed → fall back to a person-to-person text
+    else showToast('Email didn\'t go through — try again in a bit','⚠️');
+    return;
+  }
+  if(sub.phone){_subInviteSms(sub,link);return;}
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(_subInviteMsg(sub,link)).then(()=>showToast('Invite copied — paste it anywhere','🔗')).catch(()=>showToast('Couldn\'t copy the invite','⚠️'));
+  }else showToast('Add a phone or email to send the invite','⚠️');
+}
+// Referral attribution — called by obSubmit (settings.js) right after account
+// creation: records who brought this signup in, then clears the stash so a
+// later re-signup on the same device can't double-claim it.
+function _claimSubReferralAttribution(){
+  try{
+    const _si=JSON.parse(localStorage.getItem('_pendingSubInvite')||'null');
+    if(!_si)return false;
+    S.referredBy={bname:_si.bn||'',via:'sub_invite',at:new Date().toISOString()};
+    localStorage.removeItem('_pendingSubInvite');
+    return true;
+  }catch(_e){return false;}
+}
+
+// ── The live pipe: business links + accept-model payment offers ──────────────
+// A standing link between a GC account and a sub account (forged server-side
+// at grant redemption — see redeem_sub_invite_grant). Payments the GC logs to
+// a linked sub become OFFERS: a card the sub explicitly accepts into their
+// own books. The GC never writes into the sub's ledger — ownership stays
+// clean, same one-way principle as mailing a check.
+// Referral rewards (the referrer's side of the growth loop): every sub who
+// signs up through your invite earns YOU a reward, accrued server-side at the
+// verified conversion (grant redemption — see redeem_sub_invite_grant). Default
+// today is one free month, applied when subscription billing launches. This is
+// read-only on the client — the app never writes rewards, only shows them.
+let _referralRewards=null; // null = not loaded; [] = loaded, none
+async function _loadReferralRewards(force){
+  if(_referralRewards!==null&&!force)return _referralRewards;
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser){_referralRewards=[];return _referralRewards;}
+  try{
+    const{data,error}=await _supa.from('referral_rewards').select('*')
+      .eq('referrer_user_id',_supaUser.id).order('created_at',{ascending:false});
+    _referralRewards=error?[]:(data||[]);
+  }catch(_e){_referralRewards=[];}
+  return _referralRewards;
+}
+// Loyalty ratio: how many referred contractors who go paid earn one free month.
+// Owner decision 2026-07-13: 2-for-1 (a signup alone isn't a free month — it's a
+// free month once two of them actually stick and start paying). Change here only;
+// the DB just records one row per verified signup, the math lives in the app.
+const REFERRALS_PER_FREE_MONTH=2;
+// Pure renderer for the referral-earnings card on the Team page. Empty string
+// until at least one referral has converted, so it costs nothing for accounts
+// that haven't referred anyone. Each reward row = one contractor who signed up
+// off this account's invite; every REFERRALS_PER_FREE_MONTH of them = 1 free
+// month, always shown with live progress toward the next one so the rule reads
+// plainly on the card.
+function _referralRewardCardHTML(rewards){
+  if(!Array.isArray(rewards)||!rewards.length)return'';
+  const active=rewards.filter(r=>r&&r.status!=='void');
+  const total=active.length;
+  if(!total)return'';
+  const per=REFERRALS_PER_FREE_MONTH;
+  const months=Math.floor(total/per);   // free months earned so far
+  const toward=total%per;               // referrals sitting toward the NEXT month
+  const need=per-toward;                // how many more to earn the next month
+  const names=active.map(r=>escHtml(r.referred_business_name||'A contractor')).slice(0,3).join(', ');
+  const more=total>3?' +'+(total-3)+' more':'';
+  const headline=months>0
+    ?months+' free month'+(months!==1?'s':'')+' earned'
+    :total+' referral'+(total!==1?'s':'')+' — '+need+' more to a free month';
+  const progress=toward>0
+    ?need+' more paid referral'+(need!==1?'s':'')+' earns '+(months>0?'another':'your first')+' free month.'
+    :'Every '+per+' contractors you refer who go paid = 1 free month.';
+  return '<div style="background:#ECFDF5;border:1.5px solid var(--green-mid,#0E6B39);border-radius:var(--r);padding:12px;margin-bottom:10px">'+
+    '<div style="font-size:13px;font-weight:800;color:var(--green-mid,#0E6B39);margin-bottom:3px">'+svgIcon('🎁',{size:13})+' '+headline+'</div>'+
+    '<div style="font-size:11px;color:var(--text2);line-height:1.5">'+
+      total+' contractor'+(total!==1?'s you invited have':' you invited has')+' signed up ('+names+more+'). '+
+      progress+' Credit applies automatically once TradeDesk billing starts.'+
+    '</div>'+
+  '</div>';
+}
+let _bizLinks=null; // null = not loaded yet; [] = loaded, none
+async function _loadBizLinks(force){
+  if(_bizLinks!==null&&!force)return _bizLinks;
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser){_bizLinks=[];return _bizLinks;}
+  try{
+    const{data,error}=await _supa.from('business_links').select('*')
+      .or('gc_user_id.eq.'+_supaUser.id+',sub_user_id.eq.'+_supaUser.id);
+    _bizLinks=error?[]:(data||[]);
+  }catch(_e){_bizLinks=[];}
+  return _bizLinks;
+}
+// The link (if any) for a sub ROSTER row in this GC's account — matched by
+// roster id, never by name, so renames can't cross-wire two subs.
+function _bizLinkForRosterId(rosterId){
+  if(!Array.isArray(_bizLinks)||rosterId==null)return null;
+  const me=_supaUser?String(_supaUser.id):'';
+  return _bizLinks.find(l=>String(l.gc_user_id)===me&&String(l.sub_roster_id)===String(rosterId))||null;
+}
+// GC side: fire-and-forget offer to a linked sub. No link → silent no-op
+// (the payment is still fully logged locally either way).
+async function _offerPaymentToLinkedSub(rosterId,pay){
+  try{
+    if(!pay||!(Number(pay.amount)>0))return false;
+    if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return false;
+    await _loadBizLinks();
+    const link=_bizLinkForRosterId(rosterId);
+    if(!link)return false;
+    // Tight scope, enforced here AND by the table (no other columns exist):
+    // amount + date + job ADDRESS. Never job names/descriptions.
+    const{error}=await _supa.from('payment_offers').insert({
+      gc_user_id:_supaUser.id,sub_user_id:link.sub_user_id,
+      amount:Number(pay.amount),paid_date:String(pay.date||'').slice(0,10),
+      job_addr:String(pay.addr||'').slice(0,200),
+      gc_business_name:String(S.bname||link.gc_business_name||'').slice(0,120)
+    });
+    // escHtml: showToast renders via innerHTML and the sub controls their
+    // business name — cross-ACCOUNT strings never enter the DOM raw.
+    if(!error)showToast('Payment lands in '+escHtml(link.sub_business_name||'their')+' TradeDesk books automatically','🔗');
+    return !error;
+  }catch(_e){return false;}
+}
+// GC side: assigning a linked sub to a job shares the job ADDRESS + start
+// date — the moment the sub actually needs it (mileage, routing). Same tight
+// scope as payments: no job names, no descriptions, no client details.
+async function _offerJobToLinkedSub(rosterId,info){
+  try{
+    if(!info||!String(info.addr||'').trim())return false;
+    if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return false;
+    await _loadBizLinks();
+    const link=_bizLinkForRosterId(rosterId);
+    if(!link)return false;
+    const{error}=await _supa.from('job_assignments').insert({
+      gc_user_id:_supaUser.id,sub_user_id:link.sub_user_id,
+      job_addr:String(info.addr||'').slice(0,200),start_date:String(info.date||'').slice(0,10),
+      gc_business_name:String(S.bname||link.gc_business_name||'').slice(0,120)
+    });
+    if(!error)showToast('Job address sent to '+escHtml(link.sub_business_name||'their')+' TradeDesk calendar','🔗');
+    return !error;
+  }catch(_e){return false;}
+}
+
+// ── The REVERSE pipe: the sub bids their piece back to the GC ─────────────────
+// GC→sub hands over an address (job_assignments). This is the sub pricing that
+// work as an independent business and sending the number back for the GC to
+// approve — the round-trip that makes the relationship a vendor relationship,
+// not a disguised-employee one. Scope that crosses: amount + scope + address.
+// The sub's line-item costs, margins, other clients never leave their account.
+
+// The sub's standing link to a specific GC, matched by the GC's ACCOUNT id
+// (the payer card's gcLinkId) — never by name, so two same-name GCs can't cross.
+function _linkForGcUid(gcUid){
+  if(!Array.isArray(_bizLinks)||!gcUid)return null;
+  const me=_supaUser?String(_supaUser.id):'';
+  return _bizLinks.find(l=>String(l.gc_user_id)===String(gcUid)&&String(l.sub_user_id)===me)||null;
+}
+// Sub side: send a priced bid to a linked GC. No link → silent no-op (the bid
+// is meaningless without the standing relationship, and RLS would reject it).
+async function _sendBidToGC(info){
+  try{
+    if(!info)return false;
+    const gcUid=String(info.gcUid||'');
+    const amount=Number(info.amount);
+    if(!gcUid||!(amount>=0))return false;
+    if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return false;
+    await _loadBizLinks();
+    const link=_linkForGcUid(gcUid);
+    if(!link)return false;
+    const{error}=await _supa.from('sub_bids').insert({
+      sub_user_id:_supaUser.id,gc_user_id:link.gc_user_id,
+      job_addr:String(info.addr||'').slice(0,200),
+      amount:amount,
+      scope:String(info.scope||'').slice(0,2000),
+      line_count:Math.max(0,Math.min(9999,Number(info.lineCount)||0)),
+      sub_business_name:String(S.bname||link.sub_business_name||'').slice(0,120)
+    });
+    // escHtml: showToast renders via innerHTML and the GC name is cross-account.
+    if(!error)showToast('Bid sent to '+escHtml(link.gc_business_name||'the GC')+' for approval','📤');
+    return !error;
+  }catch(_e){return false;}
+}
+// GC side: the bids sent TO me. null = not loaded; [] = loaded, none.
+let _subBids=null;
+async function _loadSubBids(force){
+  if(_subBids!==null&&!force)return _subBids;
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser){_subBids=[];return _subBids;}
+  try{
+    const{data,error}=await _supa.from('sub_bids').select('*')
+      .eq('gc_user_id',_supaUser.id).order('created_at',{ascending:false});
+    _subBids=error?[]:(data||[]);
+  }catch(_e){_subBids=[];}
+  return _subBids;
+}
+// GC side: DECLINE an open bid (no signature needed to say no).
+async function _declineSubBid(id){
+  try{
+    if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return false;
+    const{error}=await _supa.from('sub_bids')
+      .update({status:'declined',decided_at:new Date().toISOString()})
+      .eq('id',id).eq('gc_user_id',_supaUser.id).eq('status','pending');
+    if(error)return false;
+    const b=(_subBids||[]).find(x=>String(x.id)===String(id));
+    if(b)b.status='declined';
+    if(typeof renderDash==='function')renderDash();
+    showToast('Bid declined','✓');
+    return true;
+  }catch(_e){return false;}
+}
+// GC side: SIGN an open bid — the GC e-signs the sub's full scope + price. This
+// is the protective artifact: signed_name + signed_at recorded on an immutable
+// amount/scope, so the sub holds documented proof the GC agreed to pay it. On
+// signing, the agreed price is stamped onto the GC's matching job (by address)
+// so the signature literally becomes the agreed amount on that job.
+async function _signSubBid(id,signerName){
+  try{
+    if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return false;
+    const name=String(signerName||'').trim().slice(0,120);
+    if(!name)return false;
+    const now=new Date().toISOString();
+    const{error}=await _supa.from('sub_bids')
+      .update({status:'approved',signed_name:name,signed_at:now,decided_at:now})
+      .eq('id',id).eq('gc_user_id',_supaUser.id).eq('status','pending');
+    if(error)return false;
+    const b=(_subBids||[]).find(x=>String(x.id)===String(id));
+    if(b){b.status='approved';b.signed_name=name;b.signed_at=now;
+      const job=(jobs||[]).find(j=>j&&j.addr&&String(j.addr)===String(b.job_addr||''));
+      if(job){job.subBidAmount=Number(b.amount)||0;job.subBidBy=String(b.sub_business_name||'');job.subBidSignedBy=name;saveAll();}
+    }
+    if(typeof renderDash==='function')renderDash();
+    showToast('Signed — '+escHtml((b&&b.sub_business_name)||'the sub')+' is cleared to start','✍️');
+    return true;
+  }catch(_e){return false;}
+}
+// GC side: the review-and-sign sheet. Shows the FULL scope + price + address,
+// then captures the GC's typed signature. Not a one-tap approve — the signature
+// on the full scope is what protects the sub.
+function _openBidReview(id){
+  const b=(_subBids||[]).find(x=>String(x.id)===String(id));
+  if(!b)return;
+  const who=escHtml(b.sub_business_name||'A linked sub');
+  const addr=escHtml(b.job_addr||'');
+  const amt=(typeof fmt==='function')?fmt(Number(b.amount)||0):('$'+(Number(b.amount)||0));
+  const scope=escHtml(b.scope||'').replace(/\n/g,'<br>');
+  document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());
+  const overlay=document.createElement('div');overlay.className='zmodal-overlay';
+  const boxEl=document.createElement('div');boxEl.className='zmodal';
+  boxEl.innerHTML=
+    '<div style="font-size:17px;font-weight:800;margin-bottom:2px">'+svgIcon('📥')+' Bid from '+who+'</div>'+
+    (addr?'<div style="display:flex;gap:6px;align-items:center;font-size:12px;color:var(--text3);margin-bottom:12px">'+svgIcon('📍',{size:13})+addr+'</div>':'<div style="height:8px"></div>')+
+    '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:12px;margin-bottom:12px">'+
+      '<div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px">Full scope</div>'+
+      '<div style="font-size:13px;color:var(--text);line-height:1.5">'+(scope||'<span style="color:var(--text3)">No scope note provided</span>')+'</div>'+
+      '<div style="border-top:1px solid var(--border2);margin-top:10px;padding-top:8px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:var(--text3)">Their price</span><span style="font-size:20px;font-weight:800">'+amt+'</span></div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);line-height:1.4;margin-bottom:8px">Signing records your name + the date against this scope and price — your written OK that '+who+' can start and be paid '+amt+' for it.</div>'+
+    '<div class="f" style="margin-bottom:14px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Type your name to sign</label>'+
+      '<input type="text" id="bid-sign-name" placeholder="Your full name" autocomplete="name" style="font-size:15px;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit"></div>'+
+    '<div id="bid-sign-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:8px"></div>'+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px">'+
+      '<button onclick="_declineSubBid('+Number(b.id)+');closeTopModal()" style="flex:1;min-width:120px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">Decline</button>'+
+      '<button onclick="_submitBidSignature('+Number(b.id)+')" style="flex:1.4;min-width:150px;padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Sign &amp; approve '+amt+'</button>'+
+    '</div>';
+  overlay.appendChild(boxEl);document.body.appendChild(overlay);
+  overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
+  setTimeout(()=>document.getElementById('bid-sign-name')?.focus(),60);
+}
+async function _submitBidSignature(id){
+  const name=(document.getElementById('bid-sign-name')?.value||'').trim();
+  const err=document.getElementById('bid-sign-err');
+  if(!name){if(err){err.style.display='block';err.textContent='Type your name to sign.';}return;}
+  const ok=await _signSubBid(id,name);
+  if(ok)closeTopModal();
+  else if(err){err.style.display='block';err.textContent='Couldn’t sign. Check your connection and try again.';}
+}
+// GC-side inbox card for pending incoming bids → opens the review-and-sign
+// sheet. Empty string when none, so it costs nothing on accounts with no
+// linked subs bidding.
+function _subBidInboxHTML(bids){
+  const pend=(Array.isArray(bids)?bids:[]).filter(b=>b&&b.status==='pending');
+  if(!pend.length)return'';
+  return pend.map(b=>{
+    const who=escHtml(b.sub_business_name||'A linked sub');
+    const addr=escHtml(b.job_addr||'');
+    const amt=(typeof fmt==='function')?fmt(Number(b.amount)||0):('$'+(Number(b.amount)||0));
+    const scope=escHtml(b.scope||'');
+    const scopeShort=scope.length>90?scope.slice(0,90)+'…':scope;
+    return '<div style="background:var(--bg-card);border:1.5px solid var(--blue);border-radius:var(--r);padding:12px;margin-bottom:10px">'+
+      '<div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:3px">'+svgIcon('📥',{size:12})+' New bid from '+who+'</div>'+
+      '<div style="font-size:14px;font-weight:800;margin-bottom:2px">'+amt+(addr?' · '+addr:'')+'</div>'+
+      (scopeShort?'<div style="font-size:12px;color:var(--text2);line-height:1.45;margin:4px 0 8px">'+scopeShort+'</div>':'<div style="height:6px"></div>')+
+      '<button onclick="_openBidReview('+Number(b.id)+')" style="width:100%;padding:9px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✍️',{size:13})+' Review &amp; sign</button>'+
+    '</div>';
+  }).join('');
+}
+// Sub side: bidding a pipe job opens the REAL estimate builder (owner decision
+// 2026-07-13 — every bid is an itemized, signable document, never a lump-sum
+// quick charge). The job address arrived via the assignment, so we open the
+// estimator prefilled with it (no searching) and stamp a GC-bid context; the
+// estimator's Send then routes to the linked GC as a signable bid instead of a
+// client link (see _maybeRouteGcBid, called from sendGenericProposal).
+function _openBidBuilder(jobId){
+  const job=(jobs||[]).find(j=>j&&String(j.id)===String(jobId));
+  if(!job)return;
+  const c=(clients||[]).find(x=>x&&String(x.id)===String(job.client_id));
+  const gcUid=(c&&c.gcLinkId)?String(c.gcLinkId):'';
+  if(!c||!gcUid){if(typeof showToast==='function')showToast('This job isn’t linked to a GC on TradeDesk','⚠️');return;}
+  // GC-bid context the estimator's send step reads. Cleared on send or cancel.
+  window._gcBidCtx={gcUid,addr:job.addr||'',jobId:job.id,gcName:c.name||'the GC'};
+  if(typeof currentClientId!=='undefined')currentClientId=c.id;
+  // Open the estimator prefilled with the GC card as the "client" + the job
+  // address override. _doOpenEstimate runs the trade/style pickers as usual.
+  if(typeof _doOpenEstimate==='function')_doOpenEstimate(c,job.addr||'');
+  else if(typeof openGenericEstimate==='function')openGenericEstimate(c);
+}
+// Called by sendGenericProposal when a GC-bid context is active: route the
+// finished estimate to the linked GC as a signable bid (amount + scope +
+// line count) instead of a client sign-link. Returns true if it handled the
+// send. Pure enough to unit-test: caller passes the computed total/scope/lines.
+async function _maybeRouteGcBid(total,scope,lineCount){
+  if(!window._gcBidCtx)return false;
+  const ctx=window._gcBidCtx;
+  const ok=await _sendBidToGC({gcUid:ctx.gcUid,addr:ctx.addr,amount:Number(total)||0,
+    scope:String(scope||''),lineCount:Number(lineCount)||0});
+  if(ok){
+    const job=(jobs||[]).find(j=>j&&String(j.id)===String(ctx.jobId));
+    if(job){job.bidSentAt=new Date().toISOString();job.bidAmount=Number(total)||0;saveAll();}
+    window._gcBidCtx=null;
+    if(typeof goPg==='function')goPg('pg-dash');
+    if(typeof renderDash==='function')renderDash();
+  }
+  return ok;
+}
+// The multi-property answer: ONE client record per linked GC, no matter how
+// many properties they send work at. Addresses live on each job/income row,
+// never stacked onto the client — a builder with 300 lots is still one clean
+// card. Created as a bare lead (name only) when missing.
+//
+// Identity is the GC's ACCOUNT id (gcLinkId), not their display name: a GC
+// who renames their business keeps the same card, and two different GCs who
+// happen to share a name never get merged into one card. Name matching is
+// only the adoption path for the referral-seeded lead (created before this
+// stamping existed) — and it refuses to adopt a card already stamped for a
+// DIFFERENT GC.
+function _pipePayerClient(name,gcUid){
+  const n=String(name||'').trim();
+  const uid=String(gcUid||'');
+  if(uid){
+    const byId=clients.find(x=>x&&String(x.gcLinkId||'')===uid);
+    if(byId)return byId;
+  }
+  if(!n)return null;
+  const c=clients.find(x=>x&&x.name&&String(x.name).toLowerCase()===n.toLowerCase()
+    &&(!x.gcLinkId||String(x.gcLinkId)===uid));
+  if(c){if(uid&&!c.gcLinkId)c.gcLinkId=uid;return c;}
+  // Collision-proof id: two payer cards created in the same millisecond
+  // (two new GCs in one ingest) must never share an id.
+  let id=Date.now();while(clients.some(x=>x&&x.id===id))id++;
+  const fresh={id,name:n,phone:'',email:'',addr:'',created:new Date().toISOString(),
+    notes:'Linked contractor on TradeDesk — added automatically',
+    extraAddresses:[],clientToken:'',clientHubKey:'',gcLinkId:uid};
+  clients.push(fresh);
+  return fresh;
+}
+// Pure converter: one claimed assignment → a scheduled job on MY calendar,
+// carrying exactly what the GC shared (address + start date). Value stays 0
+// until real money flows through the payment side of the pipe.
+function _assignmentToJob(a,clientId){
+  if(!a||!String(a.job_addr||'').trim())return null;
+  // Strict YYYY-MM-DD or fall back to today — a malformed date would put an
+  // Invalid Date into every calendar/pipeline loop that parses job.start.
+  const raw=String(a.start_date||'');
+  const start=/^\d{4}-\d{2}-\d{2}$/.test(raw)?raw:(typeof todayKey==='function'?todayKey():'');
+  return{id:Date.now(),bid_id:null,client_id:clientId||null,
+    name:'Job — '+(a.gc_business_name||'linked contractor'),
+    addr:String(a.job_addr),start,days:1,buffer:0,value:0,color:'#185FA5',
+    eventType:'job',time:'',hours:null,
+    notes:'Assigned by '+(a.gc_business_name||'a linked contractor')+' on TradeDesk',
+    status:'upcoming',
+    // Flags this as pipe-sourced so the Today widget can offer a one-tap
+    // "Log mileage" shortcut — the whole reason the address crosses the
+    // pipe in the first place is so the sub's drive gets tracked.
+    pipeSourced:true};
+}
+// Pure converter: one accepted offer → an income row on MY books. The ingest
+// resolves the payer card via _pipePayerClient (account-id identity) and
+// passes its id as forceClientId; the name match here is only the fallback
+// for callers without that resolution.
+function _paymentOfferToIncome(offer,forceClientId){
+  if(!offer||!(Number(offer.amount)>0))return null;
+  const payer=(offer.gc_business_name||'').trim();
+  const c=(forceClientId==null&&payer)?clients.find(x=>x.name&&x.name.toLowerCase()===payer.toLowerCase()):null;
+  return{id:Date.now(),bid_id:null,client_id:forceClientId!=null?forceClientId:(c?c.id:null),client_name:payer||'Contractor',
+    date:String(offer.paid_date||'').replace(/-/g,'').slice(0,8),type:'Job payment',amount:Number(offer.amount),
+    method:'',notes:('From '+(payer||'a linked contractor')+(offer.job_addr?' — job @ '+offer.job_addr:'')).slice(0,200),
+    created_at:new Date().toISOString()};
+}
+// Sub side: the pipe INBOX. Payments and job assignments from linked GCs
+// land AUTOMATICALLY (owner decision — no accept tap). The claim is atomic:
+// `update … eq status pending → select` returns ONLY the rows THIS call
+// flipped, so two of the sub's devices can never double-add the same row.
+// The ledger stays the sub's own: landed rows are plain local records they
+// can edit or delete like anything hand-entered.
+let _pipeIngestRunning=false,_pipeIngestLast=0;
+async function _ingestPipeInbox(force){
+  if(_pipeIngestRunning)return false;
+  if(!force&&Date.now()-_pipeIngestLast<60000)return false; // tab-click debounce
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return false;
+  _pipeIngestRunning=true;_pipeIngestLast=Date.now();
+  try{
+    const now=new Date().toISOString();
+    let touched=false;
+    try{ // payments → income rows
+      const{data:offs}=await _supa.from('payment_offers')
+        .update({status:'accepted',decided_at:now})
+        .eq('sub_user_id',_supaUser.id).eq('status','pending').select();
+      const rows=(offs||[]).map(o=>{
+        // Resolve the payer card by GC ACCOUNT id (stable across renames,
+        // never merges two same-name GCs) — creates the lead if missing,
+        // exactly like the assignment path.
+        const pc=_pipePayerClient(o.gc_business_name,o.gc_user_id);
+        return _paymentOfferToIncome(o,pc?pc.id:null);
+      }).filter(Boolean);
+      rows.forEach(r=>{
+        let id=Date.now();while(income.some(x=>x&&x.id===id))id++;
+        r.id=id;income.push(r);
+      });
+      if(rows.length){
+        touched=true;
+        // saveAll NOW, before the next network await: these offers are already
+        // claimed server-side — a tab killed mid-ingest must not lose them.
+        saveAll();
+        const total=rows.reduce((s,r)=>s+r.amount,0);
+        const amt=typeof fmt==='function'?fmt(total):'$'+total;
+        // escHtml: showToast renders via innerHTML; payer name is GC-controlled.
+        showToast(rows.length===1
+          ?amt+' from '+escHtml(rows[0].client_name||'a linked contractor')+' — added to your books'
+          :rows.length+' payments ('+amt+') from linked contractors — added to your books','💵');
+      }
+    }catch(_e){}
+    try{ // job assignments → scheduled jobs with the address
+      const{data:asgs}=await _supa.from('job_assignments')
+        .update({status:'received',received_at:now})
+        .eq('sub_user_id',_supaUser.id).eq('status','pending').select();
+      let added=0,firstAddr='';
+      (asgs||[]).forEach(a=>{
+        const c=_pipePayerClient(a.gc_business_name,a.gc_user_id);
+        const job=_assignmentToJob(a,c?c.id:null);
+        if(job){
+          let id=Date.now();while(jobs.some(x=>x&&x.id===id))id++;
+          job.id=id;jobs.push(job);added++;if(!firstAddr)firstAddr=job.addr;
+        }
+      });
+      if(added){
+        touched=true;
+        saveAll(); // same crash-window rule as the payment block
+        // escHtml: the address is GC-controlled and showToast uses innerHTML.
+        showToast(added===1
+          ?'New job @ '+escHtml(firstAddr)+' — on your calendar'
+          :added+' new job addresses — on your calendar','📅');
+      }
+    }catch(_e){}
+    if(touched){
+      // (saveAll already ran inside each landing block — see crash-window note)
+      if(typeof supaSaveToCloud==='function')supaSaveToCloud();
+      try{
+        const pg=document.querySelector('.pg.active')?.id;
+        // pg-dash is the common case: it's the FIRST page shown at boot, and
+        // this ingest runs 1.8s after boot on purpose (never compete with the
+        // boot render) — so Today already painted before a job/payment landed.
+        // Without this, a job assigned this morning shows the toast but never
+        // shows up on Today until the sub navigates away and back.
+        if(pg==='pg-dash'&&typeof renderDash==='function')renderDash();
+        else if(pg==='pg-tracker'&&typeof renderTrackerTab==='function')renderTrackerTab();
+        else if(pg==='pg-cal'&&typeof renderCalGrid==='function')renderCalGrid();
+      }catch(_e){}
+    }
+    return touched;
+  }finally{_pipeIngestRunning=false;}
 }
 
 // ── 1099 contractor payment tracking ─────────────────────────────────────────
@@ -3064,6 +3871,11 @@ function supaShowLogin(opts={}){
   }
   if(document.getElementById('supa-login-overlay'))return;
   const _pendingInvite=JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');
+  // Sub referral (?sub_invite=): pitch-first signup screen. Employee invites
+  // win if both are somehow present; opts.plain skips the pitch (the "I
+  // already have an account" path) without clearing the stash — attribution
+  // stays claimable until an account is actually created (obSubmit).
+  const _pendingSubInv=(!_pendingInvite&&!opts.plain)?(function(){try{return JSON.parse(localStorage.getItem('_pendingSubInvite')||'null');}catch(_e){return null;}})():null;
   const _inviteBanner=_pendingInvite
     ?'<div style="background:#EFF6FF;border:1.5px solid #3B82F6;border-radius:var(--r);padding:12px 14px;margin-bottom:20px">'+
       '<div style="font-size:13px;font-weight:700;color:#1D4ED8;margin-bottom:2px">You\'ve been invited to join a crew on TradeDesk</div>'+
@@ -3094,6 +3906,32 @@ function supaShowLogin(opts={}){
           '<div class="f" style="margin-bottom:20px"><label>Create a password</label>'+
             '<input type="password" id="supa-pass" placeholder="Min 6 characters" autocomplete="new-password" style="'+_inputStyle+'"></div>'+
           '<button onclick="_supaEmpSignUp()" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Join the crew →</button>'+
+          '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
+          '</div>';
+      })()
+    : _pendingSubInv
+    ? (function(){
+        // ── Sub referral landing ─────────────────────────────────────────────
+        const _sbBname=escHtml(_pendingSubInv.bn||'A contractor you work with');
+        const _sbFirst=escHtml((_pendingSubInv.n||'').split(/[\s,]+/)[0]||'');
+        const _sbTrade=escHtml((_pendingSubInv.t||'').toLowerCase());
+        return '<div style="max-width:360px;width:100%">'+
+          '<div style="text-align:center;margin-bottom:24px">'+
+            '<div style="font-size:36px;margin-bottom:10px">'+svgIcon('🔧',{size:36})+'</div>'+
+            '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">'+(_sbFirst?'Hey '+_sbFirst+' — this one\'s for your business':'Built for your business too')+'</div>'+
+            '<div style="font-size:13.5px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">'+_sbBname+'</strong> set you up with your own free TradeDesk account — your own business, not a login into theirs.</div>'+
+          '</div>'+
+          // What you actually get — left-aligned + scannable so the value reads at a glance.
+          '<div style="border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;margin-bottom:16px">'+
+            (localStorage.getItem('_pendingSubInviteGrant')
+              ?'<div style="display:flex;gap:10px;padding:12px;background:var(--green-lt,#ECFDF5);border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('💵',{size:18})+'</div><div style="font-size:12.5px;color:var(--green-mid,#0E6B39);line-height:1.45;font-weight:600">Every dollar '+_sbBname+' has paid you is <strong>already on your books</strong> — nothing to type in. You start where you are, not from zero.</div></div>'
+              :'')+
+            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('📍',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">They send you a job, the <strong>address drops onto your calendar</strong> — just drive out and work.</div></div>'+
+            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('🧾',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Estimate, invoice, e-sign, get paid — the <strong>same tools '+_sbBname+' runs</strong>, now yours'+(_sbTrade?', built for '+_sbTrade+' pros':'')+'.</div></div>'+
+            '<div style="display:flex;gap:10px;padding:12px"><div style="flex:none">'+svgIcon('🔒',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Your clients, your numbers, your money stay <strong>private to you</strong> — they never see your side.</div></div>'+
+          '</div>'+
+          '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Claim my free account →</button>'+
+          '<button onclick="document.getElementById(\'supa-login-overlay\').remove();supaShowLogin({force:true,plain:true})" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">I already use TradeDesk</button>'+
           '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
           '</div>';
       })()
@@ -3205,6 +4043,7 @@ function _wipeLocalAccountData(){
   // Delta cursor + its sidecar are per-account too — drop both so the next account
   // rebuilds from a full load rather than delta-ing against this account's cursor.
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
+  _subBids=null;window._subBidsKicked=false; // incoming-bid cache is per-account
   clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
   // the arrays above — the next account's Leads page would keep rendering this
@@ -4195,7 +5034,7 @@ function showScheduleAlerts(){
     '<div style="text-align:center;font-size:32px;margin-bottom:6px">'+(a.isPaid?svgIcon('💰',{size:32}):svgIcon('🎉',{size:32}))+'</div>'+
     '<div style="font-size:18px;font-weight:800;text-align:center;margin-bottom:4px">New signature!'+moreNote+'</div>'+
     '<div style="font-size:14px;color:var(--text3);text-align:center;margin-bottom:20px">'+
-      escHtml(a.name)+' signed their painting proposal'+payLine+'.'+
+      escHtml(a.name)+' signed their proposal'+payLine+'.'+
     '</div>'+
     '<button id="_sched-alert-yes" style="width:100%;padding:16px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:'+((!_depositAlready&&_stripeReady&&_depositAmt>0)?'8px':'16px')+'">'+
       'Schedule now →'+
@@ -4904,7 +5743,16 @@ async function supaLoadFromCloud({silent=false}={}){
       // This fires immediately in the contractor's open TradeDesk tab — no polling delay.
       window.addEventListener('storage',e=>{if(e.key==='zp3_sig_notify'&&e.newValue)checkNewSignatures();});
       setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
-      setTimeout(()=>checkNearbyJob(),4000);
+      // Was 4000ms — checkNearbyJob's cache-first rewrite (js/jobs.js) makes the
+      // common case (client book already geocoded from a prior day) resolve
+      // near-instantly, so this only needs to trail the location-permission
+      // request above, not pad extra wait time on top of it.
+      setTimeout(()=>checkNearbyJob(),1500);
+      // Reconnects the clock banner/interval to an open (still-clocked-in) entry
+      // this person owns, if this device reloaded mid-timer — see
+      // _rehydrateActiveTimer (js/jobs.js) for why this is safe/necessary now
+      // that clock-in persists immediately instead of only at clock-out.
+      typeof _rehydrateActiveTimer==='function'&&_rehydrateActiveTimer();
     }
 
     try{

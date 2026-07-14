@@ -1103,6 +1103,160 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderDashCollect
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // ── Nearby banner (dash-nearby) — kind-driven action (owner decision 2026-07-10) ──
+  test.describe('renderDash: nearby banner', () => {
+    test('active job today — Clock in targets it directly, Collect is absent (no balance owed)', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { clientId: 555001, jobId: 555011, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Banner Clockin', addr: '1 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '', display: el ? el.style.display : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.display).toBe('block');
+      expect(r.html).toContain('_nearbyClockIn(555001,555011)');
+      expect(r.html).toContain('Clock in');
+      expect(r.html).toContain("_nearbyStartWork(555001)");
+      expect(r.html).toContain('Estimate/Invoice');
+      // No dead controls: nothing owed means no Collect button at all, not a
+      // disabled ghost — a permanently-inert button reads as broken.
+      expect(r.html).not.toContain('Collect');
+      expect(r.html).toContain('Banner Clockin');
+      expect(r.html).toContain("You're here");
+    });
+
+    test('no job scheduled today — Clock in falls back to the client\'s nearest open job', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { clientId: 555002, jobId: null, fallbackJobId: 555012, bidId: null, balance: 0, clientName: 'Banner Fallback', addr: '2 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toContain('_nearbyClockIn(555002,555012)');
+    });
+
+    test('no open job at all — Clock in still shows (being on site is reason enough), passes null target', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { clientId: 555003, jobId: null, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Banner NoJob', addr: '3 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      // Hiding Clock in here was the wrong call (owner correction 2026-07-11):
+      // physically being on site is reason enough to want to track time even
+      // with no job record yet. It always shows; _nearbyClockIn(js/jobs.js)
+      // handles the no-target case by creating a walk-up job on the fly
+      // instead of dead-ending on the client profile page.
+      expect(r.html).toContain('Clock in');
+      expect(r.html).toContain('_nearbyClockIn(555003,null)');
+      expect(r.html).not.toContain('openClientDetail');
+      expect(r.html).toContain('_nearbyStartWork(555003)');
+    });
+
+    test('balance owed — Collect shows and opens the pay panel with autoType final', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { clientId: 555004, jobId: null, fallbackJobId: null, bidId: 555002, balance: 450, clientName: 'Banner Collect', addr: '2 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toContain("openPayPanel(555002,'final')");
+      expect(r.html).toContain('$450.00 owed');
+      expect(r.html).toContain('Collect →');
+      expect(r.html).not.toContain('disabled');
+    });
+
+    test('cold walk-up, no job and no balance — Clock in + Estimate/Invoice show, Collect does not', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { clientId: 555007, jobId: null, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Banner ColdWalkup', addr: '7 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '', btnCount: el ? el.querySelectorAll('.tf-acts button').length : -1 };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.btnCount).toBe(2);
+      expect(r.html).toContain('_nearbyStartWork(555007)');
+      expect(r.html).toContain('_nearbyClockIn(555007,null)');
+      expect(r.html).not.toContain('Collect');
+    });
+
+    test('Estimate button always shows and opens the start-work picker', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { clientId: 555005, jobId: null, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Banner Estimate', addr: '5 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.html).toContain('_nearbyStartWork(555005)');
+      expect(r.html).toContain('Estimate/Invoice');
+    });
+
+    test('the pulse/entrance keyframes are injected once, not duplicated across renders', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = null;
+        _nearbyJob = { clientId: 555006, jobId: null, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Style Once', addr: '4 Test St' };
+        try {
+          renderDash(); renderDash(); renderDash();
+          return { ok: true, count: document.querySelectorAll('#_td-nearby-anim-style').length };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.count).toBe(1);
+    });
+
+    test('an active timer suppresses the banner regardless of state', async () => {
+      const r = await page.evaluate(() => {
+        const origNb = _nearbyJob, origTimer = _activeTimer;
+        _activeTimer = { jobId: 1, scopeId: 'x', start: Date.now() };
+        _nearbyJob = { clientId: 555004, jobId: null, fallbackJobId: null, bidId: 555002, balance: 450, clientName: 'Suppressed', addr: '2 Test St' };
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, display: el ? el.style.display : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally { _nearbyJob = origNb; _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.display).toBe('none');
+    });
+  });
+
   test('renderDashCollect: no DOM element — returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-collect');

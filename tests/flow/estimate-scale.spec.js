@@ -19,108 +19,53 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
 
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
-  // ── 20-ROOM INTERIOR REPAINT ──────────────────────────────────────────────
-  test('20-room interior repaint — measure the grind of bidding a whole house', async ({ page }) => {
-    const FLOW = 'estimate-build/interior-20room';
-    const client = `E2E Scale 20rm ${RUN_TAG.slice(-5)}`;
-    const ROOMS = 20;
+  // ── 20-ITEM CUSTOM BID (Build-Your-Own at volume) ─────────────────────────
+  // The paint "20-room interior repaint" grind benchmark went away with the paint
+  // estimator; the current volume grind is a big custom bid where the estimator has
+  // no template — every line item is typed by hand. Same intent (§13.4): count the
+  // clicks it costs to bid a big job, so the ledger names the streamline target.
+  test('20-item custom bid — measure the grind of a big Build-Your-Own estimate', async ({ page }) => {
+    const FLOW = 'estimate-build/byo-20item';
+    const client = { id: Date.now(), name: `E2E Scale BYO20 ${RUN_TAG.slice(-5)}`, addr: '20 Custom Manor, Wichita, KS 67202', phone: '3165550020' };
+    const N = 20;
 
-    await step(page, {
-      label: 'client info → surface builder', page: 'pg-est',
-      suspect: 'paint-estimate.js validateAndGoStep2',
-      ruleText: 'client info must advance to the surface builder',
-      expected: 'surf-room-name visible',
-      act: async (p) => {
-        await p.evaluate(() => window.goPg('pg-est'));
-        await p.waitForSelector('#e-cname', { timeout: 20000 });
-        await p.fill('#e-cname', client);                                 // name "E2E Scale 20rm XXXXX" = 20 keystrokes
-        await p.fill('#e-cphone', '3165550020');                          // phone = 10 keystrokes
-        await p.fill('#e-caddr', '20 Room Manor, Wichita, KS 67202');     // addr = 32 keystrokes
-        await p.waitForTimeout(300);
-        await p.evaluate(() => { try { validateAndGoStep2(); } catch (e) {} }); // 1 tap (advance)
-        await p.waitForTimeout(500);
-        return 64; // goPg(1) + name(20) + phone(10) + addr(32) + validate(1) = 64
-      },
-      rule: async (p) => {
-        const ok = await p.locator('#surf-room-name').count().then(c => c > 0).catch(() => false);
-        return { ok, got: ok ? 'visible' : 'missing' };
-      },
-    });
-
-    // Build all 20 rooms inside one instrumented step. Each room is the SAME
-    // grind: name → walls → scope×3 → measure → customer-paint → sqft → save →
-    // addAnotherRoom. The returned count is the honest friction number at KEYSTROKE
-    // granularity: every typed char (room name + the two dimensions) counts as 1,
-    // every tap as 1. Per-room ≈ 8 taps + name(6–7) + len(2) + wid(2). Totals:
-    //   taps   = setSurfJobType(1) + addAnotherRoom×19 + 20×8 = 180
-    //   typed  = room names(131) + dims(20×4 = 80) = 211
-    //   GRAND TOTAL = 391 (this is the grind of bidding a whole house, the point).
     let buildRes = {};
     await step(page, {
-      label: `build ${ROOMS} measured rooms`, page: 'pg-est 3',
-      suspect: 'paint-estimate.js surf-step-a/b + addAnotherRoom',
-      ruleText: `all ${ROOMS} rooms must be recorded as measured surfaces`,
-      expected: `estSurfaces.length >= ${ROOMS}`,
+      label: `open BYO + add ${N} custom line items`, page: 'pg-est-generic',
+      suspect: 'generic-estimate.js openFreeFormEstimate / _byoAddItem / _byaConfirm',
+      ruleText: `all ${N} custom items must be recorded as priced BYO line items`,
+      expected: `_byoItems has >= ${N} ON items and total > 0`,
       act: async (p) => {
-        buildRes = await p.evaluate(async (ROOMS) => {
+        buildRes = await p.evaluate(async ({ N, client }) => {
           const g = id => document.getElementById(id);
           const wait = ms => new Promise(r => setTimeout(r, ms));
           let clicks = 0;
-          // Job type is picked once (the estimator keeps it across rooms). +1 tap.
-          try { setSurfJobType('interior'); clicks++; } catch (e) { return { err: 'setSurfJobType: ' + e.message, clicks }; }
-          await wait(150);
-          for (let i = 1; i <= ROOMS; i++) {
-            const room = 'Room ' + i;
-            // addAnotherRoom() resets surfRoom/surfWhatSelected/surfBQueue and clears
-            // the room-name field — so every room after the first re-enters everything.
-            if (i > 1) { try { addAnotherRoom(); clicks++; } catch (e) { return { err: 'addAnotherRoom@' + i + ': ' + e.message, clicks, count: estSurfaces.length }; } await wait(80); }
-            const nm = g('surf-room-name'); if (nm) { nm.value = room; try { if (typeof onSurfRoomName === 'function') onSurfRoomName(nm); } catch (e) {} } clicks += room.length; // type room name char-by-char ("Room 1"=6 .. "Room 20"=7)
-            const wb = g('swhat-walls'); if (wb) wb.click(); clicks++; // tap "walls"
-            await wait(60);
-            try { goSurfStepB(); } catch (e) { return { err: 'goSurfStepB@' + i + ': ' + e.message, clicks, count: estSurfaces.length }; } clicks++; // "Next"
-            await wait(80);
-            try { ['sand', 'prime', 'twocoat'].forEach(s => { toggleScopeRoom(s, room); clicks++; }); } catch (e) {} // 3 scope taps
-            // Customer paint BEFORE goSurfScopeToMeasure so the measure step hides the
-            // product/color picker (e-customer-paint==='1').
-            try { setPaintSupply('customer'); } catch (e) {} clicks++; // "customer paint"
-            const cp = g('e-customer-paint'); if (cp) cp.value = '1';
-            try { goSurfScopeToMeasure(); } catch (e) { return { err: 'goSurfScopeToMeasure@' + i + ': ' + e.message, clicks, count: estSurfaces.length }; } clicks++; // "Measure"
-            await wait(60);
-            // ROOT CAUSE fix (same as estimate-build): #surf-b-sqft.oninput is
-            // updateWallSqft(), which ALWAYS recomputes value from len×wid
-            // (paint-estimate.js:1262-1273). Poking #surf-b-sqft directly zeroed it,
-            // so saveSurfBAndNext read sqft=0 and never pushed. Drive the real inputs.
-            const lenEl = g('surf-b-len'); if (lenEl) { lenEl.value = '20'; lenEl.dispatchEvent(new Event('input', { bubbles: true })); } clicks += 2; // length "20" = 2 keystrokes
-            const widEl = g('surf-b-wid'); if (widEl) { widEl.value = '21'; widEl.dispatchEvent(new Event('input', { bubbles: true })); } clicks += 2; // width "21" = 2 keystrokes (20×21 = 420)
-            await wait(60);
-            try { saveSurfBAndNext(); } catch (e) { return { err: 'saveSurfBAndNext@' + i + ': ' + e.message, clicks, count: estSurfaces.length }; } clicks++; // "Save room"
-            await wait(120);
+          try { openFreeFormEstimate(client, null); clicks++; } catch (e) { return { err: 'open: ' + e.message, clicks }; }
+          await wait(400);
+          // Spread items across the default sections. Each added item is pure grind:
+          // +Add item tap, typed label, typed price, Add tap — the count is the point.
+          const SECS = ['Interior', 'Exterior', 'Materials', 'Add-ons'];
+          for (let i = 1; i <= N; i++) {
+            const sec = SECS[i % SECS.length];
+            const label = 'Custom line item ' + i;
+            const price = 100 + i * 10;
+            try { _byoAddItem(sec); clicks++; } catch (e) { return { err: '_byoAddItem@' + i + ': ' + e.message, clicks, count: (typeof _byoItems !== 'undefined' ? _byoItems.length : -1) }; }
+            await wait(40);
+            const l = g('_bya-label'); if (l) l.value = label; clicks += label.length;                  // type label
+            const pr = g('_bya-price'); if (pr) pr.value = String(price); clicks += String(price).length; // type price
+            try { _byaConfirm(sec); clicks++; } catch (e) { return { err: '_byaConfirm@' + i + ': ' + e.message, clicks, count: _byoItems.length }; }
+            await wait(40);
           }
-          return { clicks, count: (typeof estSurfaces !== 'undefined') ? estSurfaces.length : -1 };
-        }, ROOMS);
+          try { if (typeof _byoUpdateRail === 'function') _byoUpdateRail(); } catch (e) {}
+          await wait(100);
+          let total = 0; try { total = calcGeiTotal().total; } catch (e) {}
+          return { clicks, count: (typeof _byoItems !== 'undefined') ? _byoItems.filter(i => i && i.on !== false).length : -1, total, err: null };
+        }, { N, client });
         return buildRes.clicks || 0;
       },
       rule: async () => {
-        const ok = (buildRes.count || 0) >= ROOMS;
-        return { ok, got: `rooms=${buildRes.count} clicks=${buildRes.clicks} err=${buildRes.err || 'none'}` };
-      },
-    });
-
-    await step(page, {
-      label: 'price 20-room estimate', page: 'pg-est 5',
-      suspect: 'paint-estimate.js calcEst',
-      ruleText: 'a 20-room estimate must price > 0',
-      expected: 'final > 0',
-      act: async (p) => {
-        await p.evaluate(() => { try { goEstStep(4); } catch (e) {} });   // 1
-        await p.waitForTimeout(400);
-        await p.evaluate(() => { try { validateAndGoStep5(); } catch (e) { try { goEstStep(5); } catch (e2) {} } }); // 2
-        await p.waitForTimeout(600);
-        return 2;
-      },
-      rule: async (p) => {
-        const final = await p.evaluate(() => { try { return calcEst().final; } catch (e) { return null; } });
-        return { ok: final > 0, got: 'final=' + final };
+        const ok = (buildRes.count || 0) >= N && (buildRes.total || 0) > 0;
+        return { ok, got: `items=${buildRes.count} clicks=${buildRes.clicks} total=${buildRes.total} err=${buildRes.err || 'none'}` };
       },
     });
 

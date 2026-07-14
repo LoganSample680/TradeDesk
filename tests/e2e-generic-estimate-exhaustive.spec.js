@@ -2634,6 +2634,40 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.sentBid, 'a sent bid must never be auto-resumed into').toBe(false);
     });
 
+    // Regression guard for the WebKit CI race: the boot chain schedules
+    // _maybeResumeActiveEstimate on a 120ms timer (cloud.js). If the user (or
+    // a spec) opens an estimate BEFORE that timer fires, the hijack used to
+    // re-open the same bid underneath them — reassigning _geiLines and
+    // discarding unsaved in-memory rows. The fix: an already-active estimate
+    // editor is never hijacked, and the marker survives untouched.
+    test('auto-resume: never hijacks while the estimate editor is already open (late boot timer)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 90112, name: 'Open Editor Client', addr: '12 Open Rd' };
+        clients = clients.filter(x => x.id !== 90112).concat([c]);
+        bids = bids.filter(x => x.client_id !== 90112);
+        localStorage.removeItem('zp3_active_estimate');
+        openGenericEstimate(c, null, null, { mode: 'byo' });
+        goGeiStep(2); // estimate page active + auto-resume marker written
+        _geiLines.push({ id: 991, desc: 'Seeded row', qty: 1, price: 500 });
+        const linesBefore = _geiLines.length;
+        const linesRef = _geiLines;
+        // The late boot timer fires while the editor is open — must be a no-op
+        const resumed = _maybeResumeActiveEstimate();
+        const out = {
+          resumed,
+          stillOnEstimate: document.querySelector('.pg.active')?.id === 'pg-est-generic',
+          markerKept: !!localStorage.getItem('zp3_active_estimate'),
+          linesUntouched: _geiLines === linesRef && _geiLines.length === linesBefore,
+        };
+        goPg('pg-dash'); // deliberate exit — clean up editor + marker for later tests
+        return out;
+      });
+      expect(r.resumed, 'late boot timer must not hijack an already-open editor').toBe(false);
+      expect(r.stillOnEstimate).toBe(true);
+      expect(r.markerKept, 'marker must survive — it belongs to the open editor').toBe(true);
+      expect(r.linesUntouched, 'in-memory lines must never be reassigned by the late timer').toBe(true);
+    });
+
     test('_estimateTypeLabel — spelled out, never an acronym', async () => {
       const r = await page.evaluate(() => ({
         tm: _estimateTypeLabel({ isTM: true }),
@@ -2691,18 +2725,24 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
           { id: 2, section: 'Materials', label: 'Supplies', price: 100, on: true },
         ];
       }
-      let captured = '';
+      // T&C is no longer part of the proposal document/preview at all — it
+      // only shows in the accordion under the signature at the actual sign
+      // step (owner directive 2026-07-13). Capture the clause list straight
+      // from the builder function that feeds the sign-step accordion, and
+      // the deposit row separately from the actual document preview.
+      let doc = '';
       const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = html => { captured = html; };
+      window._showProposalPreviewOverlay = html => { doc = html; };
       let err = null;
-      try { await sendGenericProposal(true); } catch (e) { err = e.message; }
+      let captured = '';
+      try { await sendGenericProposal(true); captured = _geiBuildTermsHtml(); } catch (e) { err = e.message; }
       window._showProposalPreviewOverlay = orig;
       _geiIsTM = false;
       const clauses = [];
       const re = /<div>(\d+)\. <strong>(.*?):<\/strong> ([\s\S]*?)<\/div>/g;
       let m;
       while ((m = re.exec(captured)) !== null) clauses.push({ n: +m[1], title: m[2], body: m[3] });
-      return { err, clauses, hasDepRow: captured.includes('Due Before Work Begins') };
+      return { err, clauses, hasDepRow: doc.includes('Due Before Work Begins') };
     }, { isTM, clientId });
 
     test('T&M and BYO T&C come from the same clause list — shared clauses are byte-identical, mode clauses differ, numbering intact', async () => {
@@ -2714,16 +2754,19 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(byo.hasDepRow).toBe(true);
 
       // Numbering: generated from array order, sequential from 1 in both modes.
-      expect(tm.clauses.length).toBe(13);
-      expect(byo.clauses.length).toBe(11);
+      // Deposit amount/percentage is NOT its own clause — it's already shown
+      // as its own line in the proposal's deposit/balance summary, so restating
+      // it in Terms & Conditions would be redundant (owner directive 2026-07-13).
+      expect(tm.clauses.length).toBe(12);
+      expect(byo.clauses.length).toBe(10);
       tm.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
       byo.clauses.forEach((c, i) => expect(c.n).toBe(i + 1));
 
       // Mode-specific heads (sign.html's legacy patcher depends on these shapes).
       expect(tm.clauses[0].title).toBe('Contract type');
-      expect(tm.clauses[1].title).toBe('Mobilization deposit');
-      expect(tm.clauses[3].title).toBe('Billing');
-      expect(byo.clauses[0].title).toBe('Deposit');
+      expect(tm.clauses[1].title).toBe('Cancellation &amp; Deposits');
+      expect(tm.clauses[2].title).toBe('Billing');
+      expect(byo.clauses[0].title).toBe('Cancellation &amp; Deposits');
 
       // Shared tail: same titles in the same order in both modes...
       const sharedTitles = ['Cancellation &amp; Deposits', 'Change Orders', 'Limitation of Liability', 'Mechanic&#39;s Lien', 'Finance Charges', 'Workmanship Warranty', 'Permits &amp; Inspections', 'Schedule &amp; Delays', 'Insurance', 'Dispute Resolution'];
@@ -2739,7 +2782,12 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       }
     });
 
-    test('regression: preview overlay applies the same T&C accordion as sign.html (was a raw uncollapsed dump — not actually "how they\'ll see it")', async () => {
+    test('regression: preview overlay shows ONLY the document — no Terms & Conditions accordion (T&C belongs on the sign step only)', async () => {
+      // Owner directive 2026-07-13 (part 2): T&C isn't part of what the client
+      // reviews before signing at all — attaching it under the document (even
+      // collapsed) misrepresented the real flow, where it only ever appears in
+      // the accordion under the signature on the actual sign step. The preview
+      // must mirror that: document only, same as sign.html's Review step.
       const r = await page.evaluate(async () => {
         const c = { id: 88904, name: 'Accordion Client', addr: '1 Accordion Rd' };
         clients = clients.filter(x => x.id !== 88904).concat([c]);
@@ -2748,23 +2796,23 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         _geiIsTM = true; _geiIsFreeForm = false;
         _tmRatePerMan = 50; _tmEstHours = 8; _tmCrewCount = 1;
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
-        await sendGenericProposal(true); // real _showProposalPreviewOverlay runs — no interception this time
+        await sendGenericProposal(true);
         const ov = document.getElementById('_prop-preview-ov');
+        const html = ov ? ov.innerHTML : '';
         const res = {
-          isFn: typeof _applyTermsAccordion === 'function',
-          hasToggleBtn: !!ov?.querySelector('[data-terms-toggle]'),
-          termsHeaderHidden: (() => {
-            const hdr = [...(ov?.querySelectorAll('div') || [])].find(d => d.dataset.termsHdr === '1');
-            return hdr ? hdr.style.display === 'none' : false;
-          })(),
+          previewFnDeleted: typeof _geiPreviewTermsHtml === 'undefined',
+          hasTermsBodyEl: !!document.getElementById('gei-preview-terms-body'),
+          hasTermsToggleText: html.includes('Terms &amp; Conditions') || html.includes('Terms & Conditions'),
+          hasEstimatedTotal: html.includes('ESTIMATED TOTAL') || html.includes('TOTAL'),
         };
         ov?.remove();
         _geiIsTM = false;
         return res;
       });
-      expect(r.isFn).toBe(true);
-      expect(r.hasToggleBtn).toBe(true);
-      expect(r.termsHeaderHidden).toBe(true);
+      expect(r.previewFnDeleted, '_geiPreviewTermsHtml must be deleted, not left dead').toBe(true);
+      expect(r.hasTermsBodyEl).toBe(false);
+      expect(r.hasTermsToggleText, 'no Terms & Conditions accordion may render in the proposal preview').toBe(false);
+      expect(r.hasEstimatedTotal).toBe(true);
     });
 
     test('regression: selected scope-chip descriptions carry into the proposal even when BYO has line items (was silently dropped by an if/else)', async () => {

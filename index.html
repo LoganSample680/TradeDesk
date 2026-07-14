@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" style="background:#1B1612">
 <head>
+<!-- deploy-marker: owner-requested preview rebuild -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -423,6 +424,11 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
   /* Vendor/Client + Amount are the headline of each card */
   .bk-tbl td[data-label="Client"],.bk-tbl td[data-label="Vendor"]{font-size:15px;font-weight:800}
   .bk-tbl td[data-label="Amount"]{font-size:15px;font-weight:800}
+  /* Time Log's job-site cell carries a full address + a second line — the
+     generic label-left/value-right flex row squeezes that into a narrow
+     wrapped column. Stack label above value instead, full width. */
+  .bk-tbl td[data-label="Job site"]{display:block;text-align:left}
+  .bk-tbl td[data-label="Job site"]::before{display:block;margin-bottom:4px}
 }
 .row-bb{padding:6px 0;border-bottom:1px solid var(--line);font-size:12px}
 .row-bb:last-child{border:none}
@@ -684,7 +690,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 @media (prefers-reduced-motion:reduce){.zmodal{animation:none}}
 .zmodal-title{font-size:16px;font-weight:800;margin-bottom:8px}
 .zmodal-msg{font-size:14px;color:var(--text-2);line-height:1.5;margin-bottom:18px}
-.zmodal-btns{display:flex;gap:8px;justify-content:flex-end}
+.zmodal-btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .overdue-banner{background:var(--c-red-soft);border:1px solid var(--c-red-edge);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 .lien-banner{background:var(--c-deep);color:var(--c-deep-soft);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 
@@ -1211,6 +1217,15 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="td-dw" data-dw="kpi">
       <div id="dash-kpi"></div>
       <div id="dash-hobby-warn" style="display:none"></div>
+      <!-- "You're at X's" is a physically-here-RIGHT-NOW moment — nested inside the
+           kpi widget (not a standalone draggable) so it always lands right under the
+           Profit/Avg Job tiles, the natural first-glance center of the screen (owner
+           call 2026-07-10: top-of-screen reads as header chrome and gets skipped).
+           No margin-top: .mets already contributes margin-bottom:16px above this,
+           so a separate top margin doubled up into a bigger gap above the card than
+           below it (2026-07-11 fix — margin-bottom here matches .card's 14px so the
+           gap below is the same weight as everywhere else on the dashboard). -->
+      <div id="dash-nearby" style="display:none;margin-bottom:14px"></div>
     </div>
     <div class="td-dw" data-dw="crew">
       <div id="dash-crew-today" style="display:none"></div>
@@ -1218,7 +1233,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="td-dw" data-dw="alerts">
       <div id="dash-close-tip" style="display:none;margin-bottom:10px"></div>
       <div id="dash-resume" style="display:none;margin-bottom:10px"></div>
-      <div id="dash-nearby" style="display:none;margin-bottom:10px"></div>
     </div>
     <div class="td-dw" data-dw="contracts">
       <div id="dash-contracts" style="display:none;margin-bottom:10px"></div>
@@ -2089,7 +2103,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-title">Fleet &amp; Team</div>
     <div style="display:flex;gap:6px">
       <button id="fleet-add-btn" class="btn btn-sm btn-p" onclick="openAddVehicleModal(-1)" style="display:none">+ Vehicle</button>
-      <button id="team-add-btn" class="btn btn-sm btn-p" onclick="openAddEmployeeModal()">+ Add member</button>
+      <button id="team-add-btn" class="btn btn-sm btn-p" onclick="openAddEmployeeModal()">+ Add W-2 Employee</button>
     </div>
   </div>
   <div class="fbar" style="margin-bottom:16px;padding-left:2px">
@@ -2104,10 +2118,11 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Employees</div>
       <div id="team-page-list"></div>
     </div>
+    <div class="card" style="margin-top:12px;display:none" id="payroll-setup-card"></div>
     <div class="card" style="margin-top:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Subcontractors</div>
-        <button onclick="openAddSubModal()" class="btn btn-sm btn-p" style="font-size:11px">+ Add sub</button>
+        <button onclick="openAddSubModal()" class="btn btn-sm btn-p" style="font-size:11px">+ Add 1099 Sub Contractor</button>
       </div>
       <div id="team-page-subs"></div>
     </div>
@@ -2118,6 +2133,21 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div id="team-page-devices"></div>
     </div>
+  </div>
+</div>
+<div class="pg" id="pg-timelog">
+  <div class="tbar">
+    <div class="tbar-title">Time Log</div>
+    <div id="tl-total" style="font-size:12px;font-weight:700;color:var(--text3)"></div>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
+    <select id="tl-year-sel" onchange="setTimeLogYear(parseInt(this.value))" style="flex:1;min-width:0;font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer"></select>
+    <button class="btn btn-sm" onclick="_tlExportCSV()" style="flex-shrink:0">⬇ Export</button>
+  </div>
+  <div id="tl-week-total" style="font-size:11px;color:var(--text3);margin-bottom:14px"></div>
+  <div style="padding:0 12px 80px">
+    <div id="tl-open" style="display:none"></div>
+    <div id="tl-list"></div>
   </div>
 </div>
 <div class="pg" id="pg-dispatch"></div>
@@ -2142,7 +2172,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)"><span data-ico="👥" data-ico-size="14"></span> Hiring</button>
   </div>
   <div id="tr-income">
-    
     <input type="hidden" id="inc-date"><input type="hidden" id="inc-client-sel">
     <input type="hidden" id="inc-type"><input type="hidden" id="inc-amount">
     <input type="hidden" id="inc-pay"><input type="hidden" id="inc-inv">
@@ -2224,10 +2253,14 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong><span data-ico="⚠" data-ico-size="13"></span> Not a licensed tax tool.</strong> These numbers are estimates only — not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
   <div class="fbs" style="margin-bottom:14px">
     <button type="button" class="fb active" id="tx-tab-current" onclick="setTaxTab('current',this)">Current year</button>
+    <button type="button" class="fb" id="tx-tab-payroll" onclick="setTaxTab('payroll',this);renderPayrollSummary()">Payroll</button>
+  </div>
+  <div id="tx-payroll-pane" style="display:none">
+    <div id="pay-summary-body"></div>
   </div>
   <div id="tx-current-pane">
 
-  
+
   <div id="tx-reserve-banner" style="margin-bottom:10px"></div>
 
   
@@ -3284,6 +3317,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <span>Contracts</span>
   </button>
 
+  <button class="nb" id="nb-timelog" onclick="goPg('pg-timelog')">
+    <div class="bx"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+    <span>Time Log</span>
+  </button>
+
   <div id="nav-trade-switcher" style="display:none;padding:6px 10px 4px;border-top:1px solid var(--nav-border)">
     <div style="font-size:9px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:rgba(255,255,255,.25);padding:0 4px 5px">Active trade</div>
     <div id="nav-trade-pills" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 2px 4px"></div>
@@ -3380,6 +3418,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button class="mmi" id="mmi-contracts" onclick="mobileNavTo('pg-contracts')">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6M9 17h4"/></svg>Contracts
     </button>
+    <button class="mmi" id="mmi-timelog" onclick="mobileNavTo('pg-timelog')">
+      <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Time Log
+    </button>
     <button class="mmi" id="mmi-settings" onclick="mobileNavTo('pg-settings')">
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
     </button>
@@ -3406,6 +3447,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 </script>
 <script src="js/constants.js"></script>
 <script src="js/utils.js"></script>
+<script src="js/esign.js"></script>
 <script src="js/data.js"></script>
 <script src="js/navigation.js"></script>
 <script src="js/cloud.js"></script>
@@ -3420,7 +3462,10 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/proposals.js"></script>
 <script src="js/sales-tax.js"></script>
 <script src="js/tax.js"></script>
+<script src="js/payroll-onboarding.js"></script>
 <script src="js/finance.js"></script>
+<script src="js/timelog.js"></script>
+<script src="js/payroll-summary.js"></script>
 <script src="js/generic-estimate.js"></script>
 <script src="js/contracts.js"></script>
 <script src="js/agreements.js"></script>

@@ -40,6 +40,12 @@ jobs:
       E2E_DEV_EMAIL: ${{ secrets.E2E_DEV_EMAIL }}
       E2E_DEV_PASSWORD: ${{ secrets.E2E_DEV_PASSWORD }}
       E2E_DEV_USER_ID: ${{ secrets.E2E_DEV_USER_ID }}
+      # Second dev account (the 1099 sub) — wires the two-account specs
+      # (sub-pipe, cross-account-bleed, employee-redaction) into the CLOUD flow
+      # suite too, not just the self-hosted one. They soft-skip if unset.
+      E2E_DEV2_EMAIL: ${{ secrets.E2E_DEV2_EMAIL }}
+      E2E_DEV2_PASSWORD: ${{ secrets.E2E_DEV2_PASSWORD }}
+      E2E_DEV2_USER_ID: ${{ secrets.E2E_DEV2_USER_ID }}
       # Secret header value that the Cloudflare WAF rule allowlists past the bot
       # challenge. Set this secret AND add the matching Cloudflare rule.
       E2E_BYPASS_SECRET: ${{ secrets.E2E_BYPASS_SECRET }}

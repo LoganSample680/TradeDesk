@@ -756,6 +756,29 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
       if (result.entriesAfter > -1) expect(result.entriesAfter).toBeGreaterThanOrEqual(result.entriesBefore);
     }
   });
+
+  test('clockOut — tags the saved entry with who logged it (feeds Time Log)', async () => {
+    const result = await page.evaluate(([jobId]) => {
+      if (typeof clockIn !== 'function' || typeof clockOut !== 'function') return null;
+      const origBanner = window.showClockBanner, origHide = window.hideClockBanner;
+      const origRender = window.renderJobsPage, origSave = window.saveAll, origToast = window.showToast;
+      window.showClockBanner = () => {}; window.hideClockBanner = () => {};
+      window.renderJobsPage = () => {}; window.saveAll = () => {}; window.showToast = () => {};
+      try {
+        clockIn(jobId, 'walls', 'Walls');
+        clockOut(true, true);
+      } catch (e) { return { error: e.message }; }
+      window.showClockBanner = origBanner; window.hideClockBanner = origHide;
+      window.renderJobsPage = origRender; window.saveAll = origSave; window.showToast = origToast;
+      const latest = timeEntries.filter(e => e.job_id === jobId).sort((a, b) => b.id - a.id)[0];
+      return { hasLoggedByName: !!(latest && latest.logged_by_name), loggedByUid: latest ? latest.logged_by_uid : 'MISSING' };
+    }, [JOB_ID]);
+    if (result && !result.error) {
+      expect(result.hasLoggedByName).toBe(true);
+      // Owner session (this test suite never signs in as an employee) — null uid means owner.
+      expect(result.loggedByUid).toBe(null);
+    }
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -2622,6 +2645,24 @@ test.describe('Employee role/classification split and leads gating', () => {
     assertNoErrors(page, 'employeeModalHTML classification select');
   });
 
+  // NOTE: a W-2/1099 employment-type field was briefly added to THIS modal and
+  // then removed — the "Add team member" flow sends an employment agreement +
+  // app-access invite, which only ever applies to W-2 crew who clock in via
+  // TradeDesk. 1099 subcontractors already have their own dedicated flow
+  // (S.subcontractors / _subModalHTML / openAddSubModal — name, trade, rate,
+  // EIN/SSN, W-9, 1099-NEC filing info) that never touches app access or
+  // clock-in at all. Everyone reachable through _employeeModalHTML is W-2 by
+  // definition, so no classification toggle belongs here.
+  test('_employeeModalHTML does NOT render a W-2/1099 field — that belongs to the separate subcontractor flow', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _employeeModalHTML !== 'function') return { fnExists: false };
+      const html = _employeeModalHTML(null, null);
+      return { fnExists: true, hasEmploymentTypeSelect: html.includes('emp-employment-type') };
+    });
+    if (!result.fnExists) return;
+    expect(result.hasEmploymentTypeSelect).toBe(false);
+  });
+
   test('_employeeModalHTML maps legacy painter role to tech', async () => {
     const result = await page.evaluate(() => {
       if (typeof _employeeModalHTML !== 'function') return { fnExists: false };
@@ -3313,10 +3354,75 @@ test.describe('Workforce time intelligence', () => {
     if (r && !r.error) expect(r.shown).toBe(true);
   });
 
+  // Crew Cost now folds in manually-clocked time too — same fix as Job Profit
+  // above, verified independently since it aggregates differently (by
+  // employee, not by bid).
+  test('_crewCostRender counts manual timeEntries even with zero GPS entries', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _crewCostRender !== 'function') return null;
+      const orig = { timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser, ownerPayType: S.ownerPayType, ownerPayRate: S.ownerPayRate };
+      const now = new Date();
+      timeEntries = timeEntries.filter(e => e.id !== 8970002);
+      timeEntries.push({ id: 8970002, job_id: 1, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 60, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+      S.ownerPayType = 'hourly'; S.ownerPayRate = 25;
+      const makeQ = () => { const q = { _data: { data: [] } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      window._supa = { from: () => makeQ() };
+      window.supaEnabled = () => true;
+      window._supaUser = window._supaUser || { id: 'test-uid' };
+      document.getElementById('_crew-cost-ov')?.remove();
+      try { _openCrewCost(); await _crewCostRender('today'); } catch (e) { return { error: e.message }; }
+      const html = document.getElementById('_crew-cost-body')?.innerHTML || '';
+      document.getElementById('_crew-cost-ov')?.remove();
+      timeEntries = orig.timeEntries; window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser;
+      S.ownerPayType = orig.ownerPayType; S.ownerPayRate = orig.ownerPayRate;
+      return { html };
+    });
+    // 'No tracked time today yet' is the empty-state string — its absence proves
+    // the manual entry (mocked GPS entries are all empty) registered as cost.
+    if (r && !r.error) expect(r.html).not.toContain('No tracked time today');
+  });
+
   // ── Job Profit: source filter excludes drive minutes from labor cost ─────
   test('_openJobProfit is a function', async () => {
     const ok = await page.evaluate(() => typeof _openJobProfit === 'function');
     expect(ok).toBe(true);
+  });
+
+  // ── Job Profit now folds in manually-clocked time (js/jobs.js clockOut →
+  // timeEntries), not just GPS-tracked job_time_entries — a walk-up job clocked
+  // via the nearby-banner Clock in button used to be invisible here entirely.
+  test('_openJobProfit counts manual timeEntries as tracked labor even with zero GPS entries', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _openJobProfit !== 'function') return null;
+      const orig = { clients, bids, jobs, timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser, ownerPayType: S.ownerPayType, ownerPayRate: S.ownerPayRate };
+      clients = clients.filter(c => c.id !== 89801);
+      clients.push({ id: 89801, name: 'JobProfit Manual Test', addr: '1 JP St' });
+      bids = bids.filter(b => b.id !== 88701);
+      bids.push({ id: 88701, client_id: 89801, client_name: 'JobProfit Manual Test', amount: 1000, status: 'Closed Won', bid_date: '2026-01-01' });
+      jobs = jobs.filter(j => j.id !== 87801);
+      jobs.push({ id: 87801, client_id: 89801, bid_id: 88701, name: 'JP job', eventType: 'job', status: 'scheduled', start: '2099-01-01', days: 1, actualHours: 0 });
+      timeEntries = timeEntries.filter(e => e.job_id !== 87801);
+      timeEntries.push({ id: 8970001, job_id: 87801, date: '2026-01-01', start_time: '2026-01-01T09:00:00Z', end_time: '2026-01-01T11:00:00Z', minutes: 120, logged_by_uid: null, logged_by_name: 'Owner (me)' });
+      S.ownerPayType = 'hourly'; S.ownerPayRate = 30;
+      const makeQ = (data) => { const q = { _data: { data } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      window._supa = { from: (t) => makeQ([]) }; // no GPS-tracked entries or team_members at all
+      window.supaEnabled = () => true;
+      window._supaUser = window._supaUser || { id: 'test-uid' };
+      document.getElementById('_job-pl-ov')?.remove();
+      try { await _openJobProfit(); } catch (e) { return { error: e.message }; }
+      const html = document.getElementById('_job-pl-body')?.innerHTML || '';
+      document.getElementById('_job-pl-ov')?.remove();
+      ({ clients, bids, jobs, timeEntries } = orig);
+      window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser;
+      S.ownerPayType = orig.ownerPayType; S.ownerPayRate = orig.ownerPayRate;
+      return { html };
+    });
+    if (r && !r.error) {
+      expect(r.html).toContain('JobProfit Manual Test');
+      // 120 manual minutes = 2.0h tracked — proves the manual entry, not just
+      // GPS job_time_entries (mocked empty above), fed the labor calculation.
+      expect(r.html).toMatch(/2\.0h/);
+    }
   });
 
   // ── Overtime detection logic ─────────────────────────────────────────────
@@ -4390,31 +4496,42 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     assertNoErrors(page, 'trust split');
   });
 
-  test('notification panel fits the screen on mobile — no left bleed', async ({ page }) => {
-    // Owner-reported: on mobile the 300px panel anchored to the bell bled off the
-    // left edge. It now spans the viewport with margins below the topbar.
+  test('topbar: placeholder notifications + account pill removed, only help remains', async ({ page }) => {
+    // Owner removed the fake notifications panel and the non-functional account
+    // pill (filler that also ate the business-name space). Only the help "?" stays.
+    // §7.1 — prove the old entry points are gone, not just that help works.
     const hub = {
       clientId: 911, contractorUserId: FAKE_USER_ID, contractorName: 'Notif Co', businessName: 'Notif Co',
       clientName: 'Notif Client', clientAddr: '9 Notif Rd', contractorPhone: '316-555-0120',
-      bids: [], jobs: [], payments: [], messages: [],
-      notifications: [{ id: 1, title: 'Proposal sent', body: 'Ready to review.', ts: '2026-07-08T13:00:00Z', read: false }],
-      invoices: [], photos: [],
+      bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [],
     };
     await page.setViewportSize({ width: 390, height: 844 });
     await page.addInitScript(h => { window.__mockHubData = h; }, hub);
     await mockAllExternal(page);
     await page.goto(`/client.html?c=911&u=${FAKE_USER_ID}&t=notiftok911`, { waitUntil: 'domcontentloaded', timeout: 30000 });
     await page.waitForTimeout(1500);
-    const r = await page.evaluate(() => {
-      try { toggleNotifPanel({ stopPropagation() {}, preventDefault() {} }); } catch (e) {}
-      const p = document.getElementById('notif-panel');
-      const rect = p.getBoundingClientRect();
-      return { display: getComputedStyle(p).display, left: rect.left, right: rect.right, vw: document.documentElement.clientWidth };
-    });
-    expect(r.display).toBe('block');           // panel opened
-    expect(r.left).toBeGreaterThanOrEqual(0);  // no left bleed
-    expect(r.right).toBeLessThanOrEqual(r.vw + 1);  // no right bleed
-    assertNoErrors(page, 'notif panel mobile');
+    const r = await page.evaluate(() => ({
+      notifBtn:    document.getElementById('notif-btn')     ? 1 : 0,
+      notifPanel:  document.getElementById('notif-panel')   ? 1 : 0,
+      acctChip:    document.getElementById('acct-chip')     ? 1 : 0,
+      acctDropdown:document.getElementById('acct-dropdown') ? 1 : 0,
+      toggleNotifFn: typeof window.toggleNotifPanel,
+      toggleAcctFn:  typeof window.toggleAcctMenu,
+      helpBtns:    document.querySelectorAll('.topbar-actions .topbar-icon-btn').length,
+      bleed:       document.documentElement.scrollWidth - window.innerWidth,
+    }));
+    // Old entry points are gone from the DOM…
+    expect(r.notifBtn, 'notification bell removed').toBe(0);
+    expect(r.notifPanel, 'notification panel removed').toBe(0);
+    expect(r.acctChip, 'account pill removed').toBe(0);
+    expect(r.acctDropdown, 'account dropdown removed').toBe(0);
+    // …and their handlers no longer exist.
+    expect(r.toggleNotifFn, 'toggleNotifPanel deleted').toBe('undefined');
+    expect(r.toggleAcctFn, 'toggleAcctMenu deleted').toBe('undefined');
+    // Help "?" is the only topbar action left, and nothing bleeds.
+    expect(r.helpBtns, 'only the help button remains').toBe(1);
+    expect(r.bleed, 'no horizontal bleed with the pill gone').toBeLessThanOrEqual(1);
+    assertNoErrors(page, 'topbar cleanup');
   });
 
   test('mobile contact strip: Schedule button deleted, Text/Call/Email escape the preview iframe via target="_top"', async ({ page }) => {
@@ -5550,12 +5667,12 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'general');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
-      // Intercept preview overlay to capture HTML
+      // T&C is no longer part of the proposal document/preview — it only shows
+      // in the accordion under the signature at the actual sign step (owner
+      // directive 2026-07-13). Read the clause text from the same builder
+      // function that feeds that accordion.
       let captured = '';
-      const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = (html) => { captured = html; };
-      try { await sendGenericProposal(true); } catch(e) {}
-      window._showProposalPreviewOverlay = orig;
+      try { captured = _geiBuildTermsHtml(); } catch(e) {}
       return {
         hasWarranty: captured.includes('Workmanship Warranty'),
         hasPermit: captured.includes('Permits'),
@@ -5582,12 +5699,10 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'general');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
+      // T&C is no longer part of the proposal document/preview — read it from
+      // the builder function that feeds the sign-step accordion instead.
       let captured = '';
-      const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = (html) => { captured = html; };
-      try { await sendGenericProposal(true); } catch(e) {}
-      window._showProposalPreviewOverlay = orig;
-      // Isolate just the Terms & Conditions / pay-terms region for the "no Contractor" check.
+      try { captured = _geiBuildTermsHtml(); } catch(e) {}
       return {
         warrantyHasBiz: captured.includes('Brushstroke Pros LLC warrants'),
         insuranceHasBiz: captured.includes('Brushstroke Pros LLC maintains general liability'),
@@ -5631,11 +5746,10 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'painting');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 300, on: true }];
+      // T&C is no longer part of the proposal document/preview — read it from
+      // the builder function that feeds the sign-step accordion instead.
       let captured = '';
-      const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = (html) => { captured = html; };
-      try { await sendGenericProposal(true); } catch(e) {}
-      window._showProposalPreviewOverlay = orig;
+      try { captured = _geiBuildTermsHtml(); } catch(e) {}
       return {
         permitText: captured.includes('does not typically require') || captured.includes('Standard painting'),
         warrantyText: captured.includes('peeling') || captured.includes('finish defects'),
@@ -5655,11 +5769,10 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'electrical');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Panel upgrade', price: 1800, on: true }];
+      // T&C is no longer part of the proposal document/preview — read it from
+      // the builder function that feeds the sign-step accordion instead.
       let captured = '';
-      const orig = window._showProposalPreviewOverlay;
-      window._showProposalPreviewOverlay = (html) => { captured = html; };
-      try { await sendGenericProposal(true); } catch(e) {}
-      window._showProposalPreviewOverlay = orig;
+      try { captured = _geiBuildTermsHtml(); } catch(e) {}
       return { hasObtainPermit: captured.includes('shall obtain all permits') };
     });
     if (r === null) return;
