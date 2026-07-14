@@ -764,7 +764,12 @@ function _geiRenderProfitGauge(prefix,costOninput){
     '<input type="number" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
     '<div id="'+prefix+'-gauge-hint" style="display:none"></div>'+
     '<div id="'+prefix+'-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
-      '<div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 15%,#F59E0B 30%,#22C55E 38%,#22C55E 58%,#F59E0B 72%,#EF4444 100%);margin:14px 10px 26px">'+
+      // Hard-edged stops at the EXACT _updateMarginGauge breakpoints (22/35/55%) so
+      // the dot always sits on a track color matching its own computed color — no
+      // blend zone where the number renders amber over a still-green track (or
+      // vice versa). 55%+ is amber all the way to 100%, matching the JS: past the
+      // green cap, margin is never re-flagged as red, only "double-check" amber.
+      '<div style="position:relative;height:7px;border-radius:5px;background:linear-gradient(to right,#991B1B 0%,#EF4444 2%,#EF4444 22%,#F59E0B 22%,#F59E0B 35%,#22C55E 35%,#22C55E 55%,#F59E0B 55%,#F59E0B 100%);margin:14px 10px 26px">'+
         '<div id="'+prefix+'-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>'+
       '</div>'+
       '<div style="text-align:center;padding-bottom:12px">'+
