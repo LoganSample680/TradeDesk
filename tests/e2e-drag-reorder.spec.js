@@ -176,15 +176,12 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
     const widgets = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(widgets).toHaveLength(10);
-    for (const id of ['kpi', 'crew', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']) {
+    // 'crew' widget deleted 2026-07-14 (owner: "simplify before we scale").
+    expect(widgets).toHaveLength(9);
+    for (const id of ['kpi', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']) {
       expect(widgets).toContain(id);
     }
-    // The crew card specifically must be its OWN widget (the un-movable-card bug).
-    const crewOwnWidget = await page.evaluate(() =>
-      document.querySelector('.td-dw[data-dw="crew"] > #dash-crew-today') !== null
-    );
-    expect(crewOwnWidget).toBe(true);
+    expect(widgets, 'the crew widget must be deleted, not hidden').not.toContain('crew');
   });
 
   test('_initDashDrag and _applyDashOrder functions exist', async () => {
@@ -206,24 +203,27 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
       S.dashWidgetOrder = saved;
       return result;
     });
-    expect(order).toEqual(['kpi', 'crew', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+    expect(order).toEqual(['kpi', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
   });
 
-  test('_applyDashOrder reorders widgets in DOM (full 10-widget order)', async () => {
+  test('_applyDashOrder reorders widgets in DOM (full 9-widget order; stale "crew" id skipped)', async () => {
+    // 'crew' stays in the input deliberately — real users have it in their
+    // SAVED order from before the 2026-07-14 deletion; it must be skipped
+    // harmlessly, never crash or orphan.
     const full = ['sources', 'calendar', 'quick', 'feed', 'pipeline', 'goal', 'contracts', 'alerts', 'crew', 'kpi'];
     await page.evaluate((o) => _applyDashOrder(o), full);
 
     const order = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(order).toEqual(full);
+    expect(order).toEqual(full.filter(id => id !== 'crew'));
 
     // Restore default
     await page.evaluate(() => _applyDashOrder(_DASH_DEFAULT_ORDER.slice()));
     const restored = await page.evaluate(() =>
       [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw)
     );
-    expect(restored).toEqual(['kpi', 'crew', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
+    expect(restored).toEqual(['kpi', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar', 'sources']);
   });
 
   // §11.4 companion: a PRE-SPLIT saved order (6 ids) must not dump the new cards
@@ -232,16 +232,16 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
     const merged = await page.evaluate(() =>
       _mergeDashOrder(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar'])
     );
-    // crew/alerts/contracts/goal follow kpi (their default predecessor), in default order.
-    expect(merged).toEqual(['sources', 'kpi', 'crew', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar']);
-    // And applying the old order yields all 10 in the DOM, nothing orphaned.
+    // alerts/contracts/goal follow kpi (their default predecessor), in default order.
+    expect(merged).toEqual(['sources', 'kpi', 'alerts', 'contracts', 'goal', 'pipeline', 'feed', 'quick', 'calendar']);
+    // And applying the old order yields all 9 in the DOM, nothing orphaned.
     const applied = await page.evaluate(() => {
       _applyDashOrder(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar']);
       const out = [...document.querySelectorAll('#dash-widget-root > .td-dw')].map(el => el.dataset.dw);
       _applyDashOrder(_DASH_DEFAULT_ORDER.slice());
       return out;
     });
-    expect(applied).toHaveLength(10);
+    expect(applied).toHaveLength(9);
   });
 
   test('_dashSortActive flag prevents duplicate listener registration', async () => {

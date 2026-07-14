@@ -3213,6 +3213,106 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Payment-method opt-in step (owner 2026-07-14): onboarding step 9 lets the
+  // contractor choose which manual pay options a client sees at signing.
+  test('obStep8 — renders the three payment-method toggles, all default ON', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStep8 !== 'function') return { skip: true };
+      _ob.acceptCash = true; _ob.acceptCheck = true; _ob.allowPayLater = true;
+      const el = document.createElement('div');
+      el.id = 'ob-body'; document.body.appendChild(el);
+      obStep8(el);
+      const cash = el.querySelector('#obpay-acceptCash input');
+      const check = el.querySelector('#obpay-acceptCheck input');
+      const later = el.querySelector('#obpay-allowPayLater input');
+      const cards = el.querySelector('#obpay-wantCards input');
+      const r = {
+        hasAll: !!(cash && check && later),
+        allChecked: !!(cash && cash.checked && check && check.checked && later && later.checked),
+        // "Take cards" intent toggle present + on by default → obSubmit auto-launches Stripe.
+        hasCards: !!cards, cardsChecked: !!(cards && cards.checked),
+        askCopy: /how do you want to get paid/i.test(el.textContent),
+      };
+      el.remove();
+      return r;
+    });
+    if (result.skip) return;
+    expect(result.hasAll, 'all three toggles render').toBe(true);
+    expect(result.allChecked, 'default ON').toBe(true);
+    expect(result.hasCards, 'take-cards intent toggle renders').toBe(true);
+    expect(result.cardsChecked, 'take-cards defaults ON').toBe(true);
+    expect(result.askCopy, 'step asks how they want to get paid').toBe(true);
+  });
+
+  test('obTogglePay — flips the _ob flag off and re-renders the row', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obTogglePay !== 'function' || typeof obStep8 !== 'function') return { skip: true };
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      _ob.acceptCheck = true; obStep8(el);
+      obTogglePay('acceptCheck', false);
+      const off = _ob.acceptCheck === false;
+      el.remove();
+      return { off };
+    });
+    if (result.skip) return;
+    expect(result.off, 'toggling a method off records false on _ob').toBe(true);
+  });
+
+  // Booked-jobs import step (owner 2026-07-14): onboarding step 10 imports work
+  // already sold — each row becomes a lead + a job on the calendar.
+  test('obStepJobs — renders the import step; obAddJob appends a row', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStepJobs !== 'function' || typeof obAddJob !== 'function') return { skip: true };
+      // Isolate: a boot that landed on onboarding leaves its own #onboarding-overlay
+      // / #ob-body / #ob-err in the DOM. getElementById/querySelector resolve to the
+      // FIRST match in document order, so obAddJob (which calls getElementById('ob-body'))
+      // would render into the boot overlay, not ours. Remove any leftover first.
+      document.getElementById('onboarding-overlay')?.remove();
+      document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
+      _ob.jobs = [];
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      obStepJobs(el);
+      const askCopy = /jobs already booked/i.test(el.textContent);
+      obAddJob();
+      const rowsAfter = _ob.jobs.length;
+      const hasClientInput = !!document.querySelector('#ob-body input[placeholder="Client name"]');
+      el.remove();
+      return { askCopy, rowsAfter, hasClientInput };
+    });
+    if (result.skip) return;
+    expect(result.askCopy, 'step asks about already-booked jobs').toBe(true);
+    expect(result.rowsAfter, 'obAddJob appends a job row').toBe(1);
+    expect(result.hasClientInput, 'row renders a client-name field').toBe(true);
+  });
+
+  test('obNextJobs — a row with data but no client name is flagged, not silently dropped', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obNextJobs !== 'function') return { skip: true };
+      // Isolate: obNextJobs writes to document.getElementById('ob-err'). If a boot
+      // onboarding overlay left an #ob-err earlier in the DOM, the code writes there
+      // while a detached local ref stays empty — a false negative. Clear leftovers so
+      // OUR #ob-err is the one obNextJobs targets, and read via the same getElementById.
+      document.getElementById('onboarding-overlay')?.remove();
+      document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      const err = document.createElement('div'); err.id = 'ob-err'; el.appendChild(err);
+      _ob.step = 10;
+      _ob.jobs = [{ client: '', addr: '', start: '', value: '4200' }]; // value but no name
+      obNextJobs();
+      const errText = (document.getElementById('ob-err') || {}).textContent || '';
+      const blocked = _ob.step === 10 && /client name/i.test(errText);
+      // Now give it a name — it should advance to the review step (11).
+      _ob.jobs = [{ client: 'Maria Alvarez', addr: '', start: '', value: '4200' }];
+      obNextJobs();
+      const advanced = _ob.step === 11;
+      el.remove();
+      return { blocked, advanced };
+    });
+    if (result.skip) return;
+    expect(result.blocked, 'incomplete row blocks + shows an error').toBe(true);
+    expect(result.advanced, 'a named row lets the step advance').toBe(true);
+  });
+
   test('no console errors during cloud realtime/LP/onboarding tests', async () => {
     assertNoErrors(page, 'cloud realtime/LP/onboarding');
   });

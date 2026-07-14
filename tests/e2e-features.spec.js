@@ -3061,19 +3061,24 @@ test.describe('Crew tracking + payroll + dispatch routing + job profit', () => {
     expect(r.salary).toBeCloseTo(32.5, 5);   // (52000/2080)=25 × 1.3
   });
 
-  test('crew cost report + dashboard tile entry points exist', async () => {
+  test('crew cost report entry points exist; the dashboard Crew Today tile is DELETED', async () => {
+    // 2026-07-14 owner directive ("simplify before we scale"): the dashboard
+    // tile duplicated the Time log "Currently clocked in" banner and was
+    // removed. §7.1: the deletion is asserted, not just the survivors.
     const r = await page.evaluate(() => ({
       crewCost: typeof _openCrewCost === 'function',
       crewRender: typeof _crewCostRender === 'function',
       dashTile: typeof _renderDashCrewToday === 'function',
       fetch: typeof _fetchCrewLabor === 'function',
       tileEl: !!document.getElementById('dash-crew-today'),
+      crewWidget: !!document.querySelector('.td-dw[data-dw="crew"]'),
     }));
     expect(r.crewCost).toBe(true);
     expect(r.crewRender).toBe(true);
-    expect(r.dashTile).toBe(true);
     expect(r.fetch).toBe(true);
-    expect(r.tileEl).toBe(true);
+    expect(r.dashTile, '_renderDashCrewToday must be deleted, not hidden').toBe(false);
+    expect(r.tileEl, '#dash-crew-today must be gone from the DOM').toBe(false);
+    expect(r.crewWidget, 'the crew dashboard widget wrapper must be gone').toBe(false);
   });
 
   test('labor-burden setting round-trips (30 percent to 1.3 multiplier)', async () => {
@@ -4083,7 +4088,16 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
       clients.push({ id: cid, name: 'Live Push C', phone: '3165550999', clientToken: 'livepushtok', clientHubKey: '' });
       window._supaUser = window._supaUser || { id: 'livepush-user-1', email: 'lp@t.com' };
       await _uploadClientHub(cid);
-      const hit = (window.__channelBroadcasts || []).find(b => b.name.indexOf('hub-upd-') === 0 && b.name.indexOf('-' + cid) > -1);
+      // The tokened-client path uploads in the BACKGROUND by design ("file
+      // exists — return instantly, refresh in background"), so the broadcast
+      // lands a few async ticks after _uploadClientHub resolves. Poll briefly
+      // instead of racing the microtask queue (which broke the moment doUpload
+      // gained a legitimate extra await for the logo upload).
+      let hit = null;
+      for (let i = 0; i < 20 && !hit; i++) {
+        hit = (window.__channelBroadcasts || []).find(b => b.name.indexOf('hub-upd-') === 0 && b.name.indexOf('-' + cid) > -1);
+        if (!hit) await new Promise(r => setTimeout(r, 25));
+      }
       return { found: !!hit, event: hit && hit.msg && hit.msg.event };
     }, 886200);
     expect(r.found).toBe(true);
@@ -4226,12 +4240,20 @@ test.describe('addJobPhoto — progress type carries an optional milestone capti
       const inp = document.createElement('input');
       inp.type = 'file';
       inp.files = dt.files;
-      await new Promise((resolve) => {
-        addJobPhoto(jobId, inp, 'progress', 'Rough-in complete');
-        // FileReader.onload is async — poll until the job's local photo record lands.
+      addJobPhoto(jobId, inp, 'progress', 'Rough-in complete');
+      // FileReader.onload lands the LOCAL job.photos entry first; the GLOBAL
+      // photos[] row lands later, after the (real, now-async) compress+upload
+      // chain — poll for that one too, not just the local copy landing.
+      // Bounded: a genuine regression (upload never resolves) fails fast with
+      // a clear message instead of hanging until Playwright's test timeout.
+      await new Promise((resolve, reject) => {
+        let tries = 0;
         const check = () => {
           const j = jobs.find(x => x.id === jobId);
-          if (j && j.photos.length) resolve(); else setTimeout(check, 30);
+          const hasGlobal = photos.some(p => p.job_id === jobId);
+          if (j && j.photos.length && hasGlobal) return resolve();
+          if (++tries > 100) return reject(new Error('global photos[] row never landed after 3s'));
+          setTimeout(check, 30);
         };
         check();
       });

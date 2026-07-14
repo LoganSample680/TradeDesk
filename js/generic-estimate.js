@@ -3154,6 +3154,9 @@ async function sendGenericProposal(previewOnly){
     createdAt:new Date().toISOString(),status:'pending',
     notifyEmail:_supaUser.email,businessPhone:S.bphone||'',
     stripeConnectEnabled:_stripeEnabled,
+    // Which manual pay options the client sees at signing (Settings → How you get
+    // paid). Default-true so proposals from before this shipped still show all.
+    acceptCash:S.acceptCash!==false,acceptCheck:S.acceptCheck!==false,allowPayLater:S.allowPayLater!==false,
     trade_type:trade,
     state:_stateKey,
     cancelDays:(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3,
@@ -3509,6 +3512,7 @@ async function _sendIndProposal(){
     proposalHtml,clientAddr:c?.addr||'',amount:midPrice,deposit:Math.round(midPrice*0.25),
     createdAt:new Date().toISOString(),status:'pending',notifyEmail:_supaUser.email,
     businessPhone:S.bphone||'',stripeConnectEnabled:_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false,
+    acceptCash:S.acceptCash!==false,acceptCheck:S.acceptCheck!==false,allowPayLater:S.allowPayLater!==false,
     trade_type:'painting',
     yearBuilt:_indYearBuilt,
     epaRequired:_indEpaRequired,

@@ -503,7 +503,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     </div>
     <div id="checkout-embed-container" style="padding:12px 12px 0"></div>
     <div style="padding:12px 18px 18px">
-      <button id="checkout-submit-btn" onclick="_submitCheckoutPayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(180,40,40,.30)">Pay — Secured by Stripe</button>
+      <button id="checkout-submit-btn" onclick="_submitCheckoutPayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(180,40,40,.30)">Pay — Secure Checkout</button>
       <div id="checkout-pay-err" style="font-size:12px;color:#c0392b;text-align:center;margin-top:8px;min-height:16px"></div>
     </div>
   </div>
@@ -658,6 +658,31 @@ let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(lo
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// Egress fix: route public gallery images through the Cloudflare edge cache
+// (/img/<path>) when served from Cloudflare — repeat hub views hit Cloudflare,
+// not Supabase. Localhost/dev and non-storage URLs pass through untouched.
+function _cdnPhoto(u){
+  try{
+    if(!u||u.startsWith('data:'))return u;
+    if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return u;
+    const m=u.match(/\/storage\/v1\/object\/public\/(gallery\/.+)$/);
+    return m?'/img/'+m[1]:u;
+  }catch(_e){return u;}
+}
+// Image fallback: retry the direct URL once before hiding — an undeployed /img
+// route or edge failure degrades to the pre-fix direct load, never a blank tile.
+function _imgFallback(el,mode){
+  const d=el.dataset?el.dataset.dsrc:'';
+  if(d&&el.src!==d){el.src=d;return;}
+  if(mode==='parent'&&el.parentElement)el.parentElement.style.display='none';
+  else el.style.display='none';
+}
+// src + fallback attributes for a hub photo <img>: 360px thumbnail in grids
+// (thumbUrl, new uploads) falling back to the full image (legacy photos).
+function _hubImgAttrs(p,mode){
+  const t=p.thumbUrl||p.url;
+  return 'src="'+esc(_cdnPhoto(t))+'" data-dsrc="'+esc(t)+'" onerror="_imgFallback(this,\''+(mode||'self')+'\')"';
+}
 // Business name for client-facing copy. Returns the escaped business name when the hub
 // has loaded one, otherwise the generic fallback ("your contractor" / "Your contractor").
 // _cn = HTML-safe (for innerHTML); _cnText = raw string (for textContent / titles).
@@ -834,23 +859,46 @@ async function _refreshHub(){
     _renderActiveView();
   }catch(e){}finally{_hubRefreshBusy=false;}
 }
+// Poll cadence (egress): the live-push channel below delivers changes in seconds,
+// so while it's healthy the poll is only a safety net — every 10th tick (5 min).
+// Channel down, never connected, or errored → every tick (30s), today's exact
+// behavior. _hubPollTick is a named function so tests can drive it directly.
+let _hubTickN=0;
+function _hubPollTick(){
+  _hubTickN++;
+  if(_hubLiveOk&&(_hubTickN%10)!==0)return;
+  _refreshHub();
+}
 function _startHubRefresh(){
   if(_hubRefreshTimer)clearInterval(_hubRefreshTimer); // never stack timers
-  _hubRefreshTimer=setInterval(_refreshHub,30000);
+  _hubTickN=0;
+  _hubRefreshTimer=setInterval(_hubPollTick,30000);
 }
 // Live push — a content-free "something changed" nudge on a per-client Realtime
 // broadcast channel (mirrors the contractor app's sig-feed-<uid> pattern), so a
 // status change lands in seconds instead of waiting out the 30s poll above. The
 // poll stays as-is: if this channel never connects or a message drops, the next
 // tick still catches up — nothing here is required for correctness.
-let _hubLiveChan=null;
+let _hubLiveChan=null,_hubLiveOk=false;
 function _startHubLiveChannel(u,c){
   if(!_supa||_hubLiveChan)return;
   try{
     _hubLiveChan=_supa.channel('hub-upd-'+u+'-'+c);
     _hubLiveChan.on('broadcast',{event:'updated'},()=>{_refreshHub();});
-    _hubLiveChan.subscribe();
+    // Health-tracked: _hubLiveOk gates the poll cadence above. Anything short of
+    // a confirmed SUBSCRIBED (error, timeout, close, never-connected) keeps the
+    // 30s poll — the stretched cadence only applies while push provably works.
+    _hubLiveChan.subscribe((s)=>{
+      if(s==='SUBSCRIBED'){if(!_hubLiveOk&&_hubTickN>0)_refreshHub();_hubLiveOk=true;}
+      else if(s==='CLOSED'||s==='CHANNEL_ERROR'||s==='TIMED_OUT')_hubLiveOk=false;
+    });
   }catch(e){}
+}
+// Nudge peers (the same client's other open tabs/devices) after this tab writes
+// a signing state change — the snapshot in storage doesn't change on a client-side
+// signature, so without this only the poll would carry it to other tabs.
+function _hubNudgePeers(){
+  try{if(_hubLiveChan&&_hubLiveOk)_hubLiveChan.send({type:'broadcast',event:'updated',payload:{}});}catch(_e){}
 }
 async function init(){
   const p=new URLSearchParams(location.search);
@@ -1151,7 +1199,10 @@ function applyBranding(h){
   const _cnName=(h.contractorName||'').trim();
   if(_cnName)document.querySelectorAll('.hub-cn-name').forEach(el=>{el.textContent=_cnName;});
   const logoEl=document.getElementById('topbar-logo-img'),nameEl=document.getElementById('topbar-name');
-  if(h.logoData){logoEl.src=h.logoData;logoEl.style.display='block';nameEl.style.display='none';}
+  // logoUrl (new snapshots — hosted once, cached forever) with base64 logoData
+  // as the legacy fallback so hubs uploaded before the egress fix keep working.
+  const _hLogo=h.logoUrl||h.logoData;
+  if(_hLogo){logoEl.src=_hLogo;logoEl.style.display='block';nameEl.style.display='none';}
   else{nameEl.textContent=h.contractorName||'Project Hub';logoEl.style.display='none';}
   const nci=document.getElementById('nav-client-info');
   if(nci)nci.innerHTML='<div class="nav-client-name">'+esc(h.clientName||'')+'</div>'+(h.clientAddr?'<div class="nav-client-addr">'+esc(h.clientAddr)+'</div>':'');
@@ -1169,8 +1220,8 @@ function applyBranding(h){
   // to ANY of this contractor's hubs shows them instantly at boot (before fetch).
   try{const _uid=new URLSearchParams(location.search).get('u');if(_uid)localStorage.setItem('td_hub_brand_'+_uid,JSON.stringify({name:h.contractorName||'',color:h.brandColor||''}));}catch(e){}
   const bl=document.getElementById('boot-logo'),blw=document.getElementById('boot-logo-wrap');
-  if(bl&&blw&&h.logoData){
-    bl.src=h.logoData;blw.style.display='flex';
+  if(bl&&blw&&_hLogo){
+    bl.src=_hLogo;blw.style.display='flex';
     const bm=document.getElementById('boot-mark');if(bm)bm.style.display='none';
   }
   const bb=document.getElementById('boot-bar');
@@ -1232,9 +1283,10 @@ function renderOverview(){
     {type:'change_order',id:'co1',label:'Add garage door trim',amount:420,status:'pending'}
   ];
 
-  // Hero
-  let html='<div class="hub-hero'+(h.logoData?' has-badge':'')+'">';
-  if(h.logoData)html+='<div class="hub-hero-badge"><img src="'+esc(h.logoData)+'" alt=""></div>';
+  // Hero — logoUrl (new snapshots) falls back to embedded logoData (legacy).
+  const _heroLogo=h.logoUrl||h.logoData;
+  let html='<div class="hub-hero'+(_heroLogo?' has-badge':'')+'">';
+  if(_heroLogo)html+='<div class="hub-hero-badge"><img src="'+esc(_heroLogo)+'" alt=""></div>';
   html+='<div class="hub-hero-l">';
   html+='<div class="hub-hero-eyebrow">Your project hub</div>';
   html+='<div class="hub-hero-greeting">'+esc(firstName)+'</div>';
@@ -1485,14 +1537,14 @@ function renderProject(){
         const b=beforePhotos[beforePhotos.length-1];
         const bIdx=jobPhotos.indexOf(b);
         html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+bIdx+')" aria-label="Before">';
-        html+='<img src="'+esc(b.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<img '+_hubImgAttrs(b,'parent')+' loading="lazy">';
         html+='<div class="hub-photo-tag">Before</div></div>';
       }else html+='<div></div>';
       if(afterPhotos.length){
         const a=afterPhotos[afterPhotos.length-1];
         const aIdx=jobPhotos.indexOf(a);
         html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+aIdx+')" aria-label="After">';
-        html+='<img src="'+esc(a.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<img '+_hubImgAttrs(a,'parent')+' loading="lazy">';
         html+='<div class="hub-photo-tag">After</div></div>';
       }else html+='<div></div>';
       html+='</div>';
@@ -1511,7 +1563,7 @@ function renderProject(){
         html+='<div class="hub-log-body">';
         html+='<div class="hub-log-date">'+(dayNum&&dayNum>0?'Day '+dayNum+(dateLabel?' · '+dateLabel:''):dateLabel)+'</div>';
         html+='<div class="hub-log-text">'+(p.caption?esc(p.caption):'Progress photo')+'</div>';
-        html+='<div class="hub-log-photos"><img class="hub-log-photo-sq" src="'+esc(p.url)+'" loading="lazy" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')" onerror="this.style.display=\'none\'"></div>';
+        html+='<div class="hub-log-photos"><img class="hub-log-photo-sq" '+_hubImgAttrs(p,'self')+' loading="lazy" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')"></div>';
         html+='</div></div>';
       });
       html+='</div>';
@@ -1521,7 +1573,7 @@ function renderProject(){
       otherPhotos.forEach(p=>{
         const idx=jobPhotos.indexOf(p);
         html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')">';
-        html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<img '+_hubImgAttrs(p,'parent')+' loading="lazy">';
         html+='</div>';
       });
       html+='</div>';
@@ -1542,7 +1594,7 @@ function renderProject(){
       const i=allPhotos.indexOf(p);
       const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='before-after'?'B&A':p.type==='progress'?'Progress':'';
       html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.photos,'+i+')">';
-      html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+      html+='<img '+_hubImgAttrs(p,'parent')+' loading="lazy">';
       if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
       html+='</div>';
     });
@@ -1615,7 +1667,7 @@ function renderPayments(){
       html+='<div style="background:var(--bg-card);padding:14px 16px;border-bottom:1px solid var(--border)">';
       const surchargeOn=!!h.ccSurchargeEnabled;
       const pct=h.ccSurchargePct||3;
-      const bigBtn=(fn,amtCents,label)=>'<button id="pay-btn-'+bid_id+'" onclick="'+fn+'('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30);margin-bottom:10px">'+label+' — Secured by Stripe</button>';
+      const bigBtn=(fn,amtCents,label)=>'<button id="pay-btn-'+bid_id+'" onclick="'+fn+'('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30);margin-bottom:10px">'+label+' — Secure Checkout</button>';
       if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
         html+=bigBtn('payBalance',Math.round(balance*100),'Pay in full '+fmt(balance));
         html+='<div style="font-size:10px;color:var(--text3);margin-bottom:8px;text-align:center">— or —</div>';
@@ -2008,6 +2060,7 @@ async function _submitCOHubSign(bidId,coNum){
     }
     // Instant contractor-tab refresh (same-browser) — cloud.js listens for this key
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum}));}catch(_){}
+    _hubNudgePeers(); // other hub tabs/devices of this client see the signature in seconds, not at the next poll
     co.signedAt=ts;co.signerName=name;co.sigData=sigData;co.status='signed';
     const _newAmt=co.newAmount!=null?co.newAmount:(bid.amount||0)+(co.delta||0);
     bid.balance=Math.max(0,(bid.balance||0)+(_newAmt-(bid.amount||0)));
@@ -2307,10 +2360,10 @@ async function _launchCheckout(bidId,amount,label){
   _stripeCheckoutBidId=bidId;
   // Open modal with loading state immediately
   document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
-  document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
+  document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secure Checkout';
   document.getElementById('checkout-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center"><div class="hub-spinner"></div><div style="color:#9ca3af;font-size:14px">Loading payment options…</div></div>';
   const submitBtn=document.getElementById('checkout-submit-btn');
-  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
+  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secure Checkout';}
   document.getElementById('stripe-overlay').style.display='block';
   document.body.style.overflow='hidden';
   if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}
@@ -2377,7 +2430,7 @@ async function _submitCheckoutPayment(){
       const errEl=document.getElementById('checkout-pay-err');
       if(errEl)errEl.textContent=error.message||'Payment failed. Please try again.';
     }
-    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeCheckoutAmt/100)+' — Secured by Stripe';}
+    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeCheckoutAmt/100)+' — Secure Checkout';}
   }
 }
 function closePaymentModal(){
@@ -2401,7 +2454,7 @@ async function payDeposit(bidId){
   await _launchCheckout(bidId,amount,'Pay deposit');
 }
 function _pay4Btns(bidId,fn,amt,h){
-  return '<button id="pay-btn-'+bidId+'" onclick="'+fn+'('+bidId+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30)">Pay '+fmt(amt)+' — Secured by Stripe</button>';
+  return '<button id="pay-btn-'+bidId+'" onclick="'+fn+'('+bidId+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30)">Pay '+fmt(amt)+' — Secure Checkout</button>';
 }
 function _showCashMsg(){
   const biz=escHtml(_hub.contractorName||'your contractor');
@@ -2494,7 +2547,7 @@ function openInvoice(bidId){
   html+='<div style="background:'+bdBg+';border:2px solid '+bdBrd+';border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center">';
   html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full '+svgIcon('✓',{size:12}):'Balance due')+'</div>';
   html+='<div style="font-size:11px;color:'+bdClr+';margin-top:3px">'+(isPaid?'Thank you for your business!':'Please remit payment at your earliest convenience')+'</div>';
-  if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay now — Secured by Stripe</button>';
+  if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay Now — Secure Checkout</button>';
   html+='</div><div style="font-size:28px;font-weight:800;color:'+bdClr+'">'+fmt(balance)+'</div></div>';
   html+='<div class="inv-footer-text">'+esc(h.contractorName)+' · '+(h.contractorPhone?esc(h.contractorPhone)+' · ':'')+'Thank you for choosing us!</div>';
   html+='<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">';
@@ -2620,7 +2673,13 @@ function _lbRender(){
   const p=_lbPhotos[_lbIdx];if(!p)return;
   const img=document.getElementById('hub-lb-img');
   const tag=document.getElementById('hub-lb-tag');
-  if(img)img.src=p.url||p;
+  // Full-resolution in the lightbox (never the thumb), via the edge cache with
+  // a one-shot direct-URL fallback if the /img route isn't available.
+  if(img){
+    const _direct=p.url||p;
+    img.onerror=()=>{if(img.src!==_direct){img.src=_direct;}else{img.onerror=null;}};
+    img.src=_cdnPhoto(_direct);
+  }
   if(tag)tag.textContent=p.caption||(p.date?fmtDate(p.date):'')||((_lbIdx+1)+' / '+_lbPhotos.length);
   // hide arrows if only 1 photo
   document.querySelectorAll('.hub-lb-arrow').forEach(a=>a.style.display=_lbPhotos.length<2?'none':'flex');

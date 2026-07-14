@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.13.26.25';
+const APP_VERSION='07.14.26.30';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -4818,20 +4818,71 @@ async function supaSaveToCloud(){
   }
 }
 
-async function checkNewSignatures(){
-  if(_checkSigsBusy||!_supa||!_supaUser)return;
+// Egress guard: after the first full poll of a session, only rows whose
+// updated_at moved past this watermark are fetched — a steady-state 30s tick
+// returns ZERO rows instead of re-downloading 100 rows of base64 signature
+// images (the standing multi-GB/day leak that blew the Supabase egress cap).
+// In-memory on purpose: every fresh page load does one full pass (which also
+// serves the "data may have been reset" re-assert), then goes delta.
+let _sigPollWatermark=null;
+// sig-feed channel health. _sigFeedReady mirrors _tdRealtimeReady's contract; the
+// down-flag makes recovery observable: SUBSCRIBED after a failure → one immediate
+// catch-up sweep (realtime is at-most-once — pushes during the outage are gone).
+let _sigFeedReady=false,_sigFeedDown=false;
+function _sigFeedStatus(status){
+  if(status==='SUBSCRIBED'){
+    const wasDown=_sigFeedDown;
+    _sigFeedReady=true;_sigFeedDown=false;
+    if(wasDown){checkNewSignatures('rejoin');_fetchProposalViews();}
+  }else if(status==='CLOSED'||status==='CHANNEL_ERROR'||status==='TIMED_OUT'){
+    _sigFeedReady=false;_sigFeedDown=true;
+    try{if(window._obs)_obs.track('sig_feed_down_'+String(status).toLowerCase());}catch(_e){}
+  }
+}
+let _checkSigsPending=false;
+async function checkNewSignatures(_src){
+  // Coalescing guard: a call landing while another run is in flight must NOT be
+  // dropped — with the sig-feed push handler firing on every account-wide insert,
+  // a push-triggered run can hold the busy flag at the exact moment the 30s tick
+  // (or a second push) arrives. Dropping that call meant a real signature waited
+  // for the next poll tick. Instead: remember it, and rerun ONCE after the
+  // in-flight run finishes — every caller is now guaranteed a poll that STARTED
+  // after their call.
+  if(_checkSigsBusy){_checkSigsPending=true;return;}
+  if(!_supa||!_supaUser)return;
   _checkSigsBusy=true;
   try{
     // Use localStorage as the seen-list — no DB column dependency
     const seenCache=new Set(JSON.parse(localStorage.getItem('zp3_seen_sigs')||'[]'));
     // select('*') — optional columns (epa_*, cancelled_*) may not exist in every
     // environment; an explicit column list would fail the whole query on drift.
-    const{data,error}=await _supa.from('signed_proposals')
+    const _fullPoll=()=>_supa.from('signed_proposals')
       .select('*')
       .eq('contractor_user_id',_supaUser.id)
       .order('signed_at',{ascending:false})
       .limit(100);
+    let data,error;
+    if(_sigPollWatermark){
+      // Delta poll: INSERTs land with updated_at=now(); every mutation the loop
+      // below cares about (cancellation, remote CO signing, payment-status flip)
+      // is an UPDATE, which the td_touch_updated_at trigger re-surfaces here.
+      ({data,error}=await _supa.from('signed_proposals')
+        .select('*')
+        .eq('contractor_user_id',_supaUser.id)
+        .gt('updated_at',_sigPollWatermark)
+        .order('updated_at',{ascending:false})
+        .limit(100));
+      // Drift-safe: an environment without the updated_at column (migration not
+      // applied) errors here — fall back to the full poll, the pre-fix behavior.
+      if(error)({data,error}=await _fullPoll());
+    }else{
+      ({data,error}=await _fullPoll());
+    }
     if(error)throw error;
+    // Advance the watermark from whatever came back. ISO timestamps in one fixed
+    // format compare correctly as strings. Rows without updated_at (un-migrated
+    // database) leave the watermark null — every poll stays full, exactly as today.
+    (data||[]).forEach(s=>{if(s.updated_at&&(!_sigPollWatermark||s.updated_at>_sigPollWatermark))_sigPollWatermark=s.updated_at;});
     if(data&&data.length){
       let changed=false;const alerts=[];const newSeen=[];const coSignedAlerts=[];
       for(const s of data){
@@ -4930,6 +4981,11 @@ async function checkNewSignatures(){
         localStorage.setItem('zp3_seen_sigs',JSON.stringify([...seenCache].slice(-500)));
       }
       if(changed){
+        // Delivery-source telemetry: was this signature caught by the realtime push
+        // ('push'), the recovery sweep ('rejoin'), or the fallback poll (default)?
+        // One counter per path answers "is realtime actually doing the work?" in
+        // the analytics table — the number that proves push reliability in prod.
+        if(alerts.length){try{if(window._obs)_obs.track('sig_delivered_'+(_src||'poll'));}catch(_e){}}
         saveAll();
         [...new Set([...alerts.map(a=>a.clientId),...coSignedAlerts.map(a=>a.clientId)])].forEach(cid=>_refreshClientHub(cid));
         coSignedAlerts.forEach(a=>{if(typeof showToast==='function')showToast('✍️ '+a.client+' signed Change Order #'+a.coNum+' — contract now '+fmt(a.newTotal),'📋');});
@@ -4941,22 +4997,59 @@ async function checkNewSignatures(){
         if(!window._showingScheduleAlert)setTimeout(showScheduleAlerts,400);
       }
     }
-  }catch(e){console.warn('checkNewSignatures:',e);}finally{_checkSigsBusy=false;}
+  }catch(e){console.warn('checkNewSignatures:',e);}finally{
+    _checkSigsBusy=false;
+    if(_checkSigsPending){_checkSigsPending=false;checkNewSignatures(_src);}
+  }
 }
+// The 30s fallback tick. Skips hidden tabs entirely — a backgrounded tab can't
+// show the signature alert anyway, and the existing visibilitychange handler
+// re-runs both checks the instant the tab is foregrounded, so nothing is lost.
+// Realtime (sig-feed channel) remains the primary, instant delivery path.
+function _sigPollTick(){
+  if(document.visibilityState==='hidden')return;
+  checkNewSignatures();_fetchProposalViews();
+}
+let _pvPollWatermark=null;
 async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
   try{
+    // Watermark probe (egress): steady state asks "is anything newer than what
+    // I've seen?" — at most ONE tiny row — instead of re-downloading 500 full
+    // rows every 30s. Any change → the full rebuild below runs unchanged, so
+    // the dict semantics (newest-first, atomic swap) never differ from today.
+    // Drift-safe: no updated_at column (un-migrated env) → the probe errors →
+    // full poll, the exact pre-fix behavior; rows without updated_at never arm
+    // the watermark, so an un-migrated database stays on full polls forever.
+    if(_pvPollWatermark){
+      const{data:_probe,error:_pErr}=await _supa.from('proposal_views')
+        .select('updated_at')
+        .eq('contractor_user_id',_supaUser.id)
+        .gt('updated_at',_pvPollWatermark)
+        .order('updated_at',{ascending:false})
+        .limit(1);
+      if(!_pErr&&_probe&&!_probe.length)return; // nothing changed — zero-row tick
+      // The probe row is the global max updated_at (desc, limit 1) — advance from
+      // it so an old row's update (outside the top-500 by opened_at below) can't
+      // wedge the watermark into probing positive on every tick.
+      if(!_pErr&&_probe)_probe.forEach(v=>{if(v.updated_at&&v.updated_at>_pvPollWatermark)_pvPollWatermark=v.updated_at;});
+    }
     // Edge Function log-proposal-view writes to proposal_views using service key (bypasses RLS).
     // Contractor reads back with their authenticated session — RLS allows SELECT on own rows.
     // select('*') not an explicit list — furthest_step/_at may not exist yet in
     // every environment (migration drift), and an explicit list would fail the
     // whole query; same defensive pattern as checkNewSignatures above.
+    // limit(500): this table grows forever and was fetched UNBOUNDED every 30s.
+    // Any proposal a client is actively engaging with is in the newest 500 view
+    // rows; older rows only feed stale badges on long-closed bids.
     const{data,error}=await _supa.from('proposal_views')
       .select('*')
       .eq('contractor_user_id',_supaUser.id)
       .not('bid_id','is',null)
-      .order('opened_at',{ascending:false});
+      .order('opened_at',{ascending:false})
+      .limit(500);
     if(data&&!error){
+      data.forEach(v=>{if(v.updated_at&&(!_pvPollWatermark||v.updated_at>_pvPollWatermark))_pvPollWatermark=v.updated_at;});
       // Build into temporaries first, then swap atomically — prevents a renderDash()
       // mid-flight from seeing an empty dict during the rebuild window (flicker race).
       const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={};
@@ -5007,6 +5100,17 @@ function _signStepBadge(bidId){
   return'<div style="font-size:11px;font-weight:800;color:'+meta.color+';margin-top:2px">'+svgIcon('⚡',{size:11})+' '+meta.label+'</div>';
 }
 function showScheduleAlerts(){
+  // Never pop over the boot spinner (owner report 2026-07-14: "popup scheduler
+  // is coming in way before the spinner completely boots"). The boot poll can
+  // find signatures within the first second — wait for the overlay to finish
+  // its fade before surfacing the modal, retrying on a short timer.
+  const _bootOv=document.getElementById('supa-boot-overlay');
+  if(_bootOv&&_bootOv.isConnected&&getComputedStyle(_bootOv).display!=='none'&&parseFloat(getComputedStyle(_bootOv).opacity)>0.05){
+    if(window._schedAlertWaiting)return; // one retry chain only — boot poll + 30s tick can both land here
+    window._schedAlertWaiting=true;
+    setTimeout(()=>{window._schedAlertWaiting=false;showScheduleAlerts();},700);
+    return;
+  }
   let alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
   // Discard any alerts whose bid no longer exists locally — they can't be scheduled
   alerts=alerts.filter(a=>bids.find(b=>String(b.id)===String(a.bidId)));
@@ -5063,14 +5167,18 @@ function showScheduleAlerts(){
   document.getElementById('_sched-alert-later').addEventListener('click',()=>{
     ov.remove();
     const q=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
-    const hasMore=q.length>0;
     // Only re-queue if bid still exists — orphaned alerts die here
     const bidStillExists=window._currentScheduleAlert&&bids.find(b=>String(b.id)===String(window._currentScheduleAlert.bidId));
     if(bidStillExists)q.push(window._currentScheduleAlert);
     window._currentScheduleAlert=null;
     localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
     window._showingScheduleAlert=false;
-    if(hasMore)showScheduleAlerts();
+    // "Later" means LATER — silence the whole stack (owner directive 2026-07-14).
+    // Chaining straight into showScheduleAlerts() here made N stacked alerts an
+    // endless carousel: each Later re-queued the current one and popped the next.
+    // The queue survives in localStorage; the next real trigger (new signature
+    // event or app boot) re-surfaces it.
+    if(q.length)showToast(q.length+' client'+(q.length>1?'s':'')+' waiting to schedule — find them under Jobs','📋');
   });
 }
 function deferScheduleAlert(){
@@ -5080,8 +5188,10 @@ function deferScheduleAlert(){
     q.push(window._currentScheduleAlert);
     localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
     window._currentScheduleAlert=null;
-    if(q.length>1)showToast(q.length+' clients waiting to schedule','📋');
-    setTimeout(showScheduleAlerts,400);
+    window._showingScheduleAlert=false;
+    // Same "Later means later" rule as the alert modal — never chain into the
+    // next alert here (the old setTimeout(showScheduleAlerts) loop).
+    if(q.length)showToast(q.length+' client'+(q.length>1?'s':'')+' waiting to schedule','📋');
   }
 }
 function showScheduleSuggestion(clientId,bidId,clientNameFallback){
@@ -5670,7 +5780,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(typeof autoRefreshDepositCaps==='function')autoRefreshDepositCaps();
       },4000);
       setTimeout(()=>_checkOdometerPrompt(),3500);
-      setInterval(()=>{checkNewSignatures();_fetchProposalViews();},30000);
+      setInterval(_sigPollTick,30000);
       // Cross-device RECONCILE HEARTBEAT — poll zj_data.updated_at on a short timer,
       // ALWAYS, not gated on a realtime event arriving. Supabase Realtime is best-effort
       // (at-most-once): a single postgres_changes / broadcast CAN be dropped. The old design
@@ -5882,10 +5992,13 @@ function _initRealtimeSubscriptions(uid){
     // sig-feed: signature + proposal-view notifications for the signed-in contractor.
     // Subscribed here (per account, gated by _realtimeSubscribed) so a same-page account
     // switch re-establishes it under the new uid — see _teardownRealtimeChannels (bug #39).
+    // Health-tracked like td-sync above: realtime is at-most-once, so any outage
+    // window can silently drop a push — _sigFeedStatus runs one catch-up sweep the
+    // moment the channel recovers, instead of leaving it to the next poll tick.
     _supa.channel('sig-feed-'+_supaUser.id)
-      .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures();})
+      .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures('push');})
       .on('postgres_changes',{event:'*',schema:'public',table:'proposal_views',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
-      .subscribe();
+      .subscribe(_sigFeedStatus);
   }catch(_sf){}
   try{
     _syncBroadcastChannel=_supa.channel('user-data-'+_supaUser.id);

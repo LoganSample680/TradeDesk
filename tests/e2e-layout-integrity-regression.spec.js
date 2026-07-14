@@ -131,26 +131,17 @@ test.describe('layout integrity — mobile', () => {
     expect(Math.abs(r.zipRight - r.occupationRight), 'Zip box right edge must line up with Occupation right edge').toBeLessThanOrEqual(1);
   });
 
-  // Regression: the dashboard "Crew today" tile used background:var(--bg2) — the app's
-  // convention for NESTED/inset surfaces sitting inside a card (buttons, sub-boxes, table
-  // headers) — instead of var(--bg-card), the white top-level tile background every other
-  // dashboard tile uses. In light mode --bg2 (#F4F5F7) reads as grey next to every white
-  // sibling tile. Fixed to var(--bg-card). Checked via source string, not a live render:
-  // _renderDashCrewToday requires team tracking + comp permission + real time-entry rows
-  // that the offline mock's generic query shim can't supply.
-  test('dashboard "Crew today" tile uses the same card background as every other tile', async () => {
-    const r = await page.evaluate(() => {
-      const src = typeof _renderDashCrewToday === 'function' ? _renderDashCrewToday.toString() : null;
-      if (!src) return { missing: true };
-      return {
-        missing: false,
-        usesCardBg: src.includes('background:var(--bg-card)'),
-        usesInsetBg: src.includes('background:var(--bg2)'),
-      };
-    });
-    expect(r.missing, '_renderDashCrewToday must exist').toBe(false);
-    expect(r.usesCardBg, 'the tile wrapper must use var(--bg-card) — the same white background every other dashboard tile uses').toBe(true);
-    expect(r.usesInsetBg, 'the tile must NOT use var(--bg2) — that is the inset/nested-surface color, not a top-level tile background').toBe(false);
+  // The "Crew today" tile was DELETED 2026-07-14 (owner: "simplify before we
+  // scale") — it duplicated the Time log "Currently clocked in" banner. The
+  // old bg-color regression test guarded a tile that no longer exists; per
+  // §7.1 it now guards the DELETION instead.
+  test('dashboard "Crew today" tile is deleted — function and element are gone', async () => {
+    const r = await page.evaluate(() => ({
+      fnExists: typeof _renderDashCrewToday === 'function',
+      elExists: !!document.getElementById('dash-crew-today'),
+    }));
+    expect(r.fnExists, '_renderDashCrewToday must be deleted, not hidden').toBe(false);
+    expect(r.elExists, '#dash-crew-today must be gone from the DOM').toBe(false);
   });
 
   // Regression: a BYO line-item note with no spaces (a long unbroken string —

@@ -1308,12 +1308,16 @@ async function _shareBeforeAfterCard(clientId){
       try{
         if(supaEnabled&&supaEnabled()&&_supaUser){
           const path=_supaUser.id+'/'+clientId+'/ba-'+Date.now()+'.jpg';
-          const{error:upErr}=await _supa.storage.from('gallery').upload(path,blob,{contentType:'image/jpeg',upsert:false});
+          // The composed card is already a bounded-size canvas JPEG — no main
+          // recompress needed, but it gets the immutable cache header + a grid thumb.
+          const{error:upErr}=await _supa.storage.from('gallery').upload(path,blob,{contentType:'image/jpeg',upsert:false,cacheControl:_PHOTO_CACHE});
           if(!upErr){
             const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
             const publicUrl=urlData?.publicUrl||'';
             if(publicUrl){
-              photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:'before-after',caption:'Before & After',client_id:clientId,client_name:c?c.name:'',uploadedAt:new Date().toISOString()});
+              const _baCp=await _compressPhoto(blob,{maxEdge:1600});
+              const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_baCp?_baCp.thumb:null,path);
+              photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,thumbUrl,thumbPath,type:'before-after',caption:'Before & After',client_id:clientId,client_name:c?c.name:'',uploadedAt:new Date().toISOString()});
               saveAll();
               _uploadClientHub&&_uploadClientHub(clientId).catch(()=>{});
               showToast('Added to client hub','✓');
@@ -1519,6 +1523,56 @@ function sendOMWText(clientId){
   const msg='Hi '+firstName+', this is '+biz+' — I\'m on my way! I\'ll be there shortly.';
   window.location.href='sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg);
 }
+// Egress fix: phone photos are 3–8MB and were uploaded RAW, then served
+// full-size even inside 110px thumbnail grids. Compress to a 1600px-long-edge
+// JPEG (visually identical at any app size) + a 360px thumbnail for grids;
+// the full image loads only in the lightbox. Returns null on ANY failure —
+// callers then upload the original file exactly as before, so a photo can
+// never be lost to a decode error (odd formats, HEIC on old engines, etc.).
+async function _compressPhoto(fileOrBlob,opts){
+  try{
+    const maxEdge=(opts&&opts.maxEdge)||1600,thumbEdge=(opts&&opts.thumbEdge)||360,q=(opts&&opts.quality)||0.82;
+    let bmp;
+    // from-image applies EXIF orientation so portrait phone shots don't land sideways.
+    try{bmp=await createImageBitmap(fileOrBlob,{imageOrientation:'from-image'});}
+    catch(_e){bmp=await createImageBitmap(fileOrBlob);}
+    const draw=edge=>{
+      const scale=Math.min(1,edge/Math.max(bmp.width,bmp.height));
+      const w=Math.max(1,Math.round(bmp.width*scale)),h=Math.max(1,Math.round(bmp.height*scale));
+      const cv=document.createElement('canvas');cv.width=w;cv.height=h;
+      cv.getContext('2d').drawImage(bmp,0,0,w,h);
+      return new Promise(res=>cv.toBlob(res,'image/jpeg',q));
+    };
+    const blob=await draw(maxEdge);
+    const thumb=await draw(thumbEdge);
+    if(!blob||!thumb||!blob.size||!thumb.size)return null;
+    return{blob,thumb,mime:'image/jpeg',ext:'jpg'};
+  }catch(_e){return null;}
+}
+// Immutable-path uploads (every path carries Date.now()) → cache for a year so
+// browsers and the CDN absorb repeat views instead of Supabase egress.
+const _PHOTO_CACHE='31536000';
+// Upload the 360px thumbnail alongside the main photo. Non-fatal by design —
+// a failed thumb just means grids fall back to the full image (pre-fix behavior).
+async function _uploadPhotoThumb(thumbBlob,mainPath){
+  try{
+    if(!thumbBlob)return{thumbUrl:'',thumbPath:''};
+    const thumbPath=mainPath.replace(/([^/]+)$/,'t-$1').replace(/\.[a-z0-9]+$/i,'.jpg');
+    // One retry on failure: a transient network blip here loses the thumbnail
+    // FOREVER (nothing re-attempts later — grids permanently fall back to full
+    // bytes, defeating the egress win for that photo). Seen live: main upload
+    // 200, thumb dropped, on a flaky runner network.
+    let error;
+    for(let _try=0;_try<2;_try++){
+      ({error}=await _supa.storage.from('gallery').upload(thumbPath,thumbBlob,{contentType:'image/jpeg',upsert:_try>0,cacheControl:_PHOTO_CACHE}));
+      if(!error)break;
+      await new Promise(r=>setTimeout(r,800));
+    }
+    if(error)return{thumbUrl:'',thumbPath:''};
+    const{data}=_supa.storage.from('gallery').getPublicUrl(thumbPath);
+    return{thumbUrl:data?data.publicUrl||'':'',thumbPath};
+  }catch(_e){return{thumbUrl:'',thumbPath:''};}
+}
 function addJobPhoto(jobId,input,type,caption){
   const file=input.files[0];if(!file)return;
   caption=(caption||'').trim().slice(0,60);
@@ -1532,16 +1586,19 @@ function addJobPhoto(jobId,input,type,caption){
     // Upload to gallery storage → push to global photos[] → refresh client hub
     if(typeof supaEnabled==='function'&&supaEnabled()&&_supaUser&&_supa){
       try{
-        const ext=(file.name.split('.').pop()||'jpg').toLowerCase();
+        // Compress + thumbnail (egress fix). null → upload the original untouched.
+        const _cp=await _compressPhoto(file);
+        const ext=_cp?_cp.ext:(file.name.split('.').pop()||'jpg').toLowerCase();
         const path=_supaUser.id+'/'+jobId+'/'+type+'-'+Date.now()+'.'+ext;
-        const{error}=await _supa.storage.from('gallery').upload(path,file,{contentType:file.type||'image/jpeg',upsert:false});
+        const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:file,{contentType:_cp?_cp.mime:(file.type||'image/jpeg'),upsert:false,cacheControl:_PHOTO_CACHE});
         if(!error){
           const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
           const publicUrl=urlData?.publicUrl||'';
           if(publicUrl){
+            const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
             const c=clients.find(x=>x.id===j.client_id);
             const _photoClientName=c?c.name||'':'';
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type,caption,client_id:j.client_id||null,client_name:_photoClientName,job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,thumbUrl,thumbPath,type,caption,client_id:j.client_id||null,client_name:_photoClientName,job_id:jobId,job_name:j.name||'',uploadedAt:new Date().toISOString()});
             saveAll();
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
@@ -1571,21 +1628,24 @@ async function _drainPhotoQueue(){
     for(const p of j.photos){
       if(!p.pendingUpload||!p.data)continue;
       try{
-        const ext=p._uploadExt||'jpg';
         const mime=p._uploadMime||'image/jpeg';
-        const path=_supaUser.id+'/'+j.id+'/'+p.type+'-'+Date.now()+'.'+ext;
         // Convert base64 data URL to Blob for upload
         const b64=p.data.split(',')[1]||p.data;
         const bytes=Uint8Array.from(atob(b64),ch=>ch.charCodeAt(0));
-        const blob=new Blob([bytes],{type:mime});
-        const{error}=await _supa.storage.from('gallery').upload(path,blob,{contentType:mime,upsert:false});
+        const rawBlob=new Blob([bytes],{type:mime});
+        // Same compress+thumb treatment as the online path (egress fix).
+        const _cp=await _compressPhoto(rawBlob);
+        const ext=_cp?_cp.ext:(p._uploadExt||'jpg');
+        const path=_supaUser.id+'/'+j.id+'/'+p.type+'-'+Date.now()+'.'+ext;
+        const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:rawBlob,{contentType:_cp?_cp.mime:mime,upsert:false,cacheControl:_PHOTO_CACHE});
         if(!error){
           const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
           const publicUrl=urlData?.publicUrl||'';
           if(publicUrl){
+            const{thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp?_cp.thumb:null,path);
             const c=clients.find(x=>x.id===j.client_id);
             const _drainClientName=c?c.name||'':'';
-            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,type:p.type,caption:p.caption||'',client_id:j.client_id||null,client_name:_drainClientName,job_id:j.id,job_name:j.name||'',uploadedAt:new Date().toISOString()});
+            photos.push({id:Date.now()+Math.random(),url:publicUrl,storagePath:path,thumbUrl,thumbPath,type:p.type,caption:p.caption||'',client_id:j.client_id||null,client_name:_drainClientName,job_id:j.id,job_name:j.name||'',uploadedAt:new Date().toISOString()});
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
           delete p.pendingUpload;delete p._uploadExt;delete p._uploadMime;

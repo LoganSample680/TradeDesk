@@ -176,23 +176,28 @@ test.describe('TradeDesk main app', () => {
       );
       expect(modal1Visible).toBe(true);
 
-      // Click "Later"
+      // Click "Later" — 2026-07-14 owner directive: Later SILENCES the stack.
+      // The old behavior (assert a chained second modal) was an endless
+      // carousel with N stacked alerts; the intended behavior flipped, so the
+      // assertion flips with it (§10.4): NO modal after Later, and the
+      // deferred alert stays queued in localStorage for the next real trigger.
       await page.evaluate(() => {
         const btns = [...document.querySelectorAll('.zmodal-overlay button, .zmodal button')];
         const later = btns.find(b => b.textContent.toLowerCase().includes('later'));
         if (later) later.click();
       });
-      // Give the chained showScheduleAlerts() time to run and render the next modal.
-      // The chain works only when both bids exist in the bids array (Phase 3 must pass).
       await page.waitForTimeout(1200);
 
-      // Second modal (chained) — Bob Garcia's alert should now appear
-      const modal2Visible = await page.evaluate(() =>
-        document.querySelectorAll('.zmodal-overlay').length > 0
-      );
-      expect(modal2Visible).toBe(true);
+      const afterLater = await page.evaluate(() => ({
+        modalCount: document.querySelectorAll('.zmodal-overlay').length,
+        queued: JSON.parse(localStorage.getItem('zp3_schedule_alerts') || '[]').length,
+      }));
+      expect(afterLater.modalCount, 'Later must close the modal and NOT chain into the next alert').toBe(0);
+      expect(afterLater.queued, 'deferred alerts stay queued for the next trigger').toBeGreaterThanOrEqual(1);
 
-      // Try "Schedule now"
+      // Re-open via the real trigger and take "Schedule now" this time
+      await page.evaluate(() => { window._showingScheduleAlert = false; showScheduleAlerts(); });
+      await page.waitForTimeout(700);
       await page.evaluate(() => {
         const btns = [...document.querySelectorAll('.zmodal-overlay button, .zmodal button')];
         const sched = btns.find(b => b.textContent.toLowerCase().includes('schedule now') || b.textContent.toLowerCase().includes('schedule'));
