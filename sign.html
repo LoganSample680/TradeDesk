@@ -1492,25 +1492,26 @@ function _renderSignPayBtns(){
   const pct=_prop?.ccSurchargePct||3;
   let html='';
   if(stripeOk){
+    // "Secure Checkout" not "Secured by Stripe" (owner 2026-07-14): the processor
+    // name means nothing to a homeowner and slightly dilutes the contractor's own
+    // brand; a lock + "Secure" reads as safe to everyone. Stripe stays the engine,
+    // just not the label.
     html+=
-      '<button id="_pay-now-btn" onclick="_paySign(\'stripe\')" style="display:block;width:100%;padding:15px;border-radius:12px;border:none;background:#1b1612;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 4px 18px rgba(27,22,18,.28);margin-bottom:10px;letter-spacing:-.2px">'+
-        'Pay now — Secured by Stripe'+
+      '<button id="_pay-now-btn" onclick="_paySign(\'stripe\')" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;border-radius:12px;border:none;background:#1b1612;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 4px 18px rgba(27,22,18,.28);margin-bottom:10px;letter-spacing:-.2px">'+
+        '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:.9"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'+
+        'Pay Now — Secure Checkout'+
       '</button>'+
       (surchargeOn?'<div style="font-size:11px;color:#b45309;text-align:center;margin-bottom:16px">'+pct+'% fee on credit cards · debit cards &amp; bank transfer are free</div>':'');
   }
-  // Layout (owner-specified 2026-07-14): Pay Now big + center across the top;
-  // beneath it a row of three — "pay later" a small MUTED text-link on the far
-  // LEFT (deliberately the hardest reach for a right thumb, so it's present but
-  // never the path of least resistance), Check in the middle, Cash on the right.
-  // "Pay later" is method-agnostic: signs now, records the balance as owed, and
-  // leaves every payment channel open afterward (hub pay-link or any manual
-  // payment the contractor logs when it lands).
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px">'+
-    '<button onclick="_paySign(\'later\')" style="padding:8px 4px;border:none;background:transparent;color:#a8a29a;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;text-align:left;text-decoration:underline;text-underline-offset:2px;flex-shrink:0">pay later</button>'+
-    '<div style="display:flex;gap:8px;flex:1;justify-content:flex-end">'+
-      '<button onclick="_paySign(\'check\')" style="padding:10px 16px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Check</button>'+
-      '<button onclick="_paySign(\'cash\')" style="padding:10px 16px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Cash</button>'+
-    '</div>'+
+  // Three identical, evenly-spaced options under the hero button (owner
+  // 2026-07-14): Pay Later · Check · Cash — same style, one equal grid.
+  // "Pay Later" is method-agnostic: signs now, records the balance as owed, and
+  // leaves every payment channel open afterward.
+  const _optBtn=(m,label)=>'<button onclick="_paySign(\''+m+'\')" style="padding:11px 8px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">'+label+'</button>';
+  html+='<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:2px">'+
+    _optBtn('later','Pay Later')+
+    _optBtn('check','Check')+
+    _optBtn('cash','Cash')+
   '</div>';
   container.innerHTML=html;
 }
@@ -1553,7 +1554,7 @@ async function _paySign(method){
     console.error(e);
     document.getElementById('pay-err').textContent='Could not open payment. Please try again.';
   }
-  if(btn){btn.disabled=false;btn.innerHTML='Pay now — Secured by Stripe';}
+  if(btn){btn.disabled=false;btn.innerHTML='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:.9;vertical-align:-2px;margin-right:6px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Pay Now — Secure Checkout';}
 }
 async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
   const _p=new URLSearchParams(location.search);
@@ -1619,7 +1620,7 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
     _closeStripeModal();
     document.getElementById('pay-err').textContent=(e?.message||'Could not open payment')+'. Please try again.';
     const btn=document.getElementById('_pay-now-btn');
-    if(btn){btn.disabled=false;btn.innerHTML='Pay now — Secured by Stripe';}
+    if(btn){btn.disabled=false;btn.innerHTML='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:.9;vertical-align:-2px;margin-right:6px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Pay Now — Secure Checkout';}
   }
 }
 async function _submitStripePayment(){
