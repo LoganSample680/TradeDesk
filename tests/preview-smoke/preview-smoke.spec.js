@@ -68,9 +68,16 @@ test.describe('preview deploy smoke — the BUILT artifact on the real origin', 
     // failure (no noisy third-party request failed) still fails the gate.
     const NOISY_ORIGINS = /cloudflareinsights\.com|apple-mapkit|js\.stripe\.com|fonts\.(gstatic|googleapis)\.com/i;
     const noisyFailedUrls = [];
+    // EVERY failed request, with its URL — "Failed to load resource:
+    // net::ERR_FAILED" console text names no URL, which made a red smoke
+    // undiagnosable. The failure message below now says exactly what died.
+    const failedRequests = [];
     page.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
     page.on('pageerror', e => errs.push('PAGEERROR: ' + e.message));
-    page.on('requestfailed', req => { if (NOISY_ORIGINS.test(req.url())) noisyFailedUrls.push(req.url()); });
+    page.on('requestfailed', req => {
+      failedRequests.push(req.url() + ' [' + ((req.failure() || {}).errorText || '?') + ']');
+      if (NOISY_ORIGINS.test(req.url())) noisyFailedUrls.push(req.url());
+    });
     page.on('response', res => { if (!res.ok() && NOISY_ORIGINS.test(res.url())) noisyFailedUrls.push(res.url()); });
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -95,7 +102,7 @@ test.describe('preview deploy smoke — the BUILT artifact on the real origin', 
       if (genericCorsMsg.test(e) && noisyFailedUrls.length) return false; // correlated with a known noisy third-party failure
       return true;
     });
-    expect(real, `console errors on boot: ${real.join(' | ')}`).toHaveLength(0);
+    expect(real, `console errors on boot: ${real.join(' | ')} — failed requests: ${failedRequests.join(' | ') || '(none captured)'}`).toHaveLength(0);
   });
 
   // 2. The Cloudflare `/api` Pages Function is live and reaches Supabase. This worker
