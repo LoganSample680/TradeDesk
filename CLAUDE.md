@@ -641,6 +641,38 @@ other's rows, and a row learned via realtime (`_applyRealtimeRecord` adds it to
 - Files: `js/cloud.js` (`supaSaveToCloud` sweep + `_applyRealtimeRecord`) + every delete
   call site. Re-enable the `offline-sync-race` spec when done.
 
+### 9.9 Onboarding Restructure — Faster, Cleaner, Day-One-Ready (owner-approved backlog 2026-07-14)
+
+The signup wizard grew to 11 steps; only ~4 carry day-one value (account, trade,
+get-paid, booked-jobs). Collapse it to ~5 required screens and push everything
+non-essential to a **dashboard setup checklist** the contractor finishes at their own
+pace — matching the Jobber/Housecall "short signup, setup-as-you-go" pattern, but
+KEEPING the two things that make them operational (payments + booked work) inside the
+wizard, which is our edge.
+
+- **Cut / demote screens:** Role (a solo signup is always Owner — infer it, ask only
+  when they add a team), Review/confirm (create straight from the last step), Brand/logo
+  (fold into Business info), and make **Vehicles optional** (today we force ≥1 — mileage
+  can wait). Defer license # + warranty period out of Business-info into "finish setup."
+- **Target flow (11 → ~5):** Welcome → Account+core business (name/email/password/
+  business/phone/state) → Trade → Get paid (toggles + Stripe) → Booked jobs → dashboard.
+- **The big structural lever:** create the Supabase account **right after email/password**
+  (not at the final step). Then the rest becomes a **resumable setup checklist** — a
+  drop-off leaves a real account you can email back ("finish setting up"), and Stripe/jobs
+  attach live instead of waiting for obSubmit. This also removes the "Stripe can't attach
+  until the account exists" constraint that forced the current auto-launch-after-signup
+  design (§ payment-opt-in work).
+- **Blast radius / caution (§10):** moving account creation earlier reworks `obSubmit`
+  (RLS timing, partial-account state, resume-from-checklist), and every current step's
+  data must persist incrementally rather than in one final write. Careful, fully-tested
+  refactor — architect with owner (§16), build with a **live signup flow test** (§12.8,
+  currently missing — see below) proving zero console errors + data lands in the cloud.
+- **Two lanes:** (1) quick wins — cut Role+Review, optional Vehicles, fold Brand, defer
+  license/warranty (~7 screens, no architectural change); (2) full restructure — the
+  above + early account creation + dashboard checklist. Owner chose the **full restructure**.
+- Files: `js/settings.js` (`_ob`, `renderObStep`, `obStep*`, `obSubmit`), `index.html`
+  (dashboard setup-checklist card), new live flow test `tests/flow/onboarding-signup-flow.spec.js`.
+
 ---
 
 ## 10. Patch-Chain Prohibition — No House-of-Cards Fixing
