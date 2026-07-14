@@ -262,8 +262,6 @@ function renderDash(){
       '</div>';
     }else{_hobbyEl.style.display='none';}
   }
-  // Crew labor tile (contractor + payroll viewer + tracking on) — async, links to Books
-  if(typeof _renderDashCrewToday==='function')_renderDashCrewToday();
   // Employee: show a location-permission fix-it banner only if perms are off
   if(typeof _geoPermissionBanner==='function')_geoPermissionBanner();
 
@@ -2243,9 +2241,11 @@ function renderEstimatesPage(){
 
 // ── Dashboard widget drag-to-reorder ──────────────────────────────────────
 // Every REAL dashboard card is its own widget (owner directive 2026-07-04:
-// "check all dashboard cards and make sure they can be moved"). crew/alerts/
+// "check all dashboard cards and make sure they can be moved"). alerts/
 // contracts/goal were split out of the old kpi+pipeline mega-widgets.
-const _DASH_DEFAULT_ORDER = ['kpi','crew','alerts','contracts','goal','pipeline','feed','quick','calendar','sources'];
+// 'crew' was deleted 2026-07-14 ("simplify before we scale") — a saved order
+// containing it is harmless: _applyDashOrder skips ids with no matching element.
+const _DASH_DEFAULT_ORDER = ['kpi','alerts','contracts','goal','pipeline','feed','quick','calendar','sources'];
 
 // FLIP slide: run a DOM mutation (placeholder move) and animate every shifted
 // sibling from its old position to its new one, so cards GLIDE aside instead of

@@ -75,39 +75,30 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
-  test('Crew Today card labels the cost "Labor cost" (renamed from "Loaded labor")', async ({ page }) => {
+  // 2026-07-14 owner directive ("simplify before we scale"): the Crew Today
+  // dashboard card is DELETED — it duplicated the Time log "Currently clocked
+  // in" banner; crew cost lives in Books (_openCrewCost). Per §7.1 the live
+  // suite asserts the deletion on the real app: function gone, element gone,
+  // and the Books report entry point still intact.
+  test('Crew Today dashboard card is DELETED; Books crew-cost report survives', async ({ page }) => {
     await step(page, {
-      label: 'seed a today time entry, render Crew Today', page: 'pg-dash', role: 'contractor',
-      suspect: 'finance.js _renderDashCrewToday → "Labor cost" label',
-      ruleText: 'the Crew Today card must render and label the cost column "Labor cost", never the old "Loaded labor"',
-      expected: '#dash-crew-today visible with "Labor cost" and no "Loaded labor"',
+      label: 'assert the Crew Today card is gone on the live app', page: 'pg-dash', role: 'contractor',
+      suspect: 'finance.js (deleted _renderDashCrewToday) + dashboard.js renderDash + index.html widget root',
+      ruleText: 'the deleted card must have NO function, NO element, NO crew widget wrapper — and _openCrewCost (Books) must still exist',
+      expected: 'fn gone + element gone + widget gone + Books report intact',
       act: async (p) => {
-        const r = await p.evaluate(async () => {
-          const uid = _supaUser.id;
-          const cid = (typeof _contractorUserId !== 'undefined' && _contractorUserId) || uid;
-          S.teamTracking = true; // owner-only card is gated on this
-          let insErr = null;
-          try {
-            const { error } = await _supa.from('job_time_entries').insert({
-              contractor_user_id: cid, employee_user_id: uid, job_id: String(Date.now() * 1000),
-              minutes: 120, source: 'geofence', arrived_at: new Date().toISOString(),
-            });
-            insErr = error ? (error.message || 'insert error') : null;
-          } catch (e) { insErr = 'ex: ' + (e && e.message); }
-          if (typeof _renderDashCrewToday === 'function') await _renderDashCrewToday();
-          return { insErr };
-        });
-        p.__ins = r.insErr;
+        await p.evaluate(() => { if (typeof renderDash === 'function') renderDash(); });
         await p.waitForTimeout(400);
         return 1;
       },
       rule: async (p) => {
-        const r = await p.evaluate(() => {
-          const el = document.getElementById('dash-crew-today');
-          const html = el ? (el.innerHTML || '') : '';
-          return { rendered: !!el && el.style.display !== 'none', hasNew: html.includes('Labor cost'), hasOld: html.includes('Loaded labor') };
-        });
-        return { ok: r.rendered && r.hasNew && !r.hasOld, got: JSON.stringify({ ...r, ins: p.__ins }) };
+        const r = await p.evaluate(() => ({
+          fnExists: typeof _renderDashCrewToday === 'function',
+          elExists: !!document.getElementById('dash-crew-today'),
+          widgetExists: !!document.querySelector('.td-dw[data-dw="crew"]'),
+          booksIntact: typeof _openCrewCost === 'function' && typeof _fetchCrewLabor === 'function',
+        }));
+        return { ok: !r.fnExists && !r.elExists && !r.widgetExists && r.booksIntact, got: JSON.stringify(r) };
       },
     });
     const rep = report(FLOW, BASELINE, page);

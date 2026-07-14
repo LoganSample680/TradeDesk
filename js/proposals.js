@@ -9,6 +9,25 @@ function setGalleryFilter(f,btn){
   if(btn)btn.classList.add('active');
   renderGallery();
 }
+// Egress fix: route public gallery images through the Cloudflare edge cache
+// (/img/<path>, functions/img/[[path]].js) when the app is served from
+// Cloudflare — repeat views across every device hit Cloudflare, not Supabase.
+// Localhost/dev (no Pages Functions) and non-storage URLs pass through as-is.
+function _cdnPhoto(u){
+  try{
+    if(!u||u.startsWith('data:'))return u;
+    if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return u;
+    const m=u.match(/\/storage\/v1\/object\/public\/(gallery\/.+)$/);
+    return m?'/img/'+m[1]:u;
+  }catch(_e){return u;}
+}
+// onerror handler for CDN-routed images: retry the direct URL once (covers an
+// undeployed /img route or edge miss failure), THEN hide — never a broken tile.
+function _imgFallback(el){
+  const d=el.dataset?el.dataset.dsrc:'';
+  if(d&&el.src!==d){el.src=d;return;}
+  el.style.display='none';
+}
 function renderGallery(){
   const el=document.getElementById('gallery-grid');if(!el)return;
   const sub=document.getElementById('gallery-count-sub');
@@ -31,7 +50,7 @@ function renderGallery(){
       '<div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;padding:0 2px">'+escHtml(name)+'</div>'+
       '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px">'+
       ps.map(p=>'<div onclick="openPhotoViewer(\''+p.id+'\')" style="position:relative;aspect-ratio:1;border-radius:var(--r);overflow:hidden;cursor:pointer;background:var(--bg2);border:1px solid var(--border)">'+
-        '<img src="'+p.url+'" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="this.style.display=\'none\'">'+
+        '<img src="'+_cdnPhoto(p.thumbUrl||p.url)+'" data-dsrc="'+escHtml(p.thumbUrl||p.url)+'" style="width:100%;height:100%;object-fit:cover" loading="lazy" onerror="_imgFallback(this)">'+
         '<div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent,rgba(0,0,0,.6));padding:4px 6px">'+
           '<span style="font-size:9px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:.04em">'+escHtml(p.type)+'</span>'+
         '</div>'+
@@ -47,7 +66,7 @@ function openPhotoViewer(photoId){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
   ov.innerHTML=
     '<button onclick="this.closest(\'div\').remove()" style="position:absolute;top:16px;right:16px;background:rgba(255,255,255,.15);border:none;color:#fff;border-radius:50%;width:36px;height:36px;font-size:18px;cursor:pointer;line-height:1">'+svgIcon('✕',{size:18})+'</button>'+
-    '<img src="'+p.url+'" style="max-width:100%;max-height:80vh;border-radius:var(--r);object-fit:contain">'+
+    '<img src="'+_cdnPhoto(p.url)+'" data-dsrc="'+escHtml(p.url)+'" onerror="_imgFallback(this)" style="max-width:100%;max-height:80vh;border-radius:var(--r);object-fit:contain">'+
     '<div style="margin-top:12px;text-align:center">'+
       '<div style="font-size:12px;font-weight:700;color:rgba(255,255,255,.7);text-transform:uppercase;letter-spacing:.06em">'+escHtml(p.type)+'</div>'+
       (p.caption?'<div style="font-size:13px;color:#fff;margin-top:4px">'+escHtml(p.caption)+'</div>':'')+
@@ -106,22 +125,27 @@ async function processGalleryUpload(input){
   let uploaded=0;
   for(const file of files){
     try{
-      let url='',storagePath='';
+      let url='',storagePath='',thumbUrl='',thumbPath='';
       if(supaEnabled()&&_supaUser){
-        const ext=file.name.split('.').pop()||'jpg';
+        // Compress + thumbnail (egress fix, shared helper in jobs.js). null → original.
+        const _cp=typeof _compressPhoto==='function'?await _compressPhoto(file):null;
+        const ext=_cp?_cp.ext:(file.name.split('.').pop()||'jpg');
         const path='gallery/'+_effectiveUid()+'/'+Date.now()+'_'+Math.random().toString(36).slice(2)+'.'+ext;
-        const{error}=await _supa.storage.from('gallery').upload(path,file,{contentType:file.type,upsert:false});
+        const{error}=await _supa.storage.from('gallery').upload(path,_cp?_cp.blob:file,{contentType:_cp?_cp.mime:file.type,upsert:false,cacheControl:typeof _PHOTO_CACHE!=='undefined'?_PHOTO_CACHE:'31536000'});
         if(!error){
           const{data:urlData}=_supa.storage.from('gallery').getPublicUrl(path);
           url=urlData?.publicUrl||'';
-          if(url)storagePath=path;
+          if(url){
+            storagePath=path;
+            if(_cp&&typeof _uploadPhotoThumb==='function'){({thumbUrl,thumbPath}=await _uploadPhotoThumb(_cp.thumb,path));}
+          }
         }
       }
       if(!url){
         // Fallback: base64 for offline (large but works)
         url=await new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsDataURL(file);});
       }
-      photos.push({id:Date.now()+Math.random(),url,storagePath,type:ptype,caption,job_id:selectedJobId,job_name:(job?job.name:null)||'',client_id:(c?c.id:null)||null,client_name:(c?c.name:null)||'',uploadedAt:new Date().toISOString()});
+      photos.push({id:Date.now()+Math.random(),url,storagePath,thumbUrl,thumbPath,type:ptype,caption,job_id:selectedJobId,job_name:(job?job.name:null)||'',client_id:(c?c.id:null)||null,client_name:(c?c.name:null)||'',uploadedAt:new Date().toISOString()});
       uploaded++;
       if(status)status.textContent='Uploaded '+uploaded+'/'+files.length;
     }catch(e){console.warn('photo upload:',e);}
@@ -162,11 +186,11 @@ function _buildClientHubSnapshot(clientId){
   });
   const clientPhotos=photos.filter(p=>p.client_id===clientId);
   const snapshotJobs=cjobs.map(j=>{
-    const jPhotos=clientPhotos.filter(p=>p.job_id===j.id).map(p=>({url:p.url,type:p.type,caption:p.caption||'',uploadedAt:p.uploadedAt||''}));
+    const jPhotos=clientPhotos.filter(p=>p.job_id===j.id).map(p=>({url:p.url,thumbUrl:p.thumbUrl||'',type:p.type,caption:p.caption||'',uploadedAt:p.uploadedAt||''}));
     return {id:j.id,bid_id:j.bid_id||null,name:j.name||'Job',start:j.start||'',days:j.days||0,status:j.status||'scheduled',completion_date:j.completion_date||'',photos:jPhotos};
   });
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
-  const jobPhotos=clientPhotos.map(p=>({url:p.url,type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null,uploadedAt:p.uploadedAt||''}));
+  const jobPhotos=clientPhotos.map(p=>({url:p.url,thumbUrl:p.thumbUrl||'',type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null,uploadedAt:p.uploadedAt||''}));
   // Extract optional chaining BEFORE the return object — Safari crashes on ?. inside { }
   const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
@@ -179,7 +203,13 @@ function _buildClientHubSnapshot(clientId){
   return {
     clientId,clientName:c.name,clientEmail:c.email||'',clientPhone:c.phone||'',clientAddr:c.addr||'',
     contractorName:S.bname||'TradeDesk',contractorPhone:S.bphone||'',
-    brandColor:adaBrand(S.brandColor)||'',logoData:S.logoData||'',bwebsite:S.bwebsite||'',
+    brandColor:adaBrand(S.brandColor)||'',
+    // logoUrl when the CURRENT logo is confirmed uploaded (hash match); base64
+    // logoData only as the fallback so the snapshot stays small in the normal
+    // case. client.html renders logoUrl||logoData — old snapshots keep working.
+    logoUrl:(S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?S.logoUrl:'',
+    logoData:(S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?'':(S.logoData||''),
+    bwebsite:S.bwebsite||'',
     // Trust signals (research: the #1 close-rate lever is trust clustered near the
     // sign CTA). Contractor-global, surfaced from Settings. HONESTY GATE: the
     // "Licensed & Insured" claim only renders for what the contractor can actually
@@ -236,6 +266,34 @@ function _ensureClientToken(clientId){
 }
 // Cheap deterministic hash of the hub JSON — gates redundant re-uploads.
 function _hubHash(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0;}return h;}
+// Egress fix: the hub snapshot used to EMBED S.logoData (base64, "can be several
+// MB" per data.js) in every client hub JSON — re-downloaded on every hub open and
+// re-uploaded on every hub refresh, for every client. Upload the logo ONCE to
+// storage (immutable, hash-addressed, long cache) and put a URL in the snapshot
+// instead. Fallback chain keeps every failure mode on today's behavior: upload
+// fails → snapshot embeds base64 exactly as before; old snapshots already out
+// there carry logoData and client.html renders whichever field it finds.
+async function _ensureLogoUrl(){
+  try{
+    if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser||!S.logoData)return '';
+    const _h=String(_hubHash(S.logoData));
+    if(S.logoUrl&&S.logoHash===_h)return S.logoUrl; // current logo already uploaded
+    const m=S.logoData.match(/^data:(image\/[a-z0-9+.-]+);base64,(.*)$/s);
+    if(!m)return '';
+    const bytes=Uint8Array.from(atob(m[2]),ch=>ch.charCodeAt(0));
+    const blob=new Blob([bytes],{type:m[1]});
+    const ext=(m[1].split('/')[1]||'png').replace('svg+xml','svg').replace('jpeg','jpg');
+    // Hash in the path = a changed logo gets a NEW immutable URL; cacheControl a
+    // year so browsers + CDN absorb every repeat view.
+    const path=_effectiveUid()+'/branding/logo-'+_h.replace('-','n')+'.'+ext;
+    const{error}=await _supa.storage.from('gallery').upload(path,blob,{contentType:m[1],upsert:true,cacheControl:'31536000'});
+    if(error)return '';
+    const{data}=_supa.storage.from('gallery').getPublicUrl(path);
+    const url=data?data.publicUrl||'':'';
+    if(url){S.logoUrl=url;S.logoHash=_h;saveAll();}
+    return url;
+  }catch(_e){return '';}
+}
 // ── Client-hub live push ──────────────────────────────────────────────────
 // client.html polls its storage snapshot every 30s (_refreshHub) as the
 // guaranteed path. This broadcast is purely an accelerator — a content-free
@@ -275,6 +333,9 @@ async function _uploadClientHub(clientId){
   const baseUrl=_clientBaseUrl();
   const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
   const doUpload=async()=>{
+    // Logo lands in storage first so the snapshot carries a URL, not megabytes
+    // of base64. Any failure returns '' and the snapshot embeds as before.
+    await _ensureLogoUrl();
     const snapshot=_buildClientHubSnapshot(clientId);
     if(!snapshot)return;
     snapshot.token=c.clientToken;

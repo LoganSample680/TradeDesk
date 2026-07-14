@@ -911,7 +911,7 @@ function handleLogoUpload(input){
   reader.readAsDataURL(file);
 }
 function clearLogoSetting(){
-  S.logoData='';_settingsChanged();_renderLogoPreview();_updateBootPreview();
+  S.logoData='';S.logoUrl='';S.logoHash='';_settingsChanged();_renderLogoPreview();_updateBootPreview();
   showToast('Logo removed — proposals will show business name','✓');
 }
 // Crew "today"/contractor labor isn't a local store — it's cloud time-tracking

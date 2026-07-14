@@ -1,3 +1,11 @@
 {
-  "_comment": "Per-flow click/time baselines for the performance ratchet (CLAUDE.md §13). CAPTURE MODE: all flows are being recounted to reflect REAL user interactions (every field fill/tap/keystroke = 1, not 1 per evaluate-block). Once the honest numbers stabilize in CI, copy each flow's reported click count here to start HARD-GATING it. A flow listed here may not increase its click count vs baseline; improvements ratchet it DOWN. Time is advisory only."
+  "_comment": "Per-flow click/time baselines for the performance ratchet (CLAUDE.md \u00a713). CAPTURE MODE: all flows are being recounted to reflect REAL user interactions (every field fill/tap/keystroke = 1, not 1 per evaluate-block). Once the honest numbers stabilize in CI, copy each flow's reported click count here to start HARD-GATING it. A flow listed here may not increase its click count vs baseline; improvements ratchet it DOWN. Time is advisory only.",
+  "lifecycle/lead-to-paid-tm": {
+    "clicks": 114,
+    "note": "Whole-business floor (2026-07-14 capture): lead 57 + T&M estimate 19 + send 1 + client sign 24 + realtime popup 0 + schedule 2 + time 2 + complete 2 + final pay 7. Raise ONLY for a deliberate new lifecycle step, in the same commit."
+  },
+  "lifecycle/lead-to-paid-byo": {
+    "clicks": 187,
+    "note": "Whole-business floor, BYO variant (2026-07-14 capture). The 90-click estimate step is the standing streamline target (templates/price-book)."
+  }
 }

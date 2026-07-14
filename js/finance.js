@@ -2614,33 +2614,10 @@ async function _fetchCrewLabor(sinceISO){
   }catch(_e){}
   return out;
 }
-// Dashboard "Crew today" tile — links into Books for the full report.
-async function _renderDashCrewToday(){
-  const el=document.getElementById('dash-crew-today');if(!el)return;
-  if(_isEmployee||!(typeof _canViewComp==='function'&&_canViewComp())||!S.teamTracking||!supaEnabled()||!_supaUser){el.style.display='none';return;}
-  const since=new Date(Date.now()-26*3600000).toISOString();
-  const data=await _fetchCrewLabor(since);
-  const today=_ctDateStr(new Date());
-  // Exclude drive entries — dashboard shows on-site productive time, not total clock
-  const todays=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))===today&&en.source!=='drive');
-  if(!todays.length){el.style.display='none';return;}
-  const byUid={};let totMin=0,totCost=0;
-  todays.forEach(en=>{const uid=en.employee_user_id,m=en.minutes||0;byUid[uid]=(byUid[uid]||0)+m;totMin+=m;totCost+=(m/60)*(data.loaded[uid]||0);});
-  const rows=Object.keys(byUid).sort((a,b)=>byUid[b]-byUid[a]).slice(0,4).map(uid=>{
-    const h=byUid[uid]/60, cost=(byUid[uid]/60)*(data.loaded[uid]||0);
-    return '<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0"><span>'+escHtml(data.name[uid]||'Crew')+'</span><span style="color:var(--text2)">'+h.toFixed(1)+'h · '+fmt(cost)+'</span></div>';
-  }).join('');
-  el.style.display='block';
-  el.innerHTML='<div onclick="goToTrackerTab(\'jobs\')" style="cursor:pointer;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
-    '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">'+
-      '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">'+svgIcon('👷',{size:13})+' Crew today</div>'+
-      '<div style="font-size:11px;color:var(--blue);font-weight:700">Books ›</div>'+
-    '</div>'+
-    '<div style="display:flex;gap:18px;margin-bottom:8px">'+
-      '<div><div style="font-size:10px;color:var(--text3)">On the clock</div><div style="font-size:18px;font-weight:800">'+(totMin/60).toFixed(1)+'h</div></div>'+
-      '<div><div style="font-size:10px;color:var(--text3)">Labor cost</div><div style="font-size:18px;font-weight:800;color:var(--c-red)">'+fmt(totCost)+'</div></div>'+
-    '</div>'+rows+'</div>';
-}
+// The dashboard "Crew today" tile was DELETED 2026-07-14 (owner: "simplify
+// before we scale") — it duplicated the Time log page's live "Currently
+// clocked in" banner. Crew hours live there; crew COST lives in Books via
+// _openCrewCost below. _fetchCrewLabor stays (Books + timelog use it).
 // Per-employee Crew Cost report (Today / This week), with per-job breakdown.
 async function _openCrewCost(){
   if(typeof _canViewComp==='function'&&!_canViewComp()){zAlert('You need the Pay & profit permission to view this.');return;}

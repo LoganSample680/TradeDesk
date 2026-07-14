@@ -658,6 +658,31 @@ let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(lo
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+// Egress fix: route public gallery images through the Cloudflare edge cache
+// (/img/<path>) when served from Cloudflare — repeat hub views hit Cloudflare,
+// not Supabase. Localhost/dev and non-storage URLs pass through untouched.
+function _cdnPhoto(u){
+  try{
+    if(!u||u.startsWith('data:'))return u;
+    if(location.hostname==='localhost'||location.hostname==='127.0.0.1')return u;
+    const m=u.match(/\/storage\/v1\/object\/public\/(gallery\/.+)$/);
+    return m?'/img/'+m[1]:u;
+  }catch(_e){return u;}
+}
+// Image fallback: retry the direct URL once before hiding — an undeployed /img
+// route or edge failure degrades to the pre-fix direct load, never a blank tile.
+function _imgFallback(el,mode){
+  const d=el.dataset?el.dataset.dsrc:'';
+  if(d&&el.src!==d){el.src=d;return;}
+  if(mode==='parent'&&el.parentElement)el.parentElement.style.display='none';
+  else el.style.display='none';
+}
+// src + fallback attributes for a hub photo <img>: 360px thumbnail in grids
+// (thumbUrl, new uploads) falling back to the full image (legacy photos).
+function _hubImgAttrs(p,mode){
+  const t=p.thumbUrl||p.url;
+  return 'src="'+esc(_cdnPhoto(t))+'" data-dsrc="'+esc(t)+'" onerror="_imgFallback(this,\''+(mode||'self')+'\')"';
+}
 // Business name for client-facing copy. Returns the escaped business name when the hub
 // has loaded one, otherwise the generic fallback ("your contractor" / "Your contractor").
 // _cn = HTML-safe (for innerHTML); _cnText = raw string (for textContent / titles).
@@ -834,23 +859,46 @@ async function _refreshHub(){
     _renderActiveView();
   }catch(e){}finally{_hubRefreshBusy=false;}
 }
+// Poll cadence (egress): the live-push channel below delivers changes in seconds,
+// so while it's healthy the poll is only a safety net — every 10th tick (5 min).
+// Channel down, never connected, or errored → every tick (30s), today's exact
+// behavior. _hubPollTick is a named function so tests can drive it directly.
+let _hubTickN=0;
+function _hubPollTick(){
+  _hubTickN++;
+  if(_hubLiveOk&&(_hubTickN%10)!==0)return;
+  _refreshHub();
+}
 function _startHubRefresh(){
   if(_hubRefreshTimer)clearInterval(_hubRefreshTimer); // never stack timers
-  _hubRefreshTimer=setInterval(_refreshHub,30000);
+  _hubTickN=0;
+  _hubRefreshTimer=setInterval(_hubPollTick,30000);
 }
 // Live push — a content-free "something changed" nudge on a per-client Realtime
 // broadcast channel (mirrors the contractor app's sig-feed-<uid> pattern), so a
 // status change lands in seconds instead of waiting out the 30s poll above. The
 // poll stays as-is: if this channel never connects or a message drops, the next
 // tick still catches up — nothing here is required for correctness.
-let _hubLiveChan=null;
+let _hubLiveChan=null,_hubLiveOk=false;
 function _startHubLiveChannel(u,c){
   if(!_supa||_hubLiveChan)return;
   try{
     _hubLiveChan=_supa.channel('hub-upd-'+u+'-'+c);
     _hubLiveChan.on('broadcast',{event:'updated'},()=>{_refreshHub();});
-    _hubLiveChan.subscribe();
+    // Health-tracked: _hubLiveOk gates the poll cadence above. Anything short of
+    // a confirmed SUBSCRIBED (error, timeout, close, never-connected) keeps the
+    // 30s poll — the stretched cadence only applies while push provably works.
+    _hubLiveChan.subscribe((s)=>{
+      if(s==='SUBSCRIBED'){if(!_hubLiveOk&&_hubTickN>0)_refreshHub();_hubLiveOk=true;}
+      else if(s==='CLOSED'||s==='CHANNEL_ERROR'||s==='TIMED_OUT')_hubLiveOk=false;
+    });
   }catch(e){}
+}
+// Nudge peers (the same client's other open tabs/devices) after this tab writes
+// a signing state change — the snapshot in storage doesn't change on a client-side
+// signature, so without this only the poll would carry it to other tabs.
+function _hubNudgePeers(){
+  try{if(_hubLiveChan&&_hubLiveOk)_hubLiveChan.send({type:'broadcast',event:'updated',payload:{}});}catch(_e){}
 }
 async function init(){
   const p=new URLSearchParams(location.search);
@@ -1151,7 +1199,10 @@ function applyBranding(h){
   const _cnName=(h.contractorName||'').trim();
   if(_cnName)document.querySelectorAll('.hub-cn-name').forEach(el=>{el.textContent=_cnName;});
   const logoEl=document.getElementById('topbar-logo-img'),nameEl=document.getElementById('topbar-name');
-  if(h.logoData){logoEl.src=h.logoData;logoEl.style.display='block';nameEl.style.display='none';}
+  // logoUrl (new snapshots — hosted once, cached forever) with base64 logoData
+  // as the legacy fallback so hubs uploaded before the egress fix keep working.
+  const _hLogo=h.logoUrl||h.logoData;
+  if(_hLogo){logoEl.src=_hLogo;logoEl.style.display='block';nameEl.style.display='none';}
   else{nameEl.textContent=h.contractorName||'Project Hub';logoEl.style.display='none';}
   const nci=document.getElementById('nav-client-info');
   if(nci)nci.innerHTML='<div class="nav-client-name">'+esc(h.clientName||'')+'</div>'+(h.clientAddr?'<div class="nav-client-addr">'+esc(h.clientAddr)+'</div>':'');
@@ -1169,8 +1220,8 @@ function applyBranding(h){
   // to ANY of this contractor's hubs shows them instantly at boot (before fetch).
   try{const _uid=new URLSearchParams(location.search).get('u');if(_uid)localStorage.setItem('td_hub_brand_'+_uid,JSON.stringify({name:h.contractorName||'',color:h.brandColor||''}));}catch(e){}
   const bl=document.getElementById('boot-logo'),blw=document.getElementById('boot-logo-wrap');
-  if(bl&&blw&&h.logoData){
-    bl.src=h.logoData;blw.style.display='flex';
+  if(bl&&blw&&_hLogo){
+    bl.src=_hLogo;blw.style.display='flex';
     const bm=document.getElementById('boot-mark');if(bm)bm.style.display='none';
   }
   const bb=document.getElementById('boot-bar');
@@ -1232,9 +1283,10 @@ function renderOverview(){
     {type:'change_order',id:'co1',label:'Add garage door trim',amount:420,status:'pending'}
   ];
 
-  // Hero
-  let html='<div class="hub-hero'+(h.logoData?' has-badge':'')+'">';
-  if(h.logoData)html+='<div class="hub-hero-badge"><img src="'+esc(h.logoData)+'" alt=""></div>';
+  // Hero — logoUrl (new snapshots) falls back to embedded logoData (legacy).
+  const _heroLogo=h.logoUrl||h.logoData;
+  let html='<div class="hub-hero'+(_heroLogo?' has-badge':'')+'">';
+  if(_heroLogo)html+='<div class="hub-hero-badge"><img src="'+esc(_heroLogo)+'" alt=""></div>';
   html+='<div class="hub-hero-l">';
   html+='<div class="hub-hero-eyebrow">Your project hub</div>';
   html+='<div class="hub-hero-greeting">'+esc(firstName)+'</div>';
@@ -1485,14 +1537,14 @@ function renderProject(){
         const b=beforePhotos[beforePhotos.length-1];
         const bIdx=jobPhotos.indexOf(b);
         html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+bIdx+')" aria-label="Before">';
-        html+='<img src="'+esc(b.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<img '+_hubImgAttrs(b,'parent')+' loading="lazy">';
         html+='<div class="hub-photo-tag">Before</div></div>';
       }else html+='<div></div>';
       if(afterPhotos.length){
         const a=afterPhotos[afterPhotos.length-1];
         const aIdx=jobPhotos.indexOf(a);
         html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+aIdx+')" aria-label="After">';
-        html+='<img src="'+esc(a.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<img '+_hubImgAttrs(a,'parent')+' loading="lazy">';
         html+='<div class="hub-photo-tag">After</div></div>';
       }else html+='<div></div>';
       html+='</div>';
@@ -1511,7 +1563,7 @@ function renderProject(){
         html+='<div class="hub-log-body">';
         html+='<div class="hub-log-date">'+(dayNum&&dayNum>0?'Day '+dayNum+(dateLabel?' · '+dateLabel:''):dateLabel)+'</div>';
         html+='<div class="hub-log-text">'+(p.caption?esc(p.caption):'Progress photo')+'</div>';
-        html+='<div class="hub-log-photos"><img class="hub-log-photo-sq" src="'+esc(p.url)+'" loading="lazy" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')" onerror="this.style.display=\'none\'"></div>';
+        html+='<div class="hub-log-photos"><img class="hub-log-photo-sq" '+_hubImgAttrs(p,'self')+' loading="lazy" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')"></div>';
         html+='</div></div>';
       });
       html+='</div>';
@@ -1521,7 +1573,7 @@ function renderProject(){
       otherPhotos.forEach(p=>{
         const idx=jobPhotos.indexOf(p);
         html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.jobs['+jobIdx+'].photos,'+idx+')">';
-        html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+        html+='<img '+_hubImgAttrs(p,'parent')+' loading="lazy">';
         html+='</div>';
       });
       html+='</div>';
@@ -1542,7 +1594,7 @@ function renderProject(){
       const i=allPhotos.indexOf(p);
       const tag=p.type==='before'?'Before':p.type==='after'?'After':p.type==='before-after'?'B&A':p.type==='progress'?'Progress':'';
       html+='<div class="hub-photo-thumb" onclick="openLightbox(_hub.photos,'+i+')">';
-      html+='<img src="'+esc(p.url)+'" loading="lazy" onerror="this.parentElement.style.display=\'none\'">';
+      html+='<img '+_hubImgAttrs(p,'parent')+' loading="lazy">';
       if(tag)html+='<div class="hub-photo-tag">'+tag+'</div>';
       html+='</div>';
     });
@@ -2008,6 +2060,7 @@ async function _submitCOHubSign(bidId,coNum){
     }
     // Instant contractor-tab refresh (same-browser) — cloud.js listens for this key
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum}));}catch(_){}
+    _hubNudgePeers(); // other hub tabs/devices of this client see the signature in seconds, not at the next poll
     co.signedAt=ts;co.signerName=name;co.sigData=sigData;co.status='signed';
     const _newAmt=co.newAmount!=null?co.newAmount:(bid.amount||0)+(co.delta||0);
     bid.balance=Math.max(0,(bid.balance||0)+(_newAmt-(bid.amount||0)));
@@ -2620,7 +2673,13 @@ function _lbRender(){
   const p=_lbPhotos[_lbIdx];if(!p)return;
   const img=document.getElementById('hub-lb-img');
   const tag=document.getElementById('hub-lb-tag');
-  if(img)img.src=p.url||p;
+  // Full-resolution in the lightbox (never the thumb), via the edge cache with
+  // a one-shot direct-URL fallback if the /img route isn't available.
+  if(img){
+    const _direct=p.url||p;
+    img.onerror=()=>{if(img.src!==_direct){img.src=_direct;}else{img.onerror=null;}};
+    img.src=_cdnPhoto(_direct);
+  }
   if(tag)tag.textContent=p.caption||(p.date?fmtDate(p.date):'')||((_lbIdx+1)+' / '+_lbPhotos.length);
   // hide arrows if only 1 photo
   document.querySelectorAll('.hub-lb-arrow').forEach(a=>a.style.display=_lbPhotos.length<2?'none':'flex');
