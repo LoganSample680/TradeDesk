@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.14.26.19';
+const APP_VERSION='07.14.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5100,6 +5100,17 @@ function _signStepBadge(bidId){
   return'<div style="font-size:11px;font-weight:800;color:'+meta.color+';margin-top:2px">'+svgIcon('⚡',{size:11})+' '+meta.label+'</div>';
 }
 function showScheduleAlerts(){
+  // Never pop over the boot spinner (owner report 2026-07-14: "popup scheduler
+  // is coming in way before the spinner completely boots"). The boot poll can
+  // find signatures within the first second — wait for the overlay to finish
+  // its fade before surfacing the modal, retrying on a short timer.
+  const _bootOv=document.getElementById('supa-boot-overlay');
+  if(_bootOv&&_bootOv.isConnected&&getComputedStyle(_bootOv).display!=='none'&&parseFloat(getComputedStyle(_bootOv).opacity)>0.05){
+    if(window._schedAlertWaiting)return; // one retry chain only — boot poll + 30s tick can both land here
+    window._schedAlertWaiting=true;
+    setTimeout(()=>{window._schedAlertWaiting=false;showScheduleAlerts();},700);
+    return;
+  }
   let alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
   // Discard any alerts whose bid no longer exists locally — they can't be scheduled
   alerts=alerts.filter(a=>bids.find(b=>String(b.id)===String(a.bidId)));

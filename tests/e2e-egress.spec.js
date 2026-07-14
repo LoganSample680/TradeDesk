@@ -196,6 +196,33 @@ test.describe('egress — signature-poll watermark', () => {
     expect(r.polls, 'second call must trigger a trailing rerun — 2 polls, not 1').toBe(2);
   });
 
+  test('schedule popup NEVER surfaces over the boot spinner — it defers until the overlay is gone', async () => {
+    const r = await page.evaluate(async () => {
+      // Recreate the boot overlay (the booted test app already removed it).
+      const ov = document.createElement('div');
+      ov.id = 'supa-boot-overlay';
+      ov.style.cssText = 'position:fixed;inset:0;display:flex;opacity:1';
+      document.body.appendChild(ov);
+      bids = bids.filter(b => String(b.id) !== '990009');
+      bids.push({ id: 990009, client_id: 77009, client_name: 'Boot Gate', amount: 900, status: 'Closed Won', draft: false });
+      localStorage.setItem('zp3_schedule_alerts', JSON.stringify([{ name: 'Boot Gate', bidId: 990009, clientId: 77009, isPaid: false }]));
+      window._showingScheduleAlert = false; window._schedAlertWaiting = false;
+      showScheduleAlerts();
+      const duringBoot = !!document.getElementById('_sched-alert-overlay');
+      const waiting = !!window._schedAlertWaiting;
+      ov.remove();                                  // boot finishes
+      await new Promise(res => setTimeout(res, 900)); // retry timer fires
+      const afterBoot = !!document.getElementById('_sched-alert-overlay');
+      document.getElementById('_sched-alert-overlay')?.remove();
+      window._showingScheduleAlert = false;
+      localStorage.setItem('zp3_schedule_alerts', '[]');
+      return { duringBoot, waiting, afterBoot };
+    });
+    expect(r.duringBoot, 'modal must NOT appear while the boot overlay is visible').toBe(false);
+    expect(r.waiting, 'a single deferral chain must be armed').toBe(true);
+    expect(r.afterBoot, 'modal appears once the overlay is gone').toBe(true);
+  });
+
   test('restore real _supa + no console errors from the watermark suite', async () => {
     await page.evaluate(() => { if (window.__origSupa) _supa = window.__origSupa; });
     assertNoErrors(page, 'signature-poll watermark');
