@@ -3258,6 +3258,49 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.off, 'toggling a method off records false on _ob').toBe(true);
   });
 
+  // Booked-jobs import step (owner 2026-07-14): onboarding step 10 imports work
+  // already sold — each row becomes a lead + a job on the calendar.
+  test('obStepJobs — renders the import step; obAddJob appends a row', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obStepJobs !== 'function' || typeof obAddJob !== 'function') return { skip: true };
+      _ob.jobs = [];
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      obStepJobs(el);
+      const askCopy = /jobs already booked/i.test(el.textContent);
+      obAddJob();
+      const rowsAfter = _ob.jobs.length;
+      const hasClientInput = !!document.querySelector('#ob-body input[placeholder="Client name"]');
+      el.remove();
+      return { askCopy, rowsAfter, hasClientInput };
+    });
+    if (result.skip) return;
+    expect(result.askCopy, 'step asks about already-booked jobs').toBe(true);
+    expect(result.rowsAfter, 'obAddJob appends a job row').toBe(1);
+    expect(result.hasClientInput, 'row renders a client-name field').toBe(true);
+  });
+
+  test('obNextJobs — a row with data but no client name is flagged, not silently dropped', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obNextJobs !== 'function') return { skip: true };
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      // Ensure an ob-err target exists for the message.
+      const err = document.createElement('div'); err.id = 'ob-err'; el.appendChild(err);
+      _ob.step = 10;
+      _ob.jobs = [{ client: '', addr: '', start: '', value: '4200' }]; // value but no name
+      obNextJobs();
+      const blocked = _ob.step === 10 && /client name/i.test(err.textContent || '');
+      // Now give it a name — it should advance to the review step (11).
+      _ob.jobs = [{ client: 'Maria Alvarez', addr: '', start: '', value: '4200' }];
+      obNextJobs();
+      const advanced = _ob.step === 11;
+      el.remove();
+      return { blocked, advanced };
+    });
+    if (result.skip) return;
+    expect(result.blocked, 'incomplete row blocks + shows an error').toBe(true);
+    expect(result.advanced, 'a named row lets the step advance').toBe(true);
+  });
+
   test('no console errors during cloud realtime/LP/onboarding tests', async () => {
     assertNoErrors(page, 'cloud realtime/LP/onboarding');
   });
