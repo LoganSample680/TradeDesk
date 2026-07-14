@@ -503,7 +503,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     </div>
     <div id="checkout-embed-container" style="padding:12px 12px 0"></div>
     <div style="padding:12px 18px 18px">
-      <button id="checkout-submit-btn" onclick="_submitCheckoutPayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(180,40,40,.30)">Pay — Secured by Stripe</button>
+      <button id="checkout-submit-btn" onclick="_submitCheckoutPayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(180,40,40,.30)">Pay — Secure Checkout</button>
       <div id="checkout-pay-err" style="font-size:12px;color:#c0392b;text-align:center;margin-top:8px;min-height:16px"></div>
     </div>
   </div>
@@ -1667,7 +1667,7 @@ function renderPayments(){
       html+='<div style="background:var(--bg-card);padding:14px 16px;border-bottom:1px solid var(--border)">';
       const surchargeOn=!!h.ccSurchargeEnabled;
       const pct=h.ccSurchargePct||3;
-      const bigBtn=(fn,amtCents,label)=>'<button id="pay-btn-'+bid_id+'" onclick="'+fn+'('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30);margin-bottom:10px">'+label+' — Secured by Stripe</button>';
+      const bigBtn=(fn,amtCents,label)=>'<button id="pay-btn-'+bid_id+'" onclick="'+fn+'('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30);margin-bottom:10px">'+label+' — Secure Checkout</button>';
       if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
         html+=bigBtn('payBalance',Math.round(balance*100),'Pay in full '+fmt(balance));
         html+='<div style="font-size:10px;color:var(--text3);margin-bottom:8px;text-align:center">— or —</div>';
@@ -2360,10 +2360,10 @@ async function _launchCheckout(bidId,amount,label){
   _stripeCheckoutBidId=bidId;
   // Open modal with loading state immediately
   document.getElementById('stripe-modal-biz').textContent=_hub.contractorName||'Secure Payment';
-  document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secured by Stripe';
+  document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secure Checkout';
   document.getElementById('checkout-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center"><div class="hub-spinner"></div><div style="color:#9ca3af;font-size:14px">Loading payment options…</div></div>';
   const submitBtn=document.getElementById('checkout-submit-btn');
-  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secured by Stripe';}
+  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secure Checkout';}
   document.getElementById('stripe-overlay').style.display='block';
   document.body.style.overflow='hidden';
   if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}
@@ -2430,7 +2430,7 @@ async function _submitCheckoutPayment(){
       const errEl=document.getElementById('checkout-pay-err');
       if(errEl)errEl.textContent=error.message||'Payment failed. Please try again.';
     }
-    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeCheckoutAmt/100)+' — Secured by Stripe';}
+    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeCheckoutAmt/100)+' — Secure Checkout';}
   }
 }
 function closePaymentModal(){
@@ -2454,7 +2454,7 @@ async function payDeposit(bidId){
   await _launchCheckout(bidId,amount,'Pay deposit');
 }
 function _pay4Btns(bidId,fn,amt,h){
-  return '<button id="pay-btn-'+bidId+'" onclick="'+fn+'('+bidId+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30)">Pay '+fmt(amt)+' — Secured by Stripe</button>';
+  return '<button id="pay-btn-'+bidId+'" onclick="'+fn+'('+bidId+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30)">Pay '+fmt(amt)+' — Secure Checkout</button>';
 }
 function _showCashMsg(){
   const biz=escHtml(_hub.contractorName||'your contractor');
@@ -2547,7 +2547,7 @@ function openInvoice(bidId){
   html+='<div style="background:'+bdBg+';border:2px solid '+bdBrd+';border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center">';
   html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full '+svgIcon('✓',{size:12}):'Balance due')+'</div>';
   html+='<div style="font-size:11px;color:'+bdClr+';margin-top:3px">'+(isPaid?'Thank you for your business!':'Please remit payment at your earliest convenience')+'</div>';
-  if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay now — Secured by Stripe</button>';
+  if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay now — Secure Checkout</button>';
   html+='</div><div style="font-size:28px;font-weight:800;color:'+bdClr+'">'+fmt(balance)+'</div></div>';
   html+='<div class="inv-footer-text">'+esc(h.contractorName)+' · '+(h.contractorPhone?esc(h.contractorPhone)+' · ':'')+'Thank you for choosing us!</div>';
   html+='<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">';
