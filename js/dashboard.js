@@ -91,13 +91,22 @@ function _renderDashSetupTodo(){
     drive.title=hasVehicle?'':'Add a vehicle first to log mileage';
   }
   if(typeof _isEmployee!=='undefined'&&_isEmployee){el.style.display='none';el.innerHTML='';return;}
-  const items=[];
-  if(!hasVehicle){
-    items.push({icon:'🚗',title:'Add your first vehicle',
-      sub:'Unlocks mileage tracking, the Drive button, and vehicle tax deductions. Add the vehicle and its current odometer.',
-      cta:'Add vehicle',onclick:'openAddVehicleModal()'});
-  }
-  // Future setup tasks (Stripe, logo, team) land here as they move out of onboarding.
+  // The full setup checklist (owner 2026-07-14): every task shows from day one and
+  // drops off the moment it's done (or the contractor skips an optional one); the
+  // whole card collapses once nothing is left. Add tasks here as more move out of
+  // the signup wizard (§9.9).
+  const skipped=Array.isArray(S.setupSkipped)?S.setupSkipped:[];
+  const stripeOk=!!(typeof _stripeConnectStatus!=='undefined'&&_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
+  const hasLogo=!!(S.logoData||S.logoUrl);
+  const ALL=[
+    {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your first vehicle',
+      sub:'Unlocks mileage tracking, the Drive button, and vehicle tax deductions — add the vehicle and its current odometer.',cta:'Add vehicle'},
+    {id:'getpaid',done:stripeOk,icon:'💳',title:'Set up card payments',
+      sub:'Connect Stripe so clients can pay deposits straight to your bank. Cash & check work without it.',cta:'Connect'},
+    {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
+      sub:'Shows on every proposal you send and your client hub — looks pro from the first estimate.',cta:'Add logo'},
+  ];
+  const items=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
   if(!items.length){el.style.display='none';el.innerHTML='';return;}
   el.style.display='block';
   el.innerHTML=
@@ -108,19 +117,32 @@ function _renderDashSetupTodo(){
         '<span style="margin-left:auto;font-size:11px;font-weight:700;color:var(--blue)">'+items.length+' to go</span>'+
       '</div>'+
       items.map(it=>
-        '<button onclick="'+it.onclick+'" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 16px;border:none;background:none;cursor:pointer;font-family:inherit;border-bottom:1px solid var(--border)">'+
+        '<div class="td-setup-row" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">'+
           '<span style="width:34px;height:34px;flex-shrink:0;border-radius:9px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:17px">'+svgIcon(it.icon,{size:17})+'</span>'+
           '<span style="flex:1;min-width:0">'+
             '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+it.title+'</span>'+
             '<span style="display:block;font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px">'+it.sub+'</span>'+
+            '<button onclick="_skipSetupTodo(\''+it.id+'\')" style="margin-top:4px;background:none;border:none;padding:0;font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>'+
           '</span>'+
-          '<span style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:7px 12px;border-radius:8px">'+it.cta+'</span>'+
-        '</button>'
+          '<button onclick="_setupTodoGo(\''+it.id+'\')" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">'+it.cta+'</button>'+
+        '</div>'
       ).join('')+
     '</div>';
-  // Drop the trailing row's divider (last item sits flush with the card edge).
-  const btns=el.querySelectorAll('button');
-  if(btns.length)btns[btns.length-1].style.borderBottom='none';
+  // Drop the trailing row's divider so the last item sits flush with the card edge.
+  const rows=el.querySelectorAll('.td-setup-row');
+  if(rows.length)rows[rows.length-1].style.borderBottom='none';
+}
+// Setup-to-do actions. Kept out of inline onclick so the quoting stays sane and
+// the nav targets are guarded (a missing settings detail can never throw).
+function _setupTodoGo(id){
+  if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
+  if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
+  if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
+}
+function _skipSetupTodo(id){
+  if(!Array.isArray(S.setupSkipped))S.setupSkipped=[];
+  if(!S.setupSkipped.includes(id)){S.setupSkipped.push(id);if(typeof saveAll==='function')saveAll();}
+  _renderDashSetupTodo();
 }
 function renderDash(){
   if(_renderDashRunning)return; // prevent cascade

@@ -1354,37 +1354,43 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
   // Dashboard setup to-do (owner 2026-07-14): a self-dismissing checklist pinned
   // to the top of the dashboard; first item = add a vehicle, which also ungrays
   // the Drive quick-action (no mileage logging without a vehicle on record).
-  test('_renderDashSetupTodo — no vehicle: shows Add-vehicle to-do and grays the Drive button', async () => {
+  test('_renderDashSetupTodo — fresh account: shows the full checklist and grays the Drive button', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
-      S.vehicles = []; S.vehiclesTs = 0; S.veh = '';
+      S.vehicles = []; S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
       const out = {
         cardShown: card && card.style.display !== 'none',
-        hasAddVehicle: !!(card && /add.*vehicle/i.test(card.textContent)),
-        opensModal: !!(card && /openAddVehicleModal/.test(card.innerHTML)),
+        hasVehicleItem: !!(card && /add.*vehicle/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
+        hasGetPaidItem: !!(card && /card payments/i.test(card.textContent)),
+        hasLogoItem: !!(card && /add your logo/i.test(card.textContent)),
+        hasSkip: !!(card && /Skip for now/.test(card.innerHTML)),
         driveGrayed: !!(drive && drive.style.pointerEvents === 'none' && parseFloat(drive.style.opacity) < 1),
       };
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh;
+      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
     if (r.skip) return;
-    expect(r.cardShown, 'to-do card shows when no vehicle').toBe(true);
-    expect(r.hasAddVehicle, 'Add-vehicle item present').toBe(true);
-    expect(r.opensModal, 'item opens the add-vehicle modal').toBe(true);
+    expect(r.cardShown, 'to-do card shows on a fresh account').toBe(true);
+    expect(r.hasVehicleItem, 'Add-vehicle item present + wired').toBe(true);
+    expect(r.hasGetPaidItem, 'Set-up-payments item present').toBe(true);
+    expect(r.hasLogoItem, 'Add-logo item present').toBe(true);
+    expect(r.hasSkip, 'each item is skippable').toBe(true);
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
   });
 
-  test('_renderDashSetupTodo — with a vehicle: card hides and Drive ungrays', async () => {
+  test('_renderDashSetupTodo — every item done/skipped: card hides and Drive ungrays', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs;
+      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped;
+      // Vehicle added (done); the two optional items skipped → nothing left → hide.
       S.vehicles = [{ id: 1, name: '2019 F-150' }]; S.vehiclesTs = Date.now();
+      S.setupSkipped = ['getpaid', 'logo'];
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
@@ -1392,13 +1398,35 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
         cardHidden: !!(card && card.style.display === 'none'),
         driveEnabled: !!(drive && drive.style.pointerEvents !== 'none'),
       };
-      S.vehicles = _saved; S.vehiclesTs = _savedTs;
+      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip;
       _renderDashSetupTodo();
       return out;
     });
     if (r.skip) return;
-    expect(r.cardHidden, 'to-do card hides once a vehicle exists').toBe(true);
+    expect(r.cardHidden, 'card hides once every item is done or skipped').toBe(true);
     expect(r.driveEnabled, 'Drive button un-grays with a vehicle').toBe(true);
+  });
+
+  test('_skipSetupTodo — skipping an item removes it from the checklist', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _skipSetupTodo !== 'function') return { skip: true };
+      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _origSave = window.saveAll;
+      window.saveAll = () => {};
+      S.vehicles = []; S.vehiclesTs = 0; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      _renderDashSetupTodo();
+      const before = document.getElementById('dash-setup-todo').querySelectorAll('.td-setup-row').length;
+      _skipSetupTodo('logo');
+      const card = document.getElementById('dash-setup-todo');
+      const after = card.querySelectorAll('.td-setup-row').length;
+      const logoGone = !/add your logo/i.test(card.textContent);
+      window.saveAll = _origSave;
+      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      _renderDashSetupTodo();
+      return { before, after, logoGone };
+    });
+    if (r.skip) return;
+    expect(r.after, 'one fewer row after skipping').toBe(r.before - 1);
+    expect(r.logoGone, 'skipped item is gone').toBe(true);
   });
 
   test('quickAction("drive") — no vehicle: guarded, does not open the drive modal', async () => {
