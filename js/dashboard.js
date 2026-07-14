@@ -70,6 +70,58 @@ function _pickLeadForEstimate(clientId){
   if(!c)return;
   _doOpenEstimate(c);
 }
+// Setup to-do — a self-dismissing checklist pinned to the top of the dashboard
+// (owner 2026-07-14). Holds the setup steps that moved OUT of the signup wizard
+// (§9.9); it renders only while something is still unfinished and collapses to
+// nothing once every item is handled. First item: add a vehicle — which also
+// ungrays the Drive quick-action (mileage can't be logged without a vehicle on
+// record, an IRS requirement). Owner-only: employees never see setup tasks.
+function _renderDashSetupTodo(){
+  const el=document.getElementById('dash-setup-todo');
+  if(!el)return;
+  const hasVehicle=(typeof getVehicles==='function'?getVehicles():(S.vehicles||[])).length>0;
+  // Gray the Drive button until a vehicle exists — pointer-events:none makes it
+  // physically un-tappable, matching the "can't log mileage yet" intent; the
+  // quickAction('drive') guard is the belt-and-suspenders fallback.
+  const drive=document.getElementById('qa-drive-btn');
+  if(drive){
+    drive.style.opacity=hasVehicle?'':'.4';
+    drive.style.pointerEvents=hasVehicle?'':'none';
+    drive.setAttribute('aria-disabled',hasVehicle?'false':'true');
+    drive.title=hasVehicle?'':'Add a vehicle first to log mileage';
+  }
+  if(typeof _isEmployee!=='undefined'&&_isEmployee){el.style.display='none';el.innerHTML='';return;}
+  const items=[];
+  if(!hasVehicle){
+    items.push({icon:'🚗',title:'Add your first vehicle',
+      sub:'Unlocks mileage tracking, the Drive button, and vehicle tax deductions. Add the vehicle and its current odometer.',
+      cta:'Add vehicle',onclick:'openAddVehicleModal()'});
+  }
+  // Future setup tasks (Stripe, logo, team) land here as they move out of onboarding.
+  if(!items.length){el.style.display='none';el.innerHTML='';return;}
+  el.style.display='block';
+  el.innerHTML=
+    '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--blue);box-shadow:0 2px 12px rgba(45,93,168,.12)">'+
+      '<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:linear-gradient(135deg,rgba(45,93,168,.10),rgba(45,93,168,.02));border-bottom:1px solid var(--border)">'+
+        '<span style="font-size:15px">'+svgIcon('✨',{size:15})+'</span>'+
+        '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Finish setting up</span>'+
+        '<span style="margin-left:auto;font-size:11px;font-weight:700;color:var(--blue)">'+items.length+' to go</span>'+
+      '</div>'+
+      items.map(it=>
+        '<button onclick="'+it.onclick+'" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:14px 16px;border:none;background:none;cursor:pointer;font-family:inherit;border-bottom:1px solid var(--border)">'+
+          '<span style="width:34px;height:34px;flex-shrink:0;border-radius:9px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:17px">'+svgIcon(it.icon,{size:17})+'</span>'+
+          '<span style="flex:1;min-width:0">'+
+            '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+it.title+'</span>'+
+            '<span style="display:block;font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px">'+it.sub+'</span>'+
+          '</span>'+
+          '<span style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:7px 12px;border-radius:8px">'+it.cta+'</span>'+
+        '</button>'
+      ).join('')+
+    '</div>';
+  // Drop the trailing row's divider (last item sits flush with the card edge).
+  const btns=el.querySelectorAll('button');
+  if(btns.length)btns[btns.length-1].style.borderBottom='none';
+}
 function renderDash(){
   if(_renderDashRunning)return; // prevent cascade
   _renderDashRunning=true;
@@ -307,6 +359,7 @@ function renderDash(){
   renderDashToday();
   renderDashCollect();
   renderTodayFeed();
+  _renderDashSetupTodo();
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
     if(_nearbyJob&&!_activeTimer){

@@ -827,6 +827,14 @@ function quickAction(type){
   const wonUnscheduled=bids.filter(b=>b.status==='Closed Won'&&!jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id&&j.eventType!=='estimate'&&j.start>=tk));
 
   if(type==='drive'){
+    // Mileage requires a vehicle on record (IRS: every trip log names a vehicle).
+    // The Drive button is grayed until one exists (_renderDashSetupTodo); this is
+    // the fallback so the flow never dead-ends into an empty mileage log.
+    if((typeof getVehicles==='function'?getVehicles():(S.vehicles||[])).length===0){
+      if(typeof showToast==='function')showToast('Add a vehicle first to log mileage','🚗');
+      if(typeof openAddVehicleModal==='function')openAddVehicleModal();
+      return;
+    }
     try{ openDriveModal(); }catch(e){ console.error('[TradeDesk] openDriveModal failed:',e); }
   } else if(type==='expense'){
     try{ openExpenseFlow(); }catch(e){ console.error('[TradeDesk] openExpenseFlow failed:',e); }

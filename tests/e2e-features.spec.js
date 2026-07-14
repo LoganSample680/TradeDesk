@@ -1351,6 +1351,76 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     }
   });
 
+  // Dashboard setup to-do (owner 2026-07-14): a self-dismissing checklist pinned
+  // to the top of the dashboard; first item = add a vehicle, which also ungrays
+  // the Drive quick-action (no mileage logging without a vehicle on record).
+  test('_renderDashSetupTodo — no vehicle: shows Add-vehicle to-do and grays the Drive button', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
+      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
+      S.vehicles = []; S.vehiclesTs = 0; S.veh = '';
+      _renderDashSetupTodo();
+      const card = document.getElementById('dash-setup-todo');
+      const drive = document.getElementById('qa-drive-btn');
+      const out = {
+        cardShown: card && card.style.display !== 'none',
+        hasAddVehicle: !!(card && /add.*vehicle/i.test(card.textContent)),
+        opensModal: !!(card && /openAddVehicleModal/.test(card.innerHTML)),
+        driveGrayed: !!(drive && drive.style.pointerEvents === 'none' && parseFloat(drive.style.opacity) < 1),
+      };
+      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh;
+      try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
+      return out;
+    });
+    if (r.skip) return;
+    expect(r.cardShown, 'to-do card shows when no vehicle').toBe(true);
+    expect(r.hasAddVehicle, 'Add-vehicle item present').toBe(true);
+    expect(r.opensModal, 'item opens the add-vehicle modal').toBe(true);
+    expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
+  });
+
+  test('_renderDashSetupTodo — with a vehicle: card hides and Drive ungrays', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
+      const _saved = S.vehicles, _savedTs = S.vehiclesTs;
+      S.vehicles = [{ id: 1, name: '2019 F-150' }]; S.vehiclesTs = Date.now();
+      _renderDashSetupTodo();
+      const card = document.getElementById('dash-setup-todo');
+      const drive = document.getElementById('qa-drive-btn');
+      const out = {
+        cardHidden: !!(card && card.style.display === 'none'),
+        driveEnabled: !!(drive && drive.style.pointerEvents !== 'none'),
+      };
+      S.vehicles = _saved; S.vehiclesTs = _savedTs;
+      _renderDashSetupTodo();
+      return out;
+    });
+    if (r.skip) return;
+    expect(r.cardHidden, 'to-do card hides once a vehicle exists').toBe(true);
+    expect(r.driveEnabled, 'Drive button un-grays with a vehicle').toBe(true);
+  });
+
+  test('quickAction("drive") — no vehicle: guarded, does not open the drive modal', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof quickAction !== 'function') return { skip: true };
+      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh;
+      S.vehicles = []; S.vehiclesTs = 0; S.veh = '';
+      let driveOpened = false, addOpened = false;
+      const _origDrive = window.openDriveModal, _origAdd = window.openAddVehicleModal, _origToast = window.showToast;
+      window.openDriveModal = () => { driveOpened = true; };
+      window.openAddVehicleModal = () => { addOpened = true; };
+      window.showToast = () => {};
+      try { quickAction('drive'); } catch (e) {}
+      window.openDriveModal = _origDrive; window.openAddVehicleModal = _origAdd; window.showToast = _origToast;
+      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh;
+      return { driveOpened, addOpened };
+    });
+    if (r.skip) return;
+    expect(r.driveOpened, 'drive modal must NOT open without a vehicle').toBe(false);
+    expect(r.addOpened, 'guard routes to add-vehicle instead').toBe(true);
+  });
+
   test('markFollowupSent — increments followupStage and sets last_followup_date', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof markFollowupSent !== 'function' || typeof bids === 'undefined') return null;

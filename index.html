@@ -1209,6 +1209,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 
+  <!-- Setup to-do: pinned above every widget, dismisses itself when nothing is left
+       to set up (owner 2026-07-14). First item = add a vehicle (replaces the
+       onboarding starting-odometer step); more setup tasks land here as they move
+       out of the wizard (§9.9). -->
+  <div id="dash-setup-todo" style="display:none"></div>
   <div id="dash-geo-perm" style="display:none"></div>
   <div id="dash-widget-root">
     <!-- Every REAL card is its own widget (data-dw) so it can be held-and-moved
@@ -1259,7 +1264,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <button class="qa qa-p" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">
             <span class="qa-ico"><span data-ico="👤" data-ico-size="24"></span></span><span>New lead</span>
           </button>
-          <button class="qa" style="--qa-tint:linear-gradient(155deg,#3D74C6 0%,#24508F 100%);--qa-glow:rgba(45,93,168,.35)" onclick="quickAction('drive')">
+          <button class="qa" id="qa-drive-btn" style="--qa-tint:linear-gradient(155deg,#3D74C6 0%,#24508F 100%);--qa-glow:rgba(45,93,168,.35)" onclick="quickAction('drive')">
             <span class="qa-ico"><span data-ico="🚗" data-ico-size="24"></span></span><span>Drive</span>
           </button>
           <button class="qa" id="qa-estimate-btn" style="--qa-tint:linear-gradient(155deg,#8B5CF6 0%,#6D28D9 100%);--qa-glow:rgba(109,40,217,.35)" onclick="quickAction('estimate')">

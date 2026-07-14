@@ -898,6 +898,10 @@ function saveFleetVehicle() {
   saveAll();
   _closeFleetVehModal();
   renderFleetVehicles();
+  // Refresh the dashboard setup to-do so its "Add a vehicle" item dismisses and
+  // the Drive button ungrays the instant the first vehicle lands (the modal is
+  // often opened straight from that to-do).
+  if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();
   showToast(isEdit?'Vehicle updated':'Vehicle added','🚗');
   if(!isEdit) setTimeout(()=>{ if(typeof _checkOdometerPrompt==='function') _checkOdometerPrompt(); }, 500);
 }
