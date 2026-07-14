@@ -1290,6 +1290,51 @@ test.describe('sign.html — Stripe payment flow', () => {
     });
     if (count !== null) expect(count).toBeGreaterThanOrEqual(0);
   });
+
+  // Pay-later (owner directive 2026-07-14): a method-agnostic "pay later"
+  // option on every signing surface — signs now, balance stays owed, any
+  // channel open after. Placed as a small muted link on the far LEFT (hardest
+  // right-thumb reach) so it's present but never the path of least resistance.
+  test('pay-later — present, positioned left of cash/check, and routes to a method-agnostic confirm', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _renderSignPayBtns !== 'function') return { skip: true };
+      window._prop = { id: 1, amount: 2600, deposit: 650, businessName: 'ZJ Pro', stripeConnectEnabled: true, clientName: 'Client' };
+      window._payFullAmount = false;
+      // Make the pay page visible so getBoundingClientRect returns real layout.
+      document.querySelectorAll('.pg').forEach(x => x.style.display = 'none');
+      const payPg = document.getElementById('pg-pay'); if (payPg) payPg.style.display = 'block';
+      _renderSignPayBtns();
+      const c = document.getElementById('sign-pay-btns');
+      c.style.display = 'block'; c.style.width = '360px';
+      const btns = [...c.querySelectorAll('button')];
+      const later = btns.find(b => /pay later/i.test(b.textContent));
+      const cash = btns.find(b => /^cash$/i.test(b.textContent.trim()));
+      const check = btns.find(b => /^check$/i.test(b.textContent.trim()));
+      const laterX = later ? later.getBoundingClientRect().left : Infinity;
+      const cashX = cash ? cash.getBoundingClientRect().left : -1;
+      // Drive the pay-later branch and read the confirm copy.
+      let confirmMsg = '', confirmBtn = '';
+      if (typeof _paySign === 'function') {
+        _paySign('later');
+        confirmMsg = (document.getElementById('cash-confirm-msg') || {}).textContent || '';
+        confirmBtn = (document.getElementById('sec-cash-confirm-btn') || {}).textContent || '';
+      }
+      return {
+        hasLater: !!later, hasCash: !!cash, hasCheck: !!check,
+        laterLeftOfCash: laterX < cashX,
+        method: (typeof _manualPayMethod !== 'undefined' ? _manualPayMethod : null),
+        // Method-agnostic: no "cash"/"check" wording, offers "any way".
+        agnostic: /any way/i.test(confirmMsg) && !/collect the deposit when/i.test(confirmMsg),
+        confirmBtn,
+      };
+    });
+    if (r.skip) return;
+    expect(r.hasLater, '"pay later" option must exist').toBe(true);
+    expect(r.hasCash && r.hasCheck, 'cash + check still present').toBe(true);
+    expect(r.laterLeftOfCash, '"pay later" must sit left of Cash (hardest reach)').toBe(true);
+    expect(r.method, '_paySign(later) sets the method to later').toBe('later');
+    expect(r.agnostic, 'the confirm copy must be method-agnostic (no cash/check lock-in)').toBe(true);
+  });
 });
 
 // ════════════════════════════════════════════════════════════════════════════

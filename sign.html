@@ -1498,16 +1498,26 @@ function _renderSignPayBtns(){
       '</button>'+
       (surchargeOn?'<div style="font-size:11px;color:#b45309;text-align:center;margin-bottom:16px">'+pct+'% fee on credit cards · debit cards &amp; bank transfer are free</div>':'');
   }
-  html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:2px">'+
-    '<button onclick="_paySign(\'cash\')" style="padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Cash</button>'+
-    '<button onclick="_paySign(\'check\')" style="padding:10px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Check</button>'+
+  // Layout (owner-specified 2026-07-14): Pay Now big + center across the top;
+  // beneath it a row of three — "pay later" a small MUTED text-link on the far
+  // LEFT (deliberately the hardest reach for a right thumb, so it's present but
+  // never the path of least resistance), Check in the middle, Cash on the right.
+  // "Pay later" is method-agnostic: signs now, records the balance as owed, and
+  // leaves every payment channel open afterward (hub pay-link or any manual
+  // payment the contractor logs when it lands).
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:2px">'+
+    '<button onclick="_paySign(\'later\')" style="padding:8px 4px;border:none;background:transparent;color:#a8a29a;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;text-align:left;text-decoration:underline;text-underline-offset:2px;flex-shrink:0">pay later</button>'+
+    '<div style="display:flex;gap:8px;flex:1;justify-content:flex-end">'+
+      '<button onclick="_paySign(\'check\')" style="padding:10px 16px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Check</button>'+
+      '<button onclick="_paySign(\'cash\')" style="padding:10px 16px;border-radius:10px;border:1.5px solid #e2e0da;background:transparent;color:#94a3b8;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">Cash</button>'+
+    '</div>'+
   '</div>';
   container.innerHTML=html;
 }
 async function _paySign(method){
   if(!_prop)return;
   _logStep('method_selected');
-  if(method==='cash'||method==='check'){
+  if(method==='cash'||method==='check'||method==='later'){
     _manualPayMethod=method;
     document.getElementById('sign-pay-btns').style.display='none';
     const cashSec=document.getElementById('sec-cash');
@@ -1515,9 +1525,18 @@ async function _paySign(method){
     const hdr=document.getElementById('cash-confirm-hdr');
     const msg=document.getElementById('cash-confirm-msg');
     const confirmBtn=document.getElementById('sec-cash-confirm-btn');
-    if(hdr)hdr.textContent=method==='check'?'Check selected.':'Cash selected.';
-    if(msg)msg.textContent=_payFullAmount?(' Your proposal is signed. The contractor will collect the full amount '+(method==='check'?'when work is complete.':'when they arrive.')):(' Your proposal is signed — you’re locked in on the schedule. '+(_prop?.businessName||'The contractor')+' will collect the deposit '+(method==='check'?'before work begins.':'when they arrive.'));
-    if(confirmBtn)confirmBtn.textContent=method==='check'?(_payFullAmount?"Confirm — pay in full by check":"Confirm — I'll pay by check"):(_payFullAmount?"Confirm — pay in full cash in person":"Confirm — I'll pay cash in person");
+    if(method==='later'){
+      // Method-agnostic (owner 2026-07-14): signs now, balance stays owed, ANY
+      // channel open afterward — never boxes the client into cash/check/online.
+      const _biz=_prop?.businessName||'The contractor';
+      if(hdr)hdr.textContent='All set — pay later.';
+      if(msg)msg.textContent=' Your proposal is signed and you’re locked in on the schedule. You can pay any way that works for you — '+_biz+' will send you the details, and you can settle up anytime before work is complete.';
+      if(confirmBtn)confirmBtn.textContent='Confirm — I’ll arrange payment';
+    }else{
+      if(hdr)hdr.textContent=method==='check'?'Check selected.':'Cash selected.';
+      if(msg)msg.textContent=_payFullAmount?(' Your proposal is signed. The contractor will collect the full amount '+(method==='check'?'when work is complete.':'when they arrive.')):(' Your proposal is signed — you’re locked in on the schedule. '+(_prop?.businessName||'The contractor')+' will collect the deposit '+(method==='check'?'before work begins.':'when they arrive.'));
+      if(confirmBtn)confirmBtn.textContent=method==='check'?(_payFullAmount?"Confirm — pay in full by check":"Confirm — I'll pay by check"):(_payFullAmount?"Confirm — pay in full cash in person":"Confirm — I'll pay cash in person");
+    }
     return;
   }
   // 'stripe' — open embedded Stripe checkout; auto-surfaces Apple Pay, Google Pay, card, bank transfer
