@@ -81,9 +81,13 @@ as fast as the conversation — save the deploy for the version already approved
 **Plain rules:**
 - Every dev commit carries `[CF-Pages-Skip]` so Cloudflare does NOT rebuild. Only the
   step-4 "ready" commit deploys.
-- **Production lags on purpose.** It only updates when you say "deploy/promote." A *preview*
-  is your branch's code; *production* is whatever you last shipped — never the same mid-work.
-- **Never merge or deploy without you saying so** — not even when everything is green.
+- **Production lags on purpose.** It only updates when you say "deploy/promote," OR when
+  you approve a PR merge — a merge to `main` IS the deploy signal (§14.1.1), no separate
+  ask needed after. A *preview* is your branch's code; *production* is whatever's on
+  `main` — never the same mid-work.
+- **Never merge without you saying so** — not even when everything is green. Once you do
+  say so, the merge itself ships it to production (§14.1.1) — verify the merge commit
+  didn't accidentally inherit a stray `[CF-Pages-Skip]` (squash-merge gotcha, §14.1.1).
 - **One push, then WAIT** for the tests to report before the next push. Pushing mid-run
   kills the test that's running.
 
@@ -1122,6 +1126,34 @@ rebuilds.
 - Rationale: the owner keeps thinking of changes after the fact and wants to batch
   them into one intentional deploy instead of burning a Cloudflare build on every
   push. Respect that — never auto-deploy.
+
+### 14.1.1 Merging a PR to `main` Always Builds — No Separate "Deploy" Ask Needed
+
+Owner directive (2026-07-14): **merging a PR to `main` is itself the deploy
+signal.** §1.4/§1.5 already require explicit owner permission before any merge
+— by the time a merge happens, that approval already covers shipping it. Don't
+also wait for a separate "deploy" word after merging; the merge IS the word.
+
+- **The merge commit on `main` must NOT carry `[CF-Pages-Skip]`** anywhere in
+  its message, or Cloudflare will skip the production build — silently leaving
+  production on the old version even though `main` has the new code.
+- **Squash-merge gotcha (the actual incident this rule captures):** GitHub's
+  default squash-merge commit concatenates every squashed commit's message
+  into the merged commit's body. Since every dev-branch commit intentionally
+  carries `[CF-Pages-Skip]` per §14.1, that token ends up repeated throughout
+  the squashed body — and Cloudflare's skip-detection scans the whole message,
+  not just the first line. Result: a clean squash-merge with a skip-token-free
+  *title* still skips the build, because the token survives in the *body*.
+  **Fix:** when merging (`mcp__github__merge_pull_request` or equivalent),
+  don't rely on the default squash body — either merge with a method that
+  doesn't concatenate skipped messages, or verify after merging that the
+  landed commit's message has zero `[CF-Pages-Skip]` occurrences (`git log -1
+  main | grep -c CF-Pages-Skip` should be `0`). If it isn't, push a trivial
+  no-skip commit (or empty `git commit --allow-empty`) to `main` immediately
+  to force the production build.
+- This is about `main`/production specifically — §14.1's skip-by-default rule
+  for WIP pushes on feature branches (and for previews on request) is
+  unchanged.
 
 ### 14.2 The `/api` Proxy Is Load-Bearing — Never Remove It
 
