@@ -3263,6 +3263,12 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
   test('obStepJobs — renders the import step; obAddJob appends a row', async () => {
     const result = await page.evaluate(() => {
       if (typeof obStepJobs !== 'function' || typeof obAddJob !== 'function') return { skip: true };
+      // Isolate: a boot that landed on onboarding leaves its own #onboarding-overlay
+      // / #ob-body / #ob-err in the DOM. getElementById/querySelector resolve to the
+      // FIRST match in document order, so obAddJob (which calls getElementById('ob-body'))
+      // would render into the boot overlay, not ours. Remove any leftover first.
+      document.getElementById('onboarding-overlay')?.remove();
+      document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
       _ob.jobs = [];
       const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
       obStepJobs(el);
@@ -3282,13 +3288,19 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
   test('obNextJobs — a row with data but no client name is flagged, not silently dropped', async () => {
     const result = await page.evaluate(() => {
       if (typeof obNextJobs !== 'function') return { skip: true };
+      // Isolate: obNextJobs writes to document.getElementById('ob-err'). If a boot
+      // onboarding overlay left an #ob-err earlier in the DOM, the code writes there
+      // while a detached local ref stays empty — a false negative. Clear leftovers so
+      // OUR #ob-err is the one obNextJobs targets, and read via the same getElementById.
+      document.getElementById('onboarding-overlay')?.remove();
+      document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
       const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
-      // Ensure an ob-err target exists for the message.
       const err = document.createElement('div'); err.id = 'ob-err'; el.appendChild(err);
       _ob.step = 10;
       _ob.jobs = [{ client: '', addr: '', start: '', value: '4200' }]; // value but no name
       obNextJobs();
-      const blocked = _ob.step === 10 && /client name/i.test(err.textContent || '');
+      const errText = (document.getElementById('ob-err') || {}).textContent || '';
+      const blocked = _ob.step === 10 && /client name/i.test(errText);
       // Now give it a name — it should advance to the review step (11).
       _ob.jobs = [{ client: 'Maria Alvarez', addr: '', start: '', value: '4200' }];
       obNextJobs();
