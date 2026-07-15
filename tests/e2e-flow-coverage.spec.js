@@ -156,13 +156,23 @@ test.describe('Proposals page', () => {
   });
 
   test('declined bids show the lost reason in red', async () => {
-    const bid = makeTestBid({ id: 88106, status: 'Closed Lost', signingToken: 'tok-lost2', client_name: 'Went Elsewhere', lostReason: 'Chose competitor' });
-    await injectBids(page, [bid]);
-    await page.evaluate(() => {
+    // Seed + filter + read the render in ONE synchronous evaluate. `bids` is a
+    // live array reassigned by the debounced cloud-merge (js/data.js); doing the
+    // inject in a separate evaluate leaves a window where that merge can rebuild
+    // `bids` from a pre-inject snapshot and drop the just-added fixture. Keeping
+    // seed→render→read atomic makes the assertion race-free.
+    const html = await page.evaluate(() => {
+      const bid = {
+        id: 88106, client_id: 999, client_name: 'Went Elsewhere', name: 'Went Elsewhere',
+        amount: 5000, deposit: 1250, status: 'Closed Lost', draft: false,
+        signingToken: 'tok-lost2', bid_date: '2026-05-15', trade_type: 'painting',
+        lostReason: 'Chose competitor', surfaces: [], roomScopeMap: {}, scope: {},
+      };
+      const i = window.bids.findIndex(x => x.id === bid.id);
+      if (i >= 0) window.bids[i] = bid; else window.bids.unshift(bid);
       if (typeof setProposalFilter === 'function') setProposalFilter('declined');
+      return document.getElementById('proposals-list').innerHTML;
     });
-    await page.waitForTimeout(300);
-    const html = await page.locator('#proposals-list').innerHTML();
     expect(html).toContain('Chose competitor');
     await page.evaluate(() => { if (typeof setProposalFilter === 'function') setProposalFilter('all'); });
   });

@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.14.26.39';
+const APP_VERSION='07.14.26.42';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3884,7 +3884,12 @@ function supaShowLogin(opts={}){
     :'';
   const overlay=document.createElement('div');
   overlay.id='supa-login-overlay';
-  overlay.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
+  // Normal sign-in gets the full-bleed two-panel treatment that matches the
+  // onboarding wizard; the invite/sub-referral pitches keep their centered card.
+  const _normalLogin=!_pendingInvite&&!_pendingSubInv;
+  overlay.style.cssText=_normalLogin
+    ?'position:fixed;inset:0;z-index:9999;background:var(--bg);overflow-y:auto;padding:0'
+    :'position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
   const _inputStyle='font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box';
   overlay.innerHTML= _pendingInvite
     ? (function(){
@@ -3935,21 +3940,60 @@ function supaShowLogin(opts={}){
           '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
           '</div>';
       })()
-    : // ── Normal login ──────────────────────────────────────────────────────
-      '<div style="max-width:360px;width:100%">'+
-      '<div style="font-size:24px;font-weight:800;margin-bottom:4px">TradeDesk</div>'+
-      '<div style="font-size:13px;color:var(--text3);margin-bottom:28px">Sign in to sync your data across devices</div>'+
-      '<div class="f" style="margin-bottom:12px"><label>Email</label>'+
-        '<input type="email" id="supa-email" placeholder="your@email.com" style="'+_inputStyle+'"></div>'+
-      '<div class="f" style="margin-bottom:20px"><label>Password</label>'+
-        '<input type="password" id="supa-pass" placeholder="Password" style="'+_inputStyle+'"></div>'+
-      '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>'+
-      '<div style="text-align:right;margin-bottom:10px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:13px;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline">Forgot password?</button></div>'+
-      '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px">Create account</button>'+
-      '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
-      '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:10px;text-align:center;min-height:16px"></div>'+
-      '</div>';
+    : // ── Normal login — branded two-panel, matches the onboarding wizard ─────
+      (function(){
+        const _wrench='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>';
+        const _fld='font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;font-family:inherit';
+        const _social=(prov,label,bg,fg,bd)=>'<button onclick="_obOAuth(\''+prov+'\')" style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px;border-radius:9px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+label+'</button>';
+        return '<div style="display:flex;min-height:100vh;min-height:100dvh">'+
+          // Left brand panel (desktop only)
+          '<div id="login-left" style="width:340px;flex-shrink:0;background:#0D1117;padding:44px 34px;flex-direction:column;justify-content:space-between">'+
+            '<div>'+
+              '<div style="display:flex;align-items:center;gap:10px;margin-bottom:44px">'+
+                '<div style="width:36px;height:36px;background:rgba(255,255,255,.15);border-radius:9px;display:flex;align-items:center;justify-content:center">'+_wrench+'</div>'+
+                '<span class="brand-logo-slot" style="font-size:18px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
+              '</div>'+
+              '<div style="font-size:26px;font-weight:800;color:#fff;line-height:1.25;letter-spacing:-.02em;margin-bottom:14px">Welcome back.<br>Let\'s get to work.</div>'+
+              '<div style="display:grid;gap:12px;margin-top:24px">'+
+                [[svgIcon('📋',{size:15,color:'#fff'}),'Estimates & proposals in minutes'],[svgIcon('💰',{size:15,color:'#fff'}),'Get paid on the spot'],[svgIcon('📍',{size:15,color:'#fff'}),'Mileage, crew & taxes tracked'],[svgIcon('📊',{size:15,color:'#fff'}),'Your whole business, one place']].map(f=>
+                  '<div style="display:flex;align-items:center;gap:11px;font-size:13.5px;color:rgba(255,255,255,.82)"><span style="opacity:.9">'+f[0]+'</span><span>'+f[1]+'</span></div>'
+                ).join('')+
+              '</div>'+
+            '</div>'+
+            '<div style="font-size:11px;color:rgba(255,255,255,.4)">© 2025 TradeDesk</div>'+
+          '</div>'+
+          // Right form panel
+          '<div style="flex:1;display:flex;flex-direction:column;background:#fff;min-height:100%">'+
+            // Mobile header (logo)
+            '<div id="login-mobile-hdr" style="display:none;align-items:center;gap:8px;padding:18px 20px;border-bottom:1px solid var(--border)">'+
+              '<div style="width:28px;height:28px;background:var(--blue);border-radius:7px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>'+
+              '<span class="brand-logo-slot" style="font-size:15px;font-weight:800;color:var(--text)">TradeDesk</span>'+
+            '</div>'+
+            '<div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:32px 28px;max-width:400px;width:100%;margin:0 auto;box-sizing:border-box">'+
+              _inviteBanner+
+              '<div style="margin-bottom:22px"><div style="font-size:24px;font-weight:800;letter-spacing:-.02em;color:var(--text);margin-bottom:4px">Sign in</div><div style="font-size:14px;color:var(--text3)">Welcome back — pick up right where you left off.</div></div>'+
+              _social('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0')+
+              _social('apple','Continue with Apple','#000','#fff','1.5px solid #000')+
+              '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 16px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600">or with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>'+
+              '<div class="f" style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Email</label>'+
+                '<input type="email" id="supa-email" placeholder="you@yourbusiness.com" style="'+_fld+'"></div>'+
+              '<div class="f" style="margin-bottom:8px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Password</label>'+
+                '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" style="'+_fld+'"></div>'+
+              '<div style="text-align:right;margin-bottom:16px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
+              '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:10px;border:none;background:#0D1117;color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.14);letter-spacing:-.01em">Sign in</button>'+
+              '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
+              '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:18px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your free account</button></div>'+
+              '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;margin-top:14px;border:none;background:none;color:var(--text3);font-size:12.5px;cursor:pointer;font-family:inherit">Use offline — data stays on this device only</button>'+
+            '</div>'+
+          '</div>'+
+        '</div>';
+      })();
   document.body.appendChild(overlay);
+  // Responsive: dark brand rail on wide screens, logo header on phones (matches onboarding).
+  const _ll=document.getElementById('login-left');
+  if(_ll)_ll.style.display=window.innerWidth>=760?'flex':'none';
+  const _lm=document.getElementById('login-mobile-hdr');
+  if(_lm)_lm.style.display=window.innerWidth>=760?'none':'flex';
   setTimeout(()=>document.getElementById('supa-email')?.focus(),100);
 }
 
