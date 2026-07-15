@@ -1365,10 +1365,13 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
       const drive = document.getElementById('qa-drive-btn');
       const out = {
         cardShown: card && card.style.display !== 'none',
-        hasVehicleItem: !!(card && /add.*vehicle/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
+        hasVehicleItem: !!(card && /truck/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
         hasGetPaidItem: !!(card && /card payments/i.test(card.textContent)),
         hasLogoItem: !!(card && /add your logo/i.test(card.textContent)),
         hasSkip: !!(card && /Skip for now/.test(card.innerHTML)),
+        // Endowed progress: shrinking count + a bar that starts above zero.
+        hasCount: !!(card && /left/i.test(card.textContent)),
+        hasProgress: !!(card && /\d+ of \d+ done/i.test(card.textContent)),
         driveGrayed: !!(drive && drive.style.pointerEvents === 'none' && parseFloat(drive.style.opacity) < 1),
       };
       S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
@@ -1381,30 +1384,37 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     expect(r.hasGetPaidItem, 'Set-up-payments item present').toBe(true);
     expect(r.hasLogoItem, 'Add-logo item present').toBe(true);
     expect(r.hasSkip, 'each item is skippable').toBe(true);
+    expect(r.hasCount, 'shrinking "N left" count present').toBe(true);
+    expect(r.hasProgress, 'endowed-progress "X of Y done" present').toBe(true);
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
   });
 
-  test('_renderDashSetupTodo — every item done/skipped: card hides and Drive ungrays', async () => {
+  test('_renderDashSetupTodo — every item done/skipped: shows a clean done state, then retires on dismiss', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped;
-      // Vehicle added (done); the two optional items skipped → nothing left → hide.
+      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
+      window.saveAll = () => {};
+      // Vehicle added (done); the two optional items skipped → nothing left.
       S.vehicles = [{ id: 1, name: '2019 F-150' }]; S.vehiclesTs = Date.now();
-      S.setupSkipped = ['getpaid', 'logo'];
+      S.setupSkipped = ['getpaid', 'logo']; S.setupDone = false;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
-      const out = {
-        cardHidden: !!(card && card.style.display === 'none'),
-        driveEnabled: !!(drive && drive.style.pointerEvents !== 'none'),
-      };
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip;
+      const doneStateShown = !!(card && card.style.display !== 'none' && /set up/i.test(card.textContent));
+      const driveEnabled = !!(drive && drive.style.pointerEvents !== 'none');
+      // Dismiss the done state → retires for good.
+      S.setupDone = true;
       _renderDashSetupTodo();
-      return out;
+      const hiddenAfterDismiss = !!(card && card.style.display === 'none');
+      window.saveAll = _origSave;
+      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.setupDone = _savedDone;
+      _renderDashSetupTodo();
+      return { doneStateShown, driveEnabled, hiddenAfterDismiss };
     });
     if (r.skip) return;
-    expect(r.cardHidden, 'card hides once every item is done or skipped').toBe(true);
+    expect(r.doneStateShown, 'a clean "you\'re set up" state shows when all items clear').toBe(true);
     expect(r.driveEnabled, 'Drive button un-grays with a vehicle').toBe(true);
+    expect(r.hiddenAfterDismiss, 'card retires for good once dismissed').toBe(true);
   });
 
   test('_skipSetupTodo — skipping an item removes it from the checklist', async () => {

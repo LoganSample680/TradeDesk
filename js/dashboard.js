@@ -91,32 +91,60 @@ function _renderDashSetupTodo(){
     drive.title=hasVehicle?'':'Add a vehicle first to log mileage';
   }
   if(typeof _isEmployee!=='undefined'&&_isEmployee){el.style.display='none';el.innerHTML='';return;}
-  // The full setup checklist (owner 2026-07-14): every task shows from day one and
-  // drops off the moment it's done (or the contractor skips an optional one); the
-  // whole card collapses once nothing is left. Add tasks here as more move out of
-  // the signup wizard (§9.9).
+  // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
+  // from day one and drops off the moment it's done (or the contractor skips an
+  // optional one); the whole card collapses once nothing's left. Copy is money/
+  // time-framed — the only thing that moves contractors (not "complete your
+  // profile"). Progress starts ABOVE zero (endowed-progress effect): signup already
+  // did real work — account, trade, payment method — so we credit it and the bar
+  // never opens at 0. No points/badges/streaks (they backfire with pros).
   const skipped=Array.isArray(S.setupSkipped)?S.setupSkipped:[];
   const stripeOk=!!(typeof _stripeConnectStatus!=='undefined'&&_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
   const hasLogo=!!(S.logoData||S.logoUrl);
   const ALL=[
-    {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your first vehicle',
-      sub:'Unlocks mileage tracking, the Drive button, and vehicle tax deductions — add the vehicle and its current odometer.',cta:'Add vehicle'},
-    {id:'getpaid',done:stripeOk,icon:'💳',title:'Set up card payments',
-      sub:'Connect Stripe so clients can pay deposits straight to your bank. Cash & check work without it.',cta:'Connect'},
+    {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your truck',
+      sub:'Mileage writes itself off at tax time — and it turns on the Drive button.',cta:'Add truck'},
+    {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
+      sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
-      sub:'Shows on every proposal you send and your client hub — looks pro from the first estimate.',cta:'Add logo'},
+      sub:'Estimates that look like a real company, not a text message.',cta:'Add logo'},
   ];
-  const items=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
-  if(!items.length){el.style.display='none';el.innerHTML='';return;}
+  const remaining=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
+  // Endowed progress: credit the 3 things signup genuinely finished (account, trade,
+  // payment method chosen). These are real, not fake filler — so the head start is
+  // honest and doesn't backfire.
+  const BASE_DONE=3;
+  const total=BASE_DONE+ALL.length;
+  const doneCount=BASE_DONE+ALL.filter(t=>t.done||skipped.includes(t.id)).length;
+
+  if(!remaining.length){
+    // Everything handled — one clean, adult "done" moment, then gone for good. No
+    // confetti, no mascot; just a confident seal a pro respects. Dismiss retires it.
+    if(S.setupDone){el.style.display='none';el.innerHTML='';return;}
+    el.style.display='block';
+    el.innerHTML=
+      '<div class="card" style="margin-bottom:14px;padding:16px;border:1px solid var(--green-mid,#16a34a);background:linear-gradient(135deg,rgba(22,163,74,.10),rgba(22,163,74,.02));display:flex;align-items:center;gap:12px">'+
+        '<span style="width:34px;height:34px;flex-shrink:0;border-radius:50%;background:var(--green-mid,#16a34a);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px">'+svgIcon('✓',{size:18,color:'#fff'})+'</span>'+
+        '<span style="flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--text)">You’re set up — TradeDesk’s ready to run your jobs.</span>'+
+        '<button onclick="S.setupDone=true;if(typeof saveAll===\'function\')saveAll();_renderDashSetupTodo()" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--green-mid,#16a34a);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">Done</button>'+
+      '</div>';
+    return;
+  }
+  const pct=Math.max(0,Math.min(100,Math.round(doneCount/total*100)));
   el.style.display='block';
   el.innerHTML=
     '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--blue);box-shadow:0 2px 12px rgba(45,93,168,.12)">'+
-      '<div style="display:flex;align-items:center;gap:8px;padding:12px 16px;background:linear-gradient(135deg,rgba(45,93,168,.10),rgba(45,93,168,.02));border-bottom:1px solid var(--border)">'+
-        '<span style="font-size:15px">'+svgIcon('✨',{size:15})+'</span>'+
-        '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Finish setting up</span>'+
-        '<span style="margin-left:auto;font-size:11px;font-weight:700;color:var(--blue)">'+items.length+' to go</span>'+
+      '<div style="padding:12px 16px 10px;background:linear-gradient(135deg,rgba(45,93,168,.10),rgba(45,93,168,.02));border-bottom:1px solid var(--border)">'+
+        '<div style="display:flex;align-items:center;gap:8px">'+
+          '<span style="font-size:15px">'+svgIcon('⚡',{size:15})+'</span>'+
+          '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Get job-ready</span>'+
+          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--blue)">'+remaining.length+' left</span>'+
+        '</div>'+
+        // Endowed-progress bar — never opens at zero.
+        '<div style="height:6px;border-radius:6px;background:rgba(45,93,168,.15);margin-top:9px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--blue);border-radius:6px;transition:width .4s cubic-bezier(.22,1,.36,1)"></div></div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:6px">'+doneCount+' of '+total+' done · knock these out once and this card’s gone for good.</div>'+
       '</div>'+
-      items.map(it=>
+      remaining.map(it=>
         '<div class="td-setup-row" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">'+
           '<span style="width:34px;height:34px;flex-shrink:0;border-radius:9px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:17px">'+svgIcon(it.icon,{size:17})+'</span>'+
           '<span style="flex:1;min-width:0">'+
