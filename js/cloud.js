@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.15.26.6';
+const APP_VERSION='07.15.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3971,14 +3971,9 @@ function supaShowLogin(opts={}){
           '</div>'+
           // Right form panel
           '<div style="flex:1;display:flex;flex-direction:column;background:#fff;min-height:100%">'+
-            // Mobile hero band (dark gradient) — fills the top so the phone view isn\'t an empty white void
-            '<div id="login-mobile-hero" style="display:none;position:relative;overflow:hidden;flex-direction:column;align-items:center;justify-content:center;padding:38px 24px 30px;background:linear-gradient(160deg,#111826 0%,#0D1117 70%,#080a0f 100%);text-align:center">'+
-              '<div style="position:absolute;top:-90px;right:-90px;width:240px;height:240px;background:radial-gradient(circle,rgba(37,99,235,.3),transparent 70%);pointer-events:none"></div>'+
-              '<div style="position:relative;z-index:1;display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
-                '<div style="width:38px;height:38px;background:linear-gradient(135deg,#2563eb,#1e40af);border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(37,99,235,.4)">'+_wrench(20,'#fff')+'</div>'+
-                '<span class="brand-logo-slot" style="font-size:20px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
-              '</div>'+
-              '<div style="position:relative;z-index:1;font-size:15px;color:rgba(255,255,255,.65);font-weight:500">Welcome back — let\'s get to work.</div>'+
+            // Mobile header — minimal brand mark only
+            '<div id="login-mobile-hero" style="display:none;align-items:center;justify-content:center;padding:30px 20px 4px">'+
+              '<div style="width:46px;height:46px;background:linear-gradient(135deg,#2D5DA8,#1B3F7A);border-radius:13px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(45,93,168,.32)">'+_wrench(25,'#fff')+'</div>'+
             '</div>'+
             '<div id="login-form-inner" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:34px 28px;max-width:404px;width:100%;margin:0 auto;box-sizing:border-box">'+
               _inviteBanner+
