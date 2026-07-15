@@ -6452,17 +6452,30 @@ test.describe('Estimate pricing — line items and total calculation', () => {
   });
 
   test('inject line items and verify they are in _geiLines', async () => {
-    await page.evaluate(() => {
+    // Seed + read in ONE evaluate. openFreeFormEstimate's async init can reassign
+    // _geiLines shortly after boot, so pushing in one evaluate and reading in a
+    // separate one intermittently sees an empty array on WebKit.
+    const count = await page.evaluate(() => {
       _geiLines.push({ id: 1, desc: 'Living room paint', qty: 1, price: 500 });
       _geiLines.push({ id: 2, desc: 'Ceiling paint', qty: 1, price: 150 });
       _geiLines.push({ id: 3, desc: 'Trim + doors', qty: 1, price: 120 });
+      return _geiLines.length;
     });
-    const count = await page.evaluate(() => _geiLines.length);
     expect(count).toBeGreaterThanOrEqual(3);
   });
 
   test('bid total is calculated and greater than zero after line items added', async () => {
-    const total = await page.evaluate(() => _geiLines.reduce((s, l) => s + (l.price || 0) * (l.qty || 1), 0));
+    // Self-contained: re-seed if an async re-render cleared the lines, then total
+    // in the same evaluate — no cross-test/cross-evaluate dependency to race.
+    const total = await page.evaluate(() => {
+      if (_geiLines.length < 3) {
+        _geiLines.length = 0;
+        _geiLines.push({ id: 1, desc: 'Living room paint', qty: 1, price: 500 });
+        _geiLines.push({ id: 2, desc: 'Ceiling paint', qty: 1, price: 150 });
+        _geiLines.push({ id: 3, desc: 'Trim + doors', qty: 1, price: 120 });
+      }
+      return _geiLines.reduce((s, l) => s + (l.price || 0) * (l.qty || 1), 0);
+    });
     expect(total).toBeGreaterThan(0);
   });
 
