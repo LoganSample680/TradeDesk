@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.15.26.8';
+const APP_VERSION='07.15.26.9';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -4005,10 +4005,10 @@ function supaShowLogin(opts={}){
   if(_ll)_ll.style.display=_wide?'flex':'none';
   const _lm=document.getElementById('login-mobile-hero');
   if(_lm)_lm.style.display=_wide?'none':'flex';
-  // On phones the hero owns the top, so the form sits right under it instead of
-  // vertically centering in a tall empty column.
+  // On phones the small logo mark stays pinned at the top; the form centers in
+  // the space below it so the content sits balanced instead of jammed up high.
   const _fi=document.getElementById('login-form-inner');
-  if(_fi&&!_wide){_fi.style.justifyContent='flex-start';_fi.style.paddingTop='28px';}
+  if(_fi&&!_wide){_fi.style.justifyContent='center';}
 }
 // Reveal the email/password fields when the user chooses "Continue with email".
 function _loginShowEmail(){
