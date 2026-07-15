@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.15.26.12';
+const APP_VERSION='07.15.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3923,17 +3923,17 @@ function supaShowLogin(opts={}){
         return '<div style="max-width:360px;width:100%">'+
           '<div style="text-align:center;margin-bottom:24px">'+
             '<div style="font-size:36px;margin-bottom:10px">'+svgIcon('🔧',{size:36})+'</div>'+
-            '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">'+(_sbFirst?'Hey '+_sbFirst+' — this one\'s for your business':'Built for your business too')+'</div>'+
-            '<div style="font-size:13.5px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">'+_sbBname+'</strong> set you up with your own TradeDesk account — your own business, not a login into theirs.</div>'+
+            '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">'+(_sbFirst?'Hey '+_sbFirst+', this one\'s for your business':'Built for your business too')+'</div>'+
+            '<div style="font-size:13.5px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">'+_sbBname+'</strong> set you up with your own TradeDesk account: your own business, not a login into theirs.</div>'+
           '</div>'+
           // What you actually get — left-aligned + scannable so the value reads at a glance.
           '<div style="border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;margin-bottom:16px">'+
             (localStorage.getItem('_pendingSubInviteGrant')
-              ?'<div style="display:flex;gap:10px;padding:12px;background:var(--green-lt,#ECFDF5);border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('💵',{size:18})+'</div><div style="font-size:12.5px;color:var(--green-mid,#0E6B39);line-height:1.45;font-weight:600">Every dollar '+_sbBname+' has paid you is <strong>already on your books</strong> — nothing to type in. You start where you are, not from zero.</div></div>'
+              ?'<div style="display:flex;gap:10px;padding:12px;background:var(--green-lt,#ECFDF5);border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('💵',{size:18})+'</div><div style="font-size:12.5px;color:var(--green-mid,#0E6B39);line-height:1.45;font-weight:600">Every dollar '+_sbBname+' has paid you is <strong>already on your books</strong>. Nothing to type in. You start where you are, not from zero.</div></div>'
               :'')+
-            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('📍',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">They send you a job, the <strong>address drops onto your calendar</strong> — just drive out and work.</div></div>'+
-            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('🧾',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Estimate, invoice, e-sign, get paid — the <strong>same tools '+_sbBname+' runs</strong>, now yours'+(_sbTrade?', built for '+_sbTrade+' pros':'')+'.</div></div>'+
-            '<div style="display:flex;gap:10px;padding:12px"><div style="flex:none">'+svgIcon('🔒',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Your clients, your numbers, your money stay <strong>private to you</strong> — they never see your side.</div></div>'+
+            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('📍',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">They send you a job, the <strong>address drops onto your calendar</strong>. Just drive out and work.</div></div>'+
+            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('🧾',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Estimate, invoice, e-sign, get paid: the <strong>same tools '+_sbBname+' runs</strong>, now yours'+(_sbTrade?', built for '+_sbTrade+' pros':'')+'.</div></div>'+
+            '<div style="display:flex;gap:10px;padding:12px"><div style="flex:none">'+svgIcon('🔒',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Your clients, your numbers, your money stay <strong>private to you</strong>. They never see your side.</div></div>'+
           '</div>'+
           '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Claim my account →</button>'+
           '<button onclick="document.getElementById(\'supa-login-overlay\').remove();supaShowLogin({force:true,plain:true})" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">I already use TradeDesk</button>'+
@@ -3960,7 +3960,7 @@ function supaShowLogin(opts={}){
                 '<span class="brand-logo-slot" style="font-size:19px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
               '</div>'+
               '<div style="font-size:29px;font-weight:800;color:#fff;line-height:1.22;letter-spacing:-.025em;margin-bottom:16px">Welcome back.<br>Let\'s get to work.</div>'+
-              '<div style="font-size:14px;color:rgba(255,255,255,.55);line-height:1.5;margin-bottom:30px;max-width:250px">The CRM built for the trades — everything from lead to paid, in your pocket.</div>'+
+              '<div style="font-size:14px;color:rgba(255,255,255,.55);line-height:1.5;margin-bottom:30px;max-width:250px">Built for the trades. Everything from lead to paid, in your pocket.</div>'+
               '<div style="display:grid;gap:14px">'+
                 _bullets.map(f=>
                   '<div style="display:flex;align-items:center;gap:12px;font-size:13.5px;color:rgba(255,255,255,.85)"><span style="width:26px;height:26px;flex:none;border-radius:7px;background:rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center">'+f[0]+'</span><span>'+f[1]+'</span></div>'
@@ -3977,7 +3977,7 @@ function supaShowLogin(opts={}){
                 '<div style="width:46px;height:46px;background:linear-gradient(135deg,#2D5DA8,#1B3F7A);border-radius:13px;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 26px rgba(45,93,168,.55)">'+_wrench(25,'#fff')+'</div>'+
                 '<span style="font-size:23px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
               '</div>'+
-              '<div style="font-size:14px;color:rgba(245,239,226,.62);font-weight:500">Welcome back — let\'s get to work.</div>'+
+              '<div style="font-size:14px;color:rgba(245,239,226,.62);font-weight:500">Welcome back. Let\'s get to work.</div>'+
             '</div>'+
             '<div id="login-form-inner" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:34px 28px;max-width:404px;width:100%;margin:0 auto;box-sizing:border-box">'+
               _inviteBanner+
@@ -3997,7 +3997,7 @@ function supaShowLogin(opts={}){
               '</div>'+
               '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
               '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:20px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your account</button></div>'+
-              '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;margin-top:14px;border:none;background:none;color:var(--text3);font-size:12.5px;cursor:pointer;font-family:inherit">Use offline — data stays on this device only</button>'+
+              '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;margin-top:14px;border:none;background:none;color:var(--text3);font-size:12.5px;cursor:pointer;font-family:inherit">Use offline. Data stays on this device only</button>'+
             '</div>'+
           '</div>'+
         '</div>';
