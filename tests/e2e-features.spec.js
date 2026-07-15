@@ -1365,7 +1365,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
       const drive = document.getElementById('qa-drive-btn');
       const out = {
         cardShown: card && card.style.display !== 'none',
-        hasVehicleItem: !!(card && /truck/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
+        hasVehicleItem: !!(card && /add your vehicles/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
         hasGetPaidItem: !!(card && /card payments/i.test(card.textContent)),
         hasLogoItem: !!(card && /add your logo/i.test(card.textContent)),
         hasSkip: !!(card && /Skip for now/.test(card.innerHTML)),

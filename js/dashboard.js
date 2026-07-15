@@ -102,8 +102,8 @@ function _renderDashSetupTodo(){
   const stripeOk=!!(typeof _stripeConnectStatus!=='undefined'&&_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
   const hasLogo=!!(S.logoData||S.logoUrl);
   const ALL=[
-    {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your truck',
-      sub:'Mileage writes itself off at tax time — and it turns on the Drive button.',cta:'Add truck'},
+    {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your vehicles',
+      sub:'Mileage writes itself off at tax time — and it turns on the Drive button.',cta:'Add vehicle'},
     {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
