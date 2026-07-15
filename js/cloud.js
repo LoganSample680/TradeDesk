@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.14.26.42';
+const APP_VERSION='07.14.26.43';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3942,58 +3942,74 @@ function supaShowLogin(opts={}){
       })()
     : // ── Normal login — branded two-panel, matches the onboarding wizard ─────
       (function(){
-        const _wrench='<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>';
-        const _fld='font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;outline:none;font-family:inherit';
-        const _social=(prov,label,bg,fg,bd)=>'<button onclick="_obOAuth(\''+prov+'\')" style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px;border-radius:9px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+label+'</button>';
+        const _wrench=(sz,st)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+st+'" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>';
+        // Real vendor marks — what every premium app ships, reads as legitimate.
+        const _gLogo='<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 010-3.42V4.96H.96a9 9 0 000 8.08l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 00.96 4.96L3.97 7.3C4.68 5.17 6.66 3.58 9 3.58z"/></svg>';
+        const _aLogo='<svg width="16" height="16" viewBox="0 0 384 512" fill="#fff"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>';
+        const _fldFocus='onfocus="this.style.borderColor=\'var(--blue)\';this.style.background=\'#fff\';this.style.boxShadow=\'0 0 0 3px rgba(37,99,235,.13)\'" onblur="this.style.borderColor=\'#e3e6eb\';this.style.background=\'#f7f8fa\';this.style.boxShadow=\'none\'"';
+        const _fld='font-size:15px;padding:12px 14px;border-radius:10px;border:1.5px solid #e3e6eb;background:#f7f8fa;color:var(--text);width:100%;box-sizing:border-box;outline:none;font-family:inherit;transition:border-color .15s,box-shadow .15s,background .15s';
+        const _social=(prov,label,bg,fg,bd,icon)=>'<button onclick="_obOAuth(\''+prov+'\')" onmouseover="this.style.filter=\'brightness(.97)\'" onmouseout="this.style.filter=\'none\'" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;transition:filter .15s">'+icon+'<span>'+label+'</span></button>';
+        const _bullets=[[svgIcon('📋',{size:15,color:'#fff'}),'Estimates & proposals in minutes'],[svgIcon('💰',{size:15,color:'#fff'}),'Get paid on the spot'],[svgIcon('📍',{size:15,color:'#fff'}),'Mileage, crew & taxes tracked'],[svgIcon('📊',{size:15,color:'#fff'}),'Your whole business, one place']];
         return '<div style="display:flex;min-height:100vh;min-height:100dvh">'+
-          // Left brand panel (desktop only)
-          '<div id="login-left" style="width:340px;flex-shrink:0;background:#0D1117;padding:44px 34px;flex-direction:column;justify-content:space-between">'+
-            '<div>'+
-              '<div style="display:flex;align-items:center;gap:10px;margin-bottom:44px">'+
-                '<div style="width:36px;height:36px;background:rgba(255,255,255,.15);border-radius:9px;display:flex;align-items:center;justify-content:center">'+_wrench+'</div>'+
-                '<span class="brand-logo-slot" style="font-size:18px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
+          // Left brand panel (desktop only) — gradient + soft glow for depth
+          '<div id="login-left" style="position:relative;overflow:hidden;width:360px;flex-shrink:0;background:linear-gradient(160deg,#111826 0%,#0D1117 60%,#080a0f 100%);padding:48px 38px;flex-direction:column;justify-content:space-between">'+
+            '<div style="position:absolute;top:-120px;right:-120px;width:340px;height:340px;background:radial-gradient(circle,rgba(37,99,235,.28),transparent 70%);pointer-events:none"></div>'+
+            '<div style="position:relative;z-index:1">'+
+              '<div style="display:flex;align-items:center;gap:11px;margin-bottom:48px">'+
+                '<div style="width:40px;height:40px;background:linear-gradient(135deg,#2563eb,#1e40af);border-radius:11px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(37,99,235,.4)">'+_wrench(21,'#fff')+'</div>'+
+                '<span class="brand-logo-slot" style="font-size:19px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
               '</div>'+
-              '<div style="font-size:26px;font-weight:800;color:#fff;line-height:1.25;letter-spacing:-.02em;margin-bottom:14px">Welcome back.<br>Let\'s get to work.</div>'+
-              '<div style="display:grid;gap:12px;margin-top:24px">'+
-                [[svgIcon('📋',{size:15,color:'#fff'}),'Estimates & proposals in minutes'],[svgIcon('💰',{size:15,color:'#fff'}),'Get paid on the spot'],[svgIcon('📍',{size:15,color:'#fff'}),'Mileage, crew & taxes tracked'],[svgIcon('📊',{size:15,color:'#fff'}),'Your whole business, one place']].map(f=>
-                  '<div style="display:flex;align-items:center;gap:11px;font-size:13.5px;color:rgba(255,255,255,.82)"><span style="opacity:.9">'+f[0]+'</span><span>'+f[1]+'</span></div>'
+              '<div style="font-size:29px;font-weight:800;color:#fff;line-height:1.22;letter-spacing:-.025em;margin-bottom:16px">Welcome back.<br>Let\'s get to work.</div>'+
+              '<div style="font-size:14px;color:rgba(255,255,255,.55);line-height:1.5;margin-bottom:30px;max-width:250px">The CRM built for the trades — everything from lead to paid, in your pocket.</div>'+
+              '<div style="display:grid;gap:14px">'+
+                _bullets.map(f=>
+                  '<div style="display:flex;align-items:center;gap:12px;font-size:13.5px;color:rgba(255,255,255,.85)"><span style="width:26px;height:26px;flex:none;border-radius:7px;background:rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center">'+f[0]+'</span><span>'+f[1]+'</span></div>'
                 ).join('')+
               '</div>'+
             '</div>'+
-            '<div style="font-size:11px;color:rgba(255,255,255,.4)">© 2025 TradeDesk</div>'+
+            '<div style="position:relative;z-index:1;font-size:11px;color:rgba(255,255,255,.38)">© 2025 TradeDesk</div>'+
           '</div>'+
           // Right form panel
           '<div style="flex:1;display:flex;flex-direction:column;background:#fff;min-height:100%">'+
-            // Mobile header (logo)
-            '<div id="login-mobile-hdr" style="display:none;align-items:center;gap:8px;padding:18px 20px;border-bottom:1px solid var(--border)">'+
-              '<div style="width:28px;height:28px;background:var(--blue);border-radius:7px;display:flex;align-items:center;justify-content:center"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="#fff" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg></div>'+
-              '<span class="brand-logo-slot" style="font-size:15px;font-weight:800;color:var(--text)">TradeDesk</span>'+
+            // Mobile hero band (dark gradient) — fills the top so the phone view isn\'t an empty white void
+            '<div id="login-mobile-hero" style="display:none;position:relative;overflow:hidden;flex-direction:column;align-items:center;justify-content:center;padding:38px 24px 30px;background:linear-gradient(160deg,#111826 0%,#0D1117 70%,#080a0f 100%);text-align:center">'+
+              '<div style="position:absolute;top:-90px;right:-90px;width:240px;height:240px;background:radial-gradient(circle,rgba(37,99,235,.3),transparent 70%);pointer-events:none"></div>'+
+              '<div style="position:relative;z-index:1;display:flex;align-items:center;gap:10px;margin-bottom:14px">'+
+                '<div style="width:38px;height:38px;background:linear-gradient(135deg,#2563eb,#1e40af);border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(37,99,235,.4)">'+_wrench(20,'#fff')+'</div>'+
+                '<span class="brand-logo-slot" style="font-size:20px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
+              '</div>'+
+              '<div style="position:relative;z-index:1;font-size:15px;color:rgba(255,255,255,.65);font-weight:500">Welcome back — let\'s get to work.</div>'+
             '</div>'+
-            '<div style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:32px 28px;max-width:400px;width:100%;margin:0 auto;box-sizing:border-box">'+
+            '<div id="login-form-inner" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:34px 28px;max-width:404px;width:100%;margin:0 auto;box-sizing:border-box">'+
               _inviteBanner+
-              '<div style="margin-bottom:22px"><div style="font-size:24px;font-weight:800;letter-spacing:-.02em;color:var(--text);margin-bottom:4px">Sign in</div><div style="font-size:14px;color:var(--text3)">Welcome back — pick up right where you left off.</div></div>'+
-              _social('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0')+
-              _social('apple','Continue with Apple','#000','#fff','1.5px solid #000')+
-              '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 16px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600">or with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>'+
+              '<div style="margin-bottom:22px"><div style="font-size:25px;font-weight:800;letter-spacing:-.025em;color:var(--text);margin-bottom:4px">Sign in</div><div style="font-size:14px;color:var(--text3)">Pick up right where you left off.</div></div>'+
+              _social('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0',_gLogo)+
+              _social('apple','Continue with Apple','#000','#fff','1.5px solid #000',_aLogo)+
+              '<div style="display:flex;align-items:center;gap:10px;margin:16px 0 18px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.05em">or with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>'+
               '<div class="f" style="margin-bottom:12px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Email</label>'+
-                '<input type="email" id="supa-email" placeholder="you@yourbusiness.com" style="'+_fld+'"></div>'+
+                '<input type="email" id="supa-email" placeholder="you@yourbusiness.com" '+_fldFocus+' style="'+_fld+'"></div>'+
               '<div class="f" style="margin-bottom:8px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Password</label>'+
-                '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" style="'+_fld+'"></div>'+
-              '<div style="text-align:right;margin-bottom:16px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
-              '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:10px;border:none;background:#0D1117;color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 2px 10px rgba(0,0,0,.14);letter-spacing:-.01em">Sign in</button>'+
+                '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" '+_fldFocus+' style="'+_fld+'"></div>'+
+              '<div style="text-align:right;margin-bottom:18px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
+              '<button onclick="supaSignIn()" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 6px 20px rgba(13,17,23,.28)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 3px 12px rgba(13,17,23,.18)\'" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(13,17,23,.18);letter-spacing:-.01em;transition:transform .15s,box-shadow .15s">Sign in</button>'+
               '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
-              '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:18px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your free account</button></div>'+
+              '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:20px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your free account</button></div>'+
               '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;margin-top:14px;border:none;background:none;color:var(--text3);font-size:12.5px;cursor:pointer;font-family:inherit">Use offline — data stays on this device only</button>'+
             '</div>'+
           '</div>'+
         '</div>';
       })();
   document.body.appendChild(overlay);
-  // Responsive: dark brand rail on wide screens, logo header on phones (matches onboarding).
+  // Responsive: dark brand rail on wide screens, branded hero band on phones (matches onboarding).
+  const _wide=window.innerWidth>=760;
   const _ll=document.getElementById('login-left');
-  if(_ll)_ll.style.display=window.innerWidth>=760?'flex':'none';
-  const _lm=document.getElementById('login-mobile-hdr');
-  if(_lm)_lm.style.display=window.innerWidth>=760?'none':'flex';
+  if(_ll)_ll.style.display=_wide?'flex':'none';
+  const _lm=document.getElementById('login-mobile-hero');
+  if(_lm)_lm.style.display=_wide?'none':'flex';
+  // On phones the hero owns the top, so the form sits right under it instead of
+  // vertically centering in a tall empty column.
+  const _fi=document.getElementById('login-form-inner');
+  if(_fi&&!_wide){_fi.style.justifyContent='flex-start';_fi.style.paddingTop='28px';}
   setTimeout(()=>document.getElementById('supa-email')?.focus(),100);
 }
 

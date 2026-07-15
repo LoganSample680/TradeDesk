@@ -1165,7 +1165,10 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       const html = document.getElementById('supa-login-overlay')?.innerHTML || '';
       document.getElementById('supa-login-overlay')?.remove();
       return {
-        plainLogin: html.includes('Sign in to sync your data'),
+        // Plain login is defined by its email/password form (present in every
+        // copy revision), not by any one headline string — the redesigned login
+        // dropped the old "Sign in to sync your data" subtitle.
+        plainLogin: html.includes('id="supa-email"') && html.includes('id="supa-pass"'),
         noPitch: !html.includes('Claim my free account'),
         stashKept: !!localStorage.getItem('_pendingSubInvite'),
       };
