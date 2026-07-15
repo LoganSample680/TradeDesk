@@ -112,17 +112,20 @@ test.describe('Client management — CRUD and validation', () => {
   });
 
   test('saveClient — saves valid client and increments clients array', async () => {
-    const clientsBefore = await page.evaluate(() =>
-      typeof clients !== 'undefined' ? clients.length : -1
-    );
-
-    await page.evaluate(() => {
+    // Open form, fill, save, and read clients.length all in ONE synchronous
+    // evaluate. saveClient() pushes to the live `clients` array synchronously
+    // (js/clients.js) so the post-save count is accurate immediately; splitting
+    // save and read across evaluates leaves a window where the debounced
+    // cloud-merge (js/data.js reassigns `clients`) can clobber the just-added
+    // record, which is what intermittently zeroed the count on WebKit.
+    const result = await page.evaluate(() => {
+      if (typeof clients === 'undefined') return { before: -1, after: -1 };
+      const before = clients.length;
       _submitting = false;
       _allowPhoneDupe = true; // Allow any phone dupe
       if (typeof openNewClient === 'function') openNewClient();
       // Use a unique name to avoid duplicate detection
       const uid = 'E2EClient_' + Date.now();
-      window.__e2eClientName = uid;
       const n = document.getElementById('cf-name'); if (n) n.value = uid;
       // Use a unique phone number
       const ph = '31655' + String(Date.now()).slice(-5);
@@ -130,22 +133,17 @@ test.describe('Client management — CRUD and validation', () => {
       // Set source to a valid option value from the select
       const s = document.getElementById('cf-source');
       if (s && s.tagName === 'SELECT') {
-        // Pick first non-empty option
         for (let i = 1; i < s.options.length; i++) {
           if (s.options[i].value) { s.selectedIndex = i; break; }
         }
       } else if (s) { s.value = 'Word of mouth'; }
+      _submitting = false;
+      if (typeof saveClient === 'function') saveClient();
+      return { before, after: clients.length };
     });
-    await page.waitForTimeout(100);
-    await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
-    await page.waitForTimeout(400);
 
-    const clientsAfter = await page.evaluate(() =>
-      typeof clients !== 'undefined' ? clients.length : -1
-    );
-
-    if (clientsBefore >= 0 && clientsAfter >= 0) {
-      expect(clientsAfter).toBeGreaterThan(clientsBefore);
+    if (result.before >= 0 && result.after >= 0) {
+      expect(result.after).toBeGreaterThan(result.before);
     }
   });
 
