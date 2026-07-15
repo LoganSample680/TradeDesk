@@ -1423,32 +1423,9 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('obStep1 — renders onboarding step 1 without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep1 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep1(el);
-        return { ok: true, hasContent: el.innerHTML.length > 0 };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep2 — renders onboarding step 2 without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep2 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep2(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
+  // obStep1/2/4/5/6/7/9 deleted in the 11→3 onboarding restructure (§9.9). Step 1
+  // is now obStepAccount (covered in e2e-functions3); step 2 = obStep3 (trade),
+  // step 3 = obStep8 (payments) — both still tested below.
   test('obStep3 — renders trade selection step', async () => {
     const result = await page.evaluate(() => {
       if (typeof obStep3 !== 'function') return { skip: true };
@@ -1462,58 +1439,6 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('obStep4 — renders business info step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep4 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep4(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep5 — renders role selection step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep5 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep5(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep6 — renders vehicle step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep6 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep6(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep7 — renders team member step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep7 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep7(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
   test('obStep8 — renders payment setup step', async () => {
     const result = await page.evaluate(() => {
       if (typeof obStep8 !== 'function') return { skip: true };
@@ -1521,19 +1446,6 @@ test.describe('Settings functions', () => {
         const el = document.createElement('div');
         document.body.appendChild(el);
         obStep8(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep9 — renders final review step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep9 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep9(el);
         return { ok: true };
       } catch (e) { return { ok: false, error: e.message }; }
     });

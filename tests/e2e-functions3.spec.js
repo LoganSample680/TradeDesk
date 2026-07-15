@@ -3134,54 +3134,9 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('obNext4 — calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obNext4 !== 'function') return { skip: true };
-      try { obNext4(); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStepBrand — calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStepBrand !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        obStepBrand(el);
-        return { ok: true };
-      } catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obSelectRole — calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obSelectRole !== 'function') return { skip: true };
-      try { obSelectRole('owner'); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obNext6 — calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obNext6 !== 'function') return { skip: true };
-      try { obNext6(); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obNext2 — calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obNext2 !== 'function') return { skip: true };
-      try { obNext2(); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
+  // obNext2/obNext4/obNext6/obStepBrand/obSelectRole deleted in the 11→3 restructure
+  // (§9.9). New step-1 coverage (obStepAccount/obNextAccount) + the deletion check
+  // live further down in this describe block.
   test('obSubmit — function is defined', async () => {
     const result = await page.evaluate(() => {
       // obSubmit calls Supabase signup which requires real credentials;
@@ -3260,57 +3215,68 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
 
   // Booked-jobs import step (owner 2026-07-14): onboarding step 10 imports work
   // already sold — each row becomes a lead + a job on the calendar.
-  test('obStepJobs — renders the import step; obAddJob appends a row', async () => {
+  // 3-step wizard (§9.9): step 1 merges account + core business into one screen.
+  test('obStepAccount — step 1 renders account + business fields + social sign-in', async () => {
     const result = await page.evaluate(() => {
-      if (typeof obStepJobs !== 'function' || typeof obAddJob !== 'function') return { skip: true };
-      // Isolate: a boot that landed on onboarding leaves its own #onboarding-overlay
-      // / #ob-body / #ob-err in the DOM. getElementById/querySelector resolve to the
-      // FIRST match in document order, so obAddJob (which calls getElementById('ob-body'))
-      // would render into the boot overlay, not ours. Remove any leftover first.
+      if (typeof obStepAccount !== 'function') return { skip: true };
       document.getElementById('onboarding-overlay')?.remove();
       document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
-      _ob.jobs = [];
       const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
-      obStepJobs(el);
-      const askCopy = /jobs already booked/i.test(el.textContent);
-      obAddJob();
-      const rowsAfter = _ob.jobs.length;
-      const hasClientInput = !!document.querySelector('#ob-body input[placeholder="Client name"]');
+      obStepAccount(el);
+      const has = id => !!el.querySelector('#' + id);
+      const r = {
+        title: /create your account/i.test(el.textContent),
+        fields: has('ob-name') && has('ob-email') && has('ob-pass') && has('ob-bname') && has('ob-bphone') && has('ob-state'),
+        google: /continue with google/i.test(el.textContent),
+        apple: /continue with apple/i.test(el.textContent),
+      };
       el.remove();
-      return { askCopy, rowsAfter, hasClientInput };
+      return r;
     });
     if (result.skip) return;
-    expect(result.askCopy, 'step asks about already-booked jobs').toBe(true);
-    expect(result.rowsAfter, 'obAddJob appends a job row').toBe(1);
-    expect(result.hasClientInput, 'row renders a client-name field').toBe(true);
+    expect(result.title, 'account header shows').toBe(true);
+    expect(result.fields, 'name/email/password/business/phone/state all present').toBe(true);
+    expect(result.google && result.apple, 'Google + Apple sign-in offered').toBe(true);
   });
 
-  test('obNextJobs — a row with data but no client name is flagged, not silently dropped', async () => {
+  test('obNextAccount — validates and advances step 1 → 2', async () => {
     const result = await page.evaluate(() => {
-      if (typeof obNextJobs !== 'function') return { skip: true };
-      // Isolate: obNextJobs writes to document.getElementById('ob-err'). If a boot
-      // onboarding overlay left an #ob-err earlier in the DOM, the code writes there
-      // while a detached local ref stays empty — a false negative. Clear leftovers so
-      // OUR #ob-err is the one obNextJobs targets, and read via the same getElementById.
+      if (typeof obNextAccount !== 'function' || typeof obStepAccount !== 'function') return { skip: true };
       document.getElementById('onboarding-overlay')?.remove();
       document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
+      const _origRender = window.renderObStep; window.renderObStep = () => {};
       const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
-      const err = document.createElement('div'); err.id = 'ob-err'; el.appendChild(err);
-      _ob.step = 10;
-      _ob.jobs = [{ client: '', addr: '', start: '', value: '4200' }]; // value but no name
-      obNextJobs();
-      const errText = (document.getElementById('ob-err') || {}).textContent || '';
-      const blocked = _ob.step === 10 && /client name/i.test(errText);
-      // Now give it a name — it should advance to the review step (11).
-      _ob.jobs = [{ client: 'Maria Alvarez', addr: '', start: '', value: '4200' }];
-      obNextJobs();
-      const advanced = _ob.step === 11;
+      obStepAccount(el);
+      _ob.step = 1;
+      // Missing business name → blocked on step 1.
+      el.querySelector('#ob-name').value = 'John Smith';
+      el.querySelector('#ob-email').value = 'john@smithco.com';
+      el.querySelector('#ob-pass').value = 'secret1';
+      el.querySelector('#ob-bname').value = '';
+      el.querySelector('#ob-bphone').value = '316-555-0100';
+      el.querySelector('#ob-state').value = 'KS';
+      obNextAccount();
+      const blocked = _ob.step === 1;
+      // Fill business name → advances to step 2.
+      el.querySelector('#ob-bname').value = 'Smith Painting Co';
+      obNextAccount();
+      const advanced = _ob.step === 2 && _ob.businessName === 'Smith Painting Co' && _ob.state === 'KS';
       el.remove();
+      window.renderObStep = _origRender;
       return { blocked, advanced };
     });
     if (result.skip) return;
-    expect(result.blocked, 'incomplete row blocks + shows an error').toBe(true);
-    expect(result.advanced, 'a named row lets the step advance').toBe(true);
+    expect(result.blocked, 'missing business name blocks step 1').toBe(true);
+    expect(result.advanced, 'a complete step 1 advances to trade with data captured').toBe(true);
+  });
+
+  test('onboarding restructure — cut steps are actually gone (§7.1)', async () => {
+    const gone = await page.evaluate(() => [
+      'obStep1', 'obStep2', 'obNext2', 'obStep4', 'obNext4', 'obStepBrand',
+      'obStep5', 'obSelectRole', 'obStep6', 'obNext6', 'obStep7', 'obStepJobs',
+      'obNextJobs', 'obStep9',
+    ].filter(fn => typeof window[fn] === 'function'));
+    expect(gone, 'every cut onboarding function is deleted, not orphaned: ' + gone.join(',')).toEqual([]);
   });
 
   test('no console errors during cloud realtime/LP/onboarding tests', async () => {
