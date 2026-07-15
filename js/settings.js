@@ -1489,7 +1489,7 @@ function obStep8(el){
     '<label id="obpay-wantCards" style="display:flex;align-items:flex-start;gap:12px;padding:14px;border:1.5px solid '+(_ob.wantCards!==false?'#86efac':'var(--border2)')+';border-radius:var(--r);background:#f0fdf4;margin-bottom:8px;cursor:pointer;user-select:none">'+
       '<input type="checkbox" '+(_ob.wantCards!==false?'checked':'')+' onchange="obTogglePay(\'wantCards\',this.checked)" style="width:19px;height:19px;margin-top:1px;accent-color:#16a34a;flex-shrink:0">'+
       '<div><div style="font-size:14px;font-weight:700;color:#166534">Take cards & bank transfers</div>'+
-      '<div style="font-size:12px;color:#166534;margin-top:2px;line-height:1.6">Clients pay their deposit straight to your bank. Card fee 2.9% + $0.30, auto-logged as a deductible expense. Leave this on and we\'ll open Stripe right after you create your account (~2 min; have your EIN or SSN and bank info handy). You can always do it later in <strong>Settings → Stripe Connect</strong>.</div></div>'+
+      '<div style="font-size:12px;color:#166534;margin-top:2px;line-height:1.6">Clients pay their deposit straight to your bank. Card fee 2.9% + $0.30, auto-logged as a deductible expense. Leave this on and <strong>Turn on card payments</strong> will be waiting on your dashboard — connect Stripe in ~2 min whenever you\'ve got your EIN and bank info handy. Cash & check work right now without it.</div></div>'+
     '</label>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     '<div id="ob-progress" style="display:none;font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px"></div>'+
@@ -1552,6 +1552,7 @@ async function obSubmit(){
     // step. Stored as explicit booleans so an unchecked box is a real false, not
     // an undefined that the default-true reader would flip back on.
     S.acceptCash=_ob.acceptCash!==false;S.acceptCheck=_ob.acceptCheck!==false;S.allowPayLater=_ob.allowPayLater!==false;
+    S.wantCards=_ob.wantCards!==false; // intent to take cards — nudged via the dashboard checklist, not auto-launched
     // Arrived via a sub-invite referral link? Record who brought them in, then
     // redeem the grant (single-use RPC): the inviter lands as this brand-new
     // account's first client/lead, and everything the inviter logged as paid
@@ -1590,16 +1591,11 @@ async function obSubmit(){
     document.getElementById('onboarding-overlay')?.remove();
     window._obInProgress=false;
     saveAll();applyPermissions();renderDash();goPg('pg-dash');
-    // Owner chose auto-launch (2026-07-14): if they left "Take cards" on, kick
-    // off Stripe Connect now that the account row exists (it can't run earlier —
-    // there's nothing to attach Stripe to until obSubmit creates the account).
-    // startStripeConnect() redirects to Stripe's hosted onboarding on success; on
-    // error it just alerts and leaves them on the dashboard. Never blocks — a
-    // contractor without their EIN can bail and reconnect from Settings later.
-    if(_ob.wantCards!==false&&typeof startStripeConnect==='function'){
-      showToast&&showToast('Account created — let’s connect Stripe for card payments…','💳',5000);
-      setTimeout(()=>{try{startStripeConnect();}catch(_e){console.warn('[onboarding] Stripe auto-launch skipped:',_e);}},900);
-    }
+    // No Stripe auto-redirect (owner 2026-07-15): yanking a new contractor into an
+    // EIN/bank form the instant they sign up is the exact high-friction moment we
+    // defer everywhere else. Card setup lives ONLY on the dashboard checklist
+    // ("Turn on card payments"), so they connect Stripe when they're ready. Their
+    // intent is saved (S.wantCards) so we can nudge later; cash/check work now.
   }catch(e){
     window._obInProgress=false;
     console.error('Onboarding failed:',e);
