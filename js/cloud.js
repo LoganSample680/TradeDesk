@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.14.26.44';
+const APP_VERSION='07.15.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3924,7 +3924,7 @@ function supaShowLogin(opts={}){
           '<div style="text-align:center;margin-bottom:24px">'+
             '<div style="font-size:36px;margin-bottom:10px">'+svgIcon('🔧',{size:36})+'</div>'+
             '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">'+(_sbFirst?'Hey '+_sbFirst+' — this one\'s for your business':'Built for your business too')+'</div>'+
-            '<div style="font-size:13.5px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">'+_sbBname+'</strong> set you up with your own free TradeDesk account — your own business, not a login into theirs.</div>'+
+            '<div style="font-size:13.5px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">'+_sbBname+'</strong> set you up with your own TradeDesk account — your own business, not a login into theirs.</div>'+
           '</div>'+
           // What you actually get — left-aligned + scannable so the value reads at a glance.
           '<div style="border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;margin-bottom:16px">'+
@@ -3935,7 +3935,7 @@ function supaShowLogin(opts={}){
             '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('🧾',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Estimate, invoice, e-sign, get paid — the <strong>same tools '+_sbBname+' runs</strong>, now yours'+(_sbTrade?', built for '+_sbTrade+' pros':'')+'.</div></div>'+
             '<div style="display:flex;gap:10px;padding:12px"><div style="flex:none">'+svgIcon('🔒',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Your clients, your numbers, your money stay <strong>private to you</strong> — they never see your side.</div></div>'+
           '</div>'+
-          '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Claim my free account →</button>'+
+          '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Claim my account →</button>'+
           '<button onclick="document.getElementById(\'supa-login-overlay\').remove();supaShowLogin({force:true,plain:true})" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">I already use TradeDesk</button>'+
           '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
           '</div>';
@@ -3993,7 +3993,7 @@ function supaShowLogin(opts={}){
               '<div style="text-align:right;margin-bottom:18px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
               '<button onclick="supaSignIn()" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 6px 20px rgba(13,17,23,.28)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 3px 12px rgba(13,17,23,.18)\'" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(13,17,23,.18);letter-spacing:-.01em;transition:transform .15s,box-shadow .15s">Sign in</button>'+
               '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
-              '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:20px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your free account</button></div>'+
+              '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:20px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your account</button></div>'+
               '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;margin-top:14px;border:none;background:none;color:var(--text3);font-size:12.5px;cursor:pointer;font-family:inherit">Use offline — data stays on this device only</button>'+
             '</div>'+
           '</div>'+

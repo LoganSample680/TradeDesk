@@ -1132,7 +1132,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
         hasInviter: html.includes('Torres Electric'),
         hasFirstName: html.includes('Dana'),
         hasTrade: html.includes('drywall pros'),
-        hasSignup: html.includes('Claim my free account'),
+        hasSignup: html.includes('Claim my account'),
         hasSeparation: html.includes('private to you'),
       };
       ov?.remove();
@@ -1169,7 +1169,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
         // copy revision), not by any one headline string — the redesigned login
         // dropped the old "Sign in to sync your data" subtitle.
         plainLogin: html.includes('id="supa-email"') && html.includes('id="supa-pass"'),
-        noPitch: !html.includes('Claim my free account'),
+        noPitch: !html.includes('Claim my account'),
         stashKept: !!localStorage.getItem('_pendingSubInvite'),
       };
     });
@@ -1186,7 +1186,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       const html = document.getElementById('supa-login-overlay')?.innerHTML || '';
       document.getElementById('supa-login-overlay')?.remove();
       localStorage.removeItem('_pendingEmpInvite');
-      return { empWins: html.includes('added you to their crew'), noSubPitch: !html.includes('Claim my free account') };
+      return { empWins: html.includes('added you to their crew'), noSubPitch: !html.includes('Claim my account') };
     });
     expect(result.empWins).toBe(true);
     expect(result.noSubPitch).toBe(true);
