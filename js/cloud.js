@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.15.26.10';
+const APP_VERSION='07.15.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3969,11 +3969,12 @@ function supaShowLogin(opts={}){
             '</div>'+
             '<div style="position:relative;z-index:1;font-size:11px;color:rgba(255,255,255,.38)">© 2025 TradeDesk</div>'+
           '</div>'+
-          // Right form panel
-          '<div style="flex:1;display:flex;flex-direction:column;background:#fff;min-height:100%">'+
-            // Mobile header — minimal brand mark only
-            '<div id="login-mobile-hero" style="display:none;align-items:center;justify-content:center;padding:30px 20px 4px">'+
-              '<div style="width:46px;height:46px;background:linear-gradient(135deg,#2D5DA8,#1B3F7A);border-radius:13px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(45,93,168,.32)">'+_wrench(25,'#fff')+'</div>'+
+          // Right form panel — subtle branded gradient instead of flat white
+          '<div style="flex:1;display:flex;flex-direction:column;background:radial-gradient(115% 52% at 50% -8%,rgba(45,93,168,.09),transparent 60%),linear-gradient(180deg,#FCFDFF 0%,#F2F5FB 100%);min-height:100%">'+
+            // Mobile header — brand mark on a soft glow halo
+            '<div id="login-mobile-hero" style="display:none;position:relative;align-items:center;justify-content:center;padding:34px 20px 6px">'+
+              '<div style="position:absolute;top:6px;left:50%;transform:translateX(-50%);width:190px;height:130px;background:radial-gradient(circle,rgba(45,93,168,.18),transparent 70%);pointer-events:none"></div>'+
+              '<div style="position:relative;z-index:1;width:52px;height:52px;background:linear-gradient(135deg,#2D5DA8,#1B3F7A);border-radius:15px;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(45,93,168,.42)">'+_wrench(28,'#fff')+'</div>'+
             '</div>'+
             '<div id="login-form-inner" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:34px 28px;max-width:404px;width:100%;margin:0 auto;box-sizing:border-box">'+
               _inviteBanner+
