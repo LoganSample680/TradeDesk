@@ -108,6 +108,8 @@ function _renderDashSetupTodo(){
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
       sub:'Estimates that look like a real company, not a text message.',cta:'Add logo'},
+    {id:'team',done:false,icon:'👥',title:'Add your crew',
+      sub:'W-2 employees clock in so you stop chasing hours on paper — or invite 1099 subs. Solo? Say so and this goes away.',cta:'Set up'},
   ];
   const remaining=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
   // Endowed progress: credit the 3 things signup genuinely finished (account, trade,
@@ -166,6 +168,38 @@ function _setupTodoGo(id){
   if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
   if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
   if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
+  if(id==='team'){_setupTeamChooser();return;}
+}
+// Team is a fork, not a single action (owner 2026-07-14): W-2 employee, 1099 sub,
+// or "I don't have a team" — the last one is the honest completion for a solo op,
+// so the card can actually empty out instead of nagging forever.
+function _setupTeamChooser(){
+  document.getElementById('setup-team-chooser')?.remove();
+  const ov=document.createElement('div');
+  ov.id='setup-team-chooser';
+  ov.style.cssText='position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const opt=(icon,title,sub,onclick)=>'<button onclick="'+onclick+'" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:15px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:10px">'+
+    '<span style="width:36px;height:36px;flex-shrink:0;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px">'+svgIcon(icon,{size:18})+'</span>'+
+    '<span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+title+'</span><span style="display:block;font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4">'+sub+'</span></span>'+
+  '</button>';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px;padding:18px 16px 24px;box-sizing:border-box">'+
+    '<div style="font-size:17px;font-weight:800;color:var(--text);margin-bottom:4px">Add your crew</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Who works with you? You can add more anytime.</div>'+
+    opt('👷','Add a W-2 employee','Payroll, hours, and taxes — we\'ll walk you through hiring paperwork.',"document.getElementById('setup-team-chooser').remove();_setupTeamRoute('w2')")+
+    opt('🧰','Invite a 1099 sub','Send an invite — they join and you track what you pay them.',"document.getElementById('setup-team-chooser').remove();_setupTeamRoute('1099')")+
+    opt('🙋','I don\'t have a team','You run solo — clear this off your list.',"document.getElementById('setup-team-chooser').remove();_skipSetupTodo('team')")+
+  '</div>';
+  document.body.appendChild(ov);
+}
+function _setupTeamRoute(kind){
+  // Both land on the team surface where you invite a person and set W-2 vs 1099;
+  // once a real member exists the item clears (skip records intent meanwhile).
+  if(typeof goPg==='function')goPg('pg-settings');
+  setTimeout(()=>{
+    if(typeof _openSetDetail==='function')_openSetDetail('team');
+    if(typeof openInviteEmployeeModal==='function')openInviteEmployeeModal();
+  },180);
 }
 function _skipSetupTodo(id){
   if(!Array.isArray(S.setupSkipped))S.setupSkipped=[];

@@ -1368,6 +1368,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
         hasVehicleItem: !!(card && /add your vehicles/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
         hasGetPaidItem: !!(card && /card payments/i.test(card.textContent)),
         hasLogoItem: !!(card && /add your logo/i.test(card.textContent)),
+        hasTeamItem: !!(card && /add your crew/i.test(card.textContent) && /_setupTodoGo\('team'\)/.test(card.innerHTML)),
         hasSkip: !!(card && /Skip for now/.test(card.innerHTML)),
         // Endowed progress: shrinking count + a bar that starts above zero.
         hasCount: !!(card && /left/i.test(card.textContent)),
@@ -1383,10 +1384,39 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     expect(r.hasVehicleItem, 'Add-vehicle item present + wired').toBe(true);
     expect(r.hasGetPaidItem, 'Set-up-payments item present').toBe(true);
     expect(r.hasLogoItem, 'Add-logo item present').toBe(true);
+    expect(r.hasTeamItem, 'Add-crew item present + wired to the chooser').toBe(true);
     expect(r.hasSkip, 'each item is skippable').toBe(true);
     expect(r.hasCount, 'shrinking "N left" count present').toBe(true);
     expect(r.hasProgress, 'endowed-progress "X of Y done" present').toBe(true);
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
+  });
+
+  test('_setupTeamChooser — offers W-2 / 1099 / no-team, and "no team" clears the item', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _setupTeamChooser !== 'function' || typeof _skipSetupTodo !== 'function') return { skip: true };
+      const _savedSkip = S.setupSkipped, _origSave = window.saveAll;
+      window.saveAll = () => {};
+      S.setupSkipped = [];
+      _setupTeamChooser();
+      const ov = document.getElementById('setup-team-chooser');
+      const txt = ov ? ov.textContent : '';
+      const out = {
+        shown: !!ov,
+        w2: /w-2 employee/i.test(txt),
+        sub: /1099 sub/i.test(txt),
+        noTeam: /don.t have a team/i.test(txt),
+      };
+      // "I don't have a team" path clears the team item for good.
+      _skipSetupTodo('team');
+      out.teamSkipped = (S.setupSkipped || []).includes('team');
+      document.getElementById('setup-team-chooser')?.remove();
+      window.saveAll = _origSave; S.setupSkipped = _savedSkip;
+      return out;
+    });
+    if (r.skip) return;
+    expect(r.shown, 'chooser overlay opens').toBe(true);
+    expect(r.w2 && r.sub && r.noTeam, 'all three team paths offered').toBe(true);
+    expect(r.teamSkipped, '"I don\'t have a team" clears the crew item').toBe(true);
   });
 
   test('_renderDashSetupTodo — every item done/skipped: shows a clean done state, then retires on dismiss', async () => {
@@ -1396,7 +1426,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
       window.saveAll = () => {};
       // Vehicle added (done); the two optional items skipped → nothing left.
       S.vehicles = [{ id: 1, name: '2019 F-150' }]; S.vehiclesTs = Date.now();
-      S.setupSkipped = ['getpaid', 'logo']; S.setupDone = false;
+      S.setupSkipped = ['getpaid', 'logo', 'team']; S.setupDone = false;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
