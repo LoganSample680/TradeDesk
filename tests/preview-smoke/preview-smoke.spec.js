@@ -82,8 +82,9 @@ test.describe('preview deploy smoke — the BUILT artifact on the real origin', 
 
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     // App shell rendered (the login screen) = the deployed JS actually ran, not a blank
-    // page / 500 / wrong-root deploy.
-    await expect(page.locator('#supa-email')).toBeVisible({ timeout: 20000 });
+    // page / 500 / wrong-root deploy. The email field is now behind "Continue with
+    // email", so assert the always-visible toggle instead.
+    await expect(page.locator('#login-email-toggle')).toBeVisible({ timeout: 20000 });
 
     const liveVersion = await page.evaluate(() => (typeof APP_VERSION !== 'undefined' ? APP_VERSION : null));
     const jsonRes = await page.request.get('/version.json');

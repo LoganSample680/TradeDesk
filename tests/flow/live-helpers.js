@@ -215,7 +215,10 @@ async function signIn(page, acctOverride) {
   // bridge, tips into the 90s goto timeouts we saw. We still wait for #supa-email below,
   // so the app is provably ready before we touch it.
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.waitForSelector('#supa-email', { timeout: 30000 });
+  // #supa-email now lives inside the collapsed "Continue with email" block, so wait
+  // for it ATTACHED (login DOM built) rather than visible — signIn authenticates
+  // through the Supabase client below, it never types into the field.
+  await page.waitForSelector('#supa-email', { state: 'attached', timeout: 30000 });
   // Authenticate through the app's own Supabase client and RETURN the exact
   // result, so a bad credential or unconfirmed email reports as a one-line
   // finding instead of an opaque 120s timeout. This still triggers the app's

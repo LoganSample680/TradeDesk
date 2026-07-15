@@ -39,7 +39,7 @@ const canonFnSource = `
 // worker account). `query` lets the token half arrive via the real ?emp_invite= URL.
 async function crewSignIn(pg, acct, query) {
   await pg.goto('/' + (query || ''), { waitUntil: 'domcontentloaded', timeout: 30000 });
-  await pg.waitForSelector('#supa-email', { timeout: 30000 });
+  await pg.waitForSelector('#supa-email', { state: 'attached', timeout: 30000 });
   const res = await pg.evaluate(async ({ email, password }) => {
     if (typeof _supa === 'undefined' || !_supa) return { ok: false, why: 'client not initialized' };
     let lastWhy = null;

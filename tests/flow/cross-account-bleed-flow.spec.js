@@ -70,7 +70,7 @@ async function _signInDiag(page, acct, label) {
 
 async function openAndSignIn(page, acct) {
   await page.goto('/');
-  await page.waitForSelector('#supa-email', { timeout: 30000 });
+  await page.waitForSelector('#supa-email', { state: 'attached', timeout: 30000 });
   const res = await _signInDiag(page, acct, 'A');
   if (!res.ok) throw new Error(`openAndSignIn(${acct.email}): ${res.why}`);
   await page.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
