@@ -1171,11 +1171,16 @@ test.describe('sub referral invite, exhaustive coverage', () => {
         plainLogin: html.includes('id="supa-email"') && html.includes('id="supa-pass"'),
         noPitch: !html.includes('Claim my account'),
         stashKept: !!localStorage.getItem('_pendingSubInvite'),
+        // The deliberate offline-only entry was removed (data-loss risk): the login
+        // must no longer offer "Use offline". _enterOfflineMode stays as an auth-hiccup
+        // fallback only, never a user-facing choice.
+        noOfflineOptIn: !html.includes('Use offline'),
       };
     });
     expect(result.plainLogin).toBe(true);
     expect(result.noPitch).toBe(true);
     expect(result.stashKept).toBe(true);
+    expect(result.noOfflineOptIn).toBe(true);
   });
 
   test('employee invite outranks sub referral when both are pending', async () => {

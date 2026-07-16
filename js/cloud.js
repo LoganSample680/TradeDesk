@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.15.26.14';
+const APP_VERSION='07.15.26.15';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3997,7 +3997,9 @@ function supaShowLogin(opts={}){
               '</div>'+
               '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
               '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:20px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your account</button></div>'+
-              '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;margin-top:14px;border:none;background:none;color:var(--text3);font-size:12.5px;cursor:pointer;font-family:inherit">Use offline. Data stays on this device only</button>'+
+              // Deliberate offline-only entry removed: a crash / cleared cache / new device would
+              // wipe an offline-only account with no cloud backup. _enterOfflineMode is kept ONLY
+              // as the auth-hiccup fallback (below) for users who already have a synced cloud cache.
             '</div>'+
           '</div>'+
         '</div>';

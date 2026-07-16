@@ -14,7 +14,7 @@
 set -uo pipefail
 
 WEBHOOK="${SLACK_WEBHOOK_URL:-}"
-[ -z "$WEBHOOK" ] && { echo "SLACK_WEBHOOK_URL not set — skipping"; exit 0; }
+[ -z "$WEBHOOK" ] && { echo "SLACK_WEBHOOK_URL not set, skipping"; exit 0; }
 
 host="$(hostname 2>/dev/null || echo '?')"
 read -r mem_pct mem_str < <(free -m 2>/dev/null | awk '/Mem:/{printf "%.0f %d/%d MB (%.0f%%)", $3/$2*100, $3, $2, $3/$2*100}')
@@ -28,7 +28,7 @@ if [ "${ALERT_ONLY:-0}" = "1" ]; then
   hot=0
   [ "${mem_pct:-0}" -ge "${RAM_MAX:-90}" ] 2>/dev/null && hot=1
   [ "${disk_pct:-0}" -ge "${DISK_MAX:-90}" ] 2>/dev/null && hot=1
-  [ "$hot" = "0" ] && { echo "within thresholds — no alert"; exit 0; }
+  [ "$hot" = "0" ] && { echo "within thresholds, no alert"; exit 0; }
 fi
 
 emoji=":satellite:"
@@ -39,7 +39,7 @@ emoji=":satellite:"
 python3 - "$WEBHOOK" "$emoji" "$host" "$mem_str" "$load" "$disk_str" "$runner" "$guests" <<'PY' || echo "post failed"
 import json, sys, urllib.request
 hook, emoji, host, mem, load, disk, runner, guests = sys.argv[1:9]
-text = (f"{emoji} *jarvis heartbeat* — `{host}`\n"
+text = (f"{emoji} *jarvis heartbeat*, `{host}`\n"
         f"• RAM: {mem}\n• Load: {load}\n• Disk /: {disk}\n"
         f"• GH runner: {runner}\n• Running LXC: {guests}")
 req = urllib.request.Request(hook, data=json.dumps({"text": text}).encode(), headers={"Content-Type": "application/json"})

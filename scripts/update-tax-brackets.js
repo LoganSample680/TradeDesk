@@ -81,10 +81,10 @@ function extractBrackets(html) {
     if (isUpTo) {
       threshold = amounts[0];
     } else if (isOver) {
-      // "Over $X" means X is the 35% floor = top of 32% bracket — skip, we get it from 32% row
+      // "Over $X" means X is the 35% floor = top of 32% bracket, skip, we get it from 32% row
       threshold = null;
     } else if (amounts.length >= 2) {
-      // "$X to $Y" — Y is the top of this bracket
+      // "$X to $Y", Y is the top of this bracket
       threshold = amounts[amounts.length - 1];
     } else if (amounts.length === 1) {
       threshold = amounts[0];
@@ -227,7 +227,7 @@ async function main() {
 
   // Sanity check
   if (!brackets.b10 || brackets.b10 < 9000 || brackets.b10 > 20000) {
-    console.error(`ERROR: Sanity check failed — b10=${brackets.b10} is outside expected range $9,000–$20,000`);
+    console.error(`ERROR: Sanity check failed, b10=${brackets.b10} is outside expected range $9,000–$20,000`);
     console.error('Parsed brackets:', brackets);
     process.exit(1);
   }

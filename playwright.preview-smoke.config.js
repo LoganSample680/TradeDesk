@@ -1,6 +1,6 @@
 // @ts-check
 // Config for the PREVIEW DEPLOY SMOKE (tests/preview-smoke). Runs against the ACTUAL
-// Cloudflare deployment (PREVIEW_URL) after a build, NOT localhost — it exists to catch
+// Cloudflare deployment (PREVIEW_URL) after a build, NOT localhost, it exists to catch
 // deploy/environment issues (stale-cache version mismatch, the real /api worker, MapKit's
 // domain-locked token) that the off-Cloudflare flow gate can't see. Deliberately tiny.
 //
@@ -26,7 +26,7 @@ module.exports = defineConfig({
     // The deployed URL to smoke. The workflow sets PREVIEW_URL to the deployment that
     // just went live; falls back to E2E_BASE_URL, then production.
     baseURL: process.env.PREVIEW_URL || process.env.E2E_BASE_URL || 'https://tradedeskpro.app',
-    // NOTE: the WAF-bypass header is NOT set here as a blanket extraHTTPHeaders — that
+    // NOTE: the WAF-bypass header is NOT set here as a blanket extraHTTPHeaders, that
     // attaches it to EVERY request the context makes, including third-party origins
     // (Google Fonts, Cloudflare Insights, the MapKit CDN), whose CORS preflight rejects
     // the unrecognized custom header and blocks the request. It's scoped to same-origin
@@ -36,7 +36,7 @@ module.exports = defineConfig({
     bypassCSP: true,
   },
 
-  // iPhone first — contractors are on iPhones and it's the MapKit/iOS WebKit path that
+  // iPhone first, contractors are on iPhones and it's the MapKit/iOS WebKit path that
   // matters most; Chromium second for breadth. Two projects × 4 small tests is still
   // only dozens of requests.
   projects: [

@@ -4,7 +4,7 @@
 //
 // USAGE ATTRIBUTION: every /api hit is one Cloudflare Pages-Functions invocation
 // (the metered cost). We write ONE Workers Analytics Engine data-point per request
-// — timestamp + path + method + status + latency + ray-id + country — so you can
+//, timestamp + path + method + status + latency + ray-id + country, so you can
 // later answer "what EXACTLY caused the usage spike at 14:09:22 UTC, to the second."
 // The write is fire-and-forget and GATED on the binding existing (env.API_ANALYTICS),
 // so the proxy behaves identically whether or not the dataset is configured.
@@ -16,7 +16,7 @@ const SUPABASE = 'https://mwtsmctajhrrybblgorf.supabase.co';
 // analytics index groups cleanly (e.g. /rest/v1/td_bids?id=eq.123 → /rest/v1/td_bids).
 function endpointLabel(p) {
   const base = (p.split('?')[0] || '/');
-  // storage object keys are highly unique — collapse to the bucket level.
+  // storage object keys are highly unique, collapse to the bucket level.
   const m = base.match(/^\/storage\/v1\/object\/([^/]+\/[^/]+)/);
   if (m) return '/storage/v1/object/' + m[1];
   return base;
@@ -30,16 +30,16 @@ function recordUsage(env, request, { endpoint, method, status, ms, kind }) {
     env.API_ANALYTICS.writeDataPoint({
       // blobs: string dimensions (queryable as blob1..blobN)
       blobs: [
-        endpoint,                                   // blob1 — the endpoint hit
-        method,                                     // blob2 — GET/POST/...
-        kind,                                       // blob3 — 'http' | 'ws'
-        request.headers.get('cf-ray') || '',        // blob4 — Cloudflare ray id (exact request)
-        cf.country || '',                           // blob5 — client country
-        cf.colo || '',                              // blob6 — edge PoP that served it
+        endpoint,                                   // blob1, the endpoint hit
+        method,                                     // blob2, GET/POST/...
+        kind,                                       // blob3, 'http' | 'ws'
+        request.headers.get('cf-ray') || '',        // blob4, Cloudflare ray id (exact request)
+        cf.country || '',                           // blob5, client country
+        cf.colo || '',                              // blob6, edge PoP that served it
       ],
       // doubles: numeric metrics (queryable as double1..double2)
-      doubles: [status, ms],                        // double1 — HTTP status, double2 — upstream latency ms
-      // index: the sampling/group key (≤32 bytes) — endpoint so you GROUP BY it fast
+      doubles: [status, ms],                        // double1, HTTP status, double2, upstream latency ms
+      // index: the sampling/group key (≤32 bytes), endpoint so you GROUP BY it fast
       indexes: [endpoint.slice(0, 32)],
     });
   } catch (_) { /* analytics must never break the proxy */ }
@@ -52,7 +52,7 @@ export async function onRequest({ request, env }) {
   const endpoint = endpointLabel(supaPath);
   const t0 = Date.now();
 
-  // CORS preflight — cheap, but still an invocation, so record it.
+  // CORS preflight, cheap, but still an invocation, so record it.
   if (request.method === 'OPTIONS') {
     recordUsage(env, request, { endpoint, method: 'OPTIONS', status: 204, ms: 0, kind: 'http' });
     return new Response(null, {
@@ -69,8 +69,8 @@ export async function onRequest({ request, env }) {
   const fwdHeaders = new Headers(request.headers);
   fwdHeaders.delete('host');
 
-  // WebSocket upgrade — Supabase Realtime.
-  // Workers can't fetch() a wss:// URL — a WebSocket is opened by fetching the
+  // WebSocket upgrade, Supabase Realtime.
+  // Workers can't fetch() a wss:// URL, a WebSocket is opened by fetching the
   // https URL with the Upgrade header intact. The old wss:// rewrite made every
   // realtime connection fail, killing cross-device live sync.
   if (request.headers.get('Upgrade') === 'websocket') {

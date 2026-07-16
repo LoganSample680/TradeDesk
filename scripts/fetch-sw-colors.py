@@ -3,7 +3,7 @@
 One-time script to fetch SW color data from the Sherwin-Williams Prism API
 and write a clean sw-colors.json with official colorFamilyNames.
 
-Run from your Mac (not a server — datacenter IPs get blocked):
+Run from your Mac (not a server, datacenter IPs get blocked):
   python3 scripts/fetch-sw-colors.py
 
 Output: sw-colors.json in the project root, ready to commit.
@@ -13,7 +13,7 @@ import json, sys, re
 try:
     import requests
 except ImportError:
-    print("pip install requests  — then re-run")
+    print("pip install requests , then re-run")
     sys.exit(1)
 
 # ── Fetch ─────────────────────────────────────────────────────────────────────
@@ -47,7 +47,7 @@ print(f"Got {len(raw)} colors from API")
 # SW's colorFamilyNames uses these official values:
 #   Red, Orange, Yellow, Green, Blue, Purple, Neutral, White
 #
-# "Neutral" is the big one — it covers grays, beiges, tans, browns, and blacks.
+# "Neutral" is the big one, it covers grays, beiges, tans, browns, and blacks.
 # We split it by lightness + chroma using the HSL values the API provides.
 
 def sw_family_to_display(api_color):
@@ -55,7 +55,7 @@ def sw_family_to_display(api_color):
     primary = fams[0] if fams else ""
 
     if primary == "red":
-        # SW "Red" includes true reds and pinks — split by hue
+        # SW "Red" includes true reds and pinks, split by hue
         # Hue < 345 or > 0 and lightness high = pink; true red otherwise
         h = api_color.get("hue", 0)
         l = api_color.get("lightness", 0)
@@ -152,7 +152,7 @@ for c in raw:
         "name":   (c.get("name") or "").strip(),
         "hex":    hex_val.upper() if not hex_val.startswith("#") else hex_val,
         "family": sw_family_to_display(c),
-        # Bonus fields — useful for display and future features
+        # Bonus fields, useful for display and future features
         "lrv":    round(c.get("lrv", 0), 1),
         "isDark": bool(c.get("isDark")),
     })

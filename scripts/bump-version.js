@@ -23,7 +23,7 @@ const { version: currentVersion } = JSON.parse(fs.readFileSync(versionFile, 'utf
 
 // 3. Compute next version
 const parts = currentVersion.split('.');
-// parts: [MM, DD, YY, NN]  — but MM.DD.YY is 3 parts and NN is 4th
+// parts: [MM, DD, YY, NN] , but MM.DD.YY is 3 parts and NN is 4th
 const currentPrefix = `${parts[0]}.${parts[1]}.${parts[2]}`;
 const currentNN = parseInt(parts[3], 10);
 
@@ -37,7 +37,7 @@ if (currentPrefix === todayPrefix) {
 // 4. Write version.json
 fs.writeFileSync(versionFile, JSON.stringify({ version: nextVersion }) + '\n', 'utf8');
 
-// 5. Update sw.js — replace CACHE string
+// 5. Update sw.js, replace CACHE string
 const swFile = path.join(root, 'sw.js');
 let swContent = fs.readFileSync(swFile, 'utf8');
 swContent = swContent.replace(
@@ -46,7 +46,7 @@ swContent = swContent.replace(
 );
 fs.writeFileSync(swFile, swContent, 'utf8');
 
-// 6. Update js/cloud.js — replace APP_VERSION string
+// 6. Update js/cloud.js, replace APP_VERSION string
 const cloudFile = path.join(root, 'js', 'cloud.js');
 let cloudContent = fs.readFileSync(cloudFile, 'utf8');
 cloudContent = cloudContent.replace(
