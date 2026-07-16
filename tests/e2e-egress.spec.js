@@ -198,6 +198,11 @@ test.describe('egress: signature-poll watermark', () => {
 
   test('schedule popup NEVER surfaces over the boot spinner, it defers until the overlay is gone', async () => {
     const r = await page.evaluate(async () => {
+      // Hermetic start: a prior test in this shared page (or a leaked 700ms retry
+      // chain) can leave a _sched-alert-overlay in the DOM, which would make
+      // duringBoot read true before this test even runs. Clear it first.
+      document.getElementById('_sched-alert-overlay')?.remove();
+      window._showingScheduleAlert = false;
       // Recreate the boot overlay (the booted test app already removed it).
       const ov = document.createElement('div');
       ov.id = 'supa-boot-overlay';
