@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.16.26.9';
+const APP_VERSION='07.16.26.10';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1716,15 +1716,16 @@ async function supaInit(){
         await supaLoadFromCloud();
         _supaCloudLoaded=true;
       } else {
-        // Signed in but no data at all. This is the PRIMARY landing spot for a
-        // first-time Google/Apple sign-in: the provider made the auth user, but they
-        // never onboarded, so there's no business/trade yet. Route them INTO onboarding
-        // (prefilled from the provider, no email/password step) instead of dropping
-        // them on an empty dashboard. Guarded so it can't fire mid-email-onboarding
-        // (obSubmit owns that and sets _obInProgress).
+        // Signed in but no data at all. Route them INTO onboarding ONLY when THIS boot
+        // actually came back from a Google/Apple redirect (_oauthRet is set by the
+        // handshake above). That's the real "first-time social signup" case, and it's
+        // the ONLY time we want the full-screen onboarding overlay to auto-open. Any
+        // other accountless boot (an abandoned/empty account, and every test-harness
+        // boot, which never carries OAuth params) gets the plain empty dashboard, not
+        // an overlay that would block the whole UI.
         _authSettingsLoaded=true;
         supaSetStatus('cloud');
-        if(!window._obInProgress&&typeof _beginOAuthOnboarding==='function'){
+        if(_oauthRet&&!window._obInProgress&&typeof _beginOAuthOnboarding==='function'){
           _beginOAuthOnboarding();
         } else {
           _removeBootOverlay();
