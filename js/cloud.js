@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.16.26.5';
+const APP_VERSION='07.16.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1591,6 +1591,29 @@ function _pickBid(a,b){
 }
 async function supaInit(){
   if(!supaEnabled())return;
+  // OAuth return: capture the session params from the URL and SCRUB them from the
+  // address bar IMMEDIATELY, on the first tick of boot, before the health probe or
+  // any analytics beacon can read the current URL. The tokens ride back in the URL
+  // (hash for Apple's implicit return, ?code= for PKCE); leaving them there even for
+  // a moment lets a beacon / browser history / a screenshot capture a live token.
+  // Stash them in memory and finish the handshake once the client is built below.
+  let _oauthRet=null;
+  try{
+    const _oauthProv=localStorage.getItem('_oauthPending');
+    if(_oauthProv){
+      const _u=new URL(window.location.href);
+      const _hp=new URLSearchParams((window.location.hash||'').replace(/^#/,''));
+      _oauthRet={
+        prov:_oauthProv,
+        code:_u.searchParams.get('code'),
+        htok:_hp.get('access_token'),
+        hrefresh:_hp.get('refresh_token'),
+        err:_u.searchParams.get('error_description')||_u.searchParams.get('error')||_hp.get('error_description')||_hp.get('error')
+      };
+      // Wipe tokens/code out of the URL right now (kept the origin+path only).
+      try{history.replaceState(null,'',_u.origin+_u.pathname);}catch(_e){}
+    }
+  }catch(_e){}
   // AUTO-FALLBACK: if we're set to talk DIRECT to Supabase, confirm this network can
   // actually reach it before building the client. A 2.5s health probe, any HTTP
   // response (even 401) means reachable → stay direct; a DNS/network/timeout error
@@ -1601,7 +1624,10 @@ async function supaInit(){
     let _directOk=false;
     try{
       const _c=new AbortController();const _t=setTimeout(()=>_c.abort(),900);
-      await fetch(_SUPA_DIRECT_URL+'/auth/v1/health',{signal:_c.signal});
+      // Send the anon apikey so the health endpoint answers 200 instead of 401.
+      // We only care that SOMETHING answered (reachability), but a bare 401 prints
+      // a red error line in the console on every boot; the key makes it clean.
+      await fetch(_SUPA_DIRECT_URL+'/auth/v1/health',{signal:_c.signal,headers:{apikey:SUPA_KEY}});
       clearTimeout(_t);_directOk=true;
     }catch(_e){_directOk=false;}
     if(!_directOk){SUPA_URL=_SUPA_PROXY_URL;try{localStorage.setItem('zp3_supa_fellback','1');}catch(_e2){}}
@@ -1650,34 +1676,29 @@ async function supaInit(){
     // the params so a refresh or Back can't re-run the exchange or leave the token
     // sitting in the address bar / history.
     try{
-      const _oauthProv=localStorage.getItem('_oauthPending');
-      if(_oauthProv){
-        const _u=new URL(window.location.href);
-        const _code=_u.searchParams.get('code');
-        const _hp=new URLSearchParams((window.location.hash||'').replace(/^#/,''));
-        const _htok=_hp.get('access_token');
+      if(_oauthRet){
         // The provider / Supabase can hand back an explicit error instead of a code
         // (denied consent, provider not configured, redirect-url mismatch). Surface it
-        // rather than silently landing in local mode looking "not synced".
-        const _oaErr=_u.searchParams.get('error_description')||_u.searchParams.get('error')||_hp.get('error_description')||_hp.get('error');
-        let _oaFail=_oaErr||null;
-        if(_code&&_supa.auth.exchangeCodeForSession){
-          try{const{error:_ee}=await _supa.auth.exchangeCodeForSession(_code);if(_ee)_oaFail=_ee.message||String(_ee);}
+        // rather than silently landing in local mode looking "not synced". The tokens
+        // were already scrubbed from the URL at the top of boot; we finish with the
+        // in-memory copy here now that _supa exists.
+        let _oaFail=_oauthRet.err||null;
+        if(_oauthRet.code&&_supa.auth.exchangeCodeForSession){
+          try{const{error:_ee}=await _supa.auth.exchangeCodeForSession(_oauthRet.code);if(_ee)_oaFail=_ee.message||String(_ee);}
           catch(_e){_oaFail=(_e&&_e.message)||String(_e);}
-        } else if(_htok&&_supa.auth.setSession){
-          try{const{error:_se}=await _supa.auth.setSession({access_token:_htok,refresh_token:_hp.get('refresh_token')});if(_se)_oaFail=_se.message||String(_se);}
+        } else if(_oauthRet.htok&&_supa.auth.setSession){
+          try{const{error:_se}=await _supa.auth.setSession({access_token:_oauthRet.htok,refresh_token:_oauthRet.hrefresh});if(_se)_oaFail=_se.message||String(_se);}
           catch(_e){_oaFail=(_e&&_e.message)||String(_e);}
-        } else if(!_oaErr){
+        } else if(!_oauthRet.err){
           // Marked pending but came back with neither a code nor a token: the redirect
           // likely landed on a different origin than the one that started the flow (so
           // the PKCE verifier isn't in this localStorage), or the params were stripped.
           _oaFail='no auth code returned (redirect landed without ?code=)';
         }
         localStorage.removeItem('_oauthPending');
-        try{history.replaceState(null,'',_u.origin+_u.pathname);}catch(_e){}
         if(_oaFail){
-          console.warn('[oauth] '+_oauthProv+' sign-in did not complete:',_oaFail);
-          window._oauthFailMsg=_oauthProv+' sign-in did not finish: '+_oaFail;
+          console.warn('[oauth] '+_oauthRet.prov+' sign-in did not complete:',_oaFail);
+          window._oauthFailMsg=_oauthRet.prov+' sign-in did not finish: '+_oaFail;
         }
       }
     }catch(_e){console.warn('[oauth] handshake error:',_e);}

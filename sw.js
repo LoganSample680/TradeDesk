@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-07.16.26.5';
+const CACHE = 'tradedesk-07.16.26.6';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -52,7 +52,12 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(new Request(e.request.url, {cache: 'no-cache'})).then(r => {
         if (!r.ok) return r;
-        caches.open(CACHE).then(c => c.put('/index.html', safeClone(r)));
+        // Clone SYNCHRONOUSLY, before `return r` hands the response to the browser
+        // and its body is consumed. safeClone inside the async caches.open().then()
+        // ran too late: the body was already used, throwing "Response body is already
+        // used" on every navigation (matches the working static-asset path below).
+        const toCache = safeClone(r);
+        caches.open(CACHE).then(c => c.put('/index.html', toCache));
         return r;
       }).catch(() => caches.match('/index.html'))
     );
