@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.16.26.6';
+const APP_VERSION='07.16.26.7';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1777,6 +1777,7 @@ async function supaInit(){
         const _incomingId=session.user.id;
         if((_loadedDataOwner&&_incomingId!==_loadedDataOwner)||(_supaCloudLoaded&&_supaUser&&_incomingId!==_supaUser.id)){
           _supaCloudLoaded=false;_mergeOnSignIn=false;_realtimeSubscribed=false;_tdRealtimeReady=false;_loadInProgress=false;
+          _authSettingsLoaded=false; // hide the setup checklist until the incoming account's settings load (no flash)
           clearTimeout(_syncTimer);_syncTimer=null;
           // Close the OUTGOING account's still-live realtime channels (bug #39): an involuntary
           // SIGNED_OUT (token expiry) never ran _wipeLocalAccountData, so the prior account's
@@ -4198,6 +4199,11 @@ function _wipeLocalAccountData(){
   clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
   _teardownRealtimeChannels(); // CRITICAL: close A's live channels so they can't re-deliver A's rows into B
   _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;clearTimeout(_writeCacheTimer);_writeCacheTimer=null;
+  // Reset the "settings are authoritative" gate too. It guards the dashboard setup
+  // checklist (dashboard.js): if it survives a sign-out, the next sign-in renders the
+  // checklist for one frame against the OLD/empty state before the new load corrects
+  // it, the brief onboarding flash on re-sign-in. Keep it hidden until the new load lands.
+  _authSettingsLoaded=false;
   // Cross-account merge state: _mergeOnSignIn + the offline blob hold THIS account's data;
   // if either survives, the next account's SIGNED_IN merge pushes this account's records
   // into theirs. Hard-clear them plus the cloud cache so nothing leaks forward.

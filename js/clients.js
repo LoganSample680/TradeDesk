@@ -2301,7 +2301,14 @@ async function _lookupPropertyData(clientId,addrParts){
     let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
     if(!res.ok||res.status===204)return;
     const d=await res.json();
-    if(d.error)return;
+    if(d.error||d.found===false){
+      // Backend has no record for this address. Stamp propDataFetchedAt so the
+      // background queue (filters on !propDataFetchedAt) doesn't re-query it on
+      // every boot, that repeated lookup was the recurring /api/property miss.
+      const c0=clients.find(x=>x.id===clientId);
+      if(c0&&!c0.propDataFetchedAt){c0.propDataFetchedAt=new Date().toISOString();c0.propDataMiss=true;saveAll();}
+      return;
+    }
     const c=clients.find(x=>x.id===clientId);if(!c)return;
     if(d.yearBuilt&&!c.yearBuilt)c.yearBuilt=d.yearBuilt;
     if(d.sqft)c.sqft=d.sqft;
