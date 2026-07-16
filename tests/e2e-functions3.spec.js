@@ -3281,17 +3281,23 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
       const _savedOb = _ob;
       document.getElementById('onboarding-overlay')?.remove();
       _supaUser = { id: 'oauth-uid-1', email: 'grace@greenpaint.com', user_metadata: { full_name: 'Grace Green' } };
-      window._obInProgress = false;
+      const _obBefore = window._obInProgress;
       _beginOAuthOnboarding();
       const ov = document.getElementById('onboarding-overlay');
       const body = document.getElementById('ob-body');
       const txt = body ? body.textContent : '';
+      // Re-entry guard: calling again while the overlay is up must NOT wipe answers.
+      _ob.businessName = 'kept-value';
+      _beginOAuthOnboarding();
+      const reentryKept = _ob.businessName === 'kept-value';
       const r = {
         launched: !!ov,
         oauthFlag: _ob.oauth === true,
         namePrefill: _ob.name === 'Grace Green',
         emailPrefill: _ob.email === 'grace@greenpaint.com',
-        obInProgress: window._obInProgress === true,
+        // Must NOT leave a sticky global flag (that would wedge future sign-ins).
+        noStickyFlag: window._obInProgress === _obBefore,
+        reentryKept,
         header: /finish setting up/i.test(txt),
         noEmailField: !document.getElementById('ob-email'),
         noPassField: !document.getElementById('ob-pass'),
@@ -3301,7 +3307,6 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
       ov?.remove();
       _ob = _savedOb; _ob.oauth = false;
       _supaUser = _savedUser;
-      window._obInProgress = false;
       return r;
     });
     if (result.skip) return;
@@ -3309,7 +3314,8 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.oauthFlag, '_ob.oauth set').toBe(true);
     expect(result.namePrefill, 'name prefilled from provider').toBe(true);
     expect(result.emailPrefill, 'email prefilled from provider').toBe(true);
-    expect(result.obInProgress, '_obInProgress guard set so a later auth event cannot re-run boot').toBe(true);
+    expect(result.noStickyFlag, '_beginOAuthOnboarding leaves no sticky _obInProgress flag').toBe(true);
+    expect(result.reentryKept, 'a second call while onboarding is open does not restart/wipe answers').toBe(true);
     expect(result.header, '"Finish setting up" header shown, not "Create your account"').toBe(true);
     expect(result.noEmailField && result.noPassField, 'no email/password fields in oauth mode').toBe(true);
     expect(result.noSocial, 'no social buttons inside oauth-mode onboarding').toBe(true);

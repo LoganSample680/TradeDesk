@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.16.26.8';
+const APP_VERSION='07.16.26.9';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1882,18 +1882,17 @@ async function supaInit(){
             goPg('pg-dash');
           }
         } else {
-          // Brand-new account (no cloud data). Same as the boot branch above: a
-          // first-time social sign-in in THIS tab (no reload) lands here with an auth
-          // user but nothing onboarded. Send them into onboarding, not an empty dash.
+          // Brand-new account (no cloud data), settings saves are safe (nothing to clobber).
+          // NOTE: onboarding routing for first-time social sign-ins lives in the BOOT
+          // path only (see the boot brand-new branch). A real Google/Apple signup always
+          // redirects away and reloads, so it lands on boot, never here. This in-tab
+          // SIGNED_IN branch is reached by same-device account switches, which must land
+          // on the dashboard, not onboarding.
           _authSettingsLoaded=true;
+          _removeBootOverlay();
+          renderDash();
           supaSetStatus('cloud');
-          if(!window._obInProgress&&typeof _beginOAuthOnboarding==='function'){
-            _beginOAuthOnboarding();
-          } else {
-            _removeBootOverlay();
-            renderDash();
-            goPg('pg-dash');
-          }
+          goPg('pg-dash');
         }
         // Existing-account sub-invite: a contractor who already runs TradeDesk
         // arrived via a referral link and SIGNED IN (not onboarded, new

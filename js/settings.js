@@ -1260,15 +1260,18 @@ async function showOnboarding(){
 // branches in cloud.js so a first-time social tap never lands on an empty dashboard.
 function _beginOAuthOnboarding(){
   try{
+    // Already onboarding? Don't restart (would wipe their in-progress answers). This
+    // is the re-entry guard, NOT a sticky global flag: setting window._obInProgress
+    // here and only clearing it in obSubmit meant an abandoned onboarding wedged the
+    // flag true forever, blocking every future sign-in (the SIGNED_IN handler returns
+    // early on _obInProgress). obSubmit owns _obInProgress during the actual write.
+    if(typeof document!=='undefined'&&document.getElementById('onboarding-overlay'))return;
     _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:'',acceptCash:true,acceptCheck:true,allowPayLater:true,wantCards:true,jobs:[],oauth:true};
     if(typeof _supaUser!=='undefined'&&_supaUser){
       const m=_supaUser.user_metadata||{};
       _ob.name=m.full_name||m.name||m.given_name||'';
       _ob.email=_supaUser.email||'';
     }
-    // Guard: a later auth event (TOKEN_REFRESHED fires as SIGNED_IN) must not re-run
-    // the boot flow while they're mid-onboarding. obSubmit clears this when it lands.
-    window._obInProgress=true;
     showOnboarding();
   }catch(_e){if(typeof console!=='undefined')console.warn('OAuth onboarding launch failed:',_e);}
 }
