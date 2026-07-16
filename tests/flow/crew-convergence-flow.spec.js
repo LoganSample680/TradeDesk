@@ -1,14 +1,14 @@
-// CREW CERTIFICATION — the production shape of "1000 people rolled up to one owner":
+// CREW CERTIFICATION, the production shape of "1000 people rolled up to one owner":
 // N DISTINCT crew logins (real auth users, no owner graph of their own) nest under one
 // contractor and hammer the SAME account concurrently. This is the crew twin of
-// swarm-convergence-flow (which runs N devices on the OWNER login) — it certifies the
+// swarm-convergence-flow (which runs N devices on the OWNER login), it certifies the
 // server half built in 20260715_crew_rls_and_invites.sql:
 //
 //   • LINKING, both real paths: half the crew joins via the server-minted single-use
-//     TOKEN (?emp_invite= with tok → claim_crew_invite), half via EMAIL MATCH — and
+//     TOKEN (?emp_invite= with tok → claim_crew_invite), half via EMAIL MATCH, and
 //     every one must land nested (_isEmployee, _contractorUserId === boss).
 //   • WRITES: crew with estimate permission edit the SAME shared bid (distinct fields)
-//     and create their own bids — the td_* crew policies + op channel + cursor-bump RPC
+//     and create their own bids, the td_* crew policies + op channel + cursor-bump RPC
 //     must converge everyone (boss included) to the full union, byte-equal on the
 //     shared row. One crew member does it OFFLINE and returns (pull-first rebase).
 //   • ADVERSARIAL ISOLATION (the "bulletproof" part):
@@ -35,7 +35,7 @@ const canonFnSource = `
   })
 `;
 
-// Sign a CREW account in through the app (arbitrary creds — signIn() is bound to the
+// Sign a CREW account in through the app (arbitrary creds, signIn() is bound to the
 // worker account). `query` lets the token half arrive via the real ?emp_invite= URL.
 async function crewSignIn(pg, acct, query) {
   await pg.goto('/' + (query || ''), { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -59,7 +59,7 @@ async function crewSignIn(pg, acct, query) {
   await pg.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
 }
 
-test.describe('crew — N distinct employee logins nest under one owner and converge', () => {
+test.describe('crew: N distinct employee logins nest under one owner and converge', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured');
   test.skip(!LOCAL_STACK, 'crew certification runs on the local stack only (provisioned crew pool)');
 
@@ -68,10 +68,10 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
   test('crew link (token + email), write concurrently, converge byte-equal, and stay walled off', async ({ page, browser, browserName }) => {
     // Runs on BOTH browser projects since the per-browser runner split (own stack per box).
     const CREW = crewPool();
-    test.skip(CREW.length < 3, `crew pool too small (${CREW.length}) — global-setup provisions it on the local stack`);
+    test.skip(CREW.length < 3, `crew pool too small (${CREW.length}): global-setup provisions it on the local stack`);
     const M = Math.min(CREW.length, 6);
     // 7 REAL boots (boss + M crew) against an account that GROWS every run by design
-    // (§13.7 — live tests never clean up their seed data). Boot cost scales with the
+    // (§13.7: live tests never clean up their seed data). Boot cost scales with the
     // accumulated rows/hub refreshes, so the budget tracks it: the old 240k+M*20k
     // (=360s at M=6) was hit exactly once the account got heavy enough.
     test.setTimeout(360000 + M * 30000);
@@ -81,7 +81,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
     const SHARED = base, SHARED_C = base + 1;
     const crewBid = (i) => base + 200 + i;
     const TAG = `E2E CREW ${process.pid}`;
-    // Last crew member gets NO estimate permission — the redaction adversary.
+    // Last crew member gets NO estimate permission, the redaction adversary.
     const noEstIdx = M - 1;
     const editorIdx = Array.from({ length: M }, (_, i) => i).filter(i => i !== noEstIdx);
     const tokenHalf = (i) => i % 2 === 0; // even indexes link via server token, odd via email match
@@ -125,7 +125,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       }),
     });
 
-    // ── 2. Crew sign in — token half via the real ?emp_invite= URL, email half bare.
+    // ── 2. Crew sign in, token half via the real ?emp_invite= URL, email half bare.
     //       EVERY one must nest under the boss. ──
     await step(page, {
       label: `${M} crew logins nest under the boss (token + email-match paths)`, page: 'cloud', role: 'employee',
@@ -192,7 +192,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       act: async () => {
         await crewPages[offlineIdx].context().setOffline(true);
         await Promise.all(editorIdx.map((i) => crewPages[i].evaluate(async ({ SHARED, i, own, TAG }) => {
-          window._syncTrace = 1; // arm the merge/load trace BEFORE the write — names any path that later erases the marker
+          window._syncTrace = 1; // arm the merge/load trace BEFORE the write, names any path that later erases the marker
           const b = bids.find(x => String(x.id) === String(SHARED));
           if (b) b['crew_f' + i] = 'cv' + i;
           bids.push({ id: own, client_name: TAG + ' by w' + i, name: TAG + ' by w' + i, amount: 900 + i, status: 'Pending', bid_date: new Date().toISOString().slice(0, 10), _e2e: 'crew' });
@@ -228,7 +228,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
         }
         // clock=SET + marker gone ⇒ a merge dropped a CAPTURED edit (engine bug);
         // clock=ABSENT ⇒ the edit was never derived (save-path bug on crew logins).
-        return { ok: held === editorIdx.length, got: `${held}/${editorIdx.length} editors hold their marker${detail.length ? ' — ' + detail.join(' | ') : ''}` };
+        return { ok: held === editorIdx.length, got: `${held}/${editorIdx.length} editors hold their marker${detail.length ? ', ' + detail.join(' | ') : ''}` };
       },
     });
 
@@ -266,7 +266,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
           }, { SHARED, idxs: editorIdx, allCrewBids });
           if (r.ok) full++; else detail.push(`d${d}:fields[${r.mf}] bids[${r.mb}]`);
         }
-        return { ok: full === convergedPages.length, got: `${full}/${convergedPages.length} devices hold the union${detail.length ? ' — missing: ' + detail.slice(0, 3).join(' | ') : ''}` };
+        return { ok: full === convergedPages.length, got: `${full}/${convergedPages.length} devices hold the union${detail.length ? ', missing: ' + detail.slice(0, 3).join(' | ') : ''}` };
       },
     });
 
@@ -292,7 +292,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       },
     });
 
-    // ── 7. ADVERSARIAL ISOLATION — the walls hold. ──
+    // ── 7. ADVERSARIAL ISOLATION, the walls hold. ──
     const otherBoss = (localPool()[1] && localPool()[1].uid !== bossUid) ? localPool()[1].uid : (localPool()[2] || {}).uid;
     await step(page, {
       label: 'permission + cross-boss walls hold; used token refused', page: 'cloud', role: 'employee',
@@ -336,7 +336,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       },
     });
 
-    // Resource cleanup only (§13.7 — all seeded data stays for inspection).
+    // Resource cleanup only (§13.7: all seeded data stays for inspection).
     for (const ctx of ctxs) await ctx.close().catch(() => {});
 
     const rep = report(FLOW, BASELINE, page);
@@ -363,7 +363,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
     const ctxs = []; const pages = {};
     const toks = {};
 
-    // 1. OWNER INVITES — through the app's REAL minting path (_mintCrewInviteToken),
+    // 1. OWNER INVITES, through the app's REAL minting path (_mintCrewInviteToken),
     //    exactly what the Add Member modal runs: roster row (permissions riding along)
     //    then a server-minted single-use claim token.
     await step(page, {
@@ -394,7 +394,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       }),
     });
 
-    // 2. EMPLOYEES ACCEPT — open the invite LINK (the ?emp_invite= URL a real crew
+    // 2. EMPLOYEES ACCEPT, open the invite LINK (the ?emp_invite= URL a real crew
     //    member taps), sign in, and land nested with estimate permission applied.
     await step(page, {
       label: 'both employees accept the invite link and nest with estimate permission', page: 'cloud', role: 'employee',
@@ -427,7 +427,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       },
     });
 
-    // 3. EMPLOYEE WRITES AN ESTIMATE — a real one (client + surfaces + amount),
+    // 3. EMPLOYEE WRITES AN ESTIMATE, a real one (client + surfaces + amount),
     //    through the real save path, under the crew RLS.
     const AMT = 4850;
     await step(page, {
@@ -452,7 +452,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       },
       rule: async () => {
         // Assert it actually LANDED server-side (not just in E1's memory): the BOSS
-        // re-queries the cloud row directly — a crew-RLS write rejection would leave
+        // re-queries the cloud row directly, a crew-RLS write rejection would leave
         // nothing here even though E1's arrays look fine.
         const landed = await page.evaluate(async ({ estBidId }) => {
           const { data } = await _supa.from('td_bids').select('id,data').eq('user_id', _supaUser.id).eq('id', String(estBidId)).limit(1);
@@ -464,7 +464,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
     });
 
     // 4. ROLL-UP: the boss AND the second crew member receive the estimate LIVE
-    //    (no manual reload — realtime / heartbeat / delta), amount intact.
+    //    (no manual reload, realtime / heartbeat / delta), amount intact.
     await step(page, {
       label: 'the estimate rolls up live to the boss and the second crew member', page: 'pg-dash', role: 'contractor',
       suspect: 'crew sync fabric (realtime SELECT policies + cursor heartbeat + silent delta)',
@@ -493,7 +493,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       },
     });
 
-    // 5. And the three copies are byte-identical — authored once, same everywhere.
+    // 5. And the three copies are byte-identical, authored once, same everywhere.
     await step(page, {
       label: 'the estimate is byte-equal on author, boss, and peer crew', page: 'cloud', role: 'contractor',
       suspect: 'cloud.js merge fabric under crew RLS',
@@ -515,7 +515,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
     });
 
     // 6. MONEY ROUTING: everything a crew member sends must carry the BOSS's account
-    //    uid — hub/pay links (u= drives the Stripe checkout lookup in create-checkout)
+    //    uid: hub/pay links (u= drives the Stripe checkout lookup in create-checkout)
     //    and the hub snapshot's storage path. A crew login stamping its own uid sent
     //    payments to an account that doesn't exist.
     await step(page, {
@@ -530,7 +530,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
           try {
             hubUrl = await _uploadClientHub(estClientId); // returns the client-facing link
             // An already-tokened client refreshes its snapshot in the BACKGROUND (the
-            // share sheet never blocks on the upload) — poll for the recorded key
+            // share sheet never blocks on the upload), poll for the recorded key
             // instead of reading it synchronously.
             for (let t = 0; t < 40 && !hubKey; t++) {
               const c = clients.find(x => String(x.id) === String(estClientId));
@@ -556,7 +556,7 @@ test.describe('crew — N distinct employee logins nest under one owner and conv
       },
     });
 
-    // Resource cleanup only (§13.7 — the estimate stays in the account to poke at).
+    // Resource cleanup only (§13.7: the estimate stays in the account to poke at).
     for (const ctx of ctxs) await ctx.close().catch(() => {});
 
     const rep = report(FLOW2, BASELINE);

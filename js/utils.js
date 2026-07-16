@@ -21,7 +21,7 @@ const parseD=s=>new Date(s+'T12:00:00');
 const addDays=(s,n)=>{const d=parseD(s);d.setDate(d.getDate()+n);return dateKey(d);};
 const v=id=>(document.getElementById(id)||{}).value||'';
 const nv=id=>parseFloat(v(id))||0;
-// Shared dollar-amount input formatter — native <input type="number"> rejects
+// Shared dollar-amount input formatter, native <input type="number"> rejects
 // commas outright (worst on iOS Safari, which blocks the keystroke before it's
 // even typed; other browsers fail more quietly by dropping the value on read).
 // These fields are plain text with this oninput handler instead: strips
@@ -38,7 +38,7 @@ function _fmtMoneyInput(el){
   el.value=decPart!==undefined?grouped+'.'+decPart:grouped;
 }
 const _moneyVal=id=>parseFloat((document.getElementById(id)?.value||'').replace(/,/g,''))||0;
-// Comma+cents string for programmatically pre-filling a money input (no $ sign —
+// Comma+cents string for programmatically pre-filling a money input (no $ sign,
 // the field's own label/prefix already shows that).
 const _moneyStr=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const IRS=()=>S.irsRate||.725;
@@ -66,7 +66,7 @@ function stageAvatar(stage){
 function lighten(hex){if(!hex||typeof hex!=='string'||!/^#[0-9a-fA-F]{6}/.test(hex))return'#eee';try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},0.15)`;}catch(e){return'#eee';}}
 // WCAG clamp for the contractor's brand color. The brand color renders both as
 // colored TEXT on white surfaces (proposal section labels, hub links) and as a
-// BACKGROUND under white text (proposal header, TOTAL row, hub buttons) — both
+// BACKGROUND under white text (proposal header, TOTAL row, hub buttons), both
 // are the same white↔color pair, so one clamp covers both directions: darken
 // the pick toward black (hue preserved) until it clears AA 4.5:1 against
 // white, with a small margin for the near-white (#f8fafc) document surfaces.
@@ -156,7 +156,7 @@ function zPrompt(msg, onOk, opts={}){
 
 function showToast(msg,icon,duration){
   icon=icon||'✓';duration=duration||3500;
-  // Renders the icon arg as a real SVG when we have one mapped (js/icons.js) —
+  // Renders the icon arg as a real SVG when we have one mapped (js/icons.js):
   // covers ~200 showToast call sites app-wide from one place, instead of
   // touching each call site's emoji argument individually.
   const _iconHtml=(typeof hasSvgIcon==='function'&&hasSvgIcon(icon))?svgIcon(icon,{size:15}):icon;
@@ -184,7 +184,7 @@ function _mdYToYmd(s){
 }
 
 // ── Geolocation helper ───────────────────────────────────────────────
-// Silent GPS grab — only fires if OS permission is already 'granted'.
+// Silent GPS grab, only fires if OS permission is already 'granted'.
 // Never triggers the OS permission dialog. Use requestLocationPermission()
 // for any flow that needs to ask the user.
 function geoIfGranted(cb, errCb, opts){
@@ -210,10 +210,10 @@ function geoIfGranted(cb, errCb, opts){
 
 // ── Auto-capitalize EVERY free-text field ───────────────────────────────────
 // Title-cases the first letter of every space-separated word so anything typed
-// can never be saved as "master bedroom" or "Master bedroom" — it always
+// can never be saved as "master bedroom" or "Master bedroom", it always
 // normalizes to "Master Bedroom". App-wide by default (every <textarea> and
 // text <input>), so no per-field wiring is needed. The rest of each word is left
-// as typed, so acronyms ("ABC Painting") and camelCase ("McDowell") survive —
+// as typed, so acronyms ("ABC Painting") and camelCase ("McDowell") survive,
 // only the word-initial letter is forced upper.
 function _autoCapWords(s){
   return String(s==null?'':s).replace(/(^|\s)([\p{L}])/gu, function(_m, sep, ch){ return sep + ch.toUpperCase(); });
@@ -233,10 +233,10 @@ function _autoCapEligible(el){
 // TWO mechanisms, both triggered by the SPACEBAR (capitalize each word as you
 // type), and neither mutates a field during a programmatic value-set:
 //   1. MOBILE (primary): set autocapitalize="words" on every eligible field, so
-//      the device keyboard capitalizes each word natively as it's typed — the
+//      the device keyboard capitalizes each word natively as it's typed, the
 //      "hits on the spacebar" behavior, with zero value rewriting.
 //   2. DESKTOP (fallback): on a real spacebar keydown, title-case the value. A
-//      keydown only fires from genuine typing — Playwright's page.fill() sets the
+//      keydown only fires from genuine typing, Playwright's page.fill() sets the
 //      value WITHOUT a keydown, so the offline suite is never affected.
 function _applyAutoCapAttrs(root){
   try {
@@ -259,7 +259,7 @@ if (typeof document !== 'undefined' && document.addEventListener) {
   if (document.readyState !== 'loading') _applyAutoCapAttrs(document);
   else document.addEventListener('DOMContentLoaded', function(){ _applyAutoCapAttrs(document); });
   window._applyAutoCapAttrs = _applyAutoCapAttrs;
-  // Desktop spacebar fallback — runs on real typing only (not page.fill).
+  // Desktop spacebar fallback, runs on real typing only (not page.fill).
   document.addEventListener('keydown', function(e){
     if (e.key !== ' ' && e.key !== 'Spacebar') return;
     var el = e && e.target;

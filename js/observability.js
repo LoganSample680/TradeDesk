@@ -1,22 +1,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Observability — capture runtime errors + lightweight interaction telemetry and
+// Observability: capture runtime errors + lightweight interaction telemetry and
 // ship them through the `ingest-telemetry` edge function (service role), which writes
 // error_log + analytics_events. Powers the ops dashboard, Slack tripwires, and the
 // agentic self-heal loop (CLAUDE.md §14).
 //
 // Why an edge function (not direct inserts): analytics_events / error_log are deny-all
-// to clients by design — the function holds the service role, derives the ANONYMIZED
+// to clients by design, the function holds the service role, derives the ANONYMIZED
 // contractor_hash from the verified JWT (never the raw uid leaves the server), and
 // enforces the no-PII rule centrally.
 //
 // HARD RULES (so this can never destabilize the app or the test suite):
-//   • Never throws — every op wrapped, failures swallowed.
-//   • Never console.error / console.warn — must not trip assertNoErrors.
+//   • Never throws, every op wrapped, failures swallowed.
+//   • Never console.error / console.warn: must not trip assertNoErrors.
 //   • No-ops unless the cloud client + a signed-in user exist.
-//   • INERT on localhost/127.* — the flow + offline test servers run there, so this
+//   • INERT on localhost/127.*: the flow + offline test servers run there, so this
 //     adds zero load/behavior during tests; only runs on deployed origins.
 // Slack delivery is the owner's step (SLACK_WEBHOOK_URL secret + slack-notify edge fn
-// + a DB webhook on error_log) — see docs/OBSERVABILITY.md.
+// + a DB webhook on error_log), see docs/OBSERVABILITY.md.
 // ─────────────────────────────────────────────────────────────────────────────
 (function () {
   'use strict';
@@ -33,12 +33,12 @@
 
   // ── Error capture (flushed immediately, deduped) ─────────────────────────────
   var _seen = {};
-  // Transient THIRD-PARTY outages the app already degrades around — reportable
+  // Transient THIRD-PARTY outages the app already degrades around, reportable
   // as app errors they are not: nothing in our code can fix Apple's servers
   // returning 503, and the hotfix lane paged exactly that (error_log 37).
   // Geocoding/directions already fall back to Photon when MapKit is down, so
   // the user experience self-heals. Deliberately narrow: only MapKit's own
-  // init/load failures with a 5xx/network signature — a MapKit auth/token
+  // init/load failures with a 5xx/network signature, a MapKit auth/token
   // error (401/invalid) still reports, because THAT one is ours to fix.
   var _EXTERNAL_TRANSIENT = /^\[MapKit\].*(50[0-9]|Network Unavailable)/i;
   function _isExternalTransient(msg) { try { return _EXTERNAL_TRANSIENT.test(String(msg || '')); } catch (_e) { return false; } }
@@ -59,7 +59,7 @@
   }
   // Serialize one console.error argument into something a human can root-cause.
   // JSON.stringify alone produced "{}" for Error instances, DOM events, and
-  // anything with only non-enumerable props (error_log 38 was literally "{}") —
+  // anything with only non-enumerable props (error_log 38 was literally "{}"):
   // an unactionable report that re-pages the hotfix lane forever. Prefer
   // stack > message > name/type > enumerable JSON > String().
   function _serializeArg(a) {
@@ -78,14 +78,14 @@
   try {
     window.addEventListener('error', function (e) { try { _logError('error', (e && e.message) || 'error', e && e.error && e.error.stack, { file: e && e.filename, line: e && e.lineno }); } catch (_x) {} });
     window.addEventListener('unhandledrejection', function (e) { try { var r = e && e.reason; _logError('unhandledrejection', (r && r.message) || String(r || 'rejection'), r && r.stack); } catch (_x) {} });
-    // console.error capture (kind 'console') — feeds the error_log → PR self-heal
+    // console.error capture (kind 'console'): feeds the error_log → PR self-heal
     // loop (§14). Wraps, never replaces: the original always still fires, so
     // DevTools and Playwright's console listeners see everything unchanged.
     var _origCErr = console.error;
     console.error = function () {
       try {
         var msg = Array.prototype.slice.call(arguments).map(_serializeArg).join(' ');
-        // A report with zero content can never be root-caused — it would page
+        // A report with zero content can never be root-caused, it would page
         // the hotfix lane forever with nothing to fix. The original console.error
         // below still fires either way, so DevTools loses nothing.
         if (msg.replace(/[\s?]|\[object: no serializable content\]/g, '') !== '') {
@@ -97,11 +97,11 @@
   } catch (_e) {}
 
   // ── Dead-control detection (FIRST ineffective click) ─────────────────────────
-  // A dead button usually throws NOTHING — the tap just does nothing. Detect it
+  // A dead button usually throws NOTHING, the tap just does nothing. Detect it
   // from behavior on the FIRST click (owner decision 2026-07-03: don't wait for a
   // rage-click): if 700ms after clicking a control there was NO effect of any
-  // kind — no DOM mutation anywhere, no navigation, no network request, no new
-  // tab — report kind 'dead-button' to error_log, which feeds the hotfix lane
+  // kind: no DOM mutation anywhere, no navigation, no network request, no new
+  // tab: report kind 'dead-button' to error_log, which feeds the hotfix lane
   // exactly like a crash. The effect net is deliberately wide (toasts, modals,
   // re-renders, fetches, window.open all count) so a working control can't
   // false-alarm; _seen dedupes to one report per control per session. Escape
@@ -127,7 +127,7 @@
       try {
         var el = e.target && e.target.closest && e.target.closest('button,[onclick],[role="button"],a,input[type="submit"]');
         if (!el || el.disabled || el.closest('[data-obs-quiet]')) return;
-        // Real links navigate/open apps on their own — that IS their effect.
+        // Real links navigate/open apps on their own, that IS their effect.
         var href = el.tagName === 'A' ? (el.getAttribute('href') || '') : '';
         if (href && href !== '#' && href.indexOf('javascript:') !== 0) return;
         var sig = _ctlSig(el), href0 = location.href, net0 = _netSeq, mutated = false;
@@ -137,7 +137,7 @@
           try {
             mo.disconnect();
             if (mutated || location.href !== href0 || _netSeq !== net0) return;
-            _logError('dead-button', 'Dead control — no effect on click: ' + sig, null, { page: _page(), sig: sig });
+            _logError('dead-button', 'Dead control, no effect on click: ' + sig, null, { page: _page(), sig: sig });
           } catch (_x) {}
         }, 700);
       } catch (_x) {}

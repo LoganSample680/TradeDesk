@@ -589,7 +589,7 @@ test.describe('Fleet Management', () => {
 
   // ── Test 20: Zero console errors throughout ──────────────────────────────
   test('Zero console errors throughout fleet tests', async () => {
-    assertNoErrors(page, 'Fleet overall — zero console errors');
+    assertNoErrors(page, 'Fleet overall, zero console errors');
   });
 
   // ── Test 21: Edit vehicle modal uses compact header, no tbar ─────────────
@@ -805,16 +805,16 @@ test.describe('Fleet Management', () => {
 
   // ── Test 27: Zero console errors for all new features ────────────────────
   test('Zero console errors after all new fleet feature tests', async () => {
-    assertNoErrors(page, 'Fleet new features — zero console errors');
+    assertNoErrors(page, 'Fleet new features, zero console errors');
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  VEHICLE SECTION REMOVAL — Settings & Mileage regression suite
+//  VEHICLE SECTION REMOVAL, Settings & Mileage regression suite
 //  Verifies that removing the vehicle section from Settings and moving
 //  vehicle management to Fleet doesn't break Settings, mileage, or Supabase.
 // ════════════════════════════════════════════════════════════════════════════
-test.describe('Vehicle management consolidation — removal regression', () => {
+test.describe('Vehicle management consolidation, removal regression', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -850,11 +850,11 @@ test.describe('Vehicle management consolidation — removal regression', () => {
 
   // ── Regression: a deleted vehicle must STAY deleted ───────────────────────
   // Bug ("Zach Ford always comes back"): getVehicles() re-seeded a vehicle from
-  // the legacy single-vehicle string field S.veh whenever S.vehicles was empty —
+  // the legacy single-vehicle string field S.veh whenever S.vehicles was empty,
   // so deleting the last vehicle resurrected it on the very next render. The seed
   // now fires only when the fleet was NEVER managed (no S.vehiclesTs stamp); any
   // add/edit/delete stamps it and permanently disables the seed.
-  test('Deleting the last vehicle stays deleted — no resurrection from legacy S.veh', async () => {
+  test('Deleting the last vehicle stays deleted, no resurrection from legacy S.veh', async () => {
     const r = await page.evaluate(() => {
       // Legacy account shape: old string field set, fleet never managed.
       delete S.vehicles;
@@ -869,7 +869,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
       S.vehiclesTs = Date.now();
       const afterDelete = getVehicles().map(v => v.name);
 
-      // S.veh is still a live settings field — re-reading must NOT bring it back.
+      // S.veh is still a live settings field, re-reading must NOT bring it back.
       const afterReRead = getVehicles().map(v => v.name);
       return { legacySeed, afterDelete, afterReRead, vehStillSet: S.veh };
     });
@@ -887,10 +887,10 @@ test.describe('Vehicle management consolidation — removal regression', () => {
   // Bug ("Zach's Ford deletes itself"): every fleet write stamped only its
   // private vehiclesTs, never the blob-level settingsTs. The cloud save gate
   // (skip-settings when cloud settingsTs is newer) therefore treated a fresh
-  // vehicle add as STALE and silently never uploaded it — the vehicle lived
+  // vehicle add as STALE and silently never uploaded it, the vehicle lived
   // only in that device's cache and vanished on the next sign-out/fresh boot.
   // _setVehicles is the single write path and must stamp BOTH timestamps.
-  test('_setVehicles stamps settingsTs AND vehiclesTs — a fleet edit can never look stale to the save gate', async () => {
+  test('_setVehicles stamps settingsTs AND vehiclesTs, a fleet edit can never look stale to the save gate', async () => {
     const r = await page.evaluate(() => {
       if (typeof _setVehicles !== 'function') return null;
       const staleTs = 1000; // ancient settingsTs, like a user who never opens Settings
@@ -913,7 +913,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
   });
 
   // ── Regression: the fleet SERVICE LOG is a synced cloud table ─────────────
-  // maintenance (zp3_maint) was the only data store that never left the device —
+  // maintenance (zp3_maint) was the only data store that never left the device,
   // a reinstall or second device lost/never saw the service history. It now has
   // a _TD_TABLES entry (td_maintenance) so every save/load/delta/realtime path
   // picks it up automatically.
@@ -942,7 +942,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
       deleteMaintenanceRecord(991002);
     });
     await page.waitForTimeout(300);
-    // Confirm the zConfirm dialog — the delete now runs inside _userDelete so the
+    // Confirm the zConfirm dialog, the delete now runs inside _userDelete so the
     // cloud sweep records the id (without it the row resurrects from td_maintenance).
     const yesBtn = page.locator('.zmodal-overlay button', { hasText: 'Delete' }).last();
     await yesBtn.click();
@@ -952,11 +952,11 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     assertNoErrors(page, 'service record delete flows through _userDelete');
   });
 
-  // ── Vehicle deduction engine (_vehSchedC) — one method per vehicle (IRS) ──
+  // ── Vehicle deduction engine (_vehSchedC): one method per vehicle (IRS) ──
   // Before the engine, calcTax deducted ALL miles AND ALL vehicle expenses at
-  // once — stacking both deductions for any 'actual' vehicle. These tests pin
+  // once: stacking both deductions for any 'actual' vehicle. These tests pin
   // the exclusivity rules and the year-end winner math.
-  test('_vehSchedC: mileage-method vehicle — miles deduct, its expenses are excluded', async () => {
+  test('_vehSchedC: mileage-method vehicle, miles deduct, its expenses are excluded', async () => {
     const r = await page.evaluate(() => {
       if (typeof _vehSchedC !== 'function') return null;
       const YR = '2031';
@@ -981,7 +981,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     expect(r.vd.perVehicle[0].winner).toBeDefined();
   });
 
-  test('_vehSchedC: actual-method vehicle — expenses deduct at biz-use %, its miles are excluded', async () => {
+  test('_vehSchedC: actual-method vehicle, expenses deduct at biz-use %, its miles are excluded', async () => {
     const r = await page.evaluate(() => {
       if (typeof _vehSchedC !== 'function') return null;
       const YR = '2032';
@@ -1002,7 +1002,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     expect(r.perVehicle[0].winner).toBe('actual'); // 750 > 400mi × rate (~290)
   });
 
-  test('_vehSchedC: no vehicles configured — legacy pass-through (all miles, all expenses)', async () => {
+  test('_vehSchedC: no vehicles configured, legacy pass-through (all miles, all expenses)', async () => {
     const r = await page.evaluate(() => {
       if (typeof _vehSchedC !== 'function') return null;
       const YR = '2033';
@@ -1018,11 +1018,11 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     expect(r).not.toBeNull();
     expect(r.vd.hasVehicles).toBe(false);
     expect(r.vd.mileDed).toBeCloseTo(r.expected, 2);
-    expect(r.vd.expAdjust).toBe(0);       // nothing excluded — non-fleet accounts untouched
+    expect(r.vd.expAdjust).toBe(0);       // nothing excluded, non-fleet accounts untouched
     expect(r.vd.excludedIds).toEqual([]);
   });
 
-  test('_vehSchedC: winner comparison sees ALL logged costs — unexpensed service records count', async () => {
+  test('_vehSchedC: winner comparison sees ALL logged costs, unexpensed service records count', async () => {
     const r = await page.evaluate(() => {
       if (typeof _vehSchedC !== 'function') return null;
       const YR = '2036';
@@ -1042,7 +1042,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     expect(r).not.toBeNull();
     expect(r.p.costTotal).toBe(1200);              // 400 expense + 800 unexpensed service record
     expect(r.p.actualCmp).toBe(1200);              // comparison side sees everything
-    expect(r.p.winner).toBe('actual');             // 1200 beats ~$70-75 of mileage — honest verdict
+    expect(r.p.winner).toBe('actual');             // 1200 beats ~$70-75 of mileage, honest verdict
     expect(r.p.mileDed).toBeCloseTo(r.mileDedExpected, 2);
     expect(r.schedCAdjust).toBe(400);              // Schedule C math unchanged: only the expense excluded
   });
@@ -1204,14 +1204,14 @@ test.describe('Vehicle management consolidation — removal regression', () => {
         gvwr: 'heavy_truck', deductionMethod: 'mileage',
         status: 'active', addedDate: '2020-06-15',
       }];
-      S.vehiclesTs = Date.now() - 1000; // 1s ago — local is newer
+      S.vehiclesTs = Date.now() - 1000; // 1s ago, local is newer
     });
 
     // Simulate stale cloud settings arriving (no purchase fields, older ts)
     await page.evaluate(() => {
       const staleSettings = JSON.stringify({
         vehicles: [{ name: '2020 Ram 1500', nickname: 'Fleet Truck', status: 'active', addedDate: '2020-06-15' }],
-        vehiclesTs: Date.now() - 60000, // 60s ago — cloud is stale
+        vehiclesTs: Date.now() - 60000, // 60s ago, cloud is stale
         bname: 'Test Biz',
       });
       // Run the merge logic that supaLoadFromCloud uses
@@ -1236,7 +1236,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
 
   // ── Zero console errors throughout ───────────────────────────────────────
   test('Zero console errors across vehicle consolidation tests', async () => {
-    assertNoErrors(page, 'Vehicle consolidation — zero console errors');
+    assertNoErrors(page, 'Vehicle consolidation, zero console errors');
   });
 
   // ── Service log UX: card link, no inline Delete, Delete in edit modal ────
@@ -1258,7 +1258,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
 
     // The last-service row must be a <button> (not a plain <div>)
     // Fleet cards use class "card"; the service link button contains "Oil Change".
-    // Wait for the rendered button explicitly (bounded) instead of a fixed delay —
+    // Wait for the rendered button explicitly (bounded) instead of a fixed delay,
     // a slow render previously hung the whole test to its 60s timeout.
     const serviceBtn = page.locator('.card button').filter({ hasText: /Oil Change/ });
     await expect(serviceBtn).toHaveCount(1, { timeout: 8000 });
@@ -1314,7 +1314,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     assertNoErrors(page, 'No inline Delete in service log');
   });
 
-  test('Edit maintenance modal has NO Delete button — records are edit-only now', async () => {
+  test('Edit maintenance modal has NO Delete button, records are edit-only now', async () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
@@ -1329,7 +1329,7 @@ test.describe('Vehicle management consolidation — removal regression', () => {
     });
     await page.waitForTimeout(400);
 
-    // The visible delete button was removed everywhere — a maintenance record is
+    // The visible delete button was removed everywhere, a maintenance record is
     // edited to fix, never deleted from the UI (§7 record-delete-button sweep).
     const deleteBtn = page.locator('#fleet-maint-overlay button').filter({ hasText: /Delete this record/i });
     await expect(deleteBtn).toHaveCount(0);
@@ -1341,6 +1341,6 @@ test.describe('Vehicle management consolidation — removal regression', () => {
   });
 
   test('Zero console errors across service log UX tests', async () => {
-    assertNoErrors(page, 'Service log UX — zero console errors');
+    assertNoErrors(page, 'Service log UX, zero console errors');
   });
 });

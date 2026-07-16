@@ -1,11 +1,11 @@
-// REAL flow — the change-order document chain (CLAUDE.md §9.2: native change
+// REAL flow, the change-order document chain (CLAUDE.md §9.2: native change
 // orders are the biggest gap vs ServiceTitan/Jobber/HCP). Drives the actual CO
 // builder (proposals.js showChangeOrderModal → setCOType → _reviewCO →
 // _sendCOToHub) against a tagged throwaway bid and asserts the delta math and the
-// pending-client persistence — WITHOUT rolling the bid total (that only happens
+// pending-client persistence, WITHOUT rolling the bid total (that only happens
 // when the client signs in the hub), so no real bid is mutated.
 //
-// FINDING (recorded, not built — §9 backlog): completion invoices are NOT a
+// FINDING (recorded, not built, §9 backlog): completion invoices are NOT a
 // signable document. openInvoice() is a view-only statement of account; there is
 // no js/completion-invoice.js, no send/sign, and it is not cloud-synced. The
 // document chain is therefore HALF complete: change orders ship, completion
@@ -61,9 +61,9 @@ test.describe('change order document chain (UI-driven)', () => {
       act: async (p) => {
         await p.evaluate(({ bidId, clientId }) => { showChangeOrderModal(bidId, clientId); }, { bidId, clientId }); // 1 tap (open CO modal)
         await p.waitForSelector('#co-desc', { timeout: 8000 });
-        await p.fill('#co-desc', 'Added master bedroom ceiling — two coats');           // textarea — typed = 40 keystrokes
+        await p.fill('#co-desc', 'Added master bedroom ceiling, two coats');           // textarea: typed = 40 keystrokes
         await p.evaluate(({ bidId }) => { setCOType('add', bidId); }, { bidId });        // 1 tap (pick type=add)
-        await p.fill('#co-amount', String(ADD));                                          // amount field — typed "450" = 3 keystrokes
+        await p.fill('#co-amount', String(ADD));                                          // amount field, typed "450" = 3 keystrokes
         await p.evaluate(({ bidId }) => { _previewCO(bidId); }, { bidId });
         await p.evaluate(({ bidId, clientId }) => { _reviewCO(bidId, clientId); }, { bidId, clientId }); // 1 tap (review)
         await p.waitForTimeout(300);
@@ -74,7 +74,7 @@ test.describe('change order document chain (UI-driven)', () => {
           const c = b && (b.changeOrders || [])[0];
           return { amount: b ? b.amount : null, co: c || null };
         }, { bidId });
-        return 47; // open(1) + desc"Added master bedroom ceiling — two coats"(40) + setCOType(1) + amount"450"(3) + review(1) + send(1) = 47
+        return 47; // open(1) + desc"Added master bedroom ceiling, two coats"(40) + setCOType(1) + amount"450"(3) + review(1) + send(1) = 47
       },
       rule: async (p) => {
         const c = co.co;
@@ -89,7 +89,7 @@ test.describe('change order document chain (UI-driven)', () => {
       },
     });
 
-    // NO cleanup — the bid, change order + client stay in the dev account on purpose
+    // NO cleanup, the bid, change order + client stay in the dev account on purpose
     // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

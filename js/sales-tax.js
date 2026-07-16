@@ -1,19 +1,19 @@
 // ── Sales Tax Engine ─────────────────────────────────────────────────────────
 // Handles what contractors COLLECT from clients on proposals and invoices.
-// Completely separate from tax.js (income tax) — different concept entirely.
+// Completely separate from tax.js (income tax), different concept entirely.
 // tax.js = what you OWE the government. sales-tax.js = what you COLLECT for them.
 
-// States with no sales tax — skip all calculation
+// States with no sales tax, skip all calculation
 const ST_NO_TAX = new Set(['AK','DE','MT','NH','OR']);
 
-// States with gross receipts tax — full contract value taxable, labor included
+// States with gross receipts tax, full contract value taxable, labor included
 const ST_GROSS_RECEIPTS = {
-  HI:{label:'GET', note:'Hawaii General Excise Tax — applies to full contract value including labor'},
-  NM:{label:'GRT', note:'New Mexico Gross Receipts Tax — applies to full contract value including labor'},
+  HI:{label:'GET', note:'Hawaii General Excise Tax, applies to full contract value including labor'},
+  NM:{label:'GRT', note:'New Mexico Gross Receipts Tax, applies to full contract value including labor'},
 };
 
 // States where landscaping / lawn care / tree services are taxed as a SERVICE
-// (labor AND materials both taxable — different from construction trade rules)
+// (labor AND materials both taxable, different from construction trade rules)
 const ST_LANDSCAPE_SERVICE = new Set([
   'AR','DC','IA','KS','KY','MD','MN','NE','NJ','NY','NC','ND',
   'OH','RI','SC','SD','TX','WA','WI','WV','WY'
@@ -31,8 +31,8 @@ const ST_CI_CERT = {
   CT:{form:'CERT-106',name:'Blanket Certificate for Exempt Purchases of Services'},
 };
 
-// State base sales tax rates — state portion only, before local add-ons
-// Updated via code deploy when states change rates (historically rare — ~once per decade)
+// State base sales tax rates, state portion only, before local add-ons
+// Updated via code deploy when states change rates (historically rare, ~once per decade)
 const ST_BASE_RATE = {
   AL:4.000, AK:0,     AZ:5.600, AR:6.500, CA:7.250, CO:2.900, CT:6.350, DE:0,
   FL:6.000, GA:4.000, HI:4.000, ID:6.000, IL:6.250, IN:7.000, IA:6.000, KS:6.500,
@@ -86,13 +86,13 @@ function getJobTaxTreatment(state, tradeType, scope, propertyType) {
       return {
         type:'service', customerTax:true, laborTaxable:true, materialsTaxable:true,
         label:'Service tax',
-        note:stateName+' taxes landscaping services including labor — full invoice taxable',
+        note:stateName+' taxes landscaping services including labor, full invoice taxable',
       };
     }
     return {
       type:'contractor_consumer', customerTax:false, laborTaxable:false, materialsTaxable:false,
       label:'No invoice tax',
-      note:'Contractor pays tax on materials at purchase — no tax charged to client',
+      note:'Contractor pays tax on materials at purchase, no tax charged to client',
     };
   }
 
@@ -200,9 +200,9 @@ async function lookupSalesTaxRate(zip, state) {
       const {data} = await _supa.from('tax_rates').select('combined').eq('zip','STATE-'+st).maybeSingle();
       if (data?.combined != null) {
         return {rate:parseFloat(data.combined), source:'db_state',
-                warning:'Local rate not available — using '+stateName+' state base rate. Set your local rate for accuracy.'};
+                warning:'Local rate not available, using '+stateName+' state base rate. Set your local rate for accuracy.'};
       }
-    } catch(e) { /* network error — fall through */ }
+    } catch(e) { /* network error, fall through */ }
   }
 
   const base = ST_BASE_RATE[st] || 0;

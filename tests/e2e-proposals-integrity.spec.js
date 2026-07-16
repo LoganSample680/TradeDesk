@@ -1,11 +1,11 @@
 // @ts-check
 /**
- * Proposals integrity — scope and calculation regression tests.
+ * Proposals integrity, scope and calculation regression tests.
  *
  * Guards against the critical proposals bugs found in the systematic audit:
  *
  *   1. sendProposalLink used _depositAmt, _st, _cancelDays, _cancelStat before
- *      they were defined — they only existed in buildProposal's scope. Fixed by
+ *      they were defined, they only existed in buildProposal's scope. Fixed by
  *      inlining the derivations in sendProposalLink.
  *
  *   2. buildProposal used _propFinal (only defined in sendProposalLink) instead
@@ -16,7 +16,7 @@
  *      Fixed: fullPrice is the reverse-calculated pre-discount price;
  *             discountedPrice is the actual signing price.
  *
- *   4. On bid re-price (edit path), bid.deposit was never updated — only the
+ *   4. On bid re-price (edit path), bid.deposit was never updated, only the
  *      draft path did it. Fixed by adding the deposit write to the edit path.
  *
  * Because sendProposalLink and buildProposal require a fully initialized estimate
@@ -26,7 +26,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('Proposals integrity — scope and calculation regression suite', () => {
+test.describe('Proposals integrity, scope and calculation regression suite', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -119,7 +119,7 @@ test.describe('Proposals integrity — scope and calculation regression suite', 
     assertNoErrors(page, 'cancel rule scope');
   });
 
-  // ── Portfolio discount — never applied twice ──────────────────────────────
+  // ── Portfolio discount, never applied twice ──────────────────────────────
   // Before fix: fullPrice = _propFinal (already discounted), discountedPrice = _propFinal*(1-pct/100)
   // This applied the portfolio discount twice, showing clients a wrong (too-low) price.
   // After fix: fullPrice = reverse-calculated pre-discount price, discountedPrice = _propFinal.
@@ -135,8 +135,8 @@ test.describe('Proposals integrity — scope and calculation regression suite', 
       return [
         compute(1700, 15, true),   // 15% portfolio discount
         compute(3000, 10, true),   // 10% portfolio discount
-        compute(2000,  0, true),   // 0% portfolio — no discount
-        compute(2000, 15, false),  // portfolio off — both equal
+        compute(2000,  0, true),   // 0% portfolio, no discount
+        compute(2000, 15, false),  // portfolio off, both equal
         compute(500,  20, true),   // 20% portfolio
       ].map(c => ({
         ...c,
@@ -148,13 +148,13 @@ test.describe('Proposals integrity — scope and calculation regression suite', 
       expect(c.neitherNaN, 'fullPrice and discountedPrice must not be NaN').toBe(true);
       expect(
         c.fullGteDiscounted,
-        `fullPrice (${c.fullPrice}) must be >= discountedPrice (${c.discountedPrice}) — portfolio discount must not be applied twice`
+        `fullPrice (${c.fullPrice}) must be >= discountedPrice (${c.discountedPrice}): portfolio discount must not be applied twice`
       ).toBe(true);
     }
     assertNoErrors(page, 'portfolio discount not doubled');
   });
 
-  // ── Portfolio discount — correct magnitude ────────────────────────────────
+  // ── Portfolio discount, correct magnitude ────────────────────────────────
   test('fullPrice discounted by portfolioPct equals discountedPrice (within $1)', async () => {
     const result = await page.evaluate(() => {
       const propFinal = 1700; // already discounted by 15%
@@ -170,14 +170,14 @@ test.describe('Proposals integrity — scope and calculation regression suite', 
     });
     expect(
       result.withinOneDollar,
-      `fullPrice (${result.rawPrice}) discounted by 15% should equal discountedPrice — got ${result.reverseCheck} vs ${1700}`
+      `fullPrice (${result.rawPrice}) discounted by 15% should equal discountedPrice, got ${result.reverseCheck} vs ${1700}`
     ).toBe(true);
     assertNoErrors(page, 'portfolio discount magnitude');
   });
 
   // ── Bid deposit updated on re-price (edit path) ───────────────────────────
   // Before fix: on the edit path in buildProposal, b.amount was updated but
-  // b.deposit was never changed — stale deposit after every re-price.
+  // b.deposit was never changed, stale deposit after every re-price.
   // After fix: deposit is updated alongside amount.
   test('bid deposit is updated when bid amount changes during re-price', async () => {
     const result = await page.evaluate(() => {
@@ -200,7 +200,7 @@ test.describe('Proposals integrity — scope and calculation regression suite', 
 
   // ── buildProposal deposit uses final (not _propFinal) ─────────────────────
   // Before fix: const _depositAmt = Math.round(_propFinal * _depositPct * 100) / 100
-  // _propFinal was only defined in sendProposalLink — ReferenceError or stale value.
+  // _propFinal was only defined in sendProposalLink, ReferenceError or stale value.
   // After fix: uses `final` which is the correct in-scope parameter of buildProposal.
   test('deposit amount in buildProposal scope uses the correct final value', async () => {
     const result = await page.evaluate(() => {

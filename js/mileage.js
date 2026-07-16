@@ -24,7 +24,7 @@ function _showOdometerModal(tasks,hardBlock){
         </div>
       </div>
       <div style="background:#eff6ff;border:1.5px solid #bfdbfe;border-radius:var(--r);padding:10px 12px;margin:14px 0 16px;font-size:12px;color:#1e40af;line-height:1.5">
-        <strong>IRS Pub. 463 requires annual odometer records.</strong> ${t.midYear?'You joined mid-year — enter the odometer reading from when you first started using this vehicle for business, or your best Jan 1 estimate. An estimate is far better than no record.':'Recording Jan 1 &amp; Dec 31 readings proves your business-use % and makes your mileage deduction bulletproof — even in a field audit.'}
+        <strong>IRS Pub. 463 requires annual odometer records.</strong> ${t.midYear?'You joined mid-year, enter the odometer reading from when you first started using this vehicle for business, or your best Jan 1 estimate. An estimate is far better than no record.':'Recording Jan 1 &amp; Dec 31 readings proves your business-use % and makes your mileage deduction bulletproof, even in a field audit.'}
         ${loggedMi>0?`<div style="margin-top:6px">${svgIcon('📍',{size:12})} You logged <strong>${loggedMi.toFixed(1)} mi</strong> in ${t.year} for this vehicle in TradeDesk.</div>`:''}
         ${otherReading?`<div style="margin-top:4px">${isStart?'Dec 31':'Jan 1'} reading on file: <strong>${otherReading.toLocaleString()} mi</strong></div>`:''}
         ${(()=>{const prevEnd=(S.vehicleOdoLog||{})[t.year-1]?.[_vehKey(t.veh)]?.end||0;return(isStart&&prevEnd&&!existing.start)?`<div style="margin-top:4px">${svgIcon('✅',{size:12})} Carried forward from Dec 31, ${t.year-1}: <strong>${prevEnd.toLocaleString()} mi</strong></div>`:'';})()}
@@ -72,7 +72,7 @@ function _showOdometerModal(tasks,hardBlock){
         existing.bizUsePct=bizPct;existing.loggedMi=Math.round(logged);existing.totalMi=totalDriven;
         if(logged>totalDriven){existing.mileageFlag=true;}
       }
-      // Auto-seed next year's Jan 1 start from this Dec 31 reading — user never has to enter year-start again
+      // Auto-seed next year's Jan 1 start from this Dec 31 reading, user never has to enter year-start again
       const ny=t.year+1;
       if(!S.vehicleOdoLog[ny])S.vehicleOdoLog[ny]={};
       if(!S.vehicleOdoLog[ny][key])S.vehicleOdoLog[ny][key]={};
@@ -80,7 +80,7 @@ function _showOdometerModal(tasks,hardBlock){
       S.vehicleOdoLog[ny][key].startDate=todayKey();
     }
     S._odoSnoozeCount=0;
-    S.settingsTs=Date.now(); // odometer log is IRS data — must win the settings sync
+    S.settingsTs=Date.now(); // odometer log is IRS data, must win the settings sync
     saveAll();_flushSaveNow();
     taskIdx++;
     renderTask();
@@ -91,7 +91,7 @@ function _showOdometerModal(tasks,hardBlock){
   // Never open over a user-initiated form modal (quick-expense, agreement,
   // contract, …). Its z-index (99990) floats above the standard modal layer
   // (.zmodal-overlay @ 9999), so opening on top would cover the form's inputs and
-  // trap the user mid-task. Skip — it re-prompts on the next boot.
+  // trap the user mid-task. Skip: it re-prompts on the next boot.
   if(document.querySelector('.zmodal-overlay'))return;
 
   const ov=document.createElement('div');
@@ -112,7 +112,7 @@ function _showOdometerModal(tasks,hardBlock){
   function _odoFinish(){
     clearInterval(_odoYieldIv);
     ov.remove();
-    showToast('Odometer records saved — mileage deduction verified ✓','📋');
+    showToast('Odometer records saved, mileage deduction verified ✓','📋');
     // Year-end verdict: with the business-use % now final, tell the contractor
     // which deduction method won for the year they just closed out.
     try{const _vy=tasks&&tasks[0]&&tasks[0].year;if(typeof _vehWinnerAlert==='function')setTimeout(()=>_vehWinnerAlert(_vy),600);}catch(_e){}
@@ -157,8 +157,8 @@ function setTripPurpose(purpose, btn){
         jobPicker.style.display='block';
         jobPicker.innerHTML='<label style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:6px">Which job? <span style="font-weight:400;opacity:.7">(optional)</span></label>'+
           '<select id="cd-supply-job-sel" style="width:100%;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text)" onchange="gps.supplyJobId=this.value">'+
-          '<option value="">— Select job —</option>'+
-          activeJobs.map(b=>{const c=getClientById(b.client_id);return'<option value="'+b.id+'">'+escHtml(c?c.name:'Client')+' — '+fmt(b.amount)+'</option>';}).join('')+
+          '<option value="">- Select job -</option>'+
+          activeJobs.map(b=>{const c=getClientById(b.client_id);return'<option value="'+b.id+'">'+escHtml(c?c.name:'Client')+', '+fmt(b.amount)+'</option>';}).join('')+
           '</select>';
       } else {
         jobPicker.style.display='none';
@@ -179,7 +179,7 @@ function selectDriveVehicle(idx){
   checkTripReady();
 }
 function renderDriveVehicleChips(){
-  // Now uses dropdown — this just populates the select
+  // Now uses dropdown, this just populates the select
   const sel=document.getElementById('cd-vehicle-sel');
   const noVeh=document.getElementById('cd-no-vehicles');
   const vehs=getVehicles();
@@ -193,7 +193,7 @@ function renderDriveVehicleChips(){
   if(noVeh)noVeh.style.display='none';
   if(sel){
     sel.style.display='block';
-    sel.innerHTML='<option value="">— Select vehicle —</option>'+
+    sel.innerHTML='<option value="">- Select vehicle -</option>'+
       vehs.map(v=>{
         const label=getVehicleLabel(v);
         const full=getVehicleFullLabel(v);
@@ -266,7 +266,7 @@ function confirmStartDrive(){
   window._wakeLockRequest&&window._wakeLockRequest();
   if(c&&c.phone){
     const phone=c.phone.replace(/\D/g,'');
-    const msg='Hi '+(c.name||'').split(' ')[0]+', this is '+(S.bname||'TradeDesk')+' — I\'m on my way! I\'ll be there shortly.';
+    const msg='Hi '+(c.name||'').split(' ')[0]+', this is '+(S.bname||'TradeDesk')+', I\'m on my way! I\'ll be there shortly.';
     const smsLink='sms:'+phone+'&body='+encodeURIComponent(msg);
     window.location.href=smsLink;
   }
@@ -320,7 +320,7 @@ function updateMilesPreview(){
 function saveEndDriveModal(){
   const miles=parseFloat(document.getElementById('end-miles-modal')?.value)||0;
   if(!miles||miles<=0){zAlert('Enter the miles driven.',{title:'Required'});return;}
-  if(miles>500){if(!confirm('That\'s '+miles+' miles — does that look right?'))return;}
+  if(miles>500){if(!confirm('That\'s '+miles+' miles: does that look right?'))return;}
   const c=getClientById(gps.clientId);
   mileage.unshift({
     id:Date.now(),date:todayKey(),vehicle:gps.vehicle,purpose:gps.purpose,
@@ -334,7 +334,7 @@ function saveEndDriveModal(){
   window._wakeLockRelease&&window._wakeLockRelease();
   saveAll();
   // Mileage is the most-lost data because users immediately switch apps after
-  // saving a trip — flush to Supabase NOW instead of waiting for the 2s debounce.
+  // saving a trip, flush to Supabase NOW instead of waiting for the 2s debounce.
   _flushSaveNow();
   closeTopModal();
   hideDriveBanner();
@@ -396,19 +396,19 @@ let _tripDestTimer=null;
 let _tripGpsCoords=null; // cached GPS fix for search bias
 let _fromBiasCache={val:null,coords:null}; // MapKit-geocoded From coords for To-field bias
 
-// ── Shared geocoding — Photon (primary) + Census (fallback) ─────────────────
+// ── Shared geocoding, Photon (primary) + Census (fallback) ─────────────────
 // MapKit tokens are domain-locked with no expiry (see CLAUDE.md §10.1)
 const _MAPKIT_TOKEN=location.hostname.includes('pages.dev')
-  ?'eyJraWQiOiI3S0E5WDhVUjZMIiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNTIyLCJvcmlnaW4iOiIqLnRyYWRlZGVzay1jeXAucGFnZXMuZGV2Iiwic2NvcGUiOiJtYXBraXRfanMifQ.ehafZ1SO_50PLbz_-5iwhPJXKZpPXSJrNAALFhHmetxrVKOpCYzBHR9viL6Nl8Kor0yCIFJcvKiGrtrlNSgN7Q' // *.tradedesk-cyp.pages.dev — no expiry
-  :'eyJraWQiOiJXQzYzOFM2M0c0IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNDcwLCJvcmlnaW4iOiJ0cmFkZWRlc2twcm8uYXBwIiwic2NvcGUiOiJtYXBraXRfanMifQ.0hmtYgvSGLHMZcnHnEGMsaJDg6tXEtzfp3aS-tLdGbTjocZDQLP6VlrPl9l29tV-T5SgNXQycqUJO_T1b_rFWQ'; // tradedeskpro.app — no expiry
+  ?'eyJraWQiOiI3S0E5WDhVUjZMIiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNTIyLCJvcmlnaW4iOiIqLnRyYWRlZGVzay1jeXAucGFnZXMuZGV2Iiwic2NvcGUiOiJtYXBraXRfanMifQ.ehafZ1SO_50PLbz_-5iwhPJXKZpPXSJrNAALFhHmetxrVKOpCYzBHR9viL6Nl8Kor0yCIFJcvKiGrtrlNSgN7Q' // *.tradedesk-cyp.pages.dev: no expiry
+  :'eyJraWQiOiJXQzYzOFM2M0c0IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiJSVjI2NDRSTkdTIiwiaWF0IjoxNzgxMzAxNDcwLCJvcmlnaW4iOiJ0cmFkZWRlc2twcm8uYXBwIiwic2NvcGUiOiJtYXBraXRfanMifQ.0hmtYgvSGLHMZcnHnEGMsaJDg6tXEtzfp3aS-tLdGbTjocZDQLP6VlrPl9l29tV-T5SgNXQycqUJO_T1b_rFWQ'; // tradedeskpro.app: no expiry
 let _mapkitReady=false;
 // MapKit JS tokens are domain-locked (CLAUDE.md §10.1). On any non-authorized origin
 // (localhost, 127.0.0.1, the flow-test bridge) mapkit.init throws an origin-mismatch
-// console.error — which fails assertNoErrors. Only init on tradedeskpro.app / *.pages.dev.
+// console.error: which fails assertNoErrors. Only init on tradedeskpro.app / *.pages.dev.
 const _mapkitAuthorizedOrigin=/(?:^|\.)tradedeskpro\.app$/.test(location.hostname)||/\.pages\.dev$/.test(location.hostname);
 function _initMapKit(){
   if(typeof mapkit==='undefined')return;
-  if(!_mapkitAuthorizedOrigin)return; // unauthorized origin — skip init so MapKit never throws
+  if(!_mapkitAuthorizedOrigin)return; // unauthorized origin, skip init so MapKit never throws
   mapkit.init({authorizationCallback:done=>done(_MAPKIT_TOKEN),language:'en-US'});
   _mapkitReady=true;
   _retryPendingTrips();
@@ -454,7 +454,7 @@ function _haversineMiles(c1,c2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 async function _routeDistance(fromCoords,toCoords){
-  // MapKit Directions — primary
+  // MapKit Directions, primary
   if(_mapkitReady){
     try{
       return await new Promise((resolve,reject)=>{
@@ -497,7 +497,7 @@ function startDriveToClient(){
 }
 async function _geocodeAddress(val,limit,biasLat,biasLon){
   limit=limit||5;
-  // MapKit JS — Apple Maps database, every US address (primary)
+  // MapKit JS, Apple Maps database, every US address (primary)
   if(_mapkitReady){
     return new Promise(resolve=>{
       const _mkLat=biasLat||S.weatherLat||39.5,_mkLon=biasLon||S.weatherLon||-98.35;
@@ -581,14 +581,14 @@ function _addrSugSelect(suggId,streetId,cityId,stateId,zipId,street,city,state,z
   set(streetId,street);set(cityId,city);set(stateId,state);set(zipId,zip);
   const box=document.getElementById(suggId);if(box)box.style.display='none';
   // Call the dependent UI update directly rather than re-dispatching a bubbling 'input'
-  // event on the street field — that event re-fires the SAME inline oninput handler that
+  // event on the street field, that event re-fires the SAME inline oninput handler that
   // opened this box, which calls _addrSugSearch again and reopens the suggestion list
   // ~220ms later for the address the user just picked (the "bubble won't go away" bug).
   if(typeof _updateAddrComputed==='function')_updateAddrComputed();
   // For existing clients, fire lookup immediately on address selection
   if(editClientId&&street&&city)_lookupPropertyData(editClientId,{street,city,state,zip});
 }
-// ── _addrAutoFull — shared single-field address autocomplete ─────────────────
+// ── _addrAutoFull, shared single-field address autocomplete ─────────────────
 // inputEl  : the <input> element to attach autocomplete to
 // onSelect : function(fullAddr, street, city, state, zip) called on pick
 // Creates a suggestion <div> immediately after the input (parent must be
@@ -753,7 +753,7 @@ function _tripDestSearch(val){
         }
       }
       let results=await _geocodeAddress(val,5,_fromBias?.lat||null,_fromBias?.lng||null);
-      // Bias may cut off distant locations (e.g. MT address when starting from KS) — retry unbiased
+      // Bias may cut off distant locations (e.g. MT address when starting from KS), retry unbiased
       if(!results.length&&_fromBias)results=await _geocodeAddress(val,5);
       results.forEach(res=>{
         const safeL1=res.line1.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -829,7 +829,7 @@ function selectTripPlace(fieldId,suggId,coordKey,line1,line2,lat,lng,name){
   const box=document.getElementById(suggId);if(box)box.style.display='none';
   const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
   const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
-  // Show verified address chip — prefer business name when available
+  // Show verified address chip, prefer business name when available
   const chipId=fieldId==='lm-from'?'lm-from-chip':'lm-to-chip';
   const chip=document.getElementById(chipId);
   const chipTxt=document.getElementById(chipId+'-txt');
@@ -869,16 +869,16 @@ function openLogTripModal(opts){
   }
   const vehOpts=vehs.length
     ?vehs.map(v=>'<option value="'+escHtml(v.name||'')+'"'+(selVeh===v.name?' selected':'')+'>'+escHtml(getVehicleFullLabel(v)||'')+'</option>').join('')
-    :'<option value="">— Add vehicle in Settings —</option>';
-  const clientOpts='<option value="">— None —</option>'+clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name||'')+'</option>').join('');
+    :'<option value="">- Add vehicle in Settings -</option>';
+  const clientOpts='<option value="">- None -</option>'+clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name||'')+'</option>').join('');
   const prefill=opts.purpose||'';
-  const purposeOpts='<option value="" disabled'+(prefill?'':' selected')+'>— Select type —</option>'+
+  const purposeOpts='<option value="" disabled'+(prefill?'':' selected')+'>- Select type -</option>'+
     MILE_PURPOSES.map(p=>'<option value="'+p+'"'+(p===prefill?' selected':'')+'>'+p+'</option>').join('');
   // Optional quick-select chips for today's scheduled jobs/estimates (skip in edit mode)
   const suggList=(!opts.editId&&opts.suggestions&&opts.suggestions.length)?opts.suggestions:[];
   const suggHtml=suggList.length
     ?'<div style="margin-bottom:14px">'+
-        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Scheduled today — tap to fill</div>'+
+        '<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Scheduled today, tap to fill</div>'+
         '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
           suggList.map(s=>{
             const safeLabel=(s.label||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
@@ -919,7 +919,7 @@ function openLogTripModal(opts){
       '<div id="lm-from-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-from-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>'+svgIcon('📍',{size:11})+'</span><span id="lm-from-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">'+svgIcon('✓',{size:11})+'</span></div>'+
       '</div>'+
-    '<div class="f" style="margin-bottom:4px"><label>Driving to — client name or address</label>'+
+    '<div class="f" style="margin-bottom:4px"><label>Driving to, client name or address</label>'+
       '<input id="lm-to" placeholder="Type client name or any address" value="'+escHtml(opts.toAddress||'')+'" onfocus="_showRecentDestinations()" oninput="_tripDestSearch(this.value)" autocomplete="off">'+
       '<div id="lm-to-sugg" style="display:none;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);margin-top:2px;overflow:hidden;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>'+
       '<div id="lm-to-chip" style="display:none;margin-top:5px;font-size:11px;color:var(--green-mid);background:var(--green-lt);border:1px solid var(--green-mid);border-radius:20px;padding:3px 10px;align-items:center;gap:4px"><span>'+svgIcon('📍',{size:11})+'</span><span id="lm-to-chip-txt"></span><span style="color:var(--green-mid);font-weight:700">'+svgIcon('✓',{size:11})+'</span></div>'+
@@ -1088,7 +1088,7 @@ function saveLoggedTrip(){
   const mapApp=document.getElementById('lm-map-app')?.value||'';
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
-  // Save immediately with 0 miles — background route calc will update
+  // Save immediately with 0 miles, background route calc will update
   const rec={id:Date.now(),date,vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,created_at:new Date().toISOString(),calc_method:'pending'};
   if(_isEmployee){rec.logged_by_id=_supaUser.id;rec.logged_by_name=_employeeRecord?.name||_supaUser.email;}
   mileage.unshift(rec);
@@ -1096,9 +1096,9 @@ function saveLoggedTrip(){
   emitEvent('drive_logged',cid,{to,miles:0,purpose});
   saveAll();
   closeTopModal();
-  showToast('Trip saved — calculating mileage…','🚗');
+  showToast('Trip saved, calculating mileage…','🚗');
   if(mapApp&&to){
-    // iOS will suspend the PWA when we hand off to Apple/Google Maps — the 2s
+    // iOS will suspend the PWA when we hand off to Apple/Google Maps, the 2s
     // debounce in saveAll() dies before firing. Push to Supabase NOW so the
     // in-flight fetch survives the app switch.
     _flushSaveNow();
@@ -1121,7 +1121,7 @@ function saveLoggedTrip(){
       if(document.getElementById('mil-table'))renderAllMileage();
       if(document.getElementById('cd-mile-list')&&currentClientId)renderCDMileage();
       showToast(saved.miles.toFixed(1)+' mi logged · '+fmt(saved.miles*IRS())+' deduction','✅');
-    }catch(e){showToast('Could not calculate mileage — tap Edit to add miles manually','⚠️');}
+    }catch(e){showToast('Could not calculate mileage, tap Edit to add miles manually','⚠️');}
   })();
 }
 function renderAllMileage(){
@@ -1226,7 +1226,7 @@ function renderAllMileage(){
   const metsEl=document.getElementById('tr-mile-mets');
   if(metsEl){
     metsEl.innerHTML=S.homeOffice
-      ?'<div class="tip" style="margin-top:4px"><span style="font-size:18px">'+svgIcon('✅',{size:18})+'</span><div><b>Home office active</b> — your drives from home to job sites count as deductible business miles.</div></div>'
+      ?'<div class="tip" style="margin-top:4px"><span style="font-size:18px">'+svgIcon('✅',{size:18})+'</span><div><b>Home office active</b>, your drives from home to job sites count as deductible business miles.</div></div>'
       :'<div class="tip" style="margin-top:4px"><span style="font-size:18px">'+svgIcon('💡',{size:18})+'</span><div><b>Home office tip:</b> Set up a home office in Settings to make drives from home to your first job site deductible.</div></div>';
   }
 }
@@ -1313,14 +1313,14 @@ function _milRenderVehicleWorksheet(yr,tot,irsRate){
           '</div>'+
           '<div class="mil-odo-result">'+
             '<div class="td-micro">Total miles driven YTD</div>'+
-            '<div class="mil-odo-big">'+(totalDriven?totalDriven.toLocaleString():'—')+'<span style="font-size:14px;color:var(--text-3);margin-left:4px;font-weight:600"> mi</span></div>'+
+            '<div class="mil-odo-big">'+(totalDriven?totalDriven.toLocaleString():'-')+'<span style="font-size:14px;color:var(--text-3);margin-left:4px;font-weight:600"> mi</span></div>'+
           '</div>'+
         '</div>'+
         '<div class="mil-calc">'+
-          '<div class="mil-calc-row"><div class="mil-calc-label">Total miles driven</div><div class="mil-calc-eq">=</div><div class="mil-calc-v">'+(totalDriven?totalDriven.toLocaleString()+' mi':'—')+'</div></div>'+
+          '<div class="mil-calc-row"><div class="mil-calc-label">Total miles driven</div><div class="mil-calc-eq">=</div><div class="mil-calc-v">'+(totalDriven?totalDriven.toLocaleString()+' mi':'-')+'</div></div>'+
           '<div class="mil-calc-row"><div class="mil-calc-label">Business miles logged · YTD</div><div class="mil-calc-eq">−</div><div class="mil-calc-v" style="color:var(--c-green)">'+tot.toFixed(1)+' mi</div></div>'+
           '<div class="mil-calc-row"><div class="mil-calc-label">Personal miles (everything else)</div><div class="mil-calc-eq">=</div><div class="mil-calc-v">'+personalMi.toFixed(1)+' mi</div></div>'+
-          '<div class="mil-calc-row mil-calc-pct"><div class="mil-calc-label">Business-use percentage</div><div class="mil-calc-eq">→</div><div class="mil-calc-v">'+(totalDriven?bizPct+'%':'—')+'</div></div>'+
+          '<div class="mil-calc-row mil-calc-pct"><div class="mil-calc-label">Business-use percentage</div><div class="mil-calc-eq">→</div><div class="mil-calc-v">'+(totalDriven?bizPct+'%':'-')+'</div></div>'+
           '<div class="mil-calc-row mil-calc-final"><div class="mil-calc-label">Deduction · '+tot.toFixed(1)+' mi × $'+irsRate.toFixed(3)+'/mi</div><div class="mil-calc-eq">=</div><div class="mil-calc-v">'+fmt(deduction)+'</div></div>'+
         '</div>'+
       '</div>'+
@@ -1482,7 +1482,7 @@ function _milRenderSummary(filtered,tot,irsRate){
     '<div class="mil-summary">'+
       '<div class="mil-summary-cell">'+
         '<div class="td-micro">Business-use %</div>'+
-        '<div class="mil-summary-v" style="color:var(--c-green)">'+(bizPct!==null?bizPct+'%':'—')+'</div>'+
+        '<div class="mil-summary-v" style="color:var(--c-green)">'+(bizPct!==null?bizPct+'%':'-')+'</div>'+
         '<div class="mil-summary-sub">'+tot.toFixed(1)+(totalDriven?' of '+totalDriven.toLocaleString():'')+' mi</div>'+
       '</div>'+
       '<div class="mil-summary-cell">'+
@@ -1492,7 +1492,7 @@ function _milRenderSummary(filtered,tot,irsRate){
       '</div>'+
       '<div class="mil-summary-cell">'+
         '<div class="td-micro">Top purpose</div>'+
-        '<div class="mil-summary-v" style="font-size:16px">'+(topPurpose?escHtml(topPurpose[0]):'—')+'</div>'+
+        '<div class="mil-summary-v" style="font-size:16px">'+(topPurpose?escHtml(topPurpose[0]):'-')+'</div>'+
         '<div class="mil-summary-sub">'+(topPurpose&&tot>0?Math.round((topPurpose[1]/tot)*100)+'% of business miles':'No categorized trips')+'</div>'+
       '</div>'+
       '<div class="mil-summary-cell">'+
@@ -1543,7 +1543,7 @@ Object.defineProperty(window,'_rateRefreshInProgress',{get:()=>_rateRefreshInPro
 async function autoRefreshRates(){
   if(!_supa||!_supaUser||_rateRefreshInProgress)return;
   const thisYear=new Date().getFullYear();
-  // S.irsRateYear syncs to Supabase — once ANY device sets it for this year, all devices skip the fetch
+  // S.irsRateYear syncs to Supabase, once ANY device sets it for this year, all devices skip the fetch
   if(S.irsRateYear===thisYear&&S.irsRate)return;
   _rateRefreshInProgress=true;
   try{
@@ -1556,7 +1556,7 @@ async function autoRefreshRates(){
     });
     if(!resp.ok)return;
     const d=await resp.json();
-    // Sanity bounds — IRS rate must be realistic (never below 50¢ or above $1.00/mi)
+    // Sanity bounds, IRS rate must be realistic (never below 50¢ or above $1.00/mi)
     if(!d.irsRate||d.irsRate<0.50||d.irsRate>1.00)return;
     if(Math.abs(d.irsRate-(S.irsRate||0))>0.0005){
       showToast('IRS mileage rate updated to $'+(+d.irsRate).toFixed(3)+'/mi for '+d.year);

@@ -14,7 +14,7 @@ function goPg(id){
   // so boot-time goPg('pg-dash') calls can never wipe the marker before
   // _maybeResumeActiveEstimate reads it.
   if(id!=='pg-est-generic'&&document.querySelector('.pg.active')?.id==='pg-est-generic'&&typeof _geiClearActive==='function')_geiClearActive();
-  // Preserve currentClientId across navigation — only clear on explicit new client selection
+  // Preserve currentClientId across navigation, only clear on explicit new client selection
   if(id==='pg-dash')window._fromDash=false;
   try{if(window._obs)window._obs.track('page',id);}catch(_e){} // live page-view telemetry (inert on localhost)
   document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));
@@ -56,7 +56,7 @@ function goPg(id){
     loadSettingsForm();updateLocationBtn();renderTeam();loadStripeConnectStatus();_renderSettingsTradeSections();_renderDevTradeCard();renderSettingsTrades();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;
-      // Vehicles now managed in Fleet & Team — redirect there
+      // Vehicles now managed in Fleet & Team, redirect there
       setTimeout(()=>{ goPg('pg-team'); setFleetTab('fleet'); },150);
     }
   }
@@ -79,11 +79,11 @@ function _applyEmployeeNavGating(){
   // Root cause of "Settings vanished after switching to a different account in the same
   // tab": this used to only ever hide (called from employee-detected sign-in paths), with
   // nothing to un-hide it if a later sign-in in the same tab turned out to be a real owner
-  // account — the inline display:none from the earlier employee session just stuck around.
+  // account: the inline display:none from the earlier employee session just stuck around.
   // Now called unconditionally from applyPermissions() on every account load, so it always
   // reflects the CURRENT account's _isEmployee state instead of the previous one's.
   // nb-taxes/mmi-taxes are owned exclusively by applyPermissions()'s canSeeTaxes() check
-  // (a finer-grained owner/co-owner test) — not listed here to avoid two functions
+  // (a finer-grained owner/co-owner test), not listed here to avoid two functions
   // fighting over the same element.
   const _gatedIds=['nb-tracker','nb-team','nb-settings','nb-licensing','nb-contracts','nb-hub','nb-money',
    'mmi-tracker','mmi-team','mmi-settings','mmi-licensing','mmi-contracts','mmi-hub','mmi-money',
@@ -93,19 +93,19 @@ function _applyEmployeeNavGating(){
   // Leads nav: hidden only for employees without the leads permission; always shown otherwise.
   const _leadsOk=!_isEmployee||!!_employeeRecord?.permissions?.leads;
   ['nb-leads','mtb-leads','mmi-leads'].forEach(id=>{const el=document.getElementById(id);if(el)el.style.display=_leadsOk?'':'none';});
-  // Dispatch button inside the Jobs page header — employee-only hide, always restored otherwise.
+  // Dispatch button inside the Jobs page header, employee-only hide, always restored otherwise.
   const _dispBtn=document.getElementById('jobs-dispatch-btn');if(_dispBtn)_dispBtn.style.display=_isEmployee?'none':'';
   // Grey (don't hide) the dashboard Estimate quick action for employees without
-  // the estimate permission — the click still fires openEstimateForClient, which
+  // the estimate permission, the click still fires openEstimateForClient, which
   // shows the request-access popup. Full opacity for owners/co-owners always.
   const _qaEst=document.getElementById('qa-estimate-btn');
   if(_qaEst){const _ok=!_isEmployee||!!_employeeRecord?.permissions?.estimate;_qaEst.style.opacity=_ok?'':'0.55';}
   // nav-user avatar: employees can't reach the Settings page (goPg blocks it), but they
-  // still need a way to sign out — route their click to a small sign-out menu instead of
+  // still need a way to sign out, route their click to a small sign-out menu instead of
   // nulling the click entirely. Owners/co-owners go to Settings as always.
   const nu=document.getElementById('nav-user');
   if(nu){nu.style.cursor='pointer';nu.onclick=_isEmployee?()=>_employeeSignOutMenu():()=>goPg('pg-settings');}
-  // Mobile "more" menu: same reasoning — a dedicated Sign out entry only for employees
+  // Mobile "more" menu: same reasoning, a dedicated Sign out entry only for employees
   // (owners already have Sign out inside Settings; don't add a redundant one for them).
   const _mmiSignout=document.getElementById('mmi-signout');
   if(_mmiSignout)_mmiSignout.style.display=_isEmployee?'':'none';
@@ -164,7 +164,7 @@ function _initTabBarDrag() {
     return [...inner.querySelectorAll('.mtb[data-tab]')];
   }
 
-  // While editing, swallow tab clicks so a tap reorders instead of navigating —
+  // While editing, swallow tab clicks so a tap reorders instead of navigating,
   // only the Done button (outside the tab bar) stays live.
   function _swallowClick(e) { if (editMode) { e.preventDefault(); e.stopPropagation(); } }
 
@@ -193,7 +193,7 @@ function _initTabBarDrag() {
     placeholder?.remove(); placeholder = null;
     if (dragEl) { dragEl.style.cssText = ''; dragEl = null; }
     // Save to the per-individual-user prefs store (keyed by auth.uid), not the
-    // shared business settings blob — keeps each person's tab order isolated.
+    // shared business settings blob, keeps each person's tab order isolated.
     const newOrder = getButtons().map(b => b.dataset.tab);
     S.navTabOrder = newOrder;
     if (typeof _saveUserPrefs === 'function') _saveUserPrefs();
@@ -269,6 +269,6 @@ function _initTabBarDrag() {
     placeholder.replaceWith(dragEl);
     ghost?.remove(); ghost = null;
     placeholder = null; dragEl = null;
-    // Don't exit edit mode on drop — user taps Done to confirm
+    // Don't exit edit mode on drop, user taps Done to confirm
   }
 }

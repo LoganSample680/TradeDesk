@@ -1,5 +1,5 @@
 // @ts-check
-// 1099 subcontractor payment tracking — per-payee yearly ledger with job
+// 1099 subcontractor payment tracking, per-payee yearly ledger with job
 // addresses, the $600 1099-NEC threshold, W-9/EIN status, and the
 // markSubPaid → contract-labor-expense bridge.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
@@ -34,15 +34,15 @@ test.describe('1099 contractor tracking', () => {
       ];
       clients.push({ id: 601, name: 'Addr Client', addr: '123 Oak St, Wichita, KS' });
       bids.push({ id: 602, client_id: 601, client_name: 'Addr Client', addr: '123 Oak St, Wichita, KS', status: 'Closed Won', amount: 9000 });
-      // Source 1: an expense row (as markSubPaid writes) — Mike, $500
+      // Source 1: an expense row (as markSubPaid writes), Mike, $500
       expenses.push({ id: 603, date: YR + '-04-01', cat: 'subs', catLabel: 'Subcontractors', vendor: 'Mike Garcia', amount: 500, subId: 501, subPayKey: '610:0', job_id: 602, job_name: 'Oak St repaint', client_id: 601 });
-      // The job.subs entry BEHIND that expense — must be deduped by subPayKey
+      // The job.subs entry BEHIND that expense, must be deduped by subPayKey
       jobs.push({ id: 610, client_id: 601, bid_id: 602, name: 'Oak St repaint', subs: [
         { subId: 501, subName: 'Mike Garcia', desc: 'Drywall', amount: 500, paid: true, paidDate: YR + '-04-01' },
-        // Source 2: a LEGACY paid entry with no expense — Tom, $650 (crosses $600)
+        // Source 2: a LEGACY paid entry with no expense, Tom, $650 (crosses $600)
         { subId: 502, subName: 'Tom Sparks', desc: 'Panel swap', amount: 650, paid: true, paidDate: YR + '-05-01' },
       ]});
-      // Quick-modal category string also counts — Mike, $200
+      // Quick-modal category string also counts, Mike, $200
       expenses.push({ id: 604, date: YR + '-06-01', cat: 'Subcontractors', vendor: 'mike garcia', amount: 200 });
       const rep = _sub1099Report(YR);
       clients.length = 0; cSnap.forEach(x => clients.push(x));
@@ -55,7 +55,7 @@ test.describe('1099 contractor tracking', () => {
     expect(r).not.toBeNull();
     const mike = r.payees.find(p => p.name === 'Mike Garcia');
     const tom = r.payees.find(p => p.name === 'Tom Sparks');
-    expect(mike.total).toBe(700);            // 500 expense + 200 quick — job.subs twin deduped
+    expect(mike.total).toBe(700);            // 500 expense + 200 quick, job.subs twin deduped
     expect(mike.needs1099).toBe(true);       // ≥ $600
     expect(mike.w9 && !!mike.ein).toBe(true);
     expect(mike.rows[0].addr).toBe('123 Oak St, Wichita, KS'); // job address resolved
@@ -77,7 +77,7 @@ test.describe('1099 contractor tracking', () => {
       ]});
       markSubPaid(710, 0, 701);
       const afterFirst = expenses.filter(e => e.subPayKey === '710:0').length;
-      // Mark paid again (idempotent path) — must NOT double-log
+      // Mark paid again (idempotent path), must NOT double-log
       markSubPaid(710, 0, 701);
       const afterSecond = expenses.filter(e => e.subPayKey === '710:0').length;
       const exp = expenses.find(e => e.subPayKey === '710:0');

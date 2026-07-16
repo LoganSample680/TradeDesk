@@ -1,13 +1,13 @@
 // @ts-check
 // ═══════════════════════════════════════════════════════════════════════════════
-// Function coverage — js/geo-track.js consent/helpers + js/proposals.js &
+// Function coverage, js/geo-track.js consent/helpers + js/proposals.js &
 // js/generic-estimate.js send/sync flows.
 //
 // Mirrors the structure of e2e-functions1.spec.js: one describe per area, a shared
 // page booted once via mockAllExternal + waitForAppBoot, every test guarded with
 // `typeof fn !== 'function'` skip, and a closing assertNoErrors() per describe.
 //
-// Geo notes (CLAUDE.md §9.5 — two-layer consent is a LEGAL requirement):
+// Geo notes (CLAUDE.md §9.5: two-layer consent is a LEGAL requirement):
 //  • The harness runs under navigator.webdriver=true. _geoTrackInit's owner path
 //    no-ops when webdriver is set; we assert that guarded no-op AND force the
 //    non-guarded path by stubbing navigator.webdriver=false before the call.
@@ -19,10 +19,10 @@
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH GEO-1: Pure geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng
+// BATCH GEO-1: Pure geo helpers, _geoNowMinLocal / _geoCid / _geoJobLatLng
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng', () => {
+test.describe('Geo helpers, _geoNowMinLocal / _geoCid / _geoJobLatLng', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -33,7 +33,7 @@ test.describe('Geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng', () =>
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_geoNowMinLocal — returns minutes-since-midnight in 0..1439', async () => {
+  test('_geoNowMinLocal: returns minutes-since-midnight in 0..1439', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoNowMinLocal !== 'function') return { skip: true };
       const m = _geoNowMinLocal();
@@ -50,7 +50,7 @@ test.describe('Geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng', () =>
     }
   });
 
-  test('_geoCid — owner path returns _supaUser.id', async () => {
+  test('_geoCid: owner path returns _supaUser.id', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoCid !== 'function') return { skip: true };
       const origEmp = window._isEmployee;
@@ -65,7 +65,7 @@ test.describe('Geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng', () =>
     if (!result.skip) expect(result.cid).toBe('owner-uid-123');
   });
 
-  test('_geoCid — employee path returns _contractorUserId', async () => {
+  test('_geoCid: employee path returns _contractorUserId', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoCid !== 'function') return { skip: true };
       const origEmp = window._isEmployee;
@@ -80,7 +80,7 @@ test.describe('Geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng', () =>
     if (!result.skip) expect(result.cid).toBe('contractor-uid-999');
   });
 
-  test('_geoCid — owner path with no _supaUser returns falsy (no throw)', async () => {
+  test('_geoCid: owner path with no _supaUser returns falsy (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoCid !== 'function') return { skip: true };
       const origEmp = window._isEmployee;
@@ -99,7 +99,7 @@ test.describe('Geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng', () =>
     }
   });
 
-  test('_geoJobLatLng — returns cached coords when job has lat/lon', async () => {
+  test('_geoJobLatLng: returns cached coords when job has lat/lon', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _geoJobLatLng !== 'function') return { skip: true };
       const c = await _geoJobLatLng({ id: 'geo-job-1', lat: 37.6872, lon: -97.3301 });
@@ -111,7 +111,7 @@ test.describe('Geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng', () =>
     }
   });
 
-  test('_geoJobLatLng — returns null when no addr and no coords resolvable', async () => {
+  test('_geoJobLatLng: returns null when no addr and no coords resolvable', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _geoJobLatLng !== 'function') return { skip: true };
       // No lat/lon, no addr, no matching client → null
@@ -121,7 +121,7 @@ test.describe('Geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng', () =>
     if (!result.skip) expect(result.isNull).toBe(true);
   });
 
-  test('_geoJobLatLng — second call hits the session cache (same object)', async () => {
+  test('_geoJobLatLng: second call hits the session cache (same object)', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _geoJobLatLng !== 'function') return { skip: true };
       const j = { id: 'geo-job-cache-1', lat: 38.0, lon: -97.0 };
@@ -141,12 +141,12 @@ test.describe('Geo helpers — _geoNowMinLocal / _geoCid / _geoJobLatLng', () =>
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH GEO-2: Consent persistence — _geoSetConsent / _geoConsentPrompt
+// BATCH GEO-2: Consent persistence, _geoSetConsent / _geoConsentPrompt
 //   §9.5 two-layer consent is a LEGAL requirement → assert the persisted flag for
 //   BOTH allow and deny, and that tracking only "starts" on allow.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Geo consent — _geoSetConsent / _geoConsentPrompt persistence', () => {
+test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -157,7 +157,7 @@ test.describe('Geo consent — _geoSetConsent / _geoConsentPrompt persistence', 
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_geoSetConsent — owner ALLOW persists geo_owner_consent="1" and calls startGeoTracking', async () => {
+  test('_geoSetConsent: owner ALLOW persists geo_owner_consent="1" and calls startGeoTracking', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoSetConsent !== 'function') return { skip: true };
       localStorage.removeItem('geo_owner_consent');
@@ -174,7 +174,7 @@ test.describe('Geo consent — _geoSetConsent / _geoConsentPrompt persistence', 
     }
   });
 
-  test('_geoSetConsent — owner DENY persists geo_owner_consent="declined" and does NOT start tracking', async () => {
+  test('_geoSetConsent: owner DENY persists geo_owner_consent="declined" and does NOT start tracking', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoSetConsent !== 'function') return { skip: true };
       localStorage.removeItem('geo_owner_consent');
@@ -191,7 +191,7 @@ test.describe('Geo consent — _geoSetConsent / _geoConsentPrompt persistence', 
     }
   });
 
-  test('_geoSetConsent — employee ALLOW clears decline flag + sets location_consent + starts tracking', async () => {
+  test('_geoSetConsent: employee ALLOW clears decline flag + sets location_consent + starts tracking', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoSetConsent !== 'function') return { skip: true };
       localStorage.setItem('geo_consent_declined', '1');
@@ -213,7 +213,7 @@ test.describe('Geo consent — _geoSetConsent / _geoConsentPrompt persistence', 
     }
   });
 
-  test('_geoSetConsent — employee DENY persists geo_consent_declined="1" and does NOT start tracking', async () => {
+  test('_geoSetConsent: employee DENY persists geo_consent_declined="1" and does NOT start tracking', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoSetConsent !== 'function') return { skip: true };
       localStorage.removeItem('geo_consent_declined');
@@ -230,7 +230,7 @@ test.describe('Geo consent — _geoSetConsent / _geoConsentPrompt persistence', 
     }
   });
 
-  test('_geoConsentPrompt — owner variant creates the consent overlay (no throw)', async () => {
+  test('_geoConsentPrompt: owner variant creates the consent overlay (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoConsentPrompt !== 'function') return { skip: true };
       document.getElementById('_geo-consent-ov')?.remove();
@@ -250,7 +250,7 @@ test.describe('Geo consent — _geoSetConsent / _geoConsentPrompt persistence', 
     }
   });
 
-  test('_geoConsentPrompt — employee variant creates overlay (no throw)', async () => {
+  test('_geoConsentPrompt: employee variant creates overlay (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoConsentPrompt !== 'function') return { skip: true };
       document.getElementById('_geo-consent-ov')?.remove();
@@ -268,7 +268,7 @@ test.describe('Geo consent — _geoSetConsent / _geoConsentPrompt persistence', 
     }
   });
 
-  test('_geoConsentPrompt — second call is idempotent (does not duplicate overlay)', async () => {
+  test('_geoConsentPrompt: second call is idempotent (does not duplicate overlay)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoConsentPrompt !== 'function') return { skip: true };
       document.getElementById('_geo-consent-ov')?.remove();
@@ -292,11 +292,11 @@ test.describe('Geo consent — _geoSetConsent / _geoConsentPrompt persistence', 
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH GEO-3: Banner / permission / ping — _geoPermissionBanner /
+// BATCH GEO-3: Banner / permission / ping: _geoPermissionBanner /
 //   _geoRequestPermission / _geoWritePing (webdriver-guard + missing-DOM + mocked _supa)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Geo banner + ping — _geoPermissionBanner / _geoRequestPermission / _geoWritePing', () => {
+test.describe('Geo banner + ping, _geoPermissionBanner / _geoRequestPermission / _geoWritePing', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -307,7 +307,7 @@ test.describe('Geo banner + ping — _geoPermissionBanner / _geoRequestPermissio
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_geoPermissionBanner — no-op when target #dash-geo-perm is absent (missing DOM)', async () => {
+  test('_geoPermissionBanner: no-op when target #dash-geo-perm is absent (missing DOM)', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _geoPermissionBanner !== 'function') return { skip: true };
       document.getElementById('dash-geo-perm')?.remove();
@@ -317,7 +317,7 @@ test.describe('Geo banner + ping — _geoPermissionBanner / _geoRequestPermissio
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geoPermissionBanner — hides banner for non-employee (display:none)', async () => {
+  test('_geoPermissionBanner: hides banner for non-employee (display:none)', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _geoPermissionBanner !== 'function') return { skip: true };
       let el = document.getElementById('dash-geo-perm');
@@ -338,7 +338,7 @@ test.describe('Geo banner + ping — _geoPermissionBanner / _geoRequestPermissio
     }
   });
 
-  test('_geoRequestPermission — runs without throwing (calls startGeoTracking, schedules re-render)', async () => {
+  test('_geoRequestPermission, runs without throwing (calls startGeoTracking, schedules re-render)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoRequestPermission !== 'function') return { skip: true };
       const origStart = window.startGeoTracking;
@@ -353,7 +353,7 @@ test.describe('Geo banner + ping — _geoPermissionBanner / _geoRequestPermissio
     }
   });
 
-  test('_geoWritePing — no-op when _supa/_supaUser absent (no throw)', async () => {
+  test('_geoWritePing: no-op when _supa/_supaUser absent (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoWritePing !== 'function') return { skip: true };
       const origSupa = window._supa;
@@ -369,7 +369,7 @@ test.describe('Geo banner + ping — _geoPermissionBanner / _geoRequestPermissio
     if (!result.skip) expect(result.threw).toBe(false);
   });
 
-  test('_geoWritePing — inserts into location_pings via mocked _supa (no throw)', async () => {
+  test('_geoWritePing: inserts into location_pings via mocked _supa (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoWritePing !== 'function') return { skip: true };
       const origSupa = window._supa;
@@ -401,11 +401,11 @@ test.describe('Geo banner + ping — _geoPermissionBanner / _geoRequestPermissio
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH SEND-1: Change-order send dispatchers — _doCOSend / _sendCOViaSms /
+// BATCH SEND-1: Change-order send dispatchers, _doCOSend / _sendCOViaSms /
 //   _sendCOViaEmail / _shareCOLink (seed _coShareData, assert routed sub-path)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail / _shareCOLink', () => {
+test.describe('Change-order send, _doCOSend / _sendCOViaSms / _sendCOViaEmail / _shareCOLink', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -415,7 +415,7 @@ test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail
     await waitForAppBoot(page);
     // Seed a change-order share payload so the dispatchers have data to act on.
     // NOTE: `_coShareData` and `clients` are module-level `let` bindings in
-    // js/proposals.js / js/data.js — a bare assignment rebinds them, but
+    // js/proposals.js / js/data.js: a bare assignment rebinds them, but
     // `window._coShareData = …` would create an unrelated window property the app
     // never reads (same footgun as _supaUser, documented in e2e-features.spec.js).
     await page.evaluate(() => {
@@ -429,14 +429,14 @@ test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_doCOSend("sms") — routes to SMS (sets window.location.href to sms:)', async () => {
+  test('_doCOSend("sms"): routes to SMS (sets window.location.href to sms:)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _doCOSend !== 'function') return { skip: true };
       let smsHref = null;
       const origDesc = Object.getOwnPropertyDescriptor(window.location, 'href');
       try {
         Object.defineProperty(window.location, 'href', { configurable: true, set: (v) => { smsHref = v; }, get: () => smsHref });
-      } catch (e) { /* some engines lock location — fall back to no-op assert */ }
+      } catch (e) { /* some engines lock location, fall back to no-op assert */ }
       let threw = false;
       try { _doCOSend('sms'); } catch (e) { threw = true; }
       try { if (origDesc) Object.defineProperty(window.location, 'href', origDesc); } catch (e) {}
@@ -449,7 +449,7 @@ test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail
     }
   });
 
-  test('_doCOSend("email") — routes to the email compose modal', async () => {
+  test('_doCOSend("email"): routes to the email compose modal', async () => {
     const result = await page.evaluate(() => {
       if (typeof _doCOSend !== 'function') return { skip: true };
       document.getElementById('_email-compose-overlay')?.remove();
@@ -467,7 +467,7 @@ test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail
     }
   });
 
-  test('_doCOSend("other") — routes to _shareCOLink (pwaShare, no throw)', async () => {
+  test('_doCOSend("other"): routes to _shareCOLink (pwaShare, no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _doCOSend !== 'function') return { skip: true };
       const origShare = window.pwaShare;
@@ -484,7 +484,7 @@ test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail
     }
   });
 
-  test('_sendCOViaSms — alerts (no throw) when client has no phone', async () => {
+  test('_sendCOViaSms: alerts (no throw) when client has no phone', async () => {
     const result = await page.evaluate(() => {
       if (typeof _sendCOViaSms !== 'function') return { skip: true };
       const orig = _coShareData;
@@ -504,7 +504,7 @@ test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail
     }
   });
 
-  test('_sendCOViaSms — no-op (no throw) when _coShareData is null', async () => {
+  test('_sendCOViaSms: no-op (no throw) when _coShareData is null', async () => {
     const result = await page.evaluate(() => {
       if (typeof _sendCOViaSms !== 'function') return { skip: true };
       const orig = _coShareData;
@@ -517,7 +517,7 @@ test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail
     if (!result.skip) expect(result.threw).toBe(false);
   });
 
-  test('_sendCOViaEmail — opens compose modal with CO subject (no throw)', async () => {
+  test('_sendCOViaEmail: opens compose modal with CO subject (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _sendCOViaEmail !== 'function') return { skip: true };
       document.getElementById('_email-compose-overlay')?.remove();
@@ -535,7 +535,7 @@ test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail
     }
   });
 
-  test('_shareCOLink — calls pwaShare with the CO url (no throw)', async () => {
+  test('_shareCOLink: calls pwaShare with the CO url (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _shareCOLink !== 'function') return { skip: true };
       const origShare = window.pwaShare;
@@ -559,11 +559,11 @@ test.describe('Change-order send — _doCOSend / _sendCOViaSms / _sendCOViaEmail
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH SEND-2: Proposal send + pure helpers — _doGeiSend / _showEmailComposeModal /
+// BATCH SEND-2: Proposal send + pure helpers, _doGeiSend / _showEmailComposeModal /
 //   _hubHash / _paintLookupClientTaxRate
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal / _hubHash / _paintLookupClientTaxRate', () => {
+test.describe('Proposal send + helpers, _doGeiSend / _showEmailComposeModal / _hubHash / _paintLookupClientTaxRate', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -574,7 +574,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_hubHash — deterministic: same string → same hash', async () => {
+  test('_hubHash: deterministic: same string → same hash', async () => {
     const result = await page.evaluate(() => {
       if (typeof _hubHash !== 'function') return { skip: true };
       return { a: _hubHash('hello world'), b: _hubHash('hello world'), diff: _hubHash('hello world!') };
@@ -586,7 +586,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     }
   });
 
-  test('_hubHash — empty string returns 0', async () => {
+  test('_hubHash: empty string returns 0', async () => {
     const result = await page.evaluate(() => {
       if (typeof _hubHash !== 'function') return { skip: true };
       return { h: _hubHash(''), isInt: Number.isInteger(_hubHash('')) };
@@ -597,7 +597,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     }
   });
 
-  test('_hubHash — single-char hash equals the charCode', async () => {
+  test('_hubHash: single-char hash equals the charCode', async () => {
     const result = await page.evaluate(() => {
       if (typeof _hubHash !== 'function') return { skip: true };
       // h = ((0<<5)-0 + 'A'.charCodeAt(0))|0 = 65
@@ -606,7 +606,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     if (!result.skip) expect(result.h).toBe(65);
   });
 
-  test('_paintLookupClientTaxRate — no addr → clears rate to null (no throw)', async () => {
+  test('_paintLookupClientTaxRate, no addr → clears rate to null (no throw)', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _paintLookupClientTaxRate !== 'function') return { skip: true };
       let el = document.getElementById('e-caddr');
@@ -622,7 +622,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     }
   });
 
-  test('_paintLookupClientTaxRate — with a ZIP address runs without throwing', async () => {
+  test('_paintLookupClientTaxRate, with a ZIP address runs without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _paintLookupClientTaxRate !== 'function') return { skip: true };
       let el = document.getElementById('e-caddr');
@@ -635,7 +635,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     if (!result.skip) expect(result.threw).toBe(false);
   });
 
-  test('_showEmailComposeModal — builds compose overlay with To/Subject/Body fields', async () => {
+  test('_showEmailComposeModal, builds compose overlay with To/Subject/Body fields', async () => {
     const result = await page.evaluate(() => {
       if (typeof _showEmailComposeModal !== 'function') return { skip: true };
       document.getElementById('_email-compose-overlay')?.remove();
@@ -659,7 +659,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     }
   });
 
-  test('_showEmailComposeModal — opts override title/subject (CO reuse path)', async () => {
+  test('_showEmailComposeModal, opts override title/subject (CO reuse path)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _showEmailComposeModal !== 'function') return { skip: true };
       document.getElementById('_email-compose-overlay')?.remove();
@@ -680,8 +680,8 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     }
   });
 
-  test('share data carries the RAW business/client name — "&" never reaches a text message as "&amp;"', async () => {
-    // Owner-reported: the proposal SMS signed off "— ZJ's Painting &amp; Special
+  test('share data carries the RAW business/client name, "&" never reaches a text message as "&amp;"', async () => {
+    // Owner-reported: the proposal SMS signed off "- ZJ's Painting &amp; Special
     // Coatings". Root cause: sendGenericProposal escHtml'd bname/clientName for
     // the proposal HTML and reused the escaped strings in _pendingShareData,
     // which feeds PLAIN-TEXT surfaces (sms: body, share sheet, email body).
@@ -691,7 +691,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
       S.bname = "ZJ's Painting & Special Coatings";
       // The shim's storage.upload rejects, which would bail out of the send
       // BEFORE the share-data assignment (and let this test pass vacuously via
-      // the _proposalShareData() fallback) — stub it to succeed.
+      // the _proposalShareData() fallback), stub it to succeed.
       const origStorageFrom = _supa.storage.from.bind(_supa.storage);
       _supa.storage.from = () => ({ upload: async () => ({ data: { path: 'x' } }) });
       const c = { id: 79210, name: 'Smith & Sons Rentals', addr: '1 Amp Rd', phone: '3165550222' };
@@ -709,7 +709,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
       document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
       document.getElementById('_gei-send-overlay')?.remove();
       _supa.storage.from = origStorageFrom;
-      const d = _pendingShareData;   // the seeded object itself — no fallback allowed
+      const d = _pendingShareData;   // the seeded object itself, no fallback allowed
       S.bname = origBname;
       return { err, seeded: !!d, bname: d ? d.bname : '', cname: d ? d.cname : '' };
     });
@@ -722,7 +722,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     expect(result.cname).not.toContain('&amp;');
   });
 
-  test('_doGeiSend("sms") — routes to sendProposalViaSms (no throw)', async () => {
+  test('_doGeiSend("sms"): routes to sendProposalViaSms (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _doGeiSend !== 'function') return { skip: true };
       const orig = window.sendProposalViaSms;
@@ -739,7 +739,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     }
   });
 
-  test('_doGeiSend("email") — routes to sendProposalViaEmail (no throw)', async () => {
+  test('_doGeiSend("email"): routes to sendProposalViaEmail (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _doGeiSend !== 'function') return { skip: true };
       const orig = window.sendProposalViaEmail;
@@ -756,7 +756,7 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
     }
   });
 
-  test('_doGeiSend("other") — routes to shareProposalLink (no throw)', async () => {
+  test('_doGeiSend("other"): routes to shareProposalLink (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _doGeiSend !== 'function') return { skip: true };
       const orig = window.shareProposalLink;
@@ -779,12 +779,12 @@ test.describe('Proposal send + helpers — _doGeiSend / _showEmailComposeModal /
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH SEND-3: Generic-estimate sync/scope — _geiSyncJobTypeButtons /
+// BATCH SEND-3: Generic-estimate sync/scope: _geiSyncJobTypeButtons /
 //   _geiSyncJobScopeButtons / _geiSetWorkType / _geiOnboardToggle /
 //   _geiOnboardFinish / _stsuLookup / _scopeHistoryHrs
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHistoryHrs', () => {
+test.describe('Generic-estimate sync/scope: _gei* / _stsuLookup / _scopeHistoryHrs', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -795,7 +795,7 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_scopeHistoryHrs — returns null with no history', async () => {
+  test('_scopeHistoryHrs: returns null with no history', async () => {
     const result = await page.evaluate(() => {
       if (typeof _scopeHistoryHrs !== 'function') return { skip: true };
       if (!window.S) window.S = {};
@@ -805,7 +805,7 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     if (!result.skip) expect(result.v).toBe(null);
   });
 
-  test('_scopeHistoryHrs — odd count returns the median element', async () => {
+  test('_scopeHistoryHrs: odd count returns the median element', async () => {
     const result = await page.evaluate(() => {
       if (typeof _scopeHistoryHrs !== 'function') return { skip: true };
       if (!window.S) window.S = {};
@@ -815,7 +815,7 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     if (!result.skip) expect(result.v).toBe(4);
   });
 
-  test('_scopeHistoryHrs — even count averages the two middle values', async () => {
+  test('_scopeHistoryHrs: even count averages the two middle values', async () => {
     const result = await page.evaluate(() => {
       if (typeof _scopeHistoryHrs !== 'function') return { skip: true };
       if (!window.S) window.S = {};
@@ -825,7 +825,7 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     if (!result.skip) expect(result.v).toBe(5);
   });
 
-  test('_scopeHistoryHrs — ignores non-positive / non-number entries', async () => {
+  test('_scopeHistoryHrs: ignores non-positive / non-number entries', async () => {
     const result = await page.evaluate(() => {
       if (typeof _scopeHistoryHrs !== 'function') return { skip: true };
       if (!window.S) window.S = {};
@@ -835,7 +835,7 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     if (!result.skip) expect(result.v).toBe(10);
   });
 
-  test('_geiSyncJobTypeButtons — moves active state to selected property buttons', async () => {
+  test('_geiSyncJobTypeButtons, moves active state to selected property buttons', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiSyncJobTypeButtons !== 'function') return { skip: true };
       ['res', 'comm'].forEach(k => {
@@ -861,14 +861,14 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     }
   });
 
-  test('_geiSyncJobScopeButtons — highlights the active jscope button', async () => {
+  test('_geiSyncJobScopeButtons, highlights the active jscope button', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiSyncJobScopeButtons !== 'function') return { skip: true };
       ['improvement', 'repair'].forEach(s => {
         let b = document.getElementById('gei-jscope-' + s);
         if (!b) { b = document.createElement('button'); b.id = 'gei-jscope-' + s; document.body.appendChild(b); }
       });
-      // `_geiJobScope` is a module-level `let` (generic-estimate.js:273) — bare
+      // `_geiJobScope` is a module-level `let` (generic-estimate.js:273): bare
       // assignment rebinds it; `window._geiJobScope =` would not be read by the app.
       _geiJobScope = 'repair'; // → repair active
       let threw = false;
@@ -884,7 +884,7 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     }
   });
 
-  test('_geiSyncJobTypeButtons — no throw when buttons are absent (missing DOM)', async () => {
+  test('_geiSyncJobTypeButtons, no throw when buttons are absent (missing DOM)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiSyncJobTypeButtons !== 'function') return { skip: true };
       ['gei-prop-res', 'gei-prop-comm', 'gei-jtype-note'].forEach(id => document.getElementById(id)?.remove());
@@ -895,14 +895,14 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     if (!result.skip) expect(result.threw).toBe(false);
   });
 
-  test('_geiSetWorkType — sets scope + flips _geiNewWork for "improvement"', async () => {
+  test('_geiSetWorkType: sets scope + flips _geiNewWork for "improvement"', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiSetWorkType !== 'function') return { skip: true };
       // Ensure referenced buttons exist so the sync inside doesn't matter
       let threw = false;
       try { _geiSetWorkType('improvement'); } catch (e) { threw = true; }
       // `_geiJobScope` / `_geiNewWork` are module-level `let`s (generic-estimate.js:273);
-      // _geiSetWorkType writes the lexical bindings, so read them by bare name —
+      // _geiSetWorkType writes the lexical bindings, so read them by bare name,
       // `window._geiJobScope` is an unrelated property the function never assigns.
       const scope = _geiJobScope, newWork = _geiNewWork;
       // reset back to repair to avoid bleed
@@ -916,7 +916,7 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     }
   });
 
-  test('_geiOnboardToggle / _geiOnboardFinish — exist after showGeiOnboarding, toggle + finish persist bundles', async () => {
+  test('_geiOnboardToggle / _geiOnboardFinish: exist after showGeiOnboarding, toggle + finish persist bundles', async () => {
     const result = await page.evaluate(() => {
       if (typeof showGeiOnboarding !== 'function') return { skip: true };
       if (!window.S) window.S = {};
@@ -947,7 +947,7 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     }
   });
 
-  test('_stsuLookup — no-op (no throw) when #stsu-zip / result missing', async () => {
+  test('_stsuLookup: no-op (no throw) when #stsu-zip / result missing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _stsuLookup !== 'function') return { skip: true };
       document.getElementById('stsu-zip')?.remove();
@@ -959,14 +959,14 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     if (!result.skip) expect(result.threw).toBe(false);
   });
 
-  test('_stsuLookup — invalid ZIP shows validation message (no throw)', async () => {
+  test('_stsuLookup: invalid ZIP shows validation message (no throw)', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _stsuLookup !== 'function') return { skip: true };
       let zip = document.getElementById('stsu-zip');
       if (!zip) { zip = document.createElement('input'); zip.id = 'stsu-zip'; document.body.appendChild(zip); }
       let res = document.getElementById('stsu-lookup-result');
       if (!res) { res = document.createElement('div'); res.id = 'stsu-lookup-result'; document.body.appendChild(res); }
-      zip.value = '12'; // invalid — not 5 digits
+      zip.value = '12'; // invalid: not 5 digits
       let threw = false;
       try { await _stsuLookup(); } catch (e) { threw = true; }
       return { threw, msg: res.textContent };
@@ -977,7 +977,7 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
     }
   });
 
-  test('_stsuLookup — valid ZIP runs the lookup without throwing', async () => {
+  test('_stsuLookup: valid ZIP runs the lookup without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _stsuLookup !== 'function') return { skip: true };
       let zip = document.getElementById('stsu-zip');
@@ -998,11 +998,11 @@ test.describe('Generic-estimate sync/scope — _gei* / _stsuLookup / _scopeHisto
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-//  GEO HARDENING — durable queue, hidden-gap survival, manual bookends, wake lock,
+//  GEO HARDENING, durable queue, hidden-gap survival, manual bookends, wake lock,
 //  ping re-entrancy, breadcrumb retention (geo-track.js hardening package)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Geo hardening — offline queue + gap survival + bookends', () => {
+test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -1043,7 +1043,7 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
   });
   const geoRestore = () => page.evaluate(() => { if (window.__origSupa) window._supa = window.__origSupa; });
 
-  test('queue — a failed write STAYS queued; the next drain lands it with a client_key (idempotent upsert)', async () => {
+  test('queue: a failed write STAYS queued; the next drain lands it with a client_key (idempotent upsert)', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       window.__supaMode = 'fail';
@@ -1064,7 +1064,7 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
     await geoRestore();
   });
 
-  test('queue — schema-lag fallbacks: no unique index → plain insert; no client_key column → insert without it', async () => {
+  test('queue: schema-lag fallbacks: no unique index → plain insert; no client_key column → insert without it', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       window.__supaMode = 'no-conflict';
@@ -1087,7 +1087,7 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
     await geoRestore();
   });
 
-  test('hidden gap — backgrounding persists the open entry; restore + outside ping closes AT the hidden moment as geofence-gap', async () => {
+  test('hidden gap, backgrounding persists the open entry; restore + outside ping closes AT the hidden moment as geofence-gap', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       const jobId = 883001;
@@ -1121,7 +1121,7 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
     await geoRestore();
   });
 
-  test('hidden gap — still INSIDE the fence after the gap → continuous visit, no entry written, gap cleared', async () => {
+  test('hidden gap, still INSIDE the fence after the gap → continuous visit, no entry written, gap cleared', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       const jobId = 883002;
@@ -1135,14 +1135,14 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
       return out;
     });
-    expect(r.rows).toBe(0);              // no close — the visit continues
+    expect(r.rows).toBe(0);              // no close, the visit continues
     expect(String(r.cur)).toBe('883002');
     expect(r.arrivedKept).toBe(true);    // hidden time COUNTS (same arrival stands)
     expect(r.gap).toBeNull();            // gap resolved
     await geoRestore();
   });
 
-  test('re-entrancy — a ping arriving while the previous one awaits a geocode is dropped whole', async () => {
+  test('re-entrancy: a ping arriving while the previous one awaits a geocode is dropped whole', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       const jobId = 883003;
@@ -1155,7 +1155,7 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
       window._resolveCoords = () => hang.then(() => ({ lat: 37.6872, lng: -97.3301 }));
       const p1 = _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8 } }); // hangs at the geocode
       await new Promise(res => setTimeout(res, 30));
-      _geoLastPingTs = 0; // arm the breadcrumb — a second ping WOULD write one if not guarded
+      _geoLastPingTs = 0; // arm the breadcrumb, a second ping WOULD write one if not guarded
       await _geoOnPing({ coords: { latitude: 37.7, longitude: -97.34, accuracy: 8 } });           // must drop at the guard
       const breadcrumbAfterSecond = _geoLastPingTs;
       release({}); await p1;
@@ -1164,12 +1164,12 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
       return out;
     });
-    expect(r.breadcrumbAfterSecond).toBe(0); // second ping returned at the guard — touched nothing
+    expect(r.breadcrumbAfterSecond).toBe(0); // second ping returned at the guard, touched nothing
     expect(r.busyAfter).toBe(false);         // guard released after the first ping finished
     await geoRestore();
   });
 
-  test('manual bookends — Arrived opens, Done writes a source:manual entry through the queue; job-switch closes the previous', async () => {
+  test('manual bookends, Arrived opens, Done writes a source:manual entry through the queue; job-switch closes the previous', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       S.teamTracking = true;
@@ -1200,7 +1200,7 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
     await geoRestore();
   });
 
-  test('wake lock — acquired via navigator.wakeLock, released on _geoWakeRelease (stubbed)', async () => {
+  test('wake lock, acquired via navigator.wakeLock, released on _geoWakeRelease (stubbed)', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       let acquired = 0, released = 0;
@@ -1216,7 +1216,7 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
       _geoWakeLockObj = null;
       await _geoWakeAcquire();
       const afterAcquire = acquired;
-      await _geoWakeAcquire(); // idempotent — no double-request while held
+      await _geoWakeAcquire(); // idempotent: no double-request while held
       _geoWakeRelease();
       return { afterAcquire, acquiredTotal: acquired, released, objAfter: _geoWakeLockObj === null };
     });
@@ -1229,7 +1229,7 @@ test.describe('Geo hardening — offline queue + gap survival + bookends', () =>
     await geoRestore();
   });
 
-  test('breadcrumb retention — owner prunes pings older than 90 days, at most once per day', async () => {
+  test('breadcrumb retention, owner prunes pings older than 90 days, at most once per day', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       _geoPrunePings();

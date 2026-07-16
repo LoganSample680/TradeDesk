@@ -1,4 +1,4 @@
-// REAL flow — OPLOG PHASE 0 (shadow / observability). The first step of the custom
+// REAL flow, OPLOG PHASE 0 (shadow / observability). The first step of the custom
 // offline-first oplog: a Hybrid Logical Clock + a SHADOW op-derivation at the save
 // choke-point that COUNTS the per-field ops a save would emit (window._opStats) but
 // writes nothing authoritative and changes no save/merge behavior. This spec proves,
@@ -6,7 +6,7 @@
 // makes ops authoritative:
 //   • the diff emits clean create/update ops (single edit → an update op naming the field)
 //   • the diff NEVER manufactures a phantom delete in normal single-device flow
-//     (phantomDeleteCandidates stays 0) — the §9.8 trap that could delete an account.
+//     (phantomDeleteCandidates stays 0), the §9.8 trap that could delete an account.
 // Plus: the HLC is monotonic across calls. Gated behind window._opLogShadow, enabled
 // here via addInitScript BEFORE sign-in so the load-time baseline is built with it on.
 const { test, expect } = require('./flow-test');
@@ -18,7 +18,7 @@ const baseId = () => Date.now() * 1000 + (process.pid % 1000);
 const resetOpStats = (page) => page.evaluate(() => { window._opStats = { emitted: 0, creates: 0, updates: 0, phantomDeleteCandidates: 0 }; });
 const readOpStats = (page) => page.evaluate(() => ({ ...window._opStats }));
 
-test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () => {
+test.describe('oplog phase 0, shadow op-derivation + HLC (observe-only)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => {
@@ -33,7 +33,7 @@ test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () 
   test('the HLC is monotonic and strictly increasing across calls', async ({ page }) => {
     await step(page, {
       label: 'pull 6 HLC stamps', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _hlcNow — persisted (ms,counter,deviceId), counter bumps within a ms',
+      suspect: 'cloud.js _hlcNow, persisted (ms,counter,deviceId), counter bumps within a ms',
       ruleText: 'successive HLC stamps must be strictly increasing as sortable strings',
       expected: 'every stamp > the previous one',
       act: async (p) => {
@@ -55,7 +55,7 @@ test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () 
     const bidId = baseId();
     await step(page, {
       label: 'push a new bid, run the save path, read _opStats', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _opShadowDerive — new id → create op; absence accounting stays 0',
+      suspect: 'cloud.js _opShadowDerive, new id → create op; absence accounting stays 0',
       ruleText: 'a newly created bid must derive at least one create op and NO phantom-delete candidates',
       expected: '_opStats.creates >= 1 and phantomDeleteCandidates === 0',
       act: async (p) => {
@@ -81,7 +81,7 @@ test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () 
     const bidId = baseId() + 1;
     await step(page, {
       label: 'baseline a bid, then change one field', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _opShadowDerive — field-level diff vs incremental baseline',
+      suspect: 'cloud.js _opShadowDerive, field-level diff vs incremental baseline',
       ruleText: 'changing one field must derive an update op whose fields include only the changed key, with 0 phantom deletes',
       expected: 'update op for the bid with fields.amount set; phantomDeleteCandidates === 0',
       act: async (p) => {
@@ -114,7 +114,7 @@ test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () 
     const bidId = baseId() + 2;
     await step(page, {
       label: 'baseline a bid, then save again unchanged', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _opShadowDerive — unchanged rows skipped (hash equal)',
+      suspect: 'cloud.js _opShadowDerive, unchanged rows skipped (hash equal)',
       ruleText: 'a no-op save must derive zero ops and zero phantom-delete candidates',
       expected: '_opStats.emitted === 0 and phantomDeleteCandidates === 0',
       act: async (p) => {
@@ -134,10 +134,10 @@ test.describe('oplog phase 0 — shadow op-derivation + HLC (observe-only)', () 
   });
 });
 
-// PHASE 1+2+3 — durable IndexedDB op log + per-field HLC field clocks (Phase 1), the
+// PHASE 1+2+3, durable IndexedDB op log + per-field HLC field clocks (Phase 1), the
 // per-field HLC merge (Phase 2), and the AUTHORITATIVE field-clock-protected merge on
 // incoming peer records (Phase 3). Gated behind window._opLogShadow.
-test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authoritative apply', () => {
+test.describe('oplog phase 1+2+3, durable op log + per-field merge + authoritative apply', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => {
@@ -151,13 +151,13 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
   // NEW intended behavior: a successful save PUBLISHES pending ops to td_ops and
   // prunes them locally (the log holds only un-acked intent, O(pending)). Durability
   // is therefore: the intent survives a reload as EITHER a still-pending local op OR
-  // a published td_ops row — and the field clock must still rehydrate either way
+  // a published td_ops row, and the field clock must still rehydrate either way
   // (from the local log pre-publish, or from the td_ops pull post-publish).
-  test('Phase 1: a derived op is durable across a reload — pending locally or published to td_ops (field clock rehydrates)', async ({ page }) => {
+  test('Phase 1: a derived op is durable across a reload, pending locally or published to td_ops (field clock rehydrates)', async ({ page }) => {
     const bidId = baseId() + 10;
     await step(page, {
       label: 'create a bid → op persisted → reload → intent still durable (local or td_ops) + clock rehydrated', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _opPersist / _opDbLoad / _opSyncOps — durable op log + publish/prune + field-clock rehydrate',
+      suspect: 'cloud.js _opPersist / _opDbLoad / _opSyncOps: durable op log + publish/prune + field-clock rehydrate',
       ruleText: 'a derived op must be durably held (local log before publish, td_ops after) and its field clock must rehydrate across a reload',
       expected: 'opDbCount > 0 before reload; after reload the op is pending locally OR published to td_ops; field clock present',
       act: async (p) => {
@@ -194,7 +194,7 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
     const bidId = baseId() + 11;
     await step(page, {
       label: 'baseline a bid, edit amount twice, assert the field clock advances', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _opStampFields — per-field HLC clock stamped on each change',
+      suspect: 'cloud.js _opStampFields, per-field HLC clock stamped on each change',
       ruleText: 'editing a field must stamp its HLC clock, and a later edit must advance it',
       expected: 'a non-empty clock after the first edit, strictly greater after the second',
       act: async (p) => {
@@ -222,7 +222,7 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
   test('Phase 2: per-field HLC merge keeps the newer value per field (both directions)', async ({ page }) => {
     await step(page, {
       label: 'merge two rows whose fields carry different HLC clocks', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _opMergeRows — per-field last-writer-wins by HLC',
+      suspect: 'cloud.js _opMergeRows, per-field last-writer-wins by HLC',
       ruleText: 'a per-field merge must take each field from whichever side has the higher HLC, so concurrent edits to different fields both survive',
       expected: 'incoming-newer field wins; local-newer field is kept; an untouched local field survives',
       act: async (p) => {
@@ -253,7 +253,7 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
     const bidId = baseId() + 12;
     await step(page, {
       label: 'passive receiver takes incoming as-is; a locally-newer field is protected from a stale peer', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _opApplyIncoming — field-clock-protected authoritative merge in _applyRealtimeRecord',
+      suspect: 'cloud.js _opApplyIncoming, field-clock-protected authoritative merge in _applyRealtimeRecord',
       ruleText: 'an incoming peer record replaces fields wholesale UNLESS this device edited a field more recently than the incoming version, which is then protected',
       expected: 'no local edit → incoming wins all; a local edit newer than a stale peer is kept; a fresher peer still wins',
       act: async (p) => {
@@ -288,10 +288,10 @@ test.describe('oplog phase 1+2+3 — durable op log + per-field merge + authorit
     // Owner-reported 53-vs-43: a post-load filter stripped shell drafts from memory, so
     // "things to build" vanished on refresh while un-reloaded devices still showed them.
     // A draft with no amount/lines is USER INTENT (the build feed renders it with
-    // "finish & send" + Discard) — a reload must never hide or drop it.
+    // "finish & send" + Discard), a reload must never hide or drop it.
     const bidId = baseId() + 60, clientId = baseId() + 61;
     await step(page, {
-      label: 'create a shell draft, flush, hard-reload — draft still present', page: 'cloud', role: 'contractor',
+      label: 'create a shell draft, flush, hard-reload, draft still present', page: 'cloud', role: 'contractor',
       suspect: 'cloud.js supaLoadFromCloud post-load bid filters (must not exist)',
       ruleText: 'an in-progress draft must survive a reload byte-for-byte visible',
       expected: 'draft present in bids[] with draft/Draft status after reload',

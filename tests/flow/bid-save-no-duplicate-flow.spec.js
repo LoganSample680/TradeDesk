@@ -1,7 +1,7 @@
-// REAL flow — "every Save updates the SAME bid; it never spawns a duplicate in
+// REAL flow, "every Save updates the SAME bid; it never spawns a duplicate in
 // Make Money Today." The exact worry: start a bid, save it, go home, do other
-// things, come back and save again — repeatedly, including across a REAL page
-// reload (full session-var loss) — and prove the estimator never mints a second
+// things, come back and save again, repeatedly, including across a REAL page
+// reload (full session-var loss), and prove the estimator never mints a second
 // bid. The check is end-to-end against Supabase: after all the saves the CLOUD
 // (td_bids) must hold exactly ONE draft row for the client, and the live in-memory
 // bids[] must agree.
@@ -40,7 +40,7 @@ async function waitReboot(page) {
   await page.waitForTimeout(500);
 }
 
-test.describe('bid save — no duplicate in Make Money Today (UI-driven)', () => {
+test.describe('bid save, no duplicate in Make Money Today (UI-driven)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
@@ -96,7 +96,7 @@ test.describe('bid save — no duplicate in Make Money Today (UI-driven)', () =>
 
     // ── A REAL reload (full session-var loss), resume the SAME draft, save again. ──
     await step(page, {
-      label: 'reload the app, resume the draft, save again — still ONE cloud row',
+      label: 'reload the app, resume the draft, save again, still ONE cloud row',
       page: 'reboot', role: 'contractor',
       suspect: 'generic-estimate.js openGenericEstimate resume (reuse _geiEditBidId) + _byoAutosave',
       ruleText: 'after a real reload, re-saving the resumed draft must update it, not mint a duplicate',
@@ -107,7 +107,7 @@ test.describe('bid save — no duplicate in Make Money Today (UI-driven)', () =>
         await p.evaluate(async ({ clientId, CNAME, bidId }) => {
           const wait = ms => new Promise(r => setTimeout(r, ms));
           // Session globals are gone; the draft bid came back from the cloud load.
-          // Resume it directly by id (the dashboard/bid-row resume path) — no chooser.
+          // Resume it directly by id (the dashboard/bid-row resume path), no chooser.
           const c = (typeof getClientById === 'function' ? getClientById(clientId) : null) || { id: clientId, name: CNAME };
           openGenericEstimate(c, bidId, null);
           await wait(400);
@@ -123,7 +123,7 @@ test.describe('bid save — no duplicate in Make Money Today (UI-driven)', () =>
       },
     });
 
-    // NO cleanup — the seed bid + client stay in the dev account on purpose so the
+    // NO cleanup, the seed bid + client stay in the dev account on purpose so the
     // owner can inspect what this test created (CLAUDE.md §13.7). Manual delete only.
 
     const rep = report(FLOW, BASELINE, page);

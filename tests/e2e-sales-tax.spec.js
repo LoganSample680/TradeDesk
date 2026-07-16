@@ -60,7 +60,7 @@ test.describe('Sales Tax Engine', () => {
     expect(result).toBe(0);
   });
 
-  // ── Capital improvement — contractor-as-consumer ────────────────────────────
+  // ── Capital improvement, contractor-as-consumer ────────────────────────────
   test('improvement scope returns zero tax (contractor-consumer)', async () => {
     const result = await page.evaluate(() => {
       const r = calcSalesTax({ state:'KS', tradeType:'electrical', scope:'improvement',
@@ -81,7 +81,7 @@ test.describe('Sales Tax Engine', () => {
     expect(result.hasCert).toBe(true);
   });
 
-  // ── Repair — materials only ─────────────────────────────────────────────────
+  // ── Repair, materials only ─────────────────────────────────────────────────
   test('repair scope taxes materials, not labor', async () => {
     const result = await page.evaluate(() => {
       const items = [
@@ -448,7 +448,7 @@ test.describe('Sales Tax Engine', () => {
       const r = await lookupSalesTaxRate('', 'WY');
       return r.rate;
     });
-    // WY has base rate 4%, not a no-tax state — OR/AK/MT/NH/DE are no-tax
+    // WY has base rate 4%, not a no-tax state, OR/AK/MT/NH/DE are no-tax
     const rOr = await page.evaluate(async () => {
       const r = await lookupSalesTaxRate('', 'OR');
       return r.rate;

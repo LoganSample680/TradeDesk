@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * E2E tests — Settings persistence, field by field.
+ * E2E tests, Settings persistence, field by field.
  *
  * Born from a production regression where Settings fields silently reverted:
  * background syncs called loadSettingsForm() while the user was editing,
@@ -13,7 +13,7 @@
  *    (the last save wins WITHOUT collateral data loss)
  * 3. Background form refills (_refillSettingsFormUnlessEditing) never
  *    clobber in-progress edits while the Settings page is open
- * 4. onStateChange() updates only the tax-rate inputs — other unsaved
+ * 4. onStateChange() updates only the tax-rate inputs, other unsaved
  *    fields keep their typed values
  * 5. saveSettings() stamps a monotonically increasing settingsTs
  * 6. Zero console errors throughout
@@ -73,7 +73,7 @@ async function readState(page, fields) {
   }, fields);
 }
 
-test.describe('Settings persistence — every field', () => {
+test.describe('Settings persistence, every field', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -154,7 +154,7 @@ test.describe('Settings persistence — every field', () => {
     expect(result.baddr, 'in-progress address edit must survive a background refill').toBe('TYPED BUT NOT SAVED');
     expect(result.bemail, 'in-progress email edit must survive a background refill').toBe('typing@inprogress.com');
 
-    // A CLEAN settings page (no unsaved typing) MUST refresh — that is how a
+    // A CLEAN settings page (no unsaved typing) MUST refresh, that is how a
     // change saved on another device appears live on this one.
     const cleanPage = await page.evaluate(() => {
       loadSettingsForm(); // rerender → clears the dirty flag
@@ -175,7 +175,7 @@ test.describe('Settings persistence — every field', () => {
     assertNoErrors(page, 'background refill guard');
   });
 
-  test('onStateChange updates tax inputs only — unsaved fields keep typed values', async () => {
+  test('onStateChange updates tax inputs only, unsaved fields keep typed values', async () => {
     await goPg(page, 'pg-settings');
     await fillAndSave(page, FIELDS.map(f => [f.id, f.v1]));
 
@@ -209,7 +209,7 @@ test.describe('Settings persistence — every field', () => {
     });
     expect(ts.first, 'settingsTs stamped on save').toBeGreaterThan(0);
     expect(ts.second, 'settingsTs increases with each save').toBeGreaterThan(ts.first);
-    // The stamp must survive reload — it is what the cloud merge compares
+    // The stamp must survive reload, it is what the cloud merge compares
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
     const after = await page.evaluate(() => S.settingsTs);

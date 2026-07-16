@@ -1,6 +1,6 @@
 // @ts-check
 // ═══════════════════════════════════════════════════════════════════════════════
-// FLEET COVERAGE — exhaustive tests for js/fleet.js (CLAUDE.md §12)
+// FLEET COVERAGE, exhaustive tests for js/fleet.js (CLAUDE.md §12)
 //
 // Targets the previously-uncovered fleet functions: P&L math, downtime math,
 // date helpers, maintenance-due logic, the maintenance-record mutation, and every
@@ -14,12 +14,12 @@
 // ═══════════════════════════════════════════════════════════════════════════════
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
 
-// Shared seed helper — runs inside the page. Populates S.vehicles + maintenance +
+// Shared seed helper, runs inside the page. Populates S.vehicles + maintenance +
 // mileage with realistic fleet data the render/calc functions read from globals.
 function seedFleet() {
   // NOTE: the app's settings object `S` is a module-scoped `let` (js/data.js) that is
   // NOT mirrored onto `window`. A bare `S` reference inside page.evaluate resolves to
-  // that same lexically-scoped object the app reads — `window.S` would create a
+  // that same lexically-scoped object the app reads, `window.S` would create a
   // separate orphan the app never sees. So we MUST assign via bare `S` here.
   S.irsRate = 0.67;
   S.vehicleOdoLog = S.vehicleOdoLog || {};
@@ -63,10 +63,10 @@ function seedFleet() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH 1: Pure math / date / format helpers — EXACT value assertions
+// BATCH 1: Pure math / date / format helpers, EXACT value assertions
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Fleet pure helpers — date / downtime / format math', () => {
+test.describe('Fleet pure helpers, date / downtime / format math', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -77,7 +77,7 @@ test.describe('Fleet pure helpers — date / downtime / format math', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_fleetAddMonths — adds months, returns exact YYYY-MM-DD', async () => {
+  test('_fleetAddMonths: adds months, returns exact YYYY-MM-DD', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetAddMonths !== 'function') return { skip: true };
       return {
@@ -92,7 +92,7 @@ test.describe('Fleet pure helpers — date / downtime / format math', () => {
     expect(result.zero).toBe('2026-03-20');
   });
 
-  test('_fleetAddMonths — empty / null inputs return empty string (no throw)', async () => {
+  test('_fleetAddMonths: empty / null inputs return empty string (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetAddMonths !== 'function') return { skip: true };
       try {
@@ -107,7 +107,7 @@ test.describe('Fleet pure helpers — date / downtime / format math', () => {
     expect(result.undef).toBe('');
   });
 
-  test('_fleetDowntimeDays — inclusive day count for a downtime block', async () => {
+  test('_fleetDowntimeDays: inclusive day count for a downtime block', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetDowntimeDays !== 'function') return { skip: true };
       return {
@@ -120,7 +120,7 @@ test.describe('Fleet pure helpers — date / downtime / format math', () => {
     expect(result.oneDay).toBe(1);
   });
 
-  test('_fleetDowntimeDays — missing end defaults to today; never negative', async () => {
+  test('_fleetDowntimeDays: missing end defaults to today; never negative', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetDowntimeDays !== 'function') return { skip: true };
       try {
@@ -139,7 +139,7 @@ test.describe('Fleet pure helpers — date / downtime / format math', () => {
     expect(result.reversed).toBe(0); // Math.max(0, ...) guards a reversed range
   });
 
-  test('_fleetTotalDownDays — sums all downtime blocks; empty log → 0', async () => {
+  test('_fleetTotalDownDays: sums all downtime blocks; empty log → 0', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetTotalDownDays !== 'function') return { skip: true };
       return {
@@ -157,7 +157,7 @@ test.describe('Fleet pure helpers — date / downtime / format math', () => {
     expect(result.summed).toBe(15);
   });
 
-  test('_fleetDownDays — clamps a block to the requested year', async () => {
+  test('_fleetDownDays: clamps a block to the requested year', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetDownDays !== 'function') return { skip: true };
       return {
@@ -177,7 +177,7 @@ test.describe('Fleet pure helpers — date / downtime / format math', () => {
     expect(result.otherYear).toBe(0);
   });
 
-  test('_fleetFmtDate — formats a date; empty input → empty string', async () => {
+  test('_fleetFmtDate: formats a date; empty input → empty string', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetFmtDate !== 'function') return { skip: true };
       try {
@@ -199,10 +199,10 @@ test.describe('Fleet pure helpers — date / downtime / format math', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH 2: _fleetPnLCalc — deduction math (mileage + actual methods)
+// BATCH 2: _fleetPnLCalc: deduction math (mileage + actual methods)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Fleet P&L calculation — _fleetPnLCalc', () => {
+test.describe('Fleet P&L calculation, _fleetPnLCalc', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -210,17 +210,17 @@ test.describe('Fleet P&L calculation — _fleetPnLCalc', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
-    // `S` is a module-scoped let in js/data.js (NOT on window) — assign via bare `S`
+    // `S` is a module-scoped let in js/data.js (NOT on window), assign via bare `S`
     // so _fleetPnLCalc, which reads the same lexical `S.irsRate`, sees this value.
     await page.evaluate(() => { S.irsRate = 0.67; });
   });
   test.afterAll(async () => { await page.context().close(); });
 
   // ASSERTION CHANGED 2026-07-03 (§11.4): the old expectation (miles × rate × bizPct)
-  // encoded the double-penalty bug — tracked trips already ARE business miles, so the
+  // encoded the double-penalty bug, tracked trips already ARE business miles, so the
   // business-use % must not be applied twice. New intended behavior matches the
   // Schedule C engine (_vehSchedC): deduction = business miles × rate, regardless of bizUse.
-  test('mileage method — irsDeduction = business miles × rate (bizPct NOT re-applied)', async () => {
+  test('mileage method, irsDeduction = business miles × rate (bizPct NOT re-applied)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetPnLCalc !== 'function') return { skip: true };
       const v = { deductionMethod: 'mileage', bizUse: 80 };
@@ -231,7 +231,7 @@ test.describe('Fleet P&L calculation — _fleetPnLCalc', () => {
     if (result.skip) return;
     expect(result.method).toBe('mileage');
     expect(result.totalMiles).toBe(150);
-    // 150 business mi × 0.67 = 100.50 — bizUse (80%) does not re-scale business miles
+    // 150 business mi × 0.67 = 100.50: bizUse (80%) does not re-scale business miles
     expect(result.irsDeduction).toBeCloseTo(100.50, 2);
     expect(result.totalDeduction).toBeCloseTo(100.50, 2);
     // maintenance is records-only under mileage method
@@ -242,7 +242,7 @@ test.describe('Fleet P&L calculation — _fleetPnLCalc', () => {
     expect(result.costPerMile).toBeCloseTo(1.0, 2);
   });
 
-  test('actual method — depreciation + deductible maintenance at biz%', async () => {
+  test('actual method, depreciation + deductible maintenance at biz%', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetPnLCalc !== 'function') return { skip: true };
       const v = { deductionMethod: 'actual', bizUse: 50, purchasePrice: 40000 };
@@ -264,7 +264,7 @@ test.describe('Fleet P&L calculation — _fleetPnLCalc', () => {
     expect(result.irsDeduction).toBe(0); // not applicable in actual method
   });
 
-  test('zero miles — costPerMile is 0, no divide-by-zero', async () => {
+  test('zero miles, costPerMile is 0, no divide-by-zero', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetPnLCalc !== 'function') return { skip: true };
       const v = { deductionMethod: 'mileage', bizUse: 100 };
@@ -277,7 +277,7 @@ test.describe('Fleet P&L calculation — _fleetPnLCalc', () => {
     expect(Number.isFinite(result.costPerMile)).toBe(true);
   });
 
-  test('defaults — missing method→mileage, missing bizUse→100%', async () => {
+  test('defaults: missing method→mileage, missing bizUse→100%', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetPnLCalc !== 'function') return { skip: true };
       const v = {}; // no deductionMethod, no bizUse
@@ -308,10 +308,10 @@ test.describe('Fleet P&L calculation — _fleetPnLCalc', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH 3: _fleetDueAlerts — maintenance-due reminder logic
+// BATCH 3: _fleetDueAlerts: maintenance-due reminder logic
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Fleet due alerts — _fleetDueAlerts', () => {
+test.describe('Fleet due alerts, _fleetDueAlerts', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -359,7 +359,7 @@ test.describe('Fleet due alerts — _fleetDueAlerts', () => {
   test('non-reminder service type never produces an alert', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetDueAlerts !== 'function') return { skip: true };
-      // 'brakes' has reminder:false — even an ancient record yields no alert
+      // 'brakes' has reminder:false: even an ancient record yields no alert
       const r = _fleetDueAlerts({ name: 'X' }, [{ type: 'brakes', date: '2000-01-01' }]);
       return { len: r.length };
     });
@@ -373,10 +373,10 @@ test.describe('Fleet due alerts — _fleetDueAlerts', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH 4: HTML builders — _fleetCard / overview / service / P&L / GVWR note
+// BATCH 4: HTML builders, _fleetCard / overview / service / P&L / GVWR note
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Fleet HTML builders — return markup, no throw', () => {
+test.describe('Fleet HTML builders, return markup, no throw', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -388,7 +388,7 @@ test.describe('Fleet HTML builders — return markup, no throw', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_fleetCard — renders a vehicle card with its nickname', async () => {
+  test('_fleetCard: renders a vehicle card with its nickname', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetCard !== 'function') return { skip: true };
       try {
@@ -406,7 +406,7 @@ test.describe('Fleet HTML builders — return markup, no throw', () => {
     expect(result.hasCard).toBe(true);
   });
 
-  test('_fleetDetailOverviewHtml — empty + populated both return HTML', async () => {
+  test('_fleetDetailOverviewHtml, empty + populated both return HTML', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetDetailOverviewHtml !== 'function') return { skip: true };
       if (typeof _fleetPnLCalc !== 'function') return { skip: true };
@@ -429,7 +429,7 @@ test.describe('Fleet HTML builders — return markup, no throw', () => {
     expect(result.bareStr).toBe(true);
   });
 
-  test('_fleetDetailServiceHtml — empty shows placeholder, populated shows records', async () => {
+  test('_fleetDetailServiceHtml, empty shows placeholder, populated shows records', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetDetailServiceHtml !== 'function') return { skip: true };
       try {
@@ -448,7 +448,7 @@ test.describe('Fleet HTML builders — return markup, no throw', () => {
     expect(result.fullHasRecord).toBe(true);
   });
 
-  test('_fleetDetailPnLHtml — both deduction methods render without throwing', async () => {
+  test('_fleetDetailPnLHtml: both deduction methods render without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _fleetDetailPnLHtml !== 'function') return { skip: true };
       if (typeof _fleetPnLCalc !== 'function') return { skip: true };
@@ -461,7 +461,7 @@ test.describe('Fleet HTML builders — return markup, no throw', () => {
         const tActual = mileage.filter(t => t.vehicle === vActual.name);
         const a = _fleetDetailPnLHtml(vMileage, _fleetPnLCalc(vMileage, mMileage, tMileage, '2026'), mMileage, tMileage);
         const b = _fleetDetailPnLHtml(vActual, _fleetPnLCalc(vActual, mActual, tActual, '2026'), mActual, tActual);
-        // No data at all — still returns a string (defaults to current year block)
+        // No data at all, still returns a string (defaults to current year block)
         const empty = _fleetDetailPnLHtml({ name: 'Z' }, _fleetPnLCalc({ name: 'Z' }, [], [], '2026'), [], []);
         return { ok: true,
           mileageBadge: a.includes('Standard Mileage'),
@@ -476,7 +476,7 @@ test.describe('Fleet HTML builders — return markup, no throw', () => {
     expect(result.emptyStr).toBe(true);
   });
 
-  test('_gvwrNote / _renderGvwrNote — every class + missing-target case', async () => {
+  test('_gvwrNote / _renderGvwrNote: every class + missing-target case', async () => {
     const result = await page.evaluate(() => {
       if (typeof _gvwrNote !== 'function') return { skip: true };
       try {
@@ -522,7 +522,7 @@ test.describe('Fleet modal renderers + overlays', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_createFleetDetailOverlay — injects overlay + box into DOM once', async () => {
+  test('_createFleetDetailOverlay, injects overlay + box into DOM once', async () => {
     const result = await page.evaluate(() => {
       if (typeof _createFleetDetailOverlay !== 'function') return { skip: true };
       try {
@@ -538,7 +538,7 @@ test.describe('Fleet modal renderers + overlays', () => {
     expect(result.hasBox).toBe(true);
   });
 
-  test('_createFleetVehOverlay — injects vehicle modal shell', async () => {
+  test('_createFleetVehOverlay, injects vehicle modal shell', async () => {
     const result = await page.evaluate(() => {
       if (typeof _createFleetVehOverlay !== 'function') return { skip: true };
       try {
@@ -554,7 +554,7 @@ test.describe('Fleet modal renderers + overlays', () => {
     expect(result.hasBox).toBe(true);
   });
 
-  test('_createMaintOverlay — injects maintenance modal shell', async () => {
+  test('_createMaintOverlay: injects maintenance modal shell', async () => {
     const result = await page.evaluate(() => {
       if (typeof _createMaintOverlay !== 'function') return { skip: true };
       try {
@@ -570,11 +570,11 @@ test.describe('Fleet modal renderers + overlays', () => {
     expect(result.hasBox).toBe(true);
   });
 
-  test('_renderFleetDetailModal — golden path + out-of-range index (no throw)', async () => {
+  test('_renderFleetDetailModal, golden path + out-of-range index (no throw)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _renderFleetDetailModal !== 'function') return { skip: true };
       try {
-        // These are module-scoped lets in js/fleet.js (not on window) — but the app's
+        // These are module-scoped lets in js/fleet.js (not on window), but the app's
         // own setters update them lexically. Drive state through the public entry point
         // openFleetVehicleDetail(idx) (sets _fleetDetailIdx + _fleetDetailTab) and
         // setFleetDetailTab(tab) so the module-scoped vars the renderer reads are set.
@@ -594,13 +594,13 @@ test.describe('Fleet modal renderers + overlays', () => {
     expect(result.okOverview).toBe(true);
   });
 
-  test('_renderMaintModal — renders for valid vehicle, no-throw for bad index', async () => {
+  test('_renderMaintModal: renders for valid vehicle, no-throw for bad index', async () => {
     const result = await page.evaluate(() => {
       if (typeof _renderMaintModal !== 'function') return { skip: true };
       try {
         // _maintModalVehIdx/_maintEditId/_maintPhotoB64 are module-scoped lets in
         // js/fleet.js (not on window). openAddMaintenanceModal(vehIdx, editId) sets all
-        // three and calls _renderMaintModal — drive state through it.
+        // three and calls _renderMaintModal, drive state through it.
         openAddMaintenanceModal(0, null);
         const box = document.getElementById('fleet-maint-box');
         const rendered = !!box && box.innerHTML.includes('Log service');
@@ -615,7 +615,7 @@ test.describe('Fleet modal renderers + overlays', () => {
     expect(result.rendered).toBe(true);
   });
 
-  test('_renderMaintTypeFields — every branch + missing target', async () => {
+  test('_renderMaintTypeFields, every branch + missing target', async () => {
     const result = await page.evaluate(() => {
       if (typeof _renderMaintTypeFields !== 'function') return { skip: true };
       try {
@@ -641,7 +641,7 @@ test.describe('Fleet modal renderers + overlays', () => {
     expect(result.oilHtml).toBe(true);
   });
 
-  test('_renderOdometerReport — builds report overlay; bad index no-throw', async () => {
+  test('_renderOdometerReport, builds report overlay; bad index no-throw', async () => {
     const result = await page.evaluate(() => {
       if (typeof _renderOdometerReport !== 'function') return { skip: true };
       try {
@@ -650,7 +650,7 @@ test.describe('Fleet modal renderers + overlays', () => {
         openOdometerReport(0);
         const built = !!document.getElementById('odo-report-overlay');
         // invalid index → openOdometerReport guards (getVehicles()[999] undefined),
-        // and _renderOdometerReport also early-returns — no throw either way.
+        // and _renderOdometerReport also early-returns, no throw either way.
         openOdometerReport(999);
         _renderOdometerReport();
         return { ok: true, built };
@@ -667,7 +667,7 @@ test.describe('Fleet modal renderers + overlays', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH 6: Mutations + photo handlers — deleteMaintenanceRecord, photo, remove
+// BATCH 6: Mutations + photo handlers, deleteMaintenanceRecord, photo, remove
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Fleet mutations + photo handlers', () => {
@@ -682,7 +682,7 @@ test.describe('Fleet mutations + photo handlers', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('deleteMaintenanceRecord — removes the seeded record from the store', async () => {
+  test('deleteMaintenanceRecord, removes the seeded record from the store', async () => {
     const result = await page.evaluate(() => {
       if (typeof deleteMaintenanceRecord !== 'function') return { skip: true };
       try {
@@ -705,7 +705,7 @@ test.describe('Fleet mutations + photo handlers', () => {
     expect(result.after).toBe(result.before - 1);   // exactly one removed
   });
 
-  test('deleteMaintenanceRecord — non-existent id is a no-op, no throw', async () => {
+  test('deleteMaintenanceRecord, non-existent id is a no-op, no throw', async () => {
     const result = await page.evaluate(() => {
       if (typeof deleteMaintenanceRecord !== 'function') return { skip: true };
       try {
@@ -722,7 +722,7 @@ test.describe('Fleet mutations + photo handlers', () => {
     expect(result.after).toBe(result.before); // nothing removed
   });
 
-  test('_confirmRemoveVehicle — removes the vehicle from S.vehicles', async () => {
+  test('_confirmRemoveVehicle, removes the vehicle from S.vehicles', async () => {
     const result = await page.evaluate(() => {
       if (typeof _confirmRemoveVehicle !== 'function') return { skip: true };
       try {
@@ -744,7 +744,7 @@ test.describe('Fleet mutations + photo handlers', () => {
     expect(result.hasThrowaway).toBe(false);
   });
 
-  test('_confirmRemoveVehicle — invalid index returns early, no throw', async () => {
+  test('_confirmRemoveVehicle, invalid index returns early, no throw', async () => {
     const result = await page.evaluate(() => {
       if (typeof _confirmRemoveVehicle !== 'function') return { skip: true };
       try {
@@ -759,7 +759,7 @@ test.describe('Fleet mutations + photo handlers', () => {
     expect(result.ok).toBe(true);
   });
 
-  test('_clearMaintPhoto — resets the in-memory photo + hides preview', async () => {
+  test('_clearMaintPhoto: resets the in-memory photo + hides preview', async () => {
     const result = await page.evaluate(() => {
       if (typeof _clearMaintPhoto !== 'function') return { skip: true };
       try {
@@ -781,7 +781,7 @@ test.describe('Fleet mutations + photo handlers', () => {
     expect(result.hidden).toBe(true);
   });
 
-  test('_handleMaintPhoto — null/empty file input is a safe no-op', async () => {
+  test('_handleMaintPhoto: null/empty file input is a safe no-op', async () => {
     const result = await page.evaluate(() => {
       if (typeof _handleMaintPhoto !== 'function') return { skip: true };
       try {
@@ -794,7 +794,7 @@ test.describe('Fleet mutations + photo handlers', () => {
     expect(result.ok).toBe(true);
   });
 
-  test('_showMaintPhoto — opens viewer only when record has a photo', async () => {
+  test('_showMaintPhoto: opens viewer only when record has a photo', async () => {
     const result = await page.evaluate(() => {
       if (typeof _showMaintPhoto !== 'function') return { skip: true };
       try {

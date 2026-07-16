@@ -8,7 +8,7 @@
 // silently regress back to raw glyphs without a test going red.
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors, FAKE_USER_ID, FAKE_TOKEN_2, FAKE_BID_ID_2 } = require('./helpers');
 
-test.describe('icon system — js/icons.js library', () => {
+test.describe('icon system, js/icons.js library', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -36,8 +36,8 @@ test.describe('icon system — js/icons.js library', () => {
     expect(html).toContain('</svg>');
   });
 
-  test('svgIcon falls back to the raw glyph for an unmapped emoji — never renders blank', async () => {
-    // A codepoint deliberately never mapped (Mahjong tile — not a UI concept
+  test('svgIcon falls back to the raw glyph for an unmapped emoji, never renders blank', async () => {
+    // A codepoint deliberately never mapped (Mahjong tile, not a UI concept
     // this app has ever used as an icon).
     const html = await page.evaluate(() => svgIcon('\u{1F004}'));
     expect(html).toBe('\u{1F004}');
@@ -45,7 +45,7 @@ test.describe('icon system — js/icons.js library', () => {
 
   // Regression: some emoji appear with a trailing U+FE0F variation selector
   // (e.g. copy-pasted "⚠️" vs. the bare "⚠"). _ICON_PATHS keys on the bare
-  // codepoint — without stripping VS16 first, the suffixed form silently
+  // codepoint: without stripping VS16 first, the suffixed form silently
   // fails to match and falls back to the (still-suffixed) raw glyph, which
   // looks like a working icon in a quick glance but isn't one.
   test('svgIcon strips a trailing variation selector (U+FE0F) before lookup', async () => {
@@ -94,7 +94,7 @@ test.describe('icon system — js/icons.js library', () => {
   });
 });
 
-test.describe('icon system — client.html nav renders SVG icons', () => {
+test.describe('icon system, client.html nav renders SVG icons', () => {
   let page;
 
   const HUB_ICON_CHECK = {
@@ -141,7 +141,7 @@ test.describe('icon system — client.html nav renders SVG icons', () => {
     expect(html).toContain('<svg');
   });
 
-  // Uses innerText, not textContent — client.html's static-markup icons render
+  // Uses innerText, not textContent, client.html's static-markup icons render
   // via an inline <script>document.write(svgIcon(...))</script> right at each
   // emoji's original position. The <script> tag itself stays in the DOM after
   // running (normal browser behavior) with its JS source as literal child

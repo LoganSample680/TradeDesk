@@ -1,7 +1,7 @@
-// ── esign.js — THE one e-sign module ─────────────────────────────────────────
+// ── esign.js: THE one e-sign module ─────────────────────────────────────────
 // Owner directive (2026-07-13): estimates, change orders, job sign-offs,
 // diagnostic charges, and GC-bid approvals all use the EXACT same e-sign code,
-// just displayed in different areas — and the way a signature is DISPLAYED
+// just displayed in different areas, and the way a signature is DISPLAYED
 // (client hub documents + the business-owner record) is one component too.
 // This file is loaded by index.html, client.html, AND sign.html, so a change
 // here updates every signing surface at once.
@@ -22,23 +22,23 @@
 //
 // Display:  esignSigBlockHTML(o)      → the signed-document block (top rule,
 //           uppercase label, signature image card, Signed By / Date grid,
-//           optional extra cells) — used by the client hub docs, sign.html,
+//           optional extra cells), used by the client hub docs, sign.html,
 //           and the contractor's own record views.
 //           esignConsentHTML(prefix,terms) → THE terms block (owner
 //           directive 2026-07-13): a plain "by signing above, you agree to
 //           the terms below" line, then the terms collapsed behind a
 //           click-to-expand accordion (same visual as the proposal's own
-//           Terms & Conditions toggle). No separate "I agree" checkbox — the
+//           Terms & Conditions toggle). No separate "I agree" checkbox: the
 //           signature itself is the affirmative consent under E-SIGN/UETA;
 //           a checkbox next to it was redundant friction, not extra
 //           protection. For a full proposal (estimate) the accordion holds
 //           the ENTIRE numbered Terms & Conditions clause list (deposit
-//           excluded — that's its own line in the proposal summary, not
+//           excluded: that's its own line in the proposal summary, not
 //           restated here); for a change order / job sign-off / diagnostic
 //           charge, which don't establish new terms of their own, it's the
 //           short document-specific sentence below.
 const ESIGN_CITE = '15 U.S.C. §7001 et seq.';
-// Shared verbatim sentence — a change order and a job price-increase are the
+// Shared verbatim sentence, a change order and a job price-increase are the
 // SAME kind of document (modifying an existing contract), so they carry the
 // literal same disclosure, not just the same box.
 const ESIGN_NOTE_CHANGE_ORDER = 'You agree to modify the original contract to reflect the scope and price changes described above. All other terms of the original contract remain in effect. This change order is legally binding upon signature under applicable state and federal electronic transaction law (' + ESIGN_CITE + ').';
@@ -56,7 +56,7 @@ const _ESIGN_FONT = '46px Dancing Script, cursive';
 
 // The ONE markup for every capture surface (owner directive 2026-07-13): name
 // field on top, canvas below with a live "type it or draw it" placeholder,
-// Clear link under it — sign.html's shape, used verbatim everywhere so there
+// Clear link under it, sign.html's shape, used verbatim everywhere so there
 // is only one layout to ever look at, not six that drifted apart.
 function esignPadHTML(prefix, opts){
   opts = opts || {};
@@ -65,7 +65,7 @@ function esignPadHTML(prefix, opts){
   const phId = prefix + '-ph';
   const nameLabel = opts.nameLabel || 'Full name *';
   const namePlaceholder = opts.namePlaceholder || 'Type your full legal name';
-  const phText = opts.phText || 'Signature appears here as you type — or draw below';
+  const phText = opts.phText || 'Signature appears here as you type, or draw below';
   return '<div style="margin-bottom:14px">' +
       '<label for="' + _esignEsc(nameId) + '" style="display:block;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--text3,#6b7280);margin-bottom:6px">' + _esignEsc(nameLabel) + '</label>' +
       '<input type="text" id="' + _esignEsc(nameId) + '" placeholder="' + _esignEsc(namePlaceholder) + '" autocomplete="name" style="width:100%;box-sizing:border-box;font-size:16px;padding:11px 12px;border-radius:10px;border:1.5px solid var(--border2,#d1d5db);background:#fff;font-family:inherit;color:var(--text,#111)">' +
@@ -82,7 +82,7 @@ function esignPadHTML(prefix, opts){
 
 // Wires a pad rendered by esignPadHTML (or any canvas+name-input pair sharing
 // its ids). Draw + type both work everywhere, live-preview the typed name
-// into the pad in the shared cursive face, and auto-manage the placeholder —
+// into the pad in the shared cursive face, and auto-manage the placeholder,
 // callers no longer hand-wire any of this per surface.
 function esignWire(prefix, opts){
   opts = opts || {};
@@ -99,7 +99,7 @@ function esignWire(prefix, opts){
     errId: opts.errId || (prefix + '-err'),
     onClear: opts.onClear || null,
   };
-  // Placeholder shows only on a truly empty pad — hidden the instant either a
+  // Placeholder shows only on a truly empty pad, hidden the instant either a
   // typed preview is rendered or real ink exists.
   const updatePh = () => {
     if (!phEl) return;
@@ -114,7 +114,7 @@ function esignWire(prefix, opts){
   };
   const start = (e) => {
     pad.drawing = true;
-    // First real stroke clears any typed-name preview so ink replaces it —
+    // First real stroke clears any typed-name preview so ink replaces it,
     // the default everywhere now (drawing always wins over a typed preview).
     if (!pad.ink && opts.clearOnFirstInk !== false) ctx.clearRect(0, 0, canvas.width, canvas.height);
     pad.ink = true;
@@ -129,7 +129,7 @@ function esignWire(prefix, opts){
   canvas.addEventListener('touchstart', (e) => { e.preventDefault(); start(e); }, { passive: false, signal: ac.signal });
   canvas.addEventListener('touchmove', (e) => { e.preventDefault(); move(e); }, { passive: false, signal: ac.signal });
   canvas.addEventListener('touchend', () => pad.drawing = false, { signal: ac.signal });
-  // Live typed-signature preview — the SAME behavior everywhere now: type a
+  // Live typed-signature preview, the SAME behavior everywhere now: type a
   // name, watch it render in the pad in the cursive face; start drawing and
   // it's replaced by real ink (clearOnFirstInk above).
   if (nameEl && opts.typedPreview !== false) {
@@ -139,7 +139,7 @@ function esignWire(prefix, opts){
       if (typeof opts.onType === 'function') opts.onType();
     }, { signal: ac.signal });
   }
-  // Teardown when the pad's overlay leaves the DOM — no leaked listeners.
+  // Teardown when the pad's overlay leaves the DOM, no leaked listeners.
   const obs = new MutationObserver(() => {
     if (!document.contains(canvas)) { ac.abort(); pad.drawing = false; obs.disconnect(); delete _ESIGN_PADS[prefix]; }
   });
@@ -158,7 +158,7 @@ function esignClear(prefix){
   if (typeof pad.onClear === 'function') pad.onClear();
 }
 
-// Alpha-channel scan — the single copy of the "did they actually sign" check.
+// Alpha-channel scan, the single copy of the "did they actually sign" check.
 function esignHasInk(prefix){
   const pad = _ESIGN_PADS[prefix];
   if (!pad) return false;
@@ -208,7 +208,7 @@ function esignResult(prefix, opts){
 // click-to-expand accordion (same visual language as the proposal's own
 // Terms & Conditions toggle in legal.js _applyTermsAccordion) so the
 // disclosure never crowds the signature pad above it. No separate "I agree"
-// checkbox — the signature itself IS the affirmative consent; a checkbox
+// checkbox: the signature itself IS the affirmative consent; a checkbox
 // next to it was redundant friction, not extra protection.
 function esignConsentHTML(prefix, termsHtml, opts){
   opts = opts || {};
@@ -239,7 +239,7 @@ function esignSigBlockHTML(o){
   if (!o.signedAt && !o.signerName) return '';
   const dt = o.signedAt
     ? new Date(o.signedAt).toLocaleString('en-US', { month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
-    : '—';
+    : '-';
   const cells = [
     { label: 'Signed By', value: o.signerName || 'Client' },
     { label: 'Date & Time', value: dt },

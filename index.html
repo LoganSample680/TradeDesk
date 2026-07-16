@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" style="background:#1B1612">
 <head>
-<!-- deploy-marker: owner-requested preview rebuild — onboarding + Google/Apple OAuth test -->
+<!-- deploy-marker: owner-requested preview rebuild, onboarding + Google/Apple OAuth test -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -25,7 +25,7 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
 
 /* ── Design tokens ── */
 :root{
-  /* v1 names — kept for backward compat with JS */
+  /* v1 names, kept for backward compat with JS */
   --blue:#2D5DA8;--blue-dk:#1B3F7A;--blue-lt:#DCE8FA;
   --green:#0E6B39;--green-lt:#D4ECDC;--green-mid:#0F6334;
   --amber:#8A4E00;--amber-lt:#FBE2BB;
@@ -36,7 +36,7 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
   --text-2:#4B5563;--text-3:#636C7B;
   --border:#E2E5EB;--border2:#CFD4DC;
   --r:8px;--rl:12px;
-  /* v2 names — used by new component classes */
+  /* v2 names, used by new component classes */
   --ink:#1B1612;--ink-soft:#3A3128;
   --ink-line:rgba(255,238,210,.08);--ink-line-2:rgba(255,238,210,.14);
   --paper:#F4F5F7;--cream:#ECEEF2;--bg-card:#FFFFFF;
@@ -152,7 +152,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .pg.active{display:block;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both}
 #pg-dash.active{animation:td-dash-enter .8s cubic-bezier(.16,1,.3,1) both}
 /* Boot waterfall (owner request): while the boot overlay fades, the home header +
-   widget cards ripple in top-to-bottom — 60ms apart, each sliding up 14px. The
+   widget cards ripple in top-to-bottom, 60ms apart, each sliding up 14px. The
    .boot-cascade class is added ONLY by _removeBootOverlay (boot reveal), never on
    normal navigation, and is removed after the ripple settles so renderDash's
    innerHTML updates can never re-trigger it. */
@@ -160,10 +160,10 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    14px rise, NO scale (scaling large cards blurs text mid-flight → the "choppy"
    look). Ease-out-cubic decelerates softly instead of the abrupt expo snap. */
 @keyframes td-card-cascade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
-/* Cards cascade RIGHT AFTER the boot overlay lifts — and BEHIND any boot popup
+/* Cards cascade RIGHT AFTER the boot overlay lifts, and BEHIND any boot popup
    (owner: a blank white backdrop behind a popup looks odd), so the dashboard
    fills in under the popup's scrim. Delays are assigned in JS (_armBootCascade)
-   over VISIBLE cards only — inline animation-delay wins, so no fixed nth-child
+   over VISIBLE cards only, inline animation-delay wins, so no fixed nth-child
    holes. Backwards `both` fill keeps each card invisible until its turn. */
 #pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .72s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
 @media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:none}}
@@ -182,7 +182,7 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .mtb.active{color:var(--text-cream)}
 .mtb svg{width:22px;height:22px;stroke:currentColor;stroke-width:1.8;fill:none;stroke-linecap:round;stroke-linejoin:round}
 .mtb-dot{position:absolute;top:7px;right:calc(50% - 16px);width:8px;height:8px;background:var(--denim);border-radius:50%;border:2px solid var(--ink)}
-/* More popup — sits above the More button, no swipe needed */
+/* More popup, sits above the More button, no swipe needed */
 #mtb-more-popup{display:none;position:fixed;inset:0;z-index:1999}
 #mtb-more-menu{position:absolute;bottom:calc(58px + env(safe-area-inset-bottom,0px));right:6px;background:var(--ink);border-radius:14px;overflow:hidden;box-shadow:0 -4px 32px rgba(0,0,0,.5);min-width:192px;animation:fadeup .15s ease}
 @keyframes fadeup{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
@@ -376,7 +376,7 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .mmt-sec-chev{font-size:13px;color:var(--text3);width:14px;text-align:center}
 
 /* ── Quick actions ──
-   App-launcher pattern: the tinted icon chip IS the button — no tile card
+   App-launcher pattern: the tinted icon chip IS the button, no tile card
    around it (white-card-in-white-card read as nested boxes and wasted half the
    screen on phones). Each action carries its own accent (inline
    --qa-accent/--qa-tint); state classes color the CHIP, never the tile:
@@ -424,7 +424,7 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
   /* Vendor/Client + Amount are the headline of each card */
   .bk-tbl td[data-label="Client"],.bk-tbl td[data-label="Vendor"]{font-size:15px;font-weight:800}
   .bk-tbl td[data-label="Amount"]{font-size:15px;font-weight:800}
-  /* Time Log's job-site cell carries a full address + a second line — the
+  /* Time Log's job-site cell carries a full address + a second line, the
      generic label-left/value-right flex row squeezes that into a narrow
      wrapped column. Stack label above value instead, full width. */
   .bk-tbl td[data-label="Job site"]{display:block;text-align:left}
@@ -683,7 +683,7 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 /* ── Modals ── */
 .zmodal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;animation:fadein .18s ease;overflow-y:auto}
 /* §8.4 modal entrance: the card fades + slides up + settles from a slight scale
-   while the dim layer fades — no more hard pop. One rule covers every popup
+   while the dim layer fades, no more hard pop. One rule covers every popup
    (zAlert/zConfirm/collect/complete-job/…, all ~57 creation sites use .zmodal). */
 @keyframes td-modal-in{from{opacity:0;transform:translateY(16px) scale(.97)}to{opacity:1;transform:none}}
 .zmodal{background:var(--bg-card);border-radius:var(--r-xl);padding:24px 22px;width:100%;max-width:360px;box-shadow:var(--shadow-modal);animation:td-modal-in .24s cubic-bezier(.22,1,.36,1) both}
@@ -701,29 +701,29 @@ input:checked+.dm-slider:before{transform:translateX(22px)}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--ink);color:var(--text-cream);border-radius:12px;padding:14px 18px;font-size:13px;font-weight:600;box-shadow:var(--shadow-modal);z-index:9997;display:flex;align-items:center;gap:10px;max-width:320px;animation:toast-in .25s ease;transform-origin:bottom right}
 .toast-icon{font-size:18px;flex-shrink:0}
 .toast-close{background:none;border:none;color:var(--text-cream-2);cursor:pointer;font-size:16px;margin-left:8px;padding:0;line-height:1}
-/* Boot exit: the overlay LIFTS AWAY — gentle zoom + blur dissolve, not a flat fade.
+/* Boot exit: the overlay LIFTS AWAY, gentle zoom + blur dissolve, not a flat fade.
    Paired with the card waterfall underneath, the whole reveal reads as one motion. */
 #supa-boot-overlay.td-fadeout{opacity:0;transform:scale(1.05);filter:blur(10px);transition:opacity .75s cubic-bezier(.4,0,.2,1),transform .75s cubic-bezier(.4,0,.2,1),filter .75s cubic-bezier(.4,0,.2,1)}
 /* ── Boot screen (redesigned, owner request 2026-07-04) ──
-   Shared by the static overlay AND the JS rebuilder — one look, two entry points.
+   Shared by the static overlay AND the JS rebuilder, one look, two entry points.
    White-label paths untouched: brand color still overrides the background inline,
    a custom logo replaces the mark+name block entirely. */
 #supa-boot-overlay{overflow:hidden}
 /* Ambient glow: a huge soft radial light that slowly drifts and swells behind the
-   mark — the "alive" feeling. Brand-tinted inline on white-label boots. */
+   mark: the "alive" feeling. Brand-tinted inline on white-label boots. */
 .sbo-glow{position:absolute;width:130vmax;height:130vmax;left:50%;top:55%;background:radial-gradient(closest-side,rgba(45,93,168,.30),transparent 65%);animation:sbo-drift 9s ease-in-out infinite alternate;pointer-events:none}
 @keyframes sbo-drift{from{transform:translate(-56%,-52%) scale(1)}to{transform:translate(-44%,-46%) scale(1.14)}}
 .sbo-center{flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;padding:0 24px;position:relative}
 .sbo-mark{position:relative;width:64px;height:64px;border-radius:16px;background:var(--grad-mark);display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 12px 36px rgba(45,93,168,.4);animation:td-logoin .5s cubic-bezier(.22,1,.36,1) both,sbo-breathe 2.8s ease-in-out .6s infinite}
 .sbo-mark svg{width:32px;height:32px;stroke:#FFF1E6;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
-/* Halo ring: pulses outward from the mark every 2.2s — the heartbeat. */
+/* Halo ring: pulses outward from the mark every 2.2s: the heartbeat. */
 .sbo-mark::after{content:'';position:absolute;inset:-7px;border-radius:20px;border:1.5px solid rgba(148,185,235,.55);opacity:0;animation:sbo-halo 2.2s cubic-bezier(.22,1,.36,1) 1.1s infinite}
 @keyframes sbo-halo{0%{opacity:.8;transform:scale(1)}70%{opacity:0;transform:scale(1.6)}100%{opacity:0;transform:scale(1.6)}}
-/* Monogram: white-label boots without a logo get the owner's initial in the tile —
+/* Monogram: white-label boots without a logo get the owner's initial in the tile,
    their app, their letter, not our wrench. */
 .sbo-monogram{font-family:Geist,sans-serif;font-weight:900;font-size:30px;color:#FFF1E6;letter-spacing:-1px}
 /* Logo frame: uploaded artwork of any shape/background sits in a soft light card
-   with the same premium shadow language — the DESIGN carries logos that would
+   with the same premium shadow language, the DESIGN carries logos that would
    otherwise clash with the dark screen. */
 .sbo-logo-frame{background:rgba(255,255,255,.97);border-radius:22px;padding:16px 24px;max-width:78vw;display:flex;align-items:center;justify-content:center;box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 18px 50px rgba(0,0,0,.5);animation:td-logoin .55s cubic-bezier(.22,1,.36,1) both}
 .sbo-logo-frame img{max-height:96px;max-width:100%;object-fit:contain;display:block}
@@ -804,10 +804,10 @@ body.dark .cal-cell.other{background:var(--cream)}
 .mobile-topbar-icon{width:34px;height:34px;border-radius:var(--r-mark);background:var(--grad-mark);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 1px 0 rgba(255,255,255,.12) inset,0 4px 10px rgba(45,93,168,.32)}
 .mobile-topbar-icon svg{width:16px;height:16px;stroke:rgba(245,239,226,.9);fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
 /* Name wraps to up to TWO lines so long names ("ZJ's Painting & Special Coatings")
-   show in FULL — no mid-word ellipsis. Tight line-height + viewport-scaled font
+   show in FULL, no mid-word ellipsis. Tight line-height + viewport-scaled font
    keep two lines inside the top bar. Takes all remaining width. */
 .mobile-topbar-name{flex:1;min-width:0;font-family:var(--font-display);font-weight:900;font-size:clamp(14px,4.3vw,18px);letter-spacing:-.5px;line-height:1.08;color:var(--text-cream);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-/* PRO badge hidden on the owner's phone — redundant branding that stole room
+/* PRO badge hidden on the owner's phone, redundant branding that stole room
    from the business name (still shown in the desktop sidebar). */
 .mobile-topbar-pro{display:none}
 .mobile-topbar-actions{display:flex;gap:4px;flex-shrink:0}
@@ -1070,7 +1070,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
 </head>
 <body>
-<!-- Full boot screen — visible before any JS runs. td-logoin/td-bar are defined in <style> above. -->
+<!-- Full boot screen, visible before any JS runs. td-logoin/td-bar are defined in <style> above. -->
 <div id="supa-boot-overlay" style="position:fixed;inset:0;z-index:9998;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0">
   <div class="sbo-glow" id="_sbo_glow"></div>
   <div class="sbo-center">
@@ -1089,10 +1089,10 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 </div>
 <script>
-// Runs before any other JS — applies contractor white-label or TradeDesk defaults.
+// Runs before any other JS, applies contractor white-label or TradeDesk defaults.
 (function(){
   try{
-    window._sboT0=Date.now(); // min-stage-time clock — _removeBootOverlay holds the intro on fast loads
+    window._sboT0=Date.now(); // min-stage-time clock, _removeBootOverlay holds the intro on fast loads
     var raw=localStorage.getItem('zp3_S');
     var s=raw?JSON.parse(raw):{};
     var ov=document.getElementById('supa-boot-overlay');if(!ov)return;
@@ -1101,7 +1101,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     // Brand color: TINT the dark boot design, never a flat color wall (owner:
     // "white label colors are ugly as hell and carrying over"). The charcoal
     // gradient stays; the brand hue drives the ambient glow, corner wash, bar,
-    // and the monogram tile — so a white-label boot looks DESIGNED for that
+    // and the monogram tile, so a white-label boot looks DESIGNED for that
     // business, not recolored.
     var r=45,g=93,b=168,lr=115,lg=163,lb=238,hasBrand=false;
     if(s.brandColor){
@@ -1119,7 +1119,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     //  • logo → shown solo (their artwork carries the screen), tagline becomes
     //    the quiet "Powered by TradeDesk".
     //  • bname → the glowing tile shows THEIR INITIAL (brand-tinted monogram)
-    //    and their name gets the same shimmer as the TradeDesk wordmark — the
+    //    and their name gets the same shimmer as the TradeDesk wordmark, the
     //    boot looks purpose-built for that business, not white-out branding.
     var nameEl=document.getElementById('_sbo_name');
     var _mk=document.getElementById('_sbo_mark'),_tg=document.getElementById('_sbo_tag');
@@ -1169,7 +1169,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       }
       if(_tg)_tg.textContent='Powered by TradeDesk';
     }
-    // Staged status line — reads like real load stages (advances, then HOLDS on
+    // Staged status line, reads like real load stages (advances, then HOLDS on
     // "Almost ready…" instead of looping, so it feels intentional, not a fake
     // spinner caption). Paced to track the progress bar filling.
     var hint=document.getElementById('_sbo_hint');
@@ -1222,13 +1222,13 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="td-dw" data-dw="kpi">
       <div id="dash-kpi"></div>
       <div id="dash-hobby-warn" style="display:none"></div>
-      <!-- "You're at X's" is a physically-here-RIGHT-NOW moment — nested inside the
+      <!-- "You're at X's" is a physically-here-RIGHT-NOW moment, nested inside the
            kpi widget (not a standalone draggable) so it always lands right under the
            Profit/Avg Job tiles, the natural first-glance center of the screen (owner
            call 2026-07-10: top-of-screen reads as header chrome and gets skipped).
            No margin-top: .mets already contributes margin-bottom:16px above this,
            so a separate top margin doubled up into a bigger gap above the card than
-           below it (2026-07-11 fix — margin-bottom here matches .card's 14px so the
+           below it (2026-07-11 fix, margin-bottom here matches .card's 14px so the
            gap below is the same weight as everywhere else on the dashboard). -->
       <div id="dash-nearby" style="display:none;margin-bottom:14px"></div>
     </div>
@@ -1356,7 +1356,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="f" style="grid-column:1/-1">
           <label>Lead source</label>
           <select id="cf-source" onchange="toggleRefField(this)">
-            <option value="">— How did they find you? —</option>
+            <option value="">- How did they find you? -</option>
             <option value="Unknown">Unknown</option>
             <optgroup label="Direct outreach">
               <option value="Door to door">Door to door</option>
@@ -1366,7 +1366,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             </optgroup>
             <optgroup label="Referral">
               <option value="Word of mouth">Word of mouth (organic)</option>
-              <option value="Referral">Referral — someone sent them</option>
+              <option value="Referral">Referral: someone sent them</option>
               <option value="Real estate agent">Real estate agent</option>
               <option value="Property manager">Property manager / landlord</option>
               <option value="Builder / contractor">Builder / contractor</option>
@@ -1395,7 +1395,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
 
       <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">Optional — add anytime</div>
+        <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">Optional: add anytime</div>
         <div class="fg fg2">
           <div class="f" style="grid-column:1/-1;position:relative"><label>Street address</label><input id="cf-street" placeholder="1234 Maple St" autocomplete="off" oninput="clearFErr('cf-street');_updateAddrComputed();_addrSugSearch(this.value,'cf-addr-sugg','cf-street','cf-city','cf-state','cf-zip')" onblur="setTimeout(()=>{const b=document.getElementById('cf-addr-sugg');if(b)b.style.display='none'},150)">
             <div id="cf-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:200;max-height:240px;overflow-y:auto"></div>
@@ -1413,12 +1413,12 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input id="cf-year-built" type="number" min="1800" max="2030" placeholder="e.g. 1965" oninput="checkYearBuilt()" style="flex:1">
               <button type="button" class="btn btn-sm btn-g" id="cf-year-lookup" onclick="lookupYearBuilt()" style="display:none;white-space:nowrap">&#128269; Look up</button>
             </div>
-            <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px"><span data-ico="⚠" data-ico-size="14"></span> Pre-1978 — Lead paint pamphlet required</div>
+            <div id="cf-year-warn" style="display:none;font-size:12px;color:var(--amber);font-weight:700;margin-top:4px"><span data-ico="⚠" data-ico-size="14"></span> Pre-1978: Lead paint pamphlet required</div>
           </div>
           <div class="f">
             <label>Occupation</label>
             <select id="cf-occupation">
-              <option value="">— Unknown —</option>
+              <option value="">- Unknown -</option>
               <optgroup label="High-value (A-tier)">
                 <option value="Realtor / Real estate agent">Realtor / Real estate agent</option>
                 <option value="Property manager">Property manager</option>
@@ -1446,10 +1446,10 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="f">
             <label>Client tier</label>
             <select id="cf-tier">
-              <option value="">— Auto —</option>
-              <option value="A">A — High value</option>
-              <option value="B">B — Mid-tier</option>
-              <option value="C">C — Standard</option>
+              <option value="">- Auto -</option>
+              <option value="A">A: High value</option>
+              <option value="B">B: Mid-tier</option>
+              <option value="C">C: Standard</option>
             </select>
           </div>
           <div class="f" style="grid-column:1/-1"><label>Notes</label><textarea id="cf-notes" placeholder="Anything useful from first contact..."></textarea></div>
@@ -1539,7 +1539,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <select id="pay-type" onchange="autoFillPayAmount()">
               <option value="deposit">Deposit (25%)</option>
               <option value="partial">Partial payment</option>
-              <option value="final">Final payment — paid in full</option>
+              <option value="final">Final payment, paid in full</option>
               <option value="custom">Custom amount</option>
             </select>
           </div>
@@ -1559,7 +1559,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="cd-lien-panel" style="display:none">
       <div class="card" style="border:2px solid var(--c-red)">
         <div class="card-hd" style="color:var(--c-red)">Mechanic's lien record</div>
-        <div class="tip tip-d">A mechanic's lien claims the property for unpaid work. Deadlines vary by state — general guidance only. <strong>Consult an attorney in your jurisdiction before filing.</strong></div>
+        <div class="tip tip-d">A mechanic's lien claims the property for unpaid work. Deadlines vary by state, general guidance only. <strong>Consult an attorney in your jurisdiction before filing.</strong></div>
         <div class="fg fg2">
           <div class="f"><label>Lien status</label>
             <select id="lien-status">
@@ -1613,7 +1613,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <!-- Step progress bar -->
   <div id="gei-step-bar" style="padding:12px 16px 0"></div>
 
-  <!-- T&M single-page layout (matches design spec EstimateTM.jsx) — shown when _geiIsTM=true -->
+  <!-- T&M single-page layout (matches design spec EstimateTM.jsx): shown when _geiIsTM=true -->
   <div id="gei-tm-page" style="display:none">
     <div class="tbar" id="tm-topbar-wrap"></div>
 
@@ -1651,7 +1651,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <div class="stat-tile">
               <div class="stat-l">Est. labor total</div>
               <div class="stat-v" id="tm-stat-labor">$0</div>
-              <div class="stat-s" id="tm-stat-labor-s">—</div>
+              <div class="stat-s" id="tm-stat-labor-s">-</div>
             </div>
             <div class="stat-tile">
               <div class="stat-l">Total hours</div>
@@ -1670,7 +1670,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="tm-mat-list" id="tm-mat-list"></div>
           <div class="tip" style="margin-top:12px">
             <span data-ico="🧾" data-ico-size="18"></span>
-            <div><b>Markup is baked into displayed prices.</b> Clients see the all-in price only — markup is never shown to them.</div>
+            <div><b>Markup is baked into displayed prices.</b> Clients see the all-in price only, markup is never shown to them.</div>
           </div>
         </div>
 
@@ -1705,7 +1705,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="summary-row"><span>Materials</span><span id="tm-rail-mat">$0</span></div>
           <div class="summary-row" id="tm-rail-nte-row" style="display:none;color:var(--c-amber)"><span>NTE cap</span><span id="tm-rail-nte-amt">$0</span></div>
           <div class="summary-divider"></div>
-          <!-- Crew labor cost — only rendered when the contractor has employees -->
+          <!-- Crew labor cost, only rendered when the contractor has employees -->
           <div id="tm-labor-cost-wrap" style="display:none"></div>
           <div id="tm-gauge-wrap"></div>
           <div class="summary-divider"></div>
@@ -1723,7 +1723,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
 
-  <!-- Build Your Own (line-item) single-page layout (matches EstimateBYO.jsx) — shown when _geiIsFreeForm=true -->
+  <!-- Build Your Own (line-item) single-page layout (matches EstimateBYO.jsx): shown when _geiIsFreeForm=true -->
   <div id="gei-byo-page" style="display:none">
     <div class="tbar" id="byo-topbar-wrap"></div>
 
@@ -1741,7 +1741,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div id="byo-rail-tax-row" class="summary-row" style="color:var(--text-3);display:none"><span id="byo-rail-tax-lbl">Sales tax</span><span id="byo-rail-tax-amt">$0.00</span></div>
           <div class="td-display summary-total" id="byo-rail-total">$0</div>
           <div class="summary-divider"></div>
-          <!-- Crew labor cost — only rendered when the contractor has employees -->
+          <!-- Crew labor cost, only rendered when the contractor has employees -->
           <div id="byo-labor-cost-wrap" style="display:none"></div>
           <div id="byo-gauge-wrap"></div>
           <div class="summary-divider"></div>
@@ -1754,7 +1754,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   <!-- Step 1: Job Info -->
   <div id="gei-s1" style="padding:10px 14px 80px">
-    <!-- Job type — drives tax treatment, templates, and terms -->
+    <!-- Job type, drives tax treatment, templates, and terms -->
     <div class="card" style="margin-bottom:12px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Property type</div>
       <div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-bottom:10px">
@@ -1790,9 +1790,9 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="f" style="margin-bottom:8px">
           <label>Why T&amp;M?</label>
           <select id="tm-reason" onchange="document.getElementById('tm-reason-note-wrap').style.display=(['Other','Supplemental to fixed bid'].includes(this.value)?'':'none')">
-            <option value="">— Select a reason —</option>
+            <option value="">- Select a reason -</option>
             <option>Unknown scope / conditions</option>
-            <option>Complex prep — extent TBD</option>
+            <option>Complex prep, extent TBD</option>
             <option>Industrial / equipment work</option>
             <option>Ongoing / open-ended</option>
             <option>Client preference</option>
@@ -1802,7 +1802,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
         <div class="f" id="tm-reason-note-wrap" style="display:none">
           <label>Note <span style="font-weight:400;color:var(--text3)">(optional)</span></label>
-          <input type="text" id="tm-reason-note" placeholder="e.g. Significant rust under old paint — extent unknown">
+          <input type="text" id="tm-reason-note" placeholder="e.g. Significant rust under old paint, extent unknown">
         </div>
       </div>
     </div>
@@ -1842,7 +1842,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div style="font-size:10px;font-weight:700;color:rgba(255,255,255,.6);text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px">Labor estimate</div>
           <div style="font-size:11px;color:rgba(255,255,255,.45)" id="tm-crew-formula">Enter rate &amp; hours above</div>
         </div>
-        <span id="tm-labor-est" style="font-size:28px;font-weight:800;color:#fff">—</span>
+        <span id="tm-labor-est" style="font-size:28px;font-weight:800;color:#fff">-</span>
       </div>
       <div style="text-align:center;padding:6px 0 4px;font-size:12px;color:var(--text3)">Add materials on the next screen</div>
       <!-- Proceed button (T&M only) -->
@@ -1879,7 +1879,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
         <div style="display:flex;flex-direction:column;justify-content:flex-end;padding-bottom:2px">
           <div style="font-size:11px;color:var(--text3);margin-bottom:4px">Deposit amount</div>
-          <div id="tm-dep-amt" style="font-size:22px;font-weight:800;color:var(--green-mid)">—</div>
+          <div id="tm-dep-amt" style="font-size:22px;font-weight:800;color:var(--green-mid)">-</div>
         </div>
       </div>
       <!-- NTE cap -->
@@ -1917,7 +1917,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
         <span id="gei-tax-amt" style="font-size:13px;color:var(--text2)">$0.00</span>
       </div>
-      <!-- Sales tax row — shown/hidden by calcGeiTotal() based on state rules -->
+      <!-- Sales tax row, shown/hidden by calcGeiTotal() based on state rules -->
       <div id="gei-sales-tax-row" style="display:none;justify-content:space-between;align-items:center;margin-bottom:8px">
         <span id="gei-sales-tax-lbl" style="font-size:13px;color:var(--text2)">Sales tax</span>
         <span id="gei-sales-tax-amt" style="font-size:13px;color:var(--text2)">$0.00</span>
@@ -1940,7 +1940,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div id="gei-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>
         </div>
         <div style="text-align:center;padding-bottom:12px">
-          <div id="gei-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>
+          <div id="gei-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">-</div>
           <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>
           <div id="gei-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>
           <div id="gei-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>
@@ -1957,9 +1957,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button id="gei-send-btn" class="btn btn-p" onclick="sendGenericProposal()" style="margin-bottom:8px"><span data-ico="🔗" data-ico-size="14"></span> Save &amp; get client link</button>
     <button class="btn" onclick="saveGenericEstimate(true)" style="font-size:13px;color:var(--text2)">Save as draft</button>
   </div>
-  <!-- Send bar — shown after proposal is generated; same buttons as paint estimate -->
+  <!-- Send bar, shown after proposal is generated; same buttons as paint estimate -->
   <div id="gei-send-bar" style="display:none;margin:0 14px 80px;background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:12px 14px">
-    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:10px;text-align:center"><span data-ico="✓" data-ico-size="14"></span> Link ready — send to client</div>
+    <div style="font-size:12px;font-weight:700;color:var(--blue-dk);margin-bottom:10px;text-align:center"><span data-ico="✓" data-ico-size="14"></span> Link ready, send to client</div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
       <button onclick="sendProposalViaSms()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center"><span data-ico="📱" data-ico-size="16"></span> Text</button>
       <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center"><span data-ico="✉" data-ico-size="16"></span> Email</button>
@@ -2002,7 +2002,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="sched-est-fields">
       <div class="f" style="margin-bottom:10px">
         <label>Client</label>
-        <select id="s-client-sel" onchange="pullClient()"><option value="">— Select a client —</option></select>
+        <select id="s-client-sel" onchange="pullClient()"><option value="">- Select a client -</option></select>
       </div>
     </div>
 
@@ -2010,7 +2010,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="sched-job-fields" style="display:none">
       <div class="f" style="margin-bottom:10px">
         <label>Won bid</label>
-        <select id="s-bid-sel" onchange="pullBid()"><option value="">— Select a won bid —</option></select>
+        <select id="s-bid-sel" onchange="pullBid()"><option value="">- Select a won bid -</option></select>
       </div>
     </div>
 
@@ -2053,7 +2053,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <input type="checkbox" id="s-allow-weekend" onchange="refreshAvail()" style="width:16px;height:16px;cursor:pointer;accent-color:var(--blue);appearance:auto;-webkit-appearance:checkbox;flex-shrink:0">
       <label for="s-allow-weekend" style="font-size:12px;font-weight:600;cursor:pointer">Allow weekends</label>
     </div>
-    <div class="f" style="margin-bottom:6px"><label>Date — tap a day below</label>
+    <div class="f" style="margin-bottom:6px"><label>Date: tap a day below</label>
       <input id="s-start" type="date" oninput="onStartChange()">
     </div>
     <div>
@@ -2185,7 +2185,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="card-hd">Scan a receipt
         <span><button class="btn btn-sm btn-p" onclick="triggerReceiptScan()"><span data-ico="📷" data-ico-size="14"></span> Scan</button></span>
       </div>
-      <div class="tip" id="scan-tip">Take a photo of any receipt — AI reads the vendor, amount, date and category automatically.</div>
+      <div class="tip" id="scan-tip">Take a photo of any receipt, AI reads the vendor, amount, date and category automatically.</div>
       <input type="file" id="receipt-file-input" accept="image/*" capture="environment" style="display:none" onchange="processReceiptPhoto(this)">
       <div id="scan-result" style="display:none"></div>
     </div>
@@ -2198,7 +2198,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="mil-filter-bar" style="margin-bottom:12px"></div>
     <input type="hidden" id="mil-date"><input type="hidden" id="mil-vehicle-hidden"><input type="hidden" id="mil-from">
     <input type="hidden" id="mil-to"><input type="hidden" id="mil-start"><input type="hidden" id="mil-end">
-    <input type="hidden" id="mil-purpose"><select id="mil-client-sel" style="display:none"><option value="">—</option></select>
+    <input type="hidden" id="mil-purpose"><select id="mil-client-sel" style="display:none"><option value="">-</option></select>
     <div id="mil-table"></div>
     <div id="mil-summary-wrap"></div>
     <div id="tr-mile-mets"></div>
@@ -2252,7 +2252,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <select id="tax-yr-sel" onchange="setTaxYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%"></select>
   </div>
-  <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong><span data-ico="⚠" data-ico-size="13"></span> Not a licensed tax tool.</strong> These numbers are estimates only — not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
+  <div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:11px;color:#92400E;line-height:1.6"><strong><span data-ico="⚠" data-ico-size="13"></span> Not a licensed tax tool.</strong> These numbers are estimates only, not a substitute for a CPA. Do not file taxes based solely on these figures. Consult a qualified tax professional, especially for self-employment tax and quarterly payments.</div>
   <div class="fbs" style="margin-bottom:14px">
     <button type="button" class="fb active" id="tx-tab-current" onclick="setTaxTab('current',this)">Current year</button>
     <button type="button" class="fb" id="tx-tab-payroll" onclick="setTaxTab('payroll',this);renderPayrollSummary()">Payroll</button>
@@ -2287,12 +2287,12 @@ body.dark .cal-cell.other{background:var(--cream)}
         <input type="number" id="tx-paid" value="0" oninput="calcTax()" placeholder="0">
       </div>
       <div class="f">
-        <label>Last year's total tax bill ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From your prior year return — unlocks safe harbor</span></label>
-        <input type="number" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0 — enter from last year's return">
+        <label>Last year's total tax bill ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">From your prior year return, unlocks safe harbor</span></label>
+        <input type="number" id="tx-prior-yr" value="0" oninput="calcTax()" placeholder="0: enter from last year's return">
       </div>
       <div class="f">
-        <label>Last year's AGI ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">Used for 110% safe harbor threshold — leave 0 if unknown</span></label>
-        <input type="number" id="tx-prior-yr-agi" value="0" oninput="calcTax()" placeholder="0 — from last year's return line 11">
+        <label>Last year's AGI ($) <span style="font-weight:400;font-size:10px;color:var(--text3)">Used for 110% safe harbor threshold, leave 0 if unknown</span></label>
+        <input type="number" id="tx-prior-yr-agi" value="0" oninput="calcTax()" placeholder="0: from last year's return line 11">
       </div>
     </div>
   </div>
@@ -2305,7 +2305,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="tx-tips" style="margin-bottom:4px"></div>
 
   <div style="font-size:11px;color:var(--text3);line-height:1.6;padding:0 4px 16px">
-    These are estimates — not a substitute for a CPA. Numbers intentionally round up to avoid surprises at filing.
+    These are estimates, not a substitute for a CPA. Numbers intentionally round up to avoid surprises at filing.
   </div>
 
   </div><!-- end tx-current-pane -->
@@ -2531,7 +2531,7 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input id="set-bstate-display" placeholder="KS" maxlength="2" style="text-transform:uppercase;height:48px">
               <!-- height pinned explicitly: inputmode="numeric" renders this box ~18px taller
                    than its siblings on iOS Safari despite sharing the same font/padding/border
-                   rule — a platform quirk, not a CSS mismatch. Fixing the height forces parity
+                   rule: a platform quirk, not a CSS mismatch. Fixing the height forces parity
                    across every engine instead of trusting each browser's intrinsic sizing. -->
               <input id="set-bzip" placeholder="67214" inputmode="numeric" maxlength="5" style="height:48px">
             </div>
@@ -2551,7 +2551,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl"><input id="set-blic" placeholder="KS-PNT-2024-08812"></div>
         </div>
         <div class="set-form-row">
-          <div><div class="set-form-lbl">In business since</div><div class="set-form-hint">The year you started. Your client hub shows "X years in business" and bumps itself automatically every year — no need to update it.</div></div>
+          <div><div class="set-form-lbl">In business since</div><div class="set-form-hint">The year you started. Your client hub shows "X years in business" and bumps itself automatically every year, no need to update it.</div></div>
           <div class="set-form-ctrl"><input type="number" id="set-since-year" min="1900" max="2100" placeholder="e.g. 2013"></div>
         </div>
         <div class="set-form-row">
@@ -2568,7 +2568,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl"><input type="url" id="set-review-url" placeholder="https://g.page/r/…"></div>
         </div>
         <div class="set-form-row" style="border-top:2px solid var(--border);padding-top:14px;margin-top:6px">
-          <div><div class="set-form-lbl">Crew location tracking</div><div class="set-form-hint">Auto-logs drive mileage and time-on-site for dispatched crew during business hours only. Always on — a standard part of running your crew on TradeDesk.</div></div>
+          <div><div class="set-form-lbl">Crew location tracking</div><div class="set-form-hint">Auto-logs drive mileage and time-on-site for dispatched crew during business hours only. Always on, a standard part of running your crew on TradeDesk.</div></div>
           <div class="set-form-ctrl">
             <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--green-mid);font-weight:700"><span data-ico="✓" data-ico-size="15"></span><span>Active during business hours</span></div>
           </div>
@@ -2584,7 +2584,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
         </div>
         <div class="set-form-row">
-          <div><div class="set-form-lbl">Labor burden</div><div class="set-form-hint">Your true cost above wages — payroll taxes, workers' comp, insurance. Used for loaded labor cost in Job Profit and Crew Cost. 30% is typical.</div></div>
+          <div><div class="set-form-lbl">Labor burden</div><div class="set-form-hint">Your true cost above wages, payroll taxes, workers' comp, insurance. Used for loaded labor cost in Job Profit and Crew Cost. 30% is typical.</div></div>
           <div class="set-form-ctrl">
             <div style="display:flex;align-items:center;gap:8px">
               <input type="number" id="set-labor-burden" step="5" min="0" max="100" placeholder="30" style="flex:1">
@@ -2650,7 +2650,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           </div>
         </div>
         <div class="set-form-row" style="border-bottom:0;padding-bottom:0">
-          <div><div class="set-form-lbl">Loading splash</div><div class="set-form-hint">What clients see while the hub loads — uses your brand color &amp; logo.</div></div>
+          <div><div class="set-form-lbl">Loading splash</div><div class="set-form-hint">What clients see while the hub loads, uses your brand color &amp; logo.</div></div>
           <div class="set-form-ctrl">
             <div id="boot-preview-wrap" style="border-radius:12px;overflow:hidden;height:90px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px" aria-label="Boot screen preview">
               <div id="boot-preview-bg" style="position:absolute;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%)"></div>
@@ -2666,7 +2666,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <input type="checkbox" id="set-home-office" onchange="S.homeOffice=this.checked;saveAll()" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
           <div>
             <div style="font-size:13px;font-weight:700">I have a dedicated home office</div>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">A room used ONLY for business — unlocks the commuting deduction. (IRS §280A)</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">A room used ONLY for business, unlocks the commuting deduction. (IRS §280A)</div>
           </div>
         </label>
       </div>
@@ -2755,15 +2755,15 @@ body.dark .cal-cell.other{background:var(--cream)}
         <textarea id="set-sms-followup" rows="4" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
       </div>
       <div class="f" style="margin-bottom:12px">
-        <label style="display:flex;justify-content:space-between;align-items:center">Collection — Reminder <button type="button" onclick="_resetSmsTemplate('set-sms-reminder')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <label style="display:flex;justify-content:space-between;align-items:center">Collection: Reminder <button type="button" onclick="_resetSmsTemplate('set-sms-reminder')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
         <textarea id="set-sms-reminder" rows="3" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
       </div>
       <div class="f" style="margin-bottom:12px">
-        <label style="display:flex;justify-content:space-between;align-items:center">Collection — 2nd Notice <button type="button" onclick="_resetSmsTemplate('set-sms-second')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <label style="display:flex;justify-content:space-between;align-items:center">Collection: 2nd Notice <button type="button" onclick="_resetSmsTemplate('set-sms-second')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
         <textarea id="set-sms-second" rows="3" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
       </div>
       <div class="f" style="margin-bottom:12px">
-        <label style="display:flex;justify-content:space-between;align-items:center">Collection — Intent to Lien <button type="button" onclick="_resetSmsTemplate('set-sms-intent')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
+        <label style="display:flex;justify-content:space-between;align-items:center">Collection: Intent to Lien <button type="button" onclick="_resetSmsTemplate('set-sms-intent')" style="font-size:10px;font-weight:600;color:var(--blue);background:none;border:none;cursor:pointer;padding:0">Reset</button></label>
         <textarea id="set-sms-intent" rows="4" style="font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;width:100%;box-sizing:border-box"></textarea>
       </div>
       <button class="btn btn-p" onclick="saveSettings()" style="width:100%;margin-top:4px;padding:13px">Save</button>
@@ -2806,7 +2806,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
         <div style="padding:14px 16px">
           <div id="set-ueta-preview" style="font-size:11px;color:var(--text3);line-height:1.6;padding:10px;background:var(--bg2);border-radius:var(--r);border:1px solid var(--border)">By clicking "I Agree," you consent to the use of electronic records and signatures in accordance with the Electronic Signatures in Global and National Commerce Act (ESIGN) and applicable state law (UETA).</div>
-          <div style="font-size:10px;color:var(--text3);margin-top:6px">Standard UETA text — required in all 50 states. Automatically included on every proposal.</div>
+          <div style="font-size:10px;color:var(--text3);margin-top:6px">Standard UETA text, required in all 50 states. Automatically included on every proposal.</div>
         </div>
       </div>
       <button class="btn btn-p" onclick="saveSettings()" style="width:100%;padding:13px">Save</button>
@@ -2843,7 +2843,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Loading…</div>
         </div>
       </div>
-      <!-- How you get paid — always visible; controls which options a client sees at signing -->
+      <!-- How you get paid, always visible; controls which options a client sees at signing -->
       <div style="margin-bottom:14px">
         <div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">How you get paid</div>
         <div style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5">Clients only see the options you turn on when they sign a proposal. Card payments are handled by Stripe below.</div>
@@ -2859,7 +2859,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             </label>
             <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;user-select:none;padding:12px 0">
               <input type="checkbox" id="set-allow-pay-later" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
-              <div><div style="font-size:13px;font-weight:700">Allow pay later</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Client signs now, no money due at signing — settles up any way before the job's done.</div></div>
+              <div><div style="font-size:13px;font-weight:700">Allow pay later</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Client signs now, no money due at signing, settles up any way before the job's done.</div></div>
             </label>
           </div>
         </div>
@@ -2874,7 +2874,7 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input type="checkbox" id="set-cc-surcharge-enabled" onchange="document.getElementById('set-cc-surcharge-pct-wrap').style.display=this.checked?'block':'none'" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
               <div>
                 <div style="font-size:13px;font-weight:700">Pass credit card fee to client</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:2px">Clients see a fee breakdown and confirm total before paying online. Credit cards only — debit and ACH are unaffected.</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px">Clients see a fee breakdown and confirm total before paying online. Credit cards only, debit and ACH are unaffected.</div>
               </div>
             </label>
             <div id="set-cc-surcharge-pct-wrap" style="display:none;margin-top:10px;padding-left:28px">
@@ -2926,7 +2926,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
       <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">
         <span id="set-state-label">State tax rates</span>
-        <select id="set-state" onchange="onStateChange(this.value)" style="font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);margin-left:8px;font-weight:400"><option value="">— Select state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select>
+        <select id="set-state" onchange="onStateChange(this.value)" style="font-size:12px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);margin-left:8px;font-weight:400"><option value="">- Select state -</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select>
       </div>
       <div id="set-state-info" style="font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.5;display:none"></div>
       <input type="hidden" id="set-ksl"><input type="hidden" id="set-ksh"><input type="hidden" id="set-kst"><input type="hidden" id="set-kss"><input type="hidden" id="set-ksm">
@@ -2934,8 +2934,8 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Lower rate</span><span id="set-ksl-disp" style="font-weight:700"></span></div>
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Upper rate</span><span id="set-ksh-disp" style="font-weight:700"></span></div>
         <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Bracket top (single)</span><span id="set-kst-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction — single</span><span id="set-kss-disp" style="font-weight:700"></span></div>
-        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction — MFJ</span><span id="set-ksm-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction, single</span><span id="set-kss-disp" style="font-weight:700"></span></div>
+        <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px"><span style="color:var(--text3)">Std deduction, MFJ</span><span id="set-ksm-disp" style="font-weight:700"></span></div>
       </div>
       <div style="font-size:10px;color:var(--text3);margin-top:4px;margin-bottom:12px">Auto-updated annually from IRS &amp; state data.</div>
       <div class="fg fg2">
@@ -3015,8 +3015,8 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--c-red);margin-bottom:10px">Danger zone</div>
       <div style="background:var(--bg-card);border-radius:var(--r);border:1px solid var(--c-red);padding:16px">
         <div style="font-size:13px;font-weight:700;color:var(--c-red);margin-bottom:4px">Factory reset</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Wipes everything — clients, bids, mileage, expenses, fleet, settings. Cannot be undone.</div>
-        <button class="btn btn-r" onclick="clearAllData()" style="width:100%;padding:12px;font-size:13px"><span data-ico="🗑" data-ico-size="14"></span> Clear ALL data — start fresh</button>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Wipes everything, clients, bids, mileage, expenses, fleet, settings. Cannot be undone.</div>
+        <button class="btn btn-r" onclick="clearAllData()" style="width:100%;padding:12px;font-size:13px"><span data-ico="🗑" data-ico-size="14"></span> Clear ALL data, start fresh</button>
       </div>
 
     </div>
@@ -3032,7 +3032,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div style="padding:16px">
       <!-- Dev trade switcher grid -->
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px" id="dev-trade-grid"></div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Dev account only — changes business_type in DB immediately.</div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">Dev account only, changes business_type in DB immediately.</div>
       <div id="dev-support-section" style="margin-bottom:14px"></div>
 
       <!-- Legal Compliance Inspector -->
@@ -3052,18 +3052,18 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
         <div id="dev-legal-inspector">
           <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
-            <div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:4px">Cancellation — State is authority · Federal (16 CFR Part 429) is the floor</div>
-            <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px" id="dev-legal-cancel-stat">—</div>
-            <div style="font-size:11px;color:var(--text3)" id="dev-legal-cancel-days">—</div>
+            <div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:4px">Cancellation: State is authority · Federal (16 CFR Part 429) is the floor</div>
+            <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px" id="dev-legal-cancel-stat">-</div>
+            <div style="font-size:11px;color:var(--text3)" id="dev-legal-cancel-days">-</div>
           </div>
           <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
             <div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:4px">Mechanic's Lien</div>
-            <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px" id="dev-legal-lien-stat">—</div>
-            <div style="font-size:11px;color:var(--text2);line-height:1.5" id="dev-legal-lien-txt">—</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text);margin-bottom:4px" id="dev-legal-lien-stat">-</div>
+            <div style="font-size:11px;color:var(--text2);line-height:1.5" id="dev-legal-lien-txt">-</div>
           </div>
           <div style="background:#f8fafc;border:1px solid var(--border);border-radius:8px;padding:12px">
             <div style="font-size:9px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:4px">Cancellation Deadline (from signing date above)</div>
-            <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px" id="dev-legal-deadline">—</div>
+            <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:6px" id="dev-legal-deadline">-</div>
             <div style="font-size:10px;color:var(--text3)" id="dev-legal-steps"></div>
           </div>
         </div>
@@ -3105,7 +3105,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <button class="btn btn-sm" id="hl-filter-B" onclick="setHittersFilter('B',this)">B</button>
     </div>
   </div>
-  <div class="tip" id="hl-tip">Your highest-value clients — tap to open. Score = tier (A:30/B:20/C:10) + revenue + jobs won + recency. Realtors and PMs get +20 bonus. Higher score = call them first.</div>
+  <div class="tip" id="hl-tip">Your highest-value clients, tap to open. Score = tier (A:30/B:20/C:10) + revenue + jobs won + recency. Realtors and PMs get +20 bonus. Higher score = call them first.</div>
   <div id="hl-stats" style="margin-bottom:10px"></div>
   <div id="hl-list"></div>
 </div>
@@ -3181,7 +3181,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-l">
       <div class="tbar-eyebrow">Workspace</div>
       <div class="tbar-title">Client hub</div>
-      <div class="tbar-sub" id="client-hub-sub">Every client has a private project portal — preview, share, or copy any link.</div>
+      <div class="tbar-sub" id="client-hub-sub">Every client has a private project portal, preview, share, or copy any link.</div>
     </div>
     <div class="tbar-r">
       <button class="btn btn-sm" onclick="renderClientHubPage()">↻ Refresh</button>
@@ -3449,7 +3449,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings
     </button>
     <!-- Employees can't reach pg-settings (goPg blocks it), so they need Sign out here
-         instead. Owners already have it inside Settings — hidden by default, shown only
+         instead. Owners already have it inside Settings, hidden by default, shown only
          for employees by _applyEmployeeNavGating (js/navigation.js). -->
     <button class="mmi" id="mmi-signout" style="display:none" onclick="_employeeSignOutMenu()">
       <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Sign out
@@ -3459,10 +3459,10 @@ body.dark .cal-cell.other{background:var(--cream)}
 <script src="js/lib/xlsx.min.js"></script>
 <script src="js/icons.js"></script>
 <script>
-// Hydrate static emoji-icon placeholders — this file writes most of its UI as
+// Hydrate static emoji-icon placeholders, this file writes most of its UI as
 // literal HTML parsed long before this <script> tag runs, so those spots can't
 // call svgIcon() inline. Instead they carry data-ico (the emoji) and optional
-// data-ico-size, and this single pass — right after icons.js defines svgIcon —
+// data-ico-size, and this single pass, right after icons.js defines svgIcon,
 // swaps every one of them for its inline-SVG rendering.
 document.querySelectorAll('[data-ico]').forEach(function(el){
   var sz = el.getAttribute('data-ico-size');
@@ -3498,7 +3498,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/e2e.js"></script>
 <script src="js/pwa.js"></script>
 <script>
-// ── Service Worker — always-current version enforcement ───────────────────
+// ── Service Worker, always-current version enforcement ───────────────────
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('/sw.js').catch(()=>{});
   navigator.serviceWorker.addEventListener('message',e=>{
@@ -3522,7 +3522,7 @@ if('serviceWorker' in navigator){
         const raw=localStorage.getItem('_rv');
         const rec=raw?JSON.parse(raw):{n:0,t:Date.now()};
         if(Date.now()-rec.t>300000){rec.n=0;rec.t=Date.now();} // reset after 5 min
-        if(rec.n>=3){showToast('New version available — press Ctrl+Shift+R to update','🔄');return;}
+        if(rec.n>=3){showToast('New version available, press Ctrl+Shift+R to update','🔄');return;}
         rec.n++;
         localStorage.setItem('_rv',JSON.stringify(rec));
         _autoSaveAndReload();
@@ -3543,13 +3543,13 @@ setTimeout(()=>{
 },900);
 
 if(supaEnabled()){
-  // Show loading overlay — don't render local data, wait for cloud
+  // Show loading overlay, don't render local data, wait for cloud
   (function showLoadingScreen(){
     if(window._earlyBootDone)return;
     const logo=S.logoData||'';
     const bname=S.bname||'';
     const brandColor=S.brandColor||'';
-    // Brand color TINTS the dark boot design (never a flat color wall) — same
+    // Brand color TINTS the dark boot design (never a flat color wall), same
     // treatment as the early-boot script: charcoal gradient base, brand hue in
     // the corner glow + progress bar. Default stays the denim design.
     let bg,barFg,barGlow;
@@ -3613,16 +3613,16 @@ if(supaEnabled()){
       },720);
     }
   })();
-  // Supabase script is async — may not be ready when inline JS finishes
+  // Supabase script is async, may not be ready when inline JS finishes
   if(window.supabase){supaInit();}
   else{
     const _sdk=document.getElementById('supabase-sdk');
     _sdk.addEventListener('load',supaInit);
-    // SDK failed to load (offline boot, CDN unreachable) — don't strand the user
+    // SDK failed to load (offline boot, CDN unreachable), don't strand the user
     // on the boot overlay forever; render local data like the offline-mode path.
     const _sdkFallback=()=>{if(typeof _removeBootOverlay==='function')_removeBootOverlay();renderDash();};
     _sdk.addEventListener('error',_sdkFallback);
-    // The async script may have ALREADY errored before this listener attached —
+    // The async script may have ALREADY errored before this listener attached,
     // watchdog: if the SDK still isn't present after 6s and nothing signed in,
     // fall back to local data instead of an infinite boot overlay.
     setTimeout(()=>{if(!window.supabase&&typeof _supaUser!=='undefined'&&!_supaUser)_sdkFallback();},6000);
@@ -3630,7 +3630,7 @@ if(supaEnabled()){
   // Cmd+K / Ctrl+K global search
   document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();openSearch();}});
 } else {
-  // Offline mode — render from localStorage immediately
+  // Offline mode, render from localStorage immediately
   renderDash();
 }
 
@@ -3675,15 +3675,15 @@ if(supaEnabled()){
   ];
 
   const J=[
-    {id:n+40,bid_id:null,  client_id:n+2, name:'Greer — estimate',    addr:C[1].addr, start:d(-2),days:1,status:'upcoming',eventType:'estimate',color:'#7F77DD',value:0},
-    {id:n+41,bid_id:n+23, client_id:n+6, name:'Holt — interior',      addr:C[5].addr, start:d(-5),days:2,status:'upcoming',eventType:'job',    color:'#185FA5',value:1900},
-    {id:n+42,bid_id:n+24, client_id:n+7, name:'Cole — interior',      addr:C[6].addr, start:d(0), days:2,status:'upcoming',eventType:'job',    color:'#3B8C2A',value:2600},
-    {id:n+43,bid_id:n+25, client_id:n+8, name:'Torres — interior',    addr:C[7].addr, start:d(5), days:2,status:'done',completion_date:d(2),   eventType:'job',color:'#185FA5',value:2840},
-    {id:n+44,bid_id:n+26, client_id:n+9, name:'Hendricks — interior', addr:C[8].addr, start:d(13),days:2,status:'done',completion_date:d(10),  eventType:'job',color:'#185FA5',value:1650},
-    {id:n+45,bid_id:n+27, client_id:n+10,name:'Walsh — exterior',     addr:C[9].addr, start:d(21),days:2,status:'done',completion_date:d(18),  eventType:'job',color:'#185FA5',value:3200},
-    {id:n+46,bid_id:n+28, client_id:n+11,name:'Sutton — interior',    addr:C[10].addr,start:d(28),days:2,status:'done',completion_date:d(25),  eventType:'job',color:'#A32D2D',value:2950},
-    {id:n+47,bid_id:n+29, client_id:n+12,name:'Delgado — interior',   addr:C[11].addr,start:d(38),days:3,status:'done',completion_date:d(35),  eventType:'job',color:'#A32D2D',value:4100},
-    {id:n+48,bid_id:n+30, client_id:n+13,name:'Medina — commercial',  addr:C[12].addr,start:d(22),days:2,status:'done',completion_date:d(18),  eventType:'job',color:'#3B8C2A',value:1800},
+    {id:n+40,bid_id:null,  client_id:n+2, name:'Greer: estimate',    addr:C[1].addr, start:d(-2),days:1,status:'upcoming',eventType:'estimate',color:'#7F77DD',value:0},
+    {id:n+41,bid_id:n+23, client_id:n+6, name:'Holt: interior',      addr:C[5].addr, start:d(-5),days:2,status:'upcoming',eventType:'job',    color:'#185FA5',value:1900},
+    {id:n+42,bid_id:n+24, client_id:n+7, name:'Cole: interior',      addr:C[6].addr, start:d(0), days:2,status:'upcoming',eventType:'job',    color:'#3B8C2A',value:2600},
+    {id:n+43,bid_id:n+25, client_id:n+8, name:'Torres: interior',    addr:C[7].addr, start:d(5), days:2,status:'done',completion_date:d(2),   eventType:'job',color:'#185FA5',value:2840},
+    {id:n+44,bid_id:n+26, client_id:n+9, name:'Hendricks: interior', addr:C[8].addr, start:d(13),days:2,status:'done',completion_date:d(10),  eventType:'job',color:'#185FA5',value:1650},
+    {id:n+45,bid_id:n+27, client_id:n+10,name:'Walsh: exterior',     addr:C[9].addr, start:d(21),days:2,status:'done',completion_date:d(18),  eventType:'job',color:'#185FA5',value:3200},
+    {id:n+46,bid_id:n+28, client_id:n+11,name:'Sutton: interior',    addr:C[10].addr,start:d(28),days:2,status:'done',completion_date:d(25),  eventType:'job',color:'#A32D2D',value:2950},
+    {id:n+47,bid_id:n+29, client_id:n+12,name:'Delgado: interior',   addr:C[11].addr,start:d(38),days:3,status:'done',completion_date:d(35),  eventType:'job',color:'#A32D2D',value:4100},
+    {id:n+48,bid_id:n+30, client_id:n+13,name:'Medina: commercial',  addr:C[12].addr,start:d(22),days:2,status:'done',completion_date:d(18),  eventType:'job',color:'#3B8C2A',value:1800},
   ];
 
   const PAY=[
@@ -3714,7 +3714,7 @@ if(supaEnabled()){
   lp('zp3_clients',clients);lp('zp3_bids',bids);lp('zp3_jobs',jobs);
   lp('zp3_pay',payments);lp('zp3_inc',income);lp('zp3_lien',liens);
   localStorage.setItem('zp3_seeded_v3','1');
-  console.log('[ZP] Seed v3 — 14 clients, all lifecycle states');
+  console.log('[ZP] Seed v3, 14 clients, all lifecycle states');
 })();
 
 </script>
@@ -3767,17 +3767,17 @@ if(supaEnabled()){
 (function(){
   function tryWire(){
     if(typeof _addrAutoFull!=='function')return;
-    // 1. gei-addr — Generic estimate job address
+    // 1. gei-addr: Generic estimate job address
     const geiaddr=document.getElementById('gei-addr');
     if(geiaddr&&!geiaddr._addrAutoFullBound)
       _addrAutoFull(geiaddr,function(full,street,city,state,zip){
         if(typeof _geiOnAddrInput==='function')_geiOnAddrInput();
         if(typeof _lookupProperty==='function')_lookupProperty(full,'geiaddr');
       });
-    // 3. s-addr — Schedule page job address (no extra callbacks needed)
+    // 3. s-addr: Schedule page job address (no extra callbacks needed)
     const saddr=document.getElementById('s-addr');
     if(saddr&&!saddr._addrAutoFullBound)_addrAutoFull(saddr,null);
-    // 4. set-baddr — Settings business address (split: street/city/state/zip)
+    // 4. set-baddr: Settings business address (split: street/city/state/zip)
     const setbaddr=document.getElementById('set-baddr');
     if(setbaddr&&!setbaddr._addrAutoFullBound)
       _addrAutoFull(setbaddr,function(full,street,city,state,zip){
@@ -3785,10 +3785,10 @@ if(supaEnabled()){
         const cityEl=document.getElementById('set-bcity');if(cityEl)cityEl.value=city||'';
         const zipEl=document.getElementById('set-bzip');if(zipEl)zipEl.value=zip||'';
         const stateEl=document.getElementById('set-bstate-display');if(stateEl)stateEl.value=state||'';
-        // No auto-save — settings commit via the explicit Save button like every other field
+        // No auto-save, settings commit via the explicit Save button like every other field
       });
   }
-  // All four inputs are static HTML — one wire-up after scripts load is enough
+  // All four inputs are static HTML, one wire-up after scripts load is enough
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',tryWire,{once:true});
   else tryWire();
 })();

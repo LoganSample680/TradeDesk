@@ -8,10 +8,10 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors, FAKE_BID_ID_1, FAKE_USER_ID } = require('./helpers');
 
-test.describe('generic-estimate.js — exhaustive coverage', () => {
+test.describe('generic-estimate.js: exhaustive coverage', () => {
   let page;
 
-  // Idempotent fixture seed — filter-then-push so it's safe to re-run. Called in
+  // Idempotent fixture seed, filter-then-push so it's safe to re-run. Called in
   // beforeAll AND beforeEach: a late-resolving background cloud load reassigns the
   // in-memory arrays after the initial seed and drops these fixtures, so a test
   // running after that clobber saw an empty `clients`/`bids` (task #22 race). On a
@@ -60,7 +60,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     await seedFixtures();
   });
 
-  // Re-seed before EVERY test — repairs any fixture a late background cloud load
+  // Re-seed before EVERY test, repairs any fixture a late background cloud load
   // clobbered after boot (task #22). Idempotent (filter-then-push), so tests that
   // mutate-and-restore their own fixtures still start from the canonical state.
   test.beforeEach(async () => { await seedFixtures(); });
@@ -88,7 +88,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 1. openBidNotes
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openBidNotes', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -96,7 +96,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined bidId — does not throw', async () => {
+    test('undefined bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -104,7 +104,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string bidId — does not throw', async () => {
+    test('empty string bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -112,7 +112,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('zero bidId — does not throw', async () => {
+    test('zero bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(0); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -120,7 +120,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('negative bidId — does not throw', async () => {
+    test('negative bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(-1); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -128,7 +128,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets editingBidId and lastCreatedBidId', async () => {
+    test('golden path, sets editingBidId and lastCreatedBidId', async () => {
       const r = await page.evaluate(() => {
         openBidNotes(44401);
         return { editingBidId, lastCreatedBidId };
@@ -137,7 +137,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.lastCreatedBidId).toBe(44401);
     });
 
-    test('string bidId (type mismatch) — does not throw', async () => {
+    test('string bidId (type mismatch), does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes('not-a-number'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -145,7 +145,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very large bidId — does not throw', async () => {
+    test('very large bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(Number.MAX_SAFE_INTEGER); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -153,7 +153,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no state corruption', async () => {
+    test('concurrent calls (5x): no state corruption', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -165,7 +165,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(typeof r.finalId).toBe('number');
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_notes_44401', '{INVALID{{{{');
         try { openBidNotes(44401); return { ok: true }; }
@@ -180,7 +180,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 2. showNotesFab
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('showNotesFab', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showNotesFab(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -188,7 +188,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('called with extra args — does not throw', async () => {
+    test('called with extra args, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showNotesFab(null, undefined, 'extra'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -196,7 +196,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('showNotesFab()');
       expect(ok).toBe(5);
     });
@@ -206,7 +206,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 3. hideNotesFab
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('hideNotesFab', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { hideNotesFab(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -214,7 +214,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('hideNotesFab()');
       expect(ok).toBe(5);
     });
@@ -224,7 +224,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 4. toggleNotesPanel
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('toggleNotesPanel', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { toggleNotesPanel(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -232,7 +232,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('toggleNotesPanel()');
       expect(ok).toBe(5);
     });
@@ -242,7 +242,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 5. notesExpandCanvas
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('notesExpandCanvas', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { notesExpandCanvas(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -250,7 +250,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('notesExpandCanvas()');
       expect(ok).toBe(5);
     });
@@ -260,7 +260,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 6. clearNotesPanel
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('clearNotesPanel', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { clearNotesPanel(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -268,7 +268,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('clearNotesPanel()');
       expect(ok).toBe(5);
     });
@@ -278,7 +278,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 7. _resetNotesForNewEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_resetNotesForNewEstimate', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _resetNotesForNewEstimate(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -286,7 +286,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_resetNotesForNewEstimate()');
       expect(ok).toBe(5);
     });
@@ -296,7 +296,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 8. setHittersFilter
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setHittersFilter', () => {
-    test('null filter — does not throw', async () => {
+    test('null filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setHittersFilter(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -304,7 +304,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined filter — does not throw', async () => {
+    test('undefined filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setHittersFilter(undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -312,7 +312,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string filter — sets hittersFilter', async () => {
+    test('empty string filter, sets hittersFilter', async () => {
       const r = await page.evaluate(() => {
         try { setHittersFilter('', null); return { ok: true, hf: hittersFilter }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -321,7 +321,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hf).toBe('');
     });
 
-    test('golden path — filter "A" sets hittersFilter to "A"', async () => {
+    test('golden path, filter "A" sets hittersFilter to "A"', async () => {
       const r = await page.evaluate(() => {
         setHittersFilter('A', null);
         return { hf: hittersFilter };
@@ -329,7 +329,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hf).toBe('A');
     });
 
-    test('golden path — filter "B" sets hittersFilter to "B"', async () => {
+    test('golden path, filter "B" sets hittersFilter to "B"', async () => {
       const r = await page.evaluate(() => {
         setHittersFilter('B', null);
         return { hf: hittersFilter };
@@ -337,7 +337,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hf).toBe('B');
     });
 
-    test('golden path — filter "all" sets hittersFilter to "all"', async () => {
+    test('golden path, filter "all" sets hittersFilter to "all"', async () => {
       const r = await page.evaluate(() => {
         setHittersFilter('all', null);
         return { hf: hittersFilter };
@@ -345,7 +345,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hf).toBe('all');
     });
 
-    test('with DOM filter buttons present — highlights correct button', async () => {
+    test('with DOM filter buttons present, highlights correct button', async () => {
       const r = await page.evaluate(() => {
         // Create mock filter buttons
         ['all','A','B'].forEach(t => {
@@ -367,7 +367,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.AllEmpty).toBe(true);
     });
 
-    test('type mismatch (number) — does not throw', async () => {
+    test('type mismatch (number): does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setHittersFilter(42, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -375,7 +375,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — last value sticks', async () => {
+    test('concurrent calls (5x): last value sticks', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         const vals = ['all', 'A', 'B', 'all', 'A'];
@@ -388,7 +388,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.final).toBe('A');
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_hitters_filter', '{INVALID{{{{');
         try { setHittersFilter('all', null); return { ok: true }; }
@@ -403,7 +403,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 9. renderHittersList
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderHittersList', () => {
-    test('missing DOM (no hl-list element) — returns early, no throw', async () => {
+    test('missing DOM (no hl-list element), returns early, no throw', async () => {
       const r = await page.evaluate(() => {
         const existing = document.getElementById('hl-list');
         if (existing) existing.remove();
@@ -413,7 +413,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty clients array — shows empty message', async () => {
+    test('empty clients array, shows empty message', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'hl-list';
         const stats = document.createElement('div'); stats.id = 'hl-stats';
@@ -429,7 +429,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasEmpty).toBe(true);
     });
 
-    test('golden path with clients — renders cards', async () => {
+    test('golden path with clients, renders cards', async () => {
       const r = await page.evaluate(() => {
         let wrap = document.getElementById('hl-list');
         let stats = document.getElementById('hl-stats');
@@ -449,7 +449,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasStats).toBe(true);
     });
 
-    test('filter "A" — shows only A-tier or empty message', async () => {
+    test('filter "A", shows only A-tier or empty message', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'hl-list';
         const stats = document.createElement('div'); stats.id = 'hl-stats';
@@ -483,7 +483,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.total).toBe(r.unique);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'hl-list';
         const stats = document.createElement('div'); stats.id = 'hl-stats';
@@ -503,7 +503,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 10. applyPermissions
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('applyPermissions', () => {
-    test('no DOM elements present — does not throw', async () => {
+    test('no DOM elements present, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { applyPermissions(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -511,7 +511,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('as employee (_isEmployee=true) — hides restricted nav items', async () => {
+    test('as employee (_isEmployee=true): hides restricted nav items', async () => {
       const r = await page.evaluate(() => {
         const savedEmployee = _isEmployee;
         // Create restricted nav elements
@@ -533,7 +533,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('as owner (_isEmployee=false) — does not hide owner nav items', async () => {
+    test('as owner (_isEmployee=false): does not hide owner nav items', async () => {
       const r = await page.evaluate(() => {
         const savedEmployee = _isEmployee;
         window._isEmployee = false;
@@ -544,7 +544,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with nav-user-name element — sets name text', async () => {
+    test('with nav-user-name element, sets name text', async () => {
       const r = await page.evaluate(() => {
         let el = document.getElementById('nav-user-name');
         const created = !el;
@@ -577,7 +577,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.notEmail).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('applyPermissions()');
       expect(ok).toBe(5);
     });
@@ -587,7 +587,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 11. getActiveTrade
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getActiveTrade', () => {
-    test('returns string — not null/undefined', async () => {
+    test('returns string, not null/undefined', async () => {
       const r = await page.evaluate(() => {
         const t = getActiveTrade();
         return { t, isString: typeof t === 'string', notEmpty: t.length > 0 };
@@ -606,7 +606,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.valid).toBe(true);
     });
 
-    test('_activeTrade set to "electrical" — returns "electrical"', async () => {
+    test('_activeTrade set to "electrical", returns "electrical"', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade; _activeTrade = 'electrical';
         const t = getActiveTrade();
@@ -616,7 +616,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.t).toBe('electrical');
     });
 
-    test('concurrent calls (10x) — all return same value', async () => {
+    test('concurrent calls (10x): all return same value', async () => {
       const r = await page.evaluate(() => {
         _activeTrade = 'painting';
         const results = [];
@@ -631,7 +631,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 12. setActiveTrade
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setActiveTrade', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setActiveTrade(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -639,7 +639,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setActiveTrade(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -647,7 +647,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — does not throw', async () => {
+    test('empty string, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         try { setActiveTrade(''); return { ok: true }; }
@@ -657,7 +657,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path "plumbing" — _activeTrade becomes "plumbing"', async () => {
+    test('golden path "plumbing", _activeTrade becomes "plumbing"', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         setActiveTrade('plumbing');
@@ -668,7 +668,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.t).toBe('plumbing');
     });
 
-    test('unknown trade string — does not throw, sets _activeTrade', async () => {
+    test('unknown trade string, does not throw, sets _activeTrade', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         try { setActiveTrade('underwater-basket-weaving'); return { ok: true, t: _activeTrade }; }
@@ -679,7 +679,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.t).toBe('underwater-basket-weaving');
     });
 
-    test('number type — does not throw', async () => {
+    test('number type, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         try { setActiveTrade(42); return { ok: true }; }
@@ -689,7 +689,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — last value sticks', async () => {
+    test('concurrent calls (5x): last value sticks', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         const trades = ['painting','plumbing','electrical','roofing','hvac'];
@@ -710,7 +710,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 13. _getTradeLines
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getTradeLines', () => {
-    test('_config null/undefined — returns [activeTrade]', async () => {
+    test('_config null/undefined: returns [activeTrade]', async () => {
       const r = await page.evaluate(() => {
         const savedConfig = typeof _config !== 'undefined' ? _config : null;
         window._config = null;
@@ -726,7 +726,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.lines.length).toBeGreaterThanOrEqual(1);
     });
 
-    test('_config.trade_lines as array — returns that array', async () => {
+    test('_config.trade_lines as array, returns that array', async () => {
       const r = await page.evaluate(() => {
         const savedConfig = typeof _config !== 'undefined' ? _config : null;
         window._config = { trade_lines: ['painting', 'electrical', 'plumbing'] };
@@ -740,7 +740,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.lines).toEqual(['painting', 'electrical', 'plumbing']);
     });
 
-    test('_config.trade_lines as comma string — splits correctly', async () => {
+    test('_config.trade_lines as comma string, splits correctly', async () => {
       const r = await page.evaluate(() => {
         const savedConfig = typeof _config !== 'undefined' ? _config : null;
         window._config = { trade_lines: 'painting,electrical, plumbing' };
@@ -756,7 +756,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.lines).toContain('plumbing');
     });
 
-    test('_config.trade_lines empty string — returns array without empty entries', async () => {
+    test('_config.trade_lines empty string, returns array without empty entries', async () => {
       const r = await page.evaluate(() => {
         const savedConfig = typeof _config !== 'undefined' ? _config : null;
         window._config = { trade_lines: '' };
@@ -770,7 +770,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.noEmpty).toBe(true);
     });
 
-    test('concurrent calls (5x) — stable result', async () => {
+    test('concurrent calls (5x): stable result', async () => {
       const r = await page.evaluate(() => {
         let ok = 0, last;
         for (let i = 0; i < 5; i++) {
@@ -787,7 +787,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 14. _renderNavTradeSwitcher
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderNavTradeSwitcher', () => {
-    test('missing DOM — returns early, no throw', async () => {
+    test('missing DOM, returns early, no throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('nav-trade-switcher')?.remove();
         document.getElementById('nav-trade-pills')?.remove();
@@ -797,7 +797,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('single trade line — hides switcher', async () => {
+    test('single trade line, hides switcher', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher'; wrap.style.display = 'block';
         const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
@@ -816,7 +816,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('multiple trade lines — shows switcher with pills', async () => {
+    test('multiple trade lines, shows switcher with pills', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher';
         const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
@@ -854,7 +854,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.btnCount).toBe(2);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher';
         const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
@@ -874,7 +874,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 15. _geiOnAddrInput
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_geiOnAddrInput', () => {
-    test('no DOM — does not throw', async () => {
+    test('no DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _geiOnAddrInput(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -882,7 +882,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('sets debounce timer — does not crash', async () => {
+    test('sets debounce timer, does not crash', async () => {
       const r = await page.evaluate(() => {
         // Clear any existing timer
         if (typeof _geiTaxLookupTimer !== 'undefined') clearTimeout(_geiTaxLookupTimer);
@@ -893,7 +893,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.timerSet).toBe(true);
     });
 
-    test('concurrent calls (5x) — debounce does not throw', async () => {
+    test('concurrent calls (5x): debounce does not throw', async () => {
       const ok = await concurrent('_geiOnAddrInput()');
       expect(ok).toBe(5);
     });
@@ -903,7 +903,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 16. _geiLookupClientTaxRate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_geiLookupClientTaxRate', () => {
-    test('no gei-addr element — does not throw', async () => {
+    test('no gei-addr element, does not throw', async () => {
       const r = await page.evaluate(async () => {
         document.getElementById('gei-addr')?.remove();
         try { await _geiLookupClientTaxRate(); return { ok: true }; }
@@ -912,7 +912,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty address — sets _geiClientTaxRate to null', async () => {
+    test('empty address, sets _geiClientTaxRate to null', async () => {
       const r = await page.evaluate(async () => {
         const el = document.createElement('input'); el.id = 'gei-addr'; el.value = '';
         document.body.appendChild(el);
@@ -926,7 +926,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.rateNull).toBe(true);
     });
 
-    test('address with no zip or state — does not throw', async () => {
+    test('address with no zip or state, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const el = document.createElement('input'); el.id = 'gei-addr'; el.value = 'No zip here at all';
         document.body.appendChild(el);
@@ -937,7 +937,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid zip address — does not throw', async () => {
+    test('valid zip address, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const el = document.createElement('input'); el.id = 'gei-addr'; el.value = '123 Main St, Wichita KS 67202';
         document.body.appendChild(el);
@@ -948,7 +948,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent async calls — no unhandled rejection', async () => {
+    test('concurrent async calls, no unhandled rejection', async () => {
       const r = await page.evaluate(async () => {
         const el = document.createElement('input'); el.id = 'gei-addr'; el.value = '123 Main St, KS 67202';
         document.body.appendChild(el);
@@ -970,7 +970,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 17. openTMEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openTMEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openTMEstimate(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -978,7 +978,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined client — does not throw', async () => {
+    test('undefined client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openTMEstimate(undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1006,7 +1006,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.isFreeForm).toBe(false);
     });
 
-    test('golden path with client — does not throw', async () => {
+    test('golden path with client, does not throw', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         try { openTMEstimate(c, null); return { ok: true }; }
@@ -1015,7 +1015,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with existing TM bid — restores TM fields', async () => {
+    test('with existing TM bid, restores TM fields', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         try { openTMEstimate(c, 44402); return { ok: true, isTM: _geiIsTM }; }
@@ -1030,7 +1030,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 18. openFreeFormEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openFreeFormEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openFreeFormEstimate(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1056,7 +1056,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.isTM).toBe(false);
     });
 
-    test('golden path with client — does not throw', async () => {
+    test('golden path with client, does not throw', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         try { openFreeFormEstimate(c, null); return { ok: true }; }
@@ -1065,7 +1065,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with existing freeform bid — restores items', async () => {
+    test('with existing freeform bid, restores items', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         try { openFreeFormEstimate(c, 44401); return { ok: true, isFreeForm: _geiIsFreeForm }; }
@@ -1080,7 +1080,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 19. openGenericEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openGenericEstimate', () => {
-    test('null client, null bidId, null tradePick — does not throw', async () => {
+    test('null client, null bidId, null tradePick, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openGenericEstimate(null, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1088,7 +1088,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined all args — does not throw', async () => {
+    test('undefined all args, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openGenericEstimate(undefined, undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1096,7 +1096,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty client object {} — does not throw', async () => {
+    test('empty client object {}, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openGenericEstimate({}, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1104,7 +1104,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path with client and trade — sets _geiClientId', async () => {
+    test('golden path with client and trade, sets _geiClientId', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         openGenericEstimate(c, null, 'painting');
@@ -1114,7 +1114,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.trade).toBe('painting');
     });
 
-    test('opening with existing bidId — sets _geiEditBidId', async () => {
+    test('opening with existing bidId, sets _geiEditBidId', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         _geiIsFreeForm = true; _geiIsTM = false;
@@ -1124,7 +1124,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.editBidId).toBe(44401);
     });
 
-    test('resets state on new estimate — geiLines is empty []', async () => {
+    test('resets state on new estimate, geiLines is empty []', async () => {
       const r = await page.evaluate(() => {
         _geiLines = [{ desc: 'old line', qty: 1, rate: 100, total: 100 }];
         openGenericEstimate(null, null, null);
@@ -1145,7 +1145,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.t).toBe('roofing');
     });
 
-    test('type mismatch bidId (string "abc") — does not throw', async () => {
+    test('type mismatch bidId (string "abc"): does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openGenericEstimate(null, 'abc', null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1153,7 +1153,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_bids', '{INVALID{{{{');
         try { openGenericEstimate(null, null, null); return { ok: true }; }
@@ -1163,7 +1163,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         const c = clients.find(x => x.id === 55501) || null;
@@ -1180,7 +1180,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 20. goGeiStep
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('goGeiStep', () => {
-    test('null step — does not throw', async () => {
+    test('null step, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1188,7 +1188,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined step — does not throw', async () => {
+    test('undefined step, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1196,7 +1196,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('step 0 (boundary) — does not throw', async () => {
+    test('step 0 (boundary): does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep(0); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1204,7 +1204,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('step -1 (boundary) — does not throw', async () => {
+    test('step -1 (boundary): does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep(-1); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1212,7 +1212,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('step 1 — sets _geiStep to 1', async () => {
+    test('step 1, sets _geiStep to 1', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = false; _geiIsFreeForm = false;
         goGeiStep(1);
@@ -1221,7 +1221,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.step).toBe(1);
     });
 
-    test('step 3 — sets _geiStep to 3', async () => {
+    test('step 3, sets _geiStep to 3', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = false; _geiIsFreeForm = false;
         goGeiStep(3);
@@ -1230,7 +1230,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.step).toBe(3);
     });
 
-    test('TM mode step 1 — calls _tmHidePage, does not throw', async () => {
+    test('TM mode step 1, calls _tmHidePage, does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = true; _geiIsFreeForm = false;
         try { goGeiStep(1); return { ok: true, step: _geiStep }; }
@@ -1240,7 +1240,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('TM mode step 2 — calls _tmShowPage, does not throw', async () => {
+    test('TM mode step 2, calls _tmShowPage, does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = true; _geiIsFreeForm = false;
         try { goGeiStep(2); return { ok: true, step: _geiStep }; }
@@ -1250,7 +1250,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('freeform mode step 2 — calls _byoShowPage, does not throw', async () => {
+    test('freeform mode step 2, calls _byoShowPage, does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiIsFreeForm = true; _geiIsTM = false;
         try { goGeiStep(2); return { ok: true }; }
@@ -1260,7 +1260,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very large step number — does not throw', async () => {
+    test('very large step number, does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = false; _geiIsFreeForm = false;
         try { goGeiStep(9999); return { ok: true }; }
@@ -1269,7 +1269,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string step "2" (type mismatch) — does not throw', async () => {
+    test('string step "2" (type mismatch), does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep('2'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1277,7 +1277,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — last step sticks', async () => {
+    test('concurrent calls (5x): last step sticks', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = false; _geiIsFreeForm = false;
         let ok = 0;
@@ -1295,7 +1295,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 21. _tmAdj
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmAdj', () => {
-    test('null delta — does not throw', async () => {
+    test('null delta, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmAdj(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1303,7 +1303,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined delta — does not throw', async () => {
+    test('undefined delta, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmAdj(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1311,7 +1311,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('delta +1 — increments crew count', async () => {
+    test('delta +1, increments crew count', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 2;
         _tmAdj(1);
@@ -1320,7 +1320,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(3);
     });
 
-    test('delta -1 — decrements crew count', async () => {
+    test('delta -1, decrements crew count', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 3;
         _tmAdj(-1);
@@ -1329,7 +1329,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(2);
     });
 
-    test('crew count floor at 1 — never goes below 1', async () => {
+    test('crew count floor at 1, never goes below 1', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 1;
         _tmAdj(-10);
@@ -1338,7 +1338,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('very large delta — does not throw', async () => {
+    test('very large delta, does not throw', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 1;
         try { _tmAdj(Number.MAX_SAFE_INTEGER); return { ok: true, count: _tmCrewCount }; }
@@ -1348,7 +1348,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('delta 0 — crew count unchanged', async () => {
+    test('delta 0, crew count unchanged', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 4;
         _tmAdj(0);
@@ -1357,7 +1357,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(4);
     });
 
-    test('string delta (type mismatch) — does not throw', async () => {
+    test('string delta (type mismatch), does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmAdj('abc'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1365,7 +1365,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with tm-crew-display DOM element — updates display', async () => {
+    test('with tm-crew-display DOM element, updates display', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div'); el.id = 'tm-crew-display'; el.textContent = '2';
         document.body.appendChild(el);
@@ -1378,7 +1378,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(3);
     });
 
-    test('concurrent calls (5x) — crew count is valid integer', async () => {
+    test('concurrent calls (5x): crew count is valid integer', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 1;
         let ok = 0;
@@ -1396,7 +1396,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 22. _tmRecalc
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmRecalc', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmRecalc(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1404,7 +1404,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('zero rate and hours — labor is 0, displays "—"', async () => {
+    test('zero rate and hours, labor is 0, displays "-"', async () => {
       const r = await page.evaluate(() => {
         // Create minimal DOM
         ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => {
@@ -1425,10 +1425,10 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => document.getElementById(id)?.remove());
         return { laborTxt };
       });
-      expect(r.laborTxt).toBe('—');
+      expect(r.laborTxt).toBe('-');
     });
 
-    test('golden path — calculates labor correctly', async () => {
+    test('golden path, calculates labor correctly', async () => {
       const r = await page.evaluate(() => {
         ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => {
           let el = document.getElementById(id);
@@ -1452,7 +1452,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasLaborLine).toBe(true);
     });
 
-    test('upserts existing labor line — no duplicates after 3 calls', async () => {
+    test('upserts existing labor line, no duplicates after 3 calls', async () => {
       const r = await page.evaluate(() => {
         ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => {
           let el = document.getElementById(id);
@@ -1475,7 +1475,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.laborLinesCount).toBe(1);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_est_full_draft', '{INVALID{{{{');
         try { _tmRecalc(); return { ok: true }; }
@@ -1485,7 +1485,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmRecalc()');
       expect(ok).toBe(5);
     });
@@ -1495,7 +1495,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 23. _tmCalcDeposit
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmCalcDeposit', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmCalcDeposit(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1503,7 +1503,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('zero subtotal — shows "—"', async () => {
+    test('zero subtotal, shows "-"', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
         const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = '20'; document.body.appendChild(pctEl);
@@ -1513,10 +1513,10 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         finally { el.remove(); pctEl.remove(); }
       });
       expect(r.ok).toBe(true);
-      expect(r.txt).toBe('—');
+      expect(r.txt).toBe('-');
     });
 
-    test('golden path — calculates 20% deposit', async () => {
+    test('golden path, calculates 20% deposit', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
         const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = '20'; document.body.appendChild(pctEl);
@@ -1529,7 +1529,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('NaN pct — falls back to 20%', async () => {
+    test('NaN pct, falls back to 20%', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
         const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = 'not-a-number'; document.body.appendChild(pctEl);
@@ -1541,7 +1541,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmCalcDeposit()');
       expect(ok).toBe(5);
     });
@@ -1551,7 +1551,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 24. _tmCalcNte
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmCalcNte', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmCalcNte(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1559,7 +1559,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('NTE off — wrap hidden', async () => {
+    test('NTE off, wrap hidden', async () => {
       const r = await page.evaluate(() => {
         let onEl = document.getElementById('tm-nte-on');
         let wrap = document.getElementById('tm-nte-wrap');
@@ -1581,7 +1581,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('NTE on, empty cap — auto-sets cap to sub * 1.15 rounded to $500', async () => {
+    test('NTE on, empty cap, auto-sets cap to sub * 1.15 rounded to $500', async () => {
       const r = await page.evaluate(() => {
         let onEl = document.getElementById('tm-nte-on');
         let wrap = document.getElementById('tm-nte-wrap');
@@ -1612,7 +1612,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cap % 500).toBe(0);
     });
 
-    test('NTE on, cap already set — does not overwrite', async () => {
+    test('NTE on, cap already set, does not overwrite', async () => {
       const r = await page.evaluate(() => {
         const onEl = document.createElement('input'); onEl.type = 'checkbox'; onEl.id = 'tm-nte-on'; onEl.checked = true; document.body.appendChild(onEl);
         const wrap = document.createElement('div'); wrap.id = 'tm-nte-wrap'; document.body.appendChild(wrap);
@@ -1626,7 +1626,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cap).toBe('5000');
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmCalcNte()');
       expect(ok).toBe(5);
     });
@@ -1636,7 +1636,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 25. _tmSetCycle
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmSetCycle', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmSetCycle(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1644,7 +1644,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmSetCycle(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1652,7 +1652,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — does not throw', async () => {
+    test('empty string, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmSetCycle(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1660,7 +1660,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path "weekly" — sets _tmBillingCycle', async () => {
+    test('golden path "weekly", sets _tmBillingCycle', async () => {
       const r = await page.evaluate(() => {
         _tmSetCycle('weekly');
         return { cycle: _tmBillingCycle };
@@ -1668,7 +1668,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cycle).toBe('weekly');
     });
 
-    test('golden path "milestone" — sets _tmBillingCycle', async () => {
+    test('golden path "milestone", sets _tmBillingCycle', async () => {
       const r = await page.evaluate(() => {
         _tmSetCycle('milestone');
         return { cycle: _tmBillingCycle };
@@ -1676,7 +1676,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cycle).toBe('milestone');
     });
 
-    test('"completion" — sets _tmBillingCycle', async () => {
+    test('"completion", sets _tmBillingCycle', async () => {
       const r = await page.evaluate(() => {
         _tmSetCycle('completion');
         return { cycle: _tmBillingCycle };
@@ -1684,7 +1684,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cycle).toBe('completion');
     });
 
-    test('concurrent calls (5x) — last value sticks', async () => {
+    test('concurrent calls (5x): last value sticks', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         const cycles = ['weekly','biweekly','milestone','completion','weekly'];
@@ -1702,7 +1702,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 26. _tmSyncCycleButtons
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmSyncCycleButtons', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmSyncCycleButtons(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1747,7 +1747,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.weeklyActive).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmSyncCycleButtons()');
       expect(ok).toBe(5);
     });
@@ -1757,7 +1757,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 27. _tmShowPage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmShowPage', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmShowPage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1765,7 +1765,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with gei-tm-page element — makes it visible', async () => {
+    test('with gei-tm-page element, makes it visible', async () => {
       const r = await page.evaluate(() => {
         let p = document.getElementById('gei-tm-page');
         const created = !p;
@@ -1781,7 +1781,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
 
     test('hides legacy wizard elements', async () => {
-      // gei-tm-page is the REAL app page (index.html) — creating a second element with
+      // gei-tm-page is the REAL app page (index.html): creating a second element with
       // the same id and then unconditionally removing "gei-tm-page" in cleanup deletes
       // whichever one getElementById finds first, which is the real one, permanently
       // wiping it (and its render-target children) for every later test in this file.
@@ -1804,7 +1804,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmShowPage()');
       expect(ok).toBe(5);
     });
@@ -1814,7 +1814,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 28. _tmHidePage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmHidePage', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmHidePage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1822,7 +1822,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with gei-tm-page element — hides it', async () => {
+    test('with gei-tm-page element, hides it', async () => {
       const r = await page.evaluate(() => {
         let p = document.getElementById('gei-tm-page');
         const created = !p;
@@ -1858,7 +1858,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.restored).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmHidePage()');
       expect(ok).toBe(5);
     });
@@ -1868,7 +1868,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 29. _byoShowPage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_byoShowPage', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _byoShowPage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1876,7 +1876,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with gei-byo-page element — makes it visible', async () => {
+    test('with gei-byo-page element, makes it visible', async () => {
       const r = await page.evaluate(() => {
         let p = document.getElementById('gei-byo-page');
         const created = !p;
@@ -1893,7 +1893,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
 
     test('hides legacy wizard elements', async () => {
-      // gei-byo-page is the REAL app page — see the equivalent _tmShowPage test's comment.
+      // gei-byo-page is the REAL app page, see the equivalent _tmShowPage test's comment.
       const r = await page.evaluate(() => {
         const created = [];
         ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id => {
@@ -1913,7 +1913,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('with valid bid — loads byoItems from bid', async () => {
+    test('with valid bid, loads byoItems from bid', async () => {
       const r = await page.evaluate(() => {
         let p = document.getElementById('gei-byo-page');
         const pCreated = !p;
@@ -1928,7 +1928,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.items).toBeGreaterThanOrEqual(0);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_byoShowPage()');
       expect(ok).toBe(5);
     });
@@ -1938,7 +1938,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 30. _byoHidePage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_byoHidePage', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _byoHidePage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1946,7 +1946,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with gei-byo-page element — hides it', async () => {
+    test('with gei-byo-page element, hides it', async () => {
       const r = await page.evaluate(() => {
         let p = document.getElementById('gei-byo-page');
         const created = !p;
@@ -1982,17 +1982,17 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.restored).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_byoHidePage()');
       expect(ok).toBe(5);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // T&M/BYO shared render functions — one template, both modes (consolidation)
+  // T&M/BYO shared render functions, one template, both modes (consolidation)
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_geiRenderTopBar / _geiRenderScopeCard / _geiRenderProfitGauge / _geiRenderActionButtons', () => {
-    test('_geiRenderTopBar — missing container does not throw', async () => {
+    test('_geiRenderTopBar: missing container does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _geiRenderTopBar('nope', 'X', '_editTMTitle'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2000,7 +2000,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_geiRenderTopBar — golden path builds title, edit button, sub, save/cancel', async () => {
+    test('_geiRenderTopBar: golden path builds title, edit button, sub, save/cancel', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rt-topbar-wrap'; document.body.appendChild(wrap);
         _geiRenderTopBar('rt', 'My Title', '_editTMTitle');
@@ -2024,7 +2024,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasCancel).toBe(true);
     });
 
-    test('_geiRenderScopeCard — golden path wires +Add scope to the right container id', async () => {
+    test('_geiRenderScopeCard: golden path wires +Add scope to the right container id', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rt2-scopecard-wrap'; document.body.appendChild(wrap);
         _geiRenderScopeCard('rt2');
@@ -2037,7 +2037,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.addBtnOnclick).toBe("_openScopeSheet('rt2-scope-wrap')");
     });
 
-    test('_geiRenderProfitGauge — golden path builds gauge ids and wires the given oninput', async () => {
+    test('_geiRenderProfitGauge, golden path builds gauge ids and wires the given oninput', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rt3-gauge-wrap'; document.body.appendChild(wrap);
         _geiRenderProfitGauge('rt3', '_tmInputChange()');
@@ -2057,13 +2057,13 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasMsg).toBe(true);
     });
 
-    test('_geiRenderProfitGauge — idempotent: a second call does not rebuild/lose gauge state', async () => {
+    test('_geiRenderProfitGauge, idempotent: a second call does not rebuild/lose gauge state', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rt4-gauge-wrap'; document.body.appendChild(wrap);
         _geiRenderProfitGauge('rt4', '_tmInputChange()');
         const dot = document.getElementById('rt4-gauge-dot');
         dot.dataset.marker = 'still-here';
-        _geiRenderProfitGauge('rt4', '_tmInputChange()'); // second call — must be a no-op
+        _geiRenderProfitGauge('rt4', '_tmInputChange()'); // second call, must be a no-op
         const survived = document.getElementById('rt4-gauge-dot')?.dataset.marker === 'still-here';
         wrap.remove();
         return { survived };
@@ -2071,7 +2071,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.survived).toBe(true);
     });
 
-    test('_geiRenderActionButtons — default (T&M-style): 2-column grid, "Send proposal", Preview via _geiPreviewClient', async () => {
+    test('_geiRenderActionButtons, default (T&M-style): 2-column grid, "Send proposal", Preview via _geiPreviewClient', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rt5-actions-wrap'; document.body.appendChild(wrap);
         _geiRenderActionButtons('rt5', {});
@@ -2091,7 +2091,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cols).toBe('repeat(2, 1fr)');
     });
 
-    test('_geiRenderActionButtons — BYO-style options: custom send label + extra button widens the grid to 3 columns', async () => {
+    test('_geiRenderActionButtons, BYO-style options: custom send label + extra button widens the grid to 3 columns', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rt6-actions-wrap'; document.body.appendChild(wrap);
         _geiRenderActionButtons('rt6', { extraButtons: [{ label: '📋 Option B', onclick: '_byoDuplicateBid()' }] });
@@ -2108,7 +2108,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
 
     test('_tmShowPage renders "Send T&M proposal" with a 2-column action grid (no Option B)', async () => {
-      // The real app page (index.html) already has gei-tm-page + its wrap containers —
+      // The real app page (index.html) already has gei-tm-page + its wrap containers,
       // creating a second element with the same id would just orphan a duplicate in the
       // DOM (getElementById always resolves the first match), so reuse the real ones.
       const r = await page.evaluate(() => {
@@ -2139,8 +2139,8 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
   });
 
-  test.describe('_geiRenderDepositField / _geiDepositPct — shared deposit % (T&M mirrors BYO)', () => {
-    test('_geiRenderDepositField — missing container does not throw', async () => {
+  test.describe('_geiRenderDepositField / _geiDepositPct: shared deposit % (T&M mirrors BYO)', () => {
+    test('_geiRenderDepositField, missing container does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _geiRenderDepositField('nope', 'x()'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2148,7 +2148,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_geiRenderDepositField — golden path builds a 25-default pct input + balance row, wires oninput', async () => {
+    test('_geiRenderDepositField, golden path builds a 25-default pct input + balance row, wires oninput', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rd1-deposit-wrap'; document.body.appendChild(wrap);
         _geiRenderDepositField('rd1', '_tmInputChange()');
@@ -2166,12 +2166,12 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasBalance).toBe(true);
     });
 
-    test('_geiRenderDepositField — idempotent: a second call does not reset a user-edited value', async () => {
+    test('_geiRenderDepositField, idempotent: a second call does not reset a user-edited value', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'rd2-deposit-wrap'; document.body.appendChild(wrap);
         _geiRenderDepositField('rd2', '_tmInputChange()');
         document.getElementById('rd2-deposit-pct').value = '40';
-        _geiRenderDepositField('rd2', '_tmInputChange()'); // second call — must be a no-op
+        _geiRenderDepositField('rd2', '_tmInputChange()'); // second call, must be a no-op
         const survived = document.getElementById('rd2-deposit-pct')?.value === '40';
         wrap.remove();
         return { survived };
@@ -2192,7 +2192,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.byoDep).toBe(true);
     });
 
-    test('_geiDepositPct — reads tm-deposit-pct when in T&M mode', async () => {
+    test('_geiDepositPct: reads tm-deposit-pct when in T&M mode', async () => {
       const r = await page.evaluate(() => {
         _tmShowPage();
         document.getElementById('tm-deposit-pct').value = '35';
@@ -2204,7 +2204,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.pct).toBe(35);
     });
 
-    test('_geiDepositPct — reads byo-deposit-pct when not in T&M mode', async () => {
+    test('_geiDepositPct: reads byo-deposit-pct when not in T&M mode', async () => {
       const r = await page.evaluate(() => {
         _byoShowPage();
         document.getElementById('byo-deposit-pct').value = '10';
@@ -2215,9 +2215,9 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.pct).toBe(10);
     });
 
-    test('_geiDepositPct — defaults to 25 when the field is missing from the DOM', async () => {
+    test('_geiDepositPct: defaults to 25 when the field is missing from the DOM', async () => {
       const r = await page.evaluate(() => {
-        // Clear the whole wrap (not just the input) — _geiRenderDepositField is
+        // Clear the whole wrap (not just the input), _geiRenderDepositField is
         // idempotent on wrap.children.length, so a partial removal would leave it
         // permanently unable to rebuild the field for later tests.
         const wrap = document.getElementById('tm-deposit-wrap');
@@ -2264,7 +2264,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
   });
 
-  test.describe('_GEI_MODES / _geiShowSharedChrome — one code path for both estimate pages', () => {
+  test.describe('_GEI_MODES / _geiShowSharedChrome: one code path for both estimate pages', () => {
     test('_GEI_MODES registry has tm and byo entries with all keys the shared chrome needs', async () => {
       const r = await page.evaluate(() => {
         const need = ['pageId', 'defaultTitle', 'editFnName', 'titleSuffix', 'gaugeOninput', 'depositOninput', 'actionOpts'];
@@ -2286,7 +2286,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
             gauge: !!document.getElementById(prefix + '-profit-gauge'),
             deposit: !!document.getElementById(prefix + '-deposit-pct'),
             actions: (document.getElementById(prefix + '-actions-wrap')?.innerHTML || '').includes('_geiSignInPerson()'),
-            sub: (document.getElementById(prefix + '-page-sub')?.textContent || '') !== '—',
+            sub: (document.getElementById(prefix + '-page-sub')?.textContent || '') !== '-',
           };
         };
         return { tm: probe('tm'), byo: probe('byo') };
@@ -2320,7 +2320,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
   });
 
-  test.describe('Draft handling — type-aware reuse, resume chooser, fresh versions', () => {
+  test.describe('Draft handling, type-aware reuse, resume chooser, fresh versions', () => {
     test('regression: picking Time & Materials never resumes a Build Your Own draft (cross-type bleed)', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90101, name: 'TypeGuard Client', addr: '1 Guard Rd' };
@@ -2369,7 +2369,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.freshIsEmptyByo).toBe(true);
     });
 
-    test('empty stubs are reused silently — no chooser, no duplicate blanks', async () => {
+    test('empty stubs are reused silently, no chooser, no duplicate blanks', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90103, name: 'Stub Client', addr: '3 Stub Rd' };
         clients = clients.filter(x => x.id !== 90103).concat([c]);
@@ -2388,7 +2388,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.stubCount).toBe(1);
     });
 
-    test('deletion-verification: materials markup was removed from T&M — no UI field, no hidden multiplier on displayed prices', async () => {
+    test('deletion-verification: materials markup was removed from T&M, no UI field, no hidden multiplier on displayed prices', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90109, name: 'No Markup Client', addr: '9 No Markup Rd' };
         clients = clients.filter(x => x.id !== 90109).concat([c]);
@@ -2414,7 +2414,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.railShowsRaw, 'rail materials total must show the raw cost, no hidden markup applied').toBe(true);
     });
 
-    test('regression: an autosaved T&M draft round-trips — resumes as T&M with materials, NTE cap, cadence, and cap action intact', async () => {
+    test('regression: an autosaved T&M draft round-trips, resumes as T&M with materials, NTE cap, cadence, and cap action intact', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90106, name: 'TM Roundtrip Client', addr: '6 Roundtrip Rd' };
         clients = clients.filter(x => x.id !== 90106).concat([c]);
@@ -2426,7 +2426,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         _geiLines = [{ desc: 'Paint & primer', qty: 1, rate: 800, total: 800, notes: 'SW Duration' }];
         const nteEl = document.getElementById('tm-i-nte'); if (nteEl) nteEl.value = '12,000';
         const capEl = document.getElementById('tm-i-cap-action'); if (capEl) capEl.value = 'Continue at agreed rate';
-        _byoAutosave(); // what every keystroke triggers — NOT the explicit Save draft button
+        _byoAutosave(); // what every keystroke triggers, NOT the explicit Save draft button
         const bidId = _geiEditBidId;
         const saved = bids.find(x => x.id === bidId);
         const savedShape = {
@@ -2442,7 +2442,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
           resumedAsTM: _geiIsTM, resumedAsByo: _geiIsFreeForm,
           rate: _tmRatePerMan, hours: _tmEstHours, crew: _tmCrewCount, cadence: _tmBillingCycle,
           // _tmInputChange legitimately re-adds the synthetic labor line on
-          // resume (rate×crew×hours) — the material categories are what must survive.
+          // resume (rate×crew×hours), the material categories are what must survive.
           matsRestored: _geiLines.filter(l => !l._tmLabor).length,
         };
       });
@@ -2461,7 +2461,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.matsRestored).toBe(1);
     });
 
-    test('regression: leaving the "Name your proposal" field autosaves the name — no explicit Save needed to survive a back-out', async () => {
+    test('regression: leaving the "Name your proposal" field autosaves the name, no explicit Save needed to survive a back-out', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90108, name: 'Name Autosave Client', addr: '8 Name Rd' };
         clients = clients.filter(x => x.id !== 90108).concat([c]);
@@ -2470,7 +2470,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         const bidId = _geiEditBidId;
         const descEl = document.getElementById('gei-desc');
         descEl.value = 'Kitchen Remodel Quote';
-        descEl.dispatchEvent(new Event('blur')); // simulate the user clicking out — no Save click
+        descEl.dispatchEvent(new Event('blur')); // simulate the user clicking out, no Save click
         const saved = bids.find(x => x.id === bidId);
         return { type: saved?.type, geiDesc: saved?.geiDesc };
       });
@@ -2492,7 +2492,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.rate).toBe(50);
     });
 
-    test('regression: explicit bid resume derives type from the bid record — stale mode flags cannot corrupt it (feed Resume button)', async () => {
+    test('regression: explicit bid resume derives type from the bid record, stale mode flags cannot corrupt it (feed Resume button)', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90104, name: 'Stale Flag Client', addr: '4 Stale Rd' };
         clients = clients.filter(x => x.id !== 90104).concat([c]);
@@ -2509,12 +2509,12 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.rate).toBe(60);
     });
 
-    test('T&M gauge feeds TRUE cost — owner-only crew costs $0 labor; materials at raw cost (not the billed labor)', async () => {
+    test('T&M gauge feeds TRUE cost, owner-only crew costs $0 labor; materials at raw cost (not the billed labor)', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 90108, name: 'TrueCost Client', addr: '8 TrueCost Rd' };
         clients = clients.filter(x => x.id !== 90108).concat([c]);
         bids = bids.filter(x => x.client_id !== 90108);
-        const _savedEmps = S.employees; S.employees = []; // solo operator — the owner IS the crew
+        const _savedEmps = S.employees; S.employees = []; // solo operator, the owner IS the crew
         openGenericEstimate(c, null, null, { mode: 'tm' });
         goGeiStep(2);
         _tmRatePerMan = 50; _tmEstHours = 40; _tmCrewCount = 2;
@@ -2526,7 +2526,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         S.employees = _savedEmps;
         return { fedCost };
       });
-      // Solo owner: labor costs the business $0 — cost is materials at raw cost only.
+      // Solo owner: labor costs the business $0, cost is materials at raw cost only.
       // The old code fed $4,000 (2 crew × $50 × 40h of BILLED labor) as "cost".
       expect(r.fedCost).toBe(1000);
     });
@@ -2543,11 +2543,11 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         _teamCompLoaded = true;
         openGenericEstimate(c, null, null, { mode: 'tm' });
         goGeiStep(2);
-        // Drive the DOM the way a user does — _tmInputChange derives hours from
+        // Drive the DOM the way a user does, _tmInputChange derives hours from
         // the days input, so setting the module variable alone gets overwritten.
         const rateEl = document.getElementById('tm-i-rate'); if (rateEl) rateEl.value = '60';
         const daysEl = document.getElementById('tm-i-days'); if (daysEl) daysEl.value = '2'; // 16h
-        _estCrew = ['joe@crew.com']; // Joe is on the job — his real wage is a cost
+        _estCrew = ['joe@crew.com']; // Joe is on the job, his real wage is a cost
         _geiLines = [{ desc: 'Materials', qty: 1, rate: 500, total: 500, _tmLabor: false }];
         const costEl = document.getElementById('tm-expected-cost');
         if (costEl) { costEl.value = ''; delete costEl.dataset.userSet; }
@@ -2623,7 +2623,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         localStorage.setItem('zp3_active_estimate', JSON.stringify({ bidId: 901111, clientId: 90111, uid: 'someone-else', ts: Date.now() }));
         const otherAccount = _maybeResumeActiveEstimate();
         const clearedAfterReject = localStorage.getItem('zp3_active_estimate');
-        // Marker for a bid that's already been SENT (signingToken) — never hijack into it
+        // Marker for a bid that's already been SENT (signingToken): never hijack into it
         bids.find(x => x.id === 901111).signingToken = 'tok123';
         localStorage.setItem('zp3_active_estimate', JSON.stringify({ bidId: 901111, clientId: 90111, uid: (typeof _supaUser !== 'undefined' && _supaUser) ? _supaUser.id : null, ts: Date.now() }));
         const sentBid = _maybeResumeActiveEstimate();
@@ -2637,7 +2637,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     // Regression guard for the WebKit CI race: the boot chain schedules
     // _maybeResumeActiveEstimate on a 120ms timer (cloud.js). If the user (or
     // a spec) opens an estimate BEFORE that timer fires, the hijack used to
-    // re-open the same bid underneath them — reassigning _geiLines and
+    // re-open the same bid underneath them, reassigning _geiLines and
     // discarding unsaved in-memory rows. The fix: an already-active estimate
     // editor is never hijacked, and the marker survives untouched.
     test('auto-resume: never hijacks while the estimate editor is already open (late boot timer)', async () => {
@@ -2651,7 +2651,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         _geiLines.push({ id: 991, desc: 'Seeded row', qty: 1, price: 500 });
         const linesBefore = _geiLines.length;
         const linesRef = _geiLines;
-        // The late boot timer fires while the editor is open — must be a no-op
+        // The late boot timer fires while the editor is open, must be a no-op
         const resumed = _maybeResumeActiveEstimate();
         const out = {
           resumed,
@@ -2659,16 +2659,16 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
           markerKept: !!localStorage.getItem('zp3_active_estimate'),
           linesUntouched: _geiLines === linesRef && _geiLines.length === linesBefore,
         };
-        goPg('pg-dash'); // deliberate exit — clean up editor + marker for later tests
+        goPg('pg-dash'); // deliberate exit, clean up editor + marker for later tests
         return out;
       });
       expect(r.resumed, 'late boot timer must not hijack an already-open editor').toBe(false);
       expect(r.stillOnEstimate).toBe(true);
-      expect(r.markerKept, 'marker must survive — it belongs to the open editor').toBe(true);
+      expect(r.markerKept, 'marker must survive, it belongs to the open editor').toBe(true);
       expect(r.linesUntouched, 'in-memory lines must never be reassigned by the late timer').toBe(true);
     });
 
-    test('_estimateTypeLabel — spelled out, never an acronym', async () => {
+    test('_estimateTypeLabel: spelled out, never an acronym', async () => {
       const r = await page.evaluate(() => ({
         tm: _estimateTypeLabel({ isTM: true }),
         byo: _estimateTypeLabel({ isFreeForm: true }),
@@ -2690,7 +2690,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         // §11.6: sections render items into innerHTML only when expanded
         window._mmtCol_build = false;
         renderTodayFeed();
-        // Scope assertions to THIS bid's card — the shared feed contains cards
+        // Scope assertions to THIS bid's card, the shared feed contains cards
         // for other tests' fixtures (including a client literally named
         // "TM Deposit Client"), so a feed-wide acronym scan false-positives.
         const card = [...document.querySelectorAll('#dash-money-feed .tf-card')].find(el => el.textContent.includes('Feed Label Client'));
@@ -2707,7 +2707,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
     });
   });
 
-  test.describe('Proposal T&C — single clause list drives both modes (parity regression)', () => {
+  test.describe('Proposal T&C, single clause list drives both modes (parity regression)', () => {
     // Captures the generated T&C section for one mode via the preview overlay.
     const captureTerms = (page, isTM, clientId) => page.evaluate(async ({ isTM, clientId }) => {
       const c = { id: clientId, name: 'Parity Client', addr: '1 Parity Rd, Wichita KS 67202' };
@@ -2725,7 +2725,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
           { id: 2, section: 'Materials', label: 'Supplies', price: 100, on: true },
         ];
       }
-      // T&C is no longer part of the proposal document/preview at all — it
+      // T&C is no longer part of the proposal document/preview at all, it
       // only shows in the accordion under the signature at the actual sign
       // step (owner directive 2026-07-13). Capture the clause list straight
       // from the builder function that feeds the sign-step accordion, and
@@ -2745,7 +2745,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       return { err, clauses, hasDepRow: doc.includes('Due Before Work Begins') };
     }, { isTM, clientId });
 
-    test('T&M and BYO T&C come from the same clause list — shared clauses are byte-identical, mode clauses differ, numbering intact', async () => {
+    test('T&M and BYO T&C come from the same clause list, shared clauses are byte-identical, mode clauses differ, numbering intact', async () => {
       const tm = await captureTerms(page, true, 88901);
       const byo = await captureTerms(page, false, 88902);
       expect(tm.err).toBe(null);
@@ -2754,7 +2754,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(byo.hasDepRow).toBe(true);
 
       // Numbering: generated from array order, sequential from 1 in both modes.
-      // Deposit amount/percentage is NOT its own clause — it's already shown
+      // Deposit amount/percentage is NOT its own clause, it's already shown
       // as its own line in the proposal's deposit/balance summary, so restating
       // it in Terms & Conditions would be redundant (owner directive 2026-07-13).
       expect(tm.clauses.length).toBe(12);
@@ -2775,16 +2775,16 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(tmTail.map(c => c.title)).toEqual(sharedTitles);
       expect(byoTail.map(c => c.title)).toEqual(sharedTitles);
 
-      // ...and BYTE-IDENTICAL bodies — the whole point of the single clause list.
+      // ...and BYTE-IDENTICAL bodies, the whole point of the single clause list.
       // Same trade + same client state, so every shared clause must match exactly.
       for (let i = 0; i < sharedTitles.length; i++) {
         expect(tmTail[i].body, `shared clause "${sharedTitles[i]}" must be identical in both modes`).toBe(byoTail[i].body);
       }
     });
 
-    test('regression: preview overlay shows ONLY the document — no Terms & Conditions accordion (T&C belongs on the sign step only)', async () => {
+    test('regression: preview overlay shows ONLY the document, no Terms & Conditions accordion (T&C belongs on the sign step only)', async () => {
       // Owner directive 2026-07-13 (part 2): T&C isn't part of what the client
-      // reviews before signing at all — attaching it under the document (even
+      // reviews before signing at all, attaching it under the document (even
       // collapsed) misrepresented the real flow, where it only ever appears in
       // the accordion under the signature on the actual sign step. The preview
       // must mirror that: document only, same as sign.html's Review step.
@@ -2826,7 +2826,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         _geiScopeNoScope = false;
         // A chip WITH a clientDesc, per TRADE_SCOPE_CHIPS.painting.
         _geiScopeChips = ['Interior painting'];
-        // BYO also has line items on — this used to make the code take the
+        // BYO also has line items on, this used to make the code take the
         // byoItems branch and skip the scope-chip section entirely.
         _byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 300, on: true }];
         let captured = '';
@@ -2845,7 +2845,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.err).toBe(null);
       expect(r.hasChipLabel).toBe(true);
       expect(r.hasChipDesc).toBe(true);
-      // BYO's own line-item detail must still show too — this is additive, not a replacement.
+      // BYO's own line-item detail must still show too, this is additive, not a replacement.
       expect(r.hasByoItem).toBe(true);
     });
   });
@@ -2854,7 +2854,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 31. _toggleScopeChip
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_toggleScopeChip', () => {
-    test('null label — does not throw', async () => {
+    test('null label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _toggleScopeChip(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2862,7 +2862,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined label — does not throw', async () => {
+    test('undefined label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _toggleScopeChip(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2870,7 +2870,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string label — does not throw', async () => {
+    test('empty string label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _toggleScopeChip(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2878,7 +2878,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — adds label to _geiScopeChips', async () => {
+    test('golden path, adds label to _geiScopeChips', async () => {
       const r = await page.evaluate(() => {
         _geiScopeChips = [];
         _geiScopeNoScope = false;
@@ -2888,7 +2888,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.chips).toContain('Interior painting');
     });
 
-    test('toggle same label twice — removes it (toggle off)', async () => {
+    test('toggle same label twice, removes it (toggle off)', async () => {
       const r = await page.evaluate(() => {
         _geiScopeChips = [];
         _geiScopeNoScope = false;
@@ -2921,7 +2921,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(3);
     });
 
-    test('type mismatch (number) — does not throw', async () => {
+    test('type mismatch (number): does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiScopeChips = [];
         try { _toggleScopeChip(42); return { ok: true }; }
@@ -2930,7 +2930,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very long label — does not throw', async () => {
+    test('very long label, does not throw', async () => {
       const r = await page.evaluate(() => {
         const longLabel = 'x'.repeat(1000);
         _geiScopeChips = [];
@@ -2942,7 +2942,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.added).toBe(true);
     });
 
-    test('concurrent calls with same label (5x) — alternates on/off, no crash', async () => {
+    test('concurrent calls with same label (5x): alternates on/off, no crash', async () => {
       const r = await page.evaluate(() => {
         _geiScopeChips = []; _geiScopeNoScope = false;
         let ok = 0;
@@ -2998,7 +2998,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.noScope).toBe(false);
     });
 
-    test('concurrent calls (5x) — alternates state, no crash', async () => {
+    test('concurrent calls (5x): alternates state, no crash', async () => {
       const r = await page.evaluate(() => {
         _geiScopeNoScope = false; _geiScopeChips = [];
         let ok = 0;
@@ -3017,7 +3017,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 33. _updateScopeSheetBtn
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_updateScopeSheetBtn', () => {
-    test('null label — does not throw', async () => {
+    test('null label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _updateScopeSheetBtn(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3025,7 +3025,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined label — does not throw', async () => {
+    test('undefined label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _updateScopeSheetBtn(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3033,7 +3033,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('label with no matching DOM button — returns early', async () => {
+    test('label with no matching DOM button, returns early', async () => {
       const r = await page.evaluate(() => {
         try { _updateScopeSheetBtn('NonExistentScopeItem12345'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3041,7 +3041,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — updates active chip button style', async () => {
+    test('golden path, updates active chip button style', async () => {
       const r = await page.evaluate(() => {
         const label = 'Interior painting';
         const sid = '_scb-' + label.replace(/[^a-z0-9]/gi, '_');
@@ -3058,7 +3058,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.isBlue).toBe(true);
     });
 
-    test('inactive chip — renders without blue styling', async () => {
+    test('inactive chip, renders without blue styling', async () => {
       const r = await page.evaluate(() => {
         const label = 'Sanding';
         const sid = '_scb-' + label.replace(/[^a-z0-9]/gi, '_');
@@ -3075,7 +3075,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.notBlue).toBe(true);
     });
 
-    test('special chars in label — does not throw', async () => {
+    test('special chars in label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _updateScopeSheetBtn('Label with <script> & "quotes"'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3083,7 +3083,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_updateScopeSheetBtn("Interior painting")');
       expect(ok).toBe(5);
     });
@@ -3093,7 +3093,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 34. _renderScopeChips
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderScopeChips', () => {
-    test('null containerId — does not throw', async () => {
+    test('null containerId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderScopeChips(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3101,7 +3101,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined containerId — does not throw', async () => {
+    test('undefined containerId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderScopeChips(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3109,7 +3109,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing container element — returns early', async () => {
+    test('missing container element, returns early', async () => {
       const r = await page.evaluate(() => {
         try { _renderScopeChips('nonexistent-container-id-12345'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3117,7 +3117,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty chips array — shows "Add scope" button', async () => {
+    test('empty chips array, shows "Add scope" button', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-wrap'; document.body.appendChild(wrap);
         _geiScopeChips = []; _geiScopeNoScope = false;
@@ -3130,7 +3130,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasAddBtn).toBe(true);
     });
 
-    test('scope chips selected — renders chip items', async () => {
+    test('scope chips selected, renders chip items', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-wrap2'; document.body.appendChild(wrap);
         _geiScopeChips = ['Interior painting', 'Tape & masking'];
@@ -3148,7 +3148,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasTape).toBe(true);
     });
 
-    test('noScope=true — shows "None" chip', async () => {
+    test('noScope=true: shows "None" chip', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-wrap3'; document.body.appendChild(wrap);
         _geiScopeChips = []; _geiScopeNoScope = true;
@@ -3174,12 +3174,12 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         wrap.remove();
         return { count1, count3 };
       });
-      // innerHTML is replaced each call — 3 renders must equal 1 render (no accumulation)
+      // innerHTML is replaced each call, 3 renders must equal 1 render (no accumulation)
       expect(r.count1).toBeGreaterThanOrEqual(1);
       expect(r.count3).toBe(r.count1);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-concurrent'; document.body.appendChild(wrap);
         _geiScopeChips = ['Interior painting'];
@@ -3194,7 +3194,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(5);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_scope_chips', '{INVALID{{{{');
         const wrap = document.createElement('div'); wrap.id = 'test-scope-corrupt'; document.body.appendChild(wrap);
@@ -3206,7 +3206,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown trade — falls back to generic scope chips', async () => {
+    test('unknown trade, falls back to generic scope chips', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-unknown'; document.body.appendChild(wrap);
         _geiScopeChips = []; _geiScopeNoScope = false; _geiTrade = 'unknown_trade_xyz';
@@ -3222,7 +3222,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 35. _openScopeSheet
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_openScopeSheet', () => {
-    test('null containerId — does not throw', async () => {
+    test('null containerId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openScopeSheet(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3231,7 +3231,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined containerId — does not throw', async () => {
+    test('undefined containerId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openScopeSheet(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3240,7 +3240,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates overlay in DOM', async () => {
+    test('golden path, creates overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         _geiTrade = 'painting'; _geiScopeChips = [];
         try { _openScopeSheet('byo-scope-wrap'); }
@@ -3266,7 +3266,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasClass).toBe(true);
     });
 
-    test('called twice — replaces existing overlay (no duplicates)', async () => {
+    test('called twice, replaces existing overlay (no duplicates)', async () => {
       const r = await page.evaluate(() => {
         _geiTrade = 'painting'; _geiScopeChips = [];
         try { _openScopeSheet('byo-scope-wrap'); _openScopeSheet('byo-scope-wrap'); }
@@ -3307,7 +3307,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasHeading).toBe(true);
     });
 
-    test('concurrent calls (5x) — only one overlay in DOM', async () => {
+    test('concurrent calls (5x): only one overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         _geiTrade = 'painting'; _geiScopeChips = [];
         let ok = 0;
@@ -3322,7 +3322,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ovCount).toBe(1);
     });
 
-    test('unknown trade — uses generic scope chips without crash', async () => {
+    test('unknown trade, uses generic scope chips without crash', async () => {
       const r = await page.evaluate(() => {
         _geiTrade = 'underwater-basket-weaving'; _geiScopeChips = [];
         try { _openScopeSheet('byo-scope-wrap'); return { ok: true }; }
@@ -3332,7 +3332,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_scope_sheet_data', '{INVALID{{{{');
         _geiTrade = 'painting'; _geiScopeChips = [];
@@ -3360,15 +3360,15 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.overlayCenters).toBe(true);
       expect(r.sheetIsZmodal).toBe(true);
       // A real .zmodal participates in the overlay's flexbox centering (static
-      // position) — the old bottom-sheet hardcoded position:fixed to escape it.
+      // position): the old bottom-sheet hardcoded position:fixed to escape it.
       expect(r.sheetPosition).not.toBe('fixed');
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 36. No console errors — generic-estimate.js
+  // 36. No console errors, generic-estimate.js
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — generic-estimate.js', async () => {
+  test('no console errors, generic-estimate.js', async () => {
     assertNoErrors(page, 'generic-estimate.js');
   });
 });

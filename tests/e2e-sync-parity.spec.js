@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Sync parity tests — derived from the source of truth, not from bug reports.
+ * Sync parity tests, derived from the source of truth, not from bug reports.
  *
  * The previous test class (e2e-realtime-sync.spec.js) was "bug-shaped": it
  * enumerated the specific render functions we knew were missing. That means it
@@ -20,7 +20,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('Sync parity — auto-discovered from _TD_TABLES', () => {
+test.describe('Sync parity, auto-discovered from _TD_TABLES', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -153,7 +153,7 @@ test.describe('Sync parity — auto-discovered from _TD_TABLES', () => {
       for (const { table, rendersTriggered, renders } of results) {
         expect(
           rendersTriggered,
-          `Table ${table} triggered 0 renders — data synced but UI never updated. Renders fired: ${renders.join(', ')}`
+          `Table ${table} triggered 0 renders, data synced but UI never updated. Renders fired: ${renders.join(', ')}`
         ).toBeGreaterThan(0);
       }
     }

@@ -1,7 +1,7 @@
 // @ts-check
 const { test, expect, mockAllExternal, _supabaseShim, _supabaseShimIntake, waitForAppBoot, goPg, assertNoErrors, FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL } = require('./helpers');
 
-test.describe('Client management — CRUD and validation', () => {
+test.describe('Client management, CRUD and validation', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -14,7 +14,7 @@ test.describe('Client management — CRUD and validation', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('openNewClient — shows form, hides list', async () => {
+  test('openNewClient: shows form, hides list', async () => {
     await goPg(page, 'pg-clients');
     await page.evaluate(() => { if (typeof openNewClient === 'function') openNewClient(); });
     await page.waitForTimeout(200);
@@ -34,7 +34,7 @@ test.describe('Client management — CRUD and validation', () => {
     expect(result.phoneEmpty).toBe(true);
   });
 
-  test('saveClient — rejects empty name', async () => {
+  test('saveClient: rejects empty name', async () => {
     await page.evaluate(() => {
       _submitting = false; // Reset debounce guard
       const n = document.getElementById('cf-name'); if (n) n.value = '';
@@ -51,7 +51,7 @@ test.describe('Client management — CRUD and validation', () => {
     expect(errVisible).toBe(true);
   });
 
-  test('saveClient — rejects empty phone', async () => {
+  test('saveClient: rejects empty phone', async () => {
     await page.evaluate(() => {
       _submitting = false;
       if (typeof openNewClient === 'function') openNewClient();
@@ -70,7 +70,7 @@ test.describe('Client management — CRUD and validation', () => {
     expect(errVisible).toBe(true);
   });
 
-  test('saveClient — rejects phone shorter than 10 digits', async () => {
+  test('saveClient: rejects phone shorter than 10 digits', async () => {
     await page.evaluate(() => {
       _submitting = false;
       if (typeof openNewClient === 'function') openNewClient();
@@ -89,7 +89,7 @@ test.describe('Client management — CRUD and validation', () => {
     expect(errVisible).toBe(true);
   });
 
-  test('saveClient — rejects missing lead source', async () => {
+  test('saveClient: rejects missing lead source', async () => {
     await page.evaluate(() => {
       _submitting = false;
       if (typeof openNewClient === 'function') openNewClient();
@@ -111,7 +111,7 @@ test.describe('Client management — CRUD and validation', () => {
     expect(errVisible).toBe(true);
   });
 
-  test('saveClient — saves valid client and increments clients array', async () => {
+  test('saveClient: saves valid client and increments clients array', async () => {
     // Open form, fill, save, and read clients.length all in ONE synchronous
     // evaluate. saveClient() pushes to the live `clients` array synchronously
     // (js/clients.js) so the post-save count is accurate immediately; splitting
@@ -147,7 +147,7 @@ test.describe('Client management — CRUD and validation', () => {
     }
   });
 
-  test('saveClient — duplicate name is rejected', async () => {
+  test('saveClient: duplicate name is rejected', async () => {
     const uid = 'DupeTest_' + Date.now();
 
     // Fill the form for a client whose name will collide with the seeded dupe
@@ -164,7 +164,7 @@ test.describe('Client management — CRUD and validation', () => {
       } else if (s) { s.value = 'Word of mouth'; }
     }, uid);
     await page.waitForTimeout(100);
-    // Seed the duplicate IN THE SAME evaluate that calls saveClient — a late
+    // Seed the duplicate IN THE SAME evaluate that calls saveClient, a late
     // background cloud load reassigns `clients` on slow WebKit workers, and a
     // dupe seeded in an earlier evaluate was dropped before the save ran
     // (task #22 fixture-seeding race). Idempotent: filter-then-push.
@@ -185,7 +185,7 @@ test.describe('Client management — CRUD and validation', () => {
     expect(errVisible).toBe(true);
   });
 
-  test('renderClientList — populates #client-list with saved clients', async () => {
+  test('renderClientList: populates #client-list with saved clients', async () => {
     // Ensure at least one client exists
     await page.evaluate(() => {
       if (typeof clients !== 'undefined' && clients.length === 0) {
@@ -203,7 +203,7 @@ test.describe('Client management — CRUD and validation', () => {
     expect(listHtml).not.toMatch(/^\s*$/);
   });
 
-  test('onClientSearch — filters client list by name', async () => {
+  test('onClientSearch: filters client list by name', async () => {
     // Inject two clients with distinct names
     const ts = Date.now();
     await page.evaluate(ts => {
@@ -239,18 +239,18 @@ test.describe('Client management — CRUD and validation', () => {
     // If Zephyr appears in results, that is the correct filtered view
     // (search may or may not filter depending on implementation)
     if (listHtml.includes('Zephyr Alpha') && !listHtml.includes('Quinton Beta')) {
-      // Search filtered correctly — ideal case
+      // Search filtered correctly, ideal case
       expect(listHtml).toContain('Zephyr Alpha');
     } else if (listHtml.includes('Zephyr Alpha') && listHtml.includes('Quinton Beta')) {
-      // Search shows all — acceptable if search is case/partial-match sensitive
+      // Search shows all, acceptable if search is case/partial-match sensitive
       expect(listHtml).toContain('Zephyr Alpha');
     } else {
-      // Neither in list — just verify no crash
+      // Neither in list, just verify no crash
       expect(typeof listHtml).toBe('string');
     }
   });
 
-  test('openClientDetail — navigates to pg-client-detail and sets currentClientId', async () => {
+  test('openClientDetail: navigates to pg-client-detail and sets currentClientId', async () => {
     const clientId = await page.evaluate(() => {
       if (typeof clients === 'undefined' || clients.length === 0) return null;
       const c = clients[0];
@@ -271,7 +271,7 @@ test.describe('Client management — CRUD and validation', () => {
     }
   });
 
-  test('diagnostic charge — protected quick path: client SIGNS before payment is ever collected', async () => {
+  test('diagnostic charge, protected quick path: client SIGNS before payment is ever collected', async () => {
     const result = await page.evaluate(async () => {
       const savedB = bids.slice(), savedC = clients.slice(), savedPay = window.openPayPanel;
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -283,7 +283,7 @@ test.describe('Client management — CRUD and validation', () => {
       openDiagnosticCharge(501);
       let modal = document.querySelector('.zmodal-overlay .zmodal');
       const chargeHtml = modal ? modal.innerHTML : '';
-      document.getElementById('diag-desc').value = 'No-heat — diagnosed failed igniter';
+      document.getElementById('diag-desc').value = 'No-heat: diagnosed failed igniter';
       document.getElementById('diag-amount').value = '150';
       saveDiagnosticCharge(501);
 
@@ -304,7 +304,7 @@ test.describe('Client management — CRUD and validation', () => {
 
       const out = {
         bidId: bid.id,
-        // Owner reframe 2026-07-13: the modal hand-holds the NARROW use case —
+        // Owner reframe 2026-07-13: the modal hand-holds the NARROW use case,
         // estimate given, client declined, charging the trip + diagnosis.
         chargeHasProtectionNote: /declined/.test(chargeHtml) && /trip out/.test(chargeHtml),
         chargeNoUnsignedWarning: !/isn.t a signed contract/.test(chargeHtml),
@@ -344,10 +344,10 @@ test.describe('Client management — CRUD and validation', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  FULL PAINT ESTIMATE UI FLOW — _doOpenEstimate → surfaces → save
+//  FULL PAINT ESTIMATE UI FLOW, _doOpenEstimate → surfaces → save
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Full paint estimate UI flow — removed, replaced by generic estimator', () => {
+test.describe('Full paint estimate UI flow, removed, replaced by generic estimator', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -360,7 +360,7 @@ test.describe('Full paint estimate UI flow — removed, replaced by generic esti
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('openGenericEstimate — navigates to pg-est-generic and populates client fields', async () => {
+  test('openGenericEstimate: navigates to pg-est-generic and populates client fields', async () => {
     const clientId = await page.evaluate(() => {
       if (typeof clients === 'undefined') return null;
       const c = {
@@ -415,10 +415,10 @@ test.describe('Full paint estimate UI flow — removed, replaced by generic esti
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  MONEY / FINANCE PAGE — Closed Won bids, pay panel, logPayment
+//  MONEY / FINANCE PAGE, Closed Won bids, pay panel, logPayment
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Money page — collections and payment logging', () => {
+test.describe('Money page, collections and payment logging', () => {
   let page;
   const MONEY_BID_ID   = 777001;
   const MONEY_BID_ID_2 = 777002;
@@ -468,7 +468,7 @@ test.describe('Money page — collections and payment logging', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderMoneyPage — shows Closed Won bids with outstanding balance', async () => {
+  test('renderMoneyPage: shows Closed Won bids with outstanding balance', async () => {
     await goPg(page, 'pg-money');
     await page.evaluate(() => {
       if (typeof renderMoneyPage === 'function') renderMoneyPage();
@@ -485,7 +485,7 @@ test.describe('Money page — collections and payment logging', () => {
     expect(result.hasContent).toBe(true);
   });
 
-  test('renderMoneyPage — summary card shows total outstanding', async () => {
+  test('renderMoneyPage: summary card shows total outstanding', async () => {
     const result = await page.evaluate(() => {
       const sumEl = document.getElementById('money-summary');
       return {
@@ -501,7 +501,7 @@ test.describe('Money page — collections and payment logging', () => {
     }
   });
 
-  test('getBidBalance — returns correct outstanding amount before any payment', async () => {
+  test('getBidBalance: returns correct outstanding amount before any payment', async () => {
     const balance = await page.evaluate(([bidId]) => {
       if (typeof getBidBalance !== 'function' || typeof bids === 'undefined') return null;
       const bid = bids.find(b => b.id === bidId);
@@ -514,7 +514,7 @@ test.describe('Money page — collections and payment logging', () => {
     }
   });
 
-  test('getBidPaid — returns 0 with no payments recorded', async () => {
+  test('getBidPaid: returns 0 with no payments recorded', async () => {
     const paid = await page.evaluate(([bidId]) => {
       if (typeof getBidPaid !== 'function') return null;
       return getBidPaid(bidId);
@@ -525,7 +525,7 @@ test.describe('Money page — collections and payment logging', () => {
     }
   });
 
-  test('openPayPanel — creates payment overlay in DOM', async () => {
+  test('openPayPanel: creates payment overlay in DOM', async () => {
     await page.evaluate(([bidId]) => {
       // Remove any existing overlay
       document.querySelectorAll('.mpay-overlay, [id^="mpay-ov"]').forEach(o => o.remove());
@@ -552,7 +552,7 @@ test.describe('Money page — collections and payment logging', () => {
     });
   });
 
-  test('logPayment — records payment and reduces getBidBalance', async () => {
+  test('logPayment: records payment and reduces getBidBalance', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof payments === 'undefined' || typeof getBidBalance === 'function' === false) return null;
       if (typeof bids === 'undefined') return null;
@@ -579,7 +579,7 @@ test.describe('Money page — collections and payment logging', () => {
     }
   });
 
-  test('money filter tabs — switching filter re-renders the list', async () => {
+  test('money filter tabs, switching filter re-renders the list', async () => {
     await goPg(page, 'pg-money');
     await page.evaluate(() => { if (typeof renderMoneyPage === 'function') renderMoneyPage(); });
     await page.waitForTimeout(300);
@@ -611,10 +611,10 @@ test.describe('Money page — collections and payment logging', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  NAVIGATION COMPLETENESS — every page via goPg()
+//  NAVIGATION COMPLETENESS, every page via goPg()
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Navigation completeness — all 18 pages via goPg()', () => {
+test.describe('Navigation completeness, all 18 pages via goPg()', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -635,7 +635,7 @@ test.describe('Navigation completeness — all 18 pages via goPg()', () => {
   ];
 
   for (const pgId of ALL_PAGES) {
-    test(`goPg('${pgId}') — activates the correct page element`, async () => {
+    test(`goPg('${pgId}'): activates the correct page element`, async () => {
       await page.evaluate(id => {
         if (typeof goPg === 'function') goPg(id);
       }, pgId);
@@ -646,14 +646,14 @@ test.describe('Navigation completeness — all 18 pages via goPg()', () => {
         return el ? el.classList.contains('active') : null;
       }, pgId);
 
-      // null means element doesn't exist in this build — skip gracefully
+      // null means element doesn't exist in this build, skip gracefully
       if (isActive !== null) {
         expect(isActive, `${pgId} should have .active class after goPg()`).toBe(true);
       }
     });
   }
 
-  test('goPg — only one page is active at a time', async () => {
+  test('goPg: only one page is active at a time', async () => {
     await page.evaluate(() => { if (typeof goPg === 'function') goPg('pg-dash'); });
     await page.waitForTimeout(350);
 
@@ -673,10 +673,10 @@ test.describe('Navigation completeness — all 18 pages via goPg()', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  DASHBOARD KPIs — renderDash, period/year filters
+//  DASHBOARD KPIs, renderDash, period/year filters
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () => {
+test.describe('Dashboard KPIs, renderDash, setDashPeriod, setDashYear', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -702,13 +702,13 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderDash — dashboard renders with greeting element', async () => {
+  test('renderDash: dashboard renders with greeting element', async () => {
     await goPg(page, 'pg-dash');
     const greet = await page.locator('#dash-greet').textContent({ timeout: 5000 }).catch(() => null);
     expect(greet).toBeTruthy();
   });
 
-  test('renderDash — dash-money-feed has content after injecting bids', async () => {
+  test('renderDash: dash-money-feed has content after injecting bids', async () => {
     await page.evaluate(() => {
       if (typeof renderDash === 'function') renderDash();
     });
@@ -721,7 +721,7 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
     expect(feedHtml).toBeDefined();
   });
 
-  test('_dashInRange — year period includes only current year dates', async () => {
+  test('_dashInRange: year period includes only current year dates', async () => {
     const result = await page.evaluate(() => {
       if (typeof _dashInRange !== 'function') return null;
       const currentYear = new Date().getFullYear();
@@ -748,7 +748,7 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
     }
   });
 
-  test('setDashPeriod — switches period and re-renders dashboard', async () => {
+  test('setDashPeriod: switches period and re-renders dashboard', async () => {
     const periods = ['month', 'quarter', 'year', 'all'];
     for (const period of periods) {
       await page.evaluate(p => {
@@ -766,7 +766,7 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
     }
   });
 
-  test('setDashYear — changes year and updates displayed data', async () => {
+  test('setDashYear: changes year and updates displayed data', async () => {
     const currentYear = new Date().getFullYear();
     await page.evaluate(year => {
       if (typeof setDashYear === 'function') {
@@ -789,7 +789,7 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
     }, currentYear);
   });
 
-  test('initDashYear — year selector exists and has options', async () => {
+  test('initDashYear: year selector exists and has options', async () => {
     const result = await page.evaluate(() => {
       const sel = document.getElementById('dash-year-sel');
       if (!sel) return null;
@@ -801,13 +801,13 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
     }
   });
 
-  test('cancellation refund — negative payment row reduces dashboard revenue', async () => {
+  test('cancellation refund, negative payment row reduces dashboard revenue', async () => {
     // ROOT-CAUSE FIX (was WebKit-flaky): the prior version injected a payment,
     // `await`ed a 200ms timeout, then read the Revenue tile. During that awaited
     // gap a background cloud reload could replace the `payments` array, dropping
     // the injected rows and making the before/after delta non-deterministic.
     // renderDash() is synchronous (dashboard.js:17), so we do inject → render →
-    // read entirely inside ONE page.evaluate with no awaited boundary — a reload
+    // read entirely inside ONE page.evaluate with no awaited boundary, a reload
     // cannot interleave, so the delta is deterministic on every engine.
     const r = await page.evaluate(() => {
       const readRevenue = () => {
@@ -822,7 +822,7 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
       const before = readRevenue();
       // Client cancels within the rescission window → clawback row
       // {amount:-paid, type:'refund', _cancelRefund:true}.
-      payments.push({ id: 991202, bid_id: 991201, amount: -50000, date: today, type: 'refund', method: 'refund', _cancelRefund: true, note: 'Refund — client cancelled within rescission window' });
+      payments.push({ id: 991202, bid_id: 991201, amount: -50000, date: today, type: 'refund', method: 'refund', _cancelRefund: true, note: 'Refund: client cancelled within rescission window' });
       if (typeof renderDash === 'function') renderDash();
       const after = readRevenue();
       const net = typeof getBidPaid === 'function' ? getBidPaid(991201) : null;
@@ -836,7 +836,7 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
     });
 
     expect(r.before, 'Revenue tile must render in owner mode').toBeTruthy();
-    // Revenue must DROP once the refund row exists — proves the dashboard sum
+    // Revenue must DROP once the refund row exists, proves the dashboard sum
     // includes negative amounts instead of silently filtering p.amount>0.
     expect(r.after, 'refund row must reduce displayed revenue').not.toBe(r.before);
     // getBidPaid sums ALL payments including negatives → cancelled bid nets to zero.
@@ -849,10 +849,10 @@ test.describe('Dashboard KPIs — renderDash, setDashPeriod, setDashYear', () =>
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SCHEDULE PAGE — populateSchedSelect, setSchedType, bid dropdown
+//  SCHEDULE PAGE, populateSchedSelect, setSchedType, bid dropdown
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Schedule page — selects, type toggle, availability grid', () => {
+test.describe('Schedule page, selects, type toggle, availability grid', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -883,7 +883,7 @@ test.describe('Schedule page — selects, type toggle, availability grid', () =>
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('schedule page — navigates to pg-schedule without errors', async () => {
+  test('schedule page, navigates to pg-schedule without errors', async () => {
     await goPg(page, 'pg-schedule');
 
     const isActive = await page.evaluate(() =>
@@ -892,7 +892,7 @@ test.describe('Schedule page — selects, type toggle, availability grid', () =>
     expect(isActive).toBe(true);
   });
 
-  test('populateSchedSelect — fills s-client-sel with clients', async () => {
+  test('populateSchedSelect: fills s-client-sel with clients', async () => {
     await page.evaluate(() => {
       if (typeof populateSchedSelect === 'function') populateSchedSelect();
     });
@@ -907,7 +907,7 @@ test.describe('Schedule page — selects, type toggle, availability grid', () =>
     expect(optCount).toBeGreaterThanOrEqual(1);
   });
 
-  test('populateSchedSelect — fills s-bid-sel with Closed Won bids', async () => {
+  test('populateSchedSelect: fills s-bid-sel with Closed Won bids', async () => {
     const result = await page.evaluate(() => {
       const sel = document.getElementById('s-bid-sel');
       if (!sel) return null;
@@ -923,7 +923,7 @@ test.describe('Schedule page — selects, type toggle, availability grid', () =>
     }
   });
 
-  test('setSchedType estimate — shows estimate fields, hides job fields', async () => {
+  test('setSchedType estimate, shows estimate fields, hides job fields', async () => {
     await page.evaluate(() => {
       if (typeof setSchedType === 'function') setSchedType('estimate');
     });
@@ -942,7 +942,7 @@ test.describe('Schedule page — selects, type toggle, availability grid', () =>
     if (result.jobHidden  !== null) expect(result.jobHidden).toBe(true);
   });
 
-  test('setSchedType job — shows job fields, hides estimate fields', async () => {
+  test('setSchedType job, shows job fields, hides estimate fields', async () => {
     await page.evaluate(() => {
       if (typeof setSchedType === 'function') setSchedType('job');
     });
@@ -967,10 +967,10 @@ test.describe('Schedule page — selects, type toggle, availability grid', () =>
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CALENDAR — renderCalendar, month label, day grid
+//  CALENDAR: renderCalendar, month label, day grid
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Calendar — renderCalendar, month label, day grid', () => {
+test.describe('Calendar: renderCalendar, month label, day grid', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -983,7 +983,7 @@ test.describe('Calendar — renderCalendar, month label, day grid', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('calendar page — navigates to pg-cal without errors', async () => {
+  test('calendar page, navigates to pg-cal without errors', async () => {
     await goPg(page, 'pg-cal');
 
     const isActive = await page.evaluate(() =>
@@ -992,7 +992,7 @@ test.describe('Calendar — renderCalendar, month label, day grid', () => {
     expect(isActive).toBe(true);
   });
 
-  test('renderCalendar — populates month label with current month/year', async () => {
+  test('renderCalendar: populates month label with current month/year', async () => {
     await page.evaluate(() => {
       if (typeof renderCalendar === 'function') renderCalendar();
     });
@@ -1015,7 +1015,7 @@ test.describe('Calendar — renderCalendar, month label, day grid', () => {
     }
   });
 
-  test('renderCalendar — day grid has 28-31 day cells', async () => {
+  test('renderCalendar: day grid has 28-31 day cells', async () => {
     const dayCells = await page.evaluate(() => {
       // Day cells might be .cal-day, .cal-cell, or td elements inside a table
       const selectors = ['.cal-day', '.cal-cell', '#cal-grid td', '#cal-grid .day'];
@@ -1032,7 +1032,7 @@ test.describe('Calendar — renderCalendar, month label, day grid', () => {
     }
   });
 
-  test('calendar prev/next navigation — changes displayed month', async () => {
+  test('calendar prev/next navigation, changes displayed month', async () => {
     const monthBefore = await page.evaluate(() => {
       const label = document.querySelector('#cal-month-label, .cal-month, .cal-hdr');
       return label ? label.textContent.trim() : '';
@@ -1057,7 +1057,7 @@ test.describe('Calendar — renderCalendar, month label, day grid', () => {
       return label ? label.textContent.trim() : '';
     });
 
-    // Month should have changed — or at least no crash occurred
+    // Month should have changed, or at least no crash occurred
     if (monthBefore && monthAfter && monthBefore.length > 0 && monthAfter.length > 0) {
       // If month label changed, great. If not, the function may not be implemented yet.
       expect(typeof monthAfter).toBe('string');
@@ -1070,10 +1070,10 @@ test.describe('Calendar — renderCalendar, month label, day grid', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  LEADS + PROPOSALS PAGES — renderLeadsPage, renderProposalsPage, filter tabs
+//  LEADS + PROPOSALS PAGES, renderLeadsPage, renderProposalsPage, filter tabs
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Leads and Proposals pages — render and filter tabs', () => {
+test.describe('Leads and Proposals pages, render and filter tabs', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1114,7 +1114,7 @@ test.describe('Leads and Proposals pages — render and filter tabs', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderLeadsPage — navigates to pg-leads and shows client entries', async () => {
+  test('renderLeadsPage: navigates to pg-leads and shows client entries', async () => {
     await goPg(page, 'pg-leads');
     await page.evaluate(() => {
       if (typeof renderLeadsPage === 'function') renderLeadsPage();
@@ -1133,7 +1133,7 @@ test.describe('Leads and Proposals pages — render and filter tabs', () => {
     expect(result.hasContent).toBe(true);
   });
 
-  test('renderProposalsPage — navigates to pg-proposals and shows bid entries', async () => {
+  test('renderProposalsPage: navigates to pg-proposals and shows bid entries', async () => {
     await goPg(page, 'pg-proposals');
     await page.evaluate(() => {
       if (typeof renderProposalsPage === 'function') renderProposalsPage();
@@ -1153,7 +1153,7 @@ test.describe('Leads and Proposals pages — render and filter tabs', () => {
     expect(result.pageActive).toBe(true);
   });
 
-  test('proposals filter — Pending filter shows only pending bids', async () => {
+  test('proposals filter, Pending filter shows only pending bids', async () => {
     await page.evaluate(() => {
       // Click the "Pending" or "Sent" filter button
       const btns = [...document.querySelectorAll('button, .fbar .fb, .filter-btn')];
@@ -1174,7 +1174,7 @@ test.describe('Leads and Proposals pages — render and filter tabs', () => {
     expect(pageActive).toBe(true);
   });
 
-  test('proposals filter — Closed Won filter shows only won bids', async () => {
+  test('proposals filter, Closed Won filter shows only won bids', async () => {
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll('button, .fbar .fb, .filter-btn')];
       const wonBtn = btns.find(b =>
@@ -1198,10 +1198,10 @@ test.describe('Leads and Proposals pages — render and filter tabs', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  DATA PERSISTENCE — saveAll / loadAll localStorage round trip
+//  DATA PERSISTENCE, saveAll / loadAll localStorage round trip
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Data persistence — saveAll/loadAll localStorage round trip', () => {
+test.describe('Data persistence, saveAll/loadAll localStorage round trip', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1214,7 +1214,7 @@ test.describe('Data persistence — saveAll/loadAll localStorage round trip', ()
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('saveAll — persists bids to localStorage (mirrors existing suite approach)', async () => {
+  test('saveAll: persists bids to localStorage (mirrors existing suite approach)', async () => {
     const result = await page.evaluate(() => {
       if (typeof saveAll !== 'function' || typeof bids === 'undefined') return null;
       const bidId = 997701;
@@ -1243,7 +1243,7 @@ test.describe('Data persistence — saveAll/loadAll localStorage round trip', ()
     }
   });
 
-  test('saveAll — persists settings (zp3_S key) on every call', async () => {
+  test('saveAll: persists settings (zp3_S key) on every call', async () => {
     const result = await page.evaluate(() => {
       if (typeof saveAll !== 'function') return null;
       try { saveAll(); } catch(e) { return { error: e.message }; }
@@ -1257,7 +1257,7 @@ test.describe('Data persistence — saveAll/loadAll localStorage round trip', ()
     }
   });
 
-  test('saveAll — runtime arrays stay consistent after save', async () => {
+  test('saveAll: runtime arrays stay consistent after save', async () => {
     const result = await page.evaluate(() => {
       if (typeof saveAll !== 'function' || typeof bids === 'undefined') return null;
       const countBefore = bids.length;
@@ -1276,7 +1276,7 @@ test.describe('Data persistence — saveAll/loadAll localStorage round trip', ()
     }
   });
 
-  test('saveAll/loadAll — payment stays in payments array after round trip', async () => {
+  test('saveAll/loadAll: payment stays in payments array after round trip', async () => {
     const result = await page.evaluate(() => {
       if (typeof payments === 'undefined' || typeof saveAll !== 'function') return null;
 
@@ -1309,7 +1309,7 @@ test.describe('Data persistence — saveAll/loadAll localStorage round trip', ()
       expect(result.inMemory).toBe(true);
       // If loadAll was called and restored the payment, great
       if (result.restoredAfterLoad !== null) {
-        // loadAll may or may not restore (depends on offline mode) — just don't throw
+        // loadAll may or may not restore (depends on offline mode), just don't throw
         expect(typeof result.restoredAfterLoad).toBe('boolean');
       }
     }
@@ -1321,10 +1321,10 @@ test.describe('Data persistence — saveAll/loadAll localStorage round trip', ()
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  ERROR RESILIENCE — renders gracefully with empty state / missing DOM
+//  ERROR RESILIENCE, renders gracefully with empty state / missing DOM
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Error resilience — empty state and missing DOM elements', () => {
+test.describe('Error resilience, empty state and missing DOM elements', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1337,7 +1337,7 @@ test.describe('Error resilience — empty state and missing DOM elements', () =>
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderMoneyPage — handles empty bids array without throwing', async () => {
+  test('renderMoneyPage: handles empty bids array without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderMoneyPage !== 'function') return null;
       const orig = (typeof bids !== 'undefined') ? [...bids] : [];
@@ -1357,7 +1357,7 @@ test.describe('Error resilience — empty state and missing DOM elements', () =>
     }
   });
 
-  test('renderClientList — handles empty clients array without throwing', async () => {
+  test('renderClientList: handles empty clients array without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderClientList !== 'function') return null;
       const orig = (typeof clients !== 'undefined') ? [...clients] : [];
@@ -1377,7 +1377,7 @@ test.describe('Error resilience — empty state and missing DOM elements', () =>
     }
   });
 
-  test('renderLeadsPage — handles empty clients array without throwing', async () => {
+  test('renderLeadsPage: handles empty clients array without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderLeadsPage !== 'function') return null;
       const orig = (typeof clients !== 'undefined') ? [...clients] : [];
@@ -1397,7 +1397,7 @@ test.describe('Error resilience — empty state and missing DOM elements', () =>
     }
   });
 
-  test('renderProposalsPage — handles empty bids array without throwing', async () => {
+  test('renderProposalsPage: handles empty bids array without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderProposalsPage !== 'function') return null;
       const orig = (typeof bids !== 'undefined') ? [...bids] : [];
@@ -1417,7 +1417,7 @@ test.describe('Error resilience — empty state and missing DOM elements', () =>
     }
   });
 
-  test('renderDash — handles zero income and zero bids without throwing', async () => {
+  test('renderDash: handles zero income and zero bids without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderDash !== 'function') return null;
       const origBids   = (typeof bids !== 'undefined')   ? [...bids]   : [];
@@ -1440,7 +1440,7 @@ test.describe('Error resilience — empty state and missing DOM elements', () =>
     }
   });
 
-  test('calcEst — handles zero surfaces without throwing', async () => {
+  test('calcEst: handles zero surfaces without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof calcEst !== 'function') return null;
       const orig = [...(estSurfaces || [])];
@@ -1461,7 +1461,7 @@ test.describe('Error resilience — empty state and missing DOM elements', () =>
     }
   });
 
-  test('getBidBalance — handles bid with undefined amount gracefully', async () => {
+  test('getBidBalance: handles bid with undefined amount gracefully', async () => {
     const result = await page.evaluate(() => {
       if (typeof getBidBalance !== 'function') return null;
       try {
@@ -1484,10 +1484,10 @@ test.describe('Error resilience — empty state and missing DOM elements', () =>
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PWA SHORTCUTS — _pwaHandleShortcut dispatch
+//  PWA SHORTCUTS, _pwaHandleShortcut dispatch
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('PWA shortcuts — _pwaHandleShortcut dispatch', () => {
+test.describe('PWA shortcuts, _pwaHandleShortcut dispatch', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1500,7 +1500,7 @@ test.describe('PWA shortcuts — _pwaHandleShortcut dispatch', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_pwaHandleShortcut — function is defined', async () => {
+  test('_pwaHandleShortcut: function is defined', async () => {
     const exists = await page.evaluate(() => typeof _pwaHandleShortcut === 'function');
     // If not defined, skip gracefully (feature may not be in this build)
     if (exists) {
@@ -1508,7 +1508,7 @@ test.describe('PWA shortcuts — _pwaHandleShortcut dispatch', () => {
     }
   });
 
-  test('_pwaHandleShortcut("new-estimate") — does not throw, navigates app', async () => {
+  test('_pwaHandleShortcut("new-estimate"): does not throw, navigates app', async () => {
     const hasFn = await page.evaluate(() => typeof _pwaHandleShortcut === 'function');
     if (!hasFn) return;
 
@@ -1525,7 +1525,7 @@ test.describe('PWA shortcuts — _pwaHandleShortcut dispatch', () => {
     });
     await page.waitForTimeout(400);
 
-    // Must not throw — navigation destination varies by trade config
+    // Must not throw, navigation destination varies by trade config
     expect(result.threw).toBe(false);
 
     // App must still be alive (some page must be active)
@@ -1535,7 +1535,7 @@ test.describe('PWA shortcuts — _pwaHandleShortcut dispatch', () => {
     expect(anyActive).toBe(true);
   });
 
-  test('_pwaHandleShortcut("new-client") — does not throw, app stays alive', async () => {
+  test('_pwaHandleShortcut("new-client"): does not throw, app stays alive', async () => {
     const hasFn = await page.evaluate(() => typeof _pwaHandleShortcut === 'function');
     if (!hasFn) return;
 
@@ -1551,7 +1551,7 @@ test.describe('PWA shortcuts — _pwaHandleShortcut dispatch', () => {
     expect(greetExists).toBe(true);
   });
 
-  test('share-photo shortcut — page does not crash when shortcut param present in URL', async () => {
+  test('share-photo shortcut, page does not crash when shortcut param present in URL', async () => {
     // Navigate to /?shortcut=share-photo to simulate PWA share target
     await page.evaluate(() => {
       // Simulate the shortcut without actual navigation by dispatching a popstate event
@@ -1573,10 +1573,10 @@ test.describe('PWA shortcuts — _pwaHandleShortcut dispatch', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGN/CLOSED WON FLOW — proposal signing, status flip
+//  SIGN/CLOSED WON FLOW, proposal signing, status flip
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Sign / Closed Won flow — proposal status lifecycle', () => {
+test.describe('Sign / Closed Won flow, proposal status lifecycle', () => {
   let page;
   const SIGN_BID_ID = 444001;
   const SIGN_CLIENT_ID = 4401;
@@ -1621,7 +1621,7 @@ test.describe('Sign / Closed Won flow — proposal status lifecycle', () => {
     }
   });
 
-  test('marking bid Closed Won — status flips and persists', async () => {
+  test('marking bid Closed Won, status flips and persists', async () => {
     await page.evaluate(([bidId]) => {
       if (typeof bids === 'undefined') return;
       const b = bids.find(b => b.id === bidId);
@@ -1657,7 +1657,7 @@ test.describe('Sign / Closed Won flow — proposal status lifecycle', () => {
     expect(listHtml).toContain('Sign Flow Client');
   });
 
-  test('marking bid Closed Lost — removes it from money page', async () => {
+  test('marking bid Closed Lost, removes it from money page', async () => {
     await page.evaluate(([bidId]) => {
       if (typeof bids === 'undefined') return;
       const b = bids.find(b => b.id === bidId);
@@ -1685,10 +1685,10 @@ test.describe('Sign / Closed Won flow — proposal status lifecycle', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  MULTI-ROOM ESTIMATE — adding multiple rooms, surfaces accumulate
+//  MULTI-ROOM ESTIMATE, adding multiple rooms, surfaces accumulate
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Multi-line-item estimate — BYO lines accumulate (replaces the old multi-room surface flow)', () => {
+test.describe('Multi-line-item estimate, BYO lines accumulate (replaces the old multi-room surface flow)', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1704,12 +1704,12 @@ test.describe('Multi-line-item estimate — BYO lines accumulate (replaces the o
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_geiLines — starts empty for a new estimate session', async () => {
+  test('_geiLines: starts empty for a new estimate session', async () => {
     const count = await page.evaluate(() => { _geiLines = []; return _geiLines.length; });
     expect(count).toBe(0);
   });
 
-  test('injecting line items directly — _geiLines accumulates across multiple entries', async () => {
+  test('injecting line items directly, _geiLines accumulates across multiple entries', async () => {
     const count = await page.evaluate(() => {
       _geiLines = [];
       const items = [
@@ -1729,18 +1729,18 @@ test.describe('Multi-line-item estimate — BYO lines accumulate (replaces the o
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH A: Data utilities — getClientById, getClientBids, parseD, todayKey, fmt, fmtPhone
+// BATCH A: Data utilities, getClientById, getClientBids, parseD, todayKey, fmt, fmtPhone
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Diagnostic charge — fast on-site "I came, I diagnosed X, the fee is $Y"
-// Research-backed (owner, 2026-07-09): no client signature — every source
+// Diagnostic charge, fast on-site "I came, I diagnosed X, the fee is $Y"
+// Research-backed (owner, 2026-07-09): no client signature, every source
 // treats a diagnostic/trip fee as a plain charge-and-receipt moment. It's
 // still a real document on the client record (a Closed Won bid with
 // kind:'diagnostic'), it just skips the signing portal entirely.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Diagnostic charge — quick entry, client signs, then payment', () => {
+test.describe('Diagnostic charge, quick entry, client signs, then payment', () => {
   const DIAG_CLIENT_ID = 910001;
   let page;
 
@@ -1759,7 +1759,7 @@ test.describe('Diagnostic charge — quick entry, client signs, then payment', (
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('openDiagnosticCharge — modal renders with description + amount fields', async () => {
+  test('openDiagnosticCharge: modal renders with description + amount fields', async () => {
     const r = await page.evaluate(([cid]) => {
       openDiagnosticCharge(cid);
       return {
@@ -1774,7 +1774,7 @@ test.describe('Diagnostic charge — quick entry, client signs, then payment', (
     await page.evaluate(() => closeTopModal());
   });
 
-  test('saveDiagnosticCharge — rejects empty description', async () => {
+  test('saveDiagnosticCharge: rejects empty description', async () => {
     const r = await page.evaluate(([cid]) => {
       openDiagnosticCharge(cid);
       document.getElementById('diag-desc').value = '';
@@ -1788,10 +1788,10 @@ test.describe('Diagnostic charge — quick entry, client signs, then payment', (
     await page.evaluate(() => closeTopModal());
   });
 
-  test('saveDiagnosticCharge — rejects zero/blank amount', async () => {
+  test('saveDiagnosticCharge: rejects zero/blank amount', async () => {
     const r = await page.evaluate(([cid]) => {
       openDiagnosticCharge(cid);
-      document.getElementById('diag-desc').value = 'No-heat call — failed igniter';
+      document.getElementById('diag-desc').value = 'No-heat call, failed igniter';
       document.getElementById('diag-amount').value = '';
       const before = bids.length;
       saveDiagnosticCharge(cid);
@@ -1802,11 +1802,11 @@ test.describe('Diagnostic charge — quick entry, client signs, then payment', (
     await page.evaluate(() => closeTopModal());
   });
 
-  test('saveDiagnosticCharge — creates the Closed Won bid then opens the SIGN step (pay panel comes AFTER signing)', async () => {
+  test('saveDiagnosticCharge: creates the Closed Won bid then opens the SIGN step (pay panel comes AFTER signing)', async () => {
     const r = await page.evaluate(([cid]) => {
       document.querySelectorAll('.zmodal-overlay,.pay-modal-overlay').forEach(e => e.remove());
       openDiagnosticCharge(cid);
-      document.getElementById('diag-desc').value = 'No-heat call — diagnosed failed igniter, needs replacement';
+      document.getElementById('diag-desc').value = 'No-heat call, diagnosed failed igniter, needs replacement';
       document.getElementById('diag-amount').value = '89.00';
       saveDiagnosticCharge(cid);
       const b = bids.filter(x => x.client_id === cid).sort((a, z) => z.id - a.id)[0];
@@ -1859,7 +1859,7 @@ test.describe('Diagnostic charge — quick entry, client signs, then payment', (
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Job completion — price increase requires a client signature (routed through
+// Job completion, price increase requires a client signature (routed through
 // the same change-order structure), price decrease does not.
 //
 // Regression coverage for a root-cause bug found while building this: the old
@@ -1873,7 +1873,7 @@ test.describe('Diagnostic charge — quick entry, client signs, then payment', (
 // the modal is still live, before anything closes.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Job completion — price change signature gate', () => {
+test.describe('Job completion, price change signature gate', () => {
   const JC_CLIENT_ID = 910002;
   let page;
 
@@ -1939,7 +1939,7 @@ test.describe('Job completion — price change signature gate', () => {
     expect(r.changeOrders.length).toBe(0); // decreases don't touch change orders
   });
 
-  test('price INCREASE: "Complete job" routes to the signature step FIRST — bid.amount NOT yet changed', async () => {
+  test('price INCREASE: "Complete job" routes to the signature step FIRST, bid.amount NOT yet changed', async () => {
     const BID_ID = 920003, JOB_ID = 930003;
     await seedJob(BID_ID, JOB_ID, 1000);
     const r = await page.evaluate(([bId, jId]) => {
@@ -1962,7 +1962,7 @@ test.describe('Job completion — price change signature gate', () => {
     expect(r.completionDateStillUnset).toBe(true);
   });
 
-  test('price INCREASE without a name or signature — blocked, cannot complete', async () => {
+  test('price INCREASE without a name or signature, blocked, cannot complete', async () => {
     const BID_ID = 920004, JOB_ID = 930004;
     await seedJob(BID_ID, JOB_ID, 1000);
     const r = await page.evaluate(([bId, jId]) => {
@@ -1980,7 +1980,7 @@ test.describe('Job completion — price change signature gate', () => {
     expect(r.amountUnchanged).toBe(true);
   });
 
-  test('price INCREASE with a typed name — completes, amount updates, routed through bid.changeOrders (signed)', async () => {
+  test('price INCREASE with a typed name, completes, amount updates, routed through bid.changeOrders (signed)', async () => {
     const BID_ID = 920005, JOB_ID = 930005;
     await seedJob(BID_ID, JOB_ID, 1000);
     const r = await page.evaluate(([bId, jId]) => {
@@ -1999,7 +1999,7 @@ test.describe('Job completion — price change signature gate', () => {
         adjustments: b.adjustments || [],
       };
     }, [BID_ID, JOB_ID]);
-    expect(r.amount).toBeCloseTo(1150, 2); // THE ROOT-CAUSE BUG: this used to stay 1000 — the adjustment was silently dropped
+    expect(r.amount).toBeCloseTo(1150, 2); // THE ROOT-CAUSE BUG: this used to stay 1000, the adjustment was silently dropped
     expect(r.completionDate).toBeTruthy();
     expect(r.changeOrders.length).toBe(1);
     expect(r.changeOrders[0].delta).toBeCloseTo(150, 2);
@@ -2045,13 +2045,13 @@ test.describe('Job completion — price change signature gate', () => {
     expect(co.desc).toBe('Added outlet');
   });
 
-  test('openFinalInvoice — warns about pending (unsigned) change orders before generating', async () => {
+  test('openFinalInvoice: warns about pending (unsigned) change orders before generating', async () => {
     const BID_ID = 920008, JOB_ID = 930008;
     await seedJob(BID_ID, JOB_ID, 1000);
     await page.evaluate(([bId]) => {
       const b = bids.find(x => x.id === bId);
       b.completion_date = '2026-06-01';
-      b.changeOrders = [{ id: 1, coNum: 1, date: '2026-06-01', desc: 'Extra outlet', amount: 50, delta: 50, originalAmount: 1000, newAmount: 1050 }]; // no signedAt — pending
+      b.changeOrders = [{ id: 1, coNum: 1, date: '2026-06-01', desc: 'Extra outlet', amount: 50, delta: 50, originalAmount: 1000, newAmount: 1050 }]; // no signedAt, pending
     }, [BID_ID]);
     let alertShown = false;
     page.once('dialog', d => { alertShown = true; d.accept(); });
@@ -2070,7 +2070,7 @@ test.describe('Job completion — price change signature gate', () => {
     expect(r.msg).toContain('change order');
   });
 
-  test('openFinalInvoice — no pending change orders: generates straight through, opens the pay panel', async () => {
+  test('openFinalInvoice: no pending change orders: generates straight through, opens the pay panel', async () => {
     const BID_ID = 920009, JOB_ID = 930009;
     await seedJob(BID_ID, JOB_ID, 1000);
     await page.evaluate(([bId]) => {

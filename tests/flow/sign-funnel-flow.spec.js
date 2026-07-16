@@ -1,7 +1,7 @@
-// REAL flow — the client signing funnel (task #17): upload a real proposal
+// REAL flow, the client signing funnel (task #17): upload a real proposal
 // snapshot to the proposals bucket (exactly the key sign.html resolves from
 // ?t/?u/?b), then open the REAL sign.html as the client (anon, isolated auth) and
-// drive the signature step — type the legal name, accept the UETA e-sign consent,
+// drive the signature step, type the legal name, accept the UETA e-sign consent,
 // and assert the "Continue to payment" button unlocks. This proves the
 // revenue-critical signing entry point loads a live proposal and the consent gate
 // works, without committing to the Stripe/cash submission branch (that writes via
@@ -33,7 +33,7 @@ test.describe('client signing funnel (UI-driven)', () => {
       expected: 'upload ok + token/uid present',
       act: async (p) => {
         // Seed a REAL typed-up, sent proposal (random client/address, real
-        // proposalHtml document, artifact uploaded) — sign.html opens it for real.
+        // proposalHtml document, artifact uploaded), sign.html opens it for real.
         ctx = await seedProposal(p, { clientId, bidId, amount: 3200, tag: 'sign' });
         return 1;
       },
@@ -53,7 +53,7 @@ test.describe('client signing funnel (UI-driven)', () => {
         for (let i = 0; i < 4 && !unlocked; i++) {
           await signPage.goto(url + '&cb=' + Date.now(), { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
           // The proposal must load first (Step 1 "Review" shows #approve-btn). If the
-          // page is stuck on the error screen the proposal didn't load — surface that.
+          // page is stuck on the error screen the proposal didn't load, surface that.
           const loaded = await signPage.waitForSelector('#approve-btn', { state: 'visible', timeout: 12000 }).then(() => true).catch(() => false);
           if (!loaded) {
             const errVisible = await signPage.locator('#pg-err').isVisible().catch(() => false);
@@ -73,7 +73,7 @@ test.describe('client signing funnel (UI-driven)', () => {
           }
           const padReady = await signPage.waitForSelector('#sig-name', { state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
           if (padReady) {
-            // Type the legal name key-by-key (no separate agreement checkbox — the signature is the consent).
+            // Type the legal name key-by-key (no separate agreement checkbox, the signature is the consent).
             await signPage.locator('#sig-name').click({ timeout: 8000 }).catch(() => {});
             await signPage.locator('#sig-name').pressSequentially('Jordan E Client', { delay: 0 }).catch(() => {});
             await signPage.waitForTimeout(400);
@@ -91,7 +91,7 @@ test.describe('client signing funnel (UI-driven)', () => {
       rule: async () => ({ ok: ctx.render.unlocked, got: ctx.render.got }),
     });
 
-    // NO cleanup — the client, bid + proposal snapshot stay in the dev account on
+    // NO cleanup, the client, bid + proposal snapshot stay in the dev account on
     // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

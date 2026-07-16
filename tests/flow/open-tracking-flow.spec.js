@@ -1,8 +1,8 @@
-// REAL flow — proposal open-tracking (task #10). Proves the "👀 Opened" signal is
+// REAL flow, proposal open-tracking (task #10). Proves the "👀 Opened" signal is
 // real end-to-end: the contractor sends a proposal, a CLIENT (a fully isolated
 // browser context with NO contractor session) opens the client.html hub, which
 // POSTs to the log-proposal-view edge function (hub_opened_at), and then the
-// contractor's app — via _fetchProposalViews() — must see that the proposal was
+// contractor's app, via _fetchProposalViews(): must see that the proposal was
 // opened. The isolation matters: client.html deliberately skips logging when the
 // viewer IS the contractor, so a same-context page would never log a view.
 //
@@ -85,7 +85,7 @@ test.describe('proposal open-tracking (UI-driven)', () => {
             const { error } = await _supa.from('proposal_views').select('bid_id').limit(1);
             if (error && (/does not exist|relation|PGRST/i.test(error.message || '') || error.code === '42P01')) reachable = false;
           } catch (e) { reachable = false; }
-          // Probe whether the log-proposal-view EDGE FUNCTION is deployed — the hub open is
+          // Probe whether the log-proposal-view EDGE FUNCTION is deployed, the hub open is
           // logged by it, so on a from-migrations local stack (edge runtime absent) the table
           // is reachable but the view never lands. A 404/502/503/0 means skip, not fail.
           let edgeFnUp = true;
@@ -102,13 +102,13 @@ test.describe('proposal open-tracking (UI-driven)', () => {
       },
       rule: async () => {
         if (!hub.openProbe.reachable || !hub.openProbe.edgeFnUp) {
-          return { ok: true, got: 'SKIP — proposal_views / log-proposal-view edge fn not available in this env (pending deploy): ' + JSON.stringify(hub.openProbe) };
+          return { ok: true, got: 'SKIP: proposal_views / log-proposal-view edge fn not available in this env (pending deploy): ' + JSON.stringify(hub.openProbe) };
         }
         return { ok: hub.openProbe.opened, got: JSON.stringify(hub.openProbe) };
       },
     });
 
-    // NO cleanup — the client, bid + hub snapshot stay in the dev account on purpose
+    // NO cleanup, the client, bid + hub snapshot stay in the dev account on purpose
     // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

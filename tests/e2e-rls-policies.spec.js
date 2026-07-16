@@ -1,20 +1,20 @@
 // @ts-check
 /**
- * RLS Policy migration tests — two layers of protection:
+ * RLS Policy migration tests, two layers of protection:
  *
- * LAYER 1 — Static analysis (runs in Node, no browser needed)
+ * LAYER 1, Static analysis (runs in Node, no browser needed)
  *   Reads migration SQL files directly and checks for known-bad patterns.
  *   Catches the text=uuid bug before it ever reaches a database.
  *   If this fails, the migration SQL itself is wrong.
  *
- * LAYER 2 — App smoke tests (Playwright, both WebKit + Chromium)
+ * LAYER 2, App smoke tests (Playwright, both WebKit + Chromium)
  *   Verifies the app still boots and all data-reading paths work after
- *   the policy migration. RLS policy changes are structural — they never
- *   touch table data — so "no data loss" is guaranteed by design. These
+ *   the policy migration. RLS policy changes are structural, they never
+ *   touch table data, so "no data loss" is guaranteed by design. These
  *   tests confirm no app functionality was broken.
  *
  * WHY NO LIVE SUPABASE TESTS:
- *   E2E tests run against a mocked Supabase shim — real Postgres RLS isn't
+ *   E2E tests run against a mocked Supabase shim, real Postgres RLS isn't
  *   exercised here. The actual migration correctness gate is Supabase Preview
  *   CI, which spins up a real Postgres instance and runs every migration from
  *   scratch. If Supabase Preview passes, the SQL is valid on a real database.
@@ -28,8 +28,8 @@ const MIGRATIONS_DIR = path.join(__dirname, '..', 'supabase', 'migrations');
 
 // ── LAYER 1: Static analysis ─────────────────────────────────────────────────
 
-test.describe('RLS migration SQL — static analysis', () => {
-  // This describe block runs synchronously via test() — no browser context needed.
+test.describe('RLS migration SQL, static analysis', () => {
+  // This describe block runs synchronously via test(): no browser context needed.
 
   test('migration files sort consistently by filename and version number', () => {
     // Root cause of Supabase Preview pre-flight error: if filename alphabetical
@@ -45,11 +45,11 @@ test.describe('RLS migration SQL — static analysis', () => {
     // what Supabase's two-pointer algorithm sees on both sides.
     const versionsSorted = [...versions].sort();
 
-    expect(versions, `Migration sort mismatch — alphabetical file order doesn't match string version order.\nFiles: ${files.join(', ')}`).toEqual(versionsSorted);
+    expect(versions, `Migration sort mismatch, alphabetical file order doesn't match string version order.\nFiles: ${files.join(', ')}`).toEqual(versionsSorted);
   });
 
   test('no migration file contains uncast auth.uid() comparison (text = uuid bug)', () => {
-    // The bug: `column = auth.uid()` where column is text — Postgres rejects this
+    // The bug: `column = auth.uid()` where column is text, Postgres rejects this
     // with "operator does not exist: text = uuid". Every auth.uid() comparison
     // must use ::text casts on both sides.
     const files = fs.readdirSync(MIGRATIONS_DIR).filter(f => f.endsWith('.sql'));
@@ -68,7 +68,7 @@ test.describe('RLS migration SQL — static analysis', () => {
         // where "something" doesn't end with ::text
         const rawAuthUid = /(?<![:\w])auth\.uid\(\)(?!::text)/;
         // Allow: auth.uid()::text (correct cast)
-        // Flag:  auth.uid() alone — no cast
+        // Flag:  auth.uid() alone, no cast
         if (rawAuthUid.test(stripped)) {
           violations.push(`${file}:${i + 1}: ${line.trim()}`);
         }
@@ -77,13 +77,13 @@ test.describe('RLS migration SQL — static analysis', () => {
 
     expect(
       violations,
-      `Found uncast auth.uid() comparisons — add ::text casts:\n${violations.join('\n')}`
+      `Found uncast auth.uid() comparisons, add ::text casts:\n${violations.join('\n')}`
     ).toHaveLength(0);
   });
 
   test('policy migration 20260529 drops every affected policy before recreating it', () => {
     // Verify the policy fix migration uses DROP POLICY IF EXISTS for each policy
-    // it recreates — guarantees old broken policies are removed, not left alongside.
+    // it recreates, guarantees old broken policies are removed, not left alongside.
     const sql = fs.readFileSync(
       path.join(MIGRATIONS_DIR, '20260529_fix_rls_policy_type_casts.sql'),
       'utf8'
@@ -159,39 +159,39 @@ test.describe('App functionality after RLS policy migration', () => {
 
   test('app boots without console errors after policy migration', async () => {
     // If any data-reading path was broken by the migration, it would surface
-    // as a console.error here — either a Supabase fetch error or a render crash.
+    // as a console.error here, either a Supabase fetch error or a render crash.
     assertNoErrors(page, 'app boot after RLS policy migration');
   });
 
-  test('dashboard renders — contractor data read path works', async () => {
+  test('dashboard renders, contractor data read path works', async () => {
     await goPg(page, 'pg-dash');
     const dash = await page.$('#pg-dash');
     expect(dash, 'Dashboard page element must exist').not.toBeNull();
     assertNoErrors(page, 'dashboard render after RLS policy migration');
   });
 
-  test('clients page renders — account-scoped read path works', async () => {
+  test('clients page renders, account-scoped read path works', async () => {
     await goPg(page, 'pg-clients');
     const clients = await page.$('#pg-clients');
     expect(clients, 'Clients page element must exist').not.toBeNull();
     assertNoErrors(page, 'clients page after RLS policy migration');
   });
 
-  test('proposals page renders — zj_data read path works', async () => {
+  test('proposals page renders, zj_data read path works', async () => {
     await goPg(page, 'pg-proposals');
     const proposals = await page.$('#pg-proposals');
     expect(proposals, 'Proposals page element must exist').not.toBeNull();
     assertNoErrors(page, 'proposals page after RLS policy migration');
   });
 
-  test('finance page renders — cross-table read path works', async () => {
+  test('finance page renders, cross-table read path works', async () => {
     await goPg(page, 'pg-money');
     const money = await page.$('#pg-money');
     expect(money, 'Finance page element must exist').not.toBeNull();
     assertNoErrors(page, 'finance page after RLS policy migration');
   });
 
-  test('settings page renders — account_config read path works', async () => {
+  test('settings page renders, account_config read path works', async () => {
     await goPg(page, 'pg-settings');
     const settings = await page.$('#pg-settings');
     expect(settings, 'Settings page element must exist').not.toBeNull();

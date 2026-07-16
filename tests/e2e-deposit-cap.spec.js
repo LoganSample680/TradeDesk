@@ -1,13 +1,13 @@
 // @ts-check
-// State maximum-deposit cap (home-improvement compliance — task #22).
+// State maximum-deposit cap (home-improvement compliance, task #22).
 // legal.js defines STATE_DEPOSIT_CAP (50 states + DC) plus _maxDeposit() and
 // _depositCapNote(). _maxDeposit(state, amount) returns the largest legal deposit
 // dollar amount; 'none'/unknown states return the full contract amount (no cap).
 // Offline detector test: boots the real app (index.html) and exercises the pure
-// helpers — no network, no Supabase writes.
+// helpers: no network, no Supabase writes.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('STATE_DEPOSIT_CAP — _maxDeposit + _depositCapNote', () => {
+test.describe('STATE_DEPOSIT_CAP: _maxDeposit + _depositCapNote', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -32,7 +32,7 @@ test.describe('STATE_DEPOSIT_CAP — _maxDeposit + _depositCapNote', () => {
     assertNoErrors(page, 'deposit-cap helpers present');
   });
 
-  test('CA — lesser of $1,000 or 10% of contract', async () => {
+  test('CA: lesser of $1,000 or 10% of contract', async () => {
     const r = await page.evaluate(() => ({
       big: _maxDeposit('CA', 20000),   // 10% = 2000, flat = 1000 → lesser = 1000
       small: _maxDeposit('CA', 5000),  // 10% = 500, flat = 1000 → lesser = 500
@@ -44,15 +44,15 @@ test.describe('STATE_DEPOSIT_CAP — _maxDeposit + _depositCapNote', () => {
     assertNoErrors(page, 'CA lesser-of cap');
   });
 
-  test('MD — one-third (33.33%) of contract', async () => {
+  test('MD: one-third (33.33%) of contract', async () => {
     const r = await page.evaluate(() => _maxDeposit('MD', 9000)); // 33.33% of 9000
-    // 9000 * 33.33 / 100 = 2999.7 — within a dollar of 3000
+    // 9000 * 33.33 / 100 = 2999.7: within a dollar of 3000
     expect(r).toBeGreaterThan(2990);
     expect(r).toBeLessThanOrEqual(3000);
     assertNoErrors(page, 'MD pct cap');
   });
 
-  test('PA and MA — one-third pct cap', async () => {
+  test('PA and MA, one-third pct cap', async () => {
     const r = await page.evaluate(() => ({
       pa: _maxDeposit('PA', 12000), // ~3999.6
       ma: _maxDeposit('MA', 30000), // ~9999
@@ -64,7 +64,7 @@ test.describe('STATE_DEPOSIT_CAP — _maxDeposit + _depositCapNote', () => {
     assertNoErrors(page, 'PA/MA pct cap');
   });
 
-  test('NV — lesser of $1,000 or 10%', async () => {
+  test('NV: lesser of $1,000 or 10%', async () => {
     const r = await page.evaluate(() => ({
       big: _maxDeposit('NV', 50000), // 10% = 5000, flat = 1000 → 1000
       small: _maxDeposit('NV', 4000), // 10% = 400 → 400
@@ -74,7 +74,7 @@ test.describe('STATE_DEPOSIT_CAP — _maxDeposit + _depositCapNote', () => {
     assertNoErrors(page, 'NV lesser-of cap');
   });
 
-  test("'none' state (TX) — no cap, returns full contract amount", async () => {
+  test("'none' state (TX): no cap, returns full contract amount", async () => {
     const r = await page.evaluate(() => ({
       tx: _maxDeposit('TX', 10000),
       ks: _maxDeposit('KS', 8000),
@@ -84,7 +84,7 @@ test.describe('STATE_DEPOSIT_CAP — _maxDeposit + _depositCapNote', () => {
     assertNoErrors(page, 'none-state no cap');
   });
 
-  test('unknown / empty / nullish state — no crash, returns amount', async () => {
+  test('unknown / empty / nullish state, no crash, returns amount', async () => {
     const r = await page.evaluate(() => ({
       unknown: _maxDeposit('ZZ', 10000),
       empty: _maxDeposit('', 10000),
@@ -122,7 +122,7 @@ test.describe('STATE_DEPOSIT_CAP — _maxDeposit + _depositCapNote', () => {
   test('lookupDepositCap falls back to hardcoded value when table/_supa is absent', async () => {
     // This suite boots with mockAllExternal (no real Supabase writes). lookupDepositCap
     // must degrade to STATE_DEPOSIT_CAP on miss/error/no-supa and produce the SAME
-    // max-deposit result the sync _maxDeposit gives — proving the live path is a
+    // max-deposit result the sync _maxDeposit gives, proving the live path is a
     // pure superset, never a behavior change offline.
     const r = await page.evaluate(async () => {
       const ca = await lookupDepositCap('CA');           // capped state

@@ -138,7 +138,7 @@ function applyPermissions(){
   if(taxNav)taxNav.style.display=canSeeTaxes()?'':'none';
   const mmiTax=document.getElementById('mmi-taxes');
   if(mmiTax)mmiTax.style.display=canSeeTaxes()?'':'none';
-  // Every other contractor-only nav item (symmetric hide-for-employee/restore-for-owner) —
+  // Every other contractor-only nav item (symmetric hide-for-employee/restore-for-owner):
   // always run so a stale gate from an earlier account in the same tab can't survive a
   // switch to a different account (see _applyEmployeeNavGating for why this must be
   // unconditional, not just called when the incoming account happens to be an employee).
@@ -151,7 +151,7 @@ function applyPermissions(){
   const _meta=_supaUser?.user_metadata;
   const _metaName=_meta?.full_name||_meta?.name||'';
   const _rawName=_isEmployee?(_employeeRecord?.name||'Employee'):(getOwnerName()||_metaName||'');
-  // Never display an email address as the nav name — fall back to business name
+  // Never display an email address as the nav name, fall back to business name
   const name=(_rawName&&!_rawName.includes('@'))?_rawName:(S.bname||'My Account');
   if(nameEl)nameEl.textContent=name;
   if(roleEl)roleEl.textContent=_isEmployee?'Employee':getRole().charAt(0).toUpperCase()+getRole().slice(1);
@@ -180,7 +180,7 @@ const _GEN_SCOPE=[
 const TRADE_SCOPE_CHIPS={
   painting:[
     {label:'Interior painting',icon:'🏠',clientDesc:'Walls, ceilings, and trim in agreed rooms'},
-    {label:'Exterior painting',icon:'🏡',clientDesc:'All agreed exterior surfaces — siding, trim, and accents'},
+    {label:'Exterior painting',icon:'🏡',clientDesc:'All agreed exterior surfaces, siding, trim, and accents'},
     {label:'Cabinet painting',icon:'🗄️',clientDesc:'Prep, prime, and finish coat on cabinet doors and boxes'},
     {label:'Deck / fence stain',icon:'🪵',clientDesc:'Clean and apply semi-transparent or solid stain'},
     {label:'Move furniture',icon:'🪑',clientDesc:'Move and replace furniture as needed for access'},
@@ -333,7 +333,7 @@ async function _geiLookupClientTaxRate(){
   if(!zip&&!state){_geiClientTaxRate=null;calcGeiTotal();if(_geiIsFreeForm)_byoUpdateRail();return;}
   if(typeof lookupSalesTaxRate==='function'){
     const r=await lookupSalesTaxRate(zip||'',state||(S&&S.state)||'KS');
-    // Only use DB-sourced rates (db_zip or db_state) — never show hardcoded base rate
+    // Only use DB-sourced rates (db_zip or db_state), never show hardcoded base rate
     _geiClientTaxRate=(r&&r.source&&r.source!=='hardcoded')?r:null;
     calcGeiTotal();
     if(_geiIsFreeForm)_byoUpdateRail();
@@ -346,7 +346,7 @@ function openFreeFormEstimate(c,bidId){_geiOpenModeEstimate(c,bidId,'byo');}
 // Unsent estimate-builder drafts for a client, filtered by estimate type.
 // 'tm' matches only Time & Materials drafts; 'byo' matches everything else
 // (legacy scope drafts auto-migrate to Build Your Own on resume, so they
-// count as BYO). This is THE draft-matching rule — the resume chooser and
+// count as BYO). This is THE draft-matching rule, the resume chooser and
 // openGenericEstimate's silent-reuse both use it, so they can never disagree.
 function _geiFindDraftsFor(clientId,mode){
   return bids.filter(b=>b.client_id===clientId&&!b.signingToken&&b.geiLines!==undefined
@@ -354,7 +354,7 @@ function _geiFindDraftsFor(clientId,mode){
     &&(mode==='tm'?!!b.isTM:mode==='byo'?!b.isTM:true));
 }
 function _geiDraftIsEmpty(b){return !b.amount&&!(b.geiLines||[]).length&&!(b.byoItems||[]).length;}
-// Plain-English estimate-type label for a bid — spelled out, never an acronym.
+// Plain-English estimate-type label for a bid, spelled out, never an acronym.
 // Used anywhere a bid surfaces outside the estimate builder (Make Money Today
 // feed, pickers) so the contractor can always tell which type they chose.
 function _estimateTypeLabel(b){
@@ -364,10 +364,10 @@ function _estimateTypeLabel(b){
   return'';
 }
 
-// ── Active-estimate marker — auto-resume after a tab switch/app reopen ───────
+// ── Active-estimate marker, auto-resume after a tab switch/app reopen ───────
 // While an estimate is open, a marker records where the contractor is. If the
 // app reloads (phone tab switch, accidental close), boot jumps straight back
-// into that estimate — it's the thing they were most likely coming back to
+// into that estimate, it's the thing they were most likely coming back to
 // finish. The marker clears when they LEAVE the estimate on purpose (bottom
 // nav, back to the type picker), so deliberate exits never bounce them back.
 function _geiMarkActive(){
@@ -383,13 +383,13 @@ function _geiMarkActive(){
 function _geiClearActive(){try{localStorage.removeItem('zp3_active_estimate');}catch(_e){}}
 // Called once from the boot reveal chain. Every guard is a reason NOT to hijack
 // the open: stale marker (>12h), different account, employee account, bid gone,
-// or bid already sent/decided — in all of those, boot lands on the dashboard.
+// or bid already sent/decided: in all of those, boot lands on the dashboard.
 function _maybeResumeActiveEstimate(){
   // Already inside the estimate editor → nothing to resume. Bail WITHOUT
   // clearing the marker (it belongs to the editor that's open right now).
   // Without this guard, the boot timer that schedules this (cloud.js, 120ms
   // after reveal) can fire AFTER the user has already navigated into an
-  // estimate — re-opening it underneath them and reassigning _geiLines,
+  // estimate: re-opening it underneath them and reassigning _geiLines,
   // which discards any unsaved in-memory edits. Same race the WebKit CI
   // shards kept tripping when a spec opened an estimate right after boot.
   if(document.querySelector('.pg.active')?.id==='pg-est-generic')return false;
@@ -464,7 +464,7 @@ function _geiStartFreshDraft(){
 
 function openGenericEstimate(c,bidId,_tradePick,opts){
   // Mode comes in explicitly (never inherited from whatever estimate was open
-  // last) — stale _geiIsTM/_geiIsFreeForm from a previous estimate was how a
+  // last): stale _geiIsTM/_geiIsFreeForm from a previous estimate was how a
   // Time & Materials resume could open with Build Your Own state mixed in.
   _geiIsTM=opts?.mode==='tm';
   _geiIsFreeForm=opts?.mode==='byo';
@@ -506,7 +506,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(b.geiDuration)sf('gei-duration',b.geiDuration);
       if(b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(b.panelSched)_panelSched=JSON.parse(JSON.stringify(b.panelSched));
-      // An explicitly-resumed bid's OWN type wins — the record knows what it is,
+      // An explicitly-resumed bid's OWN type wins, the record knows what it is,
       // regardless of which button or stale state got us here. isTM takes
       // precedence: bids autosaved before the dual-flag fix carry BOTH flags,
       // and letting isFreeForm win resumed T&M drafts as empty BYO estimates.
@@ -517,7 +517,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
         _tmCapAction=b.tmCapAction||'Stop & get re-approval';
       }
       else if(b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
-      // Deposit % is restored in _tmShowPage/_byoShowPage instead — the field
+      // Deposit % is restored in _tmShowPage/_byoShowPage instead, the field
       // doesn't exist in the DOM yet at this point (rendered lazily on page show).
       _resumingExisting=true;
     }
@@ -525,7 +525,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(!_geiEditBidId&&!opts?.forceNew){
     // Reuse an existing unsent draft for this client (prevents duplicates).
     // When a mode was picked (tm/byo), only drafts of that SAME type are
-    // candidates — picking Time & Materials must never silently resume a
+    // candidates: picking Time & Materials must never silently resume a
     // Build Your Own draft and drag its items along (the cross-type "bleed"
     // the owner hit). Two-pass within candidates: exact trade match first,
     // then heal old bids that predate the trade_type field.
@@ -541,7 +541,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       _existingGei=bids.find(b=>_tMatch(b)&&(b.trade_type===undefined||b.trade_type===null||b.trade_type===''));
     }
     if(!_existingGei&&_mode){
-      // Mode flows aren't trade-scoped — the chooser found drafts by type only,
+      // Mode flows aren't trade-scoped, the chooser found drafts by type only,
       // so match by type across trades too rather than spawning a duplicate.
       _existingGei=bids.find(_tMatch);
     }
@@ -555,19 +555,19 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
       if(_b.geiNewWork){_geiNewWork=true;if(nwEl)nwEl.checked=true;}
       if(_b.panelSched)_panelSched=JSON.parse(JSON.stringify(_b.panelSched));
-      // isTM precedence — legacy dual-flag rows (see _byoAutosave note) must
+      // isTM precedence, legacy dual-flag rows (see _byoAutosave note) must
       // resume as T&M, never as an empty BYO.
       if(_b.isTM){_geiIsTM=true;_geiIsFreeForm=false;_tmCrewCount=_b.tmCrewCount||1;_tmRatePerMan=_b.tmRatePerMan||0;_tmEstHours=_b.tmEstHours||0;_tmBillingCycle=_b.tmBillingCycle||'weekly';_tmCapAction=_b.tmCapAction||'Stop & get re-approval';}
       else if(_b.isFreeForm){_geiIsFreeForm=true;_geiIsTM=false;}
       if(_b.scopeChips)_geiScopeChips=[..._b.scopeChips];
       _geiScopeNoScope=!!(_b.scopeNoScope);
-      // Deposit % is restored in _tmShowPage/_byoShowPage instead — the field
+      // Deposit % is restored in _tmShowPage/_byoShowPage instead, the field
       // doesn't exist in the DOM yet at this point (rendered lazily on page show).
       // Purge other empty duplicates for this client+trade now that we have the right
-      // one — through _userDelete so the delete-intent is RECORDED and the next save's
+      // one: through _userDelete so the delete-intent is RECORDED and the next save's
       // sweep soft-deletes them server-side too. A bare array filter only hid them in
       // memory: every reload re-downloaded the zombies, which the old load-side GEI
-      // filter then re-hid — the silent-hide loop behind the owner's 53-vs-43 report.
+      // filter then re-hid, the silent-hide loop behind the owner's 53-vs-43 report.
       _userDelete(()=>{
         bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
       });
@@ -578,7 +578,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(!_geiEditBidId){
     const _draftClientName=c?c.name||'':'';
     const _draftTypeLabel=_geiIsTM?'Time & Materials':_geiIsFreeForm?'Build Your Own':((TRADE_META&&TRADE_META[_geiTrade])?TRADE_META[_geiTrade].label||'Trade':'Trade');
-    // Stamp the picked type on the stub immediately — a typeless stub can't be
+    // Stamp the picked type on the stub immediately, a typeless stub can't be
     // found by the type-aware reuse above, so backing out and re-picking the
     // same type would spawn a duplicate blank draft every time.
     const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0,
@@ -607,7 +607,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
 }
 
 function goGeiStep(n){
-  // T&M mode — step 1: job type picker (same as scope), step 2+: single-page T&M layout
+  // T&M mode, step 1: job type picker (same as scope), step 2+: single-page T&M layout
   if(_geiIsTM){
     if(n===1){
       _tmHidePage(); // hides gei-tm-page, re-shows gei-old-tbar + gei-step-bar
@@ -624,7 +624,7 @@ function goGeiStep(n){
     window.scrollTo({top:0,behavior:'instant'});
     return;
   }
-  // BYO / free-form mode — step 1: job type picker (same as scope), step 2+: BYO page
+  // BYO / free-form mode, step 1: job type picker (same as scope), step 2+: BYO page
   if(_geiIsFreeForm){
     if(n===1){
       _byoHidePage(); // hides gei-byo-page, re-shows gei-old-tbar + gei-step-bar
@@ -641,7 +641,7 @@ function goGeiStep(n){
     window.scrollTo({top:0,behavior:'instant'});
     return;
   }
-  // Scope & Price (step-based) — hide both single-page layouts before showing wizard steps
+  // Scope & Price (step-based): hide both single-page layouts before showing wizard steps
   const _tmP=document.getElementById('gei-tm-page');if(_tmP)_tmP.style.display='none';
   const _byoP=document.getElementById('gei-byo-page');if(_byoP)_byoP.style.display='none';
   // If going to Step 2 and no bundles are set, show the onboarding picker first
@@ -675,12 +675,12 @@ function _tmRecalc(){
   _tmEstHours=parseFloat(document.getElementById('tm-hours')?.value)||0;
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
   const el=document.getElementById('tm-labor-est');
-  if(el)el.textContent=labor?'$'+labor.toLocaleString('en-US',{maximumFractionDigits:0}):'—';
+  if(el)el.textContent=labor?'$'+labor.toLocaleString('en-US',{maximumFractionDigits:0}):'-';
   const fml=document.getElementById('tm-crew-formula');
   if(fml)fml.textContent=(_tmRatePerMan&&_tmEstHours)?_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' × $'+_tmRatePerMan+'/hr × '+_tmEstHours+'hrs':'Enter rate & hours above';
   // Upsert labor line
   const idx=_geiLines.findIndex(l=>l._tmLabor);
-  const desc='Labor — '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
+  const desc='Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
   const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours)};
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
@@ -692,7 +692,7 @@ function _tmCalcDeposit(){
   const pct=parseFloat(document.getElementById('tm-dep-pct')?.value)||20;
   const amt=Math.round(sub*pct/100);
   const el=document.getElementById('tm-dep-amt');
-  if(el)el.textContent=amt?'$'+amt.toLocaleString('en-US',{maximumFractionDigits:0}):'—';
+  if(el)el.textContent=amt?'$'+amt.toLocaleString('en-US',{maximumFractionDigits:0}):'-';
   // Also update NTE suggestion if not manually set
   _tmCalcNte();
   _byoAutosave();
@@ -725,10 +725,10 @@ function _tmSyncCycleButtons(){
   });
 }
 
-// ── T&M / BYO shared markup — one template, rendered per-prefix ─────────────
+// ── T&M / BYO shared markup, one template, rendered per-prefix ─────────────
 // The two single-page layouts (EstimateTM.jsx / EstimateBYO.jsx equivalents) share
 // identical structure for the top bar, the profit gauge, and the Send/Preview/
-// Sign-in-person action row — only ids and a handful of parameters differ per mode.
+// Sign-in-person action row, only ids and a handful of parameters differ per mode.
 // Rendering from one function means a future change to any of these can never
 // silently apply to only one of the two modes (see the _tmPreviewClient regression
 // this consolidation followed).
@@ -741,7 +741,7 @@ function _geiRenderTopBar(prefix,defaultTitle,editFnName){
         '<span id="'+prefix+'-tbar-title">'+defaultTitle+'</span>'+
         '<button onclick="'+editFnName+'()" id="'+prefix+'-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)">'+svgIcon('✏',{size:16})+'</button>'+
       '</div>'+
-      '<div class="tbar-sub" id="'+prefix+'-page-sub">—</div>'+
+      '<div class="tbar-sub" id="'+prefix+'-page-sub">-</div>'+
     '</div>'+
     '<div class="tbar-r">'+
       '<button class="btn" onclick="saveGenericEstimate(true)">'+svgIcon('💾',{size:14})+' Save draft</button>'+
@@ -759,13 +759,13 @@ function _geiRenderScopeCard(prefix){
 }
 function _geiRenderProfitGauge(prefix,costOninput){
   const wrap=document.getElementById(prefix+'-gauge-wrap');
-  if(!wrap||wrap.children.length)return; // idempotent — preserve gauge/animation state across repeat page shows
+  if(!wrap||wrap.children.length)return; // idempotent: preserve gauge/animation state across repeat page shows
   wrap.innerHTML=
     '<input type="number" id="'+prefix+'-expected-cost" style="display:none" oninput="'+costOninput+'">'+
     '<div id="'+prefix+'-gauge-hint" style="display:none"></div>'+
     '<div id="'+prefix+'-profit-gauge" style="display:none;opacity:0;transition:opacity .32s ease">'+
       // Hard-edged stops at the EXACT _updateMarginGauge breakpoints (22/35/55%) so
-      // the dot always sits on a track color matching its own computed color — no
+      // the dot always sits on a track color matching its own computed color, no
       // blend zone where the number renders amber over a still-green track (or
       // vice versa). 55%+ is amber all the way to 100%, matching the JS: past the
       // green cap, margin is never re-flagged as red, only "double-check" amber.
@@ -773,7 +773,7 @@ function _geiRenderProfitGauge(prefix,costOninput){
         '<div id="'+prefix+'-gauge-dot" style="position:absolute;top:50%;transform:translate(-50%,-50%);width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #22C55E,0 2px 8px rgba(0,0,0,.25);left:50%;transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>'+
       '</div>'+
       '<div style="text-align:center;padding-bottom:12px">'+
-        '<div id="'+prefix+'-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">—</div>'+
+        '<div id="'+prefix+'-gauge-pct" style="font-size:30px;font-weight:900;line-height:1.1;color:var(--text);transition:color .4s ease">-</div>'+
         '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0 2px">Profit %</div>'+
         '<div id="'+prefix+'-gauge-dollars" style="font-size:15px;font-weight:700;margin:0 0 5px;transition:color .4s ease"></div>'+
         '<div id="'+prefix+'-gauge-msg" style="font-size:11.5px;color:var(--text3);min-height:16px"></div>'+
@@ -810,7 +810,7 @@ function _geiRenderDepositField(prefix,onInputExpr){
     '</div>'+
     '<div class="summary-row" style="color:var(--text-3)"><span>Balance later</span><span id="'+prefix+'-rail-balance">$0</span></div>';
 }
-// Single source of truth for "what % deposit does this estimate use" — read by
+// Single source of truth for "what % deposit does this estimate use", read by
 // _byoAutosave, saveGenericEstimate, sendGenericProposal, _geiSignInPerson, and
 // _geiConfirmInPerson so T&M and BYO can never drift onto different formulas.
 function _geiDepositPct(){
@@ -821,12 +821,12 @@ function _geiDepositPct(){
 // ── Estimate mode registry ────────────────────────────────────────────────────
 // The DIFFERENCES between T&M and BYO live here as data. The behavior that uses
 // them (_geiShowSharedChrome and the shared render functions above) is one code
-// path — a change to how either page looks or boots automatically hits both.
+// path: a change to how either page looks or boots automatically hits both.
 //
-// SHARED KERNEL — the constant baseline every estimate type builds on. A new
+// SHARED KERNEL, the constant baseline every estimate type builds on. A new
 // estimate type (fixed-price, subscription, whatever comes next) is a new entry
 // in _GEI_MODES plus its own genuinely-unique fields (like T&M's crew/rate/days
-// inputs or BYO's line-item sections) — it reuses everything below, it never
+// inputs or BYO's line-item sections), it reuses everything below, it never
 // re-implements it:
 //   • Page chrome:        _geiShowSharedChrome / _geiHidePage
 //   • Rendered components: _geiRenderTopBar, _geiRenderScopeCard,
@@ -836,17 +836,17 @@ function _geiDepositPct(){
 //                          saveGenericEstimate, sendGenericProposal,
 //                          _byoAutosave, _geiSignInPerson, _geiConfirmInPerson)
 //   • Scope-of-work:       TRADE_SCOPE_CHIPS / _GEN_SCOPE, _toggleScopeChip,
-//                          _renderScopeChips, _openScopeSheet — the one
+//                          _renderScopeChips, _openScopeSheet, the one
 //                          "what's included" definition every mode shares;
 //                          it always carries into the sent proposal
 //                          (see the _scopeBlocks assembly in sendGenericProposal)
 //   • Save/send/sign:      saveGenericEstimate, sendGenericProposal,
 //                          _geiSignInPerson, _geiConfirmInPerson
-//   • Proposal T&C:        the single clause array in sendGenericProposal —
+//   • Proposal T&C:        the single clause array in sendGenericProposal,
 //                          shared legal clauses exist once; a mode only
 //                          supplies its own payment-terms clauses at the top
 // If a change only touches one mode's genuinely-unique behavior, it belongs in
-// that mode's own function (_tmInputChange, _byoUpdateRail, etc.) — not here.
+// that mode's own function (_tmInputChange, _byoUpdateRail, etc.): not here.
 const _GEI_MODES={
   tm:{
     pageId:'gei-tm-page',
@@ -895,14 +895,14 @@ function _geiShowSharedChrome(prefix){
     if(c?.addr)parts.push(c.addr.split(',')[0]);
     sub.textContent=parts.join(' · ')||'New estimate';
   }
-  // Restore deposit % from saved bid (back-calculate from deposit/amount) — the
+  // Restore deposit % from saved bid (back-calculate from deposit/amount): the
   // field was rendered fresh above, so this must come after _geiRenderDepositField.
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(b?.amount>0&&b?.deposit>0){
     const depEl=document.getElementById(prefix+'-deposit-pct');
     if(depEl)depEl.value=Math.round((b.deposit/b.amount)*100);
   }
-  _geiMarkActive(); // estimate is open — a reload should come straight back here
+  _geiMarkActive(); // estimate is open, a reload should come straight back here
   return b;
 }
 function _geiHidePage(pageId){
@@ -913,7 +913,7 @@ function _geiHidePage(pageId){
 // ── T&M single-page layout (matches design spec EstimateTM.jsx) ──────────────
 function _tmShowPage(){
   const b=_geiShowSharedChrome('tm');
-  // Populate inputs from current state — comma-formatted like the price fields
+  // Populate inputs from current state, comma-formatted like the price fields
   // elsewhere (_fmtMoneyInput/_moneyVal), so a restored value displays the same
   // way it would after the contractor typed it.
   const setV=(id,v)=>{const e=document.getElementById(id);if(e)e.value=(v===0||v)?Number(v).toLocaleString('en-US'):''};
@@ -923,7 +923,7 @@ function _tmShowPage(){
   if(crewDisp)crewDisp.textContent=Math.max(1,_tmCrewCount||1);
   if(b?.tmNteCap)setV('tm-i-nte',b.tmNteCap);
   if(b?.tmCapAction){setV('tm-i-cap-action',b.tmCapAction);_tmCapAction=b.tmCapAction;}
-  // Restore who's on the job — drives the true-cost gauge via the shared crew picker.
+  // Restore who's on the job, drives the true-cost gauge via the shared crew picker.
   _estCrew=Array.isArray(b&&b.estCrew)?[...b.estCrew]:[];
   _injectRrpItems();
   _tmRenderMatList();
@@ -936,26 +936,26 @@ function _tmHidePage(){_geiHidePage('gei-tm-page');}
 // ── Build Your Own single-page layout ────────────────────────────────────────
 let _byoItems=[],_byoCustomSections=[],_byoCustomTerms='';
 const _BYO_DEFAULT_SECTIONS=['Interior','Exterior','Materials','Add-ons'];
-const _RRP_BYO_SECTION='RRP — Lead-Safe Protocol';
+const _RRP_BYO_SECTION='RRP: Lead-Safe Protocol';
 const _RRP_ITEMS=[
   {label:'Lead-safe setup & interior containment',hint:'Plastic sheeting 6 ft from work surfaces; sealed ducts, vents, door coverings (EPA §745.85)',price:0,_scope:'interior'},
   {label:'Exterior containment',hint:'Ground cover 10 ft out from building; vertical barriers within 10 ft of property line (EPA §745.85)',price:0,_scope:'exterior'},
-  {label:'HEPA-equipped prep',hint:'HEPA-shrouded sanding only — no torching, no dry power sanding, no heat guns >1,100°F (EPA §745.85)',price:0},
+  {label:'HEPA-equipped prep',hint:'HEPA-shrouded sanding only, no torching, no dry power sanding, no heat guns >1,100°F (EPA §745.85)',price:0},
   {label:'HEPA vacuum service',hint:'HEPA vacuum cleanup at end of each workday and at completion (EPA §745.85)',price:0},
   {label:'Lead-safe cleanup',hint:'Wet-wash + HEPA-vac + wet-wash cycle until no dust or debris remains (EPA §745.85)',price:0},
   {label:'Cleaning verification',hint:'Certified renovator wipe test vs EPA card on all sills, floors, and counters (EPA §745.85(b))',price:0},
   {label:'Lead waste disposal',hint:'All debris bagged, sealed, and transported per EPA requirements (EPA §745.85)',price:0},
 ];
 const _RRP_PROPOSAL_LINES=[
-  'Containment — Plastic on floors, walls, and HVAC vents. 10-ft exterior perimeter outside.',
-  'No high-dust methods — No torching, no power-sanding without HEPA, no heat guns above 1,100°F.',
-  'HEPA everything — HEPA-attached tools and HEPA vacuums on every cleanup pass.',
-  'Daily lockdown — Work area sealed at end of day. Debris bagged and tied off.',
-  'Cleaning verification — Wet-clean, HEPA-vac, wet-clean again, then a wipe-test against EPA’s clearance card.',
-  'Documentation — Signed work plan, Renovate Right pamphlet, and post-job verification record.',
+  'Containment: Plastic on floors, walls, and HVAC vents. 10-ft exterior perimeter outside.',
+  'No high-dust methods, No torching, no power-sanding without HEPA, no heat guns above 1,100°F.',
+  'HEPA everything, HEPA-attached tools and HEPA vacuums on every cleanup pass.',
+  'Daily lockdown, Work area sealed at end of day. Debris bagged and tied off.',
+  'Cleaning verification, Wet-clean, HEPA-vac, wet-clean again, then a wipe-test against EPA’s clearance card.',
+  'Documentation: Signed work plan, Renovate Right pamphlet, and post-job verification record.',
 ];
 function _byoShowPage(){
-  _tmHidePage(); // must run first — it re-shows gei-old-tbar; the shared chrome re-hides it
+  _tmHidePage(); // must run first, it re-shows gei-old-tbar; the shared chrome re-hides it
   const b=_geiShowSharedChrome('byo');
   // Load items from saved bid, otherwise start blank
   if(b?.byoItems&&b.byoItems.length){_byoItems=b.byoItems.map(x=>({...x}));}
@@ -975,7 +975,7 @@ function _toggleScopeChip(label){
   if(idx>=0)_geiScopeChips.splice(idx,1);else _geiScopeChips.push(label);
   ['tm-scope-wrap','byo-scope-wrap'].forEach(id=>_renderScopeChips(id));
   _updateScopeSheetBtn(label);
-  // Scope drives the auto crew-labor estimate — refresh the rail + gauge.
+  // Scope drives the auto crew-labor estimate, refresh the rail + gauge.
   if(_geiIsFreeForm&&typeof _byoUpdateRail==='function')_byoUpdateRail();
   _byoAutosave();
 }
@@ -1015,7 +1015,7 @@ function _renderScopeChips(containerId){
     }
     return;
   }
-  // Render selected scope as clean line items (not pills) — one per row with a divider.
+  // Render selected scope as clean line items (not pills), one per row with a divider.
   let html='<div style="padding:4px 0">';
   _geiScopeChips.forEach((l,i)=>{
     const c=allItems.find(x=>x.label===l)||{icon:'✓',label:l};
@@ -1035,8 +1035,8 @@ function _openScopeSheet(containerId){
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const trade=_geiTrade||getActiveTrade();
   const tradeItems=(typeof TRADE_SCOPE_ITEMS!=='undefined'&&TRADE_SCOPE_ITEMS[trade]);
-  // Centered like every other modal in the app (.zmodal — fade+slide+scale via
-  // the shared td-modal-in keyframe, §8.4) — this used to hardcode
+  // Centered like every other modal in the app (.zmodal: fade+slide+scale via
+  // the shared td-modal-in keyframe, §8.4): this used to hardcode
   // position:fixed;bottom:0, pinning it to the viewport bottom and overriding
   // .zmodal-overlay's centering instead of using the shared modal pattern.
   const sheet=document.createElement('div');
@@ -1077,7 +1077,7 @@ function _openScopeSheet(containerId){
     '</div>'+itemsHtml;
   ov.appendChild(sheet);document.body.appendChild(ov);
 }
-// Shared Edit/Remove button pair for a line-item row — used by both BYO's
+// Shared Edit/Remove button pair for a line-item row, used by both BYO's
 // item rows and T&M's material category rows so the two lists look and
 // behave identically. event.stopPropagation() keeps a wrapping row-level
 // onclick (BYO toggles on/off; T&M opens edit) from also firing.
@@ -1118,7 +1118,7 @@ function _editEstTitle(titleId,btnId){
 function _editByoTitle(){_editEstTitle('byo-tbar-title','byo-edit-title-btn');}
 function _editTMTitle(){_editEstTitle('tm-tbar-title','tm-edit-title-btn');}
 function _editScopeTitle(){_editEstTitle('gei-trade-title','scope-edit-title-btn');}
-// Shared item-row renderer — one row shape for BYO items (checkbox toggle +
+// Shared item-row renderer, one row shape for BYO items (checkbox toggle +
 // edit/delete) and T&M material categories (no checkbox, add/edit/delete only):
 // title + price + actions on one header line; notes (if present) run full-width
 // below that line instead of being squeezed into a narrow left column next to
@@ -1155,7 +1155,7 @@ function _byoRenderSections(){
         editFn:'_byoEditItem('+idx+')',delFn:'_byoDelItem('+idx+')'
       });
     }).join(''):
-    '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet — tap + Add item</div>';
+    '<div style="padding:14px 16px;font-size:12px;color:var(--text-3);font-style:italic">No items yet, tap + Add item</div>';
     return '<div class="card card-pad-0" style="margin-bottom:12px">'+
       '<div class="card-hd"><div class="card-hd-title">'+escHtml(sec)+'</div>'+
       '<div style="display:flex;gap:6px">'+
@@ -1187,7 +1187,7 @@ function _byoAutosave(){
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(!b)return;
   // "Name your proposal" (#gei-desc) used to only get captured by the explicit Save
-  // button (saveGenericEstimate) — every autosave silently dropped a name edit until
+  // button (saveGenericEstimate): every autosave silently dropped a name edit until
   // the user hit Save, so backing out mid-edit lost the new name.
   const _trade=_geiTrade||getActiveTrade();
   const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[_trade]?.label||'Trade')+' Proposal';
@@ -1196,7 +1196,7 @@ function _byoAutosave(){
   b.geiDesc=_descVal;
   b.byoItems=JSON.parse(JSON.stringify(_byoItems));
   b.byoCustomSections=[..._byoCustomSections];
-  // Stamp the bid's REAL type — this used to write isFreeForm=true on every
+  // Stamp the bid's REAL type, this used to write isFreeForm=true on every
   // autosave, so a Time & Materials draft carried BOTH flags and resumed as
   // Build Your Own with empty items (the "my work disappeared" bug).
   b.isFreeForm=_geiIsFreeForm&&!_geiIsTM;
@@ -1218,7 +1218,7 @@ function _byoAutosave(){
     b.tmEstHours=_tmEstHours;
     b.tmBillingCycle=_tmBillingCycle;
     // T&M's actual content lives in _geiLines (labor line + material categories)
-    // — without this, autosave captured the rate/crew numbers but silently
+    //, without this, autosave captured the rate/crew numbers but silently
     // dropped every material category until the user hit "Save draft".
     b.geiLines=JSON.parse(JSON.stringify(_geiLines));
     const _nteCap=(typeof _moneyVal==='function'?_moneyVal('tm-i-nte'):0)||0;
@@ -1270,11 +1270,11 @@ function _scopeHistoryHrs(id){
   const m=Math.floor(vals.length/2);
   return vals.length%2?vals[m]:(vals[m-1]+vals[m])/2;
 }
-// Estimated crew hours for this bid — derived automatically from the selected scope:
+// Estimated crew hours for this bid, derived automatically from the selected scope:
 // the contractor's own debrief history first, then the crowdsourced benchmark median.
 // Returns 0 when no scope has time data yet (the gauge stays materials-only until it does).
 function _estLaborHours(){
-  // T&M knows its hours exactly (days × 8 × the contractor's own entry) — no
+  // T&M knows its hours exactly (days × 8 × the contractor's own entry), no
   // scope-history estimation needed. This one branch makes the entire crew
   // picker + payroll-cost stack (_estLaborCost, _renderLaborPicker) work for
   // both estimate types without duplicating any of it.
@@ -1292,7 +1292,7 @@ function _estLaborHours(){
   });
   return Math.round(hrs*10)/10;
 }
-// Trust signal for ranking crew — lifetime jobs worked + total dollar value of those jobs.
+// Trust signal for ranking crew, lifetime jobs worked + total dollar value of those jobs.
 // Uses the durable crewHistory recorded on each job (falls back to current assignment).
 function _employeeTrust(emp){
   const eid=String(emp&&emp.id);
@@ -1369,7 +1369,7 @@ function _renderLaborPicker(type){
     _teamCompLoaded=true;
     _loadTeamComp().then(()=>{if(type==='byo'&&typeof _byoUpdateRail==='function')_byoUpdateRail();}).catch(()=>{});
   }
-  // Most-trusted crew first — ranked by lifetime jobs worked, then dollars handled.
+  // Most-trusted crew first, ranked by lifetime jobs worked, then dollars handled.
   const emps=_crewByTrust((S.employees||[]).filter(e=>e&&e.name));
   const chips=emps.map((e,i)=>{
     const email=(e.email||'').toLowerCase();
@@ -1392,7 +1392,7 @@ function _renderLaborPicker(type){
   // Check if any selected crew member has an upcoming booking conflict.
   const bookedSelected=emps.filter(e=>_estCrew.indexOf((e.email||'').toLowerCase())>=0&&_empNextJob(e));
   if(!_estCrew.length){
-    body='<span style="color:var(--text3)">Tap a name to add who\'s on this job — their pay + benefits become a job cost.</span>';
+    body='<span style="color:var(--text3)">Tap a name to add who\'s on this job, their pay + benefits become a job cost.</span>';
   }else if(cost<=0){
     body='<span style="color:var(--c-amber)">Set pay rates on the Team page (or build job-time history) to price this crew.</span>';
   }else{
@@ -1419,7 +1419,7 @@ function _updateMarginGauge(type,total){
     if(gWrap._showRaf){cancelAnimationFrame(gWrap._showRaf);gWrap._showRaf=0;}
     gWrap.style.opacity='0';
     // Gate the hide on the REAL condition (cost still cleared) rather than the
-    // race-prone opacity value — deterministic regardless of stray animations.
+    // race-prone opacity value, deterministic regardless of stray animations.
     setTimeout(()=>{
       const _c=parseFloat(document.getElementById(type+'-expected-cost')?.value)||0;
       if(!_c||_c<=0)gWrap.style.display='none';
@@ -1433,14 +1433,14 @@ function _updateMarginGauge(type,total){
   // colour beneath it (red=low margin on the left → green band → amber when very high).
   const pos=Math.min(Math.max(margin,2),98);
   let color,msg;
-  if(margin<0){color='#DC2626';msg='Below cost — you’re losing money on this job';}
-  else if(margin<22){color='#EF4444';msg='Underpriced — consider raising your rate';}
-  else if(margin<35){color='#F59E0B';msg='Below target — a bit of room to grow';}
-  else if(margin<55){color='#22C55E';msg='Priced right — solid margin for this job';}
+  if(margin<0){color='#DC2626';msg='Below cost, you’re losing money on this job';}
+  else if(margin<22){color='#EF4444';msg='Underpriced: consider raising your rate';}
+  else if(margin<35){color='#F59E0B';msg='Below target, a bit of room to grow';}
+  else if(margin<55){color='#22C55E';msg='Priced right, solid margin for this job';}
   // Owner call (2026-07-06): green ending at 75% read as "everything's fine" on
-  // margins that usually mean a cost got missed — green now tops out at 55%.
-  else if(margin<75){color='#F59E0B';msg='High margin — double-check your cost numbers';}
-  else{color='#F59E0B';msg='Very high margin — double-check your numbers';}
+  // margins that usually mean a cost got missed, green now tops out at 55%.
+  else if(margin<75){color='#F59E0B';msg='High margin, double-check your cost numbers';}
+  else{color='#F59E0B';msg='Very high margin, double-check your numbers';}
   const dot=document.getElementById(type+'-gauge-dot');
   const pct=document.getElementById(type+'-gauge-pct');
   const msgEl=document.getElementById(type+'-gauge-msg');
@@ -1499,7 +1499,7 @@ function _byoUpdateRail(){
         taxAmt.textContent='$'+salesTax.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
         taxRow.style.display='';
       } else if(_stResult.treatment&&!_stResult.treatment.customerTax){
-        taxLbl.textContent=_stScope==='improvement'?'Sales tax — capital improvement':'Sales tax (exempt)';
+        taxLbl.textContent=_stScope==='improvement'?'Sales tax, capital improvement':'Sales tax (exempt)';
         taxAmt.textContent='$0.00';
         taxRow.style.display='';
       } else {
@@ -1534,7 +1534,7 @@ function _byoUpdateRail(){
   // government and not the contractor's earnings, so including it inflates the margin.
   _updateMarginGauge('byo',sub);
 }
-// Comma-formats a BYO price field as the contractor types — native type="number"
+// Comma-formats a BYO price field as the contractor types, native type="number"
 // inputs reject commas outright in every browser, so this field is plain text
 // with a digits-only filter + live thousands-grouping instead.
 function _byaFormatPriceInput(el){
@@ -1550,7 +1550,7 @@ function _byoAddItem(sec){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Add to '+escHtml(sec)+'</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3 — walls only"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" placeholder="e.g. Bedroom 3, walls only"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
     '<div class="f" style="margin-bottom:6px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><textarea id="_bya-notes" rows="3" placeholder="e.g. Two coats, ceilings included" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea></div>'+
     '<div style="font-size:11px;color:var(--text-3);margin-bottom:14px">Tab from Notes to save &amp; add another</div>'+
@@ -1568,7 +1568,7 @@ function _byoAddItem(sec){
     // Tab from label → price (default), Tab from price → notes (default)
     // Tab or Enter from notes → save + open next
     if(notesEl){
-      // Enter now makes a newline in the notes textarea — only Tab saves & advances.
+      // Enter now makes a newline in the notes textarea, only Tab saves & advances.
       notesEl.addEventListener('keydown',e=>{
         if(e.key==='Tab'&&!e.shiftKey){
           e.preventDefault();
@@ -1619,7 +1619,7 @@ function _byoEditItem(idx){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box';
   ov.innerHTML='<div style="background:var(--bg);border-radius:14px;width:100%;max-width:480px;padding:20px 16px 24px;max-height:90vh;overflow-y:auto">'+
     '<div style="font-weight:800;font-size:16px;margin-bottom:16px">Edit item</div>'+
-    '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="e.g. Bedroom 3 — walls only"></div>'+
+    '<div class="f" style="margin-bottom:10px"><label>What is it?</label><input type="text" id="_bya-label" value="'+escHtml(it.label)+'" placeholder="e.g. Bedroom 3, walls only"></div>'+
     '<div class="f" style="margin-bottom:10px"><label>Price ($)</label><div class="input-prefix"><span>$</span><input type="text" inputmode="numeric" id="_bya-price" value="'+(it.price?Number(it.price).toLocaleString('en-US'):'')+'" placeholder="0" oninput="_byaFormatPriceInput(this)"></div></div>'+
     '<div class="f" style="margin-bottom:16px"><label>Notes <span style="font-weight:400;color:var(--text-3)">(optional)</span></label><textarea id="_bya-notes" rows="4" placeholder="e.g. Two coats, ceilings included" style="width:100%;box-sizing:border-box;resize:vertical;font-family:inherit">'+escHtml(it.notes||'')+'</textarea></div>'+
     '<div style="display:flex;gap:10px">'+
@@ -1637,7 +1637,7 @@ function _byoEditItem(idx){
       labelEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();priceEl?.focus();}});
     }
     if(priceEl){priceEl.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();notesEl?.focus();}});}
-    // Enter makes a newline in the notes textarea — Save changes button submits.
+    // Enter makes a newline in the notes textarea, Save changes button submits.
   },50);
 }
 function _byaEditConfirm(idx){
@@ -1697,9 +1697,9 @@ function _byoDuplicateBid(){
   const src=bids.find(x=>x.id===_geiEditBidId);
   if(!src){showToast('Bid not found','⚠️');return;}
   // Label the original "Option A" so both show distinct names in the bid list
-  const baseName=(src.type||'Custom Proposal').replace(/\s*—\s*Option\s+[AB]$/i,'').trim();
+  const baseName=(src.type||'Custom Proposal').replace(/\s*-\s*Option\s+[AB]$/i,'').trim();
   if(!/option [ab]$/i.test(src.type||'')){
-    src.type=baseName+' — Option A';
+    src.type=baseName+', Option A';
     const descEl=document.getElementById('gei-desc');
     if(descEl)descEl.value=src.type;
     const titleEl=document.getElementById('byo-tbar-title');
@@ -1707,13 +1707,13 @@ function _byoDuplicateBid(){
   }
   const copy=JSON.parse(JSON.stringify(src));
   copy.id=_newBidId();
-  copy.type=baseName+' — Option B';
+  copy.type=baseName+', Option B';
   copy.status='Draft';copy.draft=true;
   copy.signingToken=undefined;copy.proposalKey=undefined;copy.proposalSentDate=undefined;
   bids.unshift(copy);saveAll();
   // Open the copy in the editor
   _byoShowPage({id:copy.client_id,name:copy.client_name||copy.name||''},copy.id);
-  showToast('Duplicated — edit Option B now','📋');
+  showToast('Duplicated: edit Option B now','📋');
 }
 function _showProposalPreviewOverlay(proposalHtml){
   document.getElementById('_prop-preview-ov')?.remove();
@@ -1722,9 +1722,9 @@ function _showProposalPreviewOverlay(proposalHtml){
   ov.style.cssText='position:fixed;inset:0;z-index:9500;background:#0007;display:flex;flex-direction:column';
   const hdr=document.createElement('div');
   hdr.style.cssText='background:#1a365d;color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0';
-  hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview — how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
+  hdr.innerHTML='<span style="font-size:15px;font-weight:800">'+svgIcon('👁',{size:15,color:'#fff'})+' Client preview, how they\'ll see it</span><button onclick="document.getElementById(\'_prop-preview-ov\')?.remove()" style="background:rgba(255,255,255,.15);border:none;color:#fff;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation">'+svgIcon('✕',{size:14,color:'#fff'})+' Close</button>';
   const body=document.createElement('div');
-  // flex:0 1 auto (not flex:1) — the card hugs its own content height instead
+  // flex:0 1 auto (not flex:1): the card hugs its own content height instead
   // of stretching to fill the screen. Short proposals no longer leave a slab
   // of flat gray dead space below the card; long ones still scroll normally.
   body.style.cssText='flex:0 1 auto;overflow-y:auto;max-height:calc(100vh - 56px);padding:16px;box-sizing:border-box;background:#f0f4f8;overflow-wrap:anywhere';
@@ -1750,7 +1750,7 @@ function _openComparisonPicker(){
     const label=b.type||('Bid '+(i+1));
     return `<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border2);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" name="cmp-bid" value="${b.id}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0"><span style="flex:1"><span style="font-size:14px;font-weight:700;display:block">${escHtml(label)}</span><span style="font-size:12px;color:var(--text-3)">$${total.toLocaleString()} · ${b.status||'Draft'}</span></span></label>`;
   }).join('');
-  box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">${svgIcon('📊',{size:17})} Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 bids — your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">${svgIcon('👁',{size:16,color:'#fff'})} Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
+  box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">${svgIcon('📊',{size:17})} Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 bids, your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">${svgIcon('👁',{size:16,color:'#fff'})} Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
@@ -1783,14 +1783,14 @@ function _tmInputChange(){
   // Crew count driven by stepper; read stepper display, not a select
   const crewDisp=document.getElementById('tm-i-crew-count');
   if(crewDisp)_tmCrewCount=parseInt(crewDisp.textContent)||_tmCrewCount||1;
-  // The field is "Estimated days" — _tmEstHours (shared with save/resume/the legacy
+  // The field is "Estimated days", _tmEstHours (shared with save/resume/the legacy
   // wizard) stays a real hour count internally, just derived from days×8 now.
   const daysInput=_moneyVal('tm-i-days');
   _tmEstHours=daysInput*8;
   const labor=_tmCrewCount*_tmRatePerMan*_tmEstHours;
   // Upsert labor line in _geiLines (same shape the rest of the app expects)
   const idx=_geiLines.findIndex(l=>l._tmLabor);
-  const desc='Labor — '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
+  const desc='Labor: '+_tmCrewCount+' worker'+(_tmCrewCount>1?'s':'')+' @ $'+_tmRatePerMan+'/hr';
   const line={desc,qty:_tmEstHours,unit:'hr',rate:Math.round(_tmRatePerMan*_tmCrewCount),_tmLabor:true,total:Math.round(_tmRatePerMan*_tmCrewCount*_tmEstHours)};
   if(idx>=0){if(labor>0)_geiLines[idx]=line;else _geiLines.splice(idx,1);}
   else if(labor>0)_geiLines.unshift(line);
@@ -1800,9 +1800,9 @@ function _tmInputChange(){
   setT('tm-stat-day','$'+dayRate.toLocaleString());
   setT('tm-stat-day-s',_tmRatePerMan&&_tmCrewCount?_tmCrewCount+'-person crew · 8hr day':'enter rate & crew');
   setT('tm-stat-labor','$'+labor.toLocaleString());
-  setT('tm-stat-labor-s',(_tmRatePerMan&&daysInput)?daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'—');
+  setT('tm-stat-labor-s',(_tmRatePerMan&&daysInput)?daysInput+'d × 8hr × '+_tmCrewCount+' × $'+_tmRatePerMan:'-');
   setT('tm-stat-days',_tmEstHours);
-  // Materials subtotal — shown at raw cost, no markup applied
+  // Materials subtotal, shown at raw cost, no markup applied
   const matRaw=_geiLines.filter(l=>!l._tmLabor).reduce((s,l)=>s+(l.total||(l.qty||0)*(l.rate||0)),0);
   const total=labor+matRaw;
   // Rail breakdown
@@ -1830,11 +1830,11 @@ function _tmInputChange(){
   // Keep the legacy line items + totals in sync (used by save/proposal)
   if(typeof renderGeiLines==='function')renderGeiLines();
   if(typeof calcGeiTotal==='function')calcGeiTotal();
-  // Crew picker (shared with BYO) — who's actually on this job drives true labor cost.
+  // Crew picker (shared with BYO), who's actually on this job drives true labor cost.
   if(typeof _renderLaborPicker==='function')_renderLaborPicker('tm');
   // TRUE cost feeds the gauge: materials at raw cost + what the selected crew
   // actually costs the business (loaded pay rates × the T&M hours). No employees
-  // — or none selected — means the OWNER is doing the work: their labor costs
+  //, or none selected, means the OWNER is doing the work: their labor costs
   // the business $0 and the labor revenue correctly reads as profit. The old
   // code fed the labor BILLING amount as "cost", which hid all labor profit and
   // made every T&M job read as underpriced.
@@ -1849,7 +1849,7 @@ function _tmRenderMatList(){
   const el=document.getElementById('tm-mat-list');if(!el)return;
   const mats=_geiLines.map((l,i)=>({l,i})).filter(x=>!x.l._tmLabor);
   if(!mats.length){
-    el.innerHTML='<div class="tm-mat-empty">No material categories yet — tap "+ Add category" to start.</div>';
+    el.innerHTML='<div class="tm-mat-empty">No material categories yet, tap "+ Add category" to start.</div>';
     return;
   }
   el.innerHTML=mats.map(({l,i})=>{
@@ -1956,7 +1956,7 @@ function _geiRenderFreeFormBuilder(){
   const hist=allHist.filter(h=>!h.trade||h.trade===curTrade||h.trade==='general').slice(0,6);
   const histHtml=hist.length?
     '<div style="margin-bottom:14px">'+
-      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Recently used — '+curTrade.charAt(0).toUpperCase()+curTrade.slice(1)+'</div>'+
+      '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Recently used, '+curTrade.charAt(0).toUpperCase()+curTrade.slice(1)+'</div>'+
       '<div style="display:flex;flex-wrap:wrap;gap:6px">'+
       hist.map((h,i)=>{const realIdx=allHist.findIndex(x=>x.desc===h.desc&&x.trade===h.trade);return'<button onclick="_geiHistoryChipAdd('+realIdx+')" style="padding:6px 12px;border-radius:20px;border:1.5px solid var(--border2);background:var(--bg2);font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2);display:inline-flex;align-items:center;gap:5px">'+escHtml(h.desc)+'<span style="color:var(--blue);font-weight:700">$'+(h.rate||0).toLocaleString('en-US',{maximumFractionDigits:0})+'</span></button>';}).join('')+
       '</div></div>':'';
@@ -1979,7 +1979,7 @@ function _geiRenderFreeFormLines(){
     const totalFmt='$'+total.toLocaleString('en-US',{maximumFractionDigits:0});
     return'<div style="background:var(--bg2);border-radius:var(--r);border:1px solid var(--border2);padding:11px 13px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px">'+
       '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(l.desc||'—')+'</div>'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(l.desc||'-')+'</div>'+
         '<div style="font-size:11px;color:var(--text3)">'+(l.qty||1)+' '+(l.unit||'ea')+' @ $'+(l.rate||0).toLocaleString('en-US',{maximumFractionDigits:0})+'</div>'+
       '</div>'+
       '<div style="display:flex;align-items:center;gap:6px;flex-shrink:0">'+
@@ -2006,7 +2006,7 @@ function _geiAddFreeFormLine(prefill){
     '<div style="background:var(--bg);border-radius:var(--rl);padding:20px 18px 24px;width:100%;max-width:480px;box-sizing:border-box;max-height:90vh;overflow-y:auto">'+
       '<div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:14px">'+(isEdit?'Edit line':'Add line item')+'</div>'+
       '<div class="f" style="margin-bottom:10px"><label>Description</label>'+
-        '<input id="_ffa-desc" type="text" value="'+escHtml(d.desc||'')+'" placeholder="e.g. Interior paint — 2 coats, Labor, Material" autocomplete="off" style="font-size:14px">'+
+        '<input id="_ffa-desc" type="text" value="'+escHtml(d.desc||'')+'" placeholder="e.g. Interior paint, 2 coats, Labor, Material" autocomplete="off" style="font-size:14px">'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">'+
         '<div class="f"><label>Qty</label><input id="_ffa-qty" type="number" value="'+(d.qty||1)+'" min="0.01" step="any" oninput="_ffaLiveTotal()" style="font-size:14px"></div>'+
@@ -2015,7 +2015,7 @@ function _geiAddFreeFormLine(prefill){
       '</div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);padding:9px 12px;border-radius:var(--r);margin-bottom:14px">'+
         '<span style="font-size:12px;color:var(--text2)">Line total</span>'+
-        '<span id="_ffa-total-disp" style="font-size:18px;font-weight:800;color:var(--blue)">'+(d.qty&&d.rate?'$'+((d.qty||1)*(d.rate||0)).toLocaleString('en-US',{maximumFractionDigits:0}):'—')+'</span>'+
+        '<span id="_ffa-total-disp" style="font-size:18px;font-weight:800;color:var(--blue)">'+(d.qty&&d.rate?'$'+((d.qty||1)*(d.rate||0)).toLocaleString('en-US',{maximumFractionDigits:0}):'-')+'</span>'+
       '</div>'+
       '<button class="btn btn-p" onclick="_geiConfirmFreeFormAdd('+(isEdit?d._edit:-1)+')" style="margin-bottom:8px">'+(isEdit?'Update line':'Add to estimate')+'</button>'+
       '<button class="btn" onclick="document.getElementById(\'_ff-add-ov\')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>'+
@@ -2028,7 +2028,7 @@ function _ffaLiveTotal(){
   const qty=parseFloat(document.getElementById('_ffa-qty')?.value)||0;
   const rate=parseFloat(document.getElementById('_ffa-rate')?.value)||0;
   const el=document.getElementById('_ffa-total-disp');
-  if(el)el.textContent=(qty&&rate)?'$'+(qty*rate).toLocaleString('en-US',{maximumFractionDigits:0}):'—';
+  if(el)el.textContent=(qty&&rate)?'$'+(qty*rate).toLocaleString('en-US',{maximumFractionDigits:0}):'-';
 }
 function _geiConfirmFreeFormAdd(editIdx){
   const desc=(document.getElementById('_ffa-desc')?.value||'').trim();
@@ -2115,7 +2115,7 @@ function _geiAddWithRate(job,inputEl){
     _settingsChanged();
     showToast('Rate saved for '+job.name,'💾');
   }
-  if(job.gasLic)showToast('Gas work — verify you\'re licensed for gas in your state','⚠️');
+  if(job.gasLic)showToast('Gas work, verify you\'re licensed for gas in your state','⚠️');
   if(job.freeForm){_geiShowFreeFormModal(job);return;}
   const rate=entered||marketTotal;
   if(job.custom){
@@ -2123,10 +2123,10 @@ function _geiAddWithRate(job,inputEl){
     const raw=prompt('Enter '+unitLabel+' for: '+job.name);
     if(!raw)return;
     const qty=parseFloat(raw);if(!qty||isNaN(qty))return;
-    _geiLines.push({desc:job.name+' — labor',qty,unit:job.unit,rate:Math.round(p.labor),total:qty*Math.round(p.labor),jobId:job.id});
+    _geiLines.push({desc:job.name+', labor',qty,unit:job.unit,rate:Math.round(p.labor),total:qty*Math.round(p.labor),jobId:job.id});
     if(p.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:p.mat,total:qty*p.mat});
   } else {
-    if(p.labor>0)_geiLines.push({desc:job.name+' — labor',qty:1,unit:job.unit,rate:p.labor,total:p.labor,jobId:job.id});
+    if(p.labor>0)_geiLines.push({desc:job.name+', labor',qty:1,unit:job.unit,rate:p.labor,total:p.labor,jobId:job.id});
     if(p.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty:1,unit:job.unit,rate:p.mat,total:p.mat});
   }
   renderGeiLines();calcGeiTotal();
@@ -2185,8 +2185,8 @@ function _geiOpenCatSheet(catLabel){
     </div>`;
   }).join('');
 
-  const firstTimeBanner=(!S.myRates||!Object.keys(S.myRates).length)?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:12px;color:#1e40af;line-height:1.5">${svgIcon('📍',{size:12,color:'#1e40af'})} Showing <strong>${S.state||'US'} market averages</strong> (BLS labor data). Edit any price to set your own rate — saves automatically.</div>`:'';
-  const newWorkBadge=_geiNewWork?`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:6px 12px;margin-bottom:10px;font-size:12px;color:#15803d;font-weight:600">${svgIcon('🏗',{size:12,color:'#15803d'})} New construction rates active — lower labor</div>`:'';
+  const firstTimeBanner=(!S.myRates||!Object.keys(S.myRates).length)?`<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:var(--r);padding:10px 14px;margin-bottom:12px;font-size:12px;color:#1e40af;line-height:1.5">${svgIcon('📍',{size:12,color:'#1e40af'})} Showing <strong>${S.state||'US'} market averages</strong> (BLS labor data). Edit any price to set your own rate, saves automatically.</div>`:'';
+  const newWorkBadge=_geiNewWork?`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:6px 12px;margin-bottom:10px;font-size:12px;color:#15803d;font-weight:600">${svgIcon('🏗',{size:12,color:'#15803d'})} New construction rates active, lower labor</div>`:'';
   sheet.innerHTML=`
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div style="font-size:16px;font-weight:800;color:var(--text)">${catLabel}</div>
@@ -2223,8 +2223,8 @@ function _geiRenderTemplates(){
   const visibleIds=_geiVisibleJobIds();
 
   let html='';
-  if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">${svgIcon('🚨',{size:12,color:'#b91c1c'})} Emergency mode — labor rates ×1.5 · after-hours surcharge added</div>`;
-  if(_geiNewWork)html+=`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:7px 12px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600">${svgIcon('🏗',{size:12,color:'#15803d'})} New construction rates active — lower labor</div>`;
+  if(_geiEmergency)html+=`<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:9px 12px;font-size:12px;color:#b91c1c;margin-bottom:12px;font-weight:600">${svgIcon('🚨',{size:12,color:'#b91c1c'})} Emergency mode, labor rates ×1.5 · after-hours surcharge added</div>`;
+  if(_geiNewWork)html+=`<div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:var(--r);padding:7px 12px;font-size:12px;color:#15803d;margin-bottom:12px;font-weight:600">${svgIcon('🏗',{size:12,color:'#15803d'})} New construction rates active, lower labor</div>`;
 
   // Category tile grid for trades with categories
   const cats=TRADE_JOB_CATS[trade];
@@ -2294,7 +2294,7 @@ function showGeiOnboarding(opts){
       <div style="font-size:20px;font-weight:800;color:var(--text);margin-bottom:4px">${svgIcon('⚡',{size:20})} Set up your services</div>
       <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Takes about 30 seconds · you can change this anytime</div>
       <div style="background:var(--blue-lt);border:1px solid var(--blue);border-radius:var(--r);padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--blue-dk)">
-        ${svgIcon('📍',{size:12,color:'var(--blue-dk)'})} You're in <strong>${stateStr}</strong> — market rates loaded${multNote}
+        ${svgIcon('📍',{size:12,color:'var(--blue-dk)'})} You're in <strong>${stateStr}</strong>, market rates loaded${multNote}
         <button onclick="document.getElementById('_gei-state-sel')?.classList.toggle('show')" style="margin-left:8px;background:none;border:none;color:var(--blue);font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit">Change</button>
         <select id="_gei-state-sel" class="show" onchange="S.state=this.value;_settingsChanged();showGeiOnboarding()" style="display:block;margin-top:8px;padding:6px 8px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;background:var(--bg);color:var(--text);width:100%">
           ${['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC'].map(st=>`<option value="${st}"${S.state===st?' selected':''}>${st}</option>`).join('')}
@@ -2314,7 +2314,7 @@ function showGeiOnboarding(opts){
       <button onclick="_geiOnboardFinish()" id="_gei-ob-btn" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:${selected.size?'var(--blue)':'var(--border2)'};color:${selected.size?'#fff':'var(--text3)'};font-weight:800;font-size:15px;cursor:${selected.size?'pointer':'default'};font-family:inherit;margin-bottom:10px">
         ${selected.size?`Get started → (${selected.size} service type${selected.size!==1?'s':''})`:'Select at least one service type'}
       </button>
-      <button onclick="_geiOnboardSkip()" style="width:100%;padding:10px;background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">Set up later — you'll be reminded next time</button>
+      <button onclick="_geiOnboardSkip()" style="width:100%;padding:10px;background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">Set up later, you'll be reminded next time</button>
     </div>`;
   }
   window._geiOnboardToggle=function(id){
@@ -2326,10 +2326,10 @@ function showGeiOnboarding(opts){
   window._geiOnboardFinish=function(){
     if(!selected.size)return;
     S.myBundles=[...selected];S.hasOnboarded=true;_settingsChanged();
-    ov.remove();showToast('Services set up — showing '+S.state+' market rates','✓');
+    ov.remove();showToast('Services set up, showing '+S.state+' market rates','✓');
   };
   window._geiOnboardSkip=function(){
-    ov.remove(); // session-only dismiss — myBundles stays unset, popup re-appears next load
+    ov.remove(); // session-only dismiss, myBundles stays unset, popup re-appears next load
   };
   render();
   document.body.appendChild(ov);
@@ -2376,7 +2376,7 @@ function _geiSyncJobTypeButtons(){
   if(_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
     const st=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
     const t=getJobTaxTreatment(st,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required — client must sign before work begins.':'New construction: no tax';
+    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required: client must sign before work begins.':'New construction: no tax';
     noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
   } else {
     noteEl.textContent='';
@@ -2403,7 +2403,7 @@ function _geiSyncJobScopeButtons(){
   if(noteEl&&_geiJobScope==='improvement'&&typeof getJobTaxTreatment==='function'){
     const stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
     const t=getJobTaxTreatment(stateKey,_geiTrade||'general','improvement',_geiIsCommercial?'commercial':'residential');
-    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required — client must sign before work begins.':'New construction: no tax';
+    noteEl.innerHTML=t.certificate?svgIcon('⚠',{size:11})+' '+escHtml(t.certificate.form)+' required: client must sign before work begins.':'New construction: no tax';
     noteEl.style.color=t.certificate?'var(--amber-dk)':'var(--text3)';
   } else if(noteEl){
     noteEl.textContent='';
@@ -2422,7 +2422,7 @@ function _geiToggleEmergency(){
 }
 
 function _geiAddTemplate(job){
-  if(job.gasLic)showToast('Gas work — verify you\'re licensed for gas in your state','⚠️');
+  if(job.gasLic)showToast('Gas work, verify you\'re licensed for gas in your state','⚠️');
   if(job.freeForm){_geiShowFreeFormModal(job);return;}
   const laborRate=_geiEmergency?Math.round(job.labor*1.5):job.labor;
   if(job.custom){
@@ -2430,10 +2430,10 @@ function _geiAddTemplate(job){
     const raw=prompt('Enter '+unitLabel+' for: '+job.name);
     if(!raw)return;
     const qty=parseFloat(raw);if(!qty||isNaN(qty))return;
-    if(laborRate>0)_geiLines.push({desc:job.name+' — labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
+    if(laborRate>0)_geiLines.push({desc:job.name+', labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
     if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty,unit:job.unit,rate:job.mat,total:qty*job.mat});
   } else {
-    if(laborRate>0)_geiLines.push({desc:job.name+' — labor',qty:1,unit:job.unit,rate:laborRate,total:laborRate});
+    if(laborRate>0)_geiLines.push({desc:job.name+', labor',qty:1,unit:job.unit,rate:laborRate,total:laborRate});
     if(job.mat>0)_geiLines.push({desc:job.matDesc||'Materials',qty:1,unit:job.unit,rate:job.mat,total:job.mat});
   }
   renderGeiLines();calcGeiTotal();
@@ -2474,8 +2474,8 @@ function _geiConfirmFreeForm(job){
   const matRate=parseFloat(document.getElementById('_ff-mat')?.value)||0;
   const qty=parseFloat(document.getElementById('_ff-qty')?.value)||1;
   document.getElementById('_gei-ff-ov')?.remove();
-  const modelTag=model?' — '+model:'';
-  if(laborRate>0)_geiLines.push({desc:job.name+modelTag+' — labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
+  const modelTag=model?', '+model:'';
+  if(laborRate>0)_geiLines.push({desc:job.name+modelTag+', labor',qty,unit:job.unit,rate:laborRate,total:qty*laborRate});
   if(matRate>0)_geiLines.push({desc:(model||job.matDesc||'Materials')+modelTag,qty,unit:job.unit,rate:matRate,total:qty*matRate});
   renderGeiLines();calcGeiTotal();
 }
@@ -2503,7 +2503,7 @@ function _geiSaveToPriceBook(i){
 function renderGeiLines(){
   const el=document.getElementById('gei-lines');if(!el)return;
   if(!_geiLines.length){
-    el.innerHTML='<div style="font-size:13px;color:var(--text3);text-align:center;padding:20px 0">No line items yet — tap <strong>+ Add line</strong> above.</div>';
+    el.innerHTML='<div style="font-size:13px;color:var(--text3);text-align:center;padding:20px 0">No line items yet, tap <strong>+ Add line</strong> above.</div>';
     return;
   }
   el.innerHTML=_geiLines.map((l,i)=>{
@@ -2604,7 +2604,7 @@ function _panelRenderSection(){
   const el=document.getElementById('gei-panel-section');if(!el)return;
   if(_geiTrade!=='electrical'){el.innerHTML='';return;}
   if(!_panelSched){
-    el.innerHTML=`<button onclick="_panelOpen()" style="width:100%;padding:12px;border-radius:var(--r);border:1.5px dashed var(--border2);background:var(--bg2);color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">${svgIcon('📋',{size:13})} Add panel schedule <span style="font-size:11px;font-weight:400">(optional — leave with the panel)</span></button>`;
+    el.innerHTML=`<button onclick="_panelOpen()" style="width:100%;padding:12px;border-radius:var(--r);border:1.5px dashed var(--border2);background:var(--bg2);color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center">${svgIcon('📋',{size:13})} Add panel schedule <span style="font-size:11px;font-weight:400">(optional: leave with the panel)</span></button>`;
     return;
   }
   const {l1,l2,slots,used,imbalance,spare}=_panelCalcBalance();
@@ -2694,10 +2694,10 @@ function _panelPrint(){
   const addr=document.getElementById('gei-addr')?.value||'';
   const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
   const biz=S.bname||getBusinessName()||'';
-  const imbalTxt=imbalance>0.10?`<span style="color:#dc2626;font-weight:700">${svgIcon('⚠',{size:13,color:'#dc2626'})} ${(imbalance*100).toFixed(0)}% imbalance — rebalance recommended</span>`:`<span style="color:#16a34a;font-weight:700">${svgIcon('✓',{size:13,color:'#16a34a'})} Balanced (${(imbalance*100).toFixed(0)}% difference)</span>`;
+  const imbalTxt=imbalance>0.10?`<span style="color:#dc2626;font-weight:700">${svgIcon('⚠',{size:13,color:'#dc2626'})} ${(imbalance*100).toFixed(0)}% imbalance, rebalance recommended</span>`:`<span style="color:#16a34a;font-weight:700">${svgIcon('✓',{size:13,color:'#16a34a'})} Balanced (${(imbalance*100).toFixed(0)}% difference)</span>`;
   const rows=circuits.map((c,i)=>`<tr>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${i+1}</td>
-    <td style="padding:4px 8px;border:1px solid #ccc">${escHtml(c.desc||'—')}</td>
+    <td style="padding:4px 8px;border:1px solid #ccc">${escHtml(c.desc||'-')}</td>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc;font-weight:700">${c.amps||''}A</td>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${c.phase==='2pole'?'2-pole':c.phase}</td>
     <td style="text-align:center;padding:4px 6px;border:1px solid #ccc">${escHtml(c.gauge||'')}</td>
@@ -2741,7 +2741,7 @@ function calcGeiTotal(){
   const pct=parseFloat(document.getElementById('gei-tax-pct')?.value)||0;
   const markup=sub*pct/100;
 
-  // Sales tax — separate from markup, based on state rules and job scope
+  // Sales tax, separate from markup, based on state rules and job scope
   let salesTax=0,salesTaxTreatment=null;
   const _stKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(document.getElementById('gei-addr')?.value||''):null)||(S&&S.state)||'KS';
   const _stScope=_geiJobScope||(_geiIsTM?'tm':'repair');
@@ -2775,7 +2775,7 @@ function calcGeiTotal(){
     } else if(salesTaxTreatment&&!salesTaxTreatment.customerTax){
       stRow.style.display='flex';
       stAmt.textContent='$0.00';
-      stLbl.textContent=_stScope==='improvement'?'Sales tax — capital improvement':'Sales tax (exempt)';
+      stLbl.textContent=_stScope==='improvement'?'Sales tax, capital improvement':'Sales tax (exempt)';
       stAmt.style.color='var(--text3)';
     } else if(salesTax>0){
       stRow.style.display='flex';
@@ -2841,12 +2841,12 @@ function saveGenericEstimate(draft){
       _deposit=Math.round(_depMax*100)/100;
       if(_geiIsTM)_tmFields.tmDepositAmt=_deposit;
       if(typeof showToast==='function'&&typeof _depositCapNote==='function'){
-        showToast('Deposit capped to $'+_deposit.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+' — '+_depositCapNote(_depState),'⚠️',6000);
+        showToast('Deposit capped to $'+_deposit.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})+', '+_depositCapNote(_depState),'⚠️',6000);
       }
     }
   }
   const _typeLabel=_geiIsTM?'Time & Materials Proposal':_geiIsFreeForm?'Custom Proposal':(TRADE_META[trade]?.label||'Trade')+' Proposal';
-  // Extract BYO field values before object literals — Safari fails to parse ?.?? inside spread conditionals
+  // Extract BYO field values before object literals, Safari fails to parse ?.?? inside spread conditionals
   const _byoTermsEl=document.getElementById('byo-custom-terms');
   const _byoTermsSave=_byoTermsEl?_byoTermsEl.value:(_byoCustomTerms||'');
   const _byoSecsSave=[..._byoCustomSections];
@@ -2891,15 +2891,15 @@ function saveGenericEstimate(draft){
   if(!draft)goPg('pg-clients');
 }
 
-// Full Terms & Conditions — ONE clause list for both T&M and BYO, built fresh
+// Full Terms & Conditions, ONE clause list for both T&M and BYO, built fresh
 // from live estimate state (owner directive 2026-07-13: moved out of the
 // proposal body and into the signature step's accordion, so the numbered
-// clauses live in exactly one place — the accordion right where the client
-// signs — instead of a wall of legal text before it). Called both when
+// clauses live in exactly one place, the accordion right where the client
+// signs: instead of a wall of legal text before it). Called both when
 // sending a proposal (stored as proposalData.termsHtml, read back by
 // sign.html) and when signing in person (_geiSignInPerson, same live
 // session) so the two paths can never drift apart. Deposit amount/percentage
-// is deliberately NOT a clause here — it's already its own line in the
+// is deliberately NOT a clause here, it's already its own line in the
 // proposal's deposit/balance summary.
 function _geiBuildTermsHtml(){
   const bname=S.bname||getBusinessName()||'';
@@ -2918,10 +2918,10 @@ function _geiBuildTermsHtml(){
     ?`Painting and surface work does not typically require permits for standard residential repainting. If your municipality requires a permit for your specific project, ${_party} will notify you in advance. Any permit fees will be billed at cost with prior approval.`
     :`${_party} shall obtain all permits and inspections required for this scope of work in accordance with applicable local ordinances and codes. Any permit fees not included in this proposal will be billed at cost with prior Buyer approval.`;
   // sign.html's legacy-proposal patcher keys on the "<div>N. <strong>Title:"
-  // shape — preserved verbatim by the renderer below.
-  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
+  // shape: preserved verbatim by the renderer below.
+  const _cancelClause=`Buyer may cancel within ${(typeof STATE_CANCEL!=='undefined'&&STATE_CANCEL[_stateKey])?STATE_CANCEL[_stateKey].days:3} business days of signing (${_cancelCitation(_stateKey)}) for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs, a reasonable estimate of actual damages, not a penalty. ${bname}'s right to retain the deposit is conditioned on ${bname}'s readiness and willingness to perform. If ${bname} fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.`;
   const _modeTerms=_geiIsTM?[
-    ['Contract type',`Time &amp; Materials${_tmNteCap?` — not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
+    ['Contract type',`Time &amp; Materials${_tmNteCap?`, not to exceed $${_tmNteCap.toLocaleString()}`:' (T&amp;M)'}`],
     ['Cancellation &amp; Deposits',_cancelClause],
     ['Billing',`${_tmBillingCycle==='weekly'?'Weekly':'Bi-weekly'} invoices with time sheets and material receipts attached.`],
   ]:[
@@ -2949,7 +2949,7 @@ function _geiBuildTermsHtml(){
 }
 
 async function sendGenericProposal(previewOnly){
-  saveGenericEstimate(true); // draft=true skips navigation — modal shows over estimate page
+  saveGenericEstimate(true); // draft=true skips navigation, modal shows over estimate page
   _saveToLineHistory();
   if(!previewOnly){
     // BYO line items already define the scope; chips are optional summary only.
@@ -2965,7 +2965,7 @@ async function sendGenericProposal(previewOnly){
       if(!_byoOn.some(it=>it.section==='Interior'||it.section==='Exterior')){zAlert('Add at least one line item in Interior or Exterior.',{title:'Work items required'});return;}
     }
     // Build minimal proposal for sign.html
-    if(!navigator.onLine){zAlert('You\'re offline — the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
+    if(!navigator.onLine){zAlert('You\'re offline, the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
     if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   }
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
@@ -2973,12 +2973,12 @@ async function sendGenericProposal(previewOnly){
   const{total}=calcGeiTotal();
   // GC-bid mode: this estimate is a sub's itemized bid to a LINKED GC, not a
   // homeowner proposal. Route it to the GC as a signable bid (amount + scope +
-  // line count) and stop — never mint a client sign-link. Fires only when
+  // line count) and stop, never mint a client sign-link. Fires only when
   // _openBidBuilder stamped the context; normal client sends skip this entirely.
   if(!previewOnly&&typeof window!=='undefined'&&window._gcBidCtx&&typeof _maybeRouteGcBid==='function'){
     // Stale-context guard: route as a GC bid ONLY if THIS estimate's client is
     // the linked GC's card. If the sub abandoned a bid and started a normal
-    // estimate, the client won't match — clear the context and send normally.
+    // estimate, the client won't match, clear the context and send normally.
     const _cliCard=(typeof clients!=='undefined')?clients.find(c=>c&&String(c.id)===String(_geiClientId)):null;
     if(_cliCard&&String(_cliCard.gcLinkId||'')===String(window._gcBidCtx.gcUid)){
       const _bidScope=(_geiScopeChips&&_geiScopeChips.length)?_geiScopeChips.join(', '):(v('gei-desc')||'');
@@ -2987,7 +2987,7 @@ async function sendGenericProposal(previewOnly){
       if(!_routed&&typeof zAlert==='function')zAlert('Couldn\'t send the bid to the GC. Check your connection and try again.',{title:'Bid not sent'});
       return;
     }
-    window._gcBidCtx=null; // stale — fall through to the normal client send
+    window._gcBidCtx=null; // stale: fall through to the normal client send
   }
   const trade=_geiTrade||getActiveTrade();
   const bname=escHtml(S.bname||getBusinessName()||'');
@@ -2999,29 +2999,29 @@ async function sendGenericProposal(previewOnly){
   const jobDesc=escHtml(v('gei-desc'));const duration=escHtml(v('gei-duration'));
   const _tradeM=TRADE_META[trade]||null;
   const tradeName=(_tradeM&&_tradeM.label)||'Service';
-  const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'—';
+  const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'-';
   const _geiNow=new Date();
   const dateStr=_geiNow.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
   const _geiExpD=new Date(_geiNow.getTime()+30*86400000).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'});
   const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const _tmDepPct=_geiDepositPct();
-  // Deposit is a % of the client-facing TOTAL (incl. tax) — the label says "(N%)" next
+  // Deposit is a % of the client-facing TOTAL (incl. tax): the label says "(N%)" next
   // to the estimated total, so computing from the pre-tax subtotal reads as a math error.
   const _tmDepAmt=Math.round(total*_tmDepPct)/100;
   const _tmNteCap=parseFloat(v('tm-nte-cap'))||0;
   const depositFmt='$'+_tmDepAmt.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-  // MUST be declared before the template literals below that use it — TDZ if declared after
+  // MUST be declared before the template literals below that use it, TDZ if declared after
   // Use the client's job address state, not the contractor's home state
   const _stateKey=(typeof detectStateFromAddr==='function'?detectStateFromAddr(v('gei-addr')):null)||(S&&S.state)||'KS';
-  // Proposal accent — uses the contractor's own S.brandColor (set in Settings →
+  // Proposal accent, uses the contractor's own S.brandColor (set in Settings →
   // Branding) when present, same hex→rgb→lighter-shade treatment as the sign-in
   // boot overlay, so a branded account's proposal actually looks like THEIRS
-  // instead of generic navy. Falls back to the original navy when unset — zero
+  // instead of generic navy. Falls back to the original navy when unset, zero
   // visual change for every account that hasn't picked a brand color.
   let _pAccent='#1a365d',_pAccent2='#2a4a7f';
   if(S&&S.brandColor){
     // adaBrand clamp: the accent renders as text on white AND as a bg under
-    // white text — a light brand pick would fail WCAG both ways. Belt for
+    // white text, a light brand pick would fail WCAG both ways. Belt for
     // legacy stored values; settings.js also clamps at save time now.
     const _bh=(typeof adaBrand==='function'?adaBrand(S.brandColor):S.brandColor).replace('#','');
     const _br=parseInt(_bh.substr(0,2),16),_bg=parseInt(_bh.substr(2,2),16),_bb=parseInt(_bh.substr(4,2),16);
@@ -3030,20 +3030,20 @@ async function sendGenericProposal(previewOnly){
       _pAccent2='rgb('+Math.min(255,_br+42)+','+Math.min(255,_bg+42)+','+Math.min(255,_bb+42)+')';
     }
   }
-  // One deposit-row template for both modes — only the label wording and accent
+  // One deposit-row template for both modes, only the label wording and accent
   // color differ (T&M calls it a mobilization deposit).
   const _tmDepRow=`<tr style="background:${_geiIsTM?'#0369a1':_pAccent2};color:rgba(255,255,255,.88)"><td style="padding:6px 18px;font-size:11px;font-weight:600">${_geiIsTM?`Mobilization Deposit (${_tmDepPct}%)`:`${_tmDepPct}% Deposit`} Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700;white-space:nowrap">${depositFmt}</td></tr>`;
-  // Full Terms & Conditions — built once, shared by the stored proposal
+  // Full Terms & Conditions, built once, shared by the stored proposal
   // (accordion under the signature in sign.html) and the contractor's own
   // Preview overlay below. No longer embedded in the proposal document body.
   const _fullTermsHtml=_geiBuildTermsHtml();
-  // Owner directive: the client-facing proposal shows exactly two dollar figures —
-  // the final TOTAL and the deposit due — never a per-room, per-material, or tax/markup
+  // Owner directive: the client-facing proposal shows exactly two dollar figures,
+  // the final TOTAL and the deposit due, never a per-room, per-material, or tax/markup
   // breakdown. Research on painting/remodeling proposals backs this: a visible price per
   // line lets clients cherry-pick or self-supply materials/labor against the number they
   // see. Line items below carry scope description only, no qty/amount columns.
   const _mkLineRow=(l,isRrp,suppressNotes)=>{
-    // BYO's own notes already print in full under "Scope of work" above (_scopeBlocks) —
+    // BYO's own notes already print in full under "Scope of work" above (_scopeBlocks):
     // repeating them again here doubled the same paragraph within one proposal and ate
     // up a lot of extra room. Suppressed for regular BYO lines; RRP and T&M lines have
     // no scope-of-work duplicate, so their notes still need to show here.
@@ -3073,14 +3073,14 @@ async function sendGenericProposal(previewOnly){
   let _propPanelHtml='';
   if(_panelSched){
     const {l1:_pl1,l2:_pl2,imbalance:_pimb}=_panelCalcBalance();
-    const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'—')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
-    _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Panel Schedule — ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:${_pAccent};color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
+    const _pRows=(_panelSched.circuits||[]).map((c,i)=>`<tr><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${i+1}</td><td style="padding:4px 8px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.desc||'-')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.amps||''}A</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.phase==='2pole'?'2-pole':c.phase}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${escHtml(c.gauge||'')}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.afci?'✓':''}</td><td style="text-align:center;padding:4px 6px;border:1px solid #cbd5e1;font-size:11px">${c.gfci?'✓':''}</td></tr>`).join('');
+    _propPanelHtml=`<div style="padding:16px 24px;border-top:2px solid #e2e8f0"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Panel Schedule, ${_panelSched.panelAmps}A</div><p style="font-size:11px;color:#64748b;margin:0 0 8px">L1 leg: ${_pl1}A · L2 leg: ${_pl2}A${_pimb>0.10?' · <strong style="color:#dc2626">Rebalance recommended</strong>':' · ✓ Balanced'}</p><table style="width:100%;border-collapse:collapse"><thead><tr><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">#</th><th style="background:${_pAccent};color:#fff;padding:5px 8px;border:1px solid #cbd5e1;text-align:left;font-size:10px">Circuit</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Amps</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Phase</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">Wire</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">AFCI</th><th style="background:${_pAccent};color:#fff;padding:5px 6px;border:1px solid #cbd5e1;font-size:10px">GFCI</th></tr></thead><tbody>${_pRows}</tbody></table></div>`;
   }
   const _hdrLabel=_geiIsTM?'Time &amp; Materials':tradeName+' Proposal';
-  // No standalone NTE pricing row — the cap is already disclosed in the Terms &
+  // No standalone NTE pricing row, the cap is already disclosed in the Terms &
   // Conditions "Contract type" clause below, so this isn't a lost disclosure, just
   // one less dollar figure sitting in the pricing table.
-  // Scope section — the scope-CHIP picker (with its plain-English clientDesc
+  // Scope section, the scope-CHIP picker (with its plain-English clientDesc
   // explanations) is the one shared, cross-mode "what's included" definition, so
   // it renders whenever any chips are selected, in EVERY estimate type. BYO's
   // own line-item section list is additional structured detail specific to BYO
@@ -3091,7 +3091,7 @@ async function sendGenericProposal(previewOnly){
     const _allChipDefs=[...(TRADE_SCOPE_CHIPS[_geiTrade]||[]),...(TRADE_SCOPE_CHIPS.general||[]),..._GEN_SCOPE];
     const _listItems=_geiScopeChips.map(l=>{
       const chip=_allChipDefs.find(c=>c.label===l);
-      const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096"> — ${escHtml(chip.clientDesc)}</span>`:'';
+      const desc=chip&&chip.clientDesc?`<span style="font-size:10.5px;color:#718096">, ${escHtml(chip.clientDesc)}</span>`:'';
       return `<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(l)}${desc}</li>`;
     }).join('');
     _scopeBlocks.push(`<ol style="margin:0 0 10px;padding-left:18px">${_listItems}</ol>`);
@@ -3101,13 +3101,13 @@ async function sendGenericProposal(previewOnly){
     const _scopeSecs2=[...(new Set(_byoWorkItems2.map(it=>it.section)))].filter(Boolean);
     const _secBlocks2=_scopeSecs2.map(sec=>{
       const its=_byoWorkItems2.filter(it=>it.section===sec);
-      // Items without notes get a quiet section-appropriate descriptor — a bare
+      // Items without notes get a quiet section-appropriate descriptor, a bare
       // one-word line ("1. Room") next to fully-described scope items reads as an
       // unfinished document to the client.
       const _fallbackDesc=/material/i.test(sec)?'Included in project total':'Labor and materials per agreed scope';
-      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}<span style="font-size:10.5px;color:#718096"> — ${escHtml(it.notes||_fallbackDesc)}</span></li>`).join('')+'</ol>';
+      const rows='<ol style="margin:4px 0 0;padding-left:18px">'+its.map(it=>`<li style="font-size:11.5px;color:#4a5568;line-height:1.7;overflow-wrap:anywhere">${escHtml(it.label)}<span style="font-size:10.5px;color:#718096">, ${escHtml(it.notes||_fallbackDesc)}</span></li>`).join('')+'</ol>';
       // Sub-section headers match the document's one header style (accent, same
-      // scale as "Scope of work") — the old hardcoded gray read as a different
+      // scale as "Scope of work"): the old hardcoded gray read as a different
       // font family entirely and made the section look mismatched.
       return `<div style="margin-bottom:10px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:2px">${escHtml(sec)}</div>${rows}</div>`;
     }).join('');
@@ -3123,19 +3123,19 @@ async function sendGenericProposal(previewOnly){
   // refactor while line 2677 still referenced it → ReferenceError aborting every send.
   const _geiEpaRequired=!!(_geiYearBuilt&&_geiYearBuilt<1978&&((_geiEpaClient&&_geiEpaClient.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const _rrpSection='';
-  // TOTAL is the one number a client should remember — sized and weighted like a
+  // TOTAL is the one number a client should remember, sized and weighted like a
   // deliberate focal point (matches the confident-number treatment sign.html's own
   // amount display uses), not just another table row.
   const _totalFooterRows=`<tr style="background:${_pAccent};color:#fff"><td style="padding:14px 18px;font-weight:800;font-size:13px;letter-spacing:.02em">${_geiIsTM?'ESTIMATED TOTAL':'TOTAL'}</td><td style="padding:14px 18px;text-align:right;font-weight:900;font-size:21px;letter-spacing:-.3px;white-space:nowrap">${totalFmt}</td></tr>${_tmDepRow}`;
   // BYO's line items are already fully listed (name + notes) under "Scope of work"
-  // above — once per-item prices came out, this table would just repeat the same
+  // above: once per-item prices came out, this table would just repeat the same
   // section headers and names a second time with nothing new to show. T&M doesn't
   // list materials anywhere else, so it keeps the full item table.
   const _lineItemsSection=_geiIsFreeForm
     ?`<table style="width:100%;border-collapse:collapse"><tfoot>${_totalFooterRows}</tfoot></table>`
     :`<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th colspan="2" style="padding:8px 18px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Description</th></tr></thead><tbody>${lineRows}</tbody><tfoot>${_totalFooterRows}</tfoot></table>`;
   const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,${_pAccent} 0%,${_pAccent2} 100%);color:#fff;padding:24px 28px;display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid rgba(255,255,255,.1)">${_proposalBizHeader(_bnameRaw,_bphoneRaw,_blicRaw)}<div style="text-align:right;padding-top:4px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9;margin-bottom:8px">${_hdrLabel}</div><div style="font-size:11px;opacity:.6;margin-bottom:2px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:${_pAccent}">${clientName}</div>${clientAddr?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Address</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientAddr}</div>`:''}${clientPhone?`<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8;margin-top:7px">Phone</div><div style="font-size:12px;color:#4a5568;margin-top:1px">${clientPhone}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:${_pAccent}">${jobDesc||tradeName+' service'}</div>${duration?`<div style="font-size:11px;color:#718096;margin-top:6px">Est. duration: ${duration}</div>`:''}<div style="font-size:11px;color:#718096;margin-top:3px">Valid until: ${_geiExpD}</div></div></div>${_scopeSection}${_rrpSection}${_lineItemsSection}${notesHtml}${_propPanelHtml}</div>`;
-  // Terms & Conditions is NOT part of the document the client reviews first —
+  // Terms & Conditions is NOT part of the document the client reviews first,
   // it only appears in the accordion under the signature on the actual sign
   // step (owner directive 2026-07-13). The preview mirrors that: it shows
   // only the document, same as sign.html's Review step before Approve & Sign.
@@ -3143,7 +3143,7 @@ async function sendGenericProposal(previewOnly){
   const bidId=_geiEditBidId;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   const proposalKey=`proposals/${_supaUser.id}/${bidId}_${token}.json`;
-  // Extract optional chaining out of object literal — Safari chokes on ?. inside { }
+  // Extract optional chaining out of object literal, Safari chokes on ?. inside { }
   const _stripeEnabled=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
   const proposalData={
     id:bidId,token,clientName:v('gei-client'),businessName:S.bname||getBusinessName(),
@@ -3172,17 +3172,17 @@ async function sendGenericProposal(previewOnly){
     poweredBy:S.poweredBy!==false,
   };
   const _uploadRes=await _supa.storage.from('proposals').upload(proposalKey,JSON.stringify(proposalData),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(e=>({error:e}));
-  if(_uploadRes&&_uploadRes.error){showToast('Upload failed — check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
+  if(_uploadRes&&_uploadRes.error){showToast('Upload failed, check connection and try again','error');console.error('[proposal upload]',_uploadRes.error);return;}
   const b=bids.find(x=>x.id===bidId);
   if(b){
     b.signingToken=token;b.proposalKey=proposalKey;
-    // Mark Pending now so hub snapshot shows the proposal — _commitProposalSent still
+    // Mark Pending now so hub snapshot shows the proposal, _commitProposalSent still
     // fires on Text/Email but is safe to call twice (idempotent status change)
     if(b.status==='Draft'||!b.status)b.status='Pending';
     b.draft=false;
     if(!b.proposalSentDate)b.proposalSentDate=todayKey();
     saveAll();
-    // saveAll() only SCHEDULES a debounced cloud write (2s timer) — force + await it
+    // saveAll() only SCHEDULES a debounced cloud write (2s timer), force + await it
     // now so the bid's signingToken/proposalKey/status are confirmed in td_bids
     // before this function proceeds (same fire-and-forget gap fixed in _sendCOToHub).
     try{await _flushSaveNow();}catch(_e){}
@@ -3196,7 +3196,7 @@ async function sendGenericProposal(previewOnly){
     try{const _hu=await _uploadClientHub(b.client_id);if(_hu)shareUrl=_hu;}catch(e){}
   }
   const _cl=getClientById(b?b.client_id:null);
-  // RAW strings only — this object feeds PLAIN-TEXT surfaces (sms: body, email
+  // RAW strings only, this object feeds PLAIN-TEXT surfaces (sms: body, email
   // body, navigator.share). `bname`/`clientName` above are escHtml'd for the
   // proposal HTML; reusing them here printed "&amp;" literally in the client's
   // text message. HTML consumers (compose modal) re-escape at injection.
@@ -3208,7 +3208,7 @@ async function sendGenericProposal(previewOnly){
     cemail:(_cl&&_cl.email)||'',
   };
   _pendingSignToken={bidId,token,proposalKey};
-  // Show send overlay (centered modal) — lets user choose Text / Email / Other app
+  // Show send overlay (centered modal), lets user choose Text / Email / Other app
   _showGeiSendOverlay();
   // Hide the generate button so user can't double-submit
   const geiSendBtn=document.getElementById('gei-send-btn');
@@ -3265,9 +3265,9 @@ function _renderIndModal(){
     '<div style="margin-bottom:14px;padding:12px;background:linear-gradient(135deg,#fffbeb,#fff7ed);border-radius:var(--r);border:1.5px solid #fed7aa">'+
       '<div style="font-size:11px;font-weight:800;color:#c2410c;margin-bottom:8px;display:flex;align-items:center;gap:6px">'+
         '<span>'+svgIcon('✨',{size:12,color:'#c2410c'})+'</span> AI Scope Helper'+
-        '<span style="font-size:10px;font-weight:500;color:#9a3412;margin-left:4px">— describe what you see, we\'ll suggest the equipment</span>'+
+        '<span style="font-size:10px;font-weight:500;color:#9a3412;margin-left:4px">- describe what you see, we\'ll suggest the equipment</span>'+
       '</div>'+
-      '<textarea id="ind-desc-inp" rows="2" placeholder="e.g. Two small drum dryers, a baghouse, and the control house — heavy rust on dryers, last painted 5+ years ago" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid #fed7aa;border-radius:var(--r);background:#fff;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:8px"></textarea>'+
+      '<textarea id="ind-desc-inp" rows="2" placeholder="e.g. Two small drum dryers, a baghouse, and the control house, heavy rust on dryers, last painted 5+ years ago" style="width:100%;box-sizing:border-box;padding:9px 10px;border:1.5px solid #fed7aa;border-radius:var(--r);background:#fff;color:var(--text);font-size:12px;font-family:inherit;resize:vertical;margin-bottom:8px"></textarea>'+
       '<div style="display:flex;align-items:center;gap:8px">'+
         '<button onclick="_indAiSuggest()" style="padding:8px 14px;border-radius:var(--r);border:none;background:#c2410c;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;flex-shrink:0">Find equipment →</button>'+
         '<div id="ind-desc-suggestions" style="flex:1;font-size:11px;color:var(--text3)">Describe the job and tap Find →</div>'+
@@ -3340,7 +3340,7 @@ function _indAiSuggest(){
   for(const[typeKey,words]of Object.entries(IND_KEYWORDS)){
     if(words.some(w=>text.includes(w)))found.push(typeKey);
   }
-  if(!found.length){suggEl.innerHTML='<span style="color:var(--text3)">No matches — try: drum dryer, silo, baghouse, conveyor, crane, tank…</span>';return;}
+  if(!found.length){suggEl.innerHTML='<span style="color:var(--text3)">No matches, try: drum dryer, silo, baghouse, conveyor, crane, tank…</span>';return;}
   suggEl.innerHTML='<div style="font-size:10px;color:var(--text3);margin-bottom:6px">Tap to add:</div>'+
     found.map(k=>'<button onclick="_addIndFromSuggest(\''+k+'\')" style="padding:5px 10px;border-radius:20px;border:1.5px solid #c2410c;background:#fff7ed;color:#c2410c;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;margin:2px 3px 2px 0">+'+escHtml(IND_EQUIP_TYPES[k].name)+'</button>').join('');
 }
@@ -3373,7 +3373,7 @@ function _addIndPiece(){
 function _removeIndPiece(i){_indPieces.splice(i,1);_renderIndPieces();_renderIndResult();}
 function _renderIndPieces(){
   const el=document.getElementById('ind-pieces-list');if(!el)return;
-  if(!_indPieces.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0;text-align:center;border:1.5px dashed var(--border2);border-radius:var(--r)">No equipment added yet — use the helper above or select a type</div>';return;}
+  if(!_indPieces.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:8px 0;text-align:center;border:1.5px dashed var(--border2);border-radius:var(--r)">No equipment added yet, use the helper above or select a type</div>';return;}
   el.innerHTML='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">Equipment list</div>'+
     _indPieces.map((p,i)=>{
       const totalSqft=p.qty*p.sqft;
@@ -3418,10 +3418,10 @@ function _renderIndResult(){
     el.innerHTML='<div style="padding:14px;background:var(--bg2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3)">Add equipment above to see the estimate</div>';
     return;
   }
-  const crewLabel=r.crew===1?'Solo — you handle it':r.crew===2?'You + 1 helper needed':r.crew===3?'3-person crew needed':'Full 4-person crew';
+  const crewLabel=r.crew===1?'Solo: you handle it':r.crew===2?'You + 1 helper needed':r.crew===3?'3-person crew needed':'Full 4-person crew';
   const crewColor=r.crew===1?'#16a34a':r.crew===2?'#2563eb':r.crew>=3?'#d97706':'#1a1a1a';
-  const liftLine=r.liftNeeded?'<div style="margin-top:6px;padding:7px 10px;background:#fff7ed;border-radius:var(--r);font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely needed (~$350/day) — add as line item if not on site</div>':'';
-  const scaffLine=r.flags.some(f=>f&&f.includes('Scaffolding'))?'<div style="margin-top:6px;padding:7px 10px;background:#fef9c3;border-radius:var(--r);font-size:11px;color:#854d0e;font-weight:600">'+svgIcon('🏗',{size:11,color:'#854d0e'})+' Scaffolding may be needed on one or more pieces — verify on-site</div>':'';
+  const liftLine=r.liftNeeded?'<div style="margin-top:6px;padding:7px 10px;background:#fff7ed;border-radius:var(--r);font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely needed (~$350/day): add as line item if not on site</div>':'';
+  const scaffLine=r.flags.some(f=>f&&f.includes('Scaffolding'))?'<div style="margin-top:6px;padding:7px 10px;background:#fef9c3;border-radius:var(--r);font-size:11px;color:#854d0e;font-weight:600">'+svgIcon('🏗',{size:11,color:'#854d0e'})+' Scaffolding may be needed on one or more pieces, verify on-site</div>':'';
   el.innerHTML=
     '<div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);border-radius:var(--r);padding:16px;color:#fff">'+
       '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-bottom:10px">Estimate Summary</div>'+
@@ -3477,7 +3477,7 @@ function _saveIndBid(silent){
 }
 async function _sendIndProposal(){
   if(!_saveIndBid(true))return; // save first, bail if no pieces
-  if(!navigator.onLine){zAlert('You\'re offline — the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
+  if(!navigator.onLine){zAlert('You\'re offline, the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   const r=_calcInd();
   const c=_indClient;
@@ -3499,7 +3499,7 @@ async function _sendIndProposal(){
     const totalSqft=p.qty*p.sqft;
     return `<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:9px 14px;font-size:12px;font-weight:600;color:#2d3748">${escHtml(p.name)}</td><td style="padding:9px 8px;text-align:center;font-size:12px;color:#64748b">${p.qty}</td><td style="padding:9px 8px;text-align:right;font-size:12px;color:#64748b">${totalSqft?totalSqft.toLocaleString():'-'}</td><td style="padding:9px 14px;font-size:11px;color:#94a3b8">${escHtml(p.note||'')}${p.lift?' '+svgIcon('⚠',{size:11,color:'#94a3b8'})+' Lift':''}${p.note&&p.lift?' / ':''}</td></tr>`;
   }).join('');
-  const liftWarning=r.liftNeeded?'<div style="padding:10px 18px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely required (~$350/day) — verify availability before scheduling</div>':'';
+  const liftWarning=r.liftNeeded?'<div style="padding:10px 18px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely required (~$350/day): verify availability before scheduling</div>':'';
   const notesSection=notes?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#7c2d12">Site Notes:</strong> ${escHtml(notes)}</div>`:'';
   const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${svgIcon('🏗',{size:11,color:'#fff'})} Industrial Coating Estimate</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT BID</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr><tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
@@ -3531,7 +3531,7 @@ async function _sendIndProposal(){
   const shareUrl=shortUrl||signingUrl;
   try{await navigator.clipboard.writeText(shareUrl);}catch(e){}
   document.getElementById('ind-equip-ov')?.remove();
-  showToast('Proposal link copied to clipboard — text or email it to the client','🔗');
+  showToast('Proposal link copied to clipboard, text or email it to the client','🔗');
   if(typeof renderCDBids==='function')setTimeout(renderCDBids,120);
 }
 // ─── End Industrial Equipment Estimate ───────────────────────────────────────
@@ -3549,7 +3549,7 @@ function openSalesTaxSetup(){
   ov.innerHTML=
     '<div style="background:var(--bg1);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:480px;animation:td-pg-enter .22s cubic-bezier(.22,1,.36,1) both">'+
       '<div style="font-size:16px;font-weight:700;color:var(--text1);margin-bottom:4px">Sales Tax Rate</div>'+
-      '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">'+stName+' — rate charged on taxable materials on your proposals</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">'+stName+', rate charged on taxable materials on your proposals</div>'+
       '<div style="display:flex;gap:8px;margin-bottom:10px">'+
         '<input id="stsu-zip" placeholder="ZIP code" maxlength="5" inputmode="numeric"'+
           ' style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;background:var(--bg2);color:var(--text1)">'+
@@ -3594,7 +3594,7 @@ function _stsuSave(){
   if(typeof showToast==='function')showToast(rate?'Sales tax rate set to '+rate+'%':'Sales tax rate cleared','✓');
 }
 
-// ─── Sign in person — T&M and Build Your Own ─────────────────────────────────
+// ─── Sign in person, T&M and Build Your Own ─────────────────────────────────
 function _geiSignInPerson(){
   saveGenericEstimate(true);
   const bid=bids.find(x=>x.id===_geiEditBidId);
@@ -3629,9 +3629,9 @@ function _geiSignInPerson(){
           )+
         '</div>'+
         // The ONE shared signing pad + the ONE shared terms block (esign.js)
-        // — same layout, same capture code, same substance as sign.html's
+        //, same layout, same capture code, same substance as sign.html's
         // remote signature for this exact document. Full clause list, not a
-        // one-line summary — this in-person signature IS the contract.
+        // one-line summary, this in-person signature IS the contract.
         esignPadHTML('gei-ip',{nameId:'gei-ip-pname'})+
         esignConsentHTML('gei-ip',_geiBuildTermsHtml())+
         '<button id="gei-ip-confirm-btn" onclick="_geiConfirmInPerson()" disabled style="width:100%;padding:14px;border-radius:var(--rl,12px);border:none;background:var(--bg2);color:var(--text3);font-size:16px;font-weight:700;cursor:not-allowed;font-family:inherit;margin-bottom:10px;transition:background .15s,color .15s">Confirm &amp; close job</button>'+
@@ -3639,8 +3639,8 @@ function _geiSignInPerson(){
       '</div>'+
     '</div>';
   document.body.appendChild(ov);
-  // Shared e-sign pad (esign.js) — markup, listeners, typed-preview all live there.
-  // Wired synchronously — the canvas is already in the DOM by this point, and
+  // Shared e-sign pad (esign.js): markup, listeners, typed-preview all live there.
+  // Wired synchronously, the canvas is already in the DOM by this point, and
   // deferring via setTimeout only opens a window where a fast confirm finds no
   // registered pad yet (esignResult returns "no-pad").
   esignWire('gei-ip',{nameId:'gei-ip-pname',onInk:()=>_geiIpCheckReady(),onType:()=>_geiIpCheckReady(),onClear:()=>_geiIpCheckReady()});
@@ -3672,11 +3672,11 @@ async function _geiConfirmInPerson(){
   bid.client_name=bid.client_name||clientName;
   saveAll();
   renderDash();
-  // Queue schedule alert — fires after user taps "Back to home" and lands on dashboard
+  // Queue schedule alert, fires after user taps "Back to home" and lands on dashboard
   const _alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
   _alerts.push({name:clientName,bidId:bid.id,clientId:bid.client_id,isPaid:false});
   localStorage.setItem('zp3_schedule_alerts',JSON.stringify(_alerts));
-  // Signature image for the DB record — shared result path (typed name renders
+  // Signature image for the DB record, shared result path (typed name renders
   // in the one cursive face when nothing was drawn).
   const _sigR=esignResult('gei-ip',{requireTyped:false,typedAsSig:true});
   const sigData=_sigR.ok?_sigR.sigData:'';

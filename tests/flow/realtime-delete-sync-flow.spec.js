@@ -1,4 +1,4 @@
-// REAL flow — cross-device Realtime sync of CREATES *and* DELETES, BOTH directions
+// REAL flow, cross-device Realtime sync of CREATES *and* DELETES, BOTH directions
 // (the "make a change on desktop, see it push to mobile, vice versa, and have it
 // flow + delete in real time" question). Two pages in ONE browser context model two
 // devices signed into the SAME account (the auth token is shared via localStorage),
@@ -14,8 +14,8 @@
 //
 //   1. A creates → B sees it           (create, A→B)
 //   2. A deletes → B removes it         (delete, A→B)   ← "delete in real time"
-//   3. B creates → A sees it            (create, B→A — vice versa)
-//   4. B deletes → A removes it         (delete, B→A — vice versa)
+//   3. B creates → A sees it            (create, B→A, vice versa)
+//   4. B deletes → A removes it         (delete, B→A, vice versa)
 //
 // Every created row is uniquely tagged and (per CLAUDE.md §13.7) the rows that are NOT
 // deleted by the test are left in the dev account to inspect; only the extra device
@@ -40,7 +40,7 @@ async function createBid(pg, id, cid, tag) {
 }
 
 // Delete a bid on device `pg` exactly as the app does: route the in-memory removal
-// through _userDelete so the id is recorded as a deliberate local delete, then save —
+// through _userDelete so the id is recorded as a deliberate local delete, then save,
 // the sweep soft-deletes it (deleted_at) and Realtime carries that to the peer.
 async function deleteBidLive(pg, id) {
   await pg.evaluate(async ({ id }) => {
@@ -64,16 +64,16 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
   // RE-ENABLED after BOTH root causes were fixed. (1) Read-skew: the sync marker is written
-  // LAST on every save, so zj_data.updated_at advances only once all td_* rows commit — proven
+  // LAST on every save, so zj_data.updated_at advances only once all td_* rows commit, proven
   // by the sibling burst test passing live on commit 6d17692. (2) B→A reverse-direction drop:
   // a live run showed steps 1&2 (A→B) green but 3&4 (B→A) failing because Supabase Realtime is
-  // best-effort — B's single postgres_changes event to A was dropped, and the old fast catch-up
+  // best-effort: B's single postgres_changes event to A was dropped, and the old fast catch-up
   // was itself KICKED BY a realtime event, so a fully-dropped event fell through to a slow 30s
   // poll (>25s test window). Fix (cloud.js): the reconcile is now an always-on ~5s HEARTBEAT
   // that polls the cursor regardless of whether an event arrived, so a dropped event self-heals
-  // within one interval and the socket is a mere accelerator. Not a widened wait (§11.1) — the
+  // within one interval and the socket is a mere accelerator. Not a widened wait (§11.1): the
   // convergence path itself is what changed.
-  test('a change on device A flows to B and deletes propagate live — and vice versa', async ({ page }) => {
+  test('a change on device A flows to B and deletes propagate live, and vice versa', async ({ page }) => {
     test.setTimeout(150000);
     const base = Date.now() * 1000 + (process.pid % 1000);
     const aBid = base, aCid = base + 1;          // created+deleted on A
@@ -111,11 +111,11 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
       rule: async (p) => ({ ok: p.__r && !(await sees(B, aBid)), got: `B still has bid = ${await sees(B, aBid)}` }),
     });
 
-    // ── 3. CREATE on B → A sees it (B→A — vice versa). ──
+    // ── 3. CREATE on B → A sees it (B→A, vice versa). ──
     // A has been a BACKGROUND tab since B opened (modern headless mirrors real tab
     // visibility). The product bar for a backgrounded device is the slow backstop; the
     // bar for a device the user LOOKS AT is "current now". bringToFront models the
-    // worker pulling the phone out — foregrounding fires the instant cursor check.
+    // worker pulling the phone out, foregrounding fires the instant cursor check.
     // Not a widened wait (§11.1): the assertion window is unchanged, the test just
     // observes a FOREGROUND device like a real user would.
     await step(page, {
@@ -127,7 +127,7 @@ test.describe('realtime cross-device create + delete, both directions (UI-driven
       rule: async (p) => ({ ok: p.__r && (await sees(p, bBid)), got: `A has bid = ${await sees(p, bBid)} (A visibility=${await p.evaluate(() => document.visibilityState)}, rt=${await p.evaluate(() => typeof _tdRealtimeReady !== 'undefined' && _tdRealtimeReady)})` }),
     });
 
-    // ── 4. DELETE on B → A removes it live (B→A — vice versa). ──
+    // ── 4. DELETE on B → A removes it live (B→A, vice versa). ──
     await step(page, {
       label: 'device B deletes the bid → device A removes it live (reverse direction)', page: 'cloud', role: 'contractor',
       suspect: 'cloud.js _userDelete + sweep on device B → postgres_changes UPDATE → _applyRealtimeRecord on A (splice)',

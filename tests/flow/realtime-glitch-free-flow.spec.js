@@ -1,14 +1,14 @@
-// REAL flow — realtime sync must be SMOOTH, not glitchy (the "no glitchy screens
+// REAL flow, realtime sync must be SMOOTH, not glitchy (the "no glitchy screens
 // or race conditions" requirement). realtime-sync-flow already proves an update
 // ARRIVES on the other device; this proves the arrival is CLEAN:
 //
-//   GLITCH-FREE — while device B receives an update from device A, B's dashboard
+//   GLITCH-FREE: while device B receives an update from device A, B's dashboard
 //   must never blank out (the greeting stays in the DOM the whole time → no white
 //   flash / rebuild flicker), B must not get navigated away from the page it's on,
 //   renderDash must not fire in a storm (the broadcast + postgres_changes are
 //   coalesced, not N redundant rebuilds), and zero console errors.
 //
-//   NO RACE / NO LOST UPDATE — when A fires a rapid BURST of edits to the same bid,
+//   NO RACE / NO LOST UPDATE, when A fires a rapid BURST of edits to the same bid,
 //   B must converge to the LAST value (the _loadInProgress guard + broadcast
 //   debounce serialize the reloads; no interleaving leaves a stale amount).
 //
@@ -56,7 +56,7 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
         const orig = renderDash;
         window.renderDash = function () {
           window.__g.rd++;
-          // Record WHO triggered each render — on a budget breach the failure names the
+          // Record WHO triggered each render, on a budget breach the failure names the
           // caller instead of leaving us to guess which sync path added a pass.
           try { window.__g.stacks.push(String((new Error()).stack || '').split('\n').slice(1, 4).map(s => s.trim()).join(' < ')); } catch (e) {}
           return orig.apply(this, arguments);
@@ -83,7 +83,7 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
           bids.push({ id: bidId, client_id: clientId, client_name: tag + ' Client', amount: 5000, status: 'Pending', bid_date: new Date().toISOString().slice(0, 10), _e2e: 'glitch' });
           // Bound the save WAIT (not the op): a full-account upsert can serialize behind
           // other workers' upserts of the same shared-account rows and stall well past
-          // the 120s test budget — a single page.evaluate has no per-call timeout, so an
+          // the 120s test budget, a single page.evaluate has no per-call timeout, so an
           // unbounded await would eat the whole run. Stop waiting after 20s and proceed
           // to assert render-stability; the upsert still completes in the background and
           // B receives it via realtime. The render assertions stay strict.
@@ -111,7 +111,7 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
       },
     });
 
-    // Resource cleanup only — the seed bid stays in the account (CLAUDE.md §13.7).
+    // Resource cleanup only, the seed bid stays in the account (CLAUDE.md §13.7).
     await pageB.close().catch(() => {});
 
     const rep = report(FLOW, BASELINE, page);
@@ -120,12 +120,12 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
 
   // RE-ENABLED after the read-skew root cause was fixed (cloud.js supaSaveToCloud "sync
   // marker written LAST"). B used to land on 5004 (one behind) every run because convergence
-  // keys off zj_data.updated_at, but that cursor was bumped by the settings-FIRST write —
+  // keys off zj_data.updated_at, but that cursor was bumped by the settings-FIRST write,
   // BEFORE the td_bids rows committed. B could capture the fresh cursor, reload, read the
   // tables before A's row upserts landed, and mark itself caught up on a stale amount (the
   // cursor never moved a second time, so B never reloaded again). The fix bumps
   // zj_data.updated_at only AFTER every td_* upsert has committed, so "cursor moved ⇒ all
-  // data committed" — B's next reconcile reload now always reads the final value.
+  // data committed", B's next reconcile reload now always reads the final value.
   test('A fires a rapid burst of edits → B converges to the LAST value (no lost update)', async ({ page }) => {
     test.setTimeout(120000);
     const bidId = Date.now() * 1000 + (process.pid % 1000);
@@ -179,11 +179,11 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
       rule: async () => {
         const amt = await pageB.evaluate((id) => { const b = (bids || []).find(x => x.id === id); return b ? b.amount : null; }, bidId);
         if (amt === 5005) return { ok: true, got: `B final amount=${amt}` };
-        // MISS — dump B's sync state, then the decisive probe: does ONE forced silent
+        // MISS: dump B's sync state, then the decisive probe: does ONE forced silent
         // reconcile heal it? healed ⇒ the notification/scheduler chain failed to fire
         // (zj event lost + heartbeat quiet); not healed ⇒ the merge itself rejects the
-        // newer row (clock/gate bug). Still a failure either way — B must converge on
-        // its own — but the next occurrence names its half of the machine.
+        // newer row (clock/gate bug). Still a failure either way, B must converge on
+        // its own, but the next occurrence names its half of the machine.
         const diag = await pageB.evaluate(async (id) => {
           const before = {
             loadInProgress: typeof _loadInProgress !== 'undefined' && _loadInProgress,
@@ -201,12 +201,12 @@ test.describe('realtime sync is glitch-free (multi-device)', () => {
         }, bidId);
         return {
           ok: false,
-          got: `B final amount=${amt} (want 5005) — loadInProgress=${diag.loadInProgress} rtReady=${diag.rtReady} lastZj=${diag.lastZj} deltaCursor=${diag.deltaCursor} clock=${diag.clock ? 'SET' : 'ABSENT'} afterForcedReconcile=${diag.after}`,
+          got: `B final amount=${amt} (want 5005), loadInProgress=${diag.loadInProgress} rtReady=${diag.rtReady} lastZj=${diag.lastZj} deltaCursor=${diag.deltaCursor} clock=${diag.clock ? 'SET' : 'ABSENT'} afterForcedReconcile=${diag.after}`,
         };
       },
     });
 
-    // Resource cleanup only — the seed bid stays in the account (CLAUDE.md §13.7).
+    // Resource cleanup only, the seed bid stays in the account (CLAUDE.md §13.7).
     await pageB.close().catch(() => {});
   });
 });

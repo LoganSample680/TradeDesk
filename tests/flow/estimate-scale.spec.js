@@ -1,14 +1,14 @@
-// SCALE BENCHMARKS — drive the REAL estimator at volume to expose where the app
+// SCALE BENCHMARKS, drive the REAL estimator at volume to expose where the app
 // gives the user no leverage (CLAUDE.md §13.4). These are UX-streamline targets,
 // not hard gates: each flow logs its deterministic interaction count via report()
 // in CAPTURE mode. A high clicks-per-unit-of-output number is a finding to slim,
 // not a CI failure. The ledger names the exact step that costs the most.
 //
-//   • estimate-build/interior-20room — a full 20-room interior repaint. How many
+//   • estimate-build/interior-20room: a full 20-room interior repaint. How many
 //     clicks does it cost to bid an entire house? Every added room is pure grind.
-//   • estimate-build/tm              — a Time & Materials job (no template; the
+//   • estimate-build/tm             : a Time & Materials job (no template; the
 //     estimator has to be told crew/rate/hours by hand).
-//   • estimate-build/byo             — Build-Your-Own custom line items the
+//   • estimate-build/byo            : Build-Your-Own custom line items the
 //     estimator has no idea how to price.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, RUN_TAG, step, report, resetLedger } = require('./live-helpers');
@@ -22,9 +22,9 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
   // ── 20-ITEM CUSTOM BID (Build-Your-Own at volume) ─────────────────────────
   // The paint "20-room interior repaint" grind benchmark went away with the paint
   // estimator; the current volume grind is a big custom bid where the estimator has
-  // no template — every line item is typed by hand. Same intent (§13.4): count the
+  // no template, every line item is typed by hand. Same intent (§13.4): count the
   // clicks it costs to bid a big job, so the ledger names the streamline target.
-  test('20-item custom bid — measure the grind of a big Build-Your-Own estimate', async ({ page }) => {
+  test('20-item custom bid, measure the grind of a big Build-Your-Own estimate', async ({ page }) => {
     const FLOW = 'estimate-build/byo-20item';
     const client = { id: Date.now(), name: `E2E Scale BYO20 ${RUN_TAG.slice(-5)}`, addr: '20 Custom Manor, Wichita, KS 67202', phone: '3165550020' };
     const N = 20;
@@ -43,7 +43,7 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
           try { openFreeFormEstimate(client, null); clicks++; } catch (e) { return { err: 'open: ' + e.message, clicks }; }
           await wait(400);
           // Spread items across the default sections. Each added item is pure grind:
-          // +Add item tap, typed label, typed price, Add tap — the count is the point.
+          // +Add item tap, typed label, typed price, Add tap, the count is the point.
           const SECS = ['Interior', 'Exterior', 'Materials', 'Add-ons'];
           for (let i = 1; i <= N; i++) {
             const sec = SECS[i % SECS.length];
@@ -69,13 +69,13 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
       },
     });
 
-    const rep = report(FLOW, BASELINE, page);   // capture mode — logs N clicks, not gated
+    const rep = report(FLOW, BASELINE, page);   // capture mode, logs N clicks, not gated
     // Scale benchmarks never hard-fail on clicks (§13.4); the count is the finding.
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
-  // ── TIME & MATERIALS (no template — pure manual entry) ─────────────────────
-  test('T&M estimate — crew/rate/hours by hand, NTE cap', async ({ page }) => {
+  // ── TIME & MATERIALS (no template, pure manual entry) ─────────────────────
+  test('T&M estimate, crew/rate/hours by hand, NTE cap', async ({ page }) => {
     const FLOW = 'estimate-build/tm';
     const client = { id: Date.now(), name: `E2E Scale TM ${RUN_TAG.slice(-5)}`, addr: '7 Hourly Ln, Wichita, KS 67202', phone: '3165550030' };
 
@@ -93,7 +93,7 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
           await wait(300);
           try {
             // ROOT CAUSE of the old failure: _tmRecalc (generic-estimate.js:501-516)
-            // reads #tm-crew-display.textContent, #tm-rate.value and #tm-hours.value —
+            // reads #tm-crew-display.textContent, #tm-rate.value and #tm-hours.value:
             // the single-page T&M layout. The old test wrote to #tm-i-crew-count /
             // #tm-i-rate / #tm-i-hours (the OTHER, wizard layout wired to
             // _tmInputChange), so _tmRecalc read rate=0 hours=0 → labor=0 → no line
@@ -130,7 +130,7 @@ test.describe('estimator scale benchmarks (UX streamline targets)', () => {
   });
 
   // ── BYO / CUSTOM LINE ITEMS (estimator has no template) ────────────────────
-  test('BYO estimate — custom section + custom line items priced by hand', async ({ page }) => {
+  test('BYO estimate, custom section + custom line items priced by hand', async ({ page }) => {
     const FLOW = 'estimate-build/byo';
     const client = { id: Date.now() + 1, name: `E2E Scale BYO ${RUN_TAG.slice(-5)}`, addr: '9 Custom Ct, Wichita, KS 67202', phone: '3165550040' };
 

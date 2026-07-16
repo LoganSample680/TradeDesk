@@ -1,9 +1,9 @@
-// REAL flow — the mileage/drive logger (task #7 remainder): drive the actual
+// REAL flow, the mileage/drive logger (task #7 remainder): drive the actual
 // End-Drive modal and its save path (mileage.js showEndDrive → saveEndDriveModal),
 // which is where the IRS-deductible trip is written. We seed the in-flight `gps`
 // trip state directly rather than going through confirmStartDrive(), because the
 // start path fires an SMS "on my way" redirect + a GPS capture that can't run
-// headless — the data-writing half is the part under test. mileage.unshift rows
+// headless: the data-writing half is the part under test. mileage.unshift rows
 // round-trip through td_mileage, so the save proves the write path end-to-end.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, type, cloudRows } = require('./live-helpers');
@@ -33,15 +33,15 @@ test.describe('mileage drive logger (UI-driven)', () => {
           gps.active = true; gps.vehicle = 'E2E Truck'; gps.purpose = 'Work drive';
           gps.clientId = clientId; gps.clientName = cName;
           gps.startTime = Date.now() - 10 * 60000; gps.startCoords = { lat: 37.6872, lon: -97.3301 };
-          showEndDrive();                                  // 1 tap — open End-Drive modal
+          showEndDrive();                                  // 1 tap, open End-Drive modal
         }, { clientId, cName });
         await p.waitForSelector('#end-miles-modal', { timeout: 10000 });
         // showEndDrive() runs a 100ms setTimeout that focus()+select()s this input (so the user
-        // can overtype the GPS-estimate prefill). Let that auto-select fire FIRST — if it lands
+        // can overtype the GPS-estimate prefill). Let that auto-select fire FIRST, if it lands
         // mid-typing it select-all-replaces the partial value (e.g. "12" → "." → ".4" = 0.4).
         await p.waitForTimeout(150);
         const k = await type(p, '#end-miles-modal', '12.4'); // real keystrokes
-        await p.evaluate(() => { saveEndDriveModal(); });    // 1 tap — Save trip
+        await p.evaluate(() => { saveEndDriveModal(); });    // 1 tap, Save trip
         await p.waitForTimeout(700);
         await p.evaluate(async () => { if (typeof supaSaveToCloud === 'function') await supaSaveToCloud(); });
         return 1 + k + 1;
@@ -61,7 +61,7 @@ test.describe('mileage drive logger (UI-driven)', () => {
       },
     });
 
-    // NO cleanup — the mileage row + client stay in the dev account on purpose so
+    // NO cleanup, the mileage row + client stay in the dev account on purpose so
     // the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

@@ -8,14 +8,14 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('jobs.js — exhaustive coverage', () => {
+test.describe('jobs.js: exhaustive coverage', () => {
   let page;
 
-  // Idempotent fixture seed — filter-then-push so it's safe to re-run. Called in
+  // Idempotent fixture seed, filter-then-push so it's safe to re-run. Called in
   // beforeAll AND beforeEach, AND (crucially) inside the same page.evaluate as
   // every test that asserts seeded values: a late-resolving cloud/cache load
   // reassigns the in-memory arrays after boot (task #22 race), and it can land
-  // in the gap BETWEEN beforeEach's evaluate and the test body's evaluate — the
+  // in the gap BETWEEN beforeEach's evaluate and the test body's evaluate, the
   // beforeEach re-seed alone still flaked on WebKit shard 3 (getJobClockTotal
   // read 0, fd9b3ba run). page.evaluate is atomic, so seeding at the top of the
   // reading evaluate fully closes the race; between-call re-seeds stay as a
@@ -97,7 +97,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
     });
   });
 
-  // Re-seed before EVERY test — repairs any fixture a late cloud/cache load
+  // Re-seed before EVERY test, repairs any fixture a late cloud/cache load
   // clobbered after boot (task #22). Idempotent, so tests that mutate-and-restore
   // their own fixtures still start from the canonical state.
   test.beforeEach(async () => { await seedFixtures(); });
@@ -132,7 +132,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // getJobScopes
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getJobScopes', () => {
-    test('null jobId — returns array without throw', async () => {
+    test('null jobId, returns array without throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(null); return { ok: true, isArray: Array.isArray(res) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -141,7 +141,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.isArray).toBe(true);
     });
 
-    test('undefined jobId — returns array without throw', async () => {
+    test('undefined jobId, returns array without throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(undefined); return { ok: true, isArray: Array.isArray(res) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -150,7 +150,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.isArray).toBe(true);
     });
 
-    test('nonexistent jobId — returns default scopes array', async () => {
+    test('nonexistent jobId, returns default scopes array', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(999999999); return { ok: true, len: res.length }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -159,7 +159,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.len).toBeGreaterThan(0);
     });
 
-    test('string jobId — does not throw', async () => {
+    test('string jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes('notanumber'); return { ok: true, isArray: Array.isArray(res) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -167,7 +167,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('zero jobId — does not throw', async () => {
+    test('zero jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(0); return { ok: true, isArray: Array.isArray(res) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -175,7 +175,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('negative jobId — does not throw', async () => {
+    test('negative jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(-1); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -183,12 +183,12 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — job with bid roomScopeMap returns active scopes + extraScopes', async () => {
+    test('golden path, job with bid roomScopeMap returns active scopes + extraScopes', async () => {
       const r = await page.evaluate(() => {
         try {
           // Re-seed the fixture INSIDE the test tick. A late-resolving cloud/cache
           // load can reassign `bids`/`jobs` after beforeAll and drop or replace the
-          // fixture — the bid's roomScopeMap (sand) survives but the job's
+          // fixture: the bid's roomScopeMap (sand) survives but the job's
           // extraScopes (popcorn) goes missing (task #22 shared-page state race).
           // Forcing the fixture present here makes the scope merge deterministic.
           if (typeof bids !== 'undefined' && !bids.some(b => b.id === 78801)) bids.push({ id: 78801, client_id: 79901, client_name: 'Jobs Test Alpha', amount: 3500, status: 'Closed Won', bid_date: '2026-01-10', trade_type: 'painting', type: 'Interior painting', surfaces: [{ type: 'walls', room: 'Living Room', qty: 400, wallSqft: 400 }], roomScopeMap: { 'Living Room': { sand: { active: true, hrs: 2, rate: 45, cost: 90 }, prime: { active: true } } }, signedAt: '2026-01-15T00:00:00Z', completion_date: null });
@@ -207,7 +207,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasPopcorn).toBe(true);
     });
 
-    test('job with no bid — falls back to default clock scopes', async () => {
+    test('job with no bid, falls back to default clock scopes', async () => {
       const r = await page.evaluate(() => {
         try {
           window.__seedJobsFixtures();
@@ -237,7 +237,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasDup).toBe(false);
     });
 
-    test('extraScopes as object with id — included correctly', async () => {
+    test('extraScopes as object with id, included correctly', async () => {
       const r = await page.evaluate(() => {
         try {
           window.__seedJobsFixtures();
@@ -253,7 +253,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasCustom).toBe(true);
     });
 
-    test('concurrent calls — no corruption', async () => {
+    test('concurrent calls, no corruption', async () => {
       const r = await page.evaluate(() => {
         window.__seedJobsFixtures();
         let ok = 0;
@@ -270,7 +270,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // getJobScopeBreakdown
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getJobScopeBreakdown', () => {
-    test('null — returns empty object without throw', async () => {
+    test('null: returns empty object without throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopeBreakdown(null); return { ok: true, type: typeof res }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -279,7 +279,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.type).toBe('object');
     });
 
-    test('undefined — returns empty object', async () => {
+    test('undefined: returns empty object', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopeBreakdown(undefined); return { ok: true, keys: Object.keys(res).length }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -288,7 +288,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.keys).toBe(0);
     });
 
-    test('nonexistent jobId — returns empty object', async () => {
+    test('nonexistent jobId, returns empty object', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopeBreakdown(999999); return { ok: true, keys: Object.keys(res).length }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -297,7 +297,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.keys).toBe(0);
     });
 
-    test('golden path — correct minutes per scope_id, __other for null scope', async () => {
+    test('golden path, correct minutes per scope_id, __other for null scope', async () => {
       const r = await page.evaluate(() => {
         try {
           window.__seedJobsFixtures();
@@ -311,7 +311,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.other).toBe(30);
     });
 
-    test('string jobId — does not throw', async () => {
+    test('string jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { getJobScopeBreakdown('abc'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -319,7 +319,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — stable results', async () => {
+    test('concurrent calls, stable results', async () => {
       const r = await page.evaluate(() => {
         window.__seedJobsFixtures();
         let ok = 0;
@@ -336,7 +336,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // getJobClockTotal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getJobClockTotal', () => {
-    test('null — returns 0', async () => {
+    test('null: returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: getJobClockTotal(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -345,7 +345,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('undefined — returns 0', async () => {
+    test('undefined: returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: getJobClockTotal(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -354,7 +354,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('nonexistent job — returns 0', async () => {
+    test('nonexistent job, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: getJobClockTotal(999999) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -363,7 +363,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('golden path — sum of minutes across all time entries for job', async () => {
+    test('golden path, sum of minutes across all time entries for job', async () => {
       const r = await page.evaluate(() => {
         try { window.__seedJobsFixtures(); return { ok: true, v: getJobClockTotal(77701) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -372,7 +372,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(165); // 90 + 45 + 30
     });
 
-    test('entry with missing minutes — treated as 0', async () => {
+    test('entry with missing minutes, treated as 0', async () => {
       const r = await page.evaluate(() => {
         try {
           window.__seedJobsFixtures();
@@ -386,7 +386,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(165);
     });
 
-    test('concurrent calls — stable', async () => {
+    test('concurrent calls, stable', async () => {
       const r = await page.evaluate(() => {
         window.__seedJobsFixtures();
         let ok = 0;
@@ -403,7 +403,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _fmtMin
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_fmtMin', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -411,7 +411,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -419,7 +419,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('0 — returns empty string', async () => {
+    test('0: returns empty string', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(0) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -428,7 +428,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('');
     });
 
-    test('30 — returns "30m"', async () => {
+    test('30: returns "30m"', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(30) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -437,7 +437,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('30m');
     });
 
-    test('60 — returns "1h "', async () => {
+    test('60: returns "1h "', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(60) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -446,7 +446,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toContain('1h');
     });
 
-    test('90 — returns "1h 30m"', async () => {
+    test('90: returns "1h 30m"', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(90) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -455,7 +455,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('1h 30m');
     });
 
-    test('120 — returns "2h "', async () => {
+    test('120: returns "2h "', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(120) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -464,7 +464,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toContain('2h');
     });
 
-    test('negative -1 — does not throw', async () => {
+    test('negative -1, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(-1) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -472,7 +472,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very large number — does not throw', async () => {
+    test('very large number, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(99999) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -481,7 +481,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toContain('h');
     });
 
-    test('string input — does not throw', async () => {
+    test('string input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin('abc') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -489,7 +489,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — all succeed', async () => {
+    test('concurrent calls, all succeed', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -505,7 +505,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // openClockInSheet
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openClockInSheet', () => {
-    test('null jobId — returns early without throw', async () => {
+    test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { openClockInSheet(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -513,7 +513,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined jobId — returns early without throw', async () => {
+    test('undefined jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { openClockInSheet(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -521,7 +521,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent jobId — returns early without throw', async () => {
+    test('nonexistent jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { openClockInSheet(999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -529,7 +529,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates overlay with id _cks-ov', async () => {
+    test('golden path, creates overlay with id _cks-ov', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('_cks-ov')?.remove();
@@ -543,7 +543,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('called 3 times — no duplicate overlays', async () => {
+    test('called 3 times, no duplicate overlays', async () => {
       const r = await page.evaluate(() => {
         try {
           openClockInSheet(77701);
@@ -558,7 +558,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('job with no bid — uses job name as client name fallback', async () => {
+    test('job with no bid, uses job name as client name fallback', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('_cks-ov')?.remove();
@@ -573,7 +573,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasJobName).toBe(true);
     });
 
-    test('bid with a balance owed — shows a Collect button wired to openPayPanel', async () => {
+    test('bid with a balance owed, shows a Collect button wired to openPayPanel', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('_cks-ov')?.remove();
@@ -589,7 +589,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.html).toContain('$3,500');
     });
 
-    test('job with no linked bid — no Collect button (nothing to collect against)', async () => {
+    test('job with no linked bid, no Collect button (nothing to collect against)', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('_cks-ov')?.remove();
@@ -604,7 +604,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasCollect).toBe(false);
     });
 
-    test('bid with zero balance — no Collect button', async () => {
+    test('bid with zero balance, no Collect button', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('_cks-ov')?.remove();
@@ -622,7 +622,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasCollect).toBe(false);
     });
 
-    test('concurrent calls — no throw, only 1 overlay', async () => {
+    test('concurrent calls, no throw, only 1 overlay', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -638,9 +638,9 @@ test.describe('jobs.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // clockIn/clockOut — "bulletproof" persistence (owner request 2026-07-11).
+  // clockIn/clockOut: "bulletproof" persistence (owner request 2026-07-11).
   // Before this, clockOut() was the ONLY place a timeEntries row was ever
-  // written — a crashed tab, dead phone, or forgotten clock-out meant the
+  // written: a crashed tab, dead phone, or forgotten clock-out meant the
   // entire session was silently lost, with no trace anywhere. Now clockIn()
   // itself persists an "open" row immediately; clockOut() closes that same
   // row instead of creating a new one. This block proves the data survives
@@ -667,7 +667,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
           window.showClockBanner = origBanner; window.showToast = origToast;
           // Leaving _activeTimer set here would make the NEXT test's clockIn()
           // hit the "already tracking this task" guard (js/jobs.js:196) and
-          // silently no-op — reset state so tests stay isolated.
+          // silently no-op, reset state so tests stay isolated.
           if (typeof _activeTimer !== 'undefined' && _activeTimer) { clearInterval(_activeTimer.timerInterval); clockOut(false, true); }
         }
       });
@@ -678,7 +678,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.matchesActiveTimer).toBe(true);
     });
 
-    test('clockOut closes the SAME open row in place — does not create a duplicate', async () => {
+    test('clockOut closes the SAME open row in place, does not create a duplicate', async () => {
       const r = await page.evaluate(() => {
         const origBanner = window.showClockBanner, origHide = window.hideClockBanner;
         const origRender = window.renderJobsPage, origToast = window.showToast;
@@ -701,11 +701,11 @@ test.describe('jobs.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.countAfterClockIn).toBe(1);
-      expect(r.countAfterClockOut).toBe(1); // still 1 — updated in place, not duplicated
+      expect(r.countAfterClockOut).toBe(1); // still 1, updated in place, not duplicated
       expect(r.sameRowClosed).toBe(true);
     });
 
-    test('clockOut(false) — explicit discard removes the open row instead of stranding it open', async () => {
+    test('clockOut(false): explicit discard removes the open row instead of stranding it open', async () => {
       const r = await page.evaluate(() => {
         const origBanner = window.showClockBanner, origHide = window.hideClockBanner, origRender = window.renderJobsPage;
         window.showClockBanner = () => {}; window.hideClockBanner = () => {}; window.renderJobsPage = () => {};
@@ -730,7 +730,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
           clockIn(77701, 'sand', 'Sanding');
           const entryId = _activeTimer.entryId;
           clearInterval(_activeTimer.timerInterval);
-          _activeTimer = null; // simulate a reload — the `let` binding does not survive
+          _activeTimer = null; // simulate a reload, the `let` binding does not survive
           _rehydrateActiveTimer();
           return { ok: true, restored: !!_activeTimer, entryId: _activeTimer ? _activeTimer.entryId : null, expectedId: entryId, jobId: _activeTimer ? _activeTimer.jobId : null };
         } catch (e) { return { ok: false, err: e.message }; }
@@ -792,12 +792,12 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasForceClosedBy).toBe(true);
     });
 
-    test('forceClockOutEntry on a nonexistent id — does not throw', async () => {
+    test('forceClockOutEntry on a nonexistent id, does not throw', async () => {
       const r = await page.evaluate(() => { try { forceClockOutEntry(999999); return true; } catch (e) { return false; } });
       expect(r).toBe(true);
     });
 
-    test('forceClockOutEntry on an already-closed entry — no-op, does not throw', async () => {
+    test('forceClockOutEntry on an already-closed entry, no-op, does not throw', async () => {
       const r = await page.evaluate(() => {
         timeEntries = timeEntries.filter(e => e.id !== 9990102);
         timeEntries.push({ id: 9990102, job_id: 77701, date: todayKey(), start_time: new Date().toISOString(), end_time: new Date().toISOString(), minutes: 30, open: false });
@@ -820,14 +820,14 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.gone).toBe(true);
     });
 
-    test('deleteTimeEntry null/nonexistent id — does not throw', async () => {
+    test('deleteTimeEntry null/nonexistent id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { deleteTimeEntry(null); deleteTimeEntry(999999); return true; } catch (e) { return false; }
       });
       expect(r).toBe(true);
     });
 
-    test('_openEditTimeEntry on a still-open entry — refuses (must clock out first)', async () => {
+    test('_openEditTimeEntry on a still-open entry, refuses (must clock out first)', async () => {
       const r = await page.evaluate(() => {
         timeEntries = timeEntries.filter(e => e.id !== 9990104);
         timeEntries.push({ id: 9990104, job_id: 77701, date: todayKey(), start_time: new Date().toISOString(), end_time: null, minutes: null, logged_by_uid: null, open: true });
@@ -840,7 +840,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.modalShown).toBe(false);
     });
 
-    test('_openEditTimeEntry / _saveEditedTimeEntry — golden path updates start/end/minutes and marks who edited it', async () => {
+    test('_openEditTimeEntry / _saveEditedTimeEntry: golden path updates start/end/minutes and marks who edited it', async () => {
       const r = await page.evaluate(() => {
         timeEntries = timeEntries.filter(e => e.id !== 9990105);
         timeEntries.push({ id: 9990105, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, logged_by_name: 'Owner (me)', open: false });
@@ -863,7 +863,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.modalClosed).toBe(true);
     });
 
-    test('_saveEditedTimeEntry rejects end time before/equal to start — leaves the entry unchanged', async () => {
+    test('_saveEditedTimeEntry rejects end time before/equal to start, leaves the entry unchanged', async () => {
       const r = await page.evaluate(() => {
         timeEntries = timeEntries.filter(e => e.id !== 9990106);
         timeEntries.push({ id: 9990106, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, open: false });
@@ -871,7 +871,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
         try {
           _openEditTimeEntry(9990106);
           document.getElementById('tle-start').value = '2026-01-01T11:00';
-          document.getElementById('tle-end').value = '2026-01-01T10:00'; // before start — invalid
+          document.getElementById('tle-end').value = '2026-01-01T10:00'; // before start, invalid
           _saveEditedTimeEntry(9990106);
           const e = timeEntries.find(x => x.id === 9990106);
           return { ok: true, minutesUnchanged: e.minutes === 60, errShown: document.getElementById('tle-err')?.style.display === 'block' };
@@ -883,7 +883,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.errShown).toBe(true);
     });
 
-    test('_saveEditedTimeEntry rejects a single entry spanning over 24 hours — leaves the entry unchanged', async () => {
+    test('_saveEditedTimeEntry rejects a single entry spanning over 24 hours, leaves the entry unchanged', async () => {
       const r = await page.evaluate(() => {
         timeEntries = timeEntries.filter(e => e.id !== 9990107);
         timeEntries.push({ id: 9990107, job_id: 77701, date: '2026-01-01', start_time: '2026-01-01T09:00:00.000Z', end_time: '2026-01-01T10:00:00.000Z', minutes: 60, logged_by_uid: null, open: false });
@@ -891,7 +891,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
         try {
           _openEditTimeEntry(9990107);
           document.getElementById('tle-start').value = '2026-01-01T09:00';
-          document.getElementById('tle-end').value = '2026-01-03T10:00'; // 49 hours later — impossible for one entry
+          document.getElementById('tle-end').value = '2026-01-03T10:00'; // 49 hours later, impossible for one entry
           _saveEditedTimeEntry(9990107);
           const e = timeEntries.find(x => x.id === 9990107);
           return { ok: true, minutesUnchanged: e.minutes === 60, errShown: document.getElementById('tle-err')?.style.display === 'block', errText: document.getElementById('tle-err')?.textContent };
@@ -923,7 +923,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.minutes).toBe(1440);
     });
 
-    test('_openEditTimeEntry / deleteTimeEntry on a nonexistent id — do not throw', async () => {
+    test('_openEditTimeEntry / deleteTimeEntry on a nonexistent id, do not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openEditTimeEntry(999999); _saveEditedTimeEntry(999999); deleteTimeEntry(999999); return true; }
         catch (e) { return false; }
@@ -933,13 +933,13 @@ test.describe('jobs.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // _nearbyClockIn — nearby-banner Clock in handler. Unlike openClockInSheet
+  // _nearbyClockIn: nearby-banner Clock in handler. Unlike openClockInSheet
   // (which requires an existing job), this always succeeds: given a null
   // jobId it creates a minimal walk-up job for the client on the spot so
   // "you're on site, clock in" never dead-ends.
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_nearbyClockIn', () => {
-    test('existing jobId — opens the sheet directly, creates no new job', async () => {
+    test('existing jobId, opens the sheet directly, creates no new job', async () => {
       const r = await page.evaluate(() => {
         const beforeCount = jobs.length;
         try {
@@ -955,7 +955,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.jobsAdded).toBe(0);
     });
 
-    test('null jobId, valid client — creates a walk-up job and opens the sheet for it', async () => {
+    test('null jobId, valid client, creates a walk-up job and opens the sheet for it', async () => {
       const r = await page.evaluate(() => {
         const orig = { clients, jobs };
         clients = clients.filter(c => c.id !== 79970);
@@ -980,7 +980,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.sheetExists).toBe(true);
     });
 
-    test('null jobId, nonexistent client — returns early without throw, no job created', async () => {
+    test('null jobId, nonexistent client, returns early without throw, no job created', async () => {
       const r = await page.evaluate(() => {
         const beforeCount = jobs.length;
         try {
@@ -992,7 +992,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.jobsAdded).toBe(0);
     });
 
-    test('null jobId, null client — does not throw', async () => {
+    test('null jobId, null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _nearbyClockIn(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1005,7 +1005,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _clockAddTask
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clockAddTask', () => {
-    test('null jobId — does not throw', async () => {
+    test('null jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTask(null); document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove()); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1013,7 +1013,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined jobId — does not throw', async () => {
+    test('undefined jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTask(undefined); document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove()); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1021,7 +1021,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates overlay with add-task UI', async () => {
+    test('golden path, creates overlay with add-task UI', async () => {
       const r = await page.evaluate(() => {
         try {
           document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -1035,7 +1035,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasInput).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -1052,7 +1052,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _clockAddTaskConfirm
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clockAddTaskConfirm', () => {
-    test('null jobId — returns early without throw', async () => {
+    test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTaskConfirm(null, 'sand', 'Sanding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1060,7 +1060,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent jobId — returns early without throw', async () => {
+    test('nonexistent jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTaskConfirm(999999, 'sand', 'Sanding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1068,7 +1068,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — adds scopeId to job extraScopes', async () => {
+    test('golden path, adds scopeId to job extraScopes', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null; // ensure clean state
@@ -1085,7 +1085,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasIt).toBe(true);
     });
 
-    test('null scopeId (custom task) — generates custom_ id and pushes object', async () => {
+    test('null scopeId (custom task), generates custom_ id and pushes object', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -1119,7 +1119,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('undefined scopeLabel — does not throw', async () => {
+    test('undefined scopeLabel, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -1136,7 +1136,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _markJobComplete
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_markJobComplete', () => {
-    test('null jobId — does not throw (zConfirm fires cb, job not found)', async () => {
+    test('null jobId, does not throw (zConfirm fires cb, job not found)', async () => {
       const r = await page.evaluate(() => {
         try { _markJobComplete(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1144,7 +1144,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent jobId — does not throw', async () => {
+    test('nonexistent jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _markJobComplete(999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1152,7 +1152,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets job status to done', async () => {
+    test('golden path, sets job status to done', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -1169,7 +1169,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.isDone).toBe(true);
     });
 
-    test('with active timer on same job — clocks out first', async () => {
+    test('with active timer on same job, clocks out first', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 120000, timerInterval: null };
@@ -1194,7 +1194,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       await page.evaluate(() => { _activeTimer = null; });
     });
 
-    test('null jobId — returns early without throw', async () => {
+    test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
         try { clockIn(null, 'sand', 'Sanding'); return { ok: true, timerNull: _activeTimer === null }; }
@@ -1204,7 +1204,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.timerNull).toBe(true);
     });
 
-    test('undefined jobId — returns early without throw', async () => {
+    test('undefined jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { clockIn(undefined, 'sand', 'Sanding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1212,7 +1212,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent jobId — returns early without throw', async () => {
+    test('nonexistent jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { clockIn(999999, 'sand', 'Sanding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1220,7 +1220,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets _activeTimer correctly', async () => {
+    test('golden path, sets _activeTimer correctly', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -1237,7 +1237,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.scopeLabel).toBe('Sanding');
     });
 
-    test('clocking in to already-active same job+scope — shows toast, no duplicate timer', async () => {
+    test('clocking in to already-active same job+scope, shows toast, no duplicate timer', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -1253,7 +1253,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('switching scope on same job — saves silently and restarts', async () => {
+    test('switching scope on same job, saves silently and restarts', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -1269,7 +1269,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.newScope).toBe('prime');
     });
 
-    test('null scopeId — stores null in timer', async () => {
+    test('null scopeId, stores null in timer', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -1284,7 +1284,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.sid).toBeNull();
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
         let ok = 0;
@@ -1307,7 +1307,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       await page.evaluate(() => { _activeTimer = null; });
     });
 
-    test('no active timer — returns early without throw', async () => {
+    test('no active timer, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; clockOut(true, true); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1315,7 +1315,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('saveEntry=false — does not push time entry', async () => {
+    test('saveEntry=false: does not push time entry', async () => {
       const r = await page.evaluate(() => {
         try {
           const prevLen = timeEntries.length;
@@ -1329,7 +1329,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.timerNull).toBe(true);
     });
 
-    test('saveEntry=true — pushes time entry and clears timer', async () => {
+    test('saveEntry=true: pushes time entry and clears timer', async () => {
       const r = await page.evaluate(() => {
         try {
           const prevLen = timeEntries.length;
@@ -1363,7 +1363,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.minutes).toBe(1);
     });
 
-    test('concurrent calls — only first executes, no double-entry', async () => {
+    test('concurrent calls, only first executes, no double-entry', async () => {
       const r = await page.evaluate(() => {
         try {
           const prevLen = timeEntries.length;
@@ -1385,7 +1385,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // updateClockTimer
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('updateClockTimer', () => {
-    test('no active timer — returns early without throw', async () => {
+    test('no active timer, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; updateClockTimer(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1393,7 +1393,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing DOM element — does not throw', async () => {
+    test('missing DOM element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('clock-banner-time')?.remove();
@@ -1406,7 +1406,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with DOM element — sets text content', async () => {
+    test('with DOM element, sets text content', async () => {
       const r = await page.evaluate(() => {
         try {
           let el = document.getElementById('clock-banner-time');
@@ -1426,7 +1426,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasContent).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = { jobId: 77701, jobName: 'T', clientName: 'C', scopeId: 'sand', scopeLabel: 'S', startTime: Date.now() - 5000, timerInterval: null };
         let ok = 0;
@@ -1444,7 +1444,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // showClockBanner / hideClockBanner
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('showClockBanner', () => {
-    test('missing clock-banner element — does not throw', async () => {
+    test('missing clock-banner element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('clock-banner')?.remove();
@@ -1457,7 +1457,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with banner element — sets display:flex', async () => {
+    test('with banner element, sets display:flex', async () => {
       const r = await page.evaluate(() => {
         try {
           let b = document.getElementById('clock-banner');
@@ -1474,7 +1474,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.disp).toBe('flex');
     });
 
-    test('null _activeTimer — does not throw', async () => {
+    test('null _activeTimer, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; showClockBanner(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1484,7 +1484,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   });
 
   test.describe('hideClockBanner', () => {
-    test('missing element — does not throw', async () => {
+    test('missing element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('clock-banner')?.remove();
@@ -1495,7 +1495,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with element — sets display:none and removes clock-active class', async () => {
+    test('with element, sets display:none and removes clock-active class', async () => {
       const r = await page.evaluate(() => {
         try {
           let b = document.getElementById('clock-banner');
@@ -1511,7 +1511,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasClass).toBe(false);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -1527,7 +1527,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // nextClockTask
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('nextClockTask', () => {
-    test('no active timer — returns early without throw', async () => {
+    test('no active timer, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; nextClockTask(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1535,7 +1535,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — clocks out and opens sheet after delay', async () => {
+    test('golden path, clocks out and opens sheet after delay', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 60000, timerInterval: null };
@@ -1549,7 +1549,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.cleared).toBe(true);
     });
 
-    test('concurrent calls without timer — no throw', async () => {
+    test('concurrent calls without timer, no throw', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
         let ok = 0;
@@ -1566,7 +1566,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // doneForDay
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('doneForDay', () => {
-    test('no active timer — returns early without throw', async () => {
+    test('no active timer, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; doneForDay(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1574,7 +1574,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — clocks out and timer becomes null', async () => {
+    test('golden path, clocks out and timer becomes null', async () => {
       const r = await page.evaluate(() => {
         try {
           const prevLen = timeEntries.length;
@@ -1590,7 +1590,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.cleared).toBe(true);
     });
 
-    test('concurrent calls — only first executes, timer null after', async () => {
+    test('concurrent calls, only first executes, timer null after', async () => {
       const r = await page.evaluate(() => {
         const prevLen = timeEntries.length;
         _activeTimer = { jobId: 77701, jobName: 'Alpha', clientName: 'C', scopeId: 'sand', scopeLabel: 'S', startTime: Date.now() - 60000, timerInterval: null };
@@ -1611,7 +1611,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _haversineKm
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_haversineKm', () => {
-    test('all zeros — returns 0', async () => {
+    test('all zeros, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(0, 0, 0, 0) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1620,7 +1620,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('null inputs — does not throw', async () => {
+    test('null inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(null, null, null, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1628,7 +1628,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined inputs — does not throw', async () => {
+    test('undefined inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(undefined, undefined, undefined, undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1636,7 +1636,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string inputs — does not throw', async () => {
+    test('string inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm('a', 'b', 'c', 'd') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1644,10 +1644,10 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — Wichita to Kansas City ~278km', async () => {
+    test('golden path, Wichita to Kansas City ~278km', async () => {
       const r = await page.evaluate(() => {
         try {
-          // Wichita KS: 37.6872, -97.3301 — Kansas City MO: 39.0997, -94.5786
+          // Wichita KS: 37.6872, -97.3301: Kansas City MO: 39.0997, -94.5786
           const km = _haversineKm(37.6872, -97.3301, 39.0997, -94.5786);
           return { ok: true, km };
         } catch (e) { return { ok: false, err: e.message }; }
@@ -1657,7 +1657,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.km).toBeLessThan(350);
     });
 
-    test('same point — returns 0', async () => {
+    test('same point, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(37.6872, -97.3301, 37.6872, -97.3301) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1666,7 +1666,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBeCloseTo(0, 5);
     });
 
-    test('boundary — antipodal points ~20015km', async () => {
+    test('boundary: antipodal points ~20015km', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(0, 0, 0, 180) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1675,7 +1675,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBeGreaterThan(19000);
     });
 
-    test('concurrent calls — stable results', async () => {
+    test('concurrent calls, stable results', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -1694,7 +1694,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _geocodeAddr
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_geocodeAddr', () => {
-    test('null addr — returns a promise that resolves to null (no throw)', async () => {
+    test('null addr, returns a promise that resolves to null (no throw)', async () => {
       const r = await page.evaluate(async () => {
         try {
           const res = await _geocodeAddr(null);
@@ -1704,7 +1704,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — resolves without throw', async () => {
+    test('empty string, resolves without throw', async () => {
       const r = await page.evaluate(async () => {
         try {
           const res = await _geocodeAddr('');
@@ -1714,7 +1714,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid address string — resolves (mock returns null from blocked network)', async () => {
+    test('valid address string, resolves (mock returns null from blocked network)', async () => {
       const r = await page.evaluate(async () => {
         try {
           const res = await _geocodeAddr('123 Main St, Wichita KS');
@@ -1729,7 +1729,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // checkNearbyJob
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('checkNearbyJob', () => {
-    test('no _supaUser — returns early without throw', async () => {
+    test('no _supaUser, returns early without throw', async () => {
       const r = await page.evaluate(async () => {
         try {
           const prev = window._supaUser;
@@ -1742,7 +1742,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('no geolocation — returns early without throw', async () => {
+    test('no geolocation, returns early without throw', async () => {
       const r = await page.evaluate(async () => {
         try {
           const prevGeo = navigator.geolocation;
@@ -1755,7 +1755,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('called 5 times — no throw', async () => {
+    test('called 5 times, no throw', async () => {
       const r = await page.evaluate(async () => {
         const prev = window._supaUser;
         window._supaUser = null;
@@ -1770,23 +1770,23 @@ test.describe('jobs.js — exhaustive coverage', () => {
     });
 
     // Owner decision 2026-07-10/11: the nearby banner must fire for ANY client
-    // with an address, not just ones with a scheduled job — and it always
+    // with an address, not just ones with a scheduled job, and it always
     // surfaces all 3 possible actions (Clock in, Start Estimate/Invoice,
     // Collect), so checkNearbyJob computes every action's TARGET rather than
     // picking a single winning "kind": jobId (active job today), fallbackJobId
     // (nearest open job when nothing's active today), bidId+balance (most
     // recent Closed Won bid with money owed). geoIfGranted + _geocodeAddr are
-    // stubbed so every candidate resolves to the mocked position —
+    // stubbed so every candidate resolves to the mocked position,
     // deterministic, no real network/GPS. The shared page's
     // clients/bids/jobs/payments arrays accumulate fixtures from every
-    // describe block in this file — checkNearbyJob's geocode BUDGET means
+    // describe block in this file, checkNearbyJob's geocode BUDGET means
     // unrelated addressed clients can consume it before reaching a test's own
     // fixture, and getBidStage's client_id fallback can pick up an unrelated
     // stray job. Every test below swaps ALL FOUR arrays down to just its own
     // fixture for the call (restored after), so target selection is verified
     // fully isolated from whatever else the shared page has accumulated.
     test.describe('action target selection', () => {
-      test('client with an active job today — jobId set, no fallback, no balance', async () => {
+      test('client with an active job today, jobId set, no fallback, no balance', async () => {
         const r = await page.evaluate(() => {
           const orig = { clients, bids, jobs, payments };
           clients = [{ id: 79960, name: 'Nearby Clockin', addr: '10 Nearby Rd, Wichita KS' }];
@@ -1811,7 +1811,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
         expect(r.nb.clientName).toBe('Nearby Clockin');
       });
 
-      test('Closed Won bid, completed, balance owed, no active job — bidId+balance set, no job target', async () => {
+      test('Closed Won bid, completed, balance owed, no active job, bidId+balance set, no job target', async () => {
         const r = await page.evaluate(() => {
           const orig = { clients, bids, jobs, payments };
           clients = [{ id: 79961, name: 'Nearby Collect', addr: '20 Nearby Rd, Wichita KS' }];
@@ -1835,7 +1835,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
         expect(r.nb.fallbackJobId).toBe(null);
       });
 
-      test('client with no Closed Won bid — all targets null except clientId (Estimate/Invoice is the always-available action)', async () => {
+      test('client with no Closed Won bid, all targets null except clientId (Estimate/Invoice is the always-available action)', async () => {
         const r = await page.evaluate(() => {
           const orig = { clients, bids, jobs, payments };
           clients = [{ id: 79962, name: 'Nearby Diagnostic', addr: '30 Nearby Rd, Wichita KS' }];
@@ -1882,7 +1882,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
         expect(r.nb.balance).toBe(0);
       });
 
-      test('a job is scheduled but not active today — fallbackJobId is set instead of jobId', async () => {
+      test('a job is scheduled but not active today, fallbackJobId is set instead of jobId', async () => {
         const r = await page.evaluate(() => {
           const orig = { clients, bids, jobs, payments };
           clients = [{ id: 79963, name: 'Nearby Fallback', addr: '50 Nearby Rd, Wichita KS' }];
@@ -1914,7 +1914,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
           payments = [];
           const origGeo = window.geoIfGranted, origGeocode = window._geocodeAddr;
           let geocodeCalls = 0;
-          window.geoIfGranted = (cb) => cb({ coords: { latitude: 1, longitude: 1, accuracy: 10 } }); // far away — no match
+          window.geoIfGranted = (cb) => cb({ coords: { latitude: 1, longitude: 1, accuracy: 10 } }); // far away, no match
           window._geocodeAddr = async () => { geocodeCalls++; return { lat: 37.71, lon: -97.35 }; };
           return checkNearbyJob().then(() => {
             const c = clients[0];
@@ -1940,7 +1940,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // sendReminderSMS
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('sendReminderSMS', () => {
-    test('null cid — calls zAlert without throw', async () => {
+    test('null cid, calls zAlert without throw', async () => {
       const r = await page.evaluate(() => {
         try { sendReminderSMS(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1948,7 +1948,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined cid — does not throw', async () => {
+    test('undefined cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { sendReminderSMS(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1956,7 +1956,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent cid — does not throw', async () => {
+    test('nonexistent cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { sendReminderSMS(999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1964,7 +1964,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('client with no phone — calls zAlert without throw', async () => {
+    test('client with no phone, calls zAlert without throw', async () => {
       const r = await page.evaluate(() => {
         try {
           clients.push({ id: 79999, name: 'No Phone Client', phone: '', addr: '1 St' });
@@ -1976,7 +1976,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -1992,7 +1992,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // renderTodayLegs
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderTodayLegs', () => {
-    test('missing DOM element — does not throw', async () => {
+    test('missing DOM element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('cd-today-legs')?.remove();
@@ -2003,7 +2003,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with element, no mileage today — clears innerHTML', async () => {
+    test('with element, no mileage today, clears innerHTML', async () => {
       const r = await page.evaluate(() => {
         try {
           let el = document.getElementById('cd-today-legs');
@@ -2021,7 +2021,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('called 3 times — no duplicate entries', async () => {
+    test('called 3 times, no duplicate entries', async () => {
       const r = await page.evaluate(() => {
         try {
           let el = document.getElementById('cd-today-legs');
@@ -2044,7 +2044,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.matches).toBe(1);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -2057,10 +2057,10 @@ test.describe('jobs.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // buildScopeGrid / toggleScopeRoom / scopeOn / roomScopeOn / setRoomScope —
+  // buildScopeGrid / toggleScopeRoom / scopeOn / roomScopeOn / setRoomScope:
   // removed with the paint estimator's scope-item grid (§7.1: assert gone)
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('paint scope-grid functions — deleted', () => {
+  test.describe('paint scope-grid functions, deleted', () => {
     test('buildScopeGrid, roomScopeOn, scopeOn, setRoomScope no longer exist', async () => {
       const r = await page.evaluate(() => {
         const names = ['buildScopeGrid', 'toggleScopeRoom', '_saveScopeHoursRoom', '_cancelScopeHoursRoom',
@@ -2076,7 +2076,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // setLeadFilter
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setLeadFilter', () => {
-    test('null filter — does not throw', async () => {
+    test('null filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setLeadFilter(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2084,7 +2084,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined filter — does not throw', async () => {
+    test('undefined filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setLeadFilter(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2092,7 +2092,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets leadFilter global', async () => {
+    test('golden path, sets leadFilter global', async () => {
       const r = await page.evaluate(() => {
         try {
           setLeadFilter('new', null);
@@ -2103,7 +2103,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('new');
     });
 
-    test('with btn element — adds active class', async () => {
+    test('with btn element, adds active class', async () => {
       const r = await page.evaluate(() => {
         try {
           const btn = document.createElement('button');
@@ -2119,7 +2119,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasActive).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -2130,7 +2130,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r).toBe(5);
     });
 
-    test('corrupted localStorage — does not affect function', async () => {
+    test('corrupted localStorage, does not affect function', async () => {
       const r = await page.evaluate(() => {
         try {
           localStorage.setItem('zp3_leads', '{INVALID{{{{');
@@ -2147,7 +2147,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // setJobFilter
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setJobFilter', () => {
-    test('null filter — does not throw', async () => {
+    test('null filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setJobFilter(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2155,7 +2155,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets jobFilter global and calls renderJobsPage', async () => {
+    test('golden path, sets jobFilter global and calls renderJobsPage', async () => {
       const r = await page.evaluate(() => {
         try {
           setJobFilter('active', null);
@@ -2166,7 +2166,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('active');
     });
 
-    test('with btn — marks active class on btn', async () => {
+    test('with btn, marks active class on btn', async () => {
       const r = await page.evaluate(() => {
         try {
           const btn = document.createElement('button');
@@ -2197,7 +2197,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.b1Active).toBe(false);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -2213,7 +2213,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // getBidStage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getBidStage', () => {
-    test('null bid — does not throw', async () => {
+    test('null bid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const v = getBidStage(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2221,7 +2221,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined bid — does not throw', async () => {
+    test('undefined bid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { getBidStage(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2229,7 +2229,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty object bid — does not throw', async () => {
+    test('empty object bid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const v = getBidStage({}); return { ok: true, hasStage: !!(v && v.stage) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2237,7 +2237,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('bid with no linked jobs and no completion_date — returns signed stage', async () => {
+    test('bid with no linked jobs and no completion_date, returns signed stage', async () => {
       const r = await page.evaluate(() => {
         try {
           const v = getBidStage({ id: 78801, client_id: 79901, status: 'Closed Won', amount: 3500, completion_date: null });
@@ -2250,7 +2250,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasColor).toBe(true);
     });
 
-    test('bid with completion_date and zero balance — paid stage', async () => {
+    test('bid with completion_date and zero balance, paid stage', async () => {
       const r = await page.evaluate(() => {
         try {
           // Use client_id 79903 (no jobs in test fixtures) so the unlinked-job fallback finds nothing.
@@ -2267,7 +2267,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.stage).toBe('paid');
     });
 
-    test('bid with active job today — active stage', async () => {
+    test('bid with active job today, active stage', async () => {
       const r = await page.evaluate(() => {
         try {
           const tk = todayKey();
@@ -2306,7 +2306,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasJobs).toBe(true);
     });
 
-    test('concurrent calls — stable results', async () => {
+    test('concurrent calls, stable results', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 78801, client_id: 79901, amount: 3500, status: 'Closed Won' };
         let ok = 0;
@@ -2318,7 +2318,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r).toBe(5);
     });
 
-    test('corrupted localStorage before call — does not throw', async () => {
+    test('corrupted localStorage before call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           localStorage.setItem('zp3_bids', '{INVALID{{{{');
@@ -2334,7 +2334,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // Console error guard
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — jobs.js', async () => {
+  test('no console errors, jobs.js', async () => {
     assertNoErrors(page, 'jobs.js');
   });
 });

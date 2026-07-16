@@ -1,10 +1,10 @@
-// REAL flow — proves a LEGIT proposal shows up inside the CLIENT HUB (the thing
+// REAL flow, proves a LEGIT proposal shows up inside the CLIENT HUB (the thing
 // that was 404-ing as "Proposal not found" / showing hollow hubs). Drives the
 // REAL hub pipeline: seed a client + a Pending proposal bid → build & upload the
 // hub snapshot via the actual production functions (proposals.js
 // _buildClientHubSnapshot + _uploadClientHub) → then open the REAL client.html
 // hub (anon, no login, same /api proxy) and assert the proposal renders as a
-// .hub-bid-row under "Awaiting your signature" — NOT the "Hub not found" state.
+// .hub-bid-row under "Awaiting your signature", NOT the "Hub not found" state.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
@@ -32,12 +32,12 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
       expected: 'hub token minted + upload returns a client.html url',
       act: async (p) => {
         // Seed a REAL typed-up, sent proposal (random client/address, real
-        // proposalHtml + uploaded artifact) — not a hollow Pending row.
+        // proposalHtml + uploaded artifact), not a hollow Pending row.
         await seedProposal(p, { clientId, bidId, amount: AMOUNT, tag: 'hub' });
         hub = await p.evaluate(async ({ clientId }) => {
           let url = null;
           if (typeof _uploadClientHub === 'function') url = await _uploadClientHub(clientId); // real build + upload
-          // Read the token from the RETURNED URL — the authoritative artifact the hub
+          // Read the token from the RETURNED URL, the authoritative artifact the hub
           // snapshot was keyed with and that client.html actually resolves from. Re-reading
           // clients[].clientToken races a realtime cloud-reload that can swap the array out
           // from under us between the await and the find (shared-account multi-device sync).
@@ -81,7 +81,7 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
       rule: async () => ({ ok: hub.render.ok, got: hub.render.got }),
     });
 
-    // NO cleanup — the client, bid + hub snapshot stay in the dev account on purpose
+    // NO cleanup, the client, bid + hub snapshot stay in the dev account on purpose
     // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);
@@ -89,9 +89,9 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
   });
 
   // A closed-out (declined) proposal must STAY in the hub Documents as a read-only
-  // record carrying its reason — not vanish once it leaves Pending. Guards the new
+  // record carrying its reason, not vanish once it leaves Pending. Guards the new
   // close-out → hub-refresh path + the renderDocuments declined card.
-  test('a closed-out proposal stays in the hub Documents — read-only, with its reason', async ({ page }) => {
+  test('a closed-out proposal stays in the hub Documents, read-only, with its reason', async ({ page }) => {
     const clientId = Date.now() * 1000 + Math.floor(Math.random() * 1000);
     const bidId = clientId + 1;
     const REASON = 'Went with another contractor';
@@ -122,7 +122,7 @@ test.describe('client hub shows a real proposal (UI-driven)', () => {
 
     await step(page, {
       label: 'open hub Documents → declined card present, no Review & Sign', page: 'client.html', role: 'client',
-      suspect: 'client.html renderDocuments — declined card (lostReason; no sign action)',
+      suspect: 'client.html renderDocuments, declined card (lostReason; no sign action)',
       ruleText: 'the declined proposal must render in Documents with its reason and NO Review & Sign action',
       expected: 'a DECLINED card showing the reason; zero sign buttons in Documents',
       act: async (p) => {

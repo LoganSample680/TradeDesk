@@ -1,4 +1,4 @@
-// REAL flow — the jobs lifecycle (task #4): schedule a job from a Closed Won bid,
+// REAL flow, the jobs lifecycle (task #4): schedule a job from a Closed Won bid,
 // clock in, clock out (a real time entry), and mark the job complete (which must
 // mirror completion_date onto the bid). Drives the actual UI funcs
 // (bids.js schedFromBid, finance.js scheduleJob, jobs.js clockIn/clockOut/
@@ -56,9 +56,9 @@ test.describe('jobs lifecycle (UI-driven)', () => {
         await p.evaluate(({ bidId, start }) => {
           const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
           set('s-bid-sel', String(bidId)); // bid <select> = 1 tap
-          set('s-name', 'Interior paint'); // name field — typed = 14 keystrokes
+          set('s-name', 'Interior paint'); // name field, typed = 14 keystrokes
           set('s-start', start);           // start date <input type=date> = 1 tap
-          set('s-days', '1');              // days field — typed "1" = 1 keystroke
+          set('s-days', '1');              // days field, typed "1" = 1 keystroke
         }, { bidId, start });
         await p.evaluate(() => { scheduleJob(); }, {});                          // 1 tap (submit)
         await p.waitForTimeout(400);
@@ -96,7 +96,7 @@ test.describe('jobs lifecycle (UI-driven)', () => {
     });
 
     await step(page, {
-      label: 'clock out — records a time entry', page: 'clock', role: 'contractor',
+      label: 'clock out, records a time entry', page: 'clock', role: 'contractor',
       suspect: 'jobs.js clockOut (timeEntries push, Math.max(1,minutes))',
       ruleText: 'clocking out must record a time entry for the job with at least 1 minute',
       expected: 'a timeEntries row with job_id, minutes>=1, scope_id=sand',
@@ -144,7 +144,7 @@ test.describe('jobs lifecycle (UI-driven)', () => {
       },
     });
 
-    // NO cleanup — the bid, job, time entry + client stay in the dev account on
+    // NO cleanup, the bid, job, time entry + client stay in the dev account on
     // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

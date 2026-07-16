@@ -5,11 +5,11 @@
 // key baked into index.html). They authenticate as a dedicated dev login and
 // write real rows, so every safety rail here matters:
 //
-//   1. needsLiveCreds() — specs SKIP cleanly when the secrets are absent, so the
+//   1. needsLiveCreds(): specs SKIP cleanly when the secrets are absent, so the
 //      normal offline CI shards are never affected and local runs don't error.
-//   2. RUN_TAG — every seeded row carries a unique, greppable marker so teardown
+//   2. RUN_TAG: every seeded row carries a unique, greppable marker so teardown
 //      only ever deletes what THIS run created.
-//   3. assertDevAccount() + teardownAll() — teardown ABORTS unless the signed-in
+//   3. assertDevAccount() + teardownAll(): teardown ABORTS unless the signed-in
 //      user id matches E2E_DEV_USER_ID. Cleanup can only ever fire on the dev
 //      account; it can never touch any other identity's data.
 //
@@ -23,11 +23,11 @@ const DEV_EMAIL = process.env.E2E_DEV_EMAIL || '';
 // ── ACCOUNT-PER-BROWSER SPLIT (cloud mode) ──────────────────────────────────
 // The full suite runs chromium + webkit in parallel; with BOTH browsers cold-
 // signing into the same shared Dev A account, they contend for the same rows
-// and the same account-wide save/load serialization — the 20-minute wall time
+// and the same account-wide save/load serialization, the 20-minute wall time
 // and the sign-in-under-load timeouts. Split the load: webkit keeps Dev A
 // (E2E_DEV_*), chromium uses Dev B (E2E_DEV2_*) when those creds exist.
 // Graceful: without DEV2 creds every browser falls back to Dev A (unchanged).
-// Two-account specs (accountPair) are unaffected — they resolve A+B explicitly.
+// Two-account specs (accountPair) are unaffected, they resolve A+B explicitly.
 // Note: env-dependent specs self-skip where Dev B lacks prerequisites (Stripe
 // connect, intake profile); webkit/Dev A retains that coverage.
 function cloudAccountFor(browserName) {
@@ -79,11 +79,11 @@ function localAccount() {
   return pool[idx] || null;
 }
 
-// SWARM account — the RESERVED last pool entry. global-setup always provisions
+// SWARM account, the RESERVED last pool entry. global-setup always provisions
 // max(workers,3)+1 accounts, so the last one is never mapped to a worker
 // (localAccount uses parallelIndex) nor to accountPair (first two). The swarm
 // spec pins all N contexts to it so its 12-writer convergence run starts from a
-// DETERMINISTIC fixture instead of the suite-accumulated worker account —
+// DETERMINISTIC fixture instead of the suite-accumulated worker account,
 // §13.7's no-cleanup made the worker account grow with every spec that ran
 // before it, and 12 concurrent boots over that payload blew the swarm's time
 // budget in full-suite runs while passing solo (observed 2026-07-03).
@@ -98,7 +98,7 @@ function swarmAccount() {
 // from here instead of the cloud E2E_DEV2_* creds, which don't exist on the local stack.
 function localPool() { return _loadLocalPool() || []; }
 
-// CREW pool — bare auth users provisioned by global-setup (no contractor graph), for
+// CREW pool, bare auth users provisioned by global-setup (no contractor graph), for
 // specs that exercise the crew invite/link/nest paths. [] when unavailable.
 function crewPool() {
   if (!LOCAL_STACK) return [];
@@ -109,7 +109,7 @@ function crewPool() {
 }
 
 // CLOUD per-worker pool. With a 2nd real dev account configured, each Playwright
-// worker gets its OWN cloud account — so workers don't clobber a shared one (fixes
+// worker gets its OWN cloud account, so workers don't clobber a shared one (fixes
 // the contention failures) AND the seed data lands in REAL Supabase accounts you can
 // sign into and inspect (the §13.7 "poke at it" workflow). Workers MUST be ≤ pool
 // size (see playwright.flow.config.js) so the modulo never collides two workers onto
@@ -149,14 +149,14 @@ function accountPair() {
 }
 // Whether the Cloudflare-bypass header secret is configured in this CI run.
 // Reported in sign-in failures so we can tell "header not sent" from "Cloudflare
-// rule not matching" without guessing. Length only — never the value.
+// rule not matching" without guessing. Length only, never the value.
 const BYPASS_STATUS = process.env.E2E_BYPASS_SECRET ? `set(${process.env.E2E_BYPASS_SECRET.length}ch)` : 'MISSING';
 
 // Attach the CI-only Cloudflare WAF bypass header to a context, scoped to the
 // APP'S OWN origin only. A blanket context.extraHTTPHeaders (the old approach)
 // attaches the header to EVERY request the context makes, including third-party
 // origins (Google Fonts, Cloudflare Insights, Stripe, the Supabase REST/Edge
-// Function host) — none of which allow this custom header in their CORS
+// Function host), none of which allow this custom header in their CORS
 // preflight, so the browser blocks those requests. That silently broke font
 // loading, analytics, Stripe Connect status checks, and Supabase Edge Function
 // calls, surfacing as false "console error" / "failed to fetch" failures having
@@ -178,7 +178,7 @@ function scopeBypassHeader(context, baseURL) {
 
 // Unique per process run. Stamped into every seeded record's name/marker field
 // so teardown can target exactly this run's rows. Uses PID + start time from the
-// env (never Math.random/Date.now in shared code) — good enough to be unique
+// env (never Math.random/Date.now in shared code), good enough to be unique
 // across concurrent CI jobs.
 const RUN_TAG = `E2E_${process.env.GITHUB_RUN_ID || 'local'}_${process.pid}`;
 
@@ -204,19 +204,19 @@ async function signIn(page, acctOverride) {
   // In local-stack mode, sign in as THIS worker's dedicated account (distinct
   // user_id per worker = isolation). Else use the shared cloud dev login.
   // acctOverride: a spec can pin a SPECIFIC pool account (the swarm uses the
-  // reserved one so its fixture is deterministic — see swarmAccount()).
+  // reserved one so its fixture is deterministic, see swarmAccount()).
   const _acct = acctOverride || workerAccount();
   const _cloud = _acct ? null : cloudAccountFor(pageBrowserName(page));
   const _email = _acct ? _acct.email : _cloud.email;
   const _password = _acct ? _acct.password : _cloud.password;
   // 'domcontentloaded', NOT the default 'load': the app's login form is interactive at
-  // DOMContentLoaded, but 'load' blocks on every external resource — notably the Apple
-  // MapKit CDN script — so waiting for it makes every test's boot slower and, on a busy
+  // DOMContentLoaded, but 'load' blocks on every external resource, notably the Apple
+  // MapKit CDN script, so waiting for it makes every test's boot slower and, on a busy
   // bridge, tips into the 90s goto timeouts we saw. We still wait for #supa-email below,
   // so the app is provably ready before we touch it.
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   // #supa-email now lives inside the collapsed "Continue with email" block, so wait
-  // for it ATTACHED (login DOM built) rather than visible — signIn authenticates
+  // for it ATTACHED (login DOM built) rather than visible, signIn authenticates
   // through the Supabase client below, it never types into the field.
   await page.waitForSelector('#supa-email', { state: 'attached', timeout: 30000 });
   // Authenticate through the app's own Supabase client and RETURN the exact
@@ -237,10 +237,10 @@ async function signIn(page, acctOverride) {
     } catch (e) { probe = 'probe-fail: ' + (e && e.message); }
     // Even with one account per worker, the SAME account is signed into by both that
     // worker's primary page AND any second device/page a multi-device spec opens, plus
-    // (in cloud) the two two-account specs that sign into Dev A/B directly — so concurrent
+    // (in cloud) the two two-account specs that sign into Dev A/B directly, so concurrent
     // password grants per-email still happen. GoTrue rate-limits those and surfaces a
     // transient AuthError whose .message is EMPTY (stringifies to "{}"). That's not a real
-    // auth failure — it's contention. Retry with jittered backoff so the grants
+    // auth failure, it's contention. Retry with jittered backoff so the grants
     // de-correlate, instead of dropping to workers:1 (which blows the budget). A real bad-credential
     // error (e.g. "Invalid login credientials") has a message and we surface it fast.
     let lastWhy = null;
@@ -257,7 +257,7 @@ async function signIn(page, acctOverride) {
     return { ok: false, why: lastWhy, origin, supaUrl, probe };
   }, { email: _email, password: _password });
   if (!res.ok) throw new Error(`Live sign-in failed @ ${res.supaUrl} (origin ${res.origin}) bypassHeader=${BYPASS_STATUS} probe[${res.probe}]: ${res.why}`);
-  // Auth succeeded — wait for the app to propagate the session, then cloud load.
+  // Auth succeeded, wait for the app to propagate the session, then cloud load.
   await page.waitForFunction(
     () => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id,
     { timeout: 30000 }
@@ -269,17 +269,17 @@ async function signIn(page, acctOverride) {
 }
 
 // Hard guard: confirm the live session is the designated dev account before any
-// destructive operation. Throws (failing the test) on mismatch — never deletes.
+// destructive operation. Throws (failing the test) on mismatch, never deletes.
 async function assertDevAccount(page) {
   const id = await page.evaluate(() => (typeof _supaUser !== 'undefined' && _supaUser ? _supaUser.id : null));
   if (!id) throw new Error('assertDevAccount: no authenticated user');
   // In local-stack mode the trusted id is THIS worker's provisioned uid.
   const _acct = workerAccount();
   // Cloud mode: the trusted id is whichever dev account THIS browser is assigned
-  // (webkit=Dev A, chromium=Dev B when configured) — both are strictly test accounts.
+  // (webkit=Dev A, chromium=Dev B when configured), both are strictly test accounts.
   const expectedId = _acct ? _acct.uid : cloudAccountFor(pageBrowserName(page)).uid;
   if (id !== expectedId) {
-    throw new Error(`assertDevAccount: signed-in user ${id} !== ${_acct ? 'local-worker-uid' : 'assigned dev-account uid'} — refusing to seed/teardown`);
+    throw new Error(`assertDevAccount: signed-in user ${id} !== ${_acct ? 'local-worker-uid' : 'assigned dev-account uid'}: refusing to seed/teardown`);
   }
   return id;
 }
@@ -303,7 +303,7 @@ async function teardownAll(page) {
         // Rows are tagged via a `_e2e` marker column when seeded; fall back to a
         // name LIKE match for tables where the marker lives in the name field.
         await _supa.from(t).delete().eq('_e2e', tag);
-      } catch (e) { /* table may lack the marker column — ignored */ }
+      } catch (e) { /* table may lack the marker column, ignored */ }
     }
   }, { tables: SEEDED_TABLES, tag: RUN_TAG });
 }
@@ -319,12 +319,12 @@ function finding({ role = 'contractor', page = '-', control = '', rule = '', exp
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// step() — the heart of every flow. One instrumented primitive that fuses three
+// step(): the heart of every flow. One instrumented primitive that fuses three
 // things into a single pass so validation and analytics are the SAME data:
-//   1. ACT     — perform the interaction; `act` returns the # of clicks/keystrokes
-//   2. MEASURE — wall-clock ms + interaction count, pushed to the LEDGER
-//   3. ASSERT  — `rule(page)` returns {ok, got}; on !ok we throw a finding() ticket
-//   (optional ABUSE — adversarial probe of the same step)
+//   1. ACT    : perform the interaction; `act` returns the # of clicks/keystrokes
+//   2. MEASURE: wall-clock ms + interaction count, pushed to the LEDGER
+//   3. ASSERT : `rule(page)` returns {ok, got}; on !ok we throw a finding() ticket
+//   (optional ABUSE, adversarial probe of the same step)
 // report() then emits a friction profile AND a click-budget verdict from the
 // ledger. CLAUDE.md §13 makes this the mandatory shape for every flow.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -341,7 +341,7 @@ async function step(page, opts) {
   let ok = true, got = '';
   if (rule) {
     // Cloud writes flush ASYNCHRONOUSLY (debounced _flushSaveNow / supaSaveToCloud),
-    // so a rule that reads the cloud can run before the write lands — the /api log
+    // so a rule that reads the cloud can run before the write lands, the /api log
     // confirms the writes return 200, just AFTER the first read fired. Poll the
     // post-condition for up to ~8s, passing the instant it holds; a rule that never
     // holds in the window is a real failure. Synchronous rules pass on the first
@@ -389,7 +389,7 @@ function report(tag, baseline, page) {
   }
   const rows = _LEDGER.slice().sort((a, b) => b.ms - a.ms);
   // eslint-disable-next-line no-console
-  console.log(`\n⏱  FLOW LEDGER [${tag}] — total ${totalMs}ms · ${totalClicks} interactions (slowest first):`);
+  console.log(`\n⏱  FLOW LEDGER [${tag}], total ${totalMs}ms · ${totalClicks} interactions (slowest first):`);
   // eslint-disable-next-line no-console
   rows.forEach(r => console.log(`   ${String(r.ms).padStart(6)}ms ${String(r.interactions).padStart(3)}clk  ${r.label}`));
   const base = baseline && baseline[tag];
@@ -400,18 +400,18 @@ function report(tag, baseline, page) {
     console.log(`   budget: ${totalClicks}/${base.clicks} clicks ${overBudget ? '✗ OVER (UX regression)' : '✓'}`);
   } else {
     // eslint-disable-next-line no-console
-    console.log(`   BASELINE CAPTURE [${tag}]: ${totalClicks} clicks · ${totalMs}ms — add to perf-baseline.json to start gating`);
+    console.log(`   BASELINE CAPTURE [${tag}]: ${totalClicks} clicks · ${totalMs}ms, add to perf-baseline.json to start gating`);
   }
   return { totalMs, totalClicks, overBudget, hasBaseline: !!base };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PHYSICAL interaction helpers (CLAUDE.md §13.6) — drive the app like a real
+// PHYSICAL interaction helpers (CLAUDE.md §13.6): drive the app like a real
 // thumb on a real screen, and RETURN the honest interaction cost so act() just
 // sums them. Every helper scrolls the target into view first; if the page
 // actually had to move, that's counted as a real scroll (you can't tap what you
 // can't see). This is what makes the ledger reflect true effort on mobile,
-// tablet, and desktop — the same flow costs MORE scrolls on a small screen.
+// tablet, and desktop, the same flow costs MORE scrolls on a small screen.
 //   tap(p, sel)            → 1 tap (+1 if a scroll was needed to reach it)
 //   type(p, sel, text)     → text.length keystrokes (+1 if a scroll was needed)
 //   pick(p, sel, value)    → 1 tap for a <select>/<input type=date> (+scroll)
@@ -442,7 +442,7 @@ async function _reach(page, sel) {
 // Read-only diagnosis for a click that won't land: distinguishes "not visible" vs
 // "covered by an overlay" vs "perpetually re-rendering / animating (not stable)".
 // Sampled twice ~300ms apart so DRIFT > 0 fingerprints the not-stable case. Purely
-// additive — only ever runs on the failure path, then the original error is re-thrown.
+// additive: only ever runs on the failure path, then the original error is re-thrown.
 async function _clickDiag(page, sel) {
   try {
     const a = await page.evaluate((s) => {
@@ -513,7 +513,7 @@ async function scrollBy(page, dy) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// cloudRows(page, table) — re-query a td_* table from Supabase and return the
+// cloudRows(page, table), re-query a td_* table from Supabase and return the
 // live (non-deleted) rows as flattened objects ({id, ...data}). This is what makes
 // a flow TRULY end-to-end: after a save, assert the row actually landed in the
 // cloud, not just in the in-memory array. The td_* tables store the record JSON in
@@ -536,7 +536,7 @@ async function cloudRows(page, table) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Realistic seed data — so what the tests leave in the account looks like genuine
+// Realistic seed data, so what the tests leave in the account looks like genuine
 // usage the owner can actually inspect, NOT hollow "E2E" junk. Real names, real
 // Wichita-area addresses, real phone numbers.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -544,18 +544,18 @@ const SEED_FIRST = ['Marcus', 'Sofia', 'Derek', 'Hannah', 'Andre', 'Olivia', 'Ty
 const SEED_LAST = ['Holloway', 'Castillo', 'Brennan', 'Okafor', 'Whitman', 'Delgado', 'Foster', 'Ramsey', 'Vaughn', 'Sandoval', 'Pierce', 'Mbeki', 'Nguyen', 'Abbott', 'Schaefer', 'Ortega'];
 const SEED_STREETS = ['Gage Blvd', 'N Main St', 'Mission Rd', 'Commercial St', 'N Hillside St', 'SW Jackson St', 'E Douglas Ave', 'W Central Ave', 'N Rock Rd', 'S Seneca St', 'Maple Grove Ln', 'Oak Ridge Dr'];
 const SEED_CITIES = [['Wichita', '672'], ['Topeka', '666'], ['Overland Park', '662'], ['Lawrence', '660'], ['Olathe', '660'], ['Derby', '670']];
-// Every seeded lead has a SOURCE — "no source set" should never appear for test data.
+// Every seeded lead has a SOURCE, "no source set" should never appear for test data.
 const SEED_SOURCES = ['Referral', 'Google', 'Facebook', 'Nextdoor', 'Yard sign', 'Repeat client', 'Word of mouth', 'Website', 'Home Advisor'];
 function _pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function _randInt(lo, hi) { return lo + Math.floor(Math.random() * (hi - lo + 1)); }
-// Randomized (not structured) realistic values — call with no arg for fully random.
+// Randomized (not structured) realistic values, call with no arg for fully random.
 function seedName() { return _pick(SEED_FIRST) + ' ' + _pick(SEED_LAST); }
 function seedAddr() { const [city, zp] = _pick(SEED_CITIES); return `${_randInt(100, 9999)} ${_pick(SEED_STREETS)}, ${city}, KS ${zp}${_randInt(10, 99)}`; }
 function seedPhone() { return '316' + _randInt(200, 989) + _randInt(1000, 9999); }
 function seedSource() { return _pick(SEED_SOURCES); }
 function seedAmount() { return _randInt(18, 142) * 100 + _randInt(0, 1) * 50; } // $1,800–$14,250, varied
 
-// Build a REAL typed-up proposal document (line items + totals + terms) — the same
+// Build a REAL typed-up proposal document (line items + totals + terms), the same
 // kind of HTML the estimator's sendProposalLink produces, so the proposal that
 // lands in the client hub / proposal section is legit, not a hollow Pending row.
 function buildProposalHtml({ name, addr, amount, deposit, biz = 'TradeDesk Painting' }) {
@@ -563,12 +563,12 @@ function buildProposalHtml({ name, addr, amount, deposit, biz = 'TradeDesk Paint
   const f = n => '$' + Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `<div style="font-family:Arial,sans-serif;color:#1a365d">
     <h1 style="margin:0 0 4px">${biz}</h1>
-    <div style="font-size:12px;color:#475569">Proposal for ${name} — ${addr}</div>
+    <div style="font-size:12px;color:#475569">Proposal for ${name}, ${addr}</div>
     <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:13px">
       <tr style="background:#f1f5f9"><th align="left" style="padding:8px">Scope</th><th align="right" style="padding:8px">Amount</th></tr>
-      <tr><td style="padding:8px;border-top:1px solid #e2e8f0">Surface prep — sand, patch, mask, prime</td><td align="right" style="padding:8px;border-top:1px solid #e2e8f0">${f(prep)}</td></tr>
-      <tr><td style="padding:8px;border-top:1px solid #e2e8f0">Labor — Living Room walls + ceiling, two coats</td><td align="right" style="padding:8px;border-top:1px solid #e2e8f0">${f(labor)}</td></tr>
-      <tr><td style="padding:8px;border-top:1px solid #e2e8f0">Materials — Sherwin-Williams Duration + sundries</td><td align="right" style="padding:8px;border-top:1px solid #e2e8f0">${f(materials)}</td></tr>
+      <tr><td style="padding:8px;border-top:1px solid #e2e8f0">Surface prep, sand, patch, mask, prime</td><td align="right" style="padding:8px;border-top:1px solid #e2e8f0">${f(prep)}</td></tr>
+      <tr><td style="padding:8px;border-top:1px solid #e2e8f0">Labor: Living Room walls + ceiling, two coats</td><td align="right" style="padding:8px;border-top:1px solid #e2e8f0">${f(labor)}</td></tr>
+      <tr><td style="padding:8px;border-top:1px solid #e2e8f0">Materials: Sherwin-Williams Duration + sundries</td><td align="right" style="padding:8px;border-top:1px solid #e2e8f0">${f(materials)}</td></tr>
       <tr style="font-weight:800"><td style="padding:8px;border-top:2px solid #1a365d">Total</td><td align="right" style="padding:8px;border-top:2px solid #1a365d">${f(amount)}</td></tr>
       <tr><td style="padding:8px">Deposit due before work begins (25%)</td><td align="right" style="padding:8px">${f(deposit)}</td></tr>
     </table>
@@ -576,14 +576,14 @@ function buildProposalHtml({ name, addr, amount, deposit, biz = 'TradeDesk Paint
   </div>`;
 }
 
-// seedProposal(page, opts) — create a realistic client AND a GENUINE typed-up,
+// seedProposal(page, opts), create a realistic client AND a GENUINE typed-up,
 // SENT proposal: real name/address, real proposalHtml, a signing token, the bid
 // row in td_bids, and the proposal artifact uploaded to the proposals bucket (so
 // it opens in the client hub / sign.html exactly like a real one). Returns the
 // token/uid/key/name so the caller can build hub or sign URLs. This is the legit
 // alternative to `bids.push({status:'Pending'})` hollow seeds.
 async function seedProposal(page, { clientId, bidId, amount, tag = 'seed' } = {}) {
-  // Randomized, complete, realistic — varied name/address/source/amount each call.
+  // Randomized, complete, realistic, varied name/address/source/amount each call.
   const name = seedName(), addr = seedAddr(), phone = seedPhone(), source = seedSource();
   const amt = amount || seedAmount();
   const proposalHtml = buildProposalHtml({ name, addr, amount: amt, deposit: Math.round(amt * 0.25) });

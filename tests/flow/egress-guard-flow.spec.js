@@ -1,13 +1,13 @@
-// REAL flow — the egress-fix package proven against the real backend
+// REAL flow, the egress-fix package proven against the real backend
 // (owner mandate 2026-07-14: "fix them all and write flow tests to see and
 // ensure nothing went wrong"). Three guards:
 //
 //   1. Signature pipeline: a NEW signed_proposals row still flips the bid to
 //      Closed Won and queues the "New signature!" alert (the real-time-notify
-//      regression guard), while the steady-state poll goes quiet — on a
+//      regression guard), while the steady-state poll goes quiet, on a
 //      migrated database the second poll is a delta (updated_at=gt.…) that
 //      returns zero rows instead of 100 rows of base64 signatures.
-//   2. Hub logo: the snapshot uploads the logo ONCE and carries a URL — the
+//   2. Hub logo: the snapshot uploads the logo ONCE and carries a URL, the
 //      hub JSON in storage must hold logoUrl and an EMPTY logoData, and the
 //      URL must actually serve the image.
 //   3. Photo pipeline: a real photo pushed through the REAL gallery uploader
@@ -18,12 +18,12 @@
 //   _ensureLogoUrl/_buildClientHubSnapshot → jobs.js _compressPhoto +
 //   proposals.js processGalleryUpload.
 //
-// Seed data is left in the dev account per CLAUDE.md §12.7 — no cleanup.
+// Seed data is left in the dev account per CLAUDE.md §12.7: no cleanup.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, seedProposal } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
-// 4×4 red PNG data URL — small but real, decodable by createImageBitmap.
+// 4×4 red PNG data URL, small but real, decodable by createImageBitmap.
 const RED_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAFElEQVR4nGP8z8DwnwEJMDEgAXQOAEvUAgVGLXA0AAAAAElFTkSuQmCC';
 
 test.describe('egress guards (UI-driven, real backend)', () => {
@@ -79,7 +79,7 @@ test.describe('egress guards (UI-driven, real backend)', () => {
           }, { onConflict: 'bid_id' });
           // Poll until the row is processed. The sig-feed PUSH handler races these
           // calls on a shared dev account (the other browser's job inserts rows
-          // too) — the coalescing guard ensures every call still lands a poll, but
+          // too): the coalescing guard ensures every call still lands a poll, but
           // WHICH invocation processes the row is non-deterministic, so wait for
           // the observable outcome instead of assuming a fixed call count.
           const t0 = Date.now();
@@ -103,10 +103,10 @@ test.describe('egress guards (UI-driven, real backend)', () => {
         const polls = p.__sigResponses || [];
         const last = polls[polls.length - 1] || { url: '', rows: -1 };
         const deltaActive = last.url.includes('updated_at=gt.');
-        // Migrated env: the steady-state delta transfers ~nothing — a few rows are
+        // Migrated env: the steady-state delta transfers ~nothing, a few rows are
         // tolerated because the OTHER browser's job writes to the same dev account
         // mid-test. What it must never be is the pre-fix 100-row full dump.
-        // Un-migrated env: the fallback full poll ran (rows >= 1) — allowed.
+        // Un-migrated env: the fallback full poll ran (rows >= 1), allowed.
         const quietOk = deltaActive ? last.rows <= 5 : last.rows >= 0;
         const ok = r.status === 'Closed Won' && r.alertQueued && quietOk;
         return { ok, got: `status=${r.status} alert=${r.alertQueued} lastPoll[delta=${deltaActive} rows=${last.rows}] polls=${polls.length}` };
@@ -131,7 +131,7 @@ test.describe('egress guards (UI-driven, real backend)', () => {
       act: async (p) => {
         out = await p.evaluate(async ({ clientId, png }) => {
           clients.push({ id: clientId, name: `Egress Logo Client ${Date.now()}`, _e2e: 'egress' });
-          // Use the account's REAL logo when one exists — the pipeline proof
+          // Use the account's REAL logo when one exists, the pipeline proof
           // (upload once → snapshot carries a fetchable URL + empty logoData)
           // holds for any image. Only seed the tiny red test PNG when the
           // account has no logo at all: branding is owner-facing, account-wide
@@ -142,7 +142,7 @@ test.describe('egress guards (UI-driven, real backend)', () => {
           S.logoUrl = ''; S.logoHash = '';
           // Diagnostic probe: replicate _ensureLogoUrl's exact upload call
           // directly so a rejection surfaces its real error (message/status)
-          // in the test's `got:` output — _ensureLogoUrl itself swallows
+          // in the test's `got:` output: _ensureLogoUrl itself swallows
           // errors by design (graceful-degradation) and browser console
           // output is not piped into the CI job log.
           let probeErr = '';
@@ -156,7 +156,7 @@ test.describe('egress guards (UI-driven, real backend)', () => {
             const { error } = await _supa.storage.from('gallery').upload(path, blob, { contentType: m[1], upsert: true, cacheControl: '31536000' });
             if (error) probeErr = `probe upload failed: status=${error.statusCode || error.status || '?'} msg=${error.message || JSON.stringify(error)}`;
           } catch (_e) { probeErr = 'probe threw: ' + (_e && _e.message); }
-          S.logoUrl = ''; S.logoHash = ''; // reset — the real path below must reproduce it itself
+          S.logoUrl = ''; S.logoHash = ''; // reset: the real path below must reproduce it itself
           await _uploadClientHub(clientId);
           await new Promise(r => setTimeout(r, 1500)); // background refresh path
           const c = clients.find(x => x.id === clientId);
@@ -192,7 +192,7 @@ test.describe('egress guards (UI-driven, real backend)', () => {
       act: async (p) => {
         await p.evaluate(() => openGalleryUpload());
         // #gup-file is a deliberately HIDDEN native file input (triggered via a
-        // styled "Choose photos" button) — waitForSelector defaults to visible,
+        // styled "Choose photos" button): waitForSelector defaults to visible,
         // which never resolves for it; 'attached' matches the real UX contract.
         await p.waitForSelector('#gup-file', { state: 'attached', timeout: 8000 });
         // A real 2400×1200 JPEG generated in-page (~deterministic, no fixture file).
@@ -224,13 +224,13 @@ test.describe('egress guards (UI-driven, real backend)', () => {
       },
     });
 
-    // NO cleanup — the client, photo + thumbnail stay in the dev account on
+    // NO cleanup, the client, photo + thumbnail stay in the dev account on
     // purpose so the owner can inspect them (CLAUDE.md §12.7).
     const rep = report(FLOW, BASELINE, page);
     expect(rep.totalClicks).toBeGreaterThan(0);
   });
 
-  test('a signature lands via REALTIME PUSH alone — no poll call — and the alert fires in seconds', async ({ page }) => {
+  test('a signature lands via REALTIME PUSH alone, no poll call, and the alert fires in seconds', async ({ page }) => {
     const FLOW = 'egress/realtime-push';
     const stamp = process.pid;
     const clientId = Date.now() * 1000 + (stamp % 1000) + 9;
@@ -249,7 +249,7 @@ test.describe('egress guards (UI-driven, real backend)', () => {
     await step(page, {
       label: 'sig-feed SUBSCRIBED → INSERT row → bid flips with ZERO poll calls', page: 'pg-dash', role: 'contractor',
       suspect: 'cloud.js _initRealtimeSubscriptions sig-feed channel + _sigFeedStatus',
-      ruleText: 'with the poll never invoked, a signed_proposals INSERT must flip the bid Closed Won via the realtime push handler within ~12s — this is the proof that push, not the poll, carries signatures',
+      ruleText: 'with the poll never invoked, a signed_proposals INSERT must flip the bid Closed Won via the realtime push handler within ~12s, this is the proof that push, not the poll, carries signatures',
       expected: 'sig-feed SUBSCRIBED + Closed Won via push + alert queued',
       act: async (p) => {
         const r = await p.evaluate(async ({ bidId }) => {
@@ -267,7 +267,7 @@ test.describe('egress guards (UI-driven, real backend)', () => {
             payment_method: 'cash', payment_status: 'pending_cash',
             signature_data: 'data:image/png;base64,pushproofsig',
           }, { onConflict: 'bid_id' });
-          // NO checkNewSignatures() call — the realtime handler must do the work.
+          // NO checkNewSignatures() call, the realtime handler must do the work.
           const t1 = Date.now();
           let flipped = false;
           while (Date.now() - t1 < 12000) {

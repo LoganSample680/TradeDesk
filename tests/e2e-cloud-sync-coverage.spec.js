@@ -1,33 +1,33 @@
 // @ts-check
 /**
- * Cloud / sync core coverage (CLAUDE.md §12 — exhaustive per-function coverage).
+ * Cloud / sync core coverage (CLAUDE.md §12, exhaustive per-function coverage).
  *
- * Targets the highest-RISK uncovered functions in js/cloud.js — the sync core —
+ * Targets the highest-RISK uncovered functions in js/cloud.js: the sync core,
  * across the §12.1 input classes (null / empty / boundary / type-mismatch /
  * missing-DOM / golden path), the §12.2 concurrent-call race pattern, and the
  * §12.3 localStorage-corruption pattern.
  *
  * Functions exercised:
- *   _isMissingTableErr        — error classification (true/false across shapes)
- *   _bidRichness              — bid scoring (empty / partial / full / non-bid)
- *   _recordLocalDelete        — delete-sweep id tracking (§9.8 concurrency-safe sweep)
- *   _setDeliberateWipe        — wipe-flag setter
- *   _isCompanyVehicleToday    — company-vehicle boolean across localStorage states
- *   _pickVehicle              — vehicle selection (localStorage + toast, missing DOM)
- *   _dispatchMoveUp/_dispatchMoveDown/_dispatchUnassign — dispatch reorder + boundaries
- *   _empPayTypeSync           — pay-type form sync (DOM label/placeholder)
- *   _setEmpRolePreset         — role → permission-checkbox preset
- *   _togglePermInfo           — info-block toggle (missing DOM)
- *   _copyInviteLink           — clipboard copy (no-throw)
- *   _cacheUserLayoutLocal     — per-uid layout cache to localStorage
- *   _opDbOpen / _opSyncOps (window.__opSync) — durable op-log + shadow sync (§12.2 race)
- *   _loadTeamComp / _refreshPermReqBadge / _denyPermissionRequest — supa-backed, no-throw
- *   _migrateReceiptsToStorage / _restoreReceiptsFromStorage — receipt sync, no-throw
+ *   _isMissingTableErr       , error classification (true/false across shapes)
+ *   _bidRichness             , bid scoring (empty / partial / full / non-bid)
+ *   _recordLocalDelete       , delete-sweep id tracking (§9.8 concurrency-safe sweep)
+ *   _setDeliberateWipe       , wipe-flag setter
+ *   _isCompanyVehicleToday   , company-vehicle boolean across localStorage states
+ *   _pickVehicle             , vehicle selection (localStorage + toast, missing DOM)
+ *   _dispatchMoveUp/_dispatchMoveDown/_dispatchUnassign: dispatch reorder + boundaries
+ *   _empPayTypeSync          , pay-type form sync (DOM label/placeholder)
+ *   _setEmpRolePreset        , role → permission-checkbox preset
+ *   _togglePermInfo          , info-block toggle (missing DOM)
+ *   _copyInviteLink          , clipboard copy (no-throw)
+ *   _cacheUserLayoutLocal    , per-uid layout cache to localStorage
+ *   _opDbOpen / _opSyncOps (window.__opSync): durable op-log + shadow sync (§12.2 race)
+ *   _loadTeamComp / _refreshPermReqBadge / _denyPermissionRequest, supa-backed, no-throw
+ *   _migrateReceiptsToStorage / _restoreReceiptsFromStorage, receipt sync, no-throw
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
 
-test.describe('Cloud sync core — uncovered function coverage', () => {
+test.describe('Cloud sync core, uncovered function coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -43,8 +43,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     await page.context().close();
   });
 
-  // ── _isMissingTableErr — pure error classification ────────────────────────
-  test('_isMissingTableErr — classifies missing-table errors true, real errors false', async () => {
+  // ── _isMissingTableErr, pure error classification ────────────────────────
+  test('_isMissingTableErr: classifies missing-table errors true, real errors false', async () => {
     const r = await page.evaluate(() => {
       if (typeof _isMissingTableErr !== 'function') return { skip: true };
       try {
@@ -79,8 +79,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.undefErr).toBe(false);
   });
 
-  // ── _bidRichness — pure scoring ───────────────────────────────────────────
-  test('_bidRichness — scores surfaces*100 + rooms across input classes', async () => {
+  // ── _bidRichness, pure scoring ───────────────────────────────────────────
+  test('_bidRichness: scores surfaces*100 + rooms across input classes', async () => {
     const r = await page.evaluate(() => {
       if (typeof _bidRichness !== 'function') return { skip: true };
       try {
@@ -110,8 +110,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.full).toBeGreaterThan(r.empty);
   });
 
-  // ── _recordLocalDelete — §9.8 concurrency-safe sweep id tracking ───────────
-  test('_recordLocalDelete — tracks explicitly-deleted ids, ignores unknown tables/empty', async () => {
+  // ── _recordLocalDelete, §9.8 concurrency-safe sweep id tracking ───────────
+  test('_recordLocalDelete: tracks explicitly-deleted ids, ignores unknown tables/empty', async () => {
     const r = await page.evaluate(() => {
       if (typeof _recordLocalDelete !== 'function' || typeof _locallyDeletedIds === 'undefined') return { skip: true };
       try {
@@ -122,7 +122,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
         // multiple ids in one call (cascade pattern)
         _recordLocalDelete('td_jobs', 555002, 555003);
         const multi = has('td_jobs', 555002) && has('td_jobs', 555003);
-        // ids are stringified — numeric and string forms collapse to the same key
+        // ids are stringified, numeric and string forms collapse to the same key
         const strMatch = has('td_bids', '555001');
         // null / undefined ids are skipped, not recorded as "null"/"undefined"
         const before = _locallyDeletedIds.td_clients.size;
@@ -144,12 +144,12 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
   });
 
   // Root cause (2026-07-10): _locallyDeletedIds was a hand-listed object literal
-  // that fell out of sync with _TD_TABLES — td_maintenance was missing, so
+  // that fell out of sync with _TD_TABLES, td_maintenance was missing, so
   // deleteMaintenanceRecord's delete never propagated to the cloud sweep (the
   // row resurrected on the next load). Now built FROM _TD_TABLES so this class
-  // of bug can't recur — this test is the tripwire: it fails the moment a new
+  // of bug can't recur, this test is the tripwire: it fails the moment a new
   // table is added to _TD_TABLES without _locallyDeletedIds picking it up.
-  test('_locallyDeletedIds — covers every table in _TD_TABLES (the exact bug: td_maintenance was missing)', async () => {
+  test('_locallyDeletedIds: covers every table in _TD_TABLES (the exact bug: td_maintenance was missing)', async () => {
     const r = await page.evaluate(() => {
       if (typeof _TD_TABLES === 'undefined' || typeof _locallyDeletedIds === 'undefined') return { skip: true };
       const missing = _TD_TABLES.map(({ t }) => t).filter(t => !(_locallyDeletedIds[t] instanceof Set));
@@ -160,12 +160,12 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.covered).toBe(r.total);
   });
 
-  test('deleteMaintenanceRecord — the delete actually propagates to the cloud sweep (regression for the fixed bug)', async () => {
+  test('deleteMaintenanceRecord, the delete actually propagates to the cloud sweep (regression for the fixed bug)', async () => {
     const r = await page.evaluate(() => {
       if (typeof deleteMaintenanceRecord !== 'function' || typeof maintenance === 'undefined') return { skip: true };
       const id = 555100;
       maintenance.push({ id, vehicleName: 'Test Van', date: '2026-01-01', desc: 'Oil change', cost: 45 });
-      // deleteMaintenanceRecord asks for confirmation via zConfirm — stub it to
+      // deleteMaintenanceRecord asks for confirmation via zConfirm, stub it to
       // auto-accept so the test drives the real delete path, not a mock.
       const origConfirm = window.zConfirm;
       let deleted = false;
@@ -179,11 +179,11 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     });
     if (r.skip) return;
     expect(r.deleted).toBe(true);   // removed from the in-memory array
-    expect(r.swept).toBe(true);     // THE bug: this used to be false — the id was never recorded, so it never left the cloud
+    expect(r.swept).toBe(true);     // THE bug: this used to be false, the id was never recorded, so it never left the cloud
   });
 
-  // ── _setDeliberateWipe — flag setter ──────────────────────────────────────
-  test('_setDeliberateWipe — coerces to boolean flag', async () => {
+  // ── _setDeliberateWipe, flag setter ──────────────────────────────────────
+  test('_setDeliberateWipe: coerces to boolean flag', async () => {
     const r = await page.evaluate(() => {
       if (typeof _setDeliberateWipe !== 'function' || typeof _deliberateWipe === 'undefined') return { skip: true };
       try {
@@ -206,8 +206,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.restored).toBe(false);
   });
 
-  // ── _isCompanyVehicleToday — boolean logic over localStorage states ───────
-  test('_isCompanyVehicleToday — true only for a real company vehicle id', async () => {
+  // ── _isCompanyVehicleToday, boolean logic over localStorage states ───────
+  test('_isCompanyVehicleToday, true only for a real company vehicle id', async () => {
     const r = await page.evaluate(() => {
       if (typeof _isCompanyVehicleToday !== 'function' || typeof todayKey !== 'function') return { skip: true };
       try {
@@ -231,8 +231,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.blank).toBe(false);
   });
 
-  // ── _pickVehicle — selection writes localStorage; tolerant of missing DOM ──
-  test('_pickVehicle — persists choice and does not throw when display el absent', async () => {
+  // ── _pickVehicle, selection writes localStorage; tolerant of missing DOM ──
+  test('_pickVehicle: persists choice and does not throw when display el absent', async () => {
     const r = await page.evaluate(() => {
       if (typeof _pickVehicle !== 'function' || typeof todayKey !== 'function') return { skip: true };
       try {
@@ -256,8 +256,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.storedNone).toBe('none');
   });
 
-  // ── _dispatch reorder — seed jobs, assert precise order + boundary no-ops ──
-  test('_dispatchMoveUp / _dispatchMoveDown — reorder dispatchOrder with boundary no-ops', async () => {
+  // ── _dispatch reorder, seed jobs, assert precise order + boundary no-ops ──
+  test('_dispatchMoveUp / _dispatchMoveDown: reorder dispatchOrder with boundary no-ops', async () => {
     const r = await page.evaluate(() => {
       if (typeof _dispatchMoveUp !== 'function' || typeof _dispatchMoveDown !== 'function'
         || typeof jobs === 'undefined' || typeof S === 'undefined' || typeof todayKey !== 'function') return { skip: true };
@@ -314,7 +314,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.unknownNoop).toBe(true);
   });
 
-  test('_dispatchUnassign — clears assignment via zConfirm without throwing', async () => {
+  test('_dispatchUnassign: clears assignment via zConfirm without throwing', async () => {
     const r = await page.evaluate(() => {
       if (typeof _dispatchUnassign !== 'function' || typeof jobs === 'undefined') return { skip: true };
       try {
@@ -338,12 +338,12 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.cleared).toBe(true);
   });
 
-  // ── _empPayTypeSync — DOM label/placeholder sync ──────────────────────────
-  test('_empPayTypeSync — swaps label + placeholder for salary vs hourly, missing DOM safe', async () => {
+  // ── _empPayTypeSync, DOM label/placeholder sync ──────────────────────────
+  test('_empPayTypeSync: swaps label + placeholder for salary vs hourly, missing DOM safe', async () => {
     const r = await page.evaluate(() => {
       if (typeof _empPayTypeSync !== 'function') return { skip: true };
       try {
-        // Missing DOM first — must not throw
+        // Missing DOM first, must not throw
         document.getElementById('_paytype-harness')?.remove();
         _empPayTypeSync();
         // Build a minimal harness mirroring the employee modal ids
@@ -372,12 +372,12 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.hourlyPh).toBe('28');
   });
 
-  // ── _setEmpRolePreset — role → permission checkboxes ──────────────────────
-  test('_setEmpRolePreset — checks the right permission boxes per role preset', async () => {
+  // ── _setEmpRolePreset, role → permission checkboxes ──────────────────────
+  test('_setEmpRolePreset: checks the right permission boxes per role preset', async () => {
     const r = await page.evaluate(() => {
       if (typeof _setEmpRolePreset !== 'function' || typeof _EMP_PERM_LABELS === 'undefined') return { skip: true };
       try {
-        // Missing checkboxes first — must not throw
+        // Missing checkboxes first, must not throw
         document.getElementById('_rolepreset-harness')?.remove();
         _setEmpRolePreset('tech');
         // Build a checkbox per permission key
@@ -406,8 +406,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.bogus).toEqual([]);
   });
 
-  // ── _togglePermInfo — info-block display toggle ───────────────────────────
-  test('_togglePermInfo — toggles display block/none, missing el is no-op', async () => {
+  // ── _togglePermInfo, info-block display toggle ───────────────────────────
+  test('_togglePermInfo: toggles display block/none, missing el is no-op', async () => {
     const r = await page.evaluate(() => {
       if (typeof _togglePermInfo !== 'function') return { skip: true };
       try {
@@ -427,8 +427,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.closed).toBe('none');
   });
 
-  // ── _copyInviteLink — clipboard copy, no-throw ────────────────────────────
-  test('_copyInviteLink — copies without throwing (clipboard + fallback)', async () => {
+  // ── _copyInviteLink, clipboard copy, no-throw ────────────────────────────
+  test('_copyInviteLink: copies without throwing (clipboard + fallback)', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _copyInviteLink !== 'function') return { skip: true };
       try {
@@ -450,8 +450,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  // ── _cacheUserLayoutLocal — per-uid layout cache to localStorage ──────────
-  test('_cacheUserLayoutLocal — writes layout cache only when a user is present', async () => {
+  // ── _cacheUserLayoutLocal, per-uid layout cache to localStorage ──────────
+  test('_cacheUserLayoutLocal, writes layout cache only when a user is present', async () => {
     const r = await page.evaluate(() => {
       if (typeof _cacheUserLayoutLocal !== 'function' || typeof S === 'undefined') return { skip: true };
       try {
@@ -479,13 +479,13 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.parsed).toMatchObject({ d: ['a', 'b'], n: ['home', 'jobs'], k: ['k1'] });
   });
 
-  // ── _opDbOpen — durable IndexedDB op-log opens (or fails safe → null) ──────
-  test('_opDbOpen — resolves a DB handle or null without throwing', async () => {
+  // ── _opDbOpen, durable IndexedDB op-log opens (or fails safe → null) ──────
+  test('_opDbOpen: resolves a DB handle or null without throwing', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _opDbOpen !== 'function') return { skip: true };
       try {
         const db = await _opDbOpen();
-        // best-effort: either a real IDBDatabase or null (blocked/unavailable) — never a throw
+        // best-effort: either a real IDBDatabase or null (blocked/unavailable): never a throw
         return { ok: true, isObjectOrNull: db === null || typeof db === 'object' };
       } catch (e) { return { ok: false, error: e.message }; }
     });
@@ -494,8 +494,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.isObjectOrNull).toBe(true);
   });
 
-  // ── _opSyncOps via window.__opSync — §12.2 concurrent-call guard ──────────
-  test('__opSync — concurrent calls resolve, guard holds, no throw', async () => {
+  // ── _opSyncOps via window.__opSync: §12.2 concurrent-call guard ──────────
+  test('__opSync: concurrent calls resolve, guard holds, no throw', async () => {
     const r = await page.evaluate(async () => {
       if (typeof window.__opSync !== 'function') return { skip: true };
       try {
@@ -504,7 +504,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
         const origUser = typeof _supaUser !== 'undefined' ? _supaUser : null;
         window._opLogShadow = true;
         try { if (!_supaUser) _supaUser = { id: 'opsync-test' }; } catch (_e) {}
-        // §12.2: fire N times without awaiting — the _opSyncRunning guard must let
+        // §12.2: fire N times without awaiting, the _opSyncRunning guard must let
         // them all settle without throwing (the shim returns empty/offline results).
         const ps = [];
         for (let i = 0; i < 10; i++) ps.push(window.__opSync());
@@ -518,8 +518,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  // ── _loadTeamComp / _refreshPermReqBadge / _denyPermissionRequest — no-throw
-  test('team-comp + permission-badge helpers — run offline without throwing', async () => {
+  // ── _loadTeamComp / _refreshPermReqBadge / _denyPermissionRequest, no-throw
+  test('team-comp + permission-badge helpers, run offline without throwing', async () => {
     const r = await page.evaluate(async () => {
       try {
         const out = {};
@@ -533,8 +533,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  // ── _refreshPermReqBadge — renders + clears the badge from the queue count ─
-  test('_refreshPermReqBadge — shows badge when requests pending, removes when empty', async () => {
+  // ── _refreshPermReqBadge, renders + clears the badge from the queue count ─
+  test('_refreshPermReqBadge: shows badge when requests pending, removes when empty', async () => {
     const r = await page.evaluate(() => {
       if (typeof _refreshPermReqBadge !== 'function' || typeof _pendingPermReqs === 'undefined') return { skip: true };
       try {
@@ -561,8 +561,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.cleared).toBe(true);
   });
 
-  // ── receipt migrate/restore — supa-backed, no-throw offline ───────────────
-  test('_migrateReceiptsToStorage / _restoreReceiptsFromStorage — run offline without throwing', async () => {
+  // ── receipt migrate/restore: supa-backed, no-throw offline ───────────────
+  test('_migrateReceiptsToStorage / _restoreReceiptsFromStorage, run offline without throwing', async () => {
     const r = await page.evaluate(async () => {
       try {
         const out = {};
@@ -581,7 +581,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
   // must DEFER while _loadInProgress and never blank the page.
   test('_autoSaveAndReload defers (never blanks the page) while a cold load is in progress', async () => {
     const r = await page.evaluate(async () => {
-      // These are `let` globals in cloud.js — reference by bare name, not window.*
+      // These are `let` globals in cloud.js: reference by bare name, not window.*
       const saved = { load: _loadInProgress, pending: _reloadPending, deferred: _deferredReload, vis: document.body.style.visibility };
       try {
         _reloadPending = false;
@@ -642,10 +642,10 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
   // If it advances BEFORE the td_* rows commit, a peer reads a fresh cursor + stale data
   // and wrongly marks itself caught up (read-skew). This drives supaSaveToCloud against an
   // order-recording Supabase stub and proves the zj_data write (settings + cursor, a single
-  // write per save) is the LAST write — after the td_* upsert — so "cursor moved ⇒ all data
+  // write per save) is the LAST write, after the td_* upsert, so "cursor moved ⇒ all data
   // committed" holds. If a future edit moves the zj_data write back ahead of the table writes,
   // this fails on the offline shard, before it ever reaches the cloud gate.
-  test('supaSaveToCloud writes the zj_data cursor LAST — after the td_* upserts (no read-skew)', async () => {
+  test('supaSaveToCloud writes the zj_data cursor LAST, after the td_* upserts (no read-skew)', async () => {
     const r = await page.evaluate(async () => {
       // Save everything we clobber so the shared page survives for later tests.
       const saved = {
@@ -654,7 +654,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
         hash: _syncedHash, known: _lastKnownIds,
       };
       // Snapshot + empty every sync table so residual data from earlier tests can't add
-      // stray upserts — then seed EXACTLY one dirty bid. Restored at the end.
+      // stray upserts, then seed EXACTLY one dirty bid. Restored at the end.
       const _tblSnap = _TD_TABLES.map(({ t, get, set }) => ({ t, set, rows: (get() || []).slice() }));
       _tblSnap.forEach(({ set }) => set([]));
       const writes = [];
@@ -695,7 +695,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
       return { threw, writes, last, tdUpsertIdx, markerIdx };
     });
     expect(r.threw).toBe(null);
-    // A td_* row was actually uploaded (precondition — otherwise the zj_data write won't fire).
+    // A td_* row was actually uploaded (precondition: otherwise the zj_data write won't fire).
     expect(r.tdUpsertIdx).toBeGreaterThanOrEqual(0);
     // The final write carries the zj_data cursor (settings + updated_at, one write per save)…
     expect(r.last && r.last.table).toBe('zj_data');
@@ -706,22 +706,22 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(firstZjIdx).toBe(r.markerIdx);
   });
 
-  // ── _hashPayload is CANONICAL — key order never changes the fingerprint ──────
+  // ── _hashPayload is CANONICAL, key order never changes the fingerprint ──────
   // Root cause of the phantom re-upload loop (delta-sync flow, 2026-07-03): the save
   // path hashes rows in in-memory insertion order, but reconcile/load rebaseline from
-  // Postgres jsonb payloads — and Postgres re-sorts jsonb object keys. With a plain
+  // Postgres jsonb payloads, and Postgres re-sorts jsonb object keys. With a plain
   // JSON.stringify hash the two orderings fingerprint differently, so every reconcile
   // marked every row "changed" and every save re-uploaded the whole account, forever.
-  // _canonicalJson sorts keys recursively (arrays keep order — order IS data there),
+  // _canonicalJson sorts keys recursively (arrays keep order, order IS data there),
   // so the same data always hashes the same regardless of who serialized it.
-  test('_hashPayload — key order never changes the hash; array order + values still do', async () => {
+  test('_hashPayload: key order never changes the hash; array order + values still do', async () => {
     const r = await page.evaluate(() => {
       const a = { name: 'Zach', amount: 5, tags: ['x', 'y'], addr: { city: 'Austin', zip: '78701' } };
       const b = { addr: { zip: '78701', city: 'Austin' }, tags: ['x', 'y'], amount: 5, name: 'Zach' };
       const arrSwapped = { ...a, tags: ['y', 'x'] };
       const valChanged = { ...a, amount: 6 };
       // undefined/function semantics must match JSON.stringify: dropped from objects,
-      // null in arrays — a jsonb round-trip (which strips them) must not change the hash.
+      // null in arrays, a jsonb round-trip (which strips them) must not change the hash.
       const withUndef = { name: 'Zach', amount: 5, tags: ['x', 'y'], addr: { city: 'Austin', zip: '78701' }, ghost: undefined, fn: function () {} };
       const arrUndef1 = { list: [1, undefined, 3] };
       const arrUndef2 = { list: [1, null, 3] };
@@ -742,8 +742,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
         dateMatchesIso: _hashPayload(withDate) === _hashPayload(withIso),
       };
     });
-    expect(r.orderInsensitive).toBe(true);  // THE fix — jsonb key re-sort must not re-upload
-    expect(r.arrayOrderMatters).toBe(true); // arrays are ordered data — never sort them
+    expect(r.orderInsensitive).toBe(true);  // THE fix, jsonb key re-sort must not re-upload
+    expect(r.arrayOrderMatters).toBe(true); // arrays are ordered data, never sort them
     expect(r.valueMatters).toBe(true);
     expect(r.dateMatchesIso).toBe(true);    // toJSON honored → no Date/jsonb phantom re-upload
     expect(r.undefDropped).toBe(true);
@@ -753,14 +753,14 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
     expect(r.nullSafe).toBe(true);
   });
 
-  // ── Phase-3 per-field merge — the two review-confirmed defects, fixed ─────────
+  // ── Phase-3 per-field merge, the two review-confirmed defects, fixed ─────────
   // (1) A protected pending edit must RE-UPLOAD: the hash stamped on merge must be the
-  //     INCOMING cloud row's hash, never the merged row's — else the next save hash-skips
+  //     INCOMING cloud row's hash, never the merged row's: else the next save hash-skips
   //     the row and the protected edit never reaches the cloud (permanent divergence).
   // (2) The pending gate (_rowSyncedAt): a field whose edit already reached the cloud is
   //     NOT protected, even when a skewed-fast clock makes its field-clock ms exceed the
   //     incoming row's server-stamped updated_at.
-  test.describe('_opApplyIncoming via _applyRealtimeRecord — pending-edit merge', () => {
+  test.describe('_opApplyIncoming via _applyRealtimeRecord, pending-edit merge', () => {
     test('protected PENDING edit survives the merge AND is queued for re-upload (hash = incoming, not merged)', async () => {
       const r = await page.evaluate(() => {
         const id = 'm3-pending-1';
@@ -769,14 +769,14 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
           window._opLogShadow = true;
           // Skip the ~15-container re-render inside _applyRealtimeRecord (fromRealtime +
           // recent local save = the echo guard returns AFTER applying data, BEFORE
-          // rendering). This test asserts merge + hash semantics, not the render chain —
+          // rendering). This test asserts merge + hash semantics, not the render chain,
           // and a synchronous render here crashed on the seed row in an unrelated
           // calendar sort. Data application is unaffected by the guard.
           _lastLocalSaveAt = Date.now();
           // Local row with a pending amount edit (field clock stamped NOW, row last synced 60s ago).
           bids.push({ id, client_id: 1, client_name: 'Merge T', amount: 7, note: 'local', status: 'Pending', bid_date: '2026-07-01' });
-          // A device that holds this row has a synced-hash entry from its load — seed it like
-          // production. (The apply stamps via _syncedHash[tbl]?.set — no map, no stamp, and the
+          // A device that holds this row has a synced-hash entry from its load, seed it like
+          // production. (The apply stamps via _syncedHash[tbl]?.set: no map, no stamp, and the
           // mocked boot never cloud-loads, which is what tripped this assertion on CI.)
           (_syncedHash['td_bids'] || (_syncedHash['td_bids'] = new Map())).set(id, 'stale-prev-hash');
           _opStampFields('td_bids', id, { amount: 1 }, _hlcNow());
@@ -811,7 +811,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
       expect(r.hashIsMerged).toBe(false);  // NEVER the merged hash (that was the divergence bug)
     });
 
-    test('already-UPLOADED edit is NOT protected — a fast clock cannot reject peer updates (pending gate)', async () => {
+    test('already-UPLOADED edit is NOT protected, a fast clock cannot reject peer updates (pending gate)', async () => {
       const r = await page.evaluate(() => {
         const id = 'm3-gate-1';
         const savedFlag = window._opLogShadow, savedSaveAt = _lastLocalSaveAt;
@@ -848,7 +848,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
 
     test('clock-less incoming row (crew full-load RPC shape) cannot whole-row-erase a clocked local field', async () => {
       // The load_account_data RPC's redacted rows carry NO updated_at. The old incMs=0
-      // bail whole-row-replaced on exactly those loads — erasing a crew device's own
+      // bail whole-row-replaced on exactly those loads, erasing a crew device's own
       // clocked field when the server row was a concurrent peer upsert's LWW winner
       // (the 5-writer marker loss). The merge must run with incMs=0: clocked local-only
       // fields survive, everything unclocked takes the incoming value.
@@ -878,17 +878,17 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
       expect(r.passiveB).toBe(3);
     });
 
-    // Regression — concurrent-writer field survival (data-safety guarantee, NOT an
+    // Regression: concurrent-writer field survival (data-safety guarantee, NOT an
     // efficiency optimization). A prior attempt at this session gated the local-only-
     // field branch on fcMs>syncedAt, reasoning that "already synced = no longer pending
-    // = safe to drop if absent from an incoming row" — intended to fix a separate
+    // = safe to drop if absent from an incoming row", intended to fix a separate
     // over-upload bug (a field cleared long ago permanently poisoning the hash
     // baseline). That gate was REVERTED: local field clocks are a client-side HLC
     // timestamp stamped the instant an edit happens, while incMs/syncedAt are SERVER
     // commit timestamps that lag behind by real network latency. Under genuine
     // concurrent multi-writer load, a device's own just-landed edit can easily have
     // fcMs <= syncedAt (its own save's ack bumps syncedAt before a racing peer's
-    // stale-base push is even processed) — the gate then dropped that device's OWN
+    // stale-base push is even processed), the gate then dropped that device's OWN
     // field the instant a concurrent peer's push arrived. Confirmed by the live
     // swarm-convergence flow test (12 concurrent writers, only 5/12 kept their own
     // marker). This test locks in the safe behavior permanently: a local-only field
@@ -908,7 +908,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
           // Simulate: this device's OWN save just landed → syncedAt advances PAST the
           // field's own clock (exactly what a successful _flushSaveNow() does).
           _rowSyncedAt['td_bids'].set(id, Date.now() + 50);
-          // A concurrent peer's push arrives via realtime — its base snapshot predates
+          // A concurrent peer's push arrives via realtime, its base snapshot predates
           // this device's field, so it legitimately lacks sw_f_A (peer never saw it).
           const incoming = { id, client_name: 'Shared', amount: 5000, sw_f_B: 'vB' };
           const merged = window.__opApplyIncoming('td_bids', local, incoming, new Date().toISOString());
@@ -984,8 +984,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
   // Live failure (A→B delete): B's silent reload awaited B's own in-flight save
   // UNBOUNDED while holding _loadInProgress, so every heartbeat tick skipped and B
   // never converged. The reload must give up after ~4s, release _loadInProgress,
-  // and queue a retry — never load concurrently (lost-edit race) and never wedge.
-  test('silent supaLoadFromCloud DEFERS (not wedges) behind a hung save — releases the lock and queues a retry', async () => {
+  // and queue a retry, never load concurrently (lost-edit race) and never wedge.
+  test('silent supaLoadFromCloud DEFERS (not wedges) behind a hung save, releases the lock and queues a retry', async () => {
     test.setTimeout(20000);
     const r = await page.evaluate(async () => {
       const saved = { supa: _supa, user: window._supaUser, pend: _pendingSavePromise };
@@ -1015,7 +1015,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
 
   // ── Anti-blinding guard: a save that overwrites a PEER-moved cursor queues a reconcile ──
   // Live failure (mechanism #2): B's background save overwrote zj_data.updated_at with its
-  // own write AFTER A's delete moved it — the heartbeat then compared equal forever and B
+  // own write AFTER A's delete moved it, the heartbeat then compared equal forever and B
   // kept the deleted bid. The save's pre-read must detect the peer's move and queue a
   // catch-up reload for right after the save.
   test('supaSaveToCloud queues a reconcile when the cloud cursor moved since our last load', async () => {
@@ -1060,10 +1060,10 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
   });
 
   // ── Scale guard: a NO-OP save touches ZERO td_* tables ─────────────────────────
-  // Before the fast path, an idle save still paid one lockedRows SELECT per table —
+  // Before the fast path, an idle save still paid one lockedRows SELECT per table,
   // 14 round-trips every ~2s during editing, the per-save cost that crawled on the
   // bloated dev account and would do the same to any heavy customer at scale.
-  test('no-op supaSaveToCloud makes zero td_* requests (fast path) — only the zj_data settings write', async () => {
+  test('no-op supaSaveToCloud makes zero td_* requests (fast path), only the zj_data settings write', async () => {
     const r = await page.evaluate(async () => {
       const saved = {
         supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded,
@@ -1108,8 +1108,8 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
   // ── Scale guard: SILENT reloads take the DELTA path (not a full-account re-read) ──
   // Every heartbeat/realtime catch-up used to re-read the entire account. Proof the
   // delta path is taken: a pre-existing in-memory row NOT present in the (empty) delta
-  // result SURVIVES the silent load — the full path's set(rows) would have wiped it.
-  test('silent supaLoadFromCloud uses the delta path — untouched rows survive an empty delta', async () => {
+  // result SURVIVES the silent load, the full path's set(rows) would have wiped it.
+  test('silent supaLoadFromCloud uses the delta path, untouched rows survive an empty delta', async () => {
     const r = await page.evaluate(async () => {
       const saved = {
         supa: _supa, user: window._supaUser, loaded: _supaCloudLoaded, owner: _loadedDataOwner,
@@ -1156,7 +1156,7 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
   // ── Read-skew guard, load side: the CURSOR is sampled BEFORE the table snapshot ──
   // The save writes tables→cursor; the load must read cursor→tables. If the cursor is
   // sampled after the tables, a load racing a peer's save can store a fresh cursor over
-  // stale data — the heartbeat then compares equal and the device goes permanently blind
+  // stale data, the heartbeat then compares equal and the device goes permanently blind
   // (the local-stack B→A delete/create failures). Order is recorded at request-FIRE time
   // (maybeSingle/then), not builder construction, because supabase-js builders are lazy.
   test('supaLoadFromCloud samples the zj_data cursor BEFORE any td_* table read', async () => {
@@ -1199,14 +1199,14 @@ test.describe('Cloud sync core — uncovered function coverage', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 100-WRITER PACKAGE — the load-bearing op channel + reconnect rebase.
+// 100-WRITER PACKAGE, the load-bearing op channel + reconnect rebase.
 // These guard the machinery that lets N devices write ONE account concurrently:
-//   _opApplyPeerOps  — per-field HLC apply (newer wins, older rejected, stale-vs-row
+//   _opApplyPeerOps : per-field HLC apply (newer wins, older rejected, stale-vs-row
 //                      guard, create materialization, resurrection guard, echo-free)
-//   _opDbPruneAcked  — the op log is pruned on ack and stays O(pending)
-//   full-load rebase — a pending local edit survives the array replace; an
+//   _opDbPruneAcked : the op log is pruned on ack and stays O(pending)
+//   full-load rebase, a pending local edit survives the array replace; an
 //                      offline-created row (pending CREATE op) is re-appended
-//   reconnect order  — pull (reads) strictly BEFORE push (writes) on offline return
+//   reconnect order , pull (reads) strictly BEFORE push (writes) on offline return
 // ─────────────────────────────────────────────────────────────────────────────
 test.describe('100-writer op channel + rebase', () => {
   let page;
@@ -1224,7 +1224,7 @@ test.describe('100-writer op channel + rebase', () => {
     await page.context().close();
   });
 
-  test('_opApplyPeerOps — newer op sets the field, older op is rejected, no derive echo', async () => {
+  test('_opApplyPeerOps: newer op sets the field, older op is rejected, no derive echo', async () => {
     const r = await page.evaluate(() => {
       if (typeof window.__opApplyPeerOps !== 'function' || typeof window.__hlcNow !== 'function') return { skip: true };
       const id = 771001;
@@ -1259,7 +1259,7 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.echoed).toBe(0);     // peer's field not re-emitted as our op
   });
 
-  test('_opApplyPeerOps — create op materializes an unknown row; deleted ids never resurrect; partial ops for unknown rows are skipped', async () => {
+  test('_opApplyPeerOps: create op materializes an unknown row; deleted ids never resurrect; partial ops for unknown rows are skipped', async () => {
     const r = await page.evaluate(() => {
       if (typeof window.__opApplyPeerOps !== 'function') return { skip: true };
       const idNew = 771010, idDel = 771011, idPartial = 771012;
@@ -1270,7 +1270,7 @@ test.describe('100-writer op channel + rebase', () => {
         // (a) CREATE op (fields carry id) for a row this device never saw → materializes.
         window.__opApplyPeerOps([{ hlc: window.__hlcNow(), op_table: 'td_bids', row_id: String(idNew), fields: { id: idNew, name: 'FromOp', amount: 42, status: 'Pending' }, device_id: 'peer-1' }]);
         const created = bids.find(b => String(b.id) === String(idNew));
-        // (b) This device DELETED idDel (still in _lastKnownIds, absent from the array) —
+        // (b) This device DELETED idDel (still in _lastKnownIds, absent from the array),
         // a peer's op must not resurrect it.
         (_lastKnownIds['td_bids'] || (_lastKnownIds['td_bids'] = new Set())).add(String(idDel));
         window.__opApplyPeerOps([{ hlc: window.__hlcNow(), op_table: 'td_bids', row_id: String(idDel), fields: { id: idDel, amount: 9 }, device_id: 'peer-1' }]);
@@ -1293,7 +1293,7 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.shell).toBe(false);
   });
 
-  test('_opApplyPeerOps — a CREATE op older than the row snapshot is a tombstone echo and must NOT materialize', async () => {
+  test('_opApplyPeerOps: a CREATE op older than the row snapshot is a tombstone echo and must NOT materialize', async () => {
     const r = await page.evaluate(() => {
       if (typeof window.__opApplyPeerOps !== 'function') return { skip: true };
       const idOld = 771025, idNew = 771026;
@@ -1303,7 +1303,7 @@ test.describe('100-writer op channel + rebase', () => {
         _lastLocalSaveAt = Date.now();
         // Our row snapshot is CURRENT (cursor = now). Ops publish only after their row
         // commits, so a create op minted BEFORE this snapshot describes a row the
-        // snapshot accounted for — absent from our arrays means soft-DELETED. It must
+        // snapshot accounted for, absent from our arrays means soft-DELETED. It must
         // not resurrect (the live swarm's 8-vs-4 ghost-bid split).
         _deltaCursor = new Date().toISOString();
         const oldHlc = (Date.now() - 60000).toString(36).padStart(9, '0') + '.0000.peerdev';
@@ -1327,7 +1327,7 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.created).toBe(true);      // genuinely new create still lands
   });
 
-  test('_opApplyPeerOps — an op STALER than the row snapshot we hold is skipped (_rowServerTs guard)', async () => {
+  test('_opApplyPeerOps: an op STALER than the row snapshot we hold is skipped (_rowServerTs guard)', async () => {
     const r = await page.evaluate(() => {
       if (typeof window.__opApplyPeerOps !== 'function') return { skip: true };
       const id = 771020;
@@ -1353,7 +1353,7 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.amount).toBe(100); // stale op did not regress the row
   });
 
-  test('_opDbPruneAcked — ops at-or-below the ack ceiling are DELETED, newer ops survive', async () => {
+  test('_opDbPruneAcked: ops at-or-below the ack ceiling are DELETED, newer ops survive', async () => {
     const r = await page.evaluate(async () => {
       if (typeof window.__opPruneAcked !== 'function' || typeof window.__opDbUnsynced !== 'function') return { skip: true };
       const idA = 771030, idB = 771031;
@@ -1368,7 +1368,7 @@ test.describe('100-writer op channel + rebase', () => {
         // Op B (post-ceiling): derived after the ceiling was sampled.
         bids.push({ id: idB, client_name: 'PruneB', name: 'PruneB', amount: 20, status: 'Pending' });
         _opShadowDerive();
-        // IndexedDB adds are fire-and-forget — wait until both ops are visible.
+        // IndexedDB adds are fire-and-forget, wait until both ops are visible.
         for (let i = 0; i < 40; i++) {
           const ops = await window.__opDbUnsynced();
           if (ops.some(o => o.rowId === String(idA)) && ops.some(o => o.rowId === String(idB))) break;
@@ -1391,7 +1391,7 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.bKept).toBe(true);
   });
 
-  test('full-load REBASE — a pending local edit survives the array replace; an offline-created row (pending CREATE op) is re-appended', async () => {
+  test('full-load REBASE, a pending local edit survives the array replace; an offline-created row (pending CREATE op) is re-appended', async () => {
     const r = await page.evaluate(async () => {
       if (typeof supaLoadFromCloud !== 'function' || typeof window.__opDbUnsynced !== 'function') return { skip: true };
       const idCloud = 771040, idLocal = 771041;
@@ -1402,7 +1402,7 @@ test.describe('100-writer op channel + rebase', () => {
         syncedAt: _rowSyncedAt, flag: window._opLogShadow, saveAt: _lastLocalSaveAt,
         auth: _authSettingsLoaded,
       };
-      // The FULL load path replaces every table array — snapshot ALL of them for restore.
+      // The FULL load path replaces every table array, snapshot ALL of them for restore.
       const _tblSnap = _TD_TABLES.map(({ t, get, set }) => ({ t, set, rows: (get() || []).slice() }));
       const past = new Date(Date.now() - 60000).toISOString();
       const makeChain = (table) => {
@@ -1424,7 +1424,7 @@ test.describe('100-writer op channel + rebase', () => {
         _lastLocalSaveAt = Date.now();
         window._supaUser = { id: UID };
         // Local state: our copy of the cloud row with a PENDING edit (amount 999, field
-        // clock stamped now — newer than the incoming row's updated_at), plus a row the
+        // clock stamped now, newer than the incoming row's updated_at), plus a row the
         // cloud has never seen whose CREATE op is pending in the durable log.
         bids.length = 0;
         bids.push({ id: idCloud, name: 'CloudRow', amount: 100, status: 'X' });
@@ -1438,11 +1438,11 @@ test.describe('100-writer op channel + rebase', () => {
           if (ops.some(o => o.rowId === String(idLocal) && o.fields && o.fields.id !== undefined && o.owner === UID)) break;
           await new Promise(res => setTimeout(res, 100));
         }
-        _rowSyncedAt['td_bids'] = new Map(); // nothing "already uploaded" — the edit is genuinely pending
+        _rowSyncedAt['td_bids'] = new Map(); // nothing "already uploaded", the edit is genuinely pending
         _supa = { from: (t) => makeChain(t), rpc: () => Promise.resolve({ data: null, error: { code: 'PGRST202', message: 'missing' } }) };
         _supaCloudLoaded = true; _isEmployee = false;
         _loadedDataOwner = UID;
-        _deltaCursor = null; // force the FULL (array-replace) branch — the one that used to clobber
+        _deltaCursor = null; // force the FULL (array-replace) branch, the one that used to clobber
         await supaLoadFromCloud({ silent: true });
         const cloudRow = bids.find(b => String(b.id) === String(idCloud));
         const localRow = bids.find(b => String(b.id) === String(idLocal));
@@ -1472,17 +1472,17 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.hashIsIncoming).toBe(true);
   });
 
-  // Regression — employee redaction must never poison a FIELD CLOCK (data-leak guard).
+  // Regression: employee redaction must never poison a FIELD CLOCK (data-leak guard).
   // Before: _opShadowDerive stamped a fresh field clock from an employee's REDACTED
   // (zeroed) in-memory bid amount before supaSaveToCloud's _saveSkip even excluded
   // td_bids from the upload. The network was never touched, but that phantom "locally
   // edited, newer than the server" clock then outranked the contractor's real value on
-  // the next reload's field-clock merge (_opApplyIncoming) — an employee's redacted
+  // the next reload's field-clock merge (_opApplyIncoming): an employee's redacted
   // view silently zeroed the contractor's real bid amount in MEMORY. Fixed: the field
-  // clock stamp is skipped for redacted tables specifically — the op ITSELF (ring +
+  // clock stamp is skipped for redacted tables specifically, the op ITSELF (ring +
   // durable log) still gets created as before, since the crew op-SYNC channel
   // deliberately keeps redacted ops local and filters them only at push time (see the
-  // sibling "redacted-table ops never push" test above — this fix must not break that).
+  // sibling "redacted-table ops never push" test above, this fix must not break that).
   test('_opShadowDerive skips the field clock (not the op) for a redacted table', async () => {
     const r = await page.evaluate(() => {
       if (typeof _opShadowDerive !== 'function' || typeof _opFieldClocks !== 'function') return { skip: true };
@@ -1497,7 +1497,7 @@ test.describe('100-writer op channel + rebase', () => {
         bids.length = 0;
         bids.push({ id: bidId, name: 'RedactGuard', amount: 7777, status: 'sent' });
         _opRebaseline();
-        _opShadowDerive(); // contractor's real save — establishes the genuine field clock
+        _opShadowDerive(); // contractor's real save, establishes the genuine field clock
         const clockBefore = { ..._opFieldClocks('td_bids', bidId) };
         const opCountBefore = (typeof window.__opLast === 'function' && window.__opLast('td_bids', bidId)) ? 1 : 0;
 
@@ -1507,7 +1507,7 @@ test.describe('100-writer op channel + rebase', () => {
         _employeeRecord = { permissions: { financials: false }, active: true, role: 'tech' };
         const b = bids.find(x => x.id === bidId);
         if (b) b.amount = 0;
-        _opShadowDerive(); // the redacted "save" derive — must NOT touch the field clock
+        _opShadowDerive(); // the redacted "save" derive: must NOT touch the field clock
         const clockAfter = { ..._opFieldClocks('td_bids', bidId) };
         const opAfter = typeof window.__opLast === 'function' ? window.__opLast('td_bids', bidId) : null;
 
@@ -1516,7 +1516,7 @@ test.describe('100-writer op channel + rebase', () => {
           redactedTables: [...(typeof _employeeRedactedTables === 'function' ? _employeeRedactedTables() : [])],
           amountClockUnchanged: clockBefore.amount === clockAfter.amount,
           // The op itself must STILL be created/persisted (Phase 2's push-time filter
-          // needs something to filter) — only the field clock is guarded.
+          // needs something to filter), only the field clock is guarded.
           opStillCreated: !!opAfter,
           opStillReflectsZero: !!(opAfter && opAfter.fields && opAfter.fields.amount === 0),
         };
@@ -1528,12 +1528,12 @@ test.describe('100-writer op channel + rebase', () => {
     });
     if (r.skip) return;
     expect(r.redactedTables, 'a financials:false employee with no estimate permission must have td_bids redacted').toContain('td_bids');
-    expect(r.amountClockUnchanged, 'a redacted derive must NOT advance the amount field clock — that is the signal a later merge trusts over the real server value').toBe(true);
-    expect(r.opStillCreated, 'the op itself must still be created/persisted — the crew push-time filter (sibling test) needs something to filter').toBe(true);
-    expect(r.opStillReflectsZero, 'the created op legitimately reflects the redacted value — filtering happens at push time, not here').toBe(true);
+    expect(r.amountClockUnchanged, 'a redacted derive must NOT advance the amount field clock, that is the signal a later merge trusts over the real server value').toBe(true);
+    expect(r.opStillCreated, 'the op itself must still be created/persisted: the crew push-time filter (sibling test) needs something to filter').toBe(true);
+    expect(r.opStillReflectsZero, 'the created op legitimately reflects the redacted value, filtering happens at push time, not here').toBe(true);
   });
 
-  test('_effectiveUid — owner→self, crew→boss, dev-support→target (the Stripe/link routing identity)', async () => {
+  test('_effectiveUid: owner→self, crew→boss, dev-support→target (the Stripe/link routing identity)', async () => {
     const r = await page.evaluate(() => {
       if (typeof _effectiveUid !== 'function') return { skip: true };
       const saved = { user: window._supaUser, emp: _isEmployee, cid: _contractorUserId };
@@ -1555,7 +1555,7 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.asCrewUnlinked).toBe('owner-9'); // never a null/undefined route
   });
 
-  test('crew op-sync — ops carry the CONTRACTOR uid and redacted-table ops never push', async () => {
+  test('crew op-sync, ops carry the CONTRACTOR uid and redacted-table ops never push', async () => {
     const r = await page.evaluate(async () => {
       if (typeof window.__opSync !== 'function' || typeof window.__opDbUnsynced !== 'function') return { skip: true };
       const idC = 771050, idB = 771051;
@@ -1584,7 +1584,7 @@ test.describe('100-writer op channel + rebase', () => {
         _deltaCursor = null;
         // ORDER MATTERS: the owner just switched ('e2e-user' → 'emp-1'), and the FIRST
         // derive after an owner switch REBASELINES from the current arrays (no ops).
-        // Settle that first, THEN create the rows, THEN derive — the incremental diff
+        // Settle that first, THEN create the rows, THEN derive, the incremental diff
         // emits the CREATE ops. (This test failed in CI by pushing rows before the
         // rebaseline, which silently swallowed them.)
         _opShadowDerive();
@@ -1626,7 +1626,7 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.bidOpStillPending).toBe(true);          // filtered ≠ deleted (ack-prune owns cleanup)
   });
 
-  test('crew save — bumps the account cursor via RPC after table writes (never zj_data directly)', async () => {
+  test('crew save, bumps the account cursor via RPC after table writes (never zj_data directly)', async () => {
     const r = await page.evaluate(async () => {
       if (typeof supaSaveToCloud !== 'function') return { skip: true };
       const saved = {
@@ -1684,7 +1684,7 @@ test.describe('100-writer op channel + rebase', () => {
     expect(r.cursorApplied).toBe(true);                                  // returned cursor becomes our applied cursor
   });
 
-  test('reconnect with pending offline writes — PULL (reads) strictly before PUSH (writes)', async () => {
+  test('reconnect with pending offline writes, PULL (reads) strictly before PUSH (writes)', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _onReconnect !== 'function') return { skip: true };
       const fired = [];
@@ -1693,7 +1693,7 @@ test.describe('100-writer op channel + rebase', () => {
         cursor: _deltaCursor, emp: _isEmployee, hash: _syncedHash, known: _lastKnownIds,
         auth: _authSettingsLoaded, foc: _loadedFromCacheOnly, flag: window._opLogShadow,
       };
-      // The reconnect's FULL pull replaces every table array — snapshot ALL for restore.
+      // The reconnect's FULL pull replaces every table array, snapshot ALL for restore.
       const _tblSnap = _TD_TABLES.map(({ t, get, set }) => ({ t, set, rows: (get() || []).slice() }));
       const makeChain = (table) => {
         const chain = {
@@ -1743,7 +1743,7 @@ test.describe('100-writer op channel + rebase', () => {
     // that's always the active page when a user signs out. The onAuthStateChange
     // SIGNED_IN handler used to remove the login overlay and THEN await
     // loadAccountData() (several sequential Supabase queries) before finally calling
-    // goPg('pg-dash') — so every account switch on the same device (no page reload)
+    // goPg('pg-dash'): so every account switch on the same device (no page reload)
     // exposed the stale Settings page underneath for that entire load. The fix
     // navigates to the dashboard synchronously, before any of that awaited work.
     const r = await page.evaluate(async () => {
@@ -1760,7 +1760,7 @@ test.describe('100-writer op channel + rebase', () => {
       _loadedDataOwner = null;
       let threw = null;
       try {
-        // Deliberately NOT awaited — the fix must navigate synchronously, before any
+        // Deliberately NOT awaited, the fix must navigate synchronously, before any
         // of the callback's awaited Supabase queries have a chance to resolve.
         window.__capturedAuthCallback('SIGNED_IN', { user: { id: 'new-account-test-uid' } });
       } catch (e) { threw = e.message; }

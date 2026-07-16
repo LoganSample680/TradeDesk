@@ -1,8 +1,8 @@
-// REAL flow — the public lead-intake funnel (task #30). The QR/intake page
+// REAL flow, the public lead-intake funnel (task #30). The QR/intake page
 // (intake.html?a=<account_id>) is how a brand-new prospect reaches a contractor.
 // A real public visitor (a fully isolated anon context, NO contractor session)
 // fills the form and submits; intake.html inserts into the inbound_leads table for
-// that account_id. We then assert — on the contractor's authenticated session —
+// that account_id. We then assert, on the contractor's authenticated session,
 // that the lead actually landed in inbound_leads (the same table _loadPendingInbound
 // reads to show the inbound inbox). End-to-end across the public→contractor seam.
 //
@@ -23,7 +23,7 @@ test.describe('public intake lead funnel (UI-driven)', () => {
     test.setTimeout(120000);
     // The contractor's accounts.id is the ACCOUNT_ID the intake URL needs.
     const acctId = await page.evaluate(() => (typeof _account !== 'undefined' && _account ? _account.id : null));
-    test.skip(!acctId, 'dev account has no accounts row — cannot drive intake');
+    test.skip(!acctId, 'dev account has no accounts row, cannot drive intake');
 
     const leadName = `E2E Intake Lead ${process.pid}`;
     const leadPhone = '3165550' + String(process.pid % 1000).padStart(3, '0');
@@ -50,7 +50,7 @@ test.describe('public intake lead funnel (UI-driven)', () => {
           await fill('#f-city', 'Wichita');
           await fill('#f-state', 'KS');
           await fill('#f-zip', '67202');
-          await fill('#f-notes', 'E2E intake — exterior repaint quote please');
+          await fill('#f-notes', 'E2E intake, exterior repaint quote please');
           await ip.locator('#submit-btn').click({ timeout: 8000 }).catch(() => {});
           // showConfirm() hides #pg-form on success.
           confirmed = await ip.waitForFunction(() => {

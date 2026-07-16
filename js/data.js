@@ -1,4 +1,4 @@
-// ── Submit guard — prevents double-tap on any button ─────────────────────
+// ── Submit guard, prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
 let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[];
 // Expose all data arrays and employee record on window so Playwright E2E tests can read/write them.
@@ -25,9 +25,9 @@ let currentClientId=null,editClientId=null,clientFilter='all';
 Object.defineProperty(window,'currentClientId',{get:()=>currentClientId,set:v=>{currentClientId=v;},configurable:true});
 Object.defineProperty(window,'editClientId',{get:()=>editClientId,set:v=>{editClientId=v;},configurable:true});
 let estLinkedClientId=null,editingBidId=null,lastCreatedBidId=null;
-let _pendingSignToken=null; // {bidId,token,proposalKey} — committed to bid only when SMS/email is actually sent
-let _pendingShareData=null; // {url,cname,bname,cphone,cemail} for the just-generated proposal link — read by _proposalShareData()
-// (sigCanvas/sigCtx/isSigning globals deleted — all signature pads now live in js/esign.js)
+let _pendingSignToken=null; // {bidId,token,proposalKey}, committed to bid only when SMS/email is actually sent
+let _pendingShareData=null; // {url,cname,bname,cphone,cemail} for the just-generated proposal link, read by _proposalShareData()
+// (sigCanvas/sigCtx/isSigning globals deleted, all signature pads now live in js/esign.js)
 let trackerTab='income',cdTab='overview',trackerYear=new Date().getFullYear();
 let selectedColor='#185FA5';
 let schedType='estimate';
@@ -50,10 +50,10 @@ function _wmoIcon(code,precip){
 async function fetchWeather(){
   const now=Date.now();
   if(_weatherCache&&now-_weatherCacheTime<1800000)return _weatherCache;
-  if(_weatherLoading)return _weatherCache||{};  // cache is null until first fetch resolves — never hand back null (callers do weather[dateKey])
+  if(_weatherLoading)return _weatherCache||{};  // cache is null until first fetch resolves, never hand back null (callers do weather[dateKey])
   _weatherLoading=true;
   try{
-    if(!S.weatherLat||!S.weatherLon){console.warn('No location set — skipping weather');return{};}
+    if(!S.weatherLat||!S.weatherLon){console.warn('No location set, skipping weather');return{};}
     const lat=S.weatherLat,lon=S.weatherLon;
     const url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lon+
       '&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_probability_max'+
@@ -84,8 +84,8 @@ let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.25,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:'',teamTracking:true,trackStart:'07:00',trackEnd:'18:00',geofenceFt:300,officeLat:0,officeLon:0,laborBurden:1.3,ownerPayType:'hourly',ownerPayRate:0};
 
-// ZJ's logo — SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
-// Only shown for ZJ's Painting account — other accounts see plain business name text.
+// ZJ's logo, SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
+// Only shown for ZJ's Painting account, other accounts see plain business name text.
 // Returns logo <img> for branded accounts, plain text for others
 // Priority: 1) S.logoData (user-uploaded), 2) ZJ auto-embed, 3) plain text
 function _proposalBizHeader(bname,bphone,blic){
@@ -111,19 +111,19 @@ Object.defineProperty(window,'_config',{get:()=>_config,set:v=>{_config=v;},conf
 Object.defineProperty(window,'_isEmployee',{get:()=>_isEmployee,set:v=>{_isEmployee=v;},configurable:true});
 // Bridge the rest of the employee-context trio so window assignment reaches the real
 // module `let`s (not a dead own-property). Without this, `window._contractorUserId=…`
-// silently no-ops and code reading the bare `_contractorUserId` still sees null —
+// silently no-ops and code reading the bare `_contractorUserId` still sees null,
 // e.g. _submitEstimateRequest's `if(!_contractorUserId) return` guard. Prod sets the
 // bare lets directly; only external callers (tests) assign via window, so this is
 // purely additive and matches the _isEmployee bridge above.
 Object.defineProperty(window,'_contractorUserId',{get:()=>_contractorUserId,set:v=>{_contractorUserId=v;},configurable:true});
 Object.defineProperty(window,'_employeeRecord',{get:()=>_employeeRecord,set:v=>{_employeeRecord=v;},configurable:true});
 
-// EFFECTIVE ACCOUNT UID — whose BUSINESS this session acts for. Every client-facing
+// EFFECTIVE ACCOUNT UID, whose BUSINESS this session acts for. Every client-facing
 // money/identity artifact (hub + pay + signing links' u= param, proposal snapshot
 // contractorUserId, signature/view-tracking rows, storage paths) must carry THIS uid,
 // never raw _supaUser.id: a crew login stamping its own uid pointed Stripe checkout
 // lookups, signature notifications and hub uploads at an account that doesn't exist
-// (employees have no users/account_config row) — payments from crew-sent links could
+// (employees have no users/account_config row), payments from crew-sent links could
 // never reach the owner. Owner → self; crew → the boss; dev-support → the target.
 function _effectiveUid(){
   try{
@@ -169,7 +169,7 @@ let FED_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let STD_DED={single:14600,mfj:29200,mfs:14600,hoh:21900};
 let KS_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let KS_STD={single:3500,mfj:8000,mfs:4000,hoh:6000};
-// IRS published values — 7-year rolling history for historical tax reports
+// IRS published values, 7-year rolling history for historical tax reports
 function _getBracketsForYear(yr){
   const n=parseInt(yr);
   const thisYear=new Date().getFullYear();
@@ -202,13 +202,13 @@ function _buildStateBrackets(data,status){
 
 
 // Persist S after a direct in-memory mutation (S.devices, S.timeOff, S.employees…).
-// Bumps settingsTs so the change wins the cloud merge — WITHOUT reading the
+// Bumps settingsTs so the change wins the cloud merge, WITHOUT reading the
 // settings form. saveSettings() harvests the form and must only ever be called
 // from the Settings UI; calling it from anywhere else wipes every saved value
 // with whatever happens to be in the (usually empty) form inputs.
 function _settingsChanged(){S.settingsTs=Date.now();saveAll();}
 function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){supaSaveDebounced();return;}try{
-  // Settings are the most critical local write — if quota is blown, evict the
+  // Settings are the most critical local write, if quota is blown, evict the
   // bulky image caches (rebuilt from cloud on demand) and retry rather than
   // silently losing every settings change until the next successful cloud save.
   try{localStorage.setItem('zp3_S',JSON.stringify(S));}
@@ -217,7 +217,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
       localStorage.removeItem('zp3_photos');localStorage.removeItem('zp3_rcpt_imgs');
       localStorage.setItem('zp3_S',JSON.stringify(S));
     }catch(_qe2){
-      // Last resort: logoData can be several MB — split it out so the rest of S lands safely
+      // Last resort: logoData can be several MB, split it out so the rest of S lands safely
       try{
         const{logoData:_ld,..._sNoLogo}=S;
         if(_ld)try{localStorage.setItem('zp3_logo',_ld);}catch(_e){}
@@ -225,7 +225,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
       }catch(_qe3){console.warn('zp3_S save failed (quota):',_qe3);}
     }
   }
-  // These arrays are localStorage-only (not in Supabase schema) — safe to keep local
+  // These arrays are localStorage-only (not in Supabase schema), safe to keep local
   localStorage.setItem('zp3_chk',JSON.stringify(checksState));
   localStorage.setItem('zp3_ev',JSON.stringify(events.slice(-600)));
   localStorage.setItem('zp3_photos',JSON.stringify(photos.slice(-300)));
@@ -242,7 +242,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   }
 }catch(e){}supaSaveDebounced();}
 function loadAll(){
-  // Business data (clients, bids, jobs, etc.) lives in Supabase only — start empty, populated by supaLoadFromCloud()
+  // Business data (clients, bids, jobs, etc.) lives in Supabase only, start empty, populated by supaLoadFromCloud()
   clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];payments=[];liens=[];timeEntries=[];
   // Load settings + localStorage-only arrays
   try{
@@ -275,7 +275,7 @@ function loadAll(){
     if(S.b24===191950)S.b24=197300;
     if(S.b32===243725)S.b32=250525;
     if(S.b35===609350)S.b35=626350;
-    S.teamTracking=true; // crew tracking is mandatory — no longer user-toggleable
+    S.teamTracking=true; // crew tracking is mandatory, no longer user-toggleable
     if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
     if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
     try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
@@ -322,18 +322,18 @@ async function _lookupProperty(addr,cardId){
       if(res.status===204||!res.ok){card.style.display='none';return;}
       const d=await res.json();
       if(d.error){card.style.display='none';return;}
-      const fmt=n=>n?'$'+Number(n).toLocaleString():'—';
+      const fmt=n=>n?'$'+Number(n).toLocaleString():'-';
       const leadPaint=d.yearBuilt&&d.yearBuilt<1978;
       card.innerHTML=
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
           '<span style="font-weight:600;color:var(--text)">Property Info</span>'+
           (leadPaint?'<span style="font-size:10px;background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-weight:700">'+svgIcon('⚠',{size:11})+' Pre-1978</span>':'')+
         '</div>'+
-        (leadPaint?'<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:6px 10px;margin-bottom:8px;color:#991b1b;font-size:11px;font-weight:600;line-height:1.4">Lead paint protocol required — EPA RRP Rule applies to renovation work</div>':'')+
+        (leadPaint?'<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:6px;padding:6px 10px;margin-bottom:8px;color:#991b1b;font-size:11px;font-weight:600;line-height:1.4">Lead paint protocol required, EPA RRP Rule applies to renovation work</div>':'')+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">'+
           '<div><div style="color:var(--text3);font-size:11px">Est. value</div><div style="font-weight:600">'+fmt(d.estValue)+'</div></div>'+
-          '<div><div style="color:var(--text3);font-size:11px">Sq ft</div><div style="font-weight:600">'+(d.sqft?Number(d.sqft).toLocaleString()+'  sqft':'—')+'</div></div>'+
-          '<div><div style="color:var(--text3);font-size:11px">Year built</div><div style="font-weight:600">'+(Number(d.yearBuilt)||'—')+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Sq ft</div><div style="font-weight:600">'+(d.sqft?Number(d.sqft).toLocaleString()+'  sqft':'-')+'</div></div>'+
+          '<div><div style="color:var(--text3);font-size:11px">Year built</div><div style="font-weight:600">'+(Number(d.yearBuilt)||'-')+'</div></div>'+
           '<div><div style="color:var(--text3);font-size:11px">Last sale</div><div style="font-weight:600">'+fmt(d.lastSalePrice)+'</div></div>'+
         '</div>';
     }catch(e){card.style.display='none';}

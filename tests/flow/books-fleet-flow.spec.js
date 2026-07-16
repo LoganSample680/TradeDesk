@@ -1,10 +1,10 @@
-// REAL flow — the books & fleet lifecycle (task #7): add a vehicle through the
+// REAL flow, the books & fleet lifecycle (task #7): add a vehicle through the
 // actual fleet modal, log an expense through the quick-expense modal, and add a
 // compliance record (license) through the licensing modal. Every action drives
 // the real UI function (fleet.js saveFleetVehicle, finance.js saveQuickExpense,
 // settings.js saveLicenseModal) and each assertion is a step() so a regression
 // throws a one-line finding(). Vehicles + expenses round-trip through the cloud;
-// licenses persist locally (zp3_lic) by design — asserted accordingly.
+// licenses persist locally (zp3_lic) by design, asserted accordingly.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, type, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
@@ -32,7 +32,7 @@ test.describe('books & fleet (UI-driven)', () => {
         await p.evaluate(() => { if (typeof openAddVehicleModal === 'function') openAddVehicleModal(); });
         await p.waitForSelector('#fv-name', { timeout: 10000 });
         const k = await type(p, '#fv-name', vehName);       // real key-by-key typing
-        await p.evaluate(() => { saveFleetVehicle(); });      // 1 tap — Add vehicle
+        await p.evaluate(() => { saveFleetVehicle(); });      // 1 tap, Add vehicle
         await p.waitForTimeout(600);
         await p.evaluate(async () => { if (typeof supaSaveToCloud === 'function') await supaSaveToCloud(); });
         return k + 1;
@@ -96,7 +96,7 @@ test.describe('books & fleet (UI-driven)', () => {
           const opt = [...sel.options].find(o => o.value);
           if (opt) { sel.value = opt.value; if (typeof _licTypeChanged === 'function') _licTypeChanged(sel); }
         });
-        // Only some license types render a number field — equipment/no-number types
+        // Only some license types render a number field, equipment/no-number types
         // hide #_lic-num-wrap. Check real VISIBILITY (the element exists in the DOM
         // either way), so we type a number only when the chosen type actually shows it.
         const numVisible = await p.locator('#_lic-num').isVisible().catch(() => false);
@@ -113,7 +113,7 @@ test.describe('books & fleet (UI-driven)', () => {
       },
     });
 
-    // NO cleanup — the vehicle, expense, license + client stay in the dev account on
+    // NO cleanup, the vehicle, expense, license + client stay in the dev account on
     // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

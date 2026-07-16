@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Regression guard — the dashboard "Maintenance Due" card must open the ACTUAL
+ * Regression guard, the dashboard "Maintenance Due" card must open the ACTUAL
  * maintenance contract, not the client record (§7.1: behavior change → assert the
  * new entry point AND that the old one is gone).
  *

@@ -1,16 +1,16 @@
-// REAL flow — geo-fence EDGE CASES the core time-on-site spec doesn't cover. Same
+// REAL flow, geo-fence EDGE CASES the core time-on-site spec doesn't cover. Same
 // approach: drive geo-track.js _geoOnPing with synthetic coords (the OS's exact
 // call) and assert the rows/state it produces. Covers the distinct code paths:
 //
-//   1. SHOP/OFFICE FENCE  — arrive→dwell→leave the office geofence writes a
+//   1. SHOP/OFFICE FENCE , arrive→dwell→leave the office geofence writes a
 //      shop_time_entries row (separate table + branch from job fences).
-//   2. DRIVE LEG          — leaving one job and arriving at another logs a
-//      job_time_entries 'drive' leg (company vehicle) — the mileage feed.
-//   3. MULTI-JOB CLOSEST  — with two job fences in range, the CLOSEST one wins
+//   2. DRIVE LEG         , leaving one job and arriving at another logs a
+//      job_time_entries 'drive' leg (company vehicle), the mileage feed.
+//   3. MULTI-JOB CLOSEST , with two job fences in range, the CLOSEST one wins
 //      (_geoOnPing's bestFt selection).
 //
 // Soft-skips if the geo tables aren't provisioned. In-memory jobs[] is restored,
-// never saved (CLAUDE.md §13.7 — the shared account is untouched).
+// never saved (CLAUDE.md §13.7: the shared account is untouched).
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
@@ -79,7 +79,7 @@ test.describe('geo-fence edge cases (UI-driven via the real ping handler)', () =
       },
       rule: async (p) => {
         const r = await rows(p, 'shop_time_entries');
-        if (r.absent) return { ok: true, got: 'SKIP — shop_time_entries not provisioned' };
+        if (r.absent) return { ok: true, got: 'SKIP: shop_time_entries not provisioned' };
         const recent = (r.rows || []).filter(x => x.minutes >= 2);
         return { ok: recent.length >= 1, got: `shopRows>=2min=${recent.length}` };
       },
@@ -105,7 +105,7 @@ test.describe('geo-fence edge cases (UI-driven via the real ping handler)', () =
       },
       rule: async (p) => {
         const r = await rows(p, 'job_time_entries', 'job_id', jobB);
-        if (r.absent) return { ok: true, got: 'SKIP — job_time_entries not provisioned' };
+        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned' };
         const drive = (r.rows || []).find(x => String(x.source || '').startsWith('drive') && x.minutes >= 2);
         return { ok: !!drive, got: drive ? `source=${drive.source} minutes=${drive.minutes}` : `no drive leg (rows=${JSON.stringify(r.rows)})` };
       },
@@ -119,7 +119,7 @@ test.describe('geo-fence edge cases (UI-driven via the real ping handler)', () =
       expected: '_geoCurrentJob === jobMB',
       act: async (p) => {
         await resetGeo('multi');
-        // Ping essentially on top of B (a hair off) — both A and B are "today" jobs,
+        // Ping essentially on top of B (a hair off), both A and B are "today" jobs,
         // but B is far closer, so bestFt must pick B.
         await ping(p, B.lat + 0.0002, B.lon);
         await p.waitForTimeout(400);

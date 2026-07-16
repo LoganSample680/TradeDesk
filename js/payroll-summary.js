@@ -3,8 +3,8 @@
 // hours (js/timelog.js) → gross wages (_calcGrossWages) → employer FICA/FUTA
 // liability (_calcPayrollLiability), both in js/tax.js. Answers exactly one
 // question: "how much cash do I need this pay period, all-in?" Federal FICA
-// + FUTA only — no income-tax withholding, no state/local. Not tax/legal
-// advice — same disclaimer pattern as the rest of the tax tool.
+// + FUTA only, no income-tax withholding, no state/local. Not tax/legal
+// advice: same disclaimer pattern as the rest of the tax tool.
 
 let _paySummaryPeriodType='weekly';
 let _paySummaryStart=null,_paySummaryEnd=null;
@@ -30,7 +30,7 @@ function _paySummaryDefaultRange(type,anchorISO){
   const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+(type==='biweekly'?13:6));
   return{start:ds(wkStart),end:ds(wkEnd)};
 }
-// Federal (FLSA) weekly OT split — same universal-only rule as _tlComputeOT
+// Federal (FLSA) weekly OT split, same universal-only rule as _tlComputeOT
 // in timelog.js, applied here to actual payroll dollars instead of a badge.
 function _paySummaryWeeklySplit(rows){
   const byWeek={};
@@ -42,7 +42,7 @@ function _paySummaryWeeklySplit(rows){
   Object.values(byWeek).forEach(total=>{regMin+=Math.min(total,2400);otMin+=Math.max(0,total-2400);});
   return{regMin,otMin};
 }
-// Estimated YTD wages (before this period) for wage-base-cap purposes —
+// Estimated YTD wages (before this period) for wage-base-cap purposes,
 // straight-line for salary, actual logged hours for hourly. There is no
 // persisted payroll-run ledger yet, so this is a Time-Log-derived estimate,
 // editable by the caller if the real figure differs (rate changed mid-year,
@@ -62,7 +62,7 @@ function _paySummaryYtdEstimate(comp,priorRows,startDate,year){
   return{grossWages:r2(gw),ssWages:r2(gw),futaWages:r2(gw)};
 }
 // Builds the full period summary: one row per non-owner W-2 employee, plus
-// aggregate totals. Async — pulls Time Log hours (manual + GPS) via
+// aggregate totals. Async: pulls Time Log hours (manual + GPS) via
 // _timeLogRows, which itself hits Supabase for crew entries.
 async function _paySummaryBuild(startDate,endDate,periodType){
   const year=parseInt((startDate||'').slice(0,4),10)||new Date().getFullYear();
@@ -95,12 +95,12 @@ async function _paySummaryBuild(startDate,endDate,periodType){
   totals.cashNeeded=r2(totals.grossWages+totals.employerFicaMatch+totals.futa940);
   return{rows:rows2,totals,periodsPerYear,startDate,endDate};
 }
-// Exports the current period to a payroll-ready CSV — one row per employee
+// Exports the current period to a payroll-ready CSV, one row per employee
 // with everything ADP/Paychex/Gusto/QuickBooks Payroll need to key off: name,
 // pay type/rate, regular vs OT hours, gross wages, and the employer-side
 // FICA/FUTA liability for the business's own records. TradeDesk computes the
 // numbers; the contractor's existing payroll system (or their accountant)
-// actually runs and files payroll — same shape as how ServiceTitan's
+// actually runs and files payroll, same shape as how ServiceTitan's
 // Configurable Payroll hands off to whichever processor the contractor
 // already uses, rather than TradeDesk becoming a payroll processor itself.
 function _paySummaryExportCSV(){
@@ -130,7 +130,7 @@ function _paySummaryExportCSV(){
   const biz=(typeof S!=='undefined'&&S.bname)?S.bname:'TradeDesk';
   const fname=(biz+'_Payroll_'+result.startDate+'_to_'+result.endDate+'.csv').replace(/[/,\s]+/g,'_');
   if(typeof downloadFile==='function')downloadFile(fname,lines.join('\n'),'text/csv');
-  typeof showToast==='function'&&showToast('Payroll exported — hand this to your payroll system or accountant','📋');
+  typeof showToast==='function'&&showToast('Payroll exported, hand this to your payroll system or accountant','📋');
 }
 function setPaySummaryPeriodType(type){
   _paySummaryPeriodType=type;
@@ -158,7 +158,7 @@ function _paySummaryRowHTML(r){
     '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)"><span>Employee FICA withheld</span><span>'+fmt(liab.employeeFica)+'</span></div>'+
     '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)"><span>Employer FICA match</span><span>'+fmt(liab.employerFicaMatch)+'</span></div>'+
     '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)"><span>Employer FUTA</span><span>'+fmt(liab.futa940)+'</span></div>'+
-    ((liab.ssWageBaseHit||liab.futaWageBaseHit)?'<div style="font-size:10px;color:var(--amber);margin-top:4px">'+svgIcon('⚠️')+' hit the '+(liab.ssWageBaseHit?'Social Security':'FUTA')+' wage base this period — verify the YTD estimate below is accurate</div>':'')+
+    ((liab.ssWageBaseHit||liab.futaWageBaseHit)?'<div style="font-size:10px;color:var(--amber);margin-top:4px">'+svgIcon('⚠️')+' hit the '+(liab.ssWageBaseHit?'Social Security':'FUTA')+' wage base this period, verify the YTD estimate below is accurate</div>':'')+
   '</div>';
 }
 async function renderPayrollSummary(){
@@ -191,7 +191,7 @@ async function renderPayrollSummary(){
       '</div>'+
     '</div>';
   if(!employees.length){
-    el.innerHTML=controlsHTML+'<div style="font-size:12px;color:var(--text3);padding:12px">No W-2 employees yet — add one on the Team page to run payroll.</div>';
+    el.innerHTML=controlsHTML+'<div style="font-size:12px;color:var(--text3);padding:12px">No W-2 employees yet, add one on the Team page to run payroll.</div>';
     return;
   }
   el.innerHTML=controlsHTML+'<div style="font-size:12px;color:var(--text3);padding:12px">Loading hours…</div>';
@@ -213,7 +213,7 @@ async function renderPayrollSummary(){
       '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px"><span>Employer FICA match</span><span>'+fmt(t.employerFicaMatch)+'</span></div>'+
       '<div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px"><span>Employer FUTA</span><span>'+fmt(t.futa940)+'</span></div>'+
       '<div style="display:flex;justify-content:space-between;font-size:16px;font-weight:800;padding-top:8px;border-top:1px solid var(--border)"><span>Total cash needed</span><span>'+fmt(t.cashNeeded)+'</span></div>'+
-      '<div style="font-size:10px;color:var(--text3);margin-top:6px">Gross wages + your share of FICA + FUTA. Employee FICA ('+fmt(t.employeeFica)+') comes out of gross — it\'s already counted above, not extra.</div>'+
+      '<div style="font-size:10px;color:var(--text3);margin-top:6px">Gross wages + your share of FICA + FUTA. Employee FICA ('+fmt(t.employeeFica)+') comes out of gross, it\'s already counted above, not extra.</div>'+
     '</div>'+
-    '<div style="font-size:9px;color:var(--text3);margin-top:10px">Federal FICA + FUTA only — no income tax withholding, no state/local taxes. Not tax or legal advice. Take these numbers to your accountant before running real payroll.</div>';
+    '<div style="font-size:9px;color:var(--text3);margin-top:10px">Federal FICA + FUTA only, no income tax withholding, no state/local taxes. Not tax or legal advice. Take these numbers to your accountant before running real payroll.</div>';
 }

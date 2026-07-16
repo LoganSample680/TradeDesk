@@ -1,18 +1,18 @@
-// SWARM CERTIFICATION — N writers, ONE account, live editors + offline returners.
+// SWARM CERTIFICATION, N writers, ONE account, live editors + offline returners.
 //
 // This is the empirical proof behind "survives 100+ people on one account": N browser
-// contexts (default 12 in CI — dial E2E_SWARM_N up to 100 on the Proxmox stack) all
+// contexts (default 12 in CI, dial E2E_SWARM_N up to 100 on the Proxmox stack) all
 // sign into the SAME account and hammer it concurrently:
 //
-//   • every context sets its OWN field on the SAME shared bid (sw_f0..sw_fN-1) — the
+//   • every context sets its OWN field on the SAME shared bid (sw_f0..sw_fN-1): the
 //     same-row/different-field concurrency class that whole-row LWW provably loses and
 //     the per-field op channel (td_ops + HLC field clocks) exists to win;
-//   • every context also creates its OWN bid — the fan-out create class;
+//   • every context also creates its OWN bid, the fan-out create class;
 //   • a third of the contexts do all of this OFFLINE (context.setOffline) and return
-//     staggered — the offline-return rebase class (pull-first, pending ops overlay,
+//     staggered: the offline-return rebase class (pull-first, pending ops overlay,
 //     then push).
 //
-// END STATE (the whole point): every context converges to the SAME data — the shared
+// END STATE (the whole point): every context converges to the SAME data, the shared
 // bid carries ALL N field markers on EVERY device, every created bid exists everywhere,
 // and the canonical (key-sorted, id-sorted) serialization of the bids array is
 // BYTE-EQUAL across all N contexts. Nothing anyone wrote is lost, anywhere.
@@ -27,10 +27,10 @@ const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'swarm/convergence';
 const RAW_N = Math.max(3, parseInt(process.env.E2E_SWARM_N || '12', 10));
-let N = RAW_N; // finalized per-browser inside the test (WebKit caps lower — see there)
+let N = RAW_N; // finalized per-browser inside the test (WebKit caps lower, see there)
 const LOCAL_STACK = process.env.E2E_LOCAL_STACK === '1';
 
-// Canonical serialization: recursively key-sorted objects, rows sorted by id — so two
+// Canonical serialization: recursively key-sorted objects, rows sorted by id, so two
 // devices holding the same DATA in different key/array order compare byte-equal.
 const canonFnSource = `
   (function canon(v){
@@ -40,22 +40,22 @@ const canonFnSource = `
   })
 `;
 
-test.describe('swarm — N writers on one account converge byte-equal', () => {
+test.describe('swarm: N writers on one account converge byte-equal', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured');
   test.skip(!LOCAL_STACK, 'swarm runs on the local stack only (it hammers one account with N sessions)');
 
   // All N contexts pin to the RESERVED pool account (never used by other specs),
   // so the convergence run starts from a deterministic fixture. The worker account
-  // accumulates every prior spec's no-cleanup data (§13.7) — 12 concurrent boots
+  // accumulates every prior spec's no-cleanup data (§13.7): 12 concurrent boots
   // over that grew past the time budget in full-suite runs while passing solo.
   const SWARM_ACCT = swarmAccount();
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page, SWARM_ACCT); });
 
-  test(`swarm of concurrent writers (live + offline-returning) — everything persists everywhere`, async ({ page, browser, browserName }, testInfo) => {
-    // Runs on BOTH browser projects since the per-browser runner split — WebKit is
+  test(`swarm of concurrent writers (live + offline-returning), everything persists everywhere`, async ({ page, browser, browserName }, testInfo) => {
+    // Runs on BOTH browser projects since the per-browser runner split, WebKit is
     // the real iPhone engine and gets its own certification. WebKit browser
     // contexts are far heavier than Chromium's: 12 of them killed the runner box
-    // outright (2026-07-03 — job died with no logs or artifact, i.e. OOM). WebKit
+    // outright (2026-07-03: job died with no logs or artifact, i.e. OOM). WebKit
     // certifies at 6 writers; Chromium keeps the full 12. Both cover the same
     // concurrency classes (live editors + offline-returners on one account).
     N = browserName === 'webkit' ? Math.min(RAW_N, 6) : RAW_N;
@@ -127,12 +127,12 @@ test.describe('swarm — N writers on one account converge byte-equal', () => {
 
     // ── 3. THE SWARM WRITE: offline crews drop off the network first, then ALL N
     //       devices concurrently stamp their own field on the SHARED bid and create
-    //       their own bid. Offline saves fail (by design) — their intent lands in the
+    //       their own bid. Offline saves fail (by design), their intent lands in the
     //       durable op log and the offline-pending blob. ──
     await step(page, {
       label: `${N} writers hit the same row + create their own (${offlineIdx.size} of them offline)`, page: 'cloud', role: 'contractor',
       suspect: 'cloud.js _opShadowDerive (intent capture) / supaSaveToCloud (live path)',
-      ruleText: 'every writer records its edit locally — live writers push, offline writers queue',
+      ruleText: 'every writer records its edit locally, live writers push, offline writers queue',
       expected: `every device has its own marker locally`,
       act: async () => {
         for (const i of offlineIdx) await pages[i].context().setOffline(true);
@@ -157,7 +157,7 @@ test.describe('swarm — N writers on one account converge byte-equal', () => {
       },
     });
 
-    // ── 4. Offline crews come back STAGGERED (one every ~2s) — each runs the
+    // ── 4. Offline crews come back STAGGERED (one every ~2s), each runs the
     //       pull-first rebase, then pushes its merged rows + per-field ops. ──
     await step(page, {
       label: `${offlineIdx.size} offline writers return, staggered`, page: 'cloud', role: 'contractor',
@@ -184,7 +184,7 @@ test.describe('swarm — N writers on one account converge byte-equal', () => {
     });
 
     // ── 5. CONVERGENCE: every device ends with ALL N shared-row markers and ALL N
-    //       created bids. This is the union no whole-row LWW can produce — only the
+    //       created bids. This is the union no whole-row LWW can produce, only the
     //       per-field op channel gets here. ──
     const allOwn = Array.from({ length: N }, (_, i) => String(ownId(i)));
     await step(page, {
@@ -220,12 +220,12 @@ test.describe('swarm — N writers on one account converge byte-equal', () => {
           if (r.ok) full++;
           else detail.push(`d${d}:fields[${r.missingF}] bids[${r.missingB}]`);
         }
-        return { ok: full === N, got: `${full}/${N} devices hold the full union${detail.length ? ' — missing: ' + detail.slice(0, 3).join(' | ') : ''}` };
+        return { ok: full === N, got: `${full}/${N} devices hold the full union${detail.length ? ', missing: ' + detail.slice(0, 3).join(' | ') : ''}` };
       },
     });
 
     // ── 6. BYTE-EQUAL: the canonical serialization of the entire bids array is
-    //       identical on every device. Not "similar" — identical. ──
+    //       identical on every device. Not "similar", identical. ──
     await step(page, {
       label: 'canonical bids state is byte-equal across all devices', page: 'cloud', role: 'contractor',
       suspect: 'cloud.js sync engine (any residual divergence shows here)',
@@ -267,7 +267,7 @@ test.describe('swarm — N writers on one account converge byte-equal', () => {
       },
     });
 
-    // Resource cleanup only (§13.7 — the swarm's DATA stays for inspection).
+    // Resource cleanup only (§13.7: the swarm's DATA stays for inspection).
     for (const ctx of ctxs) await ctx.close().catch(() => {});
 
     const rep = report(FLOW, BASELINE, page);

@@ -14,7 +14,7 @@ test.describe('zConfirm modal', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('zConfirm — renders with custom title and danger Yes button', async () => {
+  test('zConfirm: renders with custom title and danger Yes button', async () => {
     const result = await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       if (typeof zConfirm === 'undefined') return null;
@@ -23,7 +23,7 @@ test.describe('zConfirm modal', () => {
       const title = ov?.querySelector('.zmodal-title')?.textContent || '';
       const msg   = ov?.querySelector('.zmodal-msg')?.textContent   || '';
       const yesEl = ov?.querySelector('#zmodal-yes');
-      // Use getAttribute('style') — browsers normalize hex → rgb() in .style.background,
+      // Use getAttribute('style'): browsers normalize hex → rgb() in .style.background,
       // so reading the raw attribute string is the only reliable cross-browser check.
       const yesStyle = yesEl ? (yesEl.getAttribute('style') || '') : '';
       return { title, msg, yesText: yesEl?.textContent?.trim(), danger: yesStyle.includes('#A32D2D') };
@@ -38,7 +38,7 @@ test.describe('zConfirm modal', () => {
     await page.evaluate(() => document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove()));
   });
 
-  test('zConfirm — Yes calls callback and closes modal', async () => {
+  test('zConfirm: Yes calls callback and closes modal', async () => {
     await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       window._confirmYesFired = false;
@@ -52,7 +52,7 @@ test.describe('zConfirm modal', () => {
     expect(gone).toBe(true);
   });
 
-  test('zConfirm — Cancel closes modal without calling callback', async () => {
+  test('zConfirm: Cancel closes modal without calling callback', async () => {
     await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       window._confirmCancelFired = false;
@@ -66,7 +66,7 @@ test.describe('zConfirm modal', () => {
     expect(gone).toBe(true);
   });
 
-  test('zConfirm — overlay backdrop click closes modal', async () => {
+  test('zConfirm: overlay backdrop click closes modal', async () => {
     await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       zConfirm('Backdrop test?', () => {});
@@ -81,7 +81,7 @@ test.describe('zConfirm modal', () => {
     expect(gone).toBe(true);
   });
 
-  test('zConfirm — onNo callback fires when Cancel clicked', async () => {
+  test('zConfirm: onNo callback fires when Cancel clicked', async () => {
     await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
       window._onNoFired = false;
@@ -130,7 +130,7 @@ test.describe('Lien management lifecycle', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('getBidLien — returns undefined before lien is saved', async () => {
+  test('getBidLien: returns undefined before lien is saved', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof getBidLien === 'undefined') return 'skip';
       const l = getBidLien(bidId);
@@ -139,7 +139,7 @@ test.describe('Lien management lifecycle', () => {
     if (result !== 'skip') expect(result).toBeNull();
   });
 
-  test('openLienPanel — populates fields with defaults', async () => {
+  test('openLienPanel: populates fields with defaults', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof openLienPanel !== 'function') return null;
       // Ensure panel element exists (may need client detail page)
@@ -163,7 +163,7 @@ test.describe('Lien management lifecycle', () => {
       try { openLienPanel(bidId); } catch(e) { return { error: e.message }; }
       return {
         visible:  panelEl.style.display !== 'none',
-        // Comma-formatted now ("5,000.00") — strip commas before parsing, same
+        // Comma-formatted now ("5,000.00"): strip commas before parsing, same
         // as the app's own _moneyVal read helper.
         amount:   (document.getElementById('lien-amount') || {}).value || null,
         status:   (document.getElementById('lien-status') || {}).value || null,
@@ -179,15 +179,15 @@ test.describe('Lien management lifecycle', () => {
     }
   });
 
-  test('saveLien — adds lien record to liens array', async () => {
+  test('saveLien: adds lien record to liens array', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof saveLien !== 'function' || typeof liens === 'undefined') return null;
-      // Route through the real openLienPanel(bidId) to set activeLienBidId —
+      // Route through the real openLienPanel(bidId) to set activeLienBidId,
       // it's a plain module-scope `let`, not a window property, so
       // `window.activeLienBidId = bidId` (the old pattern here) never actually
       // reached it. That made this test silently depend on the PRIOR test
-      // ("openLienPanel — populates fields") having already run successfully
-      // to set the real variable as a side effect — if that test ever failed
+      // ("openLienPanel: populates fields") having already run successfully
+      // to set the real variable as a side effect, if that test ever failed
       // for any reason, this one broke too, with a confusing unrelated error.
       // Self-contained now: sets its own state instead of inheriting it.
       if (typeof openLienPanel === 'function') openLienPanel(bidId);
@@ -219,7 +219,7 @@ test.describe('Lien management lifecycle', () => {
     }
   });
 
-  test('getBidLien — returns saved lien after save', async () => {
+  test('getBidLien: returns saved lien after save', async () => {
     const lien = await page.evaluate(([bidId]) => {
       if (typeof getBidLien !== 'function') return null;
       const l = getBidLien(bidId);
@@ -231,10 +231,10 @@ test.describe('Lien management lifecycle', () => {
     }
   });
 
-  test('saveLien with filed status — triggers high_risk on client', async () => {
+  test('saveLien with filed status, triggers high_risk on client', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof saveLien !== 'function') return null;
-      // Real call, not window.activeLienBidId= — see the note in the previous test.
+      // Real call, not window.activeLienBidId=: see the note in the previous test.
       if (typeof openLienPanel === 'function') openLienPanel(bidId);
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('lien-date', '2026-05-21'); set('lien-status', 'filed');
@@ -261,7 +261,7 @@ test.describe('Lien management lifecycle', () => {
     }
   });
 
-  // Regression — filed liens were not reliably reaching the cloud. Before:
+  // Regression: filed liens were not reliably reaching the cloud. Before:
   // saveLien only ever called the fire-and-forget saveAll() (a 2s debounce
   // timer) and returned synchronously, so a caller (or a live flow test) that
   // checked td_liens right after saveLien() returned would deterministically
@@ -269,10 +269,10 @@ test.describe('Lien management lifecycle', () => {
   // and awaits _flushSaveNow() (cancels the debounce, pushes immediately)
   // before it resolves. This proves the await happens; the live flow test
   // (payments-liens-flow.spec.js) proves the row actually lands in td_liens.
-  test('saveLien awaits the cloud write (_flushSaveNow) before resolving — does not just schedule it', async () => {
+  test('saveLien awaits the cloud write (_flushSaveNow) before resolving, does not just schedule it', async () => {
     const result = await page.evaluate(async ([bidId]) => {
       if (typeof saveLien !== 'function') return null;
-      // Real call, not window.activeLienBidId= — see the note two tests up.
+      // Real call, not window.activeLienBidId=: see the note two tests up.
       if (typeof openLienPanel === 'function') openLienPanel(bidId);
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('lien-date', '2026-05-22'); set('lien-status', 'intent');
@@ -301,11 +301,11 @@ test.describe('Lien management lifecycle', () => {
     }, [LIEN_BID_ID]);
     if (result && !result.error) {
       expect(result.flushCalled, 'saveLien must call _flushSaveNow, not rely on the bare debounce timer').toBe(true);
-      expect(result.resolvedAfterFlush, 'saveLien must AWAIT the flush — it cannot resolve before the cloud write settles').toBe(true);
+      expect(result.resolvedAfterFlush, 'saveLien must AWAIT the flush, it cannot resolve before the cloud write settles').toBe(true);
     }
   });
 
-  test('releaseLien — triggers zConfirm with release title', async () => {
+  test('releaseLien: triggers zConfirm with release title', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof releaseLien !== 'function') return null;
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -356,7 +356,7 @@ test.describe('Bid payment recording', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('getBidBalance — full amount before any payments', async () => {
+  test('getBidBalance: full amount before any payments', async () => {
     const bal = await page.evaluate(([bidId]) => {
       if (typeof getBidBalance === 'undefined' || typeof bids === 'undefined') return null;
       const bid = bids.find(b => b.id === bidId);
@@ -365,7 +365,7 @@ test.describe('Bid payment recording', () => {
     if (bal !== null) expect(bal).toBeCloseTo(4000, 2);
   });
 
-  test('getBidPaid — zero before payments', async () => {
+  test('getBidPaid: zero before payments', async () => {
     const paid = await page.evaluate(([bidId]) => {
       if (typeof getBidPaid === 'undefined') return null;
       return getBidPaid(bidId);
@@ -373,7 +373,7 @@ test.describe('Bid payment recording', () => {
     if (paid !== null) expect(paid).toBe(0);
   });
 
-  test('openPayPanel — modal renders with amount fields', async () => {
+  test('openPayPanel: modal renders with amount fields', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof openPayPanel !== 'function') return null;
       try { openPayPanel(bidId); } catch(e) { return { error: e.message }; }
@@ -394,7 +394,7 @@ test.describe('Bid payment recording', () => {
     }
   });
 
-  test('logPayment — records deposit and reduces balance', async () => {
+  test('logPayment: records deposit and reduces balance', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof logPayment !== 'function' || typeof payments === 'undefined') return null;
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
@@ -424,7 +424,7 @@ test.describe('Bid payment recording', () => {
     }
   });
 
-  test('getBidPayments — returns payment array with correct entry', async () => {
+  test('getBidPayments: returns payment array with correct entry', async () => {
     const pmts = await page.evaluate(([bidId]) => {
       if (typeof getBidPayments !== 'function') return null;
       return getBidPayments(bidId).map(p => ({ bid_id: p.bid_id, amount: p.amount, method: p.method }));
@@ -437,7 +437,7 @@ test.describe('Bid payment recording', () => {
     }
   });
 
-  test('logPayment — records final payment, balance goes to zero', async () => {
+  test('logPayment: records final payment, balance goes to zero', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof logPayment !== 'function') return null;
       try { openPayPanel(bidId); } catch(e) {}
@@ -465,7 +465,7 @@ test.describe('Bid payment recording', () => {
     }
   });
 
-  test('logPayment — rejects overpayment without recording', async () => {
+  test('logPayment: rejects overpayment without recording', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof logPayment !== 'function') return null;
       try { openPayPanel(bidId); } catch(e) {}
@@ -496,12 +496,12 @@ test.describe('Bid payment recording', () => {
 //  to schedule a job that was already scheduled AND complete)
 // ════════════════════════════════════════════════════════════════════════════
 // Own describe on a FRESH page: sharing the payment-recording page made these
-// nondeterministic — earlier tests' 300ms prompt timers get clamped by
+// nondeterministic: earlier tests' 300ms prompt timers get clamped by
 // background-tab throttling on CI and stray into later capture windows. The probe
 // also fires the gate's 300ms timer SYNCHRONOUSLY so throttling can't defer its
 // own prompt past the assertion either.
 
-test.describe('logPayment — schedule prompt gating', () => {
+test.describe('logPayment: schedule prompt gating', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -521,7 +521,7 @@ test.describe('logPayment — schedule prompt gating', () => {
     bids.push({ id: bidId, client_id: cid, client_name: 'Gate C' + bidSeed, amount: 1000, deposit: 0, status: 'Closed Won', bid_date: '2026-06-01' });
     if (seedJob) jobs.push(Object.assign({ id: bidSeed + 2, start: '2026-06-10', days: 2, name: 'Gate J' + bidSeed }, seedJob, { client_id: cid }));
     // openPayPanel sets the activePayBidId MODULE binding (window.activePayBidId
-    // assignment does NOT — `let` bindings shadow window properties) + fresh inputs.
+    // assignment does NOT, `let` bindings shadow window properties) + fresh inputs.
     try { openPayPanel(bidId); } catch (e) {}
     const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
     const typeEl = document.getElementById('mpay-type'); if (typeEl) typeEl.value = 'partial';
@@ -529,7 +529,7 @@ test.describe('logPayment — schedule prompt gating', () => {
     const prompts = [];
     const _confirm = window.zConfirm, _to = window.setTimeout;
     window.zConfirm = (msg) => { prompts.push(String(msg)); };
-    // Run the gate's 300ms prompt timer inline — deterministic under throttling.
+    // Run the gate's 300ms prompt timer inline, deterministic under throttling.
     window.setTimeout = (fn, ms, ...a) => { if (ms === 300) { try { fn(); } catch (e) {} return 0; } return _to(fn, ms, ...a); };
     window.closePayPanel = () => {}; window.renderCDBids = () => {}; window.renderCDTimeline = () => {};
     window.renderMoneyPage = () => {}; window.renderDash = () => {}; window.refreshCollectLabel = () => {};
@@ -547,7 +547,7 @@ test.describe('logPayment — schedule prompt gating', () => {
   };
 
   test('an unlinked COMPLETED job suppresses the schedule prompt', async () => {
-    // The schedule form doesn't require linking the bid, so the job carries bid_id:null —
+    // The schedule form doesn't require linking the bid, so the job carries bid_id:null:
     // it must still count as "already scheduled" (same client fallback the bid panel uses).
     const r = await page.evaluate(_promptProbe, [990310, 200, { bid_id: null, eventType: 'job', status: 'done' }]);
     if (r && !r.error) expect(r.prompts.filter(m => m.includes('Schedule this job')).length, JSON.stringify(r.gate)).toBe(0);
@@ -593,7 +593,7 @@ test.describe('Pending bid delete confirmation', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('discardInProgressBid — shows zConfirm with Delete title', async () => {
+  test('discardInProgressBid: shows zConfirm with Delete title', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof discardInProgressBid !== 'function') return null;
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -611,7 +611,7 @@ test.describe('Pending bid delete confirmation', () => {
     await page.evaluate(() => document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove()));
   });
 
-  test('discardInProgressBid — Cancel preserves bid', async () => {
+  test('discardInProgressBid: Cancel preserves bid', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof discardInProgressBid !== 'function') return null;
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -628,7 +628,7 @@ test.describe('Pending bid delete confirmation', () => {
     }
   });
 
-  test('discardInProgressBid — Confirm removes bid from array', async () => {
+  test('discardInProgressBid: Confirm removes bid from array', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof discardInProgressBid !== 'function') return null;
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -649,7 +649,7 @@ test.describe('Pending bid delete confirmation', () => {
     }
   });
 
-  test('discardInProgressBid — regression: still deletes when the bid carries a STRING id (realtime-delivered rows can have one, while this button\'s onclick always embeds a bare numeric literal)', async () => {
+  test('discardInProgressBid: regression: still deletes when the bid carries a STRING id (realtime-delivered rows can have one, while this button\'s onclick always embeds a bare numeric literal)', async () => {
     const result = await page.evaluate(() => {
       if (typeof discardInProgressBid !== 'function') return null;
       document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -679,7 +679,7 @@ test.describe('Pending bid delete confirmation', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGN.HTML — COMPLETE CASH SIGNING FLOW
+//  SIGN.HTML: COMPLETE CASH SIGNING FLOW
 // ════════════════════════════════════════════════════════════════════════════
 
 // Non-painting proposal: skips the color picker and goes straight to pg-sign-action
@@ -703,7 +703,7 @@ const MOCK_PROPOSAL_GENERAL = {
   stripeConnectEnabled: false,
 };
 
-test.describe('sign.html — complete cash signing flow', () => {
+test.describe('sign.html: complete cash signing flow', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -733,7 +733,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     expect(signOn || !errOn).toBe(true);
   });
 
-  test('approveAndSign — navigates to pg-sign-action (no color picker for non-painting)', async () => {
+  test('approveAndSign: navigates to pg-sign-action (no color picker for non-painting)', async () => {
     // If we're on pg-sign, click approve
     const onSign = await page.evaluate(() => {
       const pg = document.getElementById('pg-sign');
@@ -757,7 +757,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (actionOn !== null) expect(actionOn || colorPickOn).toBe(true);
   });
 
-  test('checkReady — sign-btn disabled before a name/signature is entered', async () => {
+  test('checkReady: sign-btn disabled before a name/signature is entered', async () => {
     const disabled = await page.evaluate(() => {
       const btn = document.getElementById('sign-btn');
       return btn ? btn.disabled : null;
@@ -765,7 +765,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (disabled !== null) expect(disabled).toBe(true);
   });
 
-  test('checkReady — sign-btn enabled once a name is typed (no separate agreement checkbox)', async () => {
+  test('checkReady: sign-btn enabled once a name is typed (no separate agreement checkbox)', async () => {
     await page.evaluate(() => {
       const nameEl = document.getElementById('sig-name');
       if (nameEl) { nameEl.value = 'Bob Garcia'; nameEl.dispatchEvent(new Event('input', { bubbles: true })); }
@@ -779,7 +779,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (disabled !== null) expect(disabled).toBe(false);
   });
 
-  test('goToPayment — advances to pg-pay', async () => {
+  test('goToPayment: advances to pg-pay', async () => {
     await page.evaluate(() => {
       if (typeof goToPayment === 'function') goToPayment();
     });
@@ -791,7 +791,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (payOn !== null) expect(payOn).toBe(true);
   });
 
-  test('pg-pay — shows payment buttons including cash', async () => {
+  test('pg-pay: shows payment buttons including cash', async () => {
     const hasCash = await page.evaluate(() => {
       const btns = document.getElementById('sign-pay-btns');
       return btns ? btns.innerHTML.toLowerCase().includes('cash') : false;
@@ -799,7 +799,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (hasCash !== null) expect(hasCash).toBe(true);
   });
 
-  test('_paySign("cash") — shows sec-cash confirmation section', async () => {
+  test('_paySign("cash"): shows sec-cash confirmation section', async () => {
     await page.evaluate(async () => {
       if (typeof _paySign === 'function') await _paySign('cash');
     });
@@ -811,7 +811,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     if (cashVisible !== null) expect(cashVisible).toBe(true);
   });
 
-  test('submitCash — clicking confirm navigates to pg-done', async () => {
+  test('submitCash: clicking confirm navigates to pg-done', async () => {
     const confirmBtn = page.locator('#sec-cash-confirm-btn');
     if (await confirmBtn.count() > 0 && await confirmBtn.isVisible().catch(() => false)) {
       await confirmBtn.click();
@@ -834,7 +834,7 @@ test.describe('sign.html — complete cash signing flow', () => {
     }
   });
 
-  test('pg-done — shows client name and payment method', async () => {
+  test('pg-done: shows client name and payment method', async () => {
     const doneOn = await page.evaluate(() => {
       const pg = document.getElementById('pg-done');
       return pg ? pg.style.display !== 'none' : false;
@@ -851,10 +851,10 @@ test.describe('sign.html — complete cash signing flow', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGN.HTML — EPA LEAD PAINT DISCLOSURE
+//  SIGN.HTML: EPA LEAD PAINT DISCLOSURE
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', () => {
+test.describe('sign.html: EPA RRP lead paint disclosure (Document 2 of 2)', () => {
   let page;
 
   const MOCK_PROPOSAL_EPA = {
@@ -912,10 +912,10 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
     expect(count).toBe(0);
   });
 
-  test('checkReady — sign-btn enabled with just a typed name (no EPA checkbox, no agreement checkbox)', async () => {
+  test('checkReady: sign-btn enabled with just a typed name (no EPA checkbox, no agreement checkbox)', async () => {
     await page.evaluate(() => {
       // The pad (#sig-name/#sig-canvas) only renders once the sign step is
-      // actually reached — for an EPA proposal that's via the EPA review
+      // actually reached, for an EPA proposal that's via the EPA review
       // page's Continue button, same as a real client would click.
       if (typeof _continueFromEpaReview === 'function') _continueFromEpaReview();
     });
@@ -934,7 +934,7 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
     expect(count).toBe(1);
   });
 
-  test('showEpaPage — pg-epa becomes visible and fills address/cert info', async () => {
+  test('showEpaPage: pg-epa becomes visible and fills address/cert info', async () => {
     await page.evaluate(() => {
       if (typeof showEpaPage === 'function') showEpaPage();
     });
@@ -950,12 +950,12 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
     expect(certText).toContain('NAT-F12345');
   });
 
-  test('submitEpaAck removed — function no longer exists (unified signing flow)', async () => {
+  test('submitEpaAck removed, function no longer exists (unified signing flow)', async () => {
     const exists = await page.evaluate(() => typeof submitEpaAck === 'function');
     expect(exists).toBe(false);
   });
 
-  test('_continueFromEpaReview — navigates from EPA review page to sign pad', async () => {
+  test('_continueFromEpaReview, navigates from EPA review page to sign pad', async () => {
     await page.evaluate(() => {
       if (typeof showEpaPage === 'function') showEpaPage(); // ensure pg-epa shown first
     });
@@ -971,7 +971,7 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
     expect(onSignAction).toBe(true);
   });
 
-  test('showDone — routes directly to pg-done for EPA proposals (no EPA page redirect)', async () => {
+  test('showDone: routes directly to pg-done for EPA proposals (no EPA page redirect)', async () => {
     await page.evaluate(() => {
       if (typeof showDone === 'function') showDone('cash');
     });
@@ -988,17 +988,17 @@ test.describe('sign.html — EPA RRP lead paint disclosure (Document 2 of 2)', (
     expect(result.epaHidden).toBe(true);
   });
 
-  test('assertNoErrors — no console errors introduced by EPA RRP flow', async () => {
+  test('assertNoErrors: no console errors introduced by EPA RRP flow', async () => {
     const errors = await page.evaluate(() => window.__consoleErrors || []);
     expect(errors.filter(e => !/supabase|storage|fetch/i.test(e))).toHaveLength(0);
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGN.HTML — PORTFOLIO DISCOUNT OFFER
+//  SIGN.HTML: PORTFOLIO DISCOUNT OFFER
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — portfolio discount offer', () => {
+test.describe('sign.html: portfolio discount offer', () => {
   let page;
 
   const MOCK_PROPOSAL_PORTFOLIO = {
@@ -1041,7 +1041,7 @@ test.describe('sign.html — portfolio discount offer', () => {
     expect(hasPortfolio).toBe(true);
   });
 
-  test('portfolioAccept — first click shows terms', async () => {
+  test('portfolioAccept: first click shows terms', async () => {
     const result = await page.evaluate(() => {
       if (typeof portfolioAccept !== 'function') return null;
       // Reset portfolio state
@@ -1061,7 +1061,7 @@ test.describe('sign.html — portfolio discount offer', () => {
     }
   });
 
-  test('portfolioAccept — second click applies discount and updates amounts', async () => {
+  test('portfolioAccept: second click applies discount and updates amounts', async () => {
     const result = await page.evaluate(() => {
       if (typeof portfolioAccept !== 'function') return null;
       // Step 1 already called; step to 2
@@ -1084,20 +1084,20 @@ test.describe('sign.html — portfolio discount offer', () => {
     }
   });
 
-  test('portfolio decline — _portfolioAccepted stays false', async () => {
+  test('portfolio decline, _portfolioAccepted stays false', async () => {
     const accepted = await page.evaluate(() => {
       window._portfolioAccepted = false;
       window._portfolioStep = 0;
-      // Decline means user just doesn't click accept — simulate by not calling portfolioAccept
+      // Decline means user just doesn't click accept, simulate by not calling portfolioAccept
       return window._portfolioAccepted;
     });
     expect(accepted).toBe(false);
   });
 
   // Owner directive: the offer sat above the scope/terms card (first thing a
-  // client saw, before reading what they're buying) — moved below it so the
+  // client saw, before reading what they're buying), moved below it so the
   // client reads the scope first, and the offer no longer uses a competing
-  // gradient hero banner (.po-hdr/.po-body) — it's a plain card like the rest
+  // gradient hero banner (.po-hdr/.po-body): it's a plain card like the rest
   // of the page now.
   test('portfolio card appears AFTER Scope & terms in DOM order, as a plain card (no gradient hero banner)', async () => {
     const r = await page.evaluate(() => {
@@ -1114,13 +1114,13 @@ test.describe('sign.html — portfolio discount offer', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGN.HTML — COLOR PICKER (PAINTING + SURFACES)
+//  SIGN.HTML: COLOR PICKER (PAINTING + SURFACES)
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — color picker for painting', () => {
+test.describe('sign.html: color picker for painting', () => {
   let page;
 
-  // MOCK_PROPOSAL already has trade:'painting' and surfaces — perfect for color picker
+  // MOCK_PROPOSAL already has trade:'painting' and surfaces, perfect for color picker
 
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -1136,7 +1136,7 @@ test.describe('sign.html — color picker for painting', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('approveAndSign — routes to pg-color-pick for painting+surfaces', async () => {
+  test('approveAndSign: routes to pg-color-pick for painting+surfaces', async () => {
     const onSign = await page.evaluate(() => {
       const pg = document.getElementById('pg-sign');
       return pg ? pg.style.display !== 'none' : false;
@@ -1154,7 +1154,7 @@ test.describe('sign.html — color picker for painting', () => {
     if (colorPickOn !== null) expect(colorPickOn).toBe(true);
   });
 
-  test('color picker — renders room inputs for each surface', async () => {
+  test('color picker, renders room inputs for each surface', async () => {
     const result = await page.evaluate(() => {
       const pg = document.getElementById('pg-color-pick');
       if (!pg || pg.style.display === 'none') return null;
@@ -1167,7 +1167,7 @@ test.describe('sign.html — color picker for painting', () => {
     }
   });
 
-  test('_goToSignPad — advances from color picker to pg-sign-action', async () => {
+  test('_goToSignPad: advances from color picker to pg-sign-action', async () => {
     await page.evaluate(() => {
       if (typeof _goToSignPad === 'function') _goToSignPad();
     });
@@ -1179,7 +1179,7 @@ test.describe('sign.html — color picker for painting', () => {
     if (actionOn !== null) expect(actionOn).toBe(true);
   });
 
-  test('_colorChoices — populated after going through color picker', async () => {
+  test('_colorChoices: populated after going through color picker', async () => {
     // _colorChoices should be an array (empty or filled) after _goToSignPad
     const choices = await page.evaluate(() => {
       return typeof window._colorChoices !== 'undefined' ? window._colorChoices : null;
@@ -1189,10 +1189,10 @@ test.describe('sign.html — color picker for painting', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGN.HTML — STRIPE PAYMENT FLOW
+//  SIGN.HTML: STRIPE PAYMENT FLOW
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — Stripe payment flow', () => {
+test.describe('sign.html: Stripe payment flow', () => {
   let page;
   let checkoutCalled = false;
   let checkoutPayload = null;
@@ -1232,7 +1232,7 @@ test.describe('sign.html — Stripe payment flow', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('pg-pay — Stripe button present when stripeConnectEnabled', async () => {
+  test('pg-pay: Stripe button present when stripeConnectEnabled', async () => {
     // Navigate through approve → sign-action → payment
     await page.evaluate(() => {
       if (typeof approveAndSign === 'function') approveAndSign();
@@ -1263,7 +1263,7 @@ test.describe('sign.html — Stripe payment flow', () => {
     if (payOn !== null) expect(payOn).toBe(true);
   });
 
-  test('payment tile — deposit tile shows 25% amount', async () => {
+  test('payment tile, deposit tile shows 25% amount', async () => {
     const result = await page.evaluate(() => {
       const tile = document.getElementById('pay-tile-dep');
       return tile ? tile.textContent : null;
@@ -1274,7 +1274,7 @@ test.describe('sign.html — Stripe payment flow', () => {
     }
   });
 
-  test('payment tile — full tile shows total amount', async () => {
+  test('payment tile, full tile shows total amount', async () => {
     const result = await page.evaluate(() => {
       const tile = document.getElementById('pay-tile-full');
       return tile ? tile.textContent : null;
@@ -1282,7 +1282,7 @@ test.describe('sign.html — Stripe payment flow', () => {
     if (result !== null) expect(result).toContain('$');
   });
 
-  test('sign-pay-btns — renders with at least one payment option', async () => {
+  test('sign-pay-btns: renders with at least one payment option', async () => {
     const count = await page.evaluate(() => {
       const btns = document.getElementById('sign-pay-btns');
       if (!btns) return 0;
@@ -1292,10 +1292,10 @@ test.describe('sign.html — Stripe payment flow', () => {
   });
 
   // Pay-later (owner directive 2026-07-14): a method-agnostic "pay later"
-  // option on every signing surface — signs now, balance stays owed, any
+  // option on every signing surface, signs now, balance stays owed, any
   // channel open after. Placed as a small muted link on the far LEFT (hardest
   // right-thumb reach) so it's present but never the path of least resistance.
-  test('pay-later — present, positioned left of cash/check, and routes to a method-agnostic confirm', async () => {
+  test('pay-later: present, positioned left of cash/check, and routes to a method-agnostic confirm', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderSignPayBtns !== 'function') return { skip: true };
       window._prop = { id: 1, amount: 2600, deposit: 650, businessName: 'ZJ Pro', stripeConnectEnabled: true, clientName: 'Client' };
@@ -1344,7 +1344,7 @@ test.describe('sign.html — Stripe payment flow', () => {
   function _renderWithFlags(page, flags) {
     return page.evaluate((f) => {
       if (typeof _renderSignPayBtns !== 'function') return { skip: true };
-      // _prop / _payFullAmount are top-level `let`s in sign.html — bare assignment
+      // _prop / _payFullAmount are top-level `let`s in sign.html: bare assignment
       // resolves to those bindings; `window._prop` would create a separate property
       // the renderer never reads.
       _prop = Object.assign({ id: 1, amount: 2600, deposit: 650, businessName: 'ZJ Pro', stripeConnectEnabled: true, clientName: 'Client' }, f);
@@ -1363,7 +1363,7 @@ test.describe('sign.html — Stripe payment flow', () => {
     }, flags);
   }
 
-  test('opt-in — a disabled method never renders, grid columns match the count', async () => {
+  test('opt-in: a disabled method never renders, grid columns match the count', async () => {
     // Contractor turned OFF check; cash + pay-later remain → 2 evenly-spaced cols.
     const r = await _renderWithFlags(page, { acceptCheck: false });
     if (r.skip) return;
@@ -1373,7 +1373,7 @@ test.describe('sign.html — Stripe payment flow', () => {
     expect(r.cols, 'grid columns track the visible count').toBe(2);
   });
 
-  test('opt-in — pay-later off hides it; only enabled options show', async () => {
+  test('opt-in: pay-later off hides it; only enabled options show', async () => {
     const r = await _renderWithFlags(page, { allowPayLater: false, acceptCash: false });
     if (r.skip) return;
     expect(r.hasLater, 'pay-later off → hidden').toBe(false);
@@ -1383,14 +1383,14 @@ test.describe('sign.html — Stripe payment flow', () => {
     expect(r.cols, 'single-column grid').toBe(1);
   });
 
-  test('opt-in — never dead-ends: all manual off + no Stripe falls back to Pay Later', async () => {
+  test('opt-in: never dead-ends: all manual off + no Stripe falls back to Pay Later', async () => {
     const r = await _renderWithFlags(page, { acceptCash: false, acceptCheck: false, allowPayLater: false, stripeConnectEnabled: false });
     if (r.skip) return;
     expect(r.hasLater, 'fallback keeps Pay Later so signing can complete').toBe(true);
     expect(r.optionCount, 'exactly the one fallback option').toBe(1);
   });
 
-  test('opt-in — old proposals (no flags) still show all three', async () => {
+  test('opt-in: old proposals (no flags) still show all three', async () => {
     const r = await _renderWithFlags(page, {});
     if (r.skip) return;
     expect(r.hasLater && r.hasCash && r.hasCheck, 'undefined flags default to shown').toBe(true);
@@ -1400,10 +1400,10 @@ test.describe('sign.html — Stripe payment flow', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CLIENT.HTML — ALL 5 TABS
+//  CLIENT.HTML: ALL 5 TABS
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('client.html — all 5 tabs', () => {
+test.describe('client.html: all 5 tabs', () => {
   let page;
 
   const HUB_ALL_TABS = {
@@ -1468,7 +1468,7 @@ test.describe('client.html — all 5 tabs', () => {
   test.afterAll(async () => { await page.context().close(); });
 
   for (const view of ['overview', 'project', 'payments', 'documents', 'messages']) {
-    test(`switchView("${view}") — shows view-${view} panel`, async () => {
+    test(`switchView("${view}"): shows view-${view} panel`, async () => {
       await page.evaluate(v => {
         if (typeof switchView === 'function') switchView(v);
       }, view);
@@ -1494,7 +1494,7 @@ test.describe('client.html — all 5 tabs', () => {
     });
   }
 
-  test('switchView — nav item gets active class', async () => {
+  test('switchView: nav item gets active class', async () => {
     await page.evaluate(() => {
       if (typeof switchView === 'function') switchView('payments');
     });
@@ -1506,7 +1506,7 @@ test.describe('client.html — all 5 tabs', () => {
     if (isActive !== null) expect(isActive).toBe(true);
   });
 
-  test('client.html — contractor name or logo appears in topbar', async () => {
+  test('client.html: contractor name or logo appears in topbar', async () => {
     const hasTopbar = await page.evaluate(() => {
       const nameEl = document.getElementById('topbar-name');
       const logoEl = document.getElementById('topbar-logo-img');
@@ -1518,14 +1518,14 @@ test.describe('client.html — all 5 tabs', () => {
     expect(hasTopbar).toBe(true);
   });
 
-  test('overview view — renders project summary', async () => {
+  test('overview view, renders project summary', async () => {
     await page.evaluate(() => { if (typeof switchView === 'function') switchView('overview'); });
     await page.waitForTimeout(300);
     const html = await page.evaluate(() => document.getElementById('view-overview')?.innerHTML || '');
     expect(html.length).toBeGreaterThan(10);
   });
 
-  test('payments view — shows payment history', async () => {
+  test('payments view, shows payment history', async () => {
     await page.evaluate(() => { if (typeof switchView === 'function') switchView('payments'); });
     await page.waitForTimeout(300);
     const html = await page.evaluate(() => document.getElementById('view-payments')?.innerHTML || '');
@@ -1533,7 +1533,7 @@ test.describe('client.html — all 5 tabs', () => {
   });
 
   // Owner directive: the client hub's loading moments were plain gray "Loading…"
-  // text with no animation — choppy/dead compared to the polish just added to
+  // text with no animation, choppy/dead compared to the polish just added to
   // sign.html. _launchCheckout writes its loading state synchronously before
   // its first await, so it's already in the DOM the instant the call returns.
   test('payment checkout modal shows an animated spinner while loading, not just static text', async () => {
@@ -1549,10 +1549,10 @@ test.describe('client.html — all 5 tabs', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  STRIPE CONNECT — API STATES
+//  STRIPE CONNECT, API STATES
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Stripe Connect — API states', () => {
+test.describe('Stripe Connect, API states', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1565,7 +1565,7 @@ test.describe('Stripe Connect — API states', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_renderStripeConnectUI — not-connected state shows Connect button', async () => {
+  test('_renderStripeConnectUI, not-connected state shows Connect button', async () => {
     const html = await page.evaluate(() => {
       if (typeof _renderStripeConnectUI !== 'function') return null;
       const el = document.createElement('div');
@@ -1578,7 +1578,7 @@ test.describe('Stripe Connect — API states', () => {
     }
   });
 
-  test('_renderStripeConnectUI — connected-but-incomplete shows warning', async () => {
+  test('_renderStripeConnectUI, connected-but-incomplete shows warning', async () => {
     const html = await page.evaluate(() => {
       if (typeof _renderStripeConnectUI !== 'function') return null;
       const el = document.createElement('div');
@@ -1590,7 +1590,7 @@ test.describe('Stripe Connect — API states', () => {
     }
   });
 
-  test('_renderStripeConnectUI — fully connected shows green status', async () => {
+  test('_renderStripeConnectUI, fully connected shows green status', async () => {
     const html = await page.evaluate(() => {
       if (typeof _renderStripeConnectUI !== 'function') return null;
       const el = document.createElement('div');
@@ -1608,14 +1608,14 @@ test.describe('Stripe Connect — API states', () => {
     }
   });
 
-  test('loadStripeConnectStatus — renders into #stripe-connect-status-ui', async () => {
+  test('loadStripeConnectStatus, renders into #stripe-connect-status-ui', async () => {
     // Navigate to settings page where the element lives
     await page.evaluate(() => { if (typeof goPg === 'function') goPg('pg-settings'); });
     await page.waitForTimeout(400);
 
     const elExists = await page.evaluate(() => !!document.getElementById('stripe-connect-status-ui'));
     if (elExists) {
-      // Call loadStripeConnectStatus — uses mocked Supabase (no network call)
+      // Call loadStripeConnectStatus, uses mocked Supabase (no network call)
       await page.evaluate(async () => {
         if (typeof loadStripeConnectStatus === 'function') {
           await loadStripeConnectStatus().catch(() => {});
@@ -1627,7 +1627,7 @@ test.describe('Stripe Connect — API states', () => {
     }
   });
 
-  test('stripe-connect-status edge function — POST returns status object', async () => {
+  test('stripe-connect-status edge function, POST returns status object', async () => {
     let stripeStatusCalled = false;
 
     // Register specific route LAST (LIFO)
@@ -1649,7 +1649,7 @@ test.describe('Stripe Connect — API states', () => {
     });
     await page.waitForTimeout(500);
 
-    // The call may not fire if _supaUser is null in test env — check conditionally
+    // The call may not fire if _supaUser is null in test env, check conditionally
     const status = await page.evaluate(() => window._stripeConnectStatus);
     // If status was set, it should be an object
     if (status !== null && status !== undefined) {
@@ -1657,7 +1657,7 @@ test.describe('Stripe Connect — API states', () => {
     }
   });
 
-  test('stripe-connect-onboard edge function — called by startStripeConnect', async () => {
+  test('stripe-connect-onboard edge function, called by startStripeConnect', async () => {
     let onboardCalled = false;
     await page.route('**/functions/v1/stripe-connect-onboard', async route => {
       onboardCalled = true;
@@ -1705,7 +1705,7 @@ test.describe('Stripe Connect — API states', () => {
 
 // ── Sign page layout tests (real DOM assertions) ──────────────────────────────
 // Verify the proposal view layout: no big price box, scope first, sticky bar clean.
-test.describe('sign.html — proposal layout', () => {
+test.describe('sign.html: proposal layout', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1721,7 +1721,7 @@ test.describe('sign.html — proposal layout', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('big price amt-box is NOT visible — removed from proposal view', async () => {
+  test('big price amt-box is NOT visible, removed from proposal view', async () => {
     // The .amt-box element exists in the DOM (hidden) but must not be visible
     const amtBoxVisible = await page.evaluate(() => {
       const el = document.querySelector('.amt-box');
@@ -1752,7 +1752,7 @@ test.describe('sign.html — proposal layout', () => {
 
   test('sticky bar has Approve & Sign button', async () => {
     const btn = await page.locator('#approve-btn').isVisible();
-    // Sticky bar is hidden until scroll — check it exists and has correct text
+    // Sticky bar is hidden until scroll, check it exists and has correct text
     const btnText = await page.evaluate(() => {
       const b = document.getElementById('approve-btn');
       return b ? b.textContent.trim() : '';
@@ -1779,7 +1779,7 @@ test.describe('sign.html — proposal layout', () => {
   });
 
   test('amt-total node exists in DOM but is inside hidden wrapper', async () => {
-    // JS writes to amt-total — it must exist so those writes don't throw
+    // JS writes to amt-total, it must exist so those writes don't throw
     const exists = await page.evaluate(() => !!document.getElementById('amt-total'));
     expect(exists).toBe(true);
     // But it must not be visible
@@ -1802,13 +1802,13 @@ test.describe('sign.html — proposal layout', () => {
 });
 
 // ── Owner directive: audit + simplify sign.html (the actual signing/payment
-// screen — the most important one a client touches) — same "no decorative
+// screen: the most important one a client touches), same "no decorative
 // emoji" pass already applied to the proposal document, plus real friction
 // fixes: the "how much to pay" decision used to be picked on the sign screen
 // AND restated on the payment screen; the meta grid (Signed by/Initials/Date/
 // Method) was pure filler; the portfolio upsell card sat above the scope/terms
 // a client hadn't read yet. Locked in here so none of it creeps back.
-test.describe('sign.html — audit/simplify pass (emoji, pay-tile placement, dead code)', () => {
+test.describe('sign.html: audit/simplify pass (emoji, pay-tile placement, dead code)', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1829,7 +1829,7 @@ test.describe('sign.html — audit/simplify pass (emoji, pay-tile placement, dea
       const re = /[\u{1F300}-\u{1FAFF}]/u;
       return re.test(document.documentElement.innerHTML);
     });
-    expect(hasEmoji, 'sign.html must carry no decorative emoji — this is the most important screen a client touches').toBe(false);
+    expect(hasEmoji, 'sign.html must carry no decorative emoji, this is the most important screen a client touches').toBe(false);
   });
 
   test('dead CSS/markup from the pre-audit page is gone', async () => {
@@ -1838,7 +1838,7 @@ test.describe('sign.html — audit/simplify pass (emoji, pay-tile placement, dea
       optCashCount: document.querySelectorAll('#opt-cash').length,
     }));
     expect(r.sigMetaCount, 'the Signed-by/Initials/Date/Method filler grid must be removed, not just hidden').toBe(0);
-    expect(r.optCashCount, '#opt-cash never existed in the current markup — confirms the dead querySelector reference was deleted, not just made to fail silently forever').toBe(0);
+    expect(r.optCashCount, '#opt-cash never existed in the current markup, confirms the dead querySelector reference was deleted, not just made to fail silently forever').toBe(0);
   });
 
   test('pay-amount tiles live on the payment screen (pg-pay), not the sign screen (pg-sign-action)', async () => {
@@ -1874,7 +1874,7 @@ test.describe('sign.html — audit/simplify pass (emoji, pay-tile placement, dea
     assertNoErrors(page, 'sign.html audit/simplify pass');
   });
 
-  test('floating green call button is gone — contact is already covered by the "Questions?" row', async () => {
+  test('floating green call button is gone, contact is already covered by the "Questions?" row', async () => {
     const r = await page.evaluate(() => ({
       elCount: document.querySelectorAll('#float-call').length,
       cssHasRule: document.documentElement.innerHTML.includes('float-call'),
@@ -1889,7 +1889,7 @@ test.describe('sign.html — audit/simplify pass (emoji, pay-tile placement, dea
   });
 });
 
-test.describe('sign.html — "Powered by" respects the contractor\'s Settings toggle', () => {
+test.describe('sign.html: "Powered by" respects the contractor\'s Settings toggle', () => {
   test('poweredBy:false on the proposal snapshot hides the footer', async ({ page }) => {
     await mockAllExternal(page, { alreadySigned: false, proposalData: { ...MOCK_PROPOSAL, poweredBy: false }, bidId: FAKE_BID_ID_1 });
     await page.goto(
@@ -1902,7 +1902,7 @@ test.describe('sign.html — "Powered by" respects the contractor\'s Settings to
   });
 });
 
-test.describe('sign.html — decline reason picker', () => {
+test.describe('sign.html: decline reason picker', () => {
   let page;
 
   test.beforeEach(async ({ page: p }) => {
@@ -1914,7 +1914,7 @@ test.describe('sign.html — decline reason picker', () => {
     );
     await page.waitForTimeout(2000);
     // _supa.from(...).upsert(...) runs entirely through the in-memory shim (no real
-    // HTTP request to intercept) — spy on _supa.from directly instead, same pattern
+    // HTTP request to intercept), spy on _supa.from directly instead, same pattern
     // used elsewhere in this file for the mocked Supabase client.
     await page.evaluate(() => {
       window.__declineUpserts = [];
@@ -1955,7 +1955,7 @@ test.describe('sign.html — decline reason picker', () => {
     expect(rows[0].payment_status).toBe('declined');
   });
 
-  test('declining with no reason picked still succeeds — reason is never a blocker', async () => {
+  test('declining with no reason picked still succeeds, reason is never a blocker', async () => {
     await page.evaluate(() => declineBid());
     await page.click('#decline-confirm-btn');
     await page.waitForTimeout(500);
@@ -1980,11 +1980,11 @@ test.describe('sign.html — decline reason picker', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PSYCH/UX CLOSE PASS — deposit-first framing, price-held date, endowed
+//  PSYCH/UX CLOSE PASS, deposit-first framing, price-held date, endowed
 //  progress, risk reversal, peak-end confirmation (owner-approved 5)
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — close-rate UX pass', () => {
+test.describe('sign.html: close-rate UX pass', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -2004,8 +2004,8 @@ test.describe('sign.html — close-rate UX pass', () => {
     const line = page.locator('#sticky-deposit-line');
     await expect(line).toBeVisible();
     const text = await line.textContent();
-    expect(text).toContain('$594'); // MOCK_PROPOSAL.deposit — the action-sized number
-    // Owner (2026-07-09): dropped "your price and" — the price-held chip above
+    expect(text).toContain('$594'); // MOCK_PROPOSAL.deposit: the action-sized number
+    // Owner (2026-07-09): dropped "your price and", the price-held chip above
     // already communicates the 30-day price hold; the deposit buys the SLOT.
     expect(text).toContain('locks in your spot on the schedule');
     expect(text).not.toContain('locks in your price'); // redundant with the price-held chip
@@ -2018,18 +2018,18 @@ test.describe('sign.html — close-rate UX pass', () => {
     const text = await chip.textContent();
     expect(text).toContain('This price is held for you until');
     // Root cause of a day-boundary flake: this used to recompute Date.now() fresh
-    // here, but the page derives the chip from MOCK_PROPOSAL.createdAt — a
+    // here, but the page derives the chip from MOCK_PROPOSAL.createdAt: a
     // timestamp fixed once when helpers.js loaded, possibly minutes earlier in a
     // long shard run. If a local-midnight boundary fell in that gap, the test's
     // fresh "+30 days" landed on a different calendar day than the page's. Derive
     // the expected date from the SAME timestamp the page actually used instead of
-    // an independent clock read — deterministic regardless of run length or when
+    // an independent clock read, deterministic regardless of run length or when
     // midnight falls.
     const expected = new Date(new Date(MOCK_PROPOSAL.createdAt).getTime() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     expect(text).toContain(expected);
   });
 
-  test('endowed progress — every step-dots row starts with a completed first dot', async () => {
+  test('endowed progress, every step-dots row starts with a completed first dot', async () => {
     const rows = await page.evaluate(() =>
       Array.from(document.querySelectorAll('.step-dots')).map(row => {
         const dots = Array.from(row.querySelectorAll('.dot'));
@@ -2045,7 +2045,7 @@ test.describe('sign.html — close-rate UX pass', () => {
 
   test('Notice of Cancellation sits in the sig card, above the shared consent block, with the state cancel window populated', async () => {
     // Owner directive 2026-07-13: the risk-reversal strip's "X-day right to
-    // cancel — no questions asked" reassurance line was removed outright —
+    // cancel: no questions asked" reassurance line was removed outright,
     // it only restated what this legally-required Notice of Cancellation
     // section (and the full Terms & Conditions) already state with the exact
     // deadline and statute. This is the one surviving cancellation disclosure.
@@ -2061,12 +2061,12 @@ test.describe('sign.html — close-rate UX pass', () => {
       };
     });
     expect(r.inSigCard).toBe(true);
-    expect(r.beforeConsent, 'notice must sit above the agreement checkbox — where signing anxiety spikes').toBe(true);
+    expect(r.beforeConsent, 'notice must sit above the agreement checkbox, where signing anxiety spikes').toBe(true);
     expect(r.noticeText).toContain('Right to cancel'); // MOCK_PROPOSAL has no cancelDays → default 3
     expect(r.riskReversalStripGone, 'the redundant risk-reversal strip must be deleted, not hidden').toBe(true);
   });
 
-  test('peak-end — done page shows "What happens next" with three concrete steps', async () => {
+  test('peak-end: done page shows "What happens next" with three concrete steps', async () => {
     await page.evaluate(() => showDone('cash'));
     await expect(page.locator('#done-next')).toBeVisible();
     const rows = await page.locator('#done-next-rows > div').count();
@@ -2089,10 +2089,10 @@ test.describe('sign.html — close-rate UX pass', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGN-FLOW STEP FUNNEL — every milestone pings log-proposal-view with a step
+//  SIGN-FLOW STEP FUNNEL, every milestone pings log-proposal-view with a step
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — step funnel analytics', () => {
+test.describe('sign.html: step funnel analytics', () => {
   let page;
 
   test.beforeEach(async ({ page: p }) => {
@@ -2142,7 +2142,7 @@ test.describe('sign.html — step funnel analytics', () => {
     assertNoErrors(page, 'step funnel full walk');
   });
 
-  test('each step fires at most once per page load — re-renders never duplicate pings', async () => {
+  test('each step fires at most once per page load, re-renders never duplicate pings', async () => {
     await page.evaluate(() => { approveAndSign(); approveAndSign(); approveAndSign(); });
     await page.waitForTimeout(200);
     const pings = await page.evaluate(() => window.__stepPings.map(x => x.step));
@@ -2156,19 +2156,19 @@ test.describe('sign.html — step funnel analytics', () => {
   });
 });
 
-// ── Cancellation clause patch — old proposals upgraded on-the-fly ────────────
+// ── Cancellation clause patch, old proposals upgraded on-the-fly ────────────
 // sign.html patches legacy proposalHtml (old "Buyer has the right to cancel"
 // language) so unsigned in-flight proposals show the updated mutual-obligation
 // clause without a manual re-send. Signed proposals return early at pg-done
 // and never reach this code path.
-test.describe('sign.html — cancellation clause patch for old proposals', () => {
+test.describe('sign.html: cancellation clause patch for old proposals', () => {
   let page;
 
   // Build a mock proposal whose proposalHtml contains the OLD one-sided
-  // cancellation language — using the ACTUAL format from proposals.js #est-proposal
+  // cancellation language, using the ACTUAL format from proposals.js #est-proposal
   // (full <p> tags with <em> formatting), NOT the compact est-terms sidebar text.
   const OLD_CANCEL_HTML =
-    '<p style="margin:0 0 9px"><strong>2. Cancellation &amp; Deposits:</strong> Buyer has the right to cancel this transaction without penalty within 3 business days of signing (K.S.A. §50-640). After the three-business-day cancellation period, the deposit is retained as liquidated damages to compensate for: (a) <em>Mobilization &amp; Scheduling</em> — reserving crew availability and declining other projects for the contracted dates; (b) <em>Administrative Costs</em> — time invested in site measurements, color consulting, and preparation of this written scope; and (c) <em>Material Procurement</em> — sourcing specific paint colors and materials that may not be returnable or transferable to other jobs. These represent a reasonable good-faith estimate of actual damages, not a penalty. If cancellation occurs after materials have been purchased, contractor will make all materials available for client pickup at no additional charge.</p>';
+    '<p style="margin:0 0 9px"><strong>2. Cancellation &amp; Deposits:</strong> Buyer has the right to cancel this transaction without penalty within 3 business days of signing (K.S.A. §50-640). After the three-business-day cancellation period, the deposit is retained as liquidated damages to compensate for: (a) <em>Mobilization &amp; Scheduling</em>, reserving crew availability and declining other projects for the contracted dates; (b) <em>Administrative Costs</em>, time invested in site measurements, color consulting, and preparation of this written scope; and (c) <em>Material Procurement</em>, sourcing specific paint colors and materials that may not be returnable or transferable to other jobs. These represent a reasonable good-faith estimate of actual damages, not a penalty. If cancellation occurs after materials have been purchased, contractor will make all materials available for client pickup at no additional charge.</p>';
 
   const OLD_PROPOSAL = { ...MOCK_PROPOSAL, proposalHtml: OLD_CANCEL_HTML };
 
@@ -2215,16 +2215,16 @@ test.describe('sign.html — cancellation clause patch for old proposals', () =>
   });
 });
 
-// ── Cancellation clause patch — generic trade proposals (HVAC, roofing, etc.) ─
+// ── Cancellation clause patch, generic trade proposals (HVAC, roofing, etc.) ─
 // Generic proposals use a different end anchor ("not a penalty.</div>") so a
 // second replacement handles them. Same mutual-obligation clause, business name.
-test.describe('sign.html — cancellation clause patch for generic trade proposals', () => {
+test.describe('sign.html: cancellation clause patch for generic trade proposals', () => {
   let page;
 
   const OLD_GENERIC_CANCEL_HTML =
     '<div style="font-size:11px;color:#2d3748;line-height:2">' +
     '<div>1. <strong>Deposit:</strong> 25% due before work begins.</div>' +
-    '<div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within 3 business days of signing (K.S.A. §50-640). After that, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty.</div>' +
+    '<div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer has the right to cancel within 3 business days of signing (K.S.A. §50-640). After that, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs, a reasonable estimate of actual damages, not a penalty.</div>' +
     '<div>3. <strong>Change Orders:</strong> Written change order required.</div>' +
     '</div>';
 
@@ -2265,19 +2265,19 @@ test.describe('sign.html — cancellation clause patch for generic trade proposa
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  BID SHARING — WITHOUT STRIPE / WITH STRIPE
+//  BID SHARING, WITHOUT STRIPE / WITH STRIPE
 // ════════════════════════════════════════════════════════════════════════════
 
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PROPOSAL JSON FRESHNESS — HTTP cache bypass (stale-status fix)
+//  PROPOSAL JSON FRESHNESS, HTTP cache bypass (stale-status fix)
 // ════════════════════════════════════════════════════════════════════════════
 // The proposal JSON is rewritten in storage on signing/voiding/payment, but
 // Supabase storage's default cache-control: max-age=3600 let the browser serve
 // a stale copy for up to an hour. sign.html now fetches the public object URL
 // with cache:'no-store' + a cb= cache-buster; the shim's in-page fetch
 // interceptor records the call in window.__storageFetches (WebKit-safe).
-test.describe('sign.html — proposal JSON cache bypass', () => {
+test.describe('sign.html: proposal JSON cache bypass', () => {
   test('proposal load uses cache:no-store and a cb= cache-buster', async ({ page }) => {
     await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
     await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
@@ -2302,7 +2302,7 @@ test.describe('sign.html — proposal JSON cache bypass', () => {
 // $70,466.83 to break across two lines ("$70,46" / "6.83") on already-sent bids.
 // break-word keeps unbreakable long strings from bleeding without collapsing numbers.
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('sign.html — proposal totals never break mid-number', () => {
+test.describe('sign.html: proposal totals never break mid-number', () => {
   test('#prop-html uses break-word, not anywhere (numeric column would collapse)', async ({ page }) => {
     await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
     await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });
@@ -2325,10 +2325,10 @@ test.describe('sign.html — proposal totals never break mid-number', () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Proposal view: the "Scope & terms" label and the outer card padding were
-// removed so the proposal document fills the width (owner-requested — the label
+// removed so the proposal document fills the width (owner-requested: the label
 // was noise and the card added dead space around the self-styled proposal doc).
 // ─────────────────────────────────────────────────────────────────────────────
-test.describe('sign.html — proposal fills, no "Scope & terms" label / dead space', () => {
+test.describe('sign.html: proposal fills, no "Scope & terms" label / dead space', () => {
   test('the Scope & terms label is gone and the proposal card has no padding frame', async ({ page }) => {
     await page.addInitScript(data => { window.__mockProposalData = data; }, MOCK_PROPOSAL);
     await mockAllExternal(page, { alreadySigned: false, proposalData: MOCK_PROPOSAL, bidId: FAKE_BID_ID_1 });

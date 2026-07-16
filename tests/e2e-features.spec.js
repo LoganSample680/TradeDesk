@@ -1,7 +1,7 @@
 // @ts-check
 const { test, expect, mockAllExternal, _supabaseShim, _supabaseShimIntake, waitForAppBoot, goPg, assertNoErrors, FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL } = require('./helpers');
 
-test.describe('Bid sharing — Stripe Connect status', () => {
+test.describe('Bid sharing, Stripe Connect status', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -29,12 +29,12 @@ test.describe('Bid sharing — Stripe Connect status', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('sendPaymentLink — alerts if Stripe not connected', async () => {
+  test('sendPaymentLink: alerts if Stripe not connected', async () => {
     const result = await page.evaluate(async () => {
       if (typeof sendPaymentLink !== 'function') return null;
       // Re-seed the fixture INSIDE the test tick. A late-resolving cloud/cache load
       // can reassign `bids`/`clients` after beforeAll and drop the seed; then
-      // sendPaymentLink's `bids.find` misses and it returns SILENTLY (no alert) —
+      // sendPaymentLink's `bids.find` misses and it returns SILENTLY (no alert),
       // the intermittent WebKit failure (task #22, shared-page state race). Seeding
       // here removes the async-overwrite window: the bid is present at call time.
       if (typeof clients !== 'undefined' && !clients.some(c => c.id === 777010)) clients.push({ id: 777010, name: 'Frank Share', phone: '316-555-1010', addr: '10 Share Ln' });
@@ -50,7 +50,7 @@ test.describe('Bid sharing — Stripe Connect status', () => {
     if (result !== null) expect(result.alerted).toBe(true);
   });
 
-  test('sendPaymentLink — calls create-checkout when Stripe connected', async () => {
+  test('sendPaymentLink: calls create-checkout when Stripe connected', async () => {
     let createCheckoutCalled = false;
     let checkoutBody = null;
 
@@ -86,7 +86,7 @@ test.describe('Bid sharing — Stripe Connect status', () => {
     }
   });
 
-  test('create-checkout payload — bidId matches, amount is balance in cents', async () => {
+  test('create-checkout payload, bidId matches, amount is balance in cents', async () => {
     // This is a verification of the payload structure from the previous test
     // If create-checkout was called, the payload should have correct fields
     const payloadCheck = await page.evaluate(() => {
@@ -110,10 +110,10 @@ test.describe('Bid sharing — Stripe Connect status', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  ADDRESS AUTOCOMPLETE — PHOTON API
+//  ADDRESS AUTOCOMPLETE, PHOTON API
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Address autocomplete — Photon API', () => {
+test.describe('Address autocomplete, Photon API', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -160,10 +160,10 @@ test.describe('Address autocomplete — Photon API', () => {
       );
     });
     // Autocomplete input may live in client form or estimate step
-    expect(addrEl || true).toBe(true); // graceful — just check no errors
+    expect(addrEl || true).toBe(true); // graceful: just check no errors
   });
 
-  test('Photon suggestions — fetched for address query', async () => {
+  test('Photon suggestions, fetched for address query', async () => {
     let photonCalled = false;
 
     await page.route('**/photon.komoot.io/**', async route => {
@@ -200,16 +200,16 @@ test.describe('Address autocomplete — Photon API', () => {
 
     await page.waitForTimeout(800);
     // photonCalled depends on whether autocomplete is wired to this input
-    // Test passes regardless — we just verify no errors
+    // Test passes regardless, we just verify no errors
     assertNoErrors(page, 'address autocomplete');
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  TAX PAGE — FULL RENDER & calcTax()
+//  TAX PAGE, FULL RENDER & calcTax()
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Tax page — calcTax and tab rendering', () => {
+test.describe('Tax page, calcTax and tab rendering', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -243,7 +243,7 @@ test.describe('Tax page — calcTax and tab rendering', () => {
     if (active !== null) expect(active).toBe(true);
   });
 
-  test('calcTax — runs and renders result elements', async () => {
+  test('calcTax: runs and renders result elements', async () => {
     await page.evaluate(() => {
       if (typeof calcTax === 'function') try { calcTax(); } catch(e) {}
     });
@@ -255,11 +255,11 @@ test.describe('Tax page — calcTax and tab rendering', () => {
       return (results && results.innerHTML.length > 20) ||
              (inputs  && inputs.innerHTML.length > 20);
     });
-    expect(hasContent || true).toBe(true); // graceful — just verify no crash
+    expect(hasContent || true).toBe(true); // graceful: just verify no crash
     assertNoErrors(page, 'calcTax render');
   });
 
-  test('estimateTax — returns a positive number for positive net income', async () => {
+  test('estimateTax: returns a positive number for positive net income', async () => {
     const result = await page.evaluate(() => {
       if (typeof estimateTax !== 'function') return null;
       try { return estimateTax(50000, new Date().getFullYear()); } catch(e) { return null; }
@@ -270,7 +270,7 @@ test.describe('Tax page — calcTax and tab rendering', () => {
     }
   });
 
-  test('estimateTax — zero net income returns zero tax', async () => {
+  test('estimateTax: zero net income returns zero tax', async () => {
     const result = await page.evaluate(() => {
       if (typeof estimateTax !== 'function') return null;
       try { return estimateTax(0, new Date().getFullYear()); } catch(e) { return null; }
@@ -278,7 +278,7 @@ test.describe('Tax page — calcTax and tab rendering', () => {
     if (result !== null) expect(result).toBe(0);
   });
 
-  test('setTaxTab — switches between summary and payments tabs', async () => {
+  test('setTaxTab: switches between summary and payments tabs', async () => {
     for (const tab of ['summary', 'payments', 'tips']) {
       await page.evaluate(t => {
         const btn = document.getElementById('tx-tab-' + t);
@@ -293,7 +293,7 @@ test.describe('Tax page — calcTax and tab rendering', () => {
     }
   });
 
-  test('tax reserve banner — shows when income exists', async () => {
+  test('tax reserve banner, shows when income exists', async () => {
     await page.evaluate(() => {
       if (typeof calcTax === 'function') try { calcTax(); } catch(e) {}
     });
@@ -312,10 +312,10 @@ test.describe('Tax page — calcTax and tab rendering', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  MULTI-STATE TAX — income apportioned by job address
+//  MULTI-STATE TAX, income apportioned by job address
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Multi-state tax — revenue breakdown by job address', () => {
+test.describe('Multi-state tax, revenue breakdown by job address', () => {
   const BID_KS = 700101;
   const BID_MO = 700102;
   const BID_TX = 700103;
@@ -350,8 +350,8 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
       }
     }, { KS: BID_KS, MO: BID_MO, TX: BID_TX });
 
-    // Render the multi-state tax UI once during setup so every test — including
-    // isolated retries that re-run beforeAll on a fresh worker — reads populated
+    // Render the multi-state tax UI once during setup so every test, including
+    // isolated retries that re-run beforeAll on a fresh worker, reads populated
     // #tx-inputs / #tx-results. Previously only the first integration test called
     // calcTax(), so any later test that failed and retried alone saw empty DOM.
     await page.evaluate(() => { if (typeof calcTax === 'function') { try { calcTax(); } catch (e) {} } });
@@ -365,7 +365,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
 
   // ── detectStateFromAddr unit tests ────────────────────────────────────────
 
-  test('detectStateFromAddr — extracts correct state codes', async () => {
+  test('detectStateFromAddr: extracts correct state codes', async () => {
     const r = await page.evaluate(() => {
       if (typeof detectStateFromAddr !== 'function') return null;
       return {
@@ -388,7 +388,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
 
   // ── _calcStateEstimate unit tests ─────────────────────────────────────────
 
-  test('_calcStateEstimate — flat-rate state Colorado (4.4%) on $50k', async () => {
+  test('_calcStateEstimate: flat-rate state Colorado (4.4%) on $50k', async () => {
     const result = await page.evaluate(() => {
       if (typeof _calcStateEstimate !== 'function' || typeof STATE_TAX === 'undefined') return null;
       return _calcStateEstimate(50000, STATE_TAX['CO']); // flat 4.4% → ceil(50000 * 0.044) = 2200
@@ -397,7 +397,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(result).toBe(2200);
   });
 
-  test('_calcStateEstimate — no-tax state Texas returns 0', async () => {
+  test('_calcStateEstimate: no-tax state Texas returns 0', async () => {
     const result = await page.evaluate(() => {
       if (typeof _calcStateEstimate !== 'function' || typeof STATE_TAX === 'undefined') return null;
       return _calcStateEstimate(50000, STATE_TAX['TX']);
@@ -406,7 +406,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(result).toBe(0);
   });
 
-  test('_calcStateEstimate — zero income always returns 0', async () => {
+  test('_calcStateEstimate: zero income always returns 0', async () => {
     const result = await page.evaluate(() => {
       if (typeof _calcStateEstimate !== 'function' || typeof STATE_TAX === 'undefined') return null;
       return _calcStateEstimate(0, STATE_TAX['MO']);
@@ -415,7 +415,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(result).toBe(0);
   });
 
-  test('_calcStateEstimate — null stInfo returns 0 (unknown state guard)', async () => {
+  test('_calcStateEstimate: null stInfo returns 0 (unknown state guard)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _calcStateEstimate !== 'function') return null;
       return _calcStateEstimate(50000, null);
@@ -424,7 +424,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(result).toBe(0);
   });
 
-  test('_calcStateEstimate — Missouri two-bracket calculation ($20k income)', async () => {
+  test('_calcStateEstimate: Missouri two-bracket calculation ($20k income)', async () => {
     // MO: low=1.5%, high=4.95%, top=9000
     // lowPart=9000*0.015=135, highPart=11000*0.0495=544.5 → ceil(679.5)=680
     const result = await page.evaluate(() => {
@@ -437,7 +437,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
 
   // ── calcTax integration tests ─────────────────────────────────────────────
 
-  test('calcTax — Income by State bar chart appears when multi-state', async () => {
+  test('calcTax: Income by State bar chart appears when multi-state', async () => {
     await page.evaluate(() => {
       if (typeof _taxPageYear !== 'undefined') _taxPageYear = 2026;
       if (typeof calcTax === 'function') try { calcTax(); } catch(e) {}
@@ -450,7 +450,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(hasChart).toBe(true);
   });
 
-  test('calcTax — bar chart shows all three seeded states', async () => {
+  test('calcTax: bar chart shows all three seeded states', async () => {
     const html = await page.evaluate(() => {
       const el = document.getElementById('tx-inputs');
       return el ? el.innerHTML : '';
@@ -462,7 +462,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(html).toContain('(non-resident)');
   });
 
-  test('calcTax — tx-results shows non-resident label for out-of-state income', async () => {
+  test('calcTax: tx-results shows non-resident label for out-of-state income', async () => {
     const html = await page.evaluate(() => {
       const el = document.getElementById('tx-results');
       return el ? el.innerHTML : '';
@@ -471,7 +471,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(html).toContain('income tax');
   });
 
-  test('calcTax — Texas (no income tax) shows "No income tax" in results', async () => {
+  test('calcTax: Texas (no income tax) shows "No income tax" in results', async () => {
     const html = await page.evaluate(() => {
       const el = document.getElementById('tx-results');
       return el ? el.innerHTML : '';
@@ -479,7 +479,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(html).toContain('No income tax');
   });
 
-  test('calcTax — Missouri (has income tax) applies credit to home state', async () => {
+  test('calcTax: Missouri (has income tax) applies credit to home state', async () => {
     // When MO tax is applied, home state should show (after credit)
     const html = await page.evaluate(() => {
       const el = document.getElementById('tx-results');
@@ -489,7 +489,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(html).toContain('after credit');
   });
 
-  test('calcTax — CPA disclaimer shown in multi-state mode', async () => {
+  test('calcTax: CPA disclaimer shown in multi-state mode', async () => {
     const html = await page.evaluate(() => {
       const el = document.getElementById('tx-results');
       return el ? el.innerHTML : '';
@@ -498,7 +498,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
     expect(html).toContain('CPA');
   });
 
-  test('calcTax — totalOwed is displayed and positive', async () => {
+  test('calcTax: totalOwed is displayed and positive', async () => {
     const html = await page.evaluate(() => {
       const el = document.getElementById('tx-results');
       return el ? el.innerHTML : '';
@@ -511,7 +511,7 @@ test.describe('Multi-state tax — revenue breakdown by job address', () => {
   });
 });
 
-test.describe('Multi-state tax — single-state user sees no multi-state UI', () => {
+test.describe('Multi-state tax, single-state user sees no multi-state UI', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -535,7 +535,7 @@ test.describe('Multi-state tax — single-state user sees no multi-state UI', ()
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('single-state — Income by State chart not rendered', async () => {
+  test('single-state: Income by State chart not rendered', async () => {
     const hasChart = await page.evaluate(() => {
       const el = document.getElementById('tx-inputs');
       return el ? el.innerHTML.includes('Income by State') : false;
@@ -543,7 +543,7 @@ test.describe('Multi-state tax — single-state user sees no multi-state UI', ()
     expect(hasChart).toBe(false);
   });
 
-  test('single-state — no non-resident text in results', async () => {
+  test('single-state: no non-resident text in results', async () => {
     const hasNonRes = await page.evaluate(() => {
       const el = document.getElementById('tx-results');
       return el ? el.innerHTML.includes('non-resident') : false;
@@ -551,7 +551,7 @@ test.describe('Multi-state tax — single-state user sees no multi-state UI', ()
     expect(hasNonRes).toBe(false);
   });
 
-  test('single-state — no multi-state disclaimer shown', async () => {
+  test('single-state: no multi-state disclaimer shown', async () => {
     const hasDisclaimer = await page.evaluate(() => {
       const el = document.getElementById('tx-results');
       return el ? el.innerHTML.includes('Multi-state estimate') : false;
@@ -559,16 +559,16 @@ test.describe('Multi-state tax — single-state user sees no multi-state UI', ()
     expect(hasDisclaimer).toBe(false);
   });
 
-  test('single-state — no console errors', async () => {
+  test('single-state: no console errors', async () => {
     assertNoErrors(page, 'single-state tax calculation');
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  JOBS PAGE — RENDER, FILTER, CHECKLIST, CLOCK-IN/OUT
+//  JOBS PAGE, RENDER, FILTER, CHECKLIST, CLOCK-IN/OUT
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Jobs page — render, filter, stage, checklist, time-tracking', () => {
+test.describe('Jobs page, render, filter, stage, checklist, time-tracking', () => {
   const JOB_BID_ID  = 810001;
   const JOB_CLIENT  = 777020;
   const JOB_ID      = 820001;
@@ -599,7 +599,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
         jobs = jobs.filter(j => j.id !== jobId);
         jobs.push({
           id: jobId, bid_id: bidId, client_id: clientId,
-          name: 'Gary Jobs — Painting', status: 'scheduled',
+          name: 'Gary Jobs, Painting', status: 'scheduled',
           start: '2026-06-01', end: '2026-06-03', actualHours: 0,
         });
       }
@@ -611,7 +611,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderJobsPage — renders without errors', async () => {
+  test('renderJobsPage: renders without errors', async () => {
     await page.evaluate(() => {
       if (typeof goPg === 'function') goPg('pg-jobs');
     });
@@ -624,7 +624,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     assertNoErrors(page, 'renderJobsPage');
   });
 
-  test('getBidStage — returns stage object for won bid', async () => {
+  test('getBidStage: returns stage object for won bid', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof getBidStage !== 'function' || typeof bids === 'undefined') return null;
       const bid = bids.find(b => b.id === bidId);
@@ -640,7 +640,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     }
   });
 
-  test('setJobFilter — switches job filter without crashing', async () => {
+  test('setJobFilter: switches job filter without crashing', async () => {
     for (const filter of ['all', 'active', 'done']) {
       await page.evaluate(f => {
         const btn = document.getElementById('jft-' + f) || document.querySelector('[data-jf="' + f + '"]');
@@ -651,7 +651,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     assertNoErrors(page, 'setJobFilter');
   });
 
-  test('renderLeadsPage — renders without errors', async () => {
+  test('renderLeadsPage: renders without errors', async () => {
     await page.evaluate(() => {
       if (typeof goPg === 'function') goPg('pg-leads');
     });
@@ -664,7 +664,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     assertNoErrors(page, 'renderLeadsPage');
   });
 
-  test('setLeadFilter — cycles all filter values', async () => {
+  test('setLeadFilter: cycles all filter values', async () => {
     for (const filter of ['all', 'new', 'bid_out', 'signed']) {
       await page.evaluate(f => {
         const btn = document.getElementById('lft-' + f) || document.querySelector('[data-lf="' + f + '"]');
@@ -675,7 +675,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     assertNoErrors(page, 'setLeadFilter');
   });
 
-  test('openJobChecklist — shows checklist modal', async () => {
+  test('openJobChecklist: shows checklist modal', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof openJobChecklist !== 'function') return null;
       document.querySelectorAll('[id="_checklist-ov"]').forEach(e => e.remove());
@@ -690,7 +690,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     await page.evaluate(() => document.getElementById('_checklist-ov')?.remove());
   });
 
-  test('openClockInSheet — shows clock-in modal with scope options', async () => {
+  test('openClockInSheet: shows clock-in modal with scope options', async () => {
     const result = await page.evaluate(([jobId]) => {
       if (typeof openClockInSheet !== 'function') return null;
       document.getElementById('_cks-ov')?.remove();
@@ -704,10 +704,10 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     await page.evaluate(() => document.getElementById('_cks-ov')?.remove());
   });
 
-  test('clockIn — starts timer and sets _activeTimer', async () => {
+  test('clockIn: starts timer and sets _activeTimer', async () => {
     const result = await page.evaluate(([jobId]) => {
       if (typeof clockIn !== 'function') return null;
-      // NOTE: _activeTimer is declared with `let` in data.js — it is NOT on window.
+      // NOTE: _activeTimer is declared with `let` in data.js: it is NOT on window.
       // Clock out any existing timer first to start clean.
       if (typeof clockOut === 'function') try { clockOut(false, true); } catch(e) {}
       // Stub side effects
@@ -727,10 +727,10 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     }
   });
 
-  test('clockOut — stops timer and records time entry', async () => {
+  test('clockOut: stops timer and records time entry', async () => {
     const result = await page.evaluate(([jobId]) => {
       if (typeof clockOut !== 'function') return null;
-      // Ensure there is an active timer to stop — _activeTimer is a let binding, not window property
+      // Ensure there is an active timer to stop, _activeTimer is a let binding, not window property
       if (typeof _activeTimer !== 'undefined' && !_activeTimer) {
         // Use clockIn to create a real timer in the let-scoped _activeTimer
         if (typeof clockIn === 'function') {
@@ -757,7 +757,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     }
   });
 
-  test('clockOut — tags the saved entry with who logged it (feeds Time Log)', async () => {
+  test('clockOut: tags the saved entry with who logged it (feeds Time Log)', async () => {
     const result = await page.evaluate(([jobId]) => {
       if (typeof clockIn !== 'function' || typeof clockOut !== 'function') return null;
       const origBanner = window.showClockBanner, origHide = window.hideClockBanner;
@@ -775,7 +775,7 @@ test.describe('Jobs page — render, filter, stage, checklist, time-tracking', (
     }, [JOB_ID]);
     if (result && !result.error) {
       expect(result.hasLoggedByName).toBe(true);
-      // Owner session (this test suite never signs in as an employee) — null uid means owner.
+      // Owner session (this test suite never signs in as an employee), null uid means owner.
       expect(result.loggedByUid).toBe(null);
     }
   });
@@ -802,7 +802,7 @@ test.describe('Expense logging', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('openExpenseFlow — renders expense modal', async () => {
+  test('openExpenseFlow: renders expense modal', async () => {
     const result = await page.evaluate(() => {
       if (typeof openExpenseFlow !== 'function') return null;
       document.querySelector('.expense-modal, #expense-modal')?.remove();
@@ -815,7 +815,7 @@ test.describe('Expense logging', () => {
     }
   });
 
-  test('expSave — saves expense to expenses array', async () => {
+  test('expSave: saves expense to expenses array', async () => {
     const result = await page.evaluate(() => {
       if (typeof expSave !== 'function' || typeof expenses === 'undefined') return null;
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
@@ -841,7 +841,7 @@ test.describe('Expense logging', () => {
     }
   });
 
-  test('expSave — validation rejects missing amount', async () => {
+  test('expSave: validation rejects missing amount', async () => {
     const result = await page.evaluate(() => {
       if (typeof expSave !== 'function') return null;
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
@@ -862,7 +862,7 @@ test.describe('Expense logging', () => {
     if (result !== null) expect(result.after).toBe(result.before);
   });
 
-  test('toggleExpenseSections — shows meals section for meals category', async () => {
+  test('toggleExpenseSections, shows meals section for meals category', async () => {
     await page.evaluate(() => {
       const catEl = document.getElementById('em-cat');
       if (catEl) { catEl.value = 'meals'; catEl.dispatchEvent(new Event('change', { bubbles: true })); }
@@ -875,7 +875,7 @@ test.describe('Expense logging', () => {
     if (visible !== null) expect(visible).toBe(true);
   });
 
-  test('closeExpenseFlow — removes modal', async () => {
+  test('closeExpenseFlow: removes modal', async () => {
     await page.evaluate(() => {
       if (typeof closeExpenseFlow === 'function') try { closeExpenseFlow(); } catch(e) {}
     });
@@ -917,7 +917,7 @@ test.describe('Maintenance contracts lifecycle', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('openNewContractModal — renders modal form', async () => {
+  test('openNewContractModal: renders modal form', async () => {
     const result = await page.evaluate(([cid]) => {
       if (typeof openNewContractModal !== 'function') return null;
       document.getElementById('_ct-modal-ov')?.remove();
@@ -937,7 +937,7 @@ test.describe('Maintenance contracts lifecycle', () => {
     }
   });
 
-  test('_ctSaveNew — saves contract and adds to contracts array', async () => {
+  test('_ctSaveNew: saves contract and adds to contracts array', async () => {
     const result = await page.evaluate(([cid]) => {
       if (typeof _ctSaveNew !== 'function' || typeof contracts === 'undefined') return null;
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
@@ -965,7 +965,7 @@ test.describe('Maintenance contracts lifecycle', () => {
     }
   });
 
-  test('logContractVisit — adds invoice and updates nextDate', async () => {
+  test('logContractVisit: adds invoice and updates nextDate', async () => {
     const result = await page.evaluate(([cid]) => {
       if (typeof logContractVisit !== 'function' || typeof contracts === 'undefined') return null;
       const ct = contracts.find(c => c.clientId === cid);
@@ -986,7 +986,7 @@ test.describe('Maintenance contracts lifecycle', () => {
     }
   });
 
-  test('markCtInvoicePaid — marks invoice as paid', async () => {
+  test('markCtInvoicePaid: marks invoice as paid', async () => {
     const result = await page.evaluate(([cid]) => {
       if (typeof markCtInvoicePaid !== 'function' || typeof contracts === 'undefined') return null;
       const ct = contracts.find(c => c.clientId === cid);
@@ -1004,7 +1004,7 @@ test.describe('Maintenance contracts lifecycle', () => {
     }
   });
 
-  test('renderContractsDash — renders without errors', async () => {
+  test('renderContractsDash: renders without errors', async () => {
     await page.evaluate(() => {
       if (typeof renderContractsDash === 'function') try { renderContractsDash(); } catch(e) {}
     });
@@ -1020,7 +1020,7 @@ test.describe('Maintenance contracts lifecycle', () => {
 //  CLIENT LIST, STAGES & HUB PAGE
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Client list — render, filter, stage, hub page', () => {
+test.describe('Client list, render, filter, stage, hub page', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -1056,7 +1056,7 @@ test.describe('Client list — render, filter, stage, hub page', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderClientList — renders without errors', async () => {
+  test('renderClientList: renders without errors', async () => {
     await page.evaluate(() => { if (typeof goPg === 'function') goPg('pg-clients'); });
     await page.waitForTimeout(500);
     const el = await page.evaluate(() => {
@@ -1066,7 +1066,7 @@ test.describe('Client list — render, filter, stage, hub page', () => {
     assertNoErrors(page, 'renderClientList');
   });
 
-  test('getClientStage — returns stage object with label and color', async () => {
+  test('getClientStage: returns stage object with label and color', async () => {
     const results = await page.evaluate(() => {
       if (typeof getClientStage !== 'function') return null;
       return [777040, 777041, 777042].map(cid => {
@@ -1086,7 +1086,7 @@ test.describe('Client list — render, filter, stage, hub page', () => {
     }
   });
 
-  test('setCF — all filter values cycle without crashing', async () => {
+  test('setCF: all filter values cycle without crashing', async () => {
     for (const filter of ['all', 'won', 'active', 'collect', 'closed']) {
       await page.evaluate(f => {
         const btn = document.getElementById('cft-' + f) || document.querySelector('[data-cf="' + f + '"]');
@@ -1097,7 +1097,7 @@ test.describe('Client list — render, filter, stage, hub page', () => {
     assertNoErrors(page, 'setCF filter');
   });
 
-  test('renderClientHubPage — renders hub directory', async () => {
+  test('renderClientHubPage: renders hub directory', async () => {
     await page.evaluate(() => {
       if (typeof goPg === 'function') goPg('pg-client-hub');
     });
@@ -1115,10 +1115,10 @@ test.describe('Client list — render, filter, stage, hub page', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PROPOSALS — SEND LINK, CANCEL, _buildClientHubSnapshot, renderGallery
+//  PROPOSALS: SEND LINK, CANCEL, _buildClientHubSnapshot, renderGallery
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Proposals — send link, hub snapshot, gallery', () => {
+test.describe('Proposals: send link, hub snapshot, gallery', () => {
   const PROP_BID    = 810050;
   const PROP_CLIENT = 777050;
   let page;
@@ -1148,7 +1148,7 @@ test.describe('Proposals — send link, hub snapshot, gallery', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_buildClientHubSnapshot — returns valid hub object', async () => {
+  test('_buildClientHubSnapshot, returns valid hub object', async () => {
     const result = await page.evaluate(([cid]) => {
       if (typeof _buildClientHubSnapshot !== 'function') return null;
       try {
@@ -1172,7 +1172,7 @@ test.describe('Proposals — send link, hub snapshot, gallery', () => {
 
   test('trust honesty gate: "Licensed & Insured" only renders for numbers actually on file', async () => {
     // The client-facing "Licensed & Insured" line must never be an unbacked claim.
-    // S.blic DEFAULTS to the literal string "Licensed & Insured" — that default
+    // S.blic DEFAULTS to the literal string "Licensed & Insured", that default
     // must NOT produce a badge. Only a real license number and/or a real insurance
     // policy number does, and the wording matches exactly what's backed.
     const r = await page.evaluate((cid) => {
@@ -1233,7 +1233,7 @@ test.describe('Proposals — send link, hub snapshot, gallery', () => {
     expect(r.sinceWins).toBe(5);
   });
 
-  test('renderGallery — renders gallery page without errors', async () => {
+  test('renderGallery: renders gallery page without errors', async () => {
     await page.evaluate(() => {
       if (typeof goPg === 'function') goPg('pg-gallery');
     });
@@ -1244,7 +1244,7 @@ test.describe('Proposals — send link, hub snapshot, gallery', () => {
     assertNoErrors(page, 'renderGallery');
   });
 
-  test('setGalleryFilter — cycles all filter values', async () => {
+  test('setGalleryFilter: cycles all filter values', async () => {
     for (const f of ['all', 'before', 'after', 'progress']) {
       await page.evaluate(filter => {
         const btn = document.querySelector('[data-gf="' + filter + '"]') || null;
@@ -1255,10 +1255,10 @@ test.describe('Proposals — send link, hub snapshot, gallery', () => {
     assertNoErrors(page, 'setGalleryFilter');
   });
 
-  test('cancelProposalLink — shows confirm dialog and removes signingToken on confirm', async () => {
+  test('cancelProposalLink: shows confirm dialog and removes signingToken on confirm', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof cancelProposalLink !== 'function') return null;
-      // cancelProposalLink calls zConfirm — stub it to auto-confirm
+      // cancelProposalLink calls zConfirm, stub it to auto-confirm
       const _origZConfirm = window.zConfirm;
       const _origSave = window.saveAll; const _origRender = window.renderDash;
       window.zConfirm = (msg, cb) => { if (typeof cb === 'function') cb(); };
@@ -1282,10 +1282,10 @@ test.describe('Proposals — send link, hub snapshot, gallery', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  DASHBOARD COLLECTIONS — renderDashCollect, markFollowupSent, getNextCollAction
+//  DASHBOARD COLLECTIONS, renderDashCollect, markFollowupSent, getNextCollAction
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Dashboard collections — collect panel, followup, lien pipeline', () => {
+test.describe('Dashboard collections, collect panel, followup, lien pipeline', () => {
   const COLL_BID    = 810060;
   const COLL_CLIENT = 777060;
   let page;
@@ -1319,7 +1319,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('getNextCollAction — returns correct action for each stage', async () => {
+  test('getNextCollAction: returns correct action for each stage', async () => {
     const result = await page.evaluate(() => {
       if (typeof getNextCollAction !== 'function') return null;
       return {
@@ -1338,7 +1338,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     }
   });
 
-  test('renderDashCollect — renders collection items for unpaid won bids', async () => {
+  test('renderDashCollect: renders collection items for unpaid won bids', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderDashCollect !== 'function') return null;
       try { renderDashCollect(); } catch(e) { return { error: e.message }; }
@@ -1354,7 +1354,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
   // Dashboard setup to-do (owner 2026-07-14): a self-dismissing checklist pinned
   // to the top of the dashboard; first item = add a vehicle, which also ungrays
   // the Drive quick-action (no mileage logging without a vehicle on record).
-  test('_renderDashSetupTodo — fresh account: shows the full checklist and grays the Drive button', async () => {
+  test('_renderDashSetupTodo: fresh account: shows the full checklist and grays the Drive button', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
@@ -1391,7 +1391,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
   });
 
-  test('_setupTeamChooser — offers W-2 / 1099 / no-team, and "no team" clears the item', async () => {
+  test('_setupTeamChooser: offers W-2 / 1099 / no-team, and "no team" clears the item', async () => {
     const r = await page.evaluate(() => {
       if (typeof _setupTeamChooser !== 'function' || typeof _skipSetupTodo !== 'function') return { skip: true };
       const _savedSkip = S.setupSkipped, _origSave = window.saveAll;
@@ -1419,7 +1419,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     expect(r.teamSkipped, '"I don\'t have a team" clears the crew item').toBe(true);
   });
 
-  test('_renderDashSetupTodo — every item done/skipped: shows a clean done state, then retires on dismiss', async () => {
+  test('_renderDashSetupTodo: every item done/skipped: shows a clean done state, then retires on dismiss', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
@@ -1447,7 +1447,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     expect(r.hiddenAfterDismiss, 'card retires for good once dismissed').toBe(true);
   });
 
-  test('_skipSetupTodo — skipping an item removes it from the checklist', async () => {
+  test('_skipSetupTodo: skipping an item removes it from the checklist', async () => {
     const r = await page.evaluate(() => {
       if (typeof _skipSetupTodo !== 'function') return { skip: true };
       const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _origSave = window.saveAll;
@@ -1469,7 +1469,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     expect(r.logoGone, 'skipped item is gone').toBe(true);
   });
 
-  test('quickAction("drive") — no vehicle: guarded, does not open the drive modal', async () => {
+  test('quickAction("drive"): no vehicle: guarded, does not open the drive modal', async () => {
     const r = await page.evaluate(() => {
       if (typeof quickAction !== 'function') return { skip: true };
       const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh;
@@ -1489,7 +1489,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     expect(r.addOpened, 'guard routes to add-vehicle instead').toBe(true);
   });
 
-  test('markFollowupSent — increments followupStage and sets last_followup_date', async () => {
+  test('markFollowupSent: increments followupStage and sets last_followup_date', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof markFollowupSent !== 'function' || typeof bids === 'undefined') return null;
       const bid = bids.find(b => b.id === bidId);
@@ -1512,7 +1512,7 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
     }
   });
 
-  test('markFollowupSent — increments numeric followupStage', async () => {
+  test('markFollowupSent: increments numeric followupStage', async () => {
     // markFollowupSent uses numeric stages: (followupStage || 1) + 1
     // It is a separate system from the string-based getNextCollAction/getBidCollStage
     const result = await page.evaluate(([bidId]) => {
@@ -1535,10 +1535,10 @@ test.describe('Dashboard collections — collect panel, followup, lien pipeline'
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PRINT KANSAS LIEN — HTML DOCUMENT STRUCTURE
+//  PRINT KANSAS LIEN, HTML DOCUMENT STRUCTURE
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('printKansasLien — document structure', () => {
+test.describe('printKansasLien: document structure', () => {
   const LIEN_PRINT_BID = 810070;
   let page;
 
@@ -1578,7 +1578,7 @@ test.describe('printKansasLien — document structure', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('printKansasLien — generates HTML with required sections', async () => {
+  test('printKansasLien: generates HTML with required sections', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof printKansasLien !== 'function') return null;
       let capturedHtml = null;
@@ -1615,9 +1615,9 @@ test.describe('printKansasLien — document structure', () => {
     }
   });
 
-  test('printKansasLien — document is self-contained: native print + Back button, no parent-scope tdPrint', async () => {
+  test('printKansasLien: document is self-contained: native print + Back button, no parent-scope tdPrint', async () => {
     // The doc opens in a window.open() tab where the app's tdPrint() does NOT exist,
-    // so the Print button MUST call the native window.print() defined inline — the old
+    // so the Print button MUST call the native window.print() defined inline, the old
     // onclick="tdPrint()" threw silently in that scope (the "print does nothing" bug).
     const result = await page.evaluate(([bidId]) => {
       if (typeof printKansasLien !== 'function') return null;
@@ -1657,7 +1657,7 @@ test.describe('printKansasLien — document structure', () => {
     }
   });
 
-  test('printKansasLienRelease — generates a recordable release doc (self-contained print/back)', async () => {
+  test('printKansasLienRelease, generates a recordable release doc (self-contained print/back)', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof printKansasLienRelease !== 'function') return { noFn: true };
       let html = null;
@@ -1687,7 +1687,7 @@ test.describe('printKansasLien — document structure', () => {
     }
   });
 
-  test('printKansasLien — shows zAlert if window.open blocked', async () => {
+  test('printKansasLien: shows zAlert if window.open blocked', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof printKansasLien !== 'function') return null;
       let alerted = false;
@@ -1704,10 +1704,10 @@ test.describe('printKansasLien — document structure', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  INTAKE.HTML — LEAD CAPTURE FORM
+//  INTAKE.HTML: LEAD CAPTURE FORM
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('intake.html — lead capture form', () => {
+test.describe('intake.html: lead capture form', () => {
   let page;
   const FAKE_ACCOUNT_ID = 'acct-e2e-0001';
   let insertCalled = false;
@@ -1730,7 +1730,7 @@ test.describe('intake.html — lead capture form', () => {
         return route.fulfill({ status: 200, contentType: 'application/javascript', body: _supabaseShimIntake() });
       }
 
-      // Fonts — text/css required or WebKit strict mode rejects the stylesheet
+      // Fonts: text/css required or WebKit strict mode rejects the stylesheet
       if (url.includes('fonts.googleapis') || url.includes('fonts.gstatic')) {
         return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
       }
@@ -1793,12 +1793,12 @@ test.describe('intake.html — lead capture form', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('intake.html — page loads and shows form or confirmation', async () => {
+  test('intake.html: page loads and shows form or confirmation', async () => {
     const bodyLen = await page.evaluate(() => document.body.innerHTML.length);
     expect(bodyLen).toBeGreaterThan(200);
   });
 
-  test('intake.html — form fields exist', async () => {
+  test('intake.html: form fields exist', async () => {
     const result = await page.evaluate(() => ({
       name:   !!document.getElementById('f-name'),
       phone:  !!document.getElementById('f-phone'),
@@ -1809,7 +1809,7 @@ test.describe('intake.html — lead capture form', () => {
     expect(result.name || result.phone || result.street).toBe(true);
   });
 
-  test('intake.html — selTime sets call time', async () => {
+  test('intake.html: selTime sets call time', async () => {
     const result = await page.evaluate(() => {
       if (typeof selTime !== 'function') return null;
       window._callTime = null;
@@ -1820,8 +1820,8 @@ test.describe('intake.html — lead capture form', () => {
     if (result !== null) expect(result).toBe('Morning');
   });
 
-  test('intake.html — submitForm validates required fields', async () => {
-    // Leave form empty and submit — should NOT call insert
+  test('intake.html: submitForm validates required fields', async () => {
+    // Leave form empty and submit, should NOT call insert
     insertCalled = false;
     await page.evaluate(async () => {
       // Clear all fields
@@ -1840,7 +1840,7 @@ test.describe('intake.html — lead capture form', () => {
     assertNoErrors(page, 'intake.html submitForm validation');
   });
 
-  test('intake.html — submitForm with valid data calls inbound_leads insert', async () => {
+  test('intake.html: submitForm with valid data calls inbound_leads insert', async () => {
     insertCalled = false;
     insertPayload = null;
 
@@ -1873,7 +1873,7 @@ test.describe('intake.html — lead capture form', () => {
     }
   });
 
-  test('intake.html — zero console errors on load', async () => {
+  test('intake.html: zero console errors on load', async () => {
     assertNoErrors(page, 'intake.html');
   });
 });
@@ -1909,7 +1909,7 @@ test.describe('Mileage trip logging', () => {
   test.afterAll(async () => { await page.context().close(); });
 
   test('navigate to mileage page without errors', async () => {
-    // Mileage is the 'mileage' tab inside pg-tracker (Books page) — no separate pg-mileage
+    // Mileage is the 'mileage' tab inside pg-tracker (Books page), no separate pg-mileage
     await page.evaluate(() => { if (typeof goPg === 'function') goPg('pg-tracker'); });
     await page.waitForTimeout(500);
     const active = await page.evaluate(() => {
@@ -1920,7 +1920,7 @@ test.describe('Mileage trip logging', () => {
     assertNoErrors(page, 'mileage page load');
   });
 
-  test('openDriveModal / openLogTripModal — shows trip entry modal', async () => {
+  test('openDriveModal / openLogTripModal: shows trip entry modal', async () => {
     const result = await page.evaluate(() => {
       const fn = typeof openDriveModal === 'function' ? openDriveModal
                : typeof openLogTripModal === 'function' ? openLogTripModal : null;
@@ -1932,12 +1932,12 @@ test.describe('Mileage trip logging', () => {
       return { shown: !!modal };
     });
     if (result && !result.error && result.shown !== null) {
-      // best-effort — trip modal may vary by implementation
+      // best-effort: trip modal may vary by implementation
       expect(result.shown || true).toBe(true);
     }
   });
 
-  test('saveEndDriveModal — saves mileage entry', async () => {
+  test('saveEndDriveModal: saves mileage entry', async () => {
     const result = await page.evaluate(() => {
       if (typeof saveEndDriveModal !== 'function' || typeof mileage === 'undefined') return null;
       // Set up a mock GPS drive state
@@ -1980,10 +1980,10 @@ test.describe('Mileage trip logging', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  _addrAutoFull — SHARED SINGLE-FIELD ADDRESS AUTOCOMPLETE (8 FIELDS)
+//  _addrAutoFull: SHARED SINGLE-FIELD ADDRESS AUTOCOMPLETE (8 FIELDS)
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('_addrAutoFull — shared address autocomplete utility', () => {
+test.describe('_addrAutoFull: shared address autocomplete utility', () => {
   let page;
   const PHOTON_MOCK = {
     features: [
@@ -2012,18 +2012,18 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
   });
 
   // ── _agSearch and _agPick have been removed (dead code) ──────────────────
-  test('_agSearch is removed — not defined', async () => {
+  test('_agSearch is removed, not defined', async () => {
     const exists = await page.evaluate(() => typeof _agSearch === 'function');
     expect(exists).toBe(false);
   });
 
-  test('_agPick is removed — not defined', async () => {
+  test('_agPick is removed, not defined', async () => {
     const exists = await page.evaluate(() => typeof _agPick === 'function');
     expect(exists).toBe(false);
   });
 
-  // ── Field: e-caddr (paint estimate property address) — removed with pg-est ──
-  test('e-caddr — removed along with the paint estimator page', async () => {
+  // ── Field: e-caddr (paint estimate property address), removed with pg-est ──
+  test('e-caddr: removed along with the paint estimator page', async () => {
     const result = await page.evaluate(() => ({
       pgEst: !!document.getElementById('pg-est'),
       eCaddr: !!document.getElementById('e-caddr'),
@@ -2052,7 +2052,7 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
       const afterFirst = bids.filter(mine).length;
 
       // Simulate save-and-exit then reopen: session vars are gone, the localStorage
-      // draft (with the stable lastBidId) survives — AND the client gets renamed,
+      // draft (with the stable lastBidId) survives, AND the client gets renamed,
       // which defeats the old name-match recovery. Only the id link can dedup.
       lastCreatedBidId = null; editingBidId = null;
       nameEl.value = CN2;
@@ -2108,7 +2108,7 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
     expect(result.autocomplete).toBe('off');
   });
 
-  test('set-baddr — typing shows suggestions and clicking one fills the split fields', async () => {
+  test('set-baddr: typing shows suggestions and clicking one fills the split fields', async () => {
     await goPg(page, 'pg-settings');
     await page.waitForTimeout(400);
     // Stub the geocoder so the REAL bound dropdown renders a known suggestion,
@@ -2161,7 +2161,7 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
   });
 
   // ── Modal field: _addr-gate-inp (address gate modal) ────────────────────
-  test('_addr-gate-inp modal — _addrAutoFull bound on open, _agSearch removed', async () => {
+  test('_addr-gate-inp modal, _addrAutoFull bound on open, _agSearch removed', async () => {
     const result = await page.evaluate(() => {
       // Verify _agSearch is gone
       if (typeof _agSearch === 'function') return { agSearchExists: true };
@@ -2187,7 +2187,7 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
   });
 
   // ── Modal field: _new-prop-addr ──────────────────────────────────────────
-  test('_new-prop-addr modal — _addrAutoFull bound on open', async () => {
+  test('_new-prop-addr modal, _addrAutoFull bound on open', async () => {
     const result = await page.evaluate(() => {
       const fakeClient = { id: 999992, name: 'Prop Test', phone: '3165550002', addr: '1 Old St' };
       if (typeof clients !== 'undefined') {
@@ -2212,7 +2212,7 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
   });
 
   // ── Modal field: _aa-addr (add another address) ──────────────────────────
-  test('_aa-addr modal — _addrAutoFull bound on open', async () => {
+  test('_aa-addr modal, _addrAutoFull bound on open', async () => {
     const result = await page.evaluate(() => {
       if (typeof openAddAddressModal === 'function') {
         try { openAddAddressModal(); } catch(e) {}
@@ -2230,7 +2230,7 @@ test.describe('_addrAutoFull — shared address autocomplete utility', () => {
     assertNoErrors(page, '_aa-addr modal');
   });
 
-  test('no console errors — _addrAutoFull across all fields', async () => {
+  test('no console errors, _addrAutoFull across all fields', async () => {
     assertNoErrors(page, '_addrAutoFull all fields');
   });
 });
@@ -2300,7 +2300,7 @@ test.describe('Employee dispatch and daily view', () => {
 
     if (!result.fnExists) {
       // Function may not be exposed; skip gracefully
-      assertNoErrors(page, 'invite employee modal — function check');
+      assertNoErrors(page, 'invite employee modal, function check');
       return;
     }
 
@@ -2402,7 +2402,7 @@ test.describe('Employee dispatch and daily view', () => {
     });
 
     if (!result.fnExists) {
-      assertNoErrors(page, 'vehicle picker — function check');
+      assertNoErrors(page, 'vehicle picker, function check');
       return;
     }
     expect(result.hasPicker).toBe(true);
@@ -2416,7 +2416,7 @@ test.describe('Employee dispatch and daily view', () => {
       _isEmployee = true;
       _employeeRecord = { id: 'test-emp-1', name: 'Test Worker', role: 'worker' };
       // nb-taxes is gated by applyPermissions()'s canSeeTaxes() check, not
-      // _applyEmployeeNavGating() directly — call the real entry point so both are exercised.
+      // _applyEmployeeNavGating() directly, call the real entry point so both are exercised.
       if (typeof applyPermissions === 'function') applyPermissions();
       const hidden = ['nb-tracker','nb-taxes','nb-settings','nb-team','nb-leads']
         .map(id => document.getElementById(id))
@@ -2434,7 +2434,7 @@ test.describe('Employee dispatch and daily view', () => {
   test('switching from an employee to an owner in the same tab RESTORES Settings/Team/Tracker nav (regression)', async () => {
     // Root cause of the live bug: nav gating used to only ever HIDE contractor-only nav
     // for employees, with nothing to un-hide it if a later account in the same tab
-    // (no page reload) turned out to be a real owner — the earlier employee session's
+    // (no page reload) turned out to be a real owner, the earlier employee session's
     // display:none just stuck around forever, making Settings vanish for the owner too.
     const result = await page.evaluate(() => {
       const savedEmployee = _isEmployee, savedRec = _employeeRecord;
@@ -2448,7 +2448,7 @@ test.describe('Employee dispatch and daily view', () => {
       _employeeRecord = { id: 'emp-switch-1', name: 'Worker A', role: 'tech' };
       applyPermissions();
       const hiddenAfterEmployee = ids.every(id => document.getElementById(id).style.display === 'none');
-      // 2. A DIFFERENT, real owner account signs in — in the live app this is exactly
+      // 2. A DIFFERENT, real owner account signs in, in the live app this is exactly
       // what loadAccountData()'s u.account_id branch does: reset _isEmployee then call
       // applyPermissions() again, with NO page reload in between.
       _isEmployee = false;
@@ -2483,7 +2483,7 @@ test.describe('Employee dispatch and daily view', () => {
       return { fnExists: typeof _applyEmployeeNavGating === 'function', employeeOnclickIsSignOutMenu, employeeCursor, ownerCursor, ownerOnclickIsFunction };
     });
     if (!result.fnExists) return;
-    // Employees get a clickable avatar too now (routes to sign-out menu, not Settings) —
+    // Employees get a clickable avatar too now (routes to sign-out menu, not Settings),
     // it must never be nulled, or a real employee has no way to sign out at all.
     expect(result.employeeOnclickIsSignOutMenu).toBe(true);
     expect(result.employeeCursor).toBe('pointer');
@@ -2511,7 +2511,7 @@ test.describe('Employee dispatch and daily view', () => {
     expect(result.callsSupaSignOut).toBe(true);
   });
 
-  test('_employeeSignOutMenu — no throw with null _employeeRecord', async () => {
+  test('_employeeSignOutMenu: no throw with null _employeeRecord', async () => {
     const result = await page.evaluate(() => {
       if (typeof _employeeSignOutMenu !== 'function') return { fnExists: false };
       const savedRec = _employeeRecord;
@@ -2784,14 +2784,14 @@ test.describe('Employee role/classification split and leads gating', () => {
   });
 
   // NOTE: a W-2/1099 employment-type field was briefly added to THIS modal and
-  // then removed — the "Add team member" flow sends an employment agreement +
+  // then removed, the "Add team member" flow sends an employment agreement +
   // app-access invite, which only ever applies to W-2 crew who clock in via
   // TradeDesk. 1099 subcontractors already have their own dedicated flow
-  // (S.subcontractors / _subModalHTML / openAddSubModal — name, trade, rate,
+  // (S.subcontractors / _subModalHTML / openAddSubModal: name, trade, rate,
   // EIN/SSN, W-9, 1099-NEC filing info) that never touches app access or
   // clock-in at all. Everyone reachable through _employeeModalHTML is W-2 by
   // definition, so no classification toggle belongs here.
-  test('_employeeModalHTML does NOT render a W-2/1099 field — that belongs to the separate subcontractor flow', async () => {
+  test('_employeeModalHTML does NOT render a W-2/1099 field, that belongs to the separate subcontractor flow', async () => {
     const result = await page.evaluate(() => {
       if (typeof _employeeModalHTML !== 'function') return { fnExists: false };
       const html = _employeeModalHTML(null, null);
@@ -2916,10 +2916,10 @@ test.describe('Employee role/classification split and leads gating', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SECURITY FIXES — XSS ESCAPING + CRYPTO TOKEN
+//  SECURITY FIXES, XSS ESCAPING + CRYPTO TOKEN
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Security fixes — XSS escaping and crypto token', () => {
+test.describe('Security fixes, XSS escaping and crypto token', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -2984,7 +2984,7 @@ test.describe('Security fixes — XSS escaping and crypto token', () => {
   });
 
   test('cancel-refund edge function no longer exists in the codebase', async () => {
-    // This function was dead code with an IDOR — verifying it was removed
+    // This function was dead code with an IDOR, verifying it was removed
     const result = await page.evaluate(() => {
       // The function should not be callable from the client at all
       return { confirmed: true };
@@ -3009,7 +3009,7 @@ test.describe('Security fixes — XSS escaping and crypto token', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PAINT ESTIMATE — SW COLOR PICKER (ESTIMATE BUILDER)
+//  PAINT ESTIMATE, SW COLOR PICKER (ESTIMATE BUILDER)
 // ════════════════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -3146,7 +3146,7 @@ test.describe('Crew tracking + payroll + dispatch routing + job profit', () => {
     expect(r.jobProfit).toBe(true);
   });
 
-  test('Settings crew-tracking inputs exist and load from S (no toggle — always on)', async () => {
+  test('Settings crew-tracking inputs exist and load from S (no toggle, always on)', async () => {
     const r = await page.evaluate(() => {
       if (typeof loadSettingsForm !== 'function') return { fnExists: false };
       S.trackStart = '06:30'; S.trackEnd = '17:15';
@@ -3157,8 +3157,8 @@ test.describe('Crew tracking + payroll + dispatch routing + job profit', () => {
       const te = document.getElementById('set-track-end');
       return {
         fnExists: true,
-        toggleGone: !tt,                 // checkbox removed — tracking is mandatory
-        fenceInputGone: !gf,             // geofence radius hardcoded — input removed
+        toggleGone: !tt,                 // checkbox removed, tracking is mandatory
+        fenceInputGone: !gf,             // geofence radius hardcoded, input removed
         teamTracking: S.teamTracking,    // forced on
         exist: !!(ts && te),
         start: ts && ts.value, end: te && te.value,
@@ -3341,7 +3341,7 @@ test.describe('Scope-of-work chips', () => {
   test('tm-scope-wrap and byo-scope-wrap elements exist in DOM', async () => {
     // Both wrap divs are now rendered into tm-scopecard-wrap/byo-scopecard-wrap by
     // _geiRenderScopeCard (called from _tmShowPage/_byoShowPage) rather than existing
-    // statically in the HTML — render them first, same as a real page visit would.
+    // statically in the HTML, render them first, same as a real page visit would.
     const r = await page.evaluate(() => {
       if (typeof _geiRenderScopeCard === 'function') { _geiRenderScopeCard('tm'); _geiRenderScopeCard('byo'); }
       return {
@@ -3365,7 +3365,7 @@ test.describe('Scope-of-work chips', () => {
       if (!wrap) return null;
       return {
         text: wrap.textContent,
-        // One remove control (×) per selected item — no other buttons in the list.
+        // One remove control (×) per selected item, no other buttons in the list.
         removeCount: wrap.querySelectorAll('button').length,
         // Old design wrapped each chip in a rounded pill; line items must not.
         isPills: wrap.innerHTML.includes('border-radius:20px'),
@@ -3402,7 +3402,7 @@ test.describe('Scope-of-work chips', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  WORKFORCE TIME INTELLIGENCE — shop time, drive time, overtime, underage
+//  WORKFORCE TIME INTELLIGENCE, shop time, drive time, overtime, underage
 // ════════════════════════════════════════════════════════════════════════════
 
 test.describe('Workforce time intelligence', () => {
@@ -3497,7 +3497,7 @@ test.describe('Workforce time intelligence', () => {
     if (r && !r.error) expect(r.shown).toBe(true);
   });
 
-  // Crew Cost now folds in manually-clocked time too — same fix as Job Profit
+  // Crew Cost now folds in manually-clocked time too, same fix as Job Profit
   // above, verified independently since it aggregates differently (by
   // employee, not by bid).
   test('_crewCostRender counts manual timeEntries even with zero GPS entries', async () => {
@@ -3520,7 +3520,7 @@ test.describe('Workforce time intelligence', () => {
       S.ownerPayType = orig.ownerPayType; S.ownerPayRate = orig.ownerPayRate;
       return { html };
     });
-    // 'No tracked time today yet' is the empty-state string — its absence proves
+    // 'No tracked time today yet' is the empty-state string, its absence proves
     // the manual entry (mocked GPS entries are all empty) registered as cost.
     if (r && !r.error) expect(r.html).not.toContain('No tracked time today');
   });
@@ -3532,7 +3532,7 @@ test.describe('Workforce time intelligence', () => {
   });
 
   // ── Job Profit now folds in manually-clocked time (js/jobs.js clockOut →
-  // timeEntries), not just GPS-tracked job_time_entries — a walk-up job clocked
+  // timeEntries), not just GPS-tracked job_time_entries, a walk-up job clocked
   // via the nearby-banner Clock in button used to be invisible here entirely.
   test('_openJobProfit counts manual timeEntries as tracked labor even with zero GPS entries', async () => {
     const r = await page.evaluate(async () => {
@@ -3562,7 +3562,7 @@ test.describe('Workforce time intelligence', () => {
     });
     if (r && !r.error) {
       expect(r.html).toContain('JobProfit Manual Test');
-      // 120 manual minutes = 2.0h tracked — proves the manual entry, not just
+      // 120 manual minutes = 2.0h tracked, proves the manual entry, not just
       // GPS job_time_entries (mocked empty above), fed the labor calculation.
       expect(r.html).toMatch(/2\.0h/);
     }
@@ -3702,7 +3702,7 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
   test('_saveUserPrefs writes a per-uid local cache, not the shared blob', async () => {
     const r = await page.evaluate(() => {
       // Stub a signed-in user so the cache key resolves. _supaUser is a module-level
-      // `let` (cloud.js), so a bare assignment rebinds it — `window._supaUser =` would
+      // `let` (cloud.js), so a bare assignment rebinds it, `window._supaUser =` would
       // create an unrelated window property that _userLayoutCacheKey() never reads.
       const prevUser = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
       _supaUser = { id: 'test-uid-123' };
@@ -3732,7 +3732,7 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
   test('dash KPI tiles have data-kpi attributes', async () => {
     const r = await page.evaluate(() => {
       const cont = document.getElementById('dash-mets-inner');
-      if (!cont) return null; // employee view — no KPI grid
+      if (!cont) return null; // employee view, no KPI grid
       return [...cont.querySelectorAll('.met[data-kpi]')].map(el => el.dataset.kpi);
     });
     if (!r) return; // contractor KPI grid not present
@@ -3763,7 +3763,7 @@ test.describe('Drag-to-reorder nav + dashboard', () => {
   });
 });
 
-test.describe('Contracts (agreements) — create, list, e-sign store', () => {
+test.describe('Contracts (agreements): create, list, e-sign store', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -3813,7 +3813,7 @@ test.describe('Contracts (agreements) — create, list, e-sign store', () => {
         hasBody: !!document.getElementById('_ag-body'),
       };
     });
-    if (r === null) return; // feature not loaded — skip gracefully
+    if (r === null) return; // feature not loaded, skip gracefully
     expect(r.error).toBeUndefined();
     expect(r.present).toBe(true);
     expect(r.hasParty).toBe(true);
@@ -3856,7 +3856,7 @@ test.describe('Contracts (agreements) — create, list, e-sign store', () => {
       document.getElementById('_ag-title').value = 'Profit-Share Deal';
       // Ensure terms present
       const ta = document.getElementById('_ag-body');
-      if (!ta.value) ta.value = 'Test terms — 20% of net profit.';
+      if (!ta.value) ta.value = 'Test terms, 20% of net profit.';
       _agSave();
       const rec = agreements.find(a => a.party === 'Quincy Partner');
       // re-render list and check it shows up
@@ -3892,8 +3892,8 @@ test.describe('Contracts (agreements) — create, list, e-sign store', () => {
   });
 });
 
-// ── Scope of work — collapsed by default with bottom-sheet picker ─────────────
-test.describe('Scope of work — collapsed + sheet picker', () => {
+// ── Scope of work, collapsed by default with bottom-sheet picker ─────────────
+test.describe('Scope of work, collapsed + sheet picker', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -3994,7 +3994,7 @@ test.describe('Scope of work — collapsed + sheet picker', () => {
       // Tile should now show a checkmark in its _sc-ck element. Old behavior:
       // the checkmark was a literal '✓' text character. New behavior (this
       // session's icon-system migration): it's rendered via svgIcon('✓'), an
-      // inline <svg> — an SVG element contributes no text, so textContent is
+      // inline <svg>, an SVG element contributes no text, so textContent is
       // now empty even when the checkmark correctly renders. Assert on the
       // <svg> markup instead.
       const ck = tile ? tile.querySelector('._sc-ck') : null;
@@ -4124,10 +4124,10 @@ test.describe('Auto employment agreement on new employee invite', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CLIENT HUB UPLOAD — live-object stamping under mid-upload merges
+//  CLIENT HUB UPLOAD, live-object stamping under mid-upload merges
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('_uploadClientHub — stamps the LIVE client object', () => {
+test.describe('_uploadClientHub: stamps the LIVE client object', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -4140,10 +4140,10 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('boot hub sweep is PACED — never fires all clients concurrently', async () => {
+  test('boot hub sweep is PACED, never fires all clients concurrently', async () => {
     // The old boot sweep called _uploadClientHub for EVERY tokened client at once;
     // the daily finance-charge tick invalidates all content hashes together, so the
-    // first boot of the day burst O(clients) snapshot builds + storage writes — the
+    // first boot of the day burst O(clients) snapshot builds + storage writes, the
     // boot storm that times out cert runs and would hit any large real account.
     const r = await page.evaluate(async () => {
       const base = 886100;
@@ -4152,7 +4152,7 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
         clients.push({ id: base + i, name: 'Sweep C' + i, phone: '316555090' + i, clientToken: 'sweeptok' + i, clientHubKey: '' });
       }
       window._supaUser = window._supaUser || { id: 'sweep-user-1', email: 's@t.com' };
-      // Keep the queue to exactly our 6 — park any other tokened clients for the test.
+      // Keep the queue to exactly our 6, park any other tokened clients for the test.
       const parked = [];
       clients.forEach(c => { if ((c.id < base || c.id >= base + 6) && c.clientToken) { parked.push([c, c.clientToken]); c.clientToken = ''; } });
       const calls = [];
@@ -4164,7 +4164,7 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
         _startHubSweep();
         const atStart = calls.length;                       // nothing fires synchronously
         await new Promise(res => setTimeout(res, 800));
-        const early = calls.length;                          // ~2 ticks in — NOT all 6
+        const early = calls.length;                          // ~2 ticks in, NOT all 6
         await new Promise(res => setTimeout(res, 2200));
         return { atStart, early, total: calls.filter(c => c.cid >= base && c.cid < base + 6).length, spreadMs: calls.length > 1 ? calls[calls.length - 1].t - calls[0].t : 0, t0 };
       } finally {
@@ -4184,7 +4184,7 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
   test('hub key/token survive a merge that replaces the client object mid-upload', async () => {
     // A delta/realtime merge replaces row OBJECTS in `clients` by id. If that happens
     // while the storage upload is in flight, stamping the pre-await reference writes to
-    // a dead object — token and clientHubKey vanish and the uploaded hub is orphaned
+    // a dead object, token and clientHubKey vanish and the uploaded hub is orphaned
     // (the crew money-routing cert failure). The fix re-finds the live object.
     const r = await page.evaluate(async () => {
       const cid = 881001;
@@ -4199,7 +4199,7 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
         const p = _uploadClientHub(cid);            // runs up to the held upload await
         await new Promise(r2 => setTimeout(r2, 50));
         // Simulate the merge: same id, fresh object, WITHOUT the just-minted token
-        // (a peer's copy predates it) — exactly what a delta row replace produces.
+        // (a peer's copy predates it), exactly what a delta row replace produces.
         const idx = clients.findIndex(c => c.id === cid);
         const stale = JSON.parse(JSON.stringify(clients[idx]));
         stale.clientToken = ''; stale.clientHubKey = '';
@@ -4215,7 +4215,7 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
     assertNoErrors(page, 'hub live-object stamp');
   });
 
-  test('a successful hub upload sends a live-push broadcast — client hub refreshes in seconds, not up to 30s', async () => {
+  test('a successful hub upload sends a live-push broadcast, client hub refreshes in seconds, not up to 30s', async () => {
     // The client hub polls its storage snapshot every 30s (client.html _refreshHub).
     // _broadcastHubUpdate is the accelerator: a content-free nudge on a per-client
     // Realtime channel so a status change (payment logged, job marked done, a
@@ -4227,7 +4227,7 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
       window._supaUser = window._supaUser || { id: 'livepush-user-1', email: 'lp@t.com' };
       await _uploadClientHub(cid);
       // The tokened-client path uploads in the BACKGROUND by design ("file
-      // exists — return instantly, refresh in background"), so the broadcast
+      // exists: return instantly, refresh in background"), so the broadcast
       // lands a few async ticks after _uploadClientHub resolves. Poll briefly
       // instead of racing the microtask queue (which broke the moment doUpload
       // gained a legitimate extra await for the logo upload).
@@ -4245,10 +4245,10 @@ test.describe('_uploadClientHub — stamps the LIVE client object', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CLIENT HUB — live push channel (client.html side)
+//  CLIENT HUB, live push channel (client.html side)
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('client hub — subscribes to and reacts to the live-push channel', () => {
+test.describe('client hub, subscribes to and reacts to the live-push channel', () => {
   let page;
   const LIVE_PUSH_HUB = {
     clientId: 903, contractorUserId: FAKE_USER_ID, contractorName: 'Live Push Co', businessName: 'Live Push Co',
@@ -4269,7 +4269,7 @@ test.describe('client hub — subscribes to and reacts to the live-push channel'
 
   test('boot subscribes a hub-upd-<uid>-<clientId> channel for broadcast "updated"', async () => {
     // _startHubLiveChannel/_hubLiveChan are top-level `let`/`function` bindings in
-    // client.html's classic script — re-invokable from page.evaluate the same way
+    // client.html's classic script, re-invokable from page.evaluate the same way
     // the existing _uploadClientHub cert above manipulates index.html's _supa.
     const r = await page.evaluate((u) => {
       const handlers = {};
@@ -4292,7 +4292,7 @@ test.describe('client hub — subscribes to and reacts to the live-push channel'
     expect(r.found).toBe(true);
   });
 
-  test('firing the broadcast handler triggers an immediate hub refresh — not a 30s wait', async () => {
+  test('firing the broadcast handler triggers an immediate hub refresh, not a 30s wait', async () => {
     const r = await page.evaluate((u) => {
       const key = 'hub-upd-' + u + '-903';
       const cb = (window.__hubLiveHandlers || {})[key];
@@ -4314,10 +4314,10 @@ test.describe('client hub — subscribes to and reacts to the live-push channel'
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  PROGRESS PHOTOS — optional milestone label, threaded through to the snapshot
+//  PROGRESS PHOTOS, optional milestone label, threaded through to the snapshot
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('checkNewSignatures — client-picked decline reason lands on bid.lostReason', () => {
+test.describe('checkNewSignatures: client-picked decline reason lands on bid.lostReason', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -4330,7 +4330,7 @@ test.describe('checkNewSignatures — client-picked decline reason lands on bid.
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('a signed_proposals row with decline_reason populates bid.lostReason — same field the Declined tab already reads', async () => {
+  test('a signed_proposals row with decline_reason populates bid.lostReason: same field the Declined tab already reads', async () => {
     const r = await page.evaluate(async ({ bidId, uid }) => {
       window._supaUser = window._supaUser || { id: uid, email: 'z@t.com' };
       bids = bids.filter(b => b.id !== bidId);
@@ -4355,7 +4355,7 @@ test.describe('checkNewSignatures — client-picked decline reason lands on bid.
   });
 });
 
-test.describe('addJobPhoto — progress type carries an optional milestone caption', () => {
+test.describe('addJobPhoto: progress type carries an optional milestone caption', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -4381,7 +4381,7 @@ test.describe('addJobPhoto — progress type carries an optional milestone capti
       addJobPhoto(jobId, inp, 'progress', 'Rough-in complete');
       // FileReader.onload lands the LOCAL job.photos entry first; the GLOBAL
       // photos[] row lands later, after the (real, now-async) compress+upload
-      // chain — poll for that one too, not just the local copy landing.
+      // chain: poll for that one too, not just the local copy landing.
       // Bounded: a genuine regression (upload never resolves) fails fast with
       // a clear message instead of hanging until Playwright's test timeout.
       await new Promise((resolve, reject) => {
@@ -4409,7 +4409,7 @@ test.describe('addJobPhoto — progress type carries an optional milestone capti
     assertNoErrors(page, 'progress photo caption');
   });
 
-  test('caption is trimmed and capped at 60 chars — never bloats the hub snapshot', async () => {
+  test('caption is trimmed and capped at 60 chars, never bloats the hub snapshot', async () => {
     const r = await page.evaluate(async (jobId) => {
       jobs = jobs.filter(j => j.id !== jobId);
       jobs.push({ id: jobId, client_id: 886300, name: 'Progress Photo Job 2', status: 'active', photos: [] });
@@ -4434,7 +4434,7 @@ test.describe('addJobPhoto — progress type carries an optional milestone capti
     expect(r.caption.startsWith(' ')).toBe(false); // trimmed
   });
 
-  test('_buildClientHubSnapshot carries uploadedAt through to the nested job photo — the timeline needs it to sort/group', async () => {
+  test('_buildClientHubSnapshot carries uploadedAt through to the nested job photo, the timeline needs it to sort/group', async () => {
     const r = await page.evaluate((clientId) => {
       if (typeof _buildClientHubSnapshot !== 'function') return { skip: true };
       clients = clients.filter(c => c.id !== clientId);
@@ -4456,10 +4456,10 @@ test.describe('addJobPhoto — progress type carries an optional milestone capti
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CLIENT HUB — Project tab renders a milestone timeline for progress photos
+//  CLIENT HUB, Project tab renders a milestone timeline for progress photos
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('client hub — progress photos render as a dated milestone timeline', () => {
+test.describe('client hub, progress photos render as a dated milestone timeline', () => {
   let page;
   const TIMELINE_HUB = {
     clientId: 904, contractorUserId: FAKE_USER_ID, contractorName: 'Timeline Co', businessName: 'Timeline Co',
@@ -4506,7 +4506,7 @@ test.describe('client hub — progress photos render as a dated milestone timeli
     expect(r.length).toBe(2);
     expect(r[0].text).toBe('Demo day');
     expect(r[1].text).toBe('Framing complete');
-    // Demo day (day 2) must render before Framing complete (day 4) — chronological, not upload order.
+    // Demo day (day 2) must render before Framing complete (day 4), chronological, not upload order.
     expect(r[0].date).toContain('Day 2');
     expect(r[1].date).toContain('Day 4');
   });
@@ -4517,12 +4517,12 @@ test.describe('client hub — progress photos render as a dated milestone timeli
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  CLIENT HUB — empty "Daily updates" card hidden so a pending signature
+//  CLIENT HUB, empty "Daily updates" card hidden so a pending signature
 //  isn't pushed below a placeholder with nothing in it
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('client hub — Daily updates card hides when there is nothing to show', () => {
-  test('no active jobs — card is absent and "Awaiting your signature" is the first thing in the main column', async ({ page }) => {
+test.describe('client hub, Daily updates card hides when there is nothing to show', () => {
+  test('no active jobs, card is absent and "Awaiting your signature" is the first thing in the main column', async ({ page }) => {
     const hub = {
       clientId: 905, contractorUserId: FAKE_USER_ID, contractorName: 'Feed Co', businessName: 'Feed Co',
       clientName: 'Feed Client', clientAddr: '4 Feed Rd',
@@ -4540,7 +4540,7 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     assertNoErrors(page, 'empty daily updates card hidden');
   });
 
-  test('an active job — Daily updates card still renders with the job in it', async ({ page }) => {
+  test('an active job, Daily updates card still renders with the job in it', async ({ page }) => {
     const hub = {
       clientId: 906, contractorUserId: FAKE_USER_ID, contractorName: 'Feed Co', businessName: 'Feed Co',
       clientName: 'Feed Client 2', clientAddr: '5 Feed Rd',
@@ -4560,7 +4560,7 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
   test('elevated proposal cards: doc icon + proposal ref, borderless shadow, no status pill, long name never bleeds', async ({ page }) => {
     // Research-informed card redesign (PaintScout/DripJobs/QuoteIQ synthesis):
     // borderless shadow elevation, brand-tinted doc icon, proposal-# reference.
-    // Price stays OFF the card (loss-aversion). No per-card status pill — the
+    // Price stays OFF the card (loss-aversion). No per-card status pill, the
     // section header already says "Awaiting your signature", so a pill was
     // redundant and fought long estimate names for width. A long name must wrap
     // cleanly with no horizontal bleed.
@@ -4659,7 +4659,7 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
   test('topbar: placeholder notifications + account pill removed, only help remains', async ({ page }) => {
     // Owner removed the fake notifications panel and the non-functional account
     // pill (filler that also ate the business-name space). Only the help "?" stays.
-    // §7.1 — prove the old entry points are gone, not just that help works.
+    // §7.1: prove the old entry points are gone, not just that help works.
     const hub = {
       clientId: 911, contractorUserId: FAKE_USER_ID, contractorName: 'Notif Co', businessName: 'Notif Co',
       clientName: 'Notif Client', clientAddr: '9 Notif Rd', contractorPhone: '316-555-0120',
@@ -4696,9 +4696,9 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
 
   test('mobile contact strip: Schedule button deleted, Text/Call/Email escape the preview iframe via target="_top"', async ({ page }) => {
     // Two owner-reported bugs: (1) the strip's Schedule button was wired to
-    // openHelp() — tapping "Schedule" dumped the client into the FAQs; deleted.
+    // openHelp(): tapping "Schedule" dumped the client into the FAQs; deleted.
     // (2) sms:/tel:/mailto: taps died silently inside the in-app hub preview,
-    // which renders client.html in an iframe — subframes can't navigate to
+    // which renders client.html in an iframe, subframes can't navigate to
     // external protocols on iOS. target="_top" makes them open at top level
     // (harmless in a normal tab, where top === self).
     const hub = {
@@ -4723,12 +4723,12 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
         badTargets,
       };
     });
-    expect(r.scheduleCount).toBe(0);                       // §7.1 — old entry point is GONE
+    expect(r.scheduleCount).toBe(0);                       // §7.1: old entry point is GONE
     expect(r.stripLabels.join(' ')).toContain('Text');
     expect(r.smsHref).toContain('sms:3165550100');
     expect(r.badTargets).toBe(0);                          // every protocol link escapes the iframe
     // Sprucing pass (owner ask): dark TradeDesk-style tab bar, brand color on
-    // primary actions — never the old white strip / black-slab basis.
+    // primary actions, never the old white strip / black-slab basis.
     const chrome = await page.evaluate(() => {
       const nav = getComputedStyle(document.querySelector('.bottom-nav'));
       const denim = getComputedStyle(document.documentElement).getPropertyValue('--denim').trim();
@@ -4760,7 +4760,7 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     expect(hero.textTonal).not.toBe('rgba(0, 0, 0, 0)');     // Text is tonal-filled, not a thin outline
     expect(hero.pressEase).toContain('transform');           // press micro-interaction wired
     // Hero polish: NO badge when the contractor has no logo (owner: the generic
-    // letter monogram read as filler — a badge only renders for a real logo).
+    // letter monogram read as filler, a badge only renders for a real logo).
     // Phone renders as a tappable chip not dim text.
     const heroPolish = await page.evaluate(() => {
       const phone = document.querySelector('.hub-hero-phone');
@@ -4790,7 +4790,7 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
   });
 
   test('boot overlay shows client-facing loading copy', async ({ page }) => {
-    // Regression guard for the boot-overlay label — must read as addressed to the
+    // Regression guard for the boot-overlay label, must read as addressed to the
     // client ("Loading your client hub…"), not a generic unlabeled "Project Hub" tag.
     const hub = { clientId: 907, contractorUserId: FAKE_USER_ID, contractorName: 'Boot Co', businessName: 'Boot Co', clientName: 'Boot Client', bids: [], jobs: [], payments: [], messages: [], notifications: [], invoices: [], photos: [] };
     await page.addInitScript(h => { window.__mockHubData = h; }, hub);
@@ -4799,7 +4799,7 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
     const bootText = await page.locator('#boot-overlay').textContent();
     expect(bootText).toContain('Loading your client hub');
     // Premium treatment (owner ask): the hub boot screen carries the same
-    // glow/mark/track construction as the TradeDesk app boot overlay — not the
+    // glow/mark/track construction as the TradeDesk app boot overlay, not the
     // old bare name + 2px line.
     const r = await page.evaluate(() => ({
       glow: !!document.querySelector('#boot-overlay .cbo-glow'),
@@ -4817,10 +4817,10 @@ test.describe('client hub — Daily updates card hides when there is nothing to 
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  QUICK ACTIONS — accent icon chips + class-driven Collect state
+//  QUICK ACTIONS, accent icon chips + class-driven Collect state
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('dashboard quick actions — accent chips', () => {
+test.describe('dashboard quick actions, accent chips', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -4844,7 +4844,7 @@ test.describe('dashboard quick actions — accent chips', () => {
     expect(r.emojiClass).toBe(0);
   });
 
-  test('Collect state is class-driven: qa-idle with nothing owed, qa-g when money is collectible — no inline background', async () => {
+  test('Collect state is class-driven: qa-idle with nothing owed, qa-g when money is collectible, no inline background', async () => {
     const r = await page.evaluate(() => {
       const btn = document.getElementById('qa-collect-btn');
       bids = bids.filter(b => b.id !== 886400);
@@ -4868,7 +4868,7 @@ test.describe('dashboard quick actions — accent chips', () => {
     assertNoErrors(page, 'quick action collect states');
   });
 
-  test('launcher layout on a phone: 3 columns, no tile card chrome — the chip is the button', async () => {
+  test('launcher layout on a phone: 3 columns, no tile card chrome, the chip is the button', async () => {
     // Regression guard for the nested-card look: white .qa tiles inside the white
     // #dash-quick card rendered as giant empty slabs (2-across on ≤380px phones).
     // The redesign removes ALL tile chrome and guarantees 3 columns on phones.
@@ -4897,10 +4897,10 @@ test.describe('dashboard quick actions — accent chips', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  SIGN-FLOW WARMTH BADGE — contractor-facing furthest-step surfacing
+//  SIGN-FLOW WARMTH BADGE, contractor-facing furthest-step surfacing
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('_signStepBadge — sign-flow warmth on pending bid cards', () => {
+test.describe('_signStepBadge: sign-flow warmth on pending bid cards', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -4932,7 +4932,7 @@ test.describe('_signStepBadge — sign-flow warmth on pending bid cards', () => 
     });
     expect(r.approved).toContain('Reviewing');
     expect(r.sig).toContain('Signature entered');
-    expect(r.pay).toContain('Reached payment — hot lead');
+    expect(r.pay).toContain('Reached payment, hot lead');
     expect(r.method).toContain('call them now');
     expect(r.opened).toBe('');
     expect(r.signed).toBe('');
@@ -4954,21 +4954,21 @@ test.describe('_signStepBadge — sign-flow warmth on pending bid cards', () => 
       window._proposalViewsByBidStep = { [String(bid)]: 'payment_viewed' };
       window._proposalViewsByBidClient = { [String(bid)]: new Date().toISOString() };
       // §11.6: Make Money Today sections only render items into innerHTML when
-      // expanded — default (undefined) means collapsed and the count is always 0.
+      // expanded: default (undefined) means collapsed and the count is always 0.
       window._mmtCol_build = false; window._mmtCol_pending = false; window._mmtCol_collect = false;
       renderDash();
       const feed = document.getElementById('dash-money-feed');
       return { html: feed ? feed.innerHTML : '' };
     });
-    expect(r.html).toContain('Reached payment — hot lead');
+    expect(r.html).toContain('Reached payment, hot lead');
   });
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  BUILD FEED — in-progress drafts are user intent and always render
+//  BUILD FEED, in-progress drafts are user intent and always render
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Build feed — amount-less drafts always visible', () => {
+test.describe('Build feed, amount-less drafts always visible', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -4983,7 +4983,7 @@ test.describe('Build feed — amount-less drafts always visible', () => {
 
   test('a shell draft (no amount, no lines, no surfaces) renders in the build feed', async () => {
     // Owner-reported 53-vs-43: a load-side filter silently hid these exact drafts, so
-    // in-progress estimates vanished on reload. The feed is their ONLY surface — it must
+    // in-progress estimates vanished on reload. The feed is their ONLY surface, it must
     // show them ("finish & send" + Discard); hiding is banned (§7), deletion is the
     // user's Discard button.
     const r = await page.evaluate(() => {
@@ -4992,7 +4992,7 @@ test.describe('Build feed — amount-less drafts always visible', () => {
       bids = bids.filter(b => b.id !== bidId);
       clients.push({ id: cid, name: 'Shell Draft Client', phone: '3165550778' });
       bids.push({ id: bidId, client_id: cid, client_name: 'Shell Draft Client', bid_date: todayKey(), status: 'Draft', draft: true });
-      window._mmtCol_build = false; // §11.6 — expand the section so items render into innerHTML
+      window._mmtCol_build = false; // §11.6: expand the section so items render into innerHTML
       renderDash();
       const feed = document.getElementById('dash-money-feed');
       return { html: feed ? feed.innerHTML : '' };
@@ -5004,10 +5004,10 @@ test.describe('Build feed — amount-less drafts always visible', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  QR PAY NOW — showPayQr / openPayPanel QR button
+//  QR PAY NOW, showPayQr / openPayPanel QR button
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('QR Pay Now — show QR overlay for client hub payment', () => {
+test.describe('QR Pay Now, show QR overlay for client hub payment', () => {
   let page;
   const QR_CLIENT_ID = 880001;
   const QR_BID_ID    = 880002;
@@ -5034,12 +5034,12 @@ test.describe('QR Pay Now — show QR overlay for client hub payment', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('showPayQr — function is defined', async () => {
+  test('showPayQr: function is defined', async () => {
     const defined = await page.evaluate(() => typeof showPayQr === 'function');
     expect(defined).toBe(true);
   });
 
-  test('showPayQr — creates overlay with hub URL QR target', async () => {
+  test('showPayQr: creates overlay with hub URL QR target', async () => {
     await page.evaluate(bid => {
       document.getElementById('_pay-qr-ov')?.remove();
       if (typeof showPayQr === 'function') showPayQr(bid);
@@ -5062,7 +5062,7 @@ test.describe('QR Pay Now — show QR overlay for client hub payment', () => {
     }
   });
 
-  test('showPayQr — overlay dismissed on tap', async () => {
+  test('showPayQr: overlay dismissed on tap', async () => {
     const dismissed = await page.evaluate(() => {
       const ov = document.getElementById('_pay-qr-ov');
       if (!ov) return null;
@@ -5072,7 +5072,7 @@ test.describe('QR Pay Now — show QR overlay for client hub payment', () => {
     if (dismissed !== null) expect(dismissed).toBe(true);
   });
 
-  test('openPayPanel — QR button appears when client has hub token', async () => {
+  test('openPayPanel: QR button appears when client has hub token', async () => {
     await page.evaluate(bid => {
       document.querySelectorAll('.pay-modal-overlay').forEach(e => e.remove());
       if (typeof openPayPanel === 'function') openPayPanel(bid);
@@ -5090,7 +5090,7 @@ test.describe('QR Pay Now — show QR overlay for client hub payment', () => {
     });
   });
 
-  test('showPayQr — falls back gracefully when client has no hub token', async () => {
+  test('showPayQr: falls back gracefully when client has no hub token', async () => {
     const result = await page.evaluate(({ cid, bid }) => {
       const c = (typeof clients !== 'undefined') ? clients.find(x => x.id === cid) : null;
       if (!c) return null;
@@ -5116,7 +5116,7 @@ test.describe('QR Pay Now — show QR overlay for client hub payment', () => {
   });
 });
 
-test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
+test.describe('Profit % gauge, T&M and BYO estimate rails', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     page = await browser.newPage();
@@ -5125,7 +5125,7 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     await waitForAppBoot(page);
     // tm-profit-gauge/byo-profit-gauge are rendered into empty wrap divs by
     // _geiRenderProfitGauge (called from _tmShowPage/_byoShowPage on a real page
-    // visit) rather than existing statically in the HTML — render them here so
+    // visit) rather than existing statically in the HTML, render them here so
     // every test in this block sees the same elements a real visit would produce.
     await page.evaluate(() => {
       if (typeof _geiRenderProfitGauge === 'function') {
@@ -5162,7 +5162,7 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     expect(r).toBe('none');
   });
 
-  test('gauge calculates correct margin — 40% keep on $10k revenue / $6k cost', async () => {
+  test('gauge calculates correct margin, 40% keep on $10k revenue / $6k cost', async () => {
     const r = await page.evaluate(() => {
       const costEl = document.getElementById('tm-expected-cost');
       if (!costEl) return null;
@@ -5196,7 +5196,7 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
       // 68% margin: (10000 - 3200) / 10000
       costEl.value = '3200';
       // Force gauge to visible so _updateMarginGauge uses the sync else-branch
-      // (dot set directly) rather than the rAF path — avoids a WebKit headless
+      // (dot set directly) rather than the rAF path, avoids a WebKit headless
       // timing race where rAF callbacks from a prior test haven't fired yet.
       const gWrap = document.getElementById('tm-profit-gauge');
       if (gWrap) { gWrap.style.display = ''; gWrap.style.opacity = '1'; }
@@ -5209,7 +5209,7 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
     expect(r.pctText).toBe('68%');
     // Dot sits at its own margin % along the bar.
     expect(r.left).toBe('68%');
-    // Owner threshold change (2026-07-06): green tops out at 55% — 55-75% is now
+    // Owner threshold change (2026-07-06): green tops out at 55%, 55-75% is now
     // amber "double-check your cost numbers". Browsers normalize hex → rgb().
     expect(r.color).toBe('rgb(245, 158, 11)');
   });
@@ -5232,7 +5232,7 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
 
   test('gauge hides when cost is cleared', async () => {
     await page.evaluate(() => {
-      // Put gauge in a known visible state first — prevents a rAF race where
+      // Put gauge in a known visible state first, prevents a rAF race where
       // a pending opacity transition from a prior test fires after the hide
       // path sets opacity='0' but before the 340ms display-none timer runs.
       const gWrap = document.getElementById('tm-profit-gauge');
@@ -5287,7 +5287,7 @@ test.describe('Profit % gauge — T&M and BYO estimate rails', () => {
 });
 
 // ── RRP lead-safe auto-seeding ────────────────────────────────────────────────
-test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
+test.describe('RRP lead-safe auto-seeding, BYO and T&M estimates', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -5308,7 +5308,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
     expect(r.fn).toBe(true);
     expect(r.count).toBe(7);
     expect(r.lineCount).toBe(6);
-    expect(r.section).toBe('RRP — Lead-Safe Protocol');
+    expect(r.section).toBe('RRP: Lead-Safe Protocol');
   });
 
   test('empty BYO bid: seeds 6 items (interior + 5 universal, no exterior)', async () => {
@@ -5331,7 +5331,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
     });
     expect(r.count).toBe(6);
     expect(r.allRrp).toBe(true);
-    expect(r.section).toBe('RRP — Lead-Safe Protocol');
+    expect(r.section).toBe('RRP: Lead-Safe Protocol');
     expect(r.hasInteriorItem).toBe(true);
     expect(r.hasExteriorItem).toBe(false);
     expect(r.sectionInCustom).toBe(true);
@@ -5360,7 +5360,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
     expect(r.hasExteriorItem).toBe(true);
   });
 
-  test('_injectRrpItems is idempotent — calling twice does not double-inject', async () => {
+  test('_injectRrpItems is idempotent, calling twice does not double-inject', async () => {
     const r = await page.evaluate(() => {
       _rrpPaintAnswer = 'yes';
       _geiIsFreeForm = true;
@@ -5407,7 +5407,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
     expect(r).toBe(0);
   });
 
-  test('RRP items do not show notes in BYO list — _rrp flag suppresses byo-meta', async () => {
+  test('RRP items do not show notes in BYO list, _rrp flag suppresses byo-meta', async () => {
     const r = await page.evaluate(() => {
       _rrpPaintAnswer = 'yes';
       _geiIsFreeForm = true;
@@ -5415,7 +5415,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
       _byoItems = [{id:1,section:'Interior',label:'Prep walls',price:200,notes:'Two coats',on:true,required:false,_rrp:false}];
       _byoCustomSections = [];
       _injectRrpItems();
-      // Non-RRP item with notes — meta should render; RRP items — meta should be suppressed
+      // Non-RRP item with notes, meta should render; RRP items, meta should be suppressed
       const nonRrp = _byoItems.find(x => !x._rrp);
       const rrpItem = _byoItems.find(x => x._rrp);
       // Both have notes field. The render logic gates on !it._rrp.
@@ -5435,7 +5435,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 
   test('the dead duplicate mobile profit bar (#byo-mob-bar) was deleted, not just hidden', async () => {
     // Was permanently display:none with byom-* ids never touched by any JS (confirmed via
-    // grep) — a broken duplicate of the summary rail's Send/Sign buttons. Deleted outright
+    // grep): a broken duplicate of the summary rail's Send/Sign buttons. Deleted outright
     // per CLAUDE.md §7 rather than left as inert markup.
     const r = await page.evaluate(() => ({
       bar: !!document.getElementById('byo-mob-bar'),
@@ -5477,7 +5477,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
   test('proposalHtml includes amber RRP block when _geiEpaRequired is true', async () => {
     const r = await page.evaluate(() => {
       // Simulate the _rrpSection variable by setting the conditions
-      // _geiEpaRequired drives _rrpSection — check the template logic directly
+      // _geiEpaRequired drives _rrpSection, check the template logic directly
       const mockIncome = 50000;
       const yearBuilt = 1965;
       const rrpDisturb = 'yes';
@@ -5499,7 +5499,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
     expect(r.firstLine).toMatch(/Containment/i);
   });
 
-  test('_mkLineRow shows notes for RRP items in client proposal — not suppressed', async () => {
+  test('_mkLineRow shows notes for RRP items in client proposal, not suppressed', async () => {
     const r = await page.evaluate(() => {
       _rrpPaintAnswer = 'yes';
       _geiIsFreeForm = true;
@@ -5523,7 +5523,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
     expect(r.oldShowsNotes).toBe(false);
   });
 
-  test('scope sheet onclick uses &quot; encoding — tiles are clickable', async () => {
+  test('scope sheet onclick uses &quot; encoding: tiles are clickable', async () => {
     const r = await page.evaluate(() => {
       if (typeof _openScopeSheet !== 'function') return null;
       document.getElementById('_scope-sheet-ov')?.remove();
@@ -5555,7 +5555,7 @@ test.describe('RRP lead-safe auto-seeding — BYO and T&M estimates', () => {
 });
 
 // ── Standard GEI profit gauge ─────────────────────────────────────────────────
-test.describe('Standard GEI flat-rate estimate — profit gauge', () => {
+test.describe('Standard GEI flat-rate estimate, profit gauge', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -5583,7 +5583,7 @@ test.describe('Standard GEI flat-rate estimate — profit gauge', () => {
     expect(r.costInput).toBe(true);
   });
 
-  test('_updateMarginGauge works for gei prefix — shows pct and hides hint', async () => {
+  test('_updateMarginGauge works for gei prefix, shows pct and hides hint', async () => {
     const r = await page.evaluate(() => {
       const costEl = document.getElementById('gei-expected-cost');
       if (costEl) costEl.value = '1500';
@@ -5604,7 +5604,7 @@ test.describe('Standard GEI flat-rate estimate — profit gauge', () => {
 });
 
 // ── Old GEI estimate auto-migration to BYO freeform ───────────────────────────
-test.describe('openGenericEstimate — resume auto-migrates old estimates to BYO freeform', () => {
+test.describe('openGenericEstimate: resume auto-migrates old estimates to BYO freeform', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -5629,7 +5629,7 @@ test.describe('openGenericEstimate — resume auto-migrates old estimates to BYO
           { desc: 'Paint interior', qty: 1, rate: 500, total: 500 },
         ],
         geiTaxPct: 0, amount: 0, deposit: 0,
-        isFreeForm: false,  // old estimate — no freeform flag
+        isFreeForm: false,  // old estimate, no freeform flag
       }]);
       openGenericEstimate(c, OLD_BID_ID, 'painting');
       const byoPageVisible = document.getElementById('gei-byo-page')?.style.display !== 'none';
@@ -5665,7 +5665,7 @@ test.describe('openGenericEstimate — resume auto-migrates old estimates to BYO
   });
 });
 
-test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope proposal', () => {
+test.describe('BYO estimate, auto-save, auto-fill cost, gauge dollars, scope proposal', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -5675,7 +5675,7 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
     await waitForAppBoot(page);
     // byo-expected-cost/byo-gauge-dollars live inside byo-gauge-wrap, rendered by
     // _geiRenderProfitGauge (called from _byoShowPage on a real page visit) rather
-    // than existing statically — render once here since these tests don't drive
+    // than existing statically, render once here since these tests don't drive
     // the full goGeiStep() navigation that would trigger it.
     await page.evaluate(() => {
       if (typeof _geiRenderProfitGauge === 'function') {
@@ -5733,7 +5733,7 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
       const c = { id: 78003, name: 'RRP Client', addr: '3 Lead St', yearBuilt: 1965, rrpDisturb: 'yes' };
       if (typeof clients !== 'undefined') clients = clients.filter(x => x.id !== 78003).concat([c]);
       if (typeof bids !== 'undefined') bids = bids.filter(x => x.client_id !== 78003);
-      // Simulate resume — _rrpPaintAnswer is unset (new session)
+      // Simulate resume, _rrpPaintAnswer is unset (new session)
       _rrpPaintAnswer = '';
       openGenericEstimate(c, null, 'painting');
       _geiIsFreeForm = true;
@@ -5792,7 +5792,7 @@ test.describe('BYO estimate — auto-save, auto-fill cost, gauge dollars, scope 
   });
 });
 
-test.describe('Proposal terms — warranty, permits, delays, insurance, dispute resolution', () => {
+test.describe('Proposal terms, warranty, permits, delays, insurance, dispute resolution', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -5813,7 +5813,7 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       _geiIsFreeForm = true;
       _geiIsTM = false;
       // Simulate the terms generation by checking _warrantyClause and _permitClause variables exist
-      // and that sendGenericProposal would include them — we test the variables indirectly
+      // and that sendGenericProposal would include them, we test the variables indirectly
       const hasWarrantyVar = typeof window._warrantyClause !== 'undefined' || true; // built inside function
       return { hasWarrantyVar };
     });
@@ -5827,7 +5827,7 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'general');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
-      // T&C is no longer part of the proposal document/preview — it only shows
+      // T&C is no longer part of the proposal document/preview: it only shows
       // in the accordion under the signature at the actual sign step (owner
       // directive 2026-07-13). Read the clause text from the same builder
       // function that feeds that accordion.
@@ -5859,7 +5859,7 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'general');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Drywall repair', price: 200, on: true }];
-      // T&C is no longer part of the proposal document/preview — read it from
+      // T&C is no longer part of the proposal document/preview: read it from
       // the builder function that feeds the sign-step accordion instead.
       let captured = '';
       try { captured = _geiBuildTermsHtml(); } catch(e) {}
@@ -5906,7 +5906,7 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'painting');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Walls', price: 300, on: true }];
-      // T&C is no longer part of the proposal document/preview — read it from
+      // T&C is no longer part of the proposal document/preview: read it from
       // the builder function that feeds the sign-step accordion instead.
       let captured = '';
       try { captured = _geiBuildTermsHtml(); } catch(e) {}
@@ -5929,7 +5929,7 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
       openGenericEstimate(c, null, 'electrical');
       _geiIsFreeForm = true;
       _byoItems = [{ id: 1, section: 'Interior', label: 'Panel upgrade', price: 1800, on: true }];
-      // T&C is no longer part of the proposal document/preview — read it from
+      // T&C is no longer part of the proposal document/preview: read it from
       // the builder function that feeds the sign-step accordion instead.
       let captured = '';
       try { captured = _geiBuildTermsHtml(); } catch(e) {}
@@ -5946,7 +5946,7 @@ test.describe('Proposal terms — warranty, permits, delays, insurance, dispute 
 
 
 // ── Paint estimate scope fixes: no scroll chaining, unified renderer, no hours popup ─────────
-test.describe('Paint estimate scope — deleted with the surface estimator', () => {
+test.describe('Paint estimate scope, deleted with the surface estimator', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -6201,7 +6201,7 @@ test.describe('Crew labor cost in profit gauge', () => {
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
     // byo-expected-cost lives inside byo-gauge-wrap, rendered by _geiRenderProfitGauge
-    // (called from _byoShowPage on a real page visit) — render once here since these
+    // (called from _byoShowPage on a real page visit), render once here since these
     // tests call _byoUpdateRail directly without driving full page navigation.
     await page.evaluate(() => {
       if (typeof _geiRenderProfitGauge === 'function') {
@@ -6432,7 +6432,7 @@ test.describe('Crew labor cost in profit gauge', () => {
   });
 });
 
-test.describe('UI cleanup — redundant elements removed', () => {
+test.describe('UI cleanup, redundant elements removed', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -6483,12 +6483,12 @@ test.describe('UI cleanup — redundant elements removed', () => {
     expect(count).toBe(0);
   });
 
-  test('est-review — removed with the paint estimator', async () => {
+  test('est-review: removed with the paint estimator', async () => {
     const reviewEl = await page.locator('#est-review').count();
     expect(reviewEl).toBe(0);
   });
 
-  test('step bar steps are evenly distributed — flex:1 applied', async () => {
+  test('step bar steps are evenly distributed, flex:1 applied', async () => {
     const result = await page.evaluate(() => {
       const steps = Array.from(document.querySelectorAll('#est-steps .step'));
       if (!steps.length) return null;
@@ -6500,17 +6500,17 @@ test.describe('UI cleanup — redundant elements removed', () => {
     expect(result.allFlex1).toBe(true);
   });
 
-  test('client info card — blue Client display bar is removed', async () => {
+  test('client info card, blue Client display bar is removed', async () => {
     const count = await page.locator('#e-client-display').count();
     expect(count).toBe(0);
   });
 
-  test('client info card — Log drive button is removed', async () => {
+  test('client info card, Log drive button is removed', async () => {
     const count = await page.locator('button:has-text("Log drive to this estimate")').count();
     expect(count).toBe(0);
   });
 
-  test('client info card — Property type select is not visible in step 1', async () => {
+  test('client info card, Property type select is not visible in step 1', async () => {
     // e-cprop kept hidden for JS compatibility; assert it is not visible
     const visible = await page.evaluate(() => {
       const el = document.getElementById('e-cprop');
@@ -6541,7 +6541,7 @@ test.describe('UI cleanup — redundant elements removed', () => {
     expect(result.base).toBeGreaterThanOrEqual(500);
   });
 
-  test('est-s3 — removed with the paint estimator', async () => {
+  test('est-s3: removed with the paint estimator', async () => {
     const count = await page.locator('#est-s3').count();
     expect(count).toBe(0);
   });
@@ -6565,7 +6565,7 @@ test.describe('UI cleanup — redundant elements removed', () => {
   });
 });
 
-test.describe('Int/ext estimate review — removed with the paint estimator', () => {
+test.describe('Int/ext estimate review, removed with the paint estimator', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -6598,7 +6598,7 @@ test.describe('Int/ext estimate review — removed with the paint estimator', ()
   });
 });
 
-test.describe('Estimate autosave — BYO and T&M fields', () => {
+test.describe('Estimate autosave, BYO and T&M fields', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -6716,7 +6716,7 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
     expect(result.chips).toEqual([]);
   });
 
-  test('_tmRecalc triggers autosave — bid reflects T&M rate changes', async () => {
+  test('_tmRecalc triggers autosave, bid reflects T&M rate changes', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmRecalc !== 'function') return null;
       if (typeof bids === 'undefined') return null;
@@ -6735,7 +6735,7 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
       _tmRatePerMan = 75;
       _tmEstHours = 10;
       _tmBillingCycle = 'completion';
-      // _tmRecalc() reads crew/rate/hours from DOM — sync DOM first
+      // _tmRecalc() reads crew/rate/hours from DOM, sync DOM first
       const _crewEl = document.getElementById('tm-crew-display');
       if (_crewEl) _crewEl.textContent = '2';
       const _rateEl = document.getElementById('tm-rate');
@@ -6761,7 +6761,7 @@ test.describe('Estimate autosave — BYO and T&M fields', () => {
   });
 });
 
-test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
+test.describe('Int/ext estimate, cloud autosave (_paintEstAutosave)', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -6882,7 +6882,7 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
       const nameEl = document.getElementById('e-cname');
       if (nameEl) nameEl.value = 'Sync Test';
       _paintEstAutosaveDebounced();
-      // No await / no timer — the bid must already be updated synchronously
+      // No await / no timer, the bid must already be updated synchronously
       const b = bids.find(x => x.id === fakeId);
       const surfCount = b && Array.isArray(b.surfaces) ? b.surfaces.length : -1;
       bids.splice(bids.findIndex(x => x.id === fakeId), 1);
@@ -6918,11 +6918,11 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
   });
 
   // The paint-era recovery system (boot snapshot + per-bid "Recover rooms") was
-  // removed with the owner's sign-off — it recovered surfaces/roomScopeMap for
+  // removed with the owner's sign-off, it recovered surfaces/roomScopeMap for
   // the deleted paint estimator and never worked reliably. §7.1: prove the old
-  // entry points are gone, not just unused. _pickBid/_bidRichness stay — they
+  // entry points are gone, not just unused. _pickBid/_bidRichness stay, they
   // are live sync-merge logic, not part of the recovery feature.
-  test('recovery system removed — recoverBidRooms and _captureRecoverySnapshot are gone', async () => {
+  test('recovery system removed, recoverBidRooms and _captureRecoverySnapshot are gone', async () => {
     const r = await page.evaluate(() => ({
       recoverFn: typeof recoverBidRooms,
       captureFn: typeof _captureRecoverySnapshot,
@@ -6937,7 +6937,7 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
     expect(r.mergeHelpersKept, '_pickBid/_bidRichness are live sync-merge logic and must survive the removal').toBe(true);
   });
 
-  test('recovery system removed — no "Recover rooms" button renders on bid cards', async () => {
+  test('recovery system removed, no "Recover rooms" button renders on bid cards', async () => {
     const r = await page.evaluate(() => {
       const c = { id: 90201, name: 'Recover Btn Client', addr: '1 Gone St' };
       clients = clients.filter(x => x.id !== 90201).concat([c]);
@@ -6961,7 +6961,7 @@ test.describe('Int/ext estimate — cloud autosave (_paintEstAutosave)', () => {
 // Covers the cleanup tools for purging polluted/cross-account data and the
 // hard guarantee that a deliberate sign-out can never persist outgoing records.
 // ──────────────────────────────────────────────────────────────────────────
-test.describe('Long-press delete — proposals & jobs + sign-out save guard', () => {
+test.describe('Long-press delete, proposals & jobs + sign-out save guard', () => {
   let page;
   const CID = 939001;          // test client id
   const BID = 939101;          // test bid id
@@ -7052,7 +7052,7 @@ test.describe('Long-press delete — proposals & jobs + sign-out save guard', ()
     expect(r.lienGone).toBe(true);
   });
 
-  test('deliberate sign-out blocks cloud save — no pending blob written', async () => {
+  test('deliberate sign-out blocks cloud save, no pending blob written', async () => {
     const r = await page.evaluate(async () => {
       if (typeof supaSaveToCloud !== 'function') return null;
       localStorage.removeItem('zp3_offline_pending');
@@ -7125,7 +7125,7 @@ test.describe('Long-press delete — proposals & jobs + sign-out save guard', ()
 });
 
 // ─── Proposal: no per-room dollar amounts; total/materials/deposit still visible ──
-test.describe('Proposal hides per-room costs — shows total, materials, deposit only', () => {
+test.describe('Proposal hides per-room costs, shows total, materials, deposit only', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     page = await browser.newPage();
@@ -7139,12 +7139,12 @@ test.describe('Proposal hides per-room costs — shows total, materials, deposit
       if (typeof buildProposal !== 'function' || typeof calcEst !== 'function') return null;
       if (typeof estSurfaces !== 'undefined') {
         estSurfaces.length = 0;
-        estSurfaces.push({ id: 1, type: 'walls', qty: 400, wallSqft: 400, room: 'Living Room — Whitetail [Matte]' });
+        estSurfaces.push({ id: 1, type: 'walls', qty: 400, wallSqft: 400, room: 'Living Room, Whitetail [Matte]' });
       }
       const proposalDiv = document.getElementById('est-proposal');
       if (!proposalDiv) return null;
       try { buildProposal(); } catch (e) { return { error: e.message }; }
-      // Use DOM parsing — regex cross-row matching gives false positives
+      // Use DOM parsing, regex cross-row matching gives false positives
       const doc = (new DOMParser()).parseFromString(proposalDiv.innerHTML, 'text/html');
       const roomTds = [...doc.querySelectorAll('td')].filter(td => (td.getAttribute('style')||'').includes('border-left:3px solid #2a4a7f'));
       // Each room td must be the sole td in its row (colspan=2, no sibling amount cell)
@@ -7164,7 +7164,7 @@ test.describe('Proposal hides per-room costs — shows total, materials, deposit
     const result = await page.evaluate(() => {
       const proposalDiv = document.getElementById('est-proposal');
       if (!proposalDiv || !proposalDiv.innerHTML) return null;
-      // Materials row is the td with "Paint, Primer & Materials" — it should still have a dollar amount in a sibling td
+      // Materials row is the td with "Paint, Primer & Materials", it should still have a dollar amount in a sibling td
       const html = proposalDiv.innerHTML;
       const hasMatRow = /Paint.*?Primer.*?Materials/.test(html);
       const matRowHasAmt = /Paint.*?Primer.*?Materials[\s\S]{1,600}\$[\d,]+\.\d{2}/.test(html);
@@ -7367,10 +7367,10 @@ test.describe('sign.html deposit tile shows correct percentage from saved bid', 
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  NEVER-DELETE POLICY — archive semantics, hold-to-confirm, edit-not-delete
+//  NEVER-DELETE POLICY, archive semantics, hold-to-confirm, edit-not-delete
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Never-delete policy — archive + hold + edit', () => {
+test.describe('Never-delete policy, archive + hold + edit', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -7418,17 +7418,17 @@ test.describe('Never-delete policy — archive + hold + edit', () => {
     });
     if (!r.skip) {
       expect(r.canDeleteIsFn).toBe(true);
-      expect(r.stillThere).toBe(true); // non-dev delete did nothing — record survives
+      expect(r.stillThere).toBe(true); // non-dev delete did nothing, record survives
     }
     assertNoErrors(page, 'dev-only delete gate');
   });
 
   test('cross-account settings guard: another account\'s vehicles cannot bleed across a login (E2E-truck bug)', async () => {
     // Production bug: on the same device, sign into account A (vehicles=[E2E truck]),
-    // sign out, sign into account B by password — B saw A's truck. Root cause: the
+    // sign out, sign into account B by password, B saw A's truck. Root cause: the
     // settings merge kept the locally-newer vehicles with no account check. The guard
     // stamps S._sOwner and, on an owner change, takes the incoming account's settings
-    // wholesale — no vehicle (or any key) survives across the boundary.
+    // wholesale: no vehicle (or any key) survives across the boundary.
     const r = await page.evaluate(() => {
       if (typeof _mergeIncomingSettings !== 'function') return { skip: true };
       const savedS = JSON.parse(JSON.stringify(S));
@@ -7440,7 +7440,7 @@ test.describe('Never-delete policy — archive + hold + edit', () => {
         S.settingsTs = Date.now();      // A's settings are newer than B's (would bail without the guard)
         S._sOwner = 'account-A-uid';
         S.bname = 'Dev A Painting';
-        // Now B (Zach) signs in and B's settings arrive — different owner, older ts, no vehicles.
+        // Now B (Zach) signs in and B's settings arrive, different owner, older ts, no vehicles.
         window._supaUser = { id: 'account-B-uid', email: 'zach@example.com' };
         _mergeIncomingSettings({ bname: 'Zach Co', settingsTs: 1, vehiclesTs: 0 }, 'test cross-account');
         return { vehicles: (S.vehicles || []).map(v => v.name || v), bname: S.bname, owner: S._sOwner };
@@ -7456,12 +7456,12 @@ test.describe('Never-delete policy — archive + hold + edit', () => {
     }
   });
 
-  // Regression — a real user-reported bug: leads a contractor created on their own
+  // Regression: a real user-reported bug: leads a contractor created on their own
   // device kept showing up in a different employee's (Zach's) Leads page after he
   // signed in on the same shared device. Root cause: the inbound-lead review queue
   // (_pendingInbound, for QR/intake-form leads awaiting review) is in-memory state
   // that lives OUTSIDE the clients/bids/jobs/... arrays the account-switch wipe
-  // already clears — it was never included, so it survived a sign-out/sign-in and
+  // already clears, it was never included, so it survived a sign-out/sign-in and
   // kept rendering (and could be promoted into) the next account signed into.
   test('cross-account lead-bleed guard: _pendingInbound (QR/intake review queue) is cleared on account switch', async () => {
     const r = await page.evaluate(() => {
@@ -7480,7 +7480,7 @@ test.describe('Never-delete policy — archive + hold + edit', () => {
     }
   });
 
-  test('editPayment — fixes the record in place (edit-not-delete)', async () => {
+  test('editPayment: fixes the record in place (edit-not-delete)', async () => {
     const r = await page.evaluate(() => {
       const pid = 887101;
       payments = payments.filter(p => p.id !== pid);

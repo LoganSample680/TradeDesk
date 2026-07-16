@@ -1,15 +1,15 @@
-// REAL flow — build a Build-Your-Own (BYO) estimate by driving the ACTUAL
+// REAL flow, build a Build-Your-Own (BYO) estimate by driving the ACTUAL
 // generic estimator UI (no seeding), price it, SEND it, and verify the real
 // proposal artifact lands in Supabase storage (the thing that was 404-ing as
 // "Proposal not found"). The sent bid must carry the line items it was built
-// from — not be a hollow Pending row.
+// from: not be a hollow Pending row.
 //
 // Rewritten for the T&M/BYO estimator that REPLACED the deleted paint flow
 // (old: pg-est / #e-cname / surfaces / sendProposalLink; now: pg-est-generic /
-// #gei-client / _byoItems / sendGenericProposal — see the §31–38 migration).
+// #gei-client / _byoItems / sendGenericProposal: see the §31–38 migration).
 //
 // REFERENCE IMPLEMENTATION for the step() engine (CLAUDE.md §13): every phase is a
-// step() — act() returns its interaction count, rule() asserts the post-condition
+// step(): act() returns its interaction count, rule() asserts the post-condition
 // and on failure throws a one-line finding() ticket. report() then emits the
 // friction profile and gates the click budget against perf-baseline.json.
 const { test, expect } = require('./flow-test');
@@ -132,7 +132,7 @@ test.describe('estimate build → proposal → real artifact (UI-driven)', () =>
           const bid = (typeof bids !== 'undefined' && bidId) ? bids.find(b => b.id === bidId) : null;
           const key = bid ? bid.proposalKey : null;
           let artifact = false, err = '';
-          // The object can briefly 404 while the upload settles — poll the download.
+          // The object can briefly 404 while the upload settles, poll the download.
           if (key && typeof _supa !== 'undefined') {
             for (let i = 0; i < 50; i++) {
               try {

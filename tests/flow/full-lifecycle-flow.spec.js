@@ -1,5 +1,5 @@
-// THE FULL-LIFECYCLE FLOW — the living master journey suite (owner directive
-// 2026-07-14: "this becomes our full flow suite — if we add things in the
+// THE FULL-LIFECYCLE FLOW, the living master journey suite (owner directive
+// 2026-07-14: "this becomes our full flow suite, if we add things in the
 // process we can add to it").
 //
 // One continuous, UI-driven run of the ENTIRE business on the REAL backend:
@@ -10,20 +10,20 @@
 //   4. client signs       → a SECOND anonymous browser context drives the real
 //                           sign.html link: approve → type name → cash → confirm
 //   5. REALTIME POPUP     → the contractor session must surface the "New
-//                           signature!" schedule modal ON ITS OWN — no manual
+//                           signature!" schedule modal ON ITS OWN, no manual
 //                           poll, no refresh. Push does the work (≤20s).
 //   6. schedule           → through the popup: Schedule now → Lock it in
 //   7. time on site       → clock in / clock out on the job
 //   8. complete           → mark job done through the real completion modal
 //   9. final pay          → log the remaining balance; books hit $0
 //
-// EXTENDING IT: every phase is a numbered step() — when a new feature lands in
+// EXTENDING IT: every phase is a numbered step(): when a new feature lands in
 // the lifecycle (change order mid-job, completion invoice, review request…),
 // insert a step at the right point, count its clicks honestly, and re-baseline
 // with a note in the same commit. This suite is the click-cost of running the
-// whole business — the number we ratchet DOWN against forever (§12.2).
+// whole business, the number we ratchet DOWN against forever (§12.2).
 //
-// Payment is the cash path — the runner has no Stripe test key, and card
+// Payment is the cash path, the runner has no Stripe test key, and card
 // checkout hands off to Stripe-hosted UI we can't drive. Seed data (client,
 // bid, job, time entry, payments) stays in the dev account per §12.7.
 const { test, expect } = require('./flow-test');
@@ -61,13 +61,13 @@ async function awaitSent(page) {
   });
 }
 
-// The whole journey, parameterized by estimate type. Each phase is a step() —
+// The whole journey, parameterized by estimate type. Each phase is a step():
 // insert new lifecycle features between the numbered phases.
 function lifecycleTest(kind) {
   test(`${kind.toUpperCase()}: lead → estimate → send → client signs → realtime popup → schedule → time → complete → paid`, async ({ page, browser }) => {
     const FLOW = `lifecycle/lead-to-paid-${kind}`;
-    // Fixed-width uniq so the typed-name keystroke count — and therefore the
-    // flow's total interaction count — is IDENTICAL every run (baselines gate it).
+    // Fixed-width uniq so the typed-name keystroke count, and therefore the
+    // flow's total interaction count, is IDENTICAL every run (baselines gate it).
     const uniq = String(Date.now() % 100000).padStart(5, '0') + String(process.pid % 100).padStart(2, '0');
     const clientName = `Lifecycle ${kind.toUpperCase()} ${uniq}`;
     const clientPhone = '3165552' + String(uniq).slice(-3);
@@ -81,9 +81,9 @@ function lifecycleTest(kind) {
       expected: 'client in clients[] with the typed name',
       act: async (p) => {
         // Hold the schedule-alert door shut for the whole build phase: this dev
-        // account accumulates signed-but-unscheduled seed bids (§12.7 — tests
+        // account accumulates signed-but-unscheduled seed bids (§12.7: tests
         // never clean up), and the app CORRECTLY pops the "New signature!"
-        // modal for them right after boot — a full-screen overlay that would
+        // modal for them right after boot, a full-screen overlay that would
         // swallow our taps. _showingScheduleAlert=true parks the queue; step 3
         // releases it (and empties the queue) right before OUR client signs.
         await p.evaluate(() => {
@@ -92,9 +92,9 @@ function lifecycleTest(kind) {
           document.getElementById('_sched-alert-overlay')?.remove();
         });
         // The REAL journey (owner-specified): tap Leads on the navbar, then tap
-        // "+ New lead" on the Leads page — physical taps, not function calls.
+        // "+ New lead" on the Leads page, physical taps, not function calls.
         // Responsive: phones show the bottom tab bar (#mtb-leads), desktop shows
-        // the sidebar (#nb-leads) — tap whichever one THIS viewport renders,
+        // the sidebar (#nb-leads): tap whichever one THIS viewport renders,
         // exactly like a real thumb would.
         let n = 0;
         const leadsNav = await p.evaluate(() =>
@@ -107,7 +107,7 @@ function lifecycleTest(kind) {
         n += await type(p, '#cf-phone', clientPhone);
         n += await type(p, '#cf-street', '742 Lifecycle Ln');
         n += await type(p, '#cf-city', 'Wichita');
-        // Lead source is REQUIRED (saveClient hard-blocks without it) — a real
+        // Lead source is REQUIRED (saveClient hard-blocks without it), a real
         // pick from the dropdown, an honest interaction.
         n += await pick(p, '#cf-source', 'Referral');
         await p.evaluate(() => saveClient());
@@ -181,7 +181,7 @@ function lifecycleTest(kind) {
         ctx.bidId = ctx.sent.bidId;
         // Flush any stray schedule alerts accumulated seed data might queue, so
         // the popup asserted in step 5 can only be OURS. Also wait for the
-        // sig-feed channel to be provably live before the client signs — if it
+        // sig-feed channel to be provably live before the client signs, if it
         // never subscribes, FAIL HERE with a clear finding instead of a
         // confusing popup timeout two steps later.
         ctx.sigFeedReady = await p.evaluate(async () => {
@@ -233,13 +233,13 @@ function lifecycleTest(kind) {
         return { ok: done, got: `pg-done visible=${done}` };
       },
     });
-    await clientCtx.close(); // resource cleanup (not data — §12.7)
+    await clientCtx.close(); // resource cleanup (not data, §12.7)
 
-    // ── 5. THE REALTIME POPUP — no poll, no refresh, push does the work ───────
+    // ── 5. THE REALTIME POPUP, no poll, no refresh, push does the work ───────
     await step(page, {
       label: '5. "New signature!" popup appears via realtime push alone', page: 'pg-dash', role: 'contractor',
       suspect: 'cloud.js sig-feed push → checkNewSignatures → showScheduleAlerts',
-      ruleText: 'the schedule popup must surface on its own within 20s of the client signing — no manual poll, no reload',
+      ruleText: 'the schedule popup must surface on its own within 20s of the client signing, no manual poll, no reload',
       expected: '#_sched-alert-overlay visible for THIS bid',
       act: async (p) => {
         const t0 = Date.now();
@@ -247,7 +247,7 @@ function lifecycleTest(kind) {
         // CHANNEL_ERROR (the recovery sweep re-polls and still pops the modal).
         await p.waitForSelector('#_sched-alert-overlay', { state: 'attached', timeout: 25000 });
         ctx.popupMs = Date.now() - t0;
-        return 0; // ZERO user interactions — that's the point
+        return 0; // ZERO user interactions, that's the point
       },
       rule: async (p) => {
         const r = await p.evaluate((bidId) => ({
@@ -324,7 +324,7 @@ function lifecycleTest(kind) {
           if (btn) btn.click(); else if (typeof _startJobComplete === 'function') _startJobComplete(jobId);
           await wait(800);
           // Any debrief/sign follow-up steps stand between the modal and the
-          // final commit — walk them by confirming directly if still not done.
+          // final commit, walk them by confirming directly if still not done.
           const j = jobs.find(x => x.id === jobId);
           if (j && j.status !== 'done' && typeof confirmJobDone === 'function') await confirmJobDone(jobId);
         }, ctx.jobId);
@@ -341,9 +341,9 @@ function lifecycleTest(kind) {
       },
     });
 
-    // ── 9. FINAL PAY — the books hit $0 ───────────────────────────────────────
+    // ── 9. FINAL PAY, the books hit $0 ───────────────────────────────────────
     await step(page, {
-      label: '9. collect final payment — balance to zero', page: 'pg-money', role: 'contractor',
+      label: '9. collect final payment, balance to zero', page: 'pg-money', role: 'contractor',
       suspect: 'bids.js openPayPanel → logPayment → getBidBalance',
       ruleText: 'logging the remaining balance as cash must zero the bid balance',
       expected: 'getBidBalance === 0 and a payment row recorded',
@@ -374,7 +374,7 @@ function lifecycleTest(kind) {
       },
     });
 
-    // NO data cleanup — the lead, bid, job, time entry and payments stay in the
+    // NO data cleanup, the lead, bid, job, time entry and payments stay in the
     // dev account for the owner to inspect (§12.7).
     const rep = report(FLOW, BASELINE, page);
     if (BASELINE[FLOW]) {
@@ -386,7 +386,7 @@ function lifecycleTest(kind) {
   });
 }
 
-test.describe('full lifecycle — lead → signed (realtime) → scheduled → timed → completed → paid', () => {
+test.describe('full lifecycle, lead → signed (realtime) → scheduled → timed → completed → paid', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 

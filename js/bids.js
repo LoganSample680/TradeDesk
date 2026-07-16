@@ -6,7 +6,7 @@ function addTradeOpportunity(clientId,trade,title,notes){
 function convertOpportunityToEstimate(bidId){
   const opp=bids.find(b=>b.id===bidId);if(!opp)return;
   const c=getClientById(opp.client_id);if(!c)return;
-  // Removing a saved opportunity bid is a real delete — route through _userDelete so the
+  // Removing a saved opportunity bid is a real delete, route through _userDelete so the
   // soft-delete sweep propagates it cross-device (else it resurrects from the cloud).
   _userDelete(()=>{bids=bids.filter(b=>b.id!==bidId);saveAll();});
   _doOpenEstimate(c,null,opp.trade_type||getActiveTrade());
@@ -38,7 +38,7 @@ function renderCDOpportunities(){
           ''+
         '</div>'+
       '</div>';
-    }).join(''):'<div style="font-size:12px;color:var(--text3);padding:6px 0">No opportunities yet — track cross-trade follow-ups here.</div>');
+    }).join(''):'<div style="font-size:12px;color:var(--text3);padding:6px 0">No opportunities yet, track cross-trade follow-ups here.</div>');
 }
 let _oppSelTrade=null;
 Object.defineProperty(window,'_oppSelTrade',{get:()=>_oppSelTrade,set:v=>{_oppSelTrade=v;},configurable:true});
@@ -94,7 +94,7 @@ function renderCDEstimatesUpcoming(){
         '<div>'+
           '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#7F77DD;margin-bottom:3px">Estimate scheduled</div>'+
           '<div style="font-size:15px;font-weight:700;color:var(--text)">'+dt+(j.time?' at '+fmtTime(j.time):'')+'</div>'+
-          '<div style="font-size:12px;color:#7F77DD;margin-top:2px">'+escHtml(j.name.replace(' — estimate','').replace(' - estimate',''))+'</div>'+
+          '<div style="font-size:12px;color:#7F77DD;margin-top:2px">'+escHtml(j.name.replace(', estimate','').replace(' - estimate',''))+'</div>'+
           (j.addr?'<div style="font-size:11px;color:var(--text2);margin-top:2px">'+escHtml(j.addr)+'</div>':'')+
         '</div>'+
         '<div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0;margin-left:10px">'+
@@ -201,7 +201,7 @@ function showJobScorecard(jobId,collectBidId){
   ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();if(balance>0.01)openPayPanel(collectBidId,'final');}});
 }
 function cleanRoomName(room){
-  const raw=(room||'').split(' — ')[0].replace('[Ext] ','').trim();
+  const raw=(room||'').split(', ')[0].replace('[Ext] ','').trim();
   const types=['walls','ceiling','trim','doors','windows','cabinets','ext_walls','ext_trim','deck'];
   for(const t of types){if(raw.endsWith(' '+t))return raw.slice(0,-(t.length+1)).trim();}
   return raw;
@@ -231,8 +231,8 @@ function showSupplyList(bidId){
   surfs.forEach(s=>{
     if(!s.qty)return;
     const t=SURF_TYPES.find(x=>x.v===s.type);if(!t||t.unit!=='sq ft')return;
-    const spec=(s.room||'').indexOf(' — ')>-1?(s.room||'').split(' — ').slice(1).join(' — '):'';
-    // Skip surfaces with no spec (customer supplies paint — no product/color stored)
+    const spec=(s.room||'').indexOf(', ')>-1?(s.room||'').split(', ').slice(1).join(', '):'';
+    // Skip surfaces with no spec (customer supplies paint, no product/color stored)
     if(!spec)return;
     const key=spec;
     if(!orderMap[key])orderMap[key]={sqFt:0,spec,cov:350,surfaces:[]};
@@ -278,7 +278,7 @@ function showSupplyList(bidId){
     {label:'Paint tray liners',qty:trayLiners,unit:'',cat:'tools',note:'One per color change'},
     {label:'Extension pole',qty:1,unit:'',cat:'tools',note:'4–8 ft for walls and ceilings'},
     {label:"2\" angled sash brush",qty:1,unit:'',cat:'tools',note:'Cutting in at trim and corners'},
-    {label:'Drop cloths',qty:dropCloths,unit:'',cat:'tools',note:'Canvas preferred — 1 per room'},
+    {label:'Drop cloths',qty:dropCloths,unit:'',cat:'tools',note:'Canvas preferred, 1 per room'},
     {label:"Blue painter's tape (1\")",qty:tapeRolls,unit:'rolls',cat:'tools',note:'FrogTape recommended for clean lines'},
     {label:'Stir sticks',qty:stirSticks,unit:'',cat:'tools',note:''},
     {label:'5-in-1 tool',qty:1,unit:'',cat:'tools',note:'Open cans, scrape, etc.'},
@@ -310,7 +310,7 @@ function showSupplyList(bidId){
   }
   if(scopeActive('caulk')){
     const caulkTubes=Math.max(Math.ceil(totalRooms*1.5),2);
-    scopeItems.push({label:"Painter's caulk (white)",qty:caulkTubes,unit:'tubes',cat:'prep',note:'DAP Alex Plus — paintable in 30 min'});
+    scopeItems.push({label:"Painter's caulk (white)",qty:caulkTubes,unit:'tubes',cat:'prep',note:'DAP Alex Plus, paintable in 30 min'});
     scopeItems.push({label:'Caulk gun',qty:1,unit:'',cat:'tools',note:''});
   }
   if(scopeActive('movefurn')){
@@ -320,7 +320,7 @@ function showSupplyList(bidId){
     scopeItems.push({label:'Garden pump sprayer',qty:1,unit:'',cat:'tools',note:'Wet popcorn before scraping'});
     scopeItems.push({label:'Wide drywall knife (10\"+)',qty:1,unit:'',cat:'tools',note:'Scraping popcorn'});
     scopeItems.push({label:'All-purpose joint compound',qty:Math.ceil(totalSqFt/200),unit:'gallon',cat:'prep',note:'Skim coat after removal'});
-    scopeItems.push({label:'Respirator mask (N95)',qty:2,unit:'',cat:'tools',note:'Fine dust — protect your lungs'});
+    scopeItems.push({label:'Respirator mask (N95)',qty:2,unit:'',cat:'tools',note:'Fine dust, protect your lungs'});
     scopeItems.push({label:'Safety goggles',qty:1,unit:'',cat:'tools',note:''});
   }
   if(scopeActive('wallpaper')){
@@ -331,11 +331,11 @@ function showSupplyList(bidId){
     scopeItems.push({label:'PVA primer',qty:Math.ceil(totalSqFt/350),unit:'gal',cat:'prep',note:'Required after wallpaper removal'});
   }
   if(scopeActive('pwash')){
-    scopeItems.push({label:'Pressure washer',qty:1,unit:'rental',cat:'rental',note:'2000-3000 PSI — Home Depot or Sunbelt'});
+    scopeItems.push({label:'Pressure washer',qty:1,unit:'rental',cat:'rental',note:'2000-3000 PSI, Home Depot or Sunbelt'});
     scopeItems.push({label:'TSP cleaner / degreaser',qty:2,unit:'lb',cat:'prep',note:'Mix with water for pre-wash'});
   }
   if(scopeActive('scaffold')){
-    scopeItems.push({label:'Scaffolding',qty:1,unit:'rental',cat:'rental',note:'Price by job — Sunbelt or local rental yard'});
+    scopeItems.push({label:'Scaffolding',qty:1,unit:'rental',cat:'rental',note:'Price by job, Sunbelt or local rental yard'});
   }
 
   // ── Surface-specific extras ───────────────────────────────
@@ -561,7 +561,7 @@ function sendBidEmail(bidId){
   }).join(', '):'Sanding, Spackle/patching, Two-coat finish';
   const NL='\n';
   const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+(s.qty||0).toLocaleString()+' sf').join(NL):'  See attached estimate';
-  // Use plain ASCII dashes — Unicode box-drawing chars trigger corporate spam filters
+  // Use plain ASCII dashes, Unicode box-drawing chars trigger corporate spam filters
   const SEP='-------------------------------------'+NL;
   // Build signing link if this bid has already been sent as a proposal
   const baseUrl=(typeof _clientBaseUrl==='function')?_clientBaseUrl():(window.location.origin+'/');
@@ -620,8 +620,8 @@ function toggleBidSummary(bidId){
   panel=document.createElement('div');
   panel.id='bid-summary-'+bidId;
   panel.style.cssText='background:var(--bg2);border-radius:var(--r);padding:12px;margin-top:10px;border-top:1px solid var(--border)';
-  const surfRows=surfs.length?surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+(SURF_LABELS[s.type]||s.type)+' — '+escHtml(s.room||'')+'</span><span style="font-weight:600">'+(s.qty||0).toLocaleString()+' '+(s.type==='walls'||s.type==='ceiling'||s.type==='ext_walls'||s.type==='deck'?'sf':'')+'</span></div>').join(''):'<div style="font-size:12px;color:var(--text3)">No surface data saved</div>';
-  // Per-room cost breakdown — for change order reference (remove a room, know how much to deduct)
+  const surfRows=surfs.length?surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+(SURF_LABELS[s.type]||s.type)+', '+escHtml(s.room||'')+'</span><span style="font-weight:600">'+(s.qty||0).toLocaleString()+' '+(s.type==='walls'||s.type==='ceiling'||s.type==='ext_walls'||s.type==='deck'?'sf':'')+'</span></div>').join(''):'<div style="font-size:12px;color:var(--text3)">No surface data saved</div>';
+  // Per-room cost breakdown, for change order reference (remove a room, know how much to deduct)
   const roomBreakdown=(()=>{
     if(!surfs.length||!(b.amount>0))return '';
     const R={
@@ -639,7 +639,7 @@ function toggleBidSummary(bidId){
     const rooms={};
     surfs.forEach(s=>{
       if(!s.qty)return;
-      const room=(s.room||'').split(' — ')[0].trim()||'Other';
+      const room=(s.room||'').split(', ')[0].trim()||'Other';
       if(!rooms[room])rooms[room]={w:0,labels:[]};
       const t=(typeof SURF_TYPES!=='undefined')&&SURF_TYPES.find(x=>x.v===s.type);
       rooms[room].w+=s.qty*(R[s.type]||(t&&t.rate)||0);
@@ -759,7 +759,7 @@ function printInvoice(bidId){
 
 <div class="totals">
   <div class="total-row"><span>Subtotal</span><span>${fmt(b.amount)}</span></div>
-  ${bPmts.map(p=>`<div class="total-row" style="color:#3B8C2A"><span>Payment received (${escHtml(p.date||'')}) — ${escHtml(p.method||'')}</span><span>(${fmt(p.amount)})</span></div>`).join('')}
+  ${bPmts.map(p=>`<div class="total-row" style="color:#3B8C2A"><span>Payment received (${escHtml(p.date||'')}): ${escHtml(p.method||'')}</span><span>(${fmt(p.amount)})</span></div>`).join('')}
   <div class="total-row grand"><span>Balance due</span><span>${fmt(balance)}</span></div>
 </div>
 
@@ -785,20 +785,20 @@ function printInvoice(bidId){
     zAlert('Allow pop-ups to open the invoice. In Safari: Settings → Safari → Block Pop-ups → Off');
   }
 }
-// ── Final invoice — one-tap "generate + collect" for a done job ─────────────
+// ── Final invoice, one-tap "generate + collect" for a done job ─────────────
 // Research-backed design (owner, 2026-07-09): bid.amount is ALREADY the fully
-// reconciled total — every signed change order updates it the moment it's
+// reconciled total, every signed change order updates it the moment it's
 // signed (_submitCOSign sets b.amount=newAmount). So the common case is "the
-// invoice equals what the client already signed" — no extra step needed, just
+// invoice equals what the client already signed", no extra step needed, just
 // generate the document and collect. The only case that needs a fresh
 // signature is an amount that's NOT backed by anything signed (an unsigned
-// price bump at closeout) — that's gated separately in confirmJobDone, which
+// price bump at closeout), that's gated separately in confirmJobDone, which
 // routes any INCREASE through the same change-order signing flow instead of a
 // silent adjustment. By the time this runs, bid.amount is trustworthy.
 function openFinalInvoice(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
   // Change orders awaiting a client signature are NOT reflected in bid.amount
-  // yet — flag it so nobody invoices a total that's about to change.
+  // yet: flag it so nobody invoices a total that's about to change.
   const pending=(b.changeOrders||[]).filter(co=>!co.signedAt);
   if(pending.length){
     zAlert(pending.length+' change order'+(pending.length>1?'s are':' is')+' still awaiting the client’s signature and '+(pending.length>1?'aren’t':'isn’t')+' included in this total yet. Get '+(pending.length>1?'them':'it')+' signed first, or continue to invoice the current signed amount.',{title:'Pending change order'+(pending.length>1?'s':'')});
@@ -820,7 +820,7 @@ function payStatus(bid){
   if(balance<=0.01)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
   const dep=bid.deposit||Math.round(total*0.25*100)/100;
   if(dep>0&&paid>=dep-0.01)return{label:'Deposit paid',cls:'bdg-deposit',color:'var(--blue)'};
-  return{label:'Partial — '+fmt(balance)+' due',cls:'bdg-pending',color:'var(--amber)'};
+  return{label:'Partial: '+fmt(balance)+' due',cls:'bdg-pending',color:'var(--amber)'};
 }
 let activePayBidId=null;
 function openQuickPayFromOverview(){
@@ -891,7 +891,7 @@ function openPayPanel(bidId, autoType){
         stripeCompact+qrCompact+
       '</div>'
     :'';
-  // Tap their card in person — the reader-driven flow ships with the native app
+  // Tap their card in person, the reader-driven flow ships with the native app
   // (owner decision 2026-07-10). Reserving the slot now so the native build only
   // has to swap this handler for the real one, not design new pay-panel UI.
   const tapToPayRow=balance>0.50
@@ -913,7 +913,7 @@ function openPayPanel(bidId, autoType){
     '<div style="font-size:12px;color:var(--text3);margin-top:2px">Enter exact amount</div>'+
   '</button>';
   const secondaryRow='<div style="display:flex;gap:8px;margin-top:4px">'+(depositSecondary||'')+customSecondary+'</div>';
-  // Primary collect button — big green, full width
+  // Primary collect button, big green, full width
   const collectBtn='<button type="button" id="mpay-btn-final" data-ptype="final" onclick="selectPayType(this,'+bidId+')" style="width:100%;padding:16px 18px;border-radius:var(--r);border:none;background:var(--green);color:#fff;cursor:pointer;font-family:inherit;display:flex;justify-content:space-between;align-items:center;box-sizing:border-box">'+
     '<div style="text-align:left"><div style="font-size:17px;font-weight:800">Collect '+fmt(balance)+'</div>'+
     '<div style="font-size:12px;opacity:.75;margin-top:2px">Full balance · tap to log payment</div></div>'+
@@ -975,9 +975,9 @@ function openPayPanel(bidId, autoType){
   if(autoBtn)setTimeout(()=>selectPayType(autoBtn,bidId),50);
 }
 function autoFillPayAmount(){
-  // No-op — amounts are entered manually, not pre-filled
+  // No-op: amounts are entered manually, not pre-filled
 }
-// Reader-driven tap-to-pay ships with the native app (owner decision 2026-07-10) —
+// Reader-driven tap-to-pay ships with the native app (owner decision 2026-07-10),
 // native NFC requires a native shell, not buildable as a web app. This keeps the
 // pay-panel slot reserved now so native only has to swap this handler.
 function _tapToPaySoon(){
@@ -1019,7 +1019,7 @@ function showPayQr(bidId){
 function showCancellationRefund(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const totalPaid=getBidPaid(bidId);
-  if(totalPaid<=0){zAlert('No deposit recorded for this job — nothing to refund.',{title:'No payment on record'});return;}
+  if(totalPaid<=0){zAlert('No deposit recorded for this job, nothing to refund.',{title:'No payment on record'});return;}
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_cr-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
@@ -1052,7 +1052,7 @@ function _crCalc(){
   const mat=parseFloat(inp.value)||0;
   const refund=Math.max(0,Math.round((paid-mat)*100)/100);
   if(mat>=paid){
-    res.innerHTML='<span style="color:#A32D2D;font-weight:700">Materials cost equals or exceeds deposit — no refund owed.</span><br><span style="font-size:11px">The deposit covers materials.</span>';
+    res.innerHTML='<span style="color:#A32D2D;font-weight:700">Materials cost equals or exceeds deposit, no refund owed.</span><br><span style="font-size:11px">The deposit covers materials.</span>';
     res.style.background='#FEF2F2';
     if(submit)submit.textContent='Cancel job (no refund)';
   } else {
@@ -1072,7 +1072,7 @@ function _submitCancellationRefund(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   if(refund>0){
     payments.push({id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
-      date:pdate,type:'refund',amount:-refund,method:'',ref:'Cancellation — materials: '+fmt(mat)});
+      date:pdate,type:'refund',amount:-refund,method:'',ref:'Cancellation: materials: '+fmt(mat)});
   }
   bid.status='Abandoned';bid.draft=false;
   saveAll();
@@ -1128,7 +1128,7 @@ function _submitCloseOutEstimate(bidId){
   if(typeof renderDash==='function')renderDash();
   if(typeof renderCDBids==='function')try{renderCDBids();}catch(e){}
   if(typeof renderClientDetail==='function')try{renderClientDetail();}catch(e){}
-  showToast('Estimate closed out — marked lost','✓');
+  showToast('Estimate closed out, marked lost','✓');
 }
 function reopenEstimate(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
@@ -1140,10 +1140,10 @@ function reopenEstimate(bidId){
   document.querySelector('[data-bdov]')?.remove();
   if(typeof renderProposalsPage==='function')renderProposalsPage();
   if(typeof renderDash==='function')renderDash();
-  showToast('Estimate reopened — back to awaiting signature','↩');
+  showToast('Estimate reopened, back to awaiting signature','↩');
 }
 function selectPayType(btn, bidId){
-  // Deselect all — keep collect button green but dimmed
+  // Deselect all, keep collect button green but dimmed
   const typeContainer=document.getElementById('mpay-type-btns');
   if(typeContainer)typeContainer.querySelectorAll('button[data-ptype]').forEach(b=>{
     if(b.dataset.ptype==='final'){b.style.background='var(--green)';b.style.border='none';b.style.color='#fff';b.style.opacity='.45';}
@@ -1352,14 +1352,14 @@ function logPayment(){
     banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;animation:slideDown .3s ease';
     banner.innerHTML=
       '<div style="background:var(--green);color:#fff;padding:14px 16px;text-align:center;font-size:15px;font-weight:700">'+
-        svgIcon('✓',{size:15})+' Paid in full — '+fmt(bid.amount)+' received'+
+        svgIcon('✓',{size:15})+' Paid in full, '+fmt(bid.amount)+' received'+
       '</div>'+
       '<div style="background:#1A4A0A;color:#fff;padding:10px 16px;text-align:center;font-size:13px">'+
         svgIcon('💰',{size:13})+' Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
       '</div>';
     document.body.appendChild(banner);
     setTimeout(()=>banner.remove(),5000);
-    // NOTE: do NOT auto-log to income here — payments array is the source of truth for bid revenue.
+    // NOTE: do NOT auto-log to income here, payments array is the source of truth for bid revenue.
     // Income array is for manual non-bid entries only. Auto-logging caused dashboard double-counting.
   } else {
     const banner=document.createElement('div');
@@ -1372,19 +1372,19 @@ function logPayment(){
         '&#128176; Set aside <strong>'+fmt(reserveFromThis)+'</strong> from this payment for taxes ('+reserveRate+'%)'+
       '</div>'+
       (bid.surfaces?.length?'<div style="background:#2D4A1A;color:#fff;padding:8px 16px;text-align:center;font-size:12px">'+
-        '&#128230; Deposit received — <button onclick="this.closest(\'div\').parentElement.remove();showSupplyList('+bid.id+')" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit">Order materials now →</button>'+
+        '&#128230; Deposit received, <button onclick="this.closest(\'div\').parentElement.remove();showSupplyList('+bid.id+')" style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:4px;cursor:pointer;font-family:inherit">Order materials now →</button>'+
       '</div>':'');
     document.body.appendChild(banner);
     setTimeout(()=>banner.remove(),4000);
   }
   renderCDBids();renderDash();renderMoneyPage();refreshCollectLabel();
   _refreshClientHub(bid.client_id);
-  // After payment — if no job scheduled yet, offer to schedule.
+  // After payment, if no job scheduled yet, offer to schedule.
   // A job counts whether it's linked by bid_id OR is an unlinked job for the same
-  // client (the schedule form doesn't require picking the bid — same fallback the
+  // client (the schedule form doesn't require picking the bid, same fallback the
   // bid detail panel uses), in ANY state including done: a completed job means
   // "already scheduled", never re-prompt. And a paid-in-full payment is the END of
-  // the money chain (collection) — the work plainly already happened, so never
+  // the money chain (collection): the work plainly already happened, so never
   // offer to schedule off the final payment either.
   if(_savedBidId&&newBalance>0.01){
     const _pb=bids.find(b=>b.id===_savedBidId);
@@ -1401,11 +1401,11 @@ function logPayment(){
     }
   }
 }
-// NEVER-DELETE UX: kept for compatibility, but the UI now surfaces editPayment —
+// NEVER-DELETE UX: kept for compatibility, but the UI now surfaces editPayment,
 // removal lives inside the edit modal, requires the 5s hold, and only archives.
-function deletePay(id){zConfirm('Remove this payment record? It moves to the Archive under Books — nothing is ever deleted.',()=>{_userDelete(()=>{payments=payments.filter(p=>p.id!==id);saveAll();});renderCDBids();},{title:'Remove payment',yes:'Remove',danger:true});}
+function deletePay(id){zConfirm('Remove this payment record? It moves to the Archive under Books, nothing is ever deleted.',()=>{_userDelete(()=>{payments=payments.filter(p=>p.id!==id);saveAll();});renderCDBids();},{title:'Remove payment',yes:'Remove',danger:true});}
 
-// ── Edit payment — fix the record instead of deleting it (owner directive) ────
+// ── Edit payment, fix the record instead of deleting it (owner directive) ────
 function editPayment(id){
   const p=payments.find(x=>x.id===id);if(!p)return;
   document.getElementById('_epay-ov')?.remove();
@@ -1510,9 +1510,9 @@ function releaseLien(bidId){
   zConfirm('Mark lien as released? This confirms payment has been received.',()=>{
     const l=liens.find(x=>x.bid_id===bidId);
     if(l){l.status='resolved';l.releasedDate=todayKey();saveAll();}
-    if(bid){setBidCollStage(bid,'resolved','Lien released — payment confirmed');}
+    if(bid){setBidCollStage(bid,'resolved','Lien released, payment confirmed');}
     renderMoneyPage();try{renderCDBids();}catch(e){}
-    // LEGAL STEP: marking it resolved in the app does NOT clear the public record —
+    // LEGAL STEP: marking it resolved in the app does NOT clear the public record,
     // the contractor must FILE a Release of Lien with the same Register of Deeds
     // (statutory duty once paid). Offer the recordable document right here.
     setTimeout(()=>{
@@ -1523,7 +1523,7 @@ function releaseLien(bidId){
     // Offer to send release confirmation text to client
     if(c&&c.phone){
       const biz=S.bname||'TradeDesk';
-      const msg=`Hi ${c.name}, this is ${biz}. We're writing to confirm that your balance has been received and the mechanic's lien on your property has been released. Thank you for resolving this — we appreciate your business.`;
+      const msg=`Hi ${c.name}, this is ${biz}. We're writing to confirm that your balance has been received and the mechanic's lien on your property has been released. Thank you for resolving this, we appreciate your business.`;
       const phone=c.phone.replace(/\D/g,'');
       setTimeout(()=>{
         zConfirm('Send release confirmation text to '+c.name+'?',()=>{
@@ -1572,7 +1572,7 @@ function collSendSMS(bid,stageKey){
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">'+
-      '<div style="font-size:15px;font-weight:800">'+svgIcon('💬',{size:15})+' '+stageLabel+' — '+escHtml(c.name)+'</div>'+
+      '<div style="font-size:15px;font-weight:800">'+svgIcon('💬',{size:15})+' '+stageLabel+', '+escHtml(c.name)+'</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">'+svgIcon('✕',{size:20})+'</button>'+
     '</div>'+
     '<div style="background:var(--bg2);border-radius:var(--r);padding:12px;font-size:12px;color:var(--text);line-height:1.6;margin-bottom:14px;max-height:160px;overflow-y:auto">'+escHtml(msg)+'</div>'+
@@ -1582,7 +1582,7 @@ function collSendSMS(bid,stageKey){
       '<button onclick="_doCollSMS(\''+phone+'\',\''+encodeURIComponent(msg)+'\',bids.find(x=>x.id=='+bid.id+'),\''+newStage+'\',\''+stageLabel+'\');this.closest(\'.zmodal-overlay\').remove()" style="flex:2;padding:12px;border-radius:var(--r);border:none;background:var(--amber);color:#1a1a1a;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Send via Messages →</button>'+
     '</div>'+
     '<div style="margin-top:10px">'+
-      '<button onclick="_markCollSMSSent(bids.find(x=>x.id=='+bid.id+'),\''+newStage+'\',\''+stageLabel+'\');this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text2)">'+svgIcon('✓',{size:12})+' Already sent — mark as sent</button>'+
+      '<button onclick="_markCollSMSSent(bids.find(x=>x.id=='+bid.id+'),\''+newStage+'\',\''+stageLabel+'\');this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text2)">'+svgIcon('✓',{size:12})+' Already sent, mark as sent</button>'+
     '</div>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -1597,7 +1597,7 @@ function _doCollSMS(phone,encodedMsg,bid,newStage,label){
 }
 function _markCollSMSSent(bid,newStage,label){
   if(!bid)return;
-  setBidCollStage(bid,newStage,label+' SMS sent — '+new Date().toLocaleDateString());
+  setBidCollStage(bid,newStage,label+' SMS sent, '+new Date().toLocaleDateString());
   if(!bid.collHistory)bid.collHistory=[];
   bid.collHistory.push({stage:newStage,note:label+' sent',ts:new Date().toISOString(),method:'sms'});
   autoLogContact(bid.client_id,'collection_sms');
@@ -1689,7 +1689,7 @@ async function autoRefreshLienRules(){
       changedStates.forEach(state=>{
         if(LIEN_RULES[state])LIEN_RULES[state].filing_deadline_days=changes[state];
       });
-      showToast('Lien deadline change detected for '+changedStates.join(', ')+' — verify before next filing','⚖️');
+      showToast('Lien deadline change detected for '+changedStates.join(', ')+', verify before next filing','⚖️');
     }
     localStorage.setItem(KEY,String(thisYear));
   }catch(e){}finally{_lienRefreshInProgress=false;}
@@ -1704,7 +1704,7 @@ function showFileLienDirect(bidId){
   const{stateCode,county}=getCountyForBid(bid);
   const filingInfo=getCountyFilingInfo(stateCode);
   const mapsUrl=_lienMapsUrl(county,stateCode);
-  const warningHtml=daysUntilDeadline<=0?'<div style="background:#3D0000;color:#FFB3B3;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">'+svgIcon('⚠',{size:12})+' Lien window may be expired — consult an attorney before filing.</div>':daysUntilDeadline<=30?'<div style="background:var(--amber-lt);color:#856404;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">'+svgIcon('⏰',{size:12})+' '+daysUntilDeadline+' days left to file — act now.</div>':'';
+  const warningHtml=daysUntilDeadline<=0?'<div style="background:#3D0000;color:#FFB3B3;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">'+svgIcon('⚠',{size:12})+' Lien window may be expired, consult an attorney before filing.</div>':daysUntilDeadline<=30?'<div style="background:var(--amber-lt);color:#856404;border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px">'+svgIcon('⏰',{size:12})+' '+daysUntilDeadline+' days left to file, act now.</div>':'';
   const notesHtml=filingInfo.notes.map(n=>'<div style="display:flex;gap:6px;margin-bottom:4px"><span style="color:var(--blue);flex-shrink:0">→</span><span>'+escHtml(n)+'</span></div>').join('');
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
@@ -1719,10 +1719,10 @@ function showFileLienDirect(bidId){
       '<div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center"><div style="font-size:18px;font-weight:800">'+daysUnpaid+'d</div><div style="font-size:10px;color:var(--text3);margin-top:2px">Days unpaid</div></div>'+
     '</div>'+
     '<div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Client:</strong> '+escHtml(c.name)+'</div>'+
-    '<div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Property:</strong> '+escHtml(addr||'—')+'</div>'+
-    '<div style="font-size:12px;color:var(--text2);margin-bottom:14px"><strong>Completion:</strong> '+escHtml(bid.completion_date||'—')+'</div>'+
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Property:</strong> '+escHtml(addr||'-')+'</div>'+
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:14px"><strong>Completion:</strong> '+escHtml(bid.completion_date||'-')+'</div>'+
     '<div style="background:var(--blue-lt);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">'+
-      '<div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:6px">'+svgIcon('📍',{size:12})+' Filing Instructions — '+escHtml(stateCode)+'</div>'+
+      '<div style="font-size:12px;font-weight:800;color:var(--blue);margin-bottom:6px">'+svgIcon('📍',{size:12})+' Filing Instructions, '+escHtml(stateCode)+'</div>'+
       '<div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:2px">'+escHtml(filingInfo.office)+'</div>'+
       '<div style="font-size:10px;color:var(--text3);margin-bottom:8px">'+escHtml(filingInfo.cite)+'</div>'+
       '<a href="'+mapsUrl+'" target="_blank" style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--blue);font-weight:600;text-decoration:none;margin-bottom:10px">'+svgIcon('📍',{size:12})+' Find '+escHtml(filingInfo.office)+' in Maps →</a>'+

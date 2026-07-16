@@ -47,9 +47,9 @@ function _agSearchInput(val){_agSearch=val;_agRenderList();}
 function renderContracts(){
   const body=document.getElementById('contracts-page-body');if(!body)return;
   let html='';
-  // Disclaimer banner — mirrors the tone of the lien / tax-tool disclaimers.
+  // Disclaimer banner, mirrors the tone of the lien / tax-tool disclaimers.
   html+='<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:10px 14px;margin-bottom:14px;font-size:12px;color:#92400e;line-height:1.45">'+
-    svgIcon('⚠️')+' <strong>Not legal advice</strong> — these templates are organizational tools only. Have an attorney review before relying on this.</div>';
+    svgIcon('⚠️')+' <strong>Not legal advice</strong>, these templates are organizational tools only. Have an attorney review before relying on this.</div>';
   // Search
   html+='<input id="contracts-search" oninput="_agSearchInput(this.value)" value="'+escHtml(_agSearch)+'" placeholder="Search by party name…" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;font-size:14px;box-sizing:border-box;margin-bottom:12px">';
   // Status filter chips
@@ -99,7 +99,7 @@ function _agProfitShareBody(party,pct,cadence){
     'This Profit-Share Agreement (“Agreement”) is entered into between '+owner+' (“Owner”) and '+p+' (“Partner”), effective on the date signed below.\n\n'+
     '1. Purpose. The Owner and Partner agree to operate the business in good faith, with the Partner sharing in the net profit of the business on the terms below.\n\n'+
     '2. Profit Share. The Owner shall pay the Partner '+x+'% of the business’s net profit, calculated and paid '+c+'. “Net profit” means total revenue collected during the period, less materials, labor, and tracked business expenses for that period.\n\n'+
-    '3. Recordkeeping. The Partner agrees to run all business operations — including all cash jobs, income, expenses, and mileage — through TradeDesk, logged accurately and in good faith. Both parties rely on these records to calculate the profit share.\n\n'+
+    '3. Recordkeeping. The Partner agrees to run all business operations, including all cash jobs, income, expenses, and mileage, through TradeDesk, logged accurately and in good faith. Both parties rely on these records to calculate the profit share.\n\n'+
     '4. Payment. Each profit-share amount is due within ten (10) days after the close of the applicable '+c+' period. Either party may request a written summary of the figures used for any period.\n\n'+
     '5. Access to Records. Each party may review the business books and TradeDesk records relevant to the profit-share calculation upon reasonable notice.\n\n'+
     '6. Term & Termination. This Agreement continues until terminated by either party on fourteen (14) days’ written notice. Profit earned through the termination date remains payable.\n\n'+
@@ -150,7 +150,7 @@ function _showAgreementModal(a){
     '</div>'+
     '<div class="f"><label>Terms</label><textarea id="_ag-body" rows="8" style="width:100%;box-sizing:border-box;font-family:inherit;font-size:13px;line-height:1.5;padding:10px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);color:var(--text)">'+escHtml(a?.body||'')+'</textarea></div>'+
     '<div class="f"><label>Effective date</label><input id="_ag-eff" type="date" value="'+escHtml(a?.effectiveDate||todayKey())+'"></div>'+
-    '<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:8px 10px;margin:4px 0 14px;line-height:1.4">'+svgIcon('⚠️')+' Not legal advice — have an attorney review before relying on this.</div>'+
+    '<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:var(--r);padding:8px 10px;margin:4px 0 14px;line-height:1.4">'+svgIcon('⚠️')+' Not legal advice, have an attorney review before relying on this.</div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
       '<button onclick="_agSave()" class="btn btn-p" style="flex:1">Save</button>'+
@@ -165,7 +165,7 @@ function _agTypeChanged(){_agApplyTemplate();
   const pf=document.getElementById('_ag-profit-fields');if(pf)pf.style.display=t==='profit_share'?'block':'none';
 }
 
-// Fill the terms textarea with the template for the selected type — only when the
+// Fill the terms textarea with the template for the selected type, only when the
 // box is empty or still holds an unedited template (so we never clobber edits).
 function _agApplyTemplate(){
   const ta=document.getElementById('_ag-body');if(!ta)return;
@@ -191,7 +191,7 @@ function _agSave(){
   const pctRaw=v('_ag-pct').trim();
   const cadence=v('_ag-cadence').trim();
   // Safety net: never let an unfilled template placeholder ({Party}/{X}) ship into a
-  // signed contract — substitute from the actual fields at save time, belt-and-suspenders
+  // signed contract, substitute from the actual fields at save time, belt-and-suspenders
   // to the live oninput re-fill above.
   if(party)body=body.replace(/\{Party\}/g,party);
   if(pctRaw!=='')body=body.replace(/\{X\}/g,pctRaw);
@@ -274,7 +274,7 @@ function _agSignUrl(a){
   return _clientBaseUrl()+'contract-sign.html?t='+a.signingToken+'&u='+(_supaUser?.id||'')+'&a='+a.id;
 }
 
-// Upload a JSON snapshot of the contract to the proposals storage bucket — mirrors
+// Upload a JSON snapshot of the contract to the proposals storage bucket, mirrors
 // the proposals sign flow exactly (public bucket, anon-readable by unguessable token).
 async function _agUpload(a){
   if(!supaEnabled()||!_supaUser)return{error:new Error('Sign in to send for signature.')};
@@ -347,7 +347,7 @@ function _agSms(id){
   window.location.href='sms:'+phone+'?body='+encodeURIComponent(msg);
 }
 
-// Poll storage for signed state on a sent contract — the signer writes signedAt /
+// Poll storage for signed state on a sent contract, the signer writes signedAt /
 // signerName / sigData back into the same snapshot via contract-sign.html.
 async function refreshAgreementSignatures(){
   if(!supaEnabled()||!_supaUser)return;
@@ -365,7 +365,7 @@ async function refreshAgreementSignatures(){
         a.status='signed';a.signedAt=snap.signedAt;a.signerName=snap.signerName||'';a.sigData=snap.sigData||null;
         changed=true;
       }
-    }catch(e){/* network/parse — ignore, try again next time */}
+    }catch(e){/* network/parse: ignore, try again next time */}
   }
   if(changed){saveAll();const pg=document.getElementById('pg-contracts');if(pg&&pg.classList.contains('active'))renderContracts();}
 }

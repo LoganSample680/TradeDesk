@@ -1,4 +1,4 @@
-// REAL flow — "Request access to estimates" (the feature the owner asked for).
+// REAL flow, "Request access to estimates" (the feature the owner asked for).
 // An employee without the `estimate` permission is gated from the estimator and
 // can request access; the owner approves, flipping team_members.permissions.
 // Drives the actual functions (clients.js _canEstimate/openEstimateForClient/
@@ -6,8 +6,8 @@
 // and the real td_permission_requests table + RLS.
 //
 // One-login self-contained: the dev account is made an employee OF ITSELF via a
-// seeded team_members self-link (so the employee-insert RLS — which requires an
-// active team membership — passes), then torn down.
+// seeded team_members self-link (so the employee-insert RLS, which requires an
+// active team membership, passes), then torn down.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
@@ -78,8 +78,8 @@ test.describe('estimate permission-request (UI-driven, two-sided)', () => {
           window._isEmployee = true; window._contractorUserId = uid;
           window._employeeRecord = { contractor_user_id: uid, employee_user_id: uid, email: _supaUser.email, name: 'E2E Self Tech', role: 'tech', active: true, permissions: { collect: true, estimate: false } };
           const canEst = (typeof _canEstimate === 'function') ? _canEstimate() : null;
-          // Attempt to start an estimate — the gate should block the estimator and
-          // route to the request popup. Pick any client (or none — the gate fires first).
+          // Attempt to start an estimate, the gate should block the estimator and
+          // route to the request popup. Pick any client (or none, the gate fires first).
           const before = document.getElementById('pg-est')?.classList.contains('active');
           try { openEstimateForClient(); } catch (e) {}
           const after = document.getElementById('pg-est')?.classList.contains('active');
@@ -106,7 +106,7 @@ test.describe('estimate permission-request (UI-driven, two-sided)', () => {
         const gateOk = reqOk.canEst === false && reqOk.openedEstimator === false;
         if (!gateOk) return { ok: false, got: JSON.stringify(reqOk) };
         if (!reqOk.tableLive) {
-          return { ok: true, got: `gate enforced (canEst=false, estimator not opened); td_permission_requests not in prod yet — pending migration merge [${reqOk.probeErr}]` };
+          return { ok: true, got: `gate enforced (canEst=false, estimator not opened); td_permission_requests not in prod yet, pending migration merge [${reqOk.probeErr}]` };
         }
         const ok = reqOk.pending >= 1 && reqOk.perm === 'estimate';
         return { ok, got: JSON.stringify(reqOk) };
@@ -126,7 +126,7 @@ test.describe('estimate permission-request (UI-driven, two-sided)', () => {
         appr = await p.evaluate(async () => {
           const uid = _supaUser.id;
           window._isEmployee = false;
-          // Probe the table first — skip the whole approval round-trip if it's absent.
+          // Probe the table first, skip the whole approval round-trip if it's absent.
           let tableLive = true, probeErr = '';
           try {
             const { error } = await _supa.from('td_permission_requests').select('id').eq('contractor_user_id', uid).limit(1);
@@ -161,7 +161,7 @@ test.describe('estimate permission-request (UI-driven, two-sided)', () => {
       },
       rule: async () => {
         if (!appr.tableLive) {
-          return { ok: true, got: `td_permission_requests not in prod yet — pending migration merge [${appr.probeErr}]` };
+          return { ok: true, got: `td_permission_requests not in prod yet, pending migration merge [${appr.probeErr}]` };
         }
         const ok = appr.loaded === 1 && appr.est === true && appr.status === 'approved';
         return { ok, got: JSON.stringify(appr) };

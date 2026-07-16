@@ -1,4 +1,4 @@
-// REAL flow — the money-collection chain (task #5): record a deposit, log a
+// REAL flow, the money-collection chain (task #5): record a deposit, log a
 // refund (negative row), watch the balance recompute, then file a mechanic's
 // lien. Drives the actual UI funcs (bids.js openPayPanel→logPayment,
 // showCancellationRefund path via the refund pay-type, openLienPanel→saveLien)
@@ -61,10 +61,10 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
         // the exact amount the user wants and fill the remaining fields by hand.
         await p.evaluate(({ today, DEP }) => {
           const set = (id, v) => { const el = document.getElementById(id); if (el) { el.readOnly = false; el.value = v; } };
-          set('mpay-amount', String(DEP));   // amount field — typed "1000" = 4 keystrokes
-          set('mpay-date', today);           // date field — date picker = 1 tap
+          set('mpay-amount', String(DEP));   // amount field, typed "1000" = 4 keystrokes
+          set('mpay-date', today);           // date field, date picker = 1 tap
           set('mpay-method', 'Check');       // method <select> = 1 tap
-          set('mpay-ref', '1001');           // check # field — typed "1001" = 4 keystrokes
+          set('mpay-ref', '1001');           // check # field, typed "1001" = 4 keystrokes
         }, { today, DEP });
         // Tap "Record payment".
         await p.evaluate(() => { logPayment(); }, {});                                      // 1 tap (submit)
@@ -81,7 +81,7 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
       },
     });
 
-    // ── Log a $500 refund (negative row) — balance must climb back up. ──
+    // ── Log a $500 refund (negative row), balance must climb back up. ──
     await step(page, {
       label: 'log a $500 refund', page: 'pay-panel', role: 'contractor',
       suspect: 'bids.js logPayment refund branch (negative amount) + getBidPaid',
@@ -89,10 +89,10 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
       expected: 'balance 4500 (refund reduces paid total)',
       act: async (p) => {
         // openPayPanel takes no autoType for refunds, so it does NOT auto-fire
-        // selectPayType — #mpay-detail-fields/#mpay-amount stay display:none. The
+        // selectPayType: #mpay-detail-fields/#mpay-amount stay display:none. The
         // refund button lives inside #_mpay-adj-btns (also display:none). The real
         // user flow: open the panel, tap "⋯ Adjustments & refunds" to reveal the
-        // adjustment buttons, then tap "Issue refund to client" — that button's
+        // adjustment buttons, then tap "Issue refund to client", that button's
         // onclick=selectPayType(this,bidId) reveals the amount row (bids.js:1130-1157).
         await p.evaluate(({ bidId }) => { openPayPanel(bidId, 'refund'); }, { bidId });   // 1 tap (open)
         await p.waitForSelector('.pay-modal-overlay', { timeout: 8000 });
@@ -102,8 +102,8 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
         await p.waitForSelector('#mpay-amount', { state: 'visible', timeout: 8000 });
         await p.evaluate(({ today, REF }) => {
           const set = (id, v) => { const el = document.getElementById(id); if (el) { el.readOnly = false; el.value = v; } };
-          set('mpay-amount', String(REF));   // refund amount field — typed "500" = 3 keystrokes
-          set('mpay-date', today);           // date field — date picker = 1 tap
+          set('mpay-amount', String(REF));   // refund amount field, typed "500" = 3 keystrokes
+          set('mpay-date', today);           // date field, date picker = 1 tap
         }, { today, REF });
         // Tap "Issue refund".
         await p.evaluate(() => { logPayment(); }, {});                                     // 1 tap (submit)
@@ -131,7 +131,7 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
         // #cd-lien-panel and its fields live INSIDE #cdt-bids-content, which is
         // display:none until the client detail page is open and the Bids tab is
         // active (clients.js setCDTab:1241-1252). openLienPanel only unhides
-        // #cd-lien-panel itself (bids.js:1303), not its hidden ancestor — so the
+        // #cd-lien-panel itself (bids.js:1303), not its hidden ancestor, so the
         // real user reveal path is: open the client record, switch to the Bids tab,
         // THEN tap "File lien". Drive that path so #lien-amount actually becomes
         // visible instead of staying inside a collapsed container.
@@ -142,10 +142,10 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
         await p.evaluate(({ today, bal }) => {
           const set = (id, v) => { const el = document.getElementById(id); if (el) el.value = v; };
           set('lien-status', 'filed');               // status <select> = 1 tap
-          set('lien-amount', String(bal));           // amount field — bal=4500, typed "4500" = 4 keystrokes
-          set('lien-date', today);                   // date field — date picker = 1 tap
-          set('lien-county', 'Sedgwick County, KS'); // county field — typed = 19 keystrokes
-          set('lien-notes', 'E2E lien');             // notes field — typed = 8 keystrokes
+          set('lien-amount', String(bal));           // amount field, bal=4500, typed "4500" = 4 keystrokes
+          set('lien-date', today);                   // date field, date picker = 1 tap
+          set('lien-county', 'Sedgwick County, KS'); // county field, typed = 19 keystrokes
+          set('lien-notes', 'E2E lien');             // notes field, typed = 8 keystrokes
         }, { today, bal });
         await p.evaluate(() => saveLien(), {});                                           // 1 tap (submit)
         return 37; // openClient(1) + bidsTab(1) + openLien(1) + status pick(1) + amount"4500"(4) + date pick(1) + county(19) + notes(8) + submit(1) = 37
@@ -164,7 +164,7 @@ test.describe('payments, deposit, refund, lien (UI-driven)', () => {
       },
     });
 
-    // NO cleanup — the bid, payments, liens + client stay in the dev account on
+    // NO cleanup, the bid, payments, liens + client stay in the dev account on
     // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

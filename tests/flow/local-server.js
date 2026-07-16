@@ -1,4 +1,4 @@
-// Local test server — serves the static TradeDesk app AND proxies /api/* to
+// Local test server, serves the static TradeDesk app AND proxies /api/* to
 // Supabase, so the live flow suite can run on a self-hosted runner (Proxmox) with
 // ZERO Cloudflare Worker usage. It reproduces what functions/api/[[path]].js does
 // on Cloudflare, but locally: /api/<path> -> <SUPABASE_UPSTREAM>/<path>, including
@@ -23,7 +23,7 @@ const ROOT = path.resolve(__dirname, '..', '..'); // repo root (where index.html
 // ─────────────────────────────────────────────────────────────────────────────
 // LOCAL-STACK anon-key swap (GATED on E2E_LOCAL_STACK==='1').
 //
-// When the flag is OFF this is dormant — served HTML/JS is byte-for-byte the
+// When the flag is OFF this is dormant, served HTML/JS is byte-for-byte the
 // cloud files. When ON, the app must authenticate against the LOCAL Supabase
 // stack, which uses a DIFFERENT publishable key than the baked cloud one. We
 // rewrite the cloud anon key(s) → the local publishable key on the fly as files
@@ -88,7 +88,7 @@ function serveStatic(req, res) {
     const ctype = MIME[ext] || 'application/octet-stream';
     // For HTML, inject a tiny script pinning the app to PROXY mode. The local server
     // IS the /api proxy (it forwards to Supabase), so the app must NOT try direct-to-
-    // supabase.co — on the runner that's unreachable, so its 2.5s boot probe times out
+    // supabase.co: on the runner that's unreachable, so its 2.5s boot probe times out
     // and falls back anyway, adding ~2.5s to EVERY test boot (→ slow boot → inputs
     // "resolved to hidden" → the timeout failures). Pinning proxy skips the probe.
     if (ext === '.html') {
@@ -101,8 +101,8 @@ function serveStatic(req, res) {
         // (they don't share cloud.js's bridge logic). On the runner that host is
         // unreachable, so their proposal/hub/account fetches fail and the page sits on
         // its error screen (#f-name / #approve-btn never shown). Rewrite that literal to
-        // the same-origin /api bridge this server proxies — exactly what the main app
-        // uses (location.origin+'/api') — so they load live data identically. Only those
+        // the same-origin /api bridge this server proxies, exactly what the main app
+        // uses (location.origin+'/api'): so they load live data identically. Only those
         // pages contain the literal; index.html (cloud.js) is untouched.
         html = html.replace(/'https:\/\/[a-z0-9-]+\.supabase\.co'/gi, "(location.origin+'/api')");
         // LOCAL STACK ONLY: point the app's anon key at the local stack's key.

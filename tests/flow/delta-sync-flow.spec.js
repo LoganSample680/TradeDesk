@@ -1,8 +1,8 @@
-// REAL flow — CONTENT-HASH DELTA SYNC (the scaling fix). Proves the cloud save only
+// REAL flow, CONTENT-HASH DELTA SYNC (the scaling fix). Proves the cloud save only
 // uploads rows that ACTUALLY changed since the last sync, instead of re-upserting the
 // whole account on every save. Every save pass increments window._deltaStats.upserts by
 // the number of rows it actually sent (and .skips by the number it skipped because their
-// content hash was unchanged) — so each assertion below counts real uploads, end-to-end,
+// content hash was unchanged), so each assertion below counts real uploads, end-to-end,
 // driving the real app against real Supabase.
 //
 // The invariants (and the failure-mode they guard):
@@ -27,12 +27,12 @@ const resetDelta = (page) => page.evaluate(() => { window._deltaStats = { upsert
 const readDelta = (page) => page.evaluate(() => ({ upserts: window._deltaStats.upserts, skips: window._deltaStats.skips, rows: (window._deltaStats.rows || []).slice(0, 20) }));
 // Post-warm snapshot + field-level diff of over-uploaded client rows: names WHICH
 // FIELDS changed between the warm save and the measured save. If none changed,
-// the churn is in the hash BASELINE (reconcile/rebuild), not the data — equally
+// the churn is in the hash BASELINE (reconcile/rebuild), not the data, equally
 // decisive. Diagnosis instrumentation for the "exactly N rows" precision rules.
 const snapClients = (page) => page.evaluate(() => { window.__snap = {}; clients.forEach(c => { window.__snap[c.id] = JSON.stringify(c); }); });
 // Round-2 diagnosis (snapshot diff came back NO-FIELD-CHANGE): compare the phantom
-// row's MEMORY payload against the CLOUD jsonb it supposedly diverged from — the
-// actual pair the hash gate compares — plus the raw hash values (baseline vs mem vs
+// row's MEMORY payload against the CLOUD jsonb it supposedly diverged from, the
+// actual pair the hash gate compares, plus the raw hash values (baseline vs mem vs
 // cloud). Names the exact field(s) some post-load code mutates, or proves the
 // baseline map itself is being re-stamped with a foreign value.
 const diffClients = (page) => page.evaluate(async () => {
@@ -50,7 +50,7 @@ const diffClients = (page) => page.evaluate(async () => {
         if (a !== b) d.push('snap.' + k + ':' + String(a).slice(0, 40) + '→' + String(b).slice(0, 40));
       });
     }
-    // mem vs CLOUD — the comparison the delta gate actually makes.
+    // mem vs CLOUD, the comparison the delta gate actually makes.
     try {
       const { data } = await _supa.from('td_clients').select('data').eq('user_id', _supaUser.id).eq('id', id).maybeSingle();
       const cloud = (data && data.data) || {};
@@ -69,13 +69,13 @@ const diffClients = (page) => page.evaluate(async () => {
 // A unique, collision-proof base id for this run (timestamp + pid), §13.7.
 const baseId = () => Date.now() * 1000 + (process.pid % 1000);
 
-test.describe('content-hash delta sync — only changed rows upload', () => {
+test.describe('content-hash delta sync, only changed rows upload', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => {
     resetLedger();
     // Quiesce the paced hub sweep: it repairs one drifted client hub per tick and
-    // STAMPS the client row each time — real, correct writes that land inside this
+    // STAMPS the client row each time, real, correct writes that land inside this
     // spec's precision windows ("exactly 1 row" / "exactly 0 rows") on a suite
     // account with a deep repair backlog. Diagnosed 2026-07-03 via _deltaStats.rows:
     // the "extra" uploads were 42 td_clients rows, all sweep stamps.
@@ -83,29 +83,29 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
     // MUST be addInitScript, not a post-signIn evaluate (root cause of the 2026-07-10
     // red): the sweep starts 4s after cloud load and each tick fires an UN-AWAITED
     // background hub upload that stamps clientHubHash on the client row when it
-    // resolves. A flag set after boot lands too late — ticks already launched stamp
-    // a client INSIDE the measurement window ("phantom" 1-row upload) — and a plain
+    // resolves. A flag set after boot lands too late, ticks already launched stamp
+    // a client INSIDE the measurement window ("phantom" 1-row upload), and a plain
     // window flag is wiped by the reload tests below. addInitScript runs before any
     // page script on EVERY navigation, so no tick ever dequeues in this page.
     await page.addInitScript(() => { window._hubSweepPause = true; });
     await signIn(page);
   });
 
-  test('a single field edit uploads only that bid — not the bids table', async ({ page }) => {
+  test('a single field edit uploads only that bid, not the bids table', async ({ page }) => {
     const bidId = baseId();
     await step(page, {
       label: 'seed a bid, warm the sync, edit one field, save', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _upsertTable — delta filter (hashes.get(id)!==h) + window._deltaStats',
+      suspect: 'cloud.js _upsertTable, delta filter (hashes.get(id)!==h) + window._deltaStats',
       // ASSERTION CORRECTED (2026-07-04, post-review): the old rule was total
       // `upserts === 1`, which assumed ZERO concurrent activity. On a real account
       // (and the stale runner where `db reset` is failing) the paced client-hub
-      // sweep legitimately repairs + re-syncs other rows in the same window — proven
+      // sweep legitimately repairs + re-syncs other rows in the same window, proven
       // harmless: their base/mem/cloud hashes are byte-identical (the canonical-hash
       // fix works). What this test actually proves is that a one-field bid edit
       // uploads EXACTLY that bid and does NOT re-upload the bids table. So assert on
-      // the td_bids uploads, not the global count — orthogonal client-sweep repairs
+      // the td_bids uploads, not the global count, orthogonal client-sweep repairs
       // must not fail it.
-      ruleText: 'editing one field of one bid uploads exactly that bid (1 td_bids row) — never the whole bids table',
+      ruleText: 'editing one field of one bid uploads exactly that bid (1 td_bids row), never the whole bids table',
       expected: 'exactly one td_bids row uploaded, and it is the edited bid',
       act: async (p) => {
         await resetDelta(p);
@@ -140,7 +140,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
     const bidId = baseId() + 1;
     await step(page, {
       label: 'seed + warm, then save again with no change', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _upsertTable — unchanged rows are skipped, never re-upserted',
+      suspect: 'cloud.js _upsertTable, unchanged rows are skipped, never re-upserted',
       ruleText: 'saving with nothing changed must upload 0 rows AND leave the cloud row updated_at untouched',
       expected: '_deltaStats.upserts === 0 and updated_at unchanged',
       act: async (p) => {
@@ -174,8 +174,8 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
     const newId = base + 5;
     await step(page, {
       label: 'seed 5, warm, edit 2 + add 1, save', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _upsertTable — delta uploads only the changed/new rows (FM-5)',
-      ruleText: 'after warming 5 bids, editing 2 and adding 1 must upload exactly 3 — and all 6 must be correct in cloud',
+      suspect: 'cloud.js _upsertTable, delta uploads only the changed/new rows (FM-5)',
+      ruleText: 'after warming 5 bids, editing 2 and adding 1 must upload exactly 3, and all 6 must be correct in cloud',
       expected: '_deltaStats.upserts === 3; 3 untouched unchanged, 2 carry edits, 1 new present',
       act: async (p) => {
         await p.evaluate(async ({ ids }) => {
@@ -220,7 +220,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
     }, { bidId });
     // Fresh boot: RELOAD (the Supabase session persists in localStorage, so the app
     // re-auths itself and runs supaLoadFromCloud again → rebuilds _syncedHash from cloud).
-    // NOT a second signIn() — that waits for the login form, which never appears when a
+    // NOT a second signIn(): that waits for the login form, which never appears when a
     // session is already active, and would hang.
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => typeof _supaCloudLoaded !== 'undefined' && _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
@@ -228,7 +228,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
 
     await step(page, {
       label: 'after fresh load, save with no edit', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js supaLoadFromCloud — _syncedHash[t]=new Map(... _hashPayload(r.data))',
+      suspect: 'cloud.js supaLoadFromCloud, _syncedHash[t]=new Map(... _hashPayload(r.data))',
       ruleText: 'the load must rebuild the synced hash so an immediate no-op save uploads nothing',
       expected: 'no-op save uploads 0, and the rebuilt hash is in lockstep with the loaded rows',
       act: async (p) => {
@@ -243,7 +243,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
         return 1;
       },
       // The property: a fresh load rebuilds _syncedHash, so a no-op save uploads nothing
-      // (upserts===0 — if the hash hadn't rebuilt, every loaded row would re-upload). And
+      // (upserts===0: if the hash hadn't rebuilt, every loaded row would re-upload). And
       // the rebuilt hash is in lockstep with the rows that actually loaded: the seeded
       // bid's hash is present IFF the bid came back into memory (the shared dev account is
       // never cleaned per §13.7, so a given row may or may not be in the loaded set, but
@@ -261,7 +261,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
     const ctxB = await browser.newContext({ baseURL: BASE, bypassCSP: true });
     await scopeBypassHeader(ctxB, BASE);
     const pageB = await ctxB.newPage();
-    // B asserts upserts===0 on its own save — its hub sweep must be quiesced from
+    // B asserts upserts===0 on its own save, its hub sweep must be quiesced from
     // first script too, or a pre-flag tick's async stamp fails B the same way.
     await pageB.addInitScript(() => { window._hubSweepPause = true; });
     await signIn(pageB);
@@ -270,7 +270,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
     try {
       await step(page, {
         label: 'A creates+edits a bid; B receives it via realtime; B saves', page: 'cloud', role: 'contractor',
-        suspect: 'cloud.js _applyRealtimeRecord — patch/insert update _syncedHash so no echo re-upload',
+        suspect: 'cloud.js _applyRealtimeRecord, patch/insert update _syncedHash so no echo re-upload',
         ruleText: 'a row B learned from a peer (realtime) must not be re-uploaded by B on its next save',
         expected: 'B sees the bid, then B._deltaStats.upserts === 0',
         act: async (p) => {
@@ -302,7 +302,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
     const bidId = baseId() + 40;
     await step(page, {
       label: 'seed+warm, delete (sweep), then re-create same id', page: 'cloud', role: 'contractor',
-      suspect: 'cloud.js _upsertTable sweep — hashes.delete(id) on soft-delete (FM-10)',
+      suspect: 'cloud.js _upsertTable sweep, hashes.delete(id) on soft-delete (FM-10)',
       ruleText: 'after a swept delete the hash must be gone, so re-creating that id uploads it again',
       expected: 'hash absent after delete; re-create → _deltaStats.upserts === 1',
       act: async (p) => {
@@ -321,7 +321,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
           // NEVER-DELETE policy: a user delete now lands as archived_at (recoverable); either column proves the removal committed.
           return !!(data && (data.deleted_at || data.archived_at));
         }, { bidId });
-        // Re-create the SAME id and save — must upload because the hash was cleared.
+        // Re-create the SAME id and save, must upload because the hash was cleared.
         await resetDelta(p);
         await p.evaluate(async ({ bidId }) => {
           bids.push({ id: bidId, client_name: 'E2E Delta Re ' + bidId, name: 'Delta Re', amount: 500, status: 'Pending', _e2e: 'delta' });
@@ -337,12 +337,12 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
   });
 
   // REGRESSION (cross-device delete bug): a BEFORE UPDATE OR DELETE trigger on td_bids
-  // (20260626 bid history) read OLD.contractor_user_id — a column td_bids does NOT have
-  // (it keys on user_id) — so the soft-delete UPDATE raised 42703 and 400'd, aborting the
+  // (20260626 bid history) read OLD.contractor_user_id: a column td_bids does NOT have
+  // (it keys on user_id), so the soft-delete UPDATE raised 42703 and 400'd, aborting the
   // save. deleted_at never landed, so the bid stayed alive in the cloud and resurrected on
   // every device / after reload. This guards the FULL invariant end-to-end: delete → cloud
   // deleted_at set (save not aborted) → fresh reload → the bid stays gone. (Effective once
-  // the test stack has all migrations incl. 20260626/20260707 — same gap that let prod break
+  // the test stack has all migrations incl. 20260626/20260707: same gap that let prod break
   // while CI stayed green: the local stack predated the trigger.)
   test('a deleted bid soft-deletes in the cloud and does NOT resurrect after a fresh reload', async ({ page }) => {
     const bidId = baseId() + 60;
@@ -357,7 +357,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
           bids.push({ id: bidId, client_name: 'E2E Del Persist ' + bidId, name: 'Del Persist', amount: 100, status: 'Pending', _e2e: 'delta' });
           await supaSaveToCloud();
         }, { bidId });
-        // Real delete path — _userDelete records the intent so the sweep soft-deletes it.
+        // Real delete path, _userDelete records the intent so the sweep soft-deletes it.
         await p.evaluate(async ({ bidId }) => {
           _userDelete(() => { bids = bids.filter(b => b.id !== bidId); });
           await supaSaveToCloud();
@@ -367,7 +367,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
           // NEVER-DELETE policy: a user delete now lands as archived_at (recoverable); either column proves the removal committed.
           return !!(data && (data.deleted_at || data.archived_at));
         }, { bidId });
-        // Fresh reload — the load filters deleted_at IS NULL, so a properly soft-deleted bid
+        // Fresh reload, the load filters deleted_at IS NULL, so a properly soft-deleted bid
         // must NOT come back. Before the fix it resurrected because deleted_at never landed.
         await p.reload({ waitUntil: 'domcontentloaded' });
         await p.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
@@ -384,13 +384,13 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
   // REGRESSION (unwrapped delete site): convertOpportunityToEstimate removed a SAVED
   // opportunity bid with a bare `bids=bids.filter(...)` (no _userDelete), so post-#51 the
   // sweep never recorded the delete intent and the opportunity resurrected from the cloud.
-  // Now wrapped in _userDelete — assert the removed opportunity actually soft-deletes.
+  // Now wrapped in _userDelete, assert the removed opportunity actually soft-deletes.
   test('converting an opportunity soft-deletes its saved bid (unwrapped-delete regression)', async ({ page }) => {
     const cid = baseId() + 70, bidId = baseId() + 71;
     await step(page, {
       label: 'seed a saved opportunity, convert it, assert the opportunity bid soft-deletes',
       page: 'cloud', role: 'contractor',
-      suspect: 'bids.js convertOpportunityToEstimate — must _userDelete the removed opportunity bid',
+      suspect: 'bids.js convertOpportunityToEstimate, must _userDelete the removed opportunity bid',
       ruleText: 'converting an opportunity must record the removed bid as a local delete so it soft-deletes in the cloud and does not resurrect',
       expected: 'opportunity bid deleted_at set; absent after reload',
       act: async (p) => {
@@ -399,7 +399,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
           bids.push({ id: bidId, client_id: cid, client_name: 'E2E Opp Client ' + cid, name: 'Opp', type: 'opportunity', status: 'opportunity', amount: 0, draft: false, bid_date: new Date().toISOString().slice(0, 10), _e2e: 'delta' });
           await supaSaveToCloud();
         }, { cid, bidId });
-        // Real app path — converting removes the opportunity bid. Tolerate any UI side-effect
+        // Real app path, converting removes the opportunity bid. Tolerate any UI side-effect
         // throw from _doOpenEstimate: the delete+record happens first, which is what we assert.
         await p.evaluate(({ bidId }) => { try { convertOpportunityToEstimate(bidId); } catch (e) {} }, { bidId });
         await p.evaluate(async () => { if (typeof _flushSaveNow === 'function') _flushSaveNow(); await supaSaveToCloud(); });
@@ -431,7 +431,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
       label: 'seed a bid + maintenance contract, Clear Data, assert cloud soft-deleted + no resurrection',
       page: 'pg-settings', role: 'contractor',
       suspect: 'settings.js clearAllData (_deliberateWipe bypass + awaited flush) vs cloud.js sanity guard',
-      ruleText: 'a deliberate Clear Data must soft-delete every store in the cloud — even on a cache-only load — and nothing may resurrect on reload',
+      ruleText: 'a deliberate Clear Data must soft-delete every store in the cloud, even on a cache-only load, and nothing may resurrect on reload',
       expected: 'td_bids + td_contracts rows for this run have deleted_at set; absent after reload',
       act: async (p) => {
         await p.evaluate(async ({ bidId, ctId }) => {
@@ -462,7 +462,7 @@ test.describe('content-hash delta sync — only changed rows upload', () => {
           // NEVER-DELETE policy: user removals land as archived_at; either column proves the removal committed.
           return { bidDel: !!(b.data && (b.data.deleted_at || b.data.archived_at)), ctDel: !!(ct.data && (ct.data.deleted_at || ct.data.archived_at)) };
         }, { bidId, ctId });
-        // Reload — a properly soft-deleted row (load filters deleted_at IS NULL) must not come back.
+        // Reload: a properly soft-deleted row (load filters deleted_at IS NULL) must not come back.
         await p.reload({ waitUntil: 'domcontentloaded' });
         await p.waitForFunction(() => typeof _supaUser !== 'undefined' && _supaUser && _supaUser.id, { timeout: 30000 });
         await p.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});

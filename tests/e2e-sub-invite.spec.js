@@ -2,7 +2,7 @@
 /**
  * Exhaustive E2E coverage for the sub referral invite flow (js/cloud.js):
  * a contractor who adds a 1099 sub can text them a link to create their OWN
- * TradeDesk account (the growth loop). NOT the employee invite — nothing in
+ * TradeDesk account (the growth loop). NOT the employee invite, nothing in
  * this flow grants access to the inviter's account.
  *
  * Functions covered:
@@ -13,7 +13,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('sub referral invite — exhaustive coverage', () => {
+test.describe('sub referral invite, exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -126,7 +126,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       window._sendSubInviteEmail = origSend; window._subInviteNavigate = origNav;
       return { emailed: emailedSub && emailedSub.email, linkOk: !!emailedLink && emailedLink.includes('sub_invite'), navCalled, invitedAt: S.subcontractors[0].tdInvitedAt };
     });
-    // Email wins over phone — one channel per invite, never both.
+    // Email wins over phone, one channel per invite, never both.
     expect(result.emailed).toBe('sub@example.com');
     expect(result.linkOk).toBe(true);
     expect(result.navCalled).toBe(false);
@@ -147,7 +147,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result).toContain('sms:3165550100');
   });
 
-  test('_inviteSubToTradeDesk suppressed address: no sms fallback (they opted out — respect it)', async () => {
+  test('_inviteSubToTradeDesk suppressed address: no sms fallback (they opted out, respect it)', async () => {
     const result = await page.evaluate(async () => {
       S.subcontractors = [{ id: 1, name: 'Opted Out', email: 'no@example.com', phone: '316-555-0100' }];
       let navCalled = false;
@@ -200,14 +200,14 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       expenses.push(
         { id: 1, cat: 'subs', subId: 71, amount: 500, date: '2026-02-01', job_name: 'Kitchen remodel' },      // by subId
         { id: 2, cat: 'Subcontractors', vendor: 'history sub', amount: 300, date: '2026-01-01' },              // by vendor name (case-insensitive)
-        { id: 3, cat: 'subs', subId: 99, amount: 999, date: '2026-03-01' },                                    // different sub — excluded
-        { id: 4, cat: 'materials', vendor: 'History Sub', amount: 50, date: '2026-04-01' },                    // not a sub expense — excluded
+        { id: 3, cat: 'subs', subId: 99, amount: 999, date: '2026-03-01' },                                    // different sub, excluded
+        { id: 4, cat: 'materials', vendor: 'History Sub', amount: 50, date: '2026-04-01' },                    // not a sub expense, excluded
         { id: 5, cat: 'subs', subId: 71, amount: 200, date: '2026-05-01', subPayKey: '801:0' },                // counted here...
       );
       jobs.push({ id: 801, name: 'Bath job', client_id: null, subs: [
         { subId: 71, paid: true, paidDate: '2026-05-01', amount: 200 },   // ...so this legacy row dedupes out (subPayKey 801:0)
         { subId: 71, paid: true, paidDate: '2025-12-01', amount: 400 },   // legacy row, counts
-        { subId: 71, paid: false, amount: 123 },                          // unpaid — excluded
+        { subId: 71, paid: false, amount: 123 },                          // unpaid: excluded
       ]});
       const rows = _subPaymentHistory(S.subcontractors[0]);
       const nullCase = _subPaymentHistory(null);
@@ -216,11 +216,11 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       return { rows, nullLen: nullCase.length };
     });
     expect(result.nullLen).toBe(0);
-    expect(result.rows.length).toBe(4); // 500 + 300 + 200(expense) + 400(legacy) — not the 999/50/unpaid/duped rows
+    expect(result.rows.length).toBe(4); // 500 + 300 + 200(expense) + 400(legacy): not the 999/50/unpaid/duped rows
     expect(result.rows.reduce((s, r) => s + r.amount, 0)).toBe(1400);
     expect(result.rows[0].date).toBe('2025-12-01'); // sorted oldest-first
     // THE PRIVACY CONTRACT: date + amount + job address. Nothing else ever
-    // crosses to the sub — no job names/descriptions (they can carry the
+    // crosses to the sub, no job names/descriptions (they can carry the
     // GC's client details), no notes, no client info.
     result.rows.forEach(r => expect(Object.keys(r).sort()).toEqual(['addr', 'amount', 'date']));
   });
@@ -233,12 +233,12 @@ test.describe('sub referral invite — exhaustive coverage', () => {
         v: 1,
         business: { name: 'Torres Electric', phone: '316-555-9000', email: 'gc@torres.com', addr: '9 Volt St, Wichita, KS' },
         payments: [
-          // 'job' simulates a tampered/legacy payload — the seeder must ignore it
+          // 'job' simulates a tampered/legacy payload, the seeder must ignore it
           { date: '2026-03-05', amount: 850, job: 'Panel swap', addr: '12 Main St' },
           { date: '2026-04-10', amount: 1200, addr: '' },
-          { date: '2026-05-01', amount: 0 },            // zero — skipped
-          { date: '2026-05-02', amount: -50 },          // negative — skipped
-          null,                                          // garbage — skipped
+          { date: '2026-05-01', amount: 0 },            // zero: skipped
+          { date: '2026-05-02', amount: -50 },          // negative: skipped
+          null,                                          // garbage: skipped
         ],
       });
       const out = {
@@ -265,7 +265,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result.dateFormat).toBe('20260305'); // matches the manual-income writer's YYYYMMDD shape
     expect(result.total).toBe(2050);
     expect(result.notesHaveSource).toBe(true);
-    expect(result.notesHaveAddr).toBe(true);   // address kept — mileage records
+    expect(result.notesHaveAddr).toBe(true);   // address kept, mileage records
     expect(result.notesLeakJobName).toBe(false); // job names NEVER cross the pipe
   });
 
@@ -301,12 +301,12 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     });
     expect(result.none).toBe(false);
     expect(result.attempted).not.toBe('threw');
-    expect(result.stashGone).toBe(true); // one attempt only — never re-fires on later boots
+    expect(result.stashGone).toBe(true); // one attempt only, never re-fires on later boots
   });
 
   test('_bizLinkForRosterId matches by roster id for MY gc links only, never by name', async () => {
     const result = await page.evaluate(() => {
-      // _supaUser is a script-scoped let — assign the binding directly, not window.*
+      // _supaUser is a script-scoped let, assign the binding directly, not window.*
       const origLinks = _bizLinks, origUser = _supaUser;
       if (!_supaUser) _supaUser = { id: 'me-test-uid' };
       const me = String(_supaUser.id);
@@ -332,7 +332,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       const savedC = clients.slice();
       clients.length = 0;
       clients.push({ id: 4242, name: 'Torres Electric', phone: '', addr: '' });
-      // job_label simulates a tampered offer row — the converter must ignore it
+      // job_label simulates a tampered offer row, the converter must ignore it
       const row = _paymentOfferToIncome({ id: 9, gc_business_name: 'torres electric', amount: 1200, paid_date: '2026-07-01', job_label: 'Rough-in', job_addr: '5 Amp Way' });
       const noClient = _paymentOfferToIncome({ id: 10, gc_business_name: 'Unknown GC', amount: 300, paid_date: '2026-07-02' });
       const badAmount = _paymentOfferToIncome({ id: 11, gc_business_name: 'X', amount: 0 });
@@ -345,14 +345,14 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result.row.amount).toBe(1200);
     expect(result.row.date).toBe('20260701'); // canonical YYYYMMDD income shape
     expect(result.row.notes).not.toContain('Rough-in'); // job names NEVER cross the pipe
-    expect(result.row.notes).toContain('5 Amp Way');    // address kept — mileage records
+    expect(result.row.notes).toContain('5 Amp Way');    // address kept, mileage records
     expect(result.noClientId).toBe(null);
     expect(result.noClientName).toBe('Unknown GC');
     expect(result.badAmount).toBe(null);
     expect(result.nullOffer).toBe(null);
   });
 
-  test('accept-model inbox UI is fully deleted — auto-land replaced it (no orphaned entry points)', async () => {
+  test('accept-model inbox UI is fully deleted, auto-land replaced it (no orphaned entry points)', async () => {
     const result = await page.evaluate(() => ({
       offersHtml: typeof window._paymentOffersHTML,
       decide: typeof window._decidePaymentOffer,
@@ -369,7 +369,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result.ingest).toBe('function'); // the replacement exists
   });
 
-  test('_pipePayerClient: one client per GC — case-insensitive match, bare lead when missing, NEVER stores addresses', async () => {
+  test('_pipePayerClient: one client per GC, case-insensitive match, bare lead when missing, NEVER stores addresses', async () => {
     const result = await page.evaluate(() => {
       const savedC = clients.slice();
       clients.length = 0;
@@ -393,7 +393,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result.before).toBe(1);
     expect(result.after).toBe(2); // exactly one new record for the builder
     // THE MULTI-PROPERTY RULE: addresses live on each job/income row, never
-    // on the client — a builder with 300 lots stays ONE clean client card.
+    // on the client, a builder with 300 lots stays ONE clean client card.
     expect(result.createdAddr).toBe('');
     expect(result.createdExtra).toBe(0);
     expect(result.sameId).toBe(true);
@@ -426,7 +426,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result.imposterStamp).toBe('gc-uid-2');
   });
 
-  test('_pipePayerClient adopts the referral-seeded lead by name and stamps it — but never a card stamped for another GC', async () => {
+  test('_pipePayerClient adopts the referral-seeded lead by name and stamps it, but never a card stamped for another GC', async () => {
     const result = await page.evaluate(() => {
       const savedC = clients.slice();
       clients.length = 0;
@@ -473,8 +473,8 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     }));
     expect(result.none).toBe('');       // invisible until someone converts
     expect(result.nullCase).toBe('');
-    // 2-for-1: one signup isn't a free month yet — it shows progress toward it.
-    expect(result.one).toContain('1 referral — 1 more to a free month');
+    // 2-for-1: one signup isn't a free month yet, it shows progress toward it.
+    expect(result.one).toContain('1 referral, 1 more to a free month');
     expect(result.one).toContain('Torres Electric');
     // three signups → floor(3/2) = 1 free month earned, 1 sitting toward the next.
     expect(result.three).toContain('1 free month earned');
@@ -560,7 +560,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       income.length = 0;
       document.querySelectorAll('.toast').forEach(t => t.remove());
       income.push({ id: 777, client_id: 9, client_name: 'x', amount: 1, date: '20260101', type: 'Job payment' });
-      // Two of the four collide with an existing id / each other's base — ids must stay unique.
+      // Two of the four collide with an existing id / each other's base, ids must stay unique.
       _importPipeHistory('<b>Torres</b> Electric', 42, [
         { date: '2026-06-14', amount: 1200, addr: '44 Lot Way' },
         { date: '2026-06-28', amount: 950, addr: '17 Lot Way' },
@@ -617,7 +617,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
         cardName: card && card.name,
         cardPhone: card && card.phone,               // enriched from payload
         tokenCleared: localStorage.getItem('_pendingSubInviteGrant') === null,
-        forceSeededIncome: income.length,            // MUST be 0 — history is offered, not forced
+        forceSeededIncome: income.length,            // MUST be 0, history is offered, not forced
         offered: zConfirmCalled,
         offerTitle: zTitle,
       };
@@ -644,7 +644,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       clients.length = 0; income.length = 0; jobs.length = 0;
       window.supaEnabled = () => true;
       _supaUser = { id: 'existing-sub-uid' };
-      // Existing user taps "Add ... to my books" — auto-accept the offer so the
+      // Existing user taps "Add ... to my books", auto-accept the offer so the
       // financial history actually imports (not just gets offered).
       window.zConfirm = (msg, onYes) => { if (typeof onYes === 'function') onYes(); };
 
@@ -742,7 +742,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
         ? { update: (row) => { upd = row; const chain = { eq: () => chain, then: (r) => r({ error: null }) }; return chain; } }
         : savedFrom(t);
       _subBids = [{ id: 55, gc_user_id: 'gc-uid', sub_user_id: 's', job_addr: '44 Lot Way', amount: 3200, scope: 'drywall', sub_business_name: 'Dana Drywall', status: 'pending' }];
-      jobs.length = 0; jobs.push({ id: 900, addr: '44 Lot Way', name: 'Job — BuildRight' });
+      jobs.length = 0; jobs.push({ id: 900, addr: '44 Lot Way', name: 'Job: BuildRight' });
       const bad = await _signSubBid(55, '   ');           // empty → rejected, no write
       const updAfterBad = upd;
       const ok = await _signSubBid(55, 'Mike GC');
@@ -786,7 +786,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       let openedWith = null;
       window._doOpenEstimate = (c, addr) => { openedWith = { cid: c && c.id, addr }; }; // stub the estimator open
       clients.push({ id: 320, name: 'BuildRight Homes', gcLinkId: 'gc-77' });
-      jobs.push({ id: 410, client_id: 320, addr: '9 Parade Cir', name: 'Job — BuildRight', pipeSourced: true });
+      jobs.push({ id: 410, client_id: 320, addr: '9 Parade Cir', name: 'Job: BuildRight', pipeSourced: true });
       _openBidBuilder(410);
       const ctx = window._gcBidCtx;
       // No gcLinkId → refuses (no bid without a real link)
@@ -814,7 +814,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       const savedSend = window._sendBidToGC, savedCtx = window._gcBidCtx, savedJ = jobs.slice();
       let sent = null;
       window._sendBidToGC = (info) => { sent = info; return Promise.resolve(true); };
-      jobs.length = 0; jobs.push({ id: 410, addr: '9 Parade Cir', name: 'Job — BuildRight' });
+      jobs.length = 0; jobs.push({ id: 410, addr: '9 Parade Cir', name: 'Job: BuildRight' });
       window._gcBidCtx = { gcUid: 'gc-77', addr: '9 Parade Cir', jobId: 410, gcName: 'BuildRight' };
       const ok = await _maybeRouteGcBid(3200, 'Hang + finish drywall', 5);
       const job = jobs.find(j => j.id === 410);
@@ -830,7 +830,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result.sent.gcUid).toBe('gc-77');       // routed to the linked GC
     expect(result.sent.amount).toBe(3200);         // the estimate total
     expect(result.sent.scope).toBe('Hang + finish drywall');
-    expect(result.sent.lineCount).toBe(5);         // itemized — real estimate, not a lump sum
+    expect(result.sent.lineCount).toBe(5);         // itemized: real estimate, not a lump sum
     expect(result.ctxAfter).toBe(null);            // context cleared after send
     expect(result.jobBidSent).toBe(true);          // job flips to "Bid sent"
     expect(result.jobBidAmt).toBe(3200);
@@ -854,7 +854,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result.golden.eventType).toBe('job');
     expect(result.golden.notes).toContain('BuildRight Homes');
     expect(result.golden.pipeSourced).toBe(true); // gates the dashboard mileage shortcut
-    expect(result.noAddr).toBe(null); // an assignment without an address is useless — skipped
+    expect(result.noAddr).toBe(null); // an assignment without an address is useless, skipped
     expect(result.nullCase).toBe(null);
     // Malformed date → today, never an Invalid Date in calendar loops
     expect(result.badDate.start).toBe(result.today);
@@ -872,7 +872,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       _dashLogPipeMileage(66701);
       opened = capture;               // golden-path capture, snapshotted immediately
       capture = null;
-      _dashLogPipeMileage(999999);    // job missing — capture must stay null
+      _dashLogPipeMileage(999999);    // job missing, capture must stay null
       const missing = capture;
       window.openLogTripModal = orig;
       jobs.length = 0; savedJ.forEach(j => jobs.push(j));
@@ -883,17 +883,17 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result.opened.clientId).toBe(6001);
     expect(result.opened.clientName).toBe('BuildRight Homes');
     expect(result.opened.purpose).toBe('Job site');
-    expect(result.missing).toBe(null); // no matching job — nothing opens, no throw
+    expect(result.missing).toBe(null); // no matching job, nothing opens, no throw
   });
 
   test('renderDashToday shows the Log mileage shortcut ONLY on pipe-sourced jobs that have an address', async () => {
     const result = await page.evaluate(() => {
       const savedJ = jobs.slice(), savedIsEmp = _isEmployee;
-      _isEmployee = false; // script-scoped let — assign the binding directly
+      _isEmployee = false; // script-scoped let, assign the binding directly
       const today = todayKey();
       jobs.length = 0;
       jobs.push(
-        { id: 77101, client_id: null, name: 'Pipe job — BuildRight Homes', addr: '44 Lot Way', start: today, days: 1, eventType: 'job', pipeSourced: true, status: 'upcoming' },
+        { id: 77101, client_id: null, name: 'Pipe job, BuildRight Homes', addr: '44 Lot Way', start: today, days: 1, eventType: 'job', pipeSourced: true, status: 'upcoming' },
         { id: 77102, client_id: null, name: 'Hand-entered job', addr: '9 Main St', start: today, days: 1, eventType: 'job', status: 'upcoming' },
         { id: 77103, client_id: null, name: 'Pipe job, no address', addr: '', start: today, days: 1, eventType: 'job', pipeSourced: true, status: 'upcoming' },
       );
@@ -912,8 +912,8 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     });
     expect(result.mileageCount).toBe(1);          // pipe job WITH an address only
     expect(result.hasPipeJobBtn).toBe(true);
-    expect(result.hasHandJobBtn).toBe(false);      // hand-entered job — no shortcut
-    expect(result.hasNoAddrJobBtn).toBe(false);    // nothing to drive to — no shortcut
+    expect(result.hasHandJobBtn).toBe(false);      // hand-entered job, no shortcut
+    expect(result.hasNoAddrJobBtn).toBe(false);    // nothing to drive to, no shortcut
   });
 
   test('_offerJobToLinkedSub is a silent no-op with no address, no link, or offline', async () => {
@@ -934,7 +934,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
   test('_ingestPipeInbox is a silent no-op offline and while another ingest is running', async () => {
     const result = await page.evaluate(async () => {
       const offline = await _ingestPipeInbox(true);
-      _pipeIngestRunning = true; // script-scoped let — assign the binding directly
+      _pipeIngestRunning = true; // script-scoped let, assign the binding directly
       const reentrant = await _ingestPipeInbox(true);
       _pipeIngestRunning = false;
       return { offline, reentrant };
@@ -946,7 +946,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
   test('a job that lands via the pipe while the sub is sitting on the dashboard appears on Today WITHOUT navigating away', async () => {
     // Regression: pg-dash is the FIRST page shown at boot, and the ingest
     // deliberately fires 1.8s after boot so it never competes with the boot
-    // render — so Today paints BEFORE a same-morning assignment lands. The
+    // render: so Today paints BEFORE a same-morning assignment lands. The
     // toast fired, but the widget stayed stale until the sub left and came
     // back. Fix: the ingest re-renders pg-dash when it's the active page.
     const result = await page.evaluate(async () => {
@@ -958,7 +958,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       _supaUser = { id: 'sub-test-uid' };
       // Stub only the two tables _ingestPipeInbox touches; job_assignments
       // returns ONE claimed row, payment_offers stays empty (isolates the
-      // assertion to the job-landing path). A tiny chainable stub — matches
+      // assertion to the job-landing path). A tiny chainable stub, matches
       // the real call shape: .update(...).eq(...).eq(...).select().
       function stubTable(result) {
         const chain = { eq: () => chain, select: () => Promise.resolve(result) };
@@ -997,7 +997,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
     expect(result.hasItAfter).toBe(true);    // ingest re-rendered Today in place
   });
 
-  test('_saveSubAssignment shares ONLY the job address + start date with a linked sub — never desc or amount', async () => {
+  test('_saveSubAssignment shares ONLY the job address + start date with a linked sub, never desc or amount', async () => {
     const result = await page.evaluate(() => {
       const savedJ = jobs.slice(), savedSubs = S.subcontractors;
       S.subcontractors = [{ id: 901, name: 'Pipe Sub', trade: 'Drywall' }];
@@ -1009,7 +1009,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       window.openJobSheet = () => {};
       openAssignSubModal(77001, null);
       document.getElementById('asub-pick').value = '0';
-      document.getElementById('asub-desc').value = 'Hang + finish — Secret Client';
+      document.getElementById('asub-desc').value = 'Hang + finish, Secret Client';
       document.getElementById('asub-amount').value = '2500';
       _saveSubAssignment(77001, null);
       window._offerJobToLinkedSub = origOffer; window.openJobSheet = origSheet;
@@ -1050,7 +1050,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       window._offerPaymentToLinkedSub = (rosterId, pay) => { offered = { rosterId, pay }; return Promise.resolve(true); };
       const origSheet = window.openJobSheet;
       window.openJobSheet = () => {};
-      // Job carries its OWN address and has NO bid — the exact shape a live
+      // Job carries its OWN address and has NO bid, the exact shape a live
       // flow run caught losing the address (markSubPaid used to read the
       // address only from the job's bid, never j.addr).
       jobs.push({ id: 66601, name: 'Pipe Test Job', bid_id: null, client_id: null, addr: '44 Lot Way', subs: [{ subId: 777, subName: 'Dana Lee', amount: 950, desc: 'Drywall hang' }] });
@@ -1097,7 +1097,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       const first = _claimSubReferralAttribution();
       const referred = S.referredBy && S.referredBy.bname;
       const via = S.referredBy && S.referredBy.via;
-      const second = _claimSubReferralAttribution(); // stash cleared — must not double-claim
+      const second = _claimSubReferralAttribution(); // stash cleared, must not double-claim
       return { first, referred, via, second, stashGone: !localStorage.getItem('_pendingSubInvite') };
     });
     expect(result.first).toBe(true);
@@ -1166,7 +1166,7 @@ test.describe('sub referral invite — exhaustive coverage', () => {
       document.getElementById('supa-login-overlay')?.remove();
       return {
         // Plain login is defined by its email/password form (present in every
-        // copy revision), not by any one headline string — the redesigned login
+        // copy revision), not by any one headline string, the redesigned login
         // dropped the old "Sign in to sync your data" subtitle.
         plainLogin: html.includes('id="supa-email"') && html.includes('id="supa-pass"'),
         noPitch: !html.includes('Claim my account'),

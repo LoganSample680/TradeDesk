@@ -1,10 +1,10 @@
-// REAL two-account flow — the LIVE GC↔sub pipe, end to end through real Supabase.
+// REAL two-account flow, the LIVE GC↔sub pipe, end to end through real Supabase.
 //
 // Dev A = the general contractor / business owner (E2E_DEV_*  → logansample).
 // Dev B = the 1099 subcontractor who signed up      (E2E_DEV2_* → the sub).
 //
 // This is the ONE feature offline shims can't honestly prove: two DISTINCT
-// accounts moving data through the real database — the RLS policies, the atomic
+// accounts moving data through the real database, the RLS policies, the atomic
 // claim, the SECURITY DEFINER link-forging RPC, and the column-level grants are
 // all server-side behavior. So this drives BOTH identities against the live
 // project and asserts the data actually crosses:
@@ -17,13 +17,13 @@
 //   5. B ingests the pipe (_ingestPipeInbox) → the job address lands on B's
 //      calendar and the payment lands on B's income ledger, AUTOMATICALLY.
 //   6. Assert the PRIVACY CONTRACT held live: what crossed is address + amount +
-//      date + payer name — never A's job names, descriptions, or client details.
+//      date + payer name, never A's job names, descriptions, or client details.
 //
 // REQUIRES a SECOND real dev account (the sub):
 //   E2E_DEV2_EMAIL, E2E_DEV2_PASSWORD, E2E_DEV2_USER_ID
 // Soft-skips cleanly until they're set. Also soft-skips (never red) if the pipe
 // migrations (business_links / payment_offers / job_assignments + the 2-arg
-// redeem RPC) aren't applied to the project yet — a missing table is a deploy
+// redeem RPC) aren't applied to the project yet, a missing table is a deploy
 // gap, not a code regression.
 //
 // Per §12.7 this leaves its run-tagged rows in place for you to open and poke at;
@@ -45,8 +45,8 @@ const JOB_ID = RUN + 1;
 const JOB_ADDR = `${RUN % 9000 + 100} Pipe Flow Way`;
 const JOB_START = new Date().toISOString().slice(0, 10);
 const PAY_AMOUNT = 1000 + (RUN % 9000);           // run-unique so assertions target THIS run's row, not a stale one
-const PRIVATE_SCOPE = `Private scope ${RUN}`;     // A's private work note — must NEVER cross to B
-const SECRET_JOB_NAME = `SECRET CLIENT ${RUN}`;   // A's private label — must NEVER cross to B
+const PRIVATE_SCOPE = `Private scope ${RUN}`;     // A's private work note, must NEVER cross to B
+const SECRET_JOB_NAME = `SECRET CLIENT ${RUN}`;   // A's private label, must NEVER cross to B
 const A_BIZ_MARK = `PipeFlow GC ${RUN}`;
 
 // Open the app fresh and sign in as a specific account, like launching it.
@@ -70,9 +70,9 @@ async function pipeSchemaPresent(page) {
   });
 }
 
-test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
+test.describe('live GC↔sub pipe, two real accounts, end to end', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
-  test.skip(!haveTwoAccounts, 'needs a SECOND dev account (the sub) — set E2E_DEV2_EMAIL / E2E_DEV2_PASSWORD / E2E_DEV2_USER_ID');
+  test.skip(!haveTwoAccounts, 'needs a SECOND dev account (the sub), set E2E_DEV2_EMAIL / E2E_DEV2_PASSWORD / E2E_DEV2_USER_ID');
 
   test('a payment + a job address cross from the GC to the subcontractor, and only those', async ({ browser }) => {
     test.setTimeout(180000);
@@ -90,14 +90,14 @@ test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
       expect(await pageA.evaluate(() => _supaUser && _supaUser.id), 'signed in as GC (Dev A)').toBe(A.uid);
 
       if (!(await pipeSchemaPresent(pageA))) {
-        test.skip(true, 'pipe migrations not applied to the project yet (business_links/payment_offers/job_assignments) — deploy them, then this goes live');
+        test.skip(true, 'pipe migrations not applied to the project yet (business_links/payment_offers/job_assignments): deploy them, then this goes live');
       }
 
       // ── 1. GC adds the sub to its roster + mints an invite grant ────────────
       // The grant's payload.sub.rosterId == ROSTER_ID is what ties the standing
       // link back to this roster row, so A's later payments/assignments to it
       // flow as pipe events. (No same-device UI for the cross-account handshake
-      // — it's inherently a server round-trip — so this is evaluate plumbing.)
+      //, it's inherently a server round-trip, so this is evaluate plumbing.)
       const grantTok = await pageA.evaluate(async ({ rosterId, mark }) => {
         S.bname = S.bname || mark;
         S.subcontractors = S.subcontractors || [];
@@ -124,7 +124,7 @@ test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
       expect(redeem, 'sub redeemed the grant (books pre-loaded + link forged)').toBe(true);
 
       // The referrer's reward accrued at the verified signup: A should now hold
-      // a referral_rewards row for B (read from A's session — RLS scopes it to
+      // a referral_rewards row for B (read from A's session, RLS scopes it to
       // the referrer). Skipped gracefully if the rewards table isn't deployed.
       const rewardLive = await pageA.evaluate(async ({ Buid }) => {
         try {
@@ -141,7 +141,7 @@ test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
       // Confirm the standing link exists (both ends can see it) and read its
       // ACTUAL roster id. business_links is a SINGLETON per (GC, sub) pair with
       // on-conflict-do-nothing, so on any run after the very first it carries
-      // the FIRST run's roster id — the durable binding, which is correct
+      // the FIRST run's roster id, the durable binding, which is correct
       // product behavior (a GC and a sub have ONE relationship). Everything
       // downstream drives off THIS id, not the freshly-minted one, so the test
       // is idempotent across the never-cleaned-up accounts (§12.7).
@@ -166,7 +166,7 @@ test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
         if (typeof _loadBizLinks === 'function') await _loadBizLinks(true);
       }, { rid: effectiveRosterId });
 
-      // ── 3. GC assigns the sub to a job — REAL modal, ledgered clicks ────────
+      // ── 3. GC assigns the sub to a job, REAL modal, ledgered clicks ────────
       // Scaffold the job (a real scheduled job on A's calendar), then drive the
       // assign modal by hand: pick the sub, type work + amount (A's PRIVATE
       // details), tap Assign. _saveSubAssignment fires _offerJobToLinkedSub,
@@ -190,7 +190,7 @@ test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
           clicks += await tap(p, '#asub-pick');                       // open the picker
           // Pick the roster sub whose id matches the LINK's roster id. Several
           // 'Pipe Flow Sub' entries may have accumulated across runs, but only
-          // THIS one is actually linked — so match by id, never by label.
+          // THIS one is actually linked, so match by id, never by label.
           await p.evaluate((rosterId) => {
             const sel = document.getElementById('asub-pick');
             const idx = (S.subcontractors || []).findIndex(s => String(s.id) === String(rosterId));
@@ -219,7 +219,7 @@ test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
         },
       });
 
-      // ── 4. GC marks the sub paid — REAL action, ledgered clicks ────────────
+      // ── 4. GC marks the sub paid, REAL action, ledgered clicks ────────────
       // markSubPaid fires _offerPaymentToLinkedSub → payment_offers. The sub row
       // lives at index 0 of this job's subs[] (just assigned above).
       await step(pageA, {
@@ -256,7 +256,7 @@ test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
         },
       });
 
-      // ── 5. Sub ingests the pipe — the payment + job land AUTOMATICALLY ──────
+      // ── 5. Sub ingests the pipe, the payment + job land AUTOMATICALLY ──────
       await step(pageB, {
         label: 'sub ingests: payment + job land automatically',
         page: 'pg-dash', role: 'contractor',
@@ -266,7 +266,7 @@ test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
         act: async (p) => {
           await p.evaluate(async () => { if (typeof _ingestPipeInbox === 'function') await _ingestPipeInbox(true); });
           await p.waitForTimeout(600);
-          return 0; // automatic — zero taps for the sub, by design
+          return 0; // automatic: zero taps for the sub, by design
         },
         rule: async (p) => {
           const r = await p.evaluate(({ amount, addr }) => ({
@@ -283,8 +283,8 @@ test.describe('live GC↔sub pipe — two real accounts, end to end', () => {
         const inc = (income || []).find(x => Number(x.amount) === amount);
         const job = (jobs || []).find(j => j.addr === addr && j.pipeSourced);
         // ONE client card per linked GC; JOB-SITE addresses never stack onto it
-        // (the GC's own business/office address as contact info is fine — that's
-        // what any client card has — the multi-property rule is about job sites).
+        // (the GC's own business/office address as contact info is fine, that's
+        // what any client card has, the multi-property rule is about job sites).
         const gcCards = (clients || []).filter(c => c.gcLinkId);
         const blob = JSON.stringify({ inc, job }).toLowerCase();
         return {

@@ -1,6 +1,6 @@
 <!DOCTYPE html>
-<!-- Inline bg on <html> matches the boot overlay's dark base so the first paint
-     — even before CSS parses — is the boot color, never white (same pre-paint
+<!-- Inline bg on <html> matches the boot overlay's dark base so the first paint,
+     even before CSS parses, is the boot color, never white (same pre-paint
      trick as index.html and client.html). -->
 <html lang="en" style="background:#1F2230">
 <head>
@@ -12,7 +12,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Vendor JS (supabase, stripe) loads LAZILY, never at parse: a sync tag here
      parser-blocked first paint (the white flash), and even `defer` evaluated
-     these chunky bundles at parse end — exactly the first frames of the entrance
+     these chunky bundles at parse end, exactly the first frames of the entrance
      waterfall, blocking the main thread mid-animation (the residual chop).
      _whenSupaReady() injects them on demand (cold opens need them immediately to
      fetch the proposal); stash opens don't touch Supabase until well after the
@@ -44,12 +44,12 @@ addEventListener('load',function(){setTimeout(window._loadVendor,2000);});
   --font-ui:'Inter Tight',-apple-system,sans-serif;
 }
 body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif);background:var(--bg);color:var(--text);min-height:100vh}
-/* Cross-document view transition — the browser cross-fades the hub → the sign
+/* Cross-document view transition, the browser cross-fades the hub → the sign
    page's BOOT overlay (supported browsers). Snapshot backgrounds pinned dark to
    match the boot so no white can show through the navigation gap. */
 @view-transition{navigation:auto}
 ::view-transition-old(root),::view-transition-new(root){background:#1F2230}
-/* ── Boot overlay — the hub's exact premium boot treatment (client.html #boot-
+/* ── Boot overlay, the hub's exact premium boot treatment (client.html #boot-
    overlay / cbo-*), proposal-specific copy: business name center stage,
    "Loading your proposal…". Covers font load, layout, and raster; the
    waterfall then runs on a fully-warmed page (owner: spinner, then waterfall). */
@@ -77,16 +77,16 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .cbo-hint{text-align:center;font-size:12px;font-weight:500;color:rgba(255,255,255,.35);letter-spacing:.02em;animation:cbo-fadeup .5s .55s cubic-bezier(.22,1,.36,1) both}
 @media (prefers-reduced-motion:reduce){.cbo-mark,.cbo-mark::after,.cbo-sheen,.cbo-glow,.cbo-name{animation:none}}
 /* Waterfall reveal (matches the dashboard's cascade): once the page is revealed,
-   the proposal's sections fade + rise in top-to-bottom sequence — ~1.1s each with
+   the proposal's sections fade + rise in top-to-bottom sequence, ~1.1s each with
    a ~160ms stagger so the whole proposal loads in slowly (owner: double the time). */
 @keyframes td-cascade{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
 /* will-change pre-promotes every cascading block to its own compositor layer on
    frame 1, so the waterfall keeps animating at full rate even if the main
-   thread hiccups — the big proposal card rasterizes once, up front, not
+   thread hiccups, the big proposal card rasterizes once, up front, not
    mid-animation. */
 body.revealed #pg-sign>*{animation:td-cascade .83s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
 /* During the entrance ONLY: the proposal document is several screens tall, and
-   animating it as one block forced layout+raster of ALL of it — the one child
+   animating it as one block forced layout+raster of ALL of it, the one child
    that hung the waterfall. content-visibility skips everything below the fold
    until .td-settled lands (~2s in, page idle, no motion), when the full
    document lays out in one invisible pass. Print is exempt. */
@@ -154,7 +154,7 @@ input[type=text]:focus{border-color:var(--denim)}
 .dot.active{background:var(--denim)}
 .dot.done{background:var(--green-mid)}
 
-/* Portfolio offer — plain card, not a competing hero banner */
+/* Portfolio offer, plain card, not a competing hero banner */
 .po-prices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
 .po-price-box{border-radius:var(--r);padding:16px;text-align:center}
 .po-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
@@ -182,7 +182,7 @@ input[type=text]:focus{border-color:var(--denim)}
 /* Title */
 .sig-title{font-size:32px;font-weight:900;font-family:var(--font-display);letter-spacing:-.5px;color:var(--text);margin-bottom:18px;line-height:1.1}
 
-/* Status badge — replaces decorative emoji on load/done/error/declined pages
+/* Status badge, replaces decorative emoji on load/done/error/declined pages
    with a single consistent icon language (plain circle + line-art SVG) */
 .pg-status-badge{width:64px;height:64px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
 .pg-status-badge svg{width:28px;height:28px}
@@ -244,7 +244,7 @@ input[type=text]:focus{border-color:var(--denim)}
 </head>
 <body>
 
-<!-- Boot overlay — covers font load, layout, and raster; the waterfall then
+<!-- Boot overlay, covers font load, layout, and raster; the waterfall then
      runs on a fully-warmed page. Same treatment as the client hub boot. -->
 <div id="sign-boot">
   <div class="cbo-glow"></div>
@@ -268,7 +268,7 @@ input[type=text]:focus{border-color:var(--denim)}
 
 <div class="wrap" style="padding-bottom:90px">
   <!-- Loading -->
-  <!-- No loading spinner — the page stays on its quiet background while the
+  <!-- No loading spinner, the page stays on its quiet background while the
        proposal JSON loads, then show('pg-sign') fades the proposal in (owner:
        "just a smooth fade in to the proposal"). -->
   <div id="pg-load" class="pg-status" style="display:none"></div>
@@ -297,30 +297,30 @@ input[type=text]:focus{border-color:var(--denim)}
 
     <div id="epa-doc1-label" style="display:none;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:4px">Document 1 of 2</div>
     <!-- Endowed progress: the first dot arrives already done ("proposal prepared
-         for you") — people finish a process they perceive as already started far
+         for you"): people finish a process they perceive as already started far
          more often than one starting at zero. Every step-dots row carries it. -->
     <div class="step-dots"><div class="dot done"></div><div class="dot active" id="d1"></div><div class="dot" id="d2"></div><div class="dot" id="d3"></div><div class="dot" id="d4"></div></div>
 
-    <!-- Estimate data nodes kept hidden — JS writes to them, nothing visible -->
+    <!-- Estimate data nodes kept hidden, JS writes to them, nothing visible -->
     <div style="display:none">
       <div id="amt-total"></div><div id="amt-dep"></div><div id="amt-bal"></div>
       <div id="sum-rows"></div>
     </div>
 
     <!-- Deadline effect, honestly applied: proposals are already valid 30 days
-         from send (baked into the document terms) — this just surfaces that real
+         from send (baked into the document terms), this just surfaces that real
          deadline where the client reads it BEFORE the price, not buried in the
          project-details fine print. -->
     <div id="price-held-chip" style="display:none;align-items:center;gap:6px;justify-content:center;margin:-8px 0 14px;font-size:12px;font-weight:700;color:var(--text2)"></div>
 
     <div id="prop-card" style="margin-bottom:14px"><div id="prop-html" style="font-size:13px;line-height:1.6;overflow-wrap:break-word"></div></div>
 
-    <!-- Portfolio offer — shown only when isPortfolio=true. Sits after scope/terms,
+    <!-- Portfolio offer, shown only when isPortfolio=true. Sits after scope/terms,
          not before, so the client reads what they're buying before seeing an
-         optional discount pitch — and it's a plain card like everything else on
+         optional discount pitch, and it's a plain card like everything else on
          the page, not a competing hero banner. -->
     <div id="portfolio-offer-card" class="card" style="display:none">
-      <span class="lbl" style="color:#16a34a">Optional — save with photos</span>
+      <span class="lbl" style="color:#16a34a">Optional: save with photos</span>
       <div style="font-size:16px;font-weight:800;color:var(--ink);letter-spacing:-.2px;margin-bottom:10px">Save <span id="po-pct-hdr"></span>% on this project</div>
       <div id="po-pitch" style="font-size:13px;color:var(--text2);line-height:1.7;margin-bottom:16px"></div>
       <div class="po-prices">
@@ -346,15 +346,15 @@ input[type=text]:focus{border-color:var(--denim)}
           </ul>
         </div>
         <button id="po-accept-btn" onclick="portfolioAccept()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:#16a34a;color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px"></button>
-        <button onclick="portfolioDecline()" style="width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">No thanks — I'll pay full price</button>
+        <button onclick="portfolioDecline()" style="width:100%;padding:11px;border-radius:var(--r);border:1.5px solid var(--border2);background:#fff;color:var(--text2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">No thanks, I'll pay full price</button>
       </div>
       <div id="po-confirmed" style="display:none;text-align:center;padding:6px 0">
         <div id="po-confirmed-msg" style="font-size:16px;font-weight:800;color:#16a34a"></div>
       </div>
-      <div id="po-declined" style="display:none;color:var(--text3);font-size:13px;text-align:center;padding:4px 0">No problem — full price applies. Scroll down to review and sign.</div>
+      <div id="po-declined" style="display:none;color:var(--text3);font-size:13px;text-align:center;padding:4px 0">No problem, full price applies. Scroll down to review and sign.</div>
     </div>
 
-    <button onclick="declineBid()" style="display:block;width:100%;margin-top:8px;padding:13px;border:none;background:none;color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center;border-radius:var(--r)">Not interested — decline this proposal</button>
+    <button onclick="declineBid()" style="display:block;width:100%;margin-top:8px;padding:13px;border:none;background:none;color:var(--text3);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;text-align:center;border-radius:var(--r)">Not interested, decline this proposal</button>
   </div>
 
   <!-- Step 2: Color selection (painting only) -->
@@ -378,22 +378,22 @@ input[type=text]:focus{border-color:var(--denim)}
       <span class="sig-eyebrow">Agreement</span>
       <h1 class="sig-title">Review &amp; Sign</h1>
 
-      <!-- The ONE shared signing pad (esign.js) — rendered by JS so this is
+      <!-- The ONE shared signing pad (esign.js): rendered by JS so this is
            the literal same markup every in-app signing surface uses. -->
       <div id="sig-pad-mount"></div>
 
       <!-- EPA notice shown in sig-card when epaRequired; one signature covers both documents -->
       <div id="epa-section" style="display:none;background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
-        <div style="font-size:12px;font-weight:800;color:#78350f;margin-bottom:4px">Pre-1978 Home — EPA Lead Paint Disclosure</div>
+        <div style="font-size:12px;font-weight:800;color:#78350f;margin-bottom:4px">Pre-1978 Home, EPA Lead Paint Disclosure</div>
         <div style="font-size:12px;color:#92400e;line-height:1.5">You have reviewed the <strong>EPA Pre-Renovation Disclosure (Document 2 of 2)</strong>. Your signature below applies to both this proposal and that EPA disclosure. <a href="https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools" target="_blank" rel="noopener" style="color:#92400e;font-weight:700">Renovate Right pamphlet →</a></div>
       </div>
 
-      <!-- Notice of Cancellation — minimum required disclosure (FTC 16 CFR Part 429 / state equiv.) -->
+      <!-- Notice of Cancellation, minimum required disclosure (FTC 16 CFR Part 429 / state equiv.) -->
       <div id="cancel-notice-section" style="display:none;border-top:1px solid var(--border);padding-top:10px;margin-bottom:12px">
         <div id="cancel-notice-body" style="font-size:11px;color:var(--text3);line-height:1.6"></div>
       </div>
 
-      <!-- The ONE shared consent block (esign.js) — same checkbox + terms
+      <!-- The ONE shared consent block (esign.js): same checkbox + terms
            accordion shape as every other signing surface in the app. -->
       <div id="sig-consent-mount"></div>
 
@@ -408,7 +408,7 @@ input[type=text]:focus{border-color:var(--denim)}
     <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div></div>
     <div class="card">
 
-      <!-- Pay amount tiles — "how much" belongs on the payment screen, not the
+      <!-- Pay amount tiles, "how much" belongs on the payment screen, not the
            sign screen; it used to be picked here AND restated as a balance card
            one screen later. Now it's picked once, right above the amount it produces. -->
       <div class="sig-pay-opts-label">How much would you like to pay now?</div>
@@ -438,8 +438,8 @@ input[type=text]:focus{border-color:var(--denim)}
       <div id="sign-pay-btns" style="margin-top:4px"></div>
 
       <div id="sec-cash" style="display:none">
-        <div class="cash-notice"><strong id="cash-confirm-hdr">Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed — you’re locked in on the schedule. The contractor will collect the deposit when they arrive.</span></div>
-        <button class="btn" id="sec-cash-confirm-btn" onclick="submitCash()">Confirm — I'll pay cash in person</button>
+        <div class="cash-notice"><strong id="cash-confirm-hdr">Cash selected.</strong><span id="cash-confirm-msg"> Your proposal is signed, you’re locked in on the schedule. The contractor will collect the deposit when they arrive.</span></div>
+        <button class="btn" id="sec-cash-confirm-btn" onclick="submitCash()">Confirm: I'll pay cash in person</button>
         <button class="btn btn-sec" onclick="document.getElementById('sec-cash').style.display='none';document.getElementById('sign-pay-btns').style.display='block'" style="margin-top:8px;font-size:13px">← Choose a different payment method</button>
       </div>
 
@@ -449,7 +449,7 @@ input[type=text]:focus{border-color:var(--denim)}
     <button class="btn btn-sec" onclick="backToSign()">← Back</button>
   </div>
 
-  <!-- EPA Pre-Renovation Disclosure — Document 2 of 2 (review before signing) -->
+  <!-- EPA Pre-Renovation Disclosure, Document 2 of 2 (review before signing) -->
   <div id="pg-epa" style="display:none">
     <button onclick="show('pg-sign');scrollTo(0,0)" style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text3);background:none;border:none;cursor:pointer;font-family:inherit;padding:8px 0;margin-bottom:14px">← Back to proposal</button>
     <div class="step-dots"><div class="dot done"></div><div class="dot done"></div><div class="dot active"></div><div class="dot"></div><div class="dot"></div></div>
@@ -467,7 +467,7 @@ input[type=text]:focus{border-color:var(--denim)}
         <div id="epa-cert-info" style="margin-top:10px;font-size:11px;color:var(--text3)"></div>
       </div>
       <div style="font-size:11px;color:var(--text3);margin-bottom:20px;text-align:center">This pamphlet will be saved in your project hub under Documents → Compliance for future reference.</div>
-      <button class="btn" onclick="_continueFromEpaReview()">Continue — Sign Both Documents →</button>
+      <button class="btn" onclick="_continueFromEpaReview()">Continue: Sign Both Documents →</button>
     </div>
   </div>
 
@@ -481,7 +481,7 @@ input[type=text]:focus{border-color:var(--denim)}
       <div class="done-box"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--green-mid);margin-bottom:10px">Confirmation</div><div id="done-rows"></div></div>
       <!-- Peak-end: the last thing the client sees is forward motion ("here's
            what happens next"), not a receipt. This moment is what they remember
-           and retell — it drives referrals and change-order goodwill later. -->
+           and retell, it drives referrals and change-order goodwill later. -->
       <div class="done-box" id="done-next" style="display:none;background:var(--bg-card,#fff);border-color:var(--border)"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">What happens next</div><div id="done-next-rows"></div></div>
       <a id="done-hub-cta" href="#" style="display:none;margin-top:20px;padding:14px;background:var(--ink);border-radius:12px;font-size:14px;font-weight:700;color:#fff;text-align:center;text-decoration:none">View your project hub →</a>
     </div>
@@ -506,7 +506,7 @@ input[type=text]:focus{border-color:var(--denim)}
   <div id="powered-by-footer" style="text-align:center;padding:28px 16px 12px;font-size:11px;color:var(--text3);font-weight:500">Powered by <strong style="font-weight:700;color:var(--text2)">TradeDesk Pro</strong></div>
 </div>
 
-<!-- Decline confirmation modal — reason picker before the exit completes, so a
+<!-- Decline confirmation modal, reason picker before the exit completes, so a
      lost deal leaves real signal instead of a blank decline. Reason is optional
      context for the contractor, never a blocker: the Decline button stays
      enabled with or without a pick, matching this screen's low-friction intent
@@ -529,13 +529,13 @@ input[type=text]:focus{border-color:var(--denim)}
   </div>
 </div>
 
-<!-- Sticky approve bar — primary action leads and carries the visual weight;
+<!-- Sticky approve bar, primary action leads and carries the visual weight;
      Download PDF is a side-action, not a competing button. -->
 <div id="sticky-bar" style="flex-direction:column;gap:6px">
   <!-- sticky-total kept hidden for JS compatibility -->
   <div id="sticky-total" style="display:none"></div>
   <!-- Deposit-first framing: the action-sized number ($ deposit), not the total,
-       is what the commitment moment leads with — and "locks in" points the verb
+       is what the commitment moment leads with, and "locks in" points the verb
        at the two real things the client loses by waiting (price, schedule slot),
        never at the client themselves. -->
   <div id="sticky-deposit-line" style="display:none;text-align:center;font-size:12px;color:var(--text2);font-weight:600;line-height:1.4"></div>
@@ -548,13 +548,13 @@ document.getElementById('approve-btn-label').innerHTML=svgIcon('✓',{size:16})+
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 // _supa is session-isolated: it never loads a stored login, so every data call on
-// this page runs as `anon` — the exact role real clients sign with. Without this,
+// this page runs as `anon`, the exact role real clients sign with. Without this,
 // a contractor opening their own link while logged into TradeDesk (same domain)
 // silently runs as `authenticated` and hits RLS paths clients never exercise
 // ("new row violates row-level security policy" on the cash/check confirm).
 // Created LAZILY: supabase-js is a deferred script (see head), so the clients
 // materialize the first time something needs them. The stash-handoff render path
-// touches no Supabase at all — the proposal paints before the CDN script even lands.
+// touches no Supabase at all, the proposal paints before the CDN script even lands.
 // _supaAuth exists only to read the contractor's session for viewer detection.
 let _supa=null,_supaAuth=null;
 function _initSupaClients(){
@@ -581,7 +581,7 @@ const pages=['pg-load','pg-sign','pg-color-pick','pg-sign-action','pg-pay','pg-e
 function escHtmlN(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 function show(id){
   // ONE animation system per entrance (owner: reveal cut in harshly). On the
-  // INITIAL reveal the body fade + td-cascade own the entire entrance — the
+  // INITIAL reveal the body fade + td-cascade own the entire entrance, the
   // per-page slide must not run underneath them (three stacked opacity ramps
   // read as a glitchy double-fade). It still runs for LATER step changes.
   const _initial=!_bodyRevealed;
@@ -615,11 +615,11 @@ function show(id){
       }
     }else{sb.style.display='none';sb.style.transform='';sb.style.transition='';}
   }
-  // Error/declined destinations drop the boot fast — never hold a dead page
+  // Error/declined destinations drop the boot fast, never hold a dead page
   // behind a 1.5s spinner. Real destinations get the full dwell.
   _dismissSignBoot(id==='pg-err'||id==='pg-declined');
 }
-// ── Boot dismiss — the hub's exact recipe (client.html _dismissBootOverlay):
+// ── Boot dismiss, the hub's exact recipe (client.html _dismissBootOverlay):
 // hold for a minimum dwell so the boot reads as intentional (and so fonts,
 // layout, and raster ALL finish underneath it), fill the bar, then the premium
 // blur+scale exit while the waterfall cascades in beneath. Pending timers are
@@ -659,7 +659,7 @@ function _dismissSignBoot(fast){
     _sbTimers.push(setTimeout(()=>{ov.style.display='none';},780));
   },delay));
 }
-// Safety net — never leave the boot up if init() throws before a show().
+// Safety net, never leave the boot up if init() throws before a show().
 setTimeout(()=>_dismissSignBoot(true),5000);
 
 function _showPortfolioOffer(){
@@ -675,14 +675,14 @@ function _showPortfolioOffer(){
   document.getElementById('po-full-price').textContent=fmt(fullP);
   document.getElementById('po-disc-price').textContent=fmt(discP);
   document.getElementById('po-save-tag').textContent='Save '+fmt(savings);
-  document.getElementById('po-accept-btn').textContent='Accept — save '+pct+'%';
+  document.getElementById('po-accept-btn').textContent='Accept: save '+pct+'%';
   document.getElementById('portfolio-offer-card').style.display='block';
 }
 function portfolioAccept(){
   const pct=_prop.portfolioPct||15;
   if(_portfolioStep===0){
     document.getElementById('po-terms').style.display='block';
-    document.getElementById('po-accept-btn').textContent='I agree — apply '+pct+'% discount';
+    document.getElementById('po-accept-btn').textContent='I agree, apply '+pct+'% discount';
     _portfolioStep=1;
   } else {
     const fullP=_prop.fullPrice||_prop.amount;
@@ -694,7 +694,7 @@ function portfolioAccept(){
     window._portfolioAccepted=true;
     document.getElementById('po-btns').style.display='none';
     document.getElementById('po-confirmed').style.display='block';
-    document.getElementById('po-confirmed-msg').innerHTML=svgIcon('✓',{size:14})+' Discount applied — '+fmt(savings)+' saved!';
+    document.getElementById('po-confirmed-msg').innerHTML=svgIcon('✓',{size:14})+' Discount applied, '+fmt(savings)+' saved!';
     document.getElementById('amt-total').textContent=fmt(discP);
     document.getElementById('amt-dep').textContent='Deposit to start: '+fmt(newDep);
     document.getElementById('amt-bal').textContent='Balance on completion: '+fmt(newBal);
@@ -709,7 +709,7 @@ function portfolioDecline(){
   document.getElementById('po-declined').style.display='block';
 }
 // Proposal JSON is rewritten in place (signing, voiding, legal-text patches), but
-// Supabase storage serves it with cache-control: max-age=3600 — the browser HTTP
+// Supabase storage serves it with cache-control: max-age=3600: the browser HTTP
 // cache could show a stale status for up to an hour. Fetch the public object URL
 // with cache:'no-store' plus a cb= cache-buster (defeats CDN/edge caches too);
 // fall back to storage.download() on any failure so the error UI is unchanged.
@@ -726,13 +726,13 @@ async function _fetchStorageJson(key){
     try{return{data:JSON.parse(await data.text()),error:null};}catch(pe){return{data:null,error:pe};}
   }
 }
-// "Already signed" terminal page — extracted from init so the stash-handoff path
+// "Already signed" terminal page, extracted from init so the stash-handoff path
 // can also reach it from its background signed-status verify.
 function _renderAlreadySigned(_sigRecord){
   const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
-  const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'—';
+  const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'-';
   const payMethod=_sigRecord?.payment_method;
-  const payLabel=payMethod==='card'?'Card charged':payMethod==='ach'?'Bank transfer':payMethod==='cash'?'Cash on arrival':payMethod==='check'?'Check':'—';
+  const payLabel=payMethod==='card'?'Card charged':payMethod==='ach'?'Bank transfer':payMethod==='cash'?'Cash on arrival':payMethod==='check'?'Check':'-';
   document.getElementById('done-title').textContent='Already signed';
   document.getElementById('done-msg').textContent='This proposal has already been signed. The contractor will be in touch to confirm your start date.';
   document.getElementById('done-rows').innerHTML=
@@ -767,9 +767,9 @@ async function init(){
     // Instant-open handoff: the hub pre-fetches pending proposals and stashes them
     // in sessionStorage keyed by this exact storage key. When present, render from
     // it with ZERO network round-trip so there's no white download-gap between the
-    // hub's "Review & Sign" tap and the proposal painting. One-shot — removed after
+    // hub's "Review & Sign" tap and the proposal painting. One-shot: removed after
     // read so a later re-open re-fetches fresh. Falls back to the network fetch when
-    // opened cold (email link, refresh) — behaviour there is unchanged.
+    // opened cold (email link, refresh), behaviour there is unchanged.
     let data=null,error=null,_fromStash=false;
     try{const _stash=sessionStorage.getItem('tdsign:'+key);
       if(_stash){data=JSON.parse(_stash);sessionStorage.removeItem('tdsign:'+key);_fromStash=true;}
@@ -777,7 +777,7 @@ async function init(){
     if(!data){await _whenSupaReady();({data,error}=await _fetchStorageJson(key));}
     if(error||!data)throw error||new Error('no data returned');
     _prop=data;
-    // Boot overlay branding — business name (stash path: instantly at parse;
+    // Boot overlay branding, business name (stash path: instantly at parse;
     // cold path: as soon as the fetch lands), contractor logo when present
     // (same swap the hub boot does for white-label).
     {const _bn=document.getElementById('sign-boot-name');
@@ -795,9 +795,9 @@ async function init(){
       show('pg-declined');return;
     }
     // stripeConnectEnabled===false: _renderSignPayBtns() will show cash-only
-    // Check proposal JSON status AND signed_proposals table (table is authoritative — storage can be cached).
+    // Check proposal JSON status AND signed_proposals table (table is authoritative, storage can be cached).
     // On the stash-handoff path this check must NOT block first paint: the hub only
-    // stashes PENDING proposals, so paint immediately and verify in the background —
+    // stashes PENDING proposals, so paint immediately and verify in the background,
     // if a signature row exists (signed on another device moments ago), swap to the
     // "Already signed" page then. Cold opens keep the blocking check: an emailed link
     // can easily point at a signed proposal and must never flash the sign UI first.
@@ -809,7 +809,7 @@ async function init(){
     if(_fromStash){
       // Postponed past the entrance waterfall (~1.6s): _whenSupaReady injects +
       // evaluates the vendor bundle, and that main-thread eval mid-cascade was
-      // the residual chop. The verify itself is not urgent — a signed-elsewhere
+      // the residual chop. The verify itself is not urgent, a signed-elsewhere
       // race just swaps to the Already-signed page a beat later.
       setTimeout(()=>{_whenSupaReady().then(async()=>{
         const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
@@ -819,19 +819,19 @@ async function init(){
       const{data:sigRow}=await _supa.from('signed_proposals').select('signed_at,client_signed_name,payment_method').eq('bid_id',String(_prop.id)).maybeSingle();
       if(sigRow){_renderAlreadySigned(sigRow);return;}
     }
-    // Log view via Edge Function — skip entirely when preview=1 (contractor previewing, not a real client open).
-    // Also detects contractor via active session — belt-and-suspenders so logged-in previews
+    // Log view via Edge Function, skip entirely when preview=1 (contractor previewing, not a real client open).
+    // Also detects contractor via active session, belt-and-suspenders so logged-in previews
     // never increment client view counts even without the preview param.
     if(_isPreview){
       const _pvBanner=document.createElement('div');
       _pvBanner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:99999;background:#1d4ed8;color:#fff;font-size:13px;font-weight:700;text-align:center;padding:10px 16px;letter-spacing:.01em';
-      _pvBanner.textContent='Preview mode — navigate freely to QA the flow. Final submission is disabled.';
+      _pvBanner.textContent='Preview mode, navigate freely to QA the flow. Final submission is disabled.';
       document.body.prepend(_pvBanner);
       // Shift page content down so banner doesn't cover anything
       document.body.style.paddingTop='44px';
     }
     if(!_isPreview&&_prop.contractorUserId&&_prop.id){
-      // Fire-and-forget — must never delay first paint, and postponed past the
+      // Fire-and-forget: must never delay first paint, and postponed past the
       // waterfall so the vendor eval it triggers can't jank the animation.
       setTimeout(()=>{_whenSupaReady().then(async()=>{
         let _viewerType='client';
@@ -848,7 +848,7 @@ async function init(){
       }).catch(()=>{});},1600);
     }
     const _biz=_prop.businessName||'Your Contractor';
-    document.title='Review & Sign — '+_biz;
+    document.title='Review & Sign, '+_biz;
     // Populate business name into decline UI
     const declinedMsg=document.getElementById('declined-msg');
     if(declinedMsg)declinedMsg.textContent=_biz+' has been notified that you\'re not moving forward at this time. We hope to have the opportunity to work with you in the future.';
@@ -867,15 +867,15 @@ async function init(){
     const stickyTotal=document.getElementById('sticky-total');
     if(stickyTotal)stickyTotal.textContent=fmt(_prop.amount);
     document.getElementById('amt-total').textContent=fmt(_prop.amount);
-    // Contractor-configurable — Settings → "Show 'Powered by'" (S.poweredBy, default true).
+    // Contractor-configurable, Settings → "Show 'Powered by'" (S.poweredBy, default true).
     if(_prop.poweredBy===false){const _pbf=document.getElementById('powered-by-footer');if(_pbf)_pbf.style.display='none';}
-    // Deposit-first framing in the sticky bar — the action-sized number leads.
+    // Deposit-first framing in the sticky bar, the action-sized number leads.
     const _sdl=document.getElementById('sticky-deposit-line');
     if(_sdl&&(_prop.deposit||0)>0){
       _sdl.innerHTML='<strong style="color:var(--ink)">'+fmt(_prop.deposit)+' today</strong> locks in your spot on the schedule';
       _sdl.style.display='block';
     }
-    // Price-held-until chip — surfaces the REAL 30-day validity window the
+    // Price-held-until chip, surfaces the REAL 30-day validity window the
     // proposal document already carries (generic-estimate bakes "Valid until:
     // send date + 30 days" into the terms). Hidden once that window has passed:
     // never advertise a price hold that's no longer true.
@@ -889,7 +889,7 @@ async function init(){
     }
     // Update cash section with actual business name
     const _cashMsg=document.getElementById('cash-confirm-msg');
-    if(_cashMsg)_cashMsg.textContent=' Your proposal is signed — you’re locked in on the schedule. '+_biz+' will collect the deposit when they arrive.';
+    if(_cashMsg)_cashMsg.textContent=' Your proposal is signed, you’re locked in on the schedule. '+_biz+' will collect the deposit when they arrive.';
     document.getElementById('amt-dep').textContent='Deposit to start: '+fmt(_prop.deposit);
     document.getElementById('amt-bal').textContent='Balance on completion: '+fmt(_prop.amount-_prop.deposit);
     const _days=_prop.estDays;
@@ -904,7 +904,7 @@ async function init(){
     let _propSt=(_propAddrMatch&&_propAddrMatch[1])||null;
     if(!_propSt){const _nm=Object.entries(_STNAMES).find(([n])=>_propAddrUpper.includes(n));if(_nm)_propSt=_nm[1];}
     if(!_propSt&&_prop.state)_propSt=_prop.state;
-    // Patch old cancellation clause in unsigned proposals — adds mutual obligation so contractor
+    // Patch old cancellation clause in unsigned proposals, adds mutual obligation so contractor
     // can't keep the deposit without performing. alreadySigned proposals return early at pg-done,
     // so this code only ever runs for proposals the client hasn't signed yet.
     const _proposalHtmlOrig=_prop.proposalHtml||'';
@@ -913,12 +913,12 @@ async function init(){
       // Painting proposals (proposals.js): full <p> tag with <em> formatting, ends with "at no additional charge.</p>"
       _proposalHtml=_proposalHtml.replace(
         /<p[^>]*><strong>2\. Cancellation &amp; Deposits:<\/strong> Buyer has the right to cancel this transaction without penalty within (\d+) business days of signing \(([^)]+)\)\..*?at no additional charge\.<\/p>/s,
-        (_,days,statute)=>'<p style="margin:0 0 9px"><strong>2. Cancellation &amp; Deposits:</strong> Buyer may cancel this transaction within '+days+' business days of signing ('+statute+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages to compensate for: (a) <em>Mobilization &amp; Scheduling</em> — reserving crew availability and declining other projects for the contracted dates; (b) <em>Administrative Costs</em> — time invested in site measurements, color consulting, and preparation of this written scope; and (c) <em>Material Procurement</em> — sourcing specific paint colors and materials that may not be returnable or transferable to other jobs. These represent a reasonable good-faith estimate of actual damages, not a penalty. '+_biz+'\'s right to retain the deposit is conditioned on '+_biz+'\'s readiness and willingness to perform. If '+_biz+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</p>'
+        (_,days,statute)=>'<p style="margin:0 0 9px"><strong>2. Cancellation &amp; Deposits:</strong> Buyer may cancel this transaction within '+days+' business days of signing ('+statute+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages to compensate for: (a) <em>Mobilization &amp; Scheduling</em>, reserving crew availability and declining other projects for the contracted dates; (b) <em>Administrative Costs</em>, time invested in site measurements, color consulting, and preparation of this written scope; and (c) <em>Material Procurement</em>, sourcing specific paint colors and materials that may not be returnable or transferable to other jobs. These represent a reasonable good-faith estimate of actual damages, not a penalty. '+_biz+'\'s right to retain the deposit is conditioned on '+_biz+'\'s readiness and willingness to perform. If '+_biz+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</p>'
       );
-      // Generic trade proposals (generic-estimate.js — plumbing, HVAC, roofing, etc.): <div> wrapper, ends with "not a penalty.</div>"
+      // Generic trade proposals (generic-estimate.js: plumbing, HVAC, roofing, etc.): <div> wrapper, ends with "not a penalty.</div>"
       _proposalHtml=_proposalHtml.replace(
         /<div>2\. <strong>Cancellation &amp; Deposits:<\/strong> Buyer has the right to cancel within (\d+) business days of signing \(([^)]+)\)\..*?not a penalty\.<\/div>/s,
-        (_,days,statute)=>'<div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+days+' business days of signing ('+statute+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. '+_biz+'\'s right to retain the deposit is conditioned on '+_biz+'\'s readiness and willingness to perform. If '+_biz+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div>'
+        (_,days,statute)=>'<div>2. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+days+' business days of signing ('+statute+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs, a reasonable estimate of actual damages, not a penalty. '+_biz+'\'s right to retain the deposit is conditioned on '+_biz+'\'s readiness and willingness to perform. If '+_biz+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div>'
       );
     }
     // Upgrade old generic mechanic's lien text → state-specific _lienNotice() sentence.
@@ -938,7 +938,7 @@ async function init(){
       const _injCd=(_prop.cancelDays||STATE_CANCEL[_propSt]?.days||3);
       const _injCs=_cancelCitation(_propSt);
       const _injBiz=escHtmlN(_prop.businessName||'Contractor');
-      const _injCancel='<div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+_injCd+' business days of signing ('+_injCs+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs — a reasonable estimate of actual damages, not a penalty. '+_injBiz+'\'s right to retain the deposit is conditioned on '+_injBiz+'\'s readiness and willingness to perform. If '+_injBiz+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div>';
+      const _injCancel='<div>3. <strong>Cancellation &amp; Deposits:</strong> Buyer may cancel within '+_injCd+' business days of signing ('+_injCs+') for a full refund of any deposit. After that period, if Buyer cancels or fails to proceed, the deposit is retained as liquidated damages for mobilization, scheduling, administrative, and material procurement costs, a reasonable estimate of actual damages, not a penalty. '+_injBiz+'\'s right to retain the deposit is conditioned on '+_injBiz+'\'s readiness and willingness to perform. If '+_injBiz+' fails to substantially complete the agreed scope of work through no fault of Buyer, the deposit shall be refunded in full. The deposit does not compensate for work not performed.</div>';
       // Renumber old items 3-7 → 4-8 first (high→low to avoid double-renaming)
       _proposalHtml=_proposalHtml
         .replace(/<div>7\. <strong>Mechanic/g,'<div>8. <strong>Mechanic')
@@ -970,7 +970,7 @@ async function init(){
     if(_propSt&&typeof STATE_LIEN!=='undefined'&&STATE_LIEN[_propSt]&&typeof _lienNotice==='function'){
       const _newLienTxt=_lienNotice(_propSt);
       let _replaced=false;
-      // New proposals store _prop.state — reconstruct old lien notice for full replacement (state name + statute)
+      // New proposals store _prop.state: reconstruct old lien notice for full replacement (state name + statute)
       if(_prop.state&&_prop.state!==_propSt){
         const _oldLienTxt=_lienNotice(_prop.state);
         if(_proposalHtml.includes(_oldLienTxt)){_proposalHtml=_proposalHtml.split(_oldLienTxt).join(_newLienTxt);_replaced=true;}
@@ -1001,7 +1001,7 @@ async function init(){
       if(_ws&&/^https?:\/\//i.test(_ws)){const _wh=_ws;_ctct.push('<a href="'+escHtmlN(_wh)+'" target="_blank" rel="noopener" style="color:var(--accent);text-decoration:none;font-weight:600">'+escHtmlN(_ws.replace(/^https?:\/\//,''))+'</a>');}
       if(_ctct.length){const _ftr=document.createElement('div');_ftr.id='prop-contact-footer';_ftr.style.cssText='margin-top:18px;padding-top:14px;border-top:1px solid var(--bdr);font-size:11px;color:var(--text3);text-align:center;line-height:2';_ftr.innerHTML='<div style="font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px">Contact us</div>'+_ctct.join('<span style="margin:0 5px;opacity:.35"> · </span>');document.getElementById('prop-html').appendChild(_ftr);}
     })();
-    // Collapsible scope lists — collapse any <ol> with 5+ items, show first 4 + expand button
+    // Collapsible scope lists, collapse any <ol> with 5+ items, show first 4 + expand button
     document.querySelectorAll('#prop-html ol').forEach(function(ol){
       const lis=ol.querySelectorAll('li');if(lis.length<5)return;
       const all=Array.from(lis);
@@ -1016,18 +1016,18 @@ async function init(){
       };
       ol.after(btn);
     });
-    // Terms accordion — shared with the contractor's estimate-builder Preview
+    // Terms accordion, shared with the contractor's estimate-builder Preview
     // overlay via _applyTermsAccordion (js/legal.js) so the two views can't drift.
     _applyTermsAccordion(document.getElementById('prop-html'));
     // If any legacy patches were applied, silently re-upload the corrected proposal to Supabase storage
     // so hub preview and all future views (client.html) reflect the correct state-specific terms.
     // (Signed/paid proposals returned early above, so this only ever touches pending ones.
-    //  Background — the deferred supabase-js may not have landed yet on the stash path.)
+    //  Background: the deferred supabase-js may not have landed yet on the stash path.)
     if(_proposalHtml!==_proposalHtmlOrig&&key){
       const _patchedProp=Object.assign({},_prop,{proposalHtml:_proposalHtml,state:_propSt||_prop.state||'KS'});
       setTimeout(()=>{_whenSupaReady().then(()=>{_supa.storage.from('proposals').upload(key,JSON.stringify(_patchedProp),{contentType:'application/json',upsert:true,cacheControl:'0'}).catch(()=>{});}).catch(()=>{});},1600);
     }
-    // Remove the embedded signature block from the proposal HTML — signing happens in sig-card below
+    // Remove the embedded signature block from the proposal HTML, signing happens in sig-card below
     document.querySelectorAll('#prop-html .sig-block, #prop-html [class*="sig-block"], #prop-html .signature-section').forEach(el=>el.remove());
     // Show EPA notice banner and "Document 1 of 2" label for pre-1978 proposals (all trades)
     if(_prop.epaRequired){
@@ -1036,10 +1036,10 @@ async function init(){
       const _d1Lbl=document.getElementById('epa-doc1-label');
       if(_d1Lbl)_d1Lbl.style.display='block';
     }
-    // Shared consent block (esign.js) — same checkbox + terms accordion shape
+    // Shared consent block (esign.js): same checkbox + terms accordion shape
     // as every other signing surface (owner directive 2026-07-13). Lien
     // rights are already the "Mechanic's Lien" numbered clause inside the
-    // full proposal document rendered above this card — this box never
+    // full proposal document rendered above this card, this box never
     // restates them, same rule as deposit timing and "the notice above".
     const _consentMount=document.getElementById('sig-consent-mount');
     const _cancelNotice=document.getElementById('cancel-notice-section');
@@ -1053,12 +1053,12 @@ async function init(){
       // New proposals carry the full Terms & Conditions clause list (owner
       // directive 2026-07-13: moved out of the document body, into this
       // accordion). Legacy proposals saved before that change have no
-      // termsHtml field — they fall back to the short summary sentence they
+      // termsHtml field, they fall back to the short summary sentence they
       // always had, so nothing breaks for proposals already in flight.
       let _termsText;
       if(_prop.termsHtml){
         _termsText=(_prop.epaRequired
-          ?'<div style="margin-bottom:10px">By signing, you confirm you have read this proposal (Document 1 of 2) and the EPA Pre-Renovation Disclosure (Document 2 of 2) — this signature applies to both documents.</div>'
+          ?'<div style="margin-bottom:10px">By signing, you confirm you have read this proposal (Document 1 of 2) and the EPA Pre-Renovation Disclosure (Document 2 of 2), this signature applies to both documents.</div>'
           :'')+_prop.termsHtml;
       }else{
         _termsText=_prop.epaRequired
@@ -1068,7 +1068,7 @@ async function init(){
       if(_consentMount)_consentMount.innerHTML=esignConsentHTML('sig',_termsText);
       if(_cancelNoticeBody){
         // FTC 16 CFR Part 429: business day = any day except Sunday and federal legal holidays (Saturdays count)
-        // Use local calendar dates — avoids UTC offset shifting the date for US timezones
+        // Use local calendar dates, avoids UTC offset shifting the date for US timezones
         const _liso=d=>{const y=d.getFullYear(),mo=String(d.getMonth()+1).padStart(2,'0'),dy=String(d.getDate()).padStart(2,'0');return y+'-'+mo+'-'+dy;};
         const _signFedHols=yr=>{const obs=d=>{const w=d.getDay();if(w===0)d.setDate(d.getDate()+1);else if(w===6)d.setDate(d.getDate()-1);return _liso(d);};const nth=(m,n,wd)=>{const d=new Date(yr,m,1);d.setDate(1+((wd-d.getDay()+7)%7)+(n-1)*7);return _liso(d);};const last=(m,wd)=>{const d=new Date(yr,m+1,0);d.setDate(d.getDate()-((d.getDay()-wd+7)%7));return _liso(d);};return[obs(new Date(yr,0,1)),nth(0,3,1),nth(1,3,1),last(4,1),obs(new Date(yr,5,19)),obs(new Date(yr,6,4)),nth(8,1,1),nth(9,2,1),obs(new Date(yr,10,11)),nth(10,4,4),obs(new Date(yr,11,25))];};
         const _now=new Date();_now.setHours(0,0,0,0);const _dl=new Date(_now);const _hols=[..._signFedHols(_now.getFullYear()),..._signFedHols(_now.getFullYear()+1)];let _bc=0;while(_bc<_cd){_dl.setDate(_dl.getDate()+1);const _ymd=_liso(_dl);if(_dl.getDay()!==0&&!_hols.includes(_ymd))_bc++;}
@@ -1090,14 +1090,14 @@ async function init(){
     if(det){
       const msg=e?.message||e?.error?.message||JSON.stringify(e)||'unknown error';
       const status=e?.status||e?.statusCode||'';
-      det.textContent='Debug: '+(status?status+' — ':'')+msg+' | key: '+key;
+      det.textContent='Debug: '+(status?status+', ':'')+msg+' | key: '+key;
       det.style.display='block';
     }
   }
 }
 
 function initCanvas(){
-  // Shared e-sign pad (esign.js) — the literal same markup + capture code as
+  // Shared e-sign pad (esign.js): the literal same markup + capture code as
   // every in-app signing surface. Re-rendered fresh each time this step opens.
   document.getElementById('sig-pad-mount').innerHTML=esignPadHTML('sig');
   esignWire('sig',{clearOnFirstInk:true,
@@ -1150,18 +1150,18 @@ function _backFromColorPick(){
 }
 function _buildColorPickUI(){
   const surfs=_prop.surfaces||[];
-  // Group by cleaned room name (strip product/color note after ' — ')
+  // Group by cleaned room name (strip product/color note after ', ')
   const rooms=new Map();
   const SURF_NICE={walls:'Walls',ceiling:'Ceiling',trim:'Trim',doors:'Doors',windows:'Windows',cabinets:'Cabinets',ext_walls:'Siding',ext_trim:'Ext Trim',deck:'Deck',fence:'Fencing',epoxy:'Epoxy Floor'};
   surfs.forEach(s=>{
     const roomRaw=s.room||'';
-    const roomName=(roomRaw.indexOf(' — ')>-1?roomRaw.slice(0,roomRaw.indexOf(' — ')):roomRaw).replace('[Ext] ','').trim()||'General';
+    const roomName=(roomRaw.indexOf(', ')>-1?roomRaw.slice(0,roomRaw.indexOf(', ')):roomRaw).replace('[Ext] ','').trim()||'General';
     if(!rooms.has(roomName))rooms.set(roomName,{types:[],existing:''});
     const label=SURF_NICE[s.type]||s.type;
     if(!rooms.get(roomName).types.includes(label))rooms.get(roomName).types.push(label);
     // Extract existing color note if contractor pre-selected one
-    if(roomRaw.indexOf(' — ')>-1){
-      const note=roomRaw.split(' — ').slice(1).join(' — ');
+    if(roomRaw.indexOf(', ')>-1){
+      const note=roomRaw.split(', ').slice(1).join(', ');
       // Color is after the product name and ·
       const colorPart=note.split(' · ').slice(-1)[0].replace(/\s*\[.*\]/,'').trim();
       if(colorPart&&!rooms.get(roomName).existing)rooms.get(roomName).existing=colorPart;
@@ -1185,7 +1185,7 @@ function _buildColorPickUI(){
       '</div>'+
     '</div>';
   });
-  if(!html)html='<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No surfaces to color — tap Continue to sign.</div>';
+  if(!html)html='<div style="color:var(--text3);font-size:13px;text-align:center;padding:20px">No surfaces to color, tap Continue to sign.</div>';
   container.innerHTML=html;
   window._colorPickRooms=[...rooms.keys()].map(n=>n.replace(/[^a-zA-Z0-9]/g,'_'));
 }
@@ -1294,12 +1294,12 @@ function _updatePayButtons(){
   const pnd=document.getElementById('pay-now-display');
   if(pnd)pnd.textContent=fmt(_payFullAmount?fullAmt:depAmt);
   const cashMsg=document.getElementById('cash-confirm-msg');
-  if(cashMsg)cashMsg.textContent=(_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed — you’re locked in on the schedule. The contractor will collect the deposit when they arrive.');
+  if(cashMsg)cashMsg.textContent=(_payFullAmount?' Your proposal is signed. The contractor will collect the full amount when they arrive.':' Your proposal is signed, you’re locked in on the schedule. The contractor will collect the deposit when they arrive.');
 }
 
 
 async function submitCash(){
-  if(_isPreview){document.getElementById('pay-err').textContent='Preview mode — payments are disabled.';return;}
+  if(_isPreview){document.getElementById('pay-err').textContent='Preview mode, payments are disabled.';return;}
   const btn=event.target;btn.disabled=true;
   const method=_manualPayMethod||'cash';
   const origLabel=btn.textContent;
@@ -1313,11 +1313,11 @@ async function submitCash(){
   try{
     const updated={..._prop,status:'signed',signedAt:ts,signerName:name,paymentMethod:method,signatureDataUrl:_sigData,portfolioAccepted:window._portfolioAccepted,finalAmount:_subAmt,colorChoices:window._colorChoices||[]};
     // Storage failure must not block the signature (DB row is the source of truth),
-    // but it means the drawn-signature image won't render on the proposal — log it.
+    // but it means the drawn-signature image won't render on the proposal, log it.
     const{error:_storErr}=await _supa.storage.from('proposals').upload(key,JSON.stringify(updated),{contentType:'application/json',upsert:true,cacheControl:'0'});
-    if(_storErr)console.warn('proposal JSON update failed — signature image will not show on stored proposal:',_storErr.message);
+    if(_storErr)console.warn('proposal JSON update failed, signature image will not show on stored proposal:',_storErr.message);
     // Core columns exist in every deployment. Optional compliance/analytics columns
-    // may lag behind where newer migrations haven't been applied — if PostgREST
+    // may lag behind where newer migrations haven't been applied, if PostgREST
     // rejects the row with an unknown-column error (PGRST204), retry with core only
     // so the signature is never lost to a schema mismatch.
     const _core={
@@ -1334,13 +1334,13 @@ async function submitCash(){
       epa_ack_at:_prop.epaRequired?ts:null,
       rrp_firm_cert:_prop.epaRequired?(_prop.rrpFirmCertNum||null):null,
       rrp_renovator_name:_prop.epaRequired?(_prop.rrpRenovatorName||null):null,
-      // Drawn signature image — stored in the DB so documents can always render it,
+      // Drawn signature image, stored in the DB so documents can always render it,
       // even when the storage-JSON update was missed at signing time.
       signature_data:_sigData||null,
     };
     let{error:_upsertErr}=await _supa.from('signed_proposals').upsert({..._core,..._optional},{onConflict:'bid_id'});
     if(_upsertErr&&(_upsertErr.code==='PGRST204'||/column/i.test(_upsertErr.message||''))){
-      console.warn('signed_proposals: optional column rejected, retrying core only —',_upsertErr.message);
+      console.warn('signed_proposals: optional column rejected, retrying core only -',_upsertErr.message);
       ({error:_upsertErr}=await _supa.from('signed_proposals').upsert(_core,{onConflict:'bid_id'}));
     }
     if(_upsertErr)throw _upsertErr;
@@ -1349,18 +1349,18 @@ async function submitCash(){
   }catch(e){
     console.error(e);
     const _det=e?.message||e?.details||'';
-    document.getElementById('pay-err').textContent='Something went wrong'+(_det?' — '+_det:'')+'. Try again.';
+    document.getElementById('pay-err').textContent='Something went wrong'+(_det?', '+_det:'')+'. Try again.';
     btn.disabled=false;btn.textContent=origLabel;
     return;
   }
-  // Outside the try — a confirmation-screen render hiccup must not report a
+  // Outside the try, a confirmation-screen render hiccup must not report a
   // successfully saved signature as a failure.
   showDone(method);
   _supa.from('signed_proposals').update({notified_at:new Date().toISOString()}).eq('bid_id',String(_prop.id)).then(null,e=>console.warn('notified_at:',e));
 }
 
 function showDone(method){
-  _logStep('signed'); // terminal step — completes the opened→signed timeline
+  _logStep('signed'); // terminal step, completes the opened→signed timeline
   const isAch=method==='ach';
   const isCashApp=method==='cashapp';
   const isCheck=method==='check';
@@ -1382,14 +1382,14 @@ function showDone(method){
     (_prop?.businessPhone?'<div class="row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--bdr)"><span class="rl">Questions?</span><span class="rv"><a href="tel:'+_prop.businessPhone.replace(/\D/g,'')+'" style="color:var(--accent);font-weight:700;text-decoration:none">Call '+escHtmlN(_prop.businessName||'us')+'</a></span></div>':'');
   const _stamp=document.getElementById('done-stamp');
   if(_stamp){_stamp.innerHTML='<div style="display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;padding:8px 20px;border-radius:20px;font-size:11px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;box-shadow:0 2px 12px rgba(22,163,74,.25)">'+svgIcon('✓',{size:14})+' Signed &amp; Approved</div>';_stamp.style.display='block';}
-  // Peak-end: forward motion, not a receipt — three concrete next steps.
+  // Peak-end: forward motion, not a receipt, three concrete next steps.
   const _dNext=document.getElementById('done-next'),_dNextRows=document.getElementById('done-next-rows');
   if(_dNext&&_dNextRows){
     const _biz2=escHtmlN(_prop?.businessName||'Your contractor');
-    const _step2=isPaid?'Deposit received — you’re locked in on the schedule'
+    const _step2=isPaid?'Deposit received, you’re locked in on the schedule'
       :isCheck?'Deposit collected before work begins'
-      :'Deposit collected on arrival — your spot stays held';
-    const _nextSteps=[_biz2+' reaches out to confirm your start date',_step2,'Work begins — follow progress and photos in your project hub'];
+      :'Deposit collected on arrival, your spot stays held';
+    const _nextSteps=[_biz2+' reaches out to confirm your start date',_step2,'Work begins, follow progress and photos in your project hub'];
     _dNextRows.innerHTML=_nextSteps.map((t,i)=>'<div style="display:flex;align-items:flex-start;gap:10px;padding:5px 0;font-size:13px;color:var(--text);line-height:1.5"><span style="flex-shrink:0;width:20px;height:20px;border-radius:50%;background:var(--bg);border:1.5px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--text2)">'+(i+1)+'</span><span>'+t+'</span></div>').join('');
     _dNext.style.display='block';
   }
@@ -1403,7 +1403,7 @@ function showDone(method){
   }
 }
 
-// ── EPA Pre-Renovation Disclosure (Document 2 of 2) — review page ──────────
+// ── EPA Pre-Renovation Disclosure (Document 2 of 2), review page ──────────
 function showEpaPage(){
   show('pg-epa');scrollTo(0,0);
   const addr=_prop.clientAddr||'';
@@ -1415,7 +1415,7 @@ function showEpaPage(){
 }
 
 // Research-backed reason list (price/value, competitor, timing, DIY, changed
-// mind, other) — matches the ranked reasons homeowners actually decline home
+// mind, other), matches the ranked reasons homeowners actually decline home
 // improvement quotes for. Mirrors the post-signing cancellation reason picker
 // in client.html for a consistent pattern, with "Doing it myself" added since
 // it's a distinct, common decline reason that never applies to cancellation.
@@ -1449,7 +1449,7 @@ async function _confirmDecline(){
   let key=params2.get('key');
   if(!key){const t=params2.get('t'),u=params2.get('u'),b=params2.get('b');if(t&&u&&b)key=`proposals/${u}/${b}_${t}.json`;}
   const ts=new Date().toISOString();
-  // Reason is entirely optional — an empty pick just means no signal, never a blocker.
+  // Reason is entirely optional, an empty pick just means no signal, never a blocker.
   let declineReason=_declineReason;
   if(declineReason==='Other'){
     const t=(document.getElementById('decline-other-text')?.value||'').trim();
@@ -1499,12 +1499,12 @@ function _renderSignPayBtns(){
     html+=
       '<button id="_pay-now-btn" onclick="_paySign(\'stripe\')" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px;border-radius:12px;border:none;background:#1b1612;color:#fff;font-size:16px;font-weight:800;cursor:pointer;font-family:inherit;text-align:center;box-shadow:0 4px 18px rgba(27,22,18,.28);margin-bottom:10px;letter-spacing:-.2px">'+
         '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:.9"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>'+
-        'Pay Now — Secure Checkout'+
+        'Pay Now, Secure Checkout'+
       '</button>'+
       (surchargeOn?'<div style="font-size:11px;color:#b45309;text-align:center;margin-bottom:16px">'+pct+'% fee on credit cards · debit cards &amp; bank transfer are free</div>':'');
   }
   // Identical, evenly-spaced options under the hero button (owner 2026-07-14):
-  // Pay Later · Check · Cash — same style, one equal grid. "Pay Later" is
+  // Pay Later · Check · Cash, same style, one equal grid. "Pay Later" is
   // method-agnostic: signs now, records the balance as owed, and leaves every
   // payment channel open afterward.
   //
@@ -1540,20 +1540,20 @@ async function _paySign(method){
     const confirmBtn=document.getElementById('sec-cash-confirm-btn');
     if(method==='later'){
       // Method-agnostic (owner 2026-07-14): signs now, balance stays owed, ANY
-      // channel open afterward — never boxes the client into cash/check/online.
+      // channel open afterward, never boxes the client into cash/check/online.
       const _biz=_prop?.businessName||'The contractor';
-      if(hdr)hdr.textContent='All set — pay later.';
-      if(msg)msg.textContent=' Your proposal is signed and you’re locked in on the schedule. You can pay any way that works for you — '+_biz+' will send you the details, and you can settle up anytime before work is complete.';
-      if(confirmBtn)confirmBtn.textContent='Confirm — I’ll arrange payment';
+      if(hdr)hdr.textContent='All set, pay later.';
+      if(msg)msg.textContent=' Your proposal is signed and you’re locked in on the schedule. You can pay any way that works for you, '+_biz+' will send you the details, and you can settle up anytime before work is complete.';
+      if(confirmBtn)confirmBtn.textContent='Confirm: I’ll arrange payment';
     }else{
       if(hdr)hdr.textContent=method==='check'?'Check selected.':'Cash selected.';
-      if(msg)msg.textContent=_payFullAmount?(' Your proposal is signed. The contractor will collect the full amount '+(method==='check'?'when work is complete.':'when they arrive.')):(' Your proposal is signed — you’re locked in on the schedule. '+(_prop?.businessName||'The contractor')+' will collect the deposit '+(method==='check'?'before work begins.':'when they arrive.'));
-      if(confirmBtn)confirmBtn.textContent=method==='check'?(_payFullAmount?"Confirm — pay in full by check":"Confirm — I'll pay by check"):(_payFullAmount?"Confirm — pay in full cash in person":"Confirm — I'll pay cash in person");
+      if(msg)msg.textContent=_payFullAmount?(' Your proposal is signed. The contractor will collect the full amount '+(method==='check'?'when work is complete.':'when they arrive.')):(' Your proposal is signed, you’re locked in on the schedule. '+(_prop?.businessName||'The contractor')+' will collect the deposit '+(method==='check'?'before work begins.':'when they arrive.'));
+      if(confirmBtn)confirmBtn.textContent=method==='check'?(_payFullAmount?"Confirm: pay in full by check":"Confirm: I'll pay by check"):(_payFullAmount?"Confirm: pay in full cash in person":"Confirm: I'll pay cash in person");
     }
     return;
   }
-  // 'stripe' — open embedded Stripe checkout; auto-surfaces Apple Pay, Google Pay, card, bank transfer
-  if(_isPreview){document.getElementById('pay-err').textContent='Preview mode — card payment is disabled. Your client will see a real checkout here.';return;}
+  // 'stripe', open embedded Stripe checkout; auto-surfaces Apple Pay, Google Pay, card, bank transfer
+  if(_isPreview){document.getElementById('pay-err').textContent='Preview mode, card payment is disabled. Your client will see a real checkout here.';return;}
   const _depFrac=(_prop?.amount>0&&_prop?.deposit>0)?_prop.deposit/_prop.amount:0.25;
   const depBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*_depFrac*100):Math.round((_prop.deposit||0)*100);
   const fullBase=window._portfolioAccepted&&_prop.discountedPrice?Math.round(_prop.discountedPrice*100):Math.round((_prop.amount||0)*100);
@@ -1566,19 +1566,19 @@ async function _paySign(method){
     console.error(e);
     document.getElementById('pay-err').textContent='Could not open payment. Please try again.';
   }
-  if(btn){btn.disabled=false;btn.innerHTML='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:.9;vertical-align:-2px;margin-right:6px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Pay Now — Secure Checkout';}
+  if(btn){btn.disabled=false;btn.innerHTML='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:.9;vertical-align:-2px;margin-right:6px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Pay Now, Secure Checkout';}
 }
 async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
   const _p=new URLSearchParams(location.search);
   let propKey=_p.get('key');
   if(!propKey){const t=_p.get('t'),u=_p.get('u'),b=_p.get('b');if(t&&u&&b)propKey=`proposals/${u}/${b}_${t}.json`;}
   _stripeAmt=amount;
-  // Open modal with loading state immediately — don't wait for the API call
+  // Open modal with loading state immediately, don't wait for the API call
   document.getElementById('sign-stripe-biz').textContent=_prop.businessName||'Secure Payment';
   document.getElementById('sign-stripe-amt').textContent=fmt(amount/100)+' · Secure Checkout';
   document.getElementById('sign-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center;color:#9ca3af;font-size:14px">Loading payment options…</div>';
   const submitBtn=document.getElementById('sign-stripe-submit');
-  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secure Checkout';}
+  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+', Secure Checkout';}
   document.getElementById('sign-stripe-overlay').style.display='flex';
   document.body.style.overflow='hidden';
   try{
@@ -1632,7 +1632,7 @@ async function _launchEmbedded(amount,paymentMethod,surchargeAmount=0){
     _closeStripeModal();
     document.getElementById('pay-err').textContent=(e?.message||'Could not open payment')+'. Please try again.';
     const btn=document.getElementById('_pay-now-btn');
-    if(btn){btn.disabled=false;btn.innerHTML='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:.9;vertical-align:-2px;margin-right:6px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Pay Now — Secure Checkout';}
+    if(btn){btn.disabled=false;btn.innerHTML='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="opacity:.9;vertical-align:-2px;margin-right:6px"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Pay Now, Secure Checkout';}
   }
 }
 async function _submitStripePayment(){
@@ -1646,7 +1646,7 @@ async function _submitStripePayment(){
     if(error.type!=='validation_error'){
       document.getElementById('pay-err').textContent=error.message||'Payment failed. Please try again.';
     }
-    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeAmt/100)+' — Secure Checkout';}
+    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeAmt/100)+', Secure Checkout';}
   }
 }
 </script>
@@ -1663,7 +1663,7 @@ async function _submitStripePayment(){
     </div>
     <div id="sign-embed-container" style="overflow-y:auto;padding:4px 4px 0"></div>
     <div style="padding:12px 16px 16px">
-      <button id="sign-stripe-submit" onclick="_submitStripePayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:#1b1612;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(27,22,18,.25);opacity:.5;transition:opacity .2s" onmouseenter="if(!this.disabled)this.style.opacity='.85'" onmouseleave="this.style.opacity=this.disabled?'.5':'1'">Pay — Secure Checkout</button>
+      <button id="sign-stripe-submit" onclick="_submitStripePayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:#1b1612;color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(27,22,18,.25);opacity:.5;transition:opacity .2s" onmouseenter="if(!this.disabled)this.style.opacity='.85'" onmouseleave="this.style.opacity=this.disabled?'.5':'1'">Pay: Secure Checkout</button>
     </div>
   </div>
 </div>

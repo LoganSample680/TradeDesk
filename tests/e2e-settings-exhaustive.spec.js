@@ -8,7 +8,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('settings.js — exhaustive coverage', () => {
+test.describe('settings.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -89,7 +89,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _openSetDetail
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_openSetDetail', () => {
-    test('null key — does not throw', async () => {
+    test('null key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -97,7 +97,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined key — does not throw', async () => {
+    test('undefined key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -105,7 +105,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string key — does not throw', async () => {
+    test('empty string key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -113,7 +113,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent key — set-index-view gets hidden class', async () => {
+    test('nonexistent key, set-index-view gets hidden class', async () => {
       const r = await page.evaluate(() => {
         try {
           _openSetDetail('nonexistent-key-xyz');
@@ -125,7 +125,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('key=integrations — calls _renderIntegrations without throw', async () => {
+    test('key=integrations: calls _renderIntegrations without throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail('integrations'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -133,7 +133,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('key=branding — calls _renderBrandSwatches without throw', async () => {
+    test('key=branding: calls _renderBrandSwatches without throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail('branding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -141,7 +141,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('numeric type input — does not throw', async () => {
+    test('numeric type input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail(42); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -149,12 +149,12 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent('_openSetDetail("branding")', 5);
       expect(ok).toBe(5);
     });
 
-    test('missing set-index-view DOM — does not throw', async () => {
+    test('missing set-index-view DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const iv = document.getElementById('set-index-view');
         if (iv) iv.remove();
@@ -177,7 +177,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _closeSetDetail
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_closeSetDetail', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _closeSetDetail(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -195,7 +195,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('missing set-index-view — does not throw', async () => {
+    test('missing set-index-view, does not throw', async () => {
       const r = await page.evaluate(() => {
         const iv = document.getElementById('set-index-view');
         if (iv) iv.remove();
@@ -212,7 +212,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_closeSetDetail()', 5);
       expect(ok).toBe(5);
     });
@@ -222,7 +222,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _renderSetIndex
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderSetIndex', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderSetIndex(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -230,7 +230,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with S.bname set — renders business name into set-meta-biz', async () => {
+    test('with S.bname set, renders business name into set-meta-biz', async () => {
       const r = await page.evaluate(() => {
         const prev = S.bname;
         S.bname = 'Acme Painting';
@@ -243,7 +243,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Acme Painting');
     });
 
-    test('with S.brandColor — renders color into set-meta-branding', async () => {
+    test('with S.brandColor: renders color into set-meta-branding', async () => {
       const r = await page.evaluate(() => {
         const prev = S.brandColor;
         S.brandColor = '#166534';
@@ -262,14 +262,14 @@ test.describe('settings.js — exhaustive coverage', () => {
         _renderSetIndex();
         _renderSetIndex();
         const el = document.getElementById('set-meta-biz');
-        // innerHTML should be set exactly once — not appended 3 times
+        // innerHTML should be set exactly once, not appended 3 times
         return el ? el.children.length : 0;
       });
       // Should have at most 1 child (strong tag), not 3x duplicates
       expect(r).toBeLessThanOrEqual(2);
     });
 
-    test('missing all meta DOM — does not throw', async () => {
+    test('missing all meta DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const ids = ['set-meta-biz','set-meta-branding','set-meta-rates','set-meta-legal',
                      'set-meta-taxes','set-meta-cloud','set-meta-notifications','set-meta-integrations','set-index-meta'];
@@ -295,7 +295,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage before call — does not throw', async () => {
+    test('corrupted localStorage before call, does not throw', async () => {
       const r = await page.evaluate(() => {
         const key = Object.keys(localStorage)[0] || 'zp3_s';
         const prev = localStorage.getItem(key);
@@ -307,7 +307,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_renderSetIndex()', 5);
       expect(ok).toBe(5);
     });
@@ -317,57 +317,57 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _brandColorName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_brandColorName', () => {
-    test('null — returns Custom', async () => {
+    test('null: returns Custom', async () => {
       const r = await page.evaluate(() => _brandColorName(null));
       expect(r).toBe('Custom');
     });
 
-    test('undefined — returns Custom', async () => {
+    test('undefined: returns Custom', async () => {
       const r = await page.evaluate(() => _brandColorName(undefined));
       expect(r).toBe('Custom');
     });
 
-    test('empty string — returns Custom', async () => {
+    test('empty string, returns Custom', async () => {
       const r = await page.evaluate(() => _brandColorName(''));
       expect(r).toBe('Custom');
     });
 
-    test('unknown hex — returns Custom', async () => {
+    test('unknown hex, returns Custom', async () => {
       const r = await page.evaluate(() => _brandColorName('#ffffff'));
       expect(r).toBe('Custom');
     });
 
-    test('#2D5DA8 — returns Denim', async () => {
+    test('#2D5DA8: returns Denim', async () => {
       const r = await page.evaluate(() => _brandColorName('#2D5DA8'));
       expect(r).toBe('Denim');
     });
 
-    test('#166534 — returns Forest', async () => {
+    test('#166534: returns Forest', async () => {
       const r = await page.evaluate(() => _brandColorName('#166534'));
       expect(r).toBe('Forest');
     });
 
-    test('#92400e — returns Amber (lowercase)', async () => {
+    test('#92400e: returns Amber (lowercase)', async () => {
       const r = await page.evaluate(() => _brandColorName('#92400e'));
       expect(r).toBe('Amber');
     });
 
-    test('#991b1b — returns Crimson', async () => {
+    test('#991b1b: returns Crimson', async () => {
       const r = await page.evaluate(() => _brandColorName('#991b1b'));
       expect(r).toBe('Crimson');
     });
 
-    test('#6d28d9 — returns Violet', async () => {
+    test('#6d28d9: returns Violet', async () => {
       const r = await page.evaluate(() => _brandColorName('#6d28d9'));
       expect(r).toBe('Violet');
     });
 
-    test('#18181b — returns Charcoal', async () => {
+    test('#18181b: returns Charcoal', async () => {
       const r = await page.evaluate(() => _brandColorName('#18181b'));
       expect(r).toBe('Charcoal');
     });
 
-    test('number input — does not throw', async () => {
+    test('number input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _brandColorName(42) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -375,7 +375,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — consistent results', async () => {
+    test('concurrent calls, consistent results', async () => {
       const ok = await concurrent('_brandColorName("#2D5DA8")', 5);
       expect(ok).toBe(5);
     });
@@ -385,7 +385,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _renderBrandSwatches
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderBrandSwatches', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderBrandSwatches(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -393,7 +393,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderBrandSwatches(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -401,7 +401,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — falls back to default color', async () => {
+    test('empty string, falls back to default color', async () => {
       const r = await page.evaluate(() => {
         try { _renderBrandSwatches(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -409,7 +409,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid preset color — renders active swatch', async () => {
+    test('valid preset color, renders active swatch', async () => {
       const r = await page.evaluate(() => {
         _renderBrandSwatches('#2D5DA8');
         const container = document.getElementById('set-brand-swatches');
@@ -419,7 +419,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('#2D5DA8');
     });
 
-    test('custom color — renders custom swatch as active', async () => {
+    test('custom color, renders custom swatch as active', async () => {
       const r = await page.evaluate(() => {
         _renderBrandSwatches('#abcdef');
         const container = document.getElementById('set-brand-swatches');
@@ -437,7 +437,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('#2D5DA8');
     });
 
-    test('missing container DOM — does not throw', async () => {
+    test('missing container DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('set-brand-swatches');
         if (el) el.remove();
@@ -467,7 +467,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_renderBrandSwatches("#166534")', 5);
       expect(ok).toBe(5);
     });
@@ -477,7 +477,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _pickedBrandColor
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_pickedBrandColor', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _pickedBrandColor(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -485,7 +485,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _pickedBrandColor(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -493,7 +493,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid hex — sets input value', async () => {
+    test('valid hex, sets input value', async () => {
       const r = await page.evaluate(() => {
         _pickedBrandColor('#991b1b');
         const inp = document.getElementById('set-brandcolor');
@@ -502,7 +502,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('#991b1b');
     });
 
-    test('missing input DOM — does not throw', async () => {
+    test('missing input DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const inp = document.getElementById('set-brandcolor');
         if (inp) inp.remove();
@@ -520,7 +520,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_pickedBrandColor("#2D5DA8")', 5);
       expect(ok).toBe(5);
     });
@@ -530,7 +530,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _checkSubdomain
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_checkSubdomain', () => {
-    test('null — clears status element', async () => {
+    test('null: clears status element', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('set-subdomain-status');
         if (el) el.textContent = 'old text';
@@ -541,7 +541,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.text).toBe('');
     });
 
-    test('undefined — clears status element', async () => {
+    test('undefined: clears status element', async () => {
       const r = await page.evaluate(() => {
         try { _checkSubdomain(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -549,7 +549,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — clears status element', async () => {
+    test('empty string, clears status element', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('set-subdomain-status');
         if (el) el.textContent = 'old';
@@ -559,7 +559,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('valid subdomain (abc123) — shows available', async () => {
+    test('valid subdomain (abc123): shows available', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('abc123');
         const el = document.getElementById('set-subdomain-status');
@@ -568,7 +568,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Available');
     });
 
-    test('too short (ab) — shows error', async () => {
+    test('too short (ab): shows error', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('ab');
         const el = document.getElementById('set-subdomain-status');
@@ -577,7 +577,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('lowercase');
     });
 
-    test('invalid chars (UPPER) — shows error', async () => {
+    test('invalid chars (UPPER): shows error', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('INVALID');
         const el = document.getElementById('set-subdomain-status');
@@ -586,7 +586,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('lowercase');
     });
 
-    test('too long (31 chars) — shows error', async () => {
+    test('too long (31 chars), shows error', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('a'.repeat(31));
         const el = document.getElementById('set-subdomain-status');
@@ -595,7 +595,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('lowercase');
     });
 
-    test('30 chars exactly — shows available', async () => {
+    test('30 chars exactly, shows available', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('a'.repeat(30));
         const el = document.getElementById('set-subdomain-status');
@@ -604,7 +604,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Available');
     });
 
-    test('missing DOM — does not throw', async () => {
+    test('missing DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('set-subdomain-status');
         if (el) el.remove();
@@ -622,7 +622,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_checkSubdomain("myshop")', 5);
       expect(ok).toBe(5);
     });
@@ -632,7 +632,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _manageSubscription
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_manageSubscription', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         // Stub zAlert to prevent modal side-effects
         const orig = window.zAlert;
@@ -651,7 +651,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         const orig = window.zAlert;
         window.zAlert = () => {};
@@ -670,7 +670,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _renderIntegrations
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderIntegrations', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderIntegrations(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -687,7 +687,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Stripe');
     });
 
-    test('Stripe not connected — shows Not connected', async () => {
+    test('Stripe not connected, shows Not connected', async () => {
       const r = await page.evaluate(() => {
         const prev = window._stripeConnectStatus;
         window._stripeConnectStatus = { connected: false };
@@ -700,7 +700,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Not connected');
     });
 
-    test('Stripe connected — shows Connected', async () => {
+    test('Stripe connected, shows Connected', async () => {
       const r = await page.evaluate(() => {
         const prev = window._stripeConnectStatus;
         window._stripeConnectStatus = { connected: true, charges_enabled: true, stripe_account_id: 'acct_test123' };
@@ -713,7 +713,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Connected');
     });
 
-    test('missing integrations-list DOM — does not throw', async () => {
+    test('missing integrations-list DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('integrations-list');
         if (el) el.remove();
@@ -742,7 +742,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_renderIntegrations()', 5);
       expect(ok).toBe(5);
     });
@@ -752,7 +752,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _openStripeConnect
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_openStripeConnect', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openStripeConnect(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -760,10 +760,10 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing DOM — does not throw', async () => {
+    test('missing DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('stripe-connect-status-ui');
-        // element doesn't exist — should handle gracefully
+        // element doesn't exist, should handle gracefully
         try { _openStripeConnect(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
@@ -794,18 +794,18 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_openStripeConnect()', 5);
       expect(ok).toBe(5);
     });
 
-    // Regression — the Manage/Connect tap-target used to call
+    // Regression: the Manage/Connect tap-target used to call
     // _renderStripeConnectUI() with NO arguments (el=undefined), throwing
     // "Cannot set properties of undefined (setting 'innerHTML')" (cloud.js:63),
     // and even once guarded it revealed an EMPTY box. _openStripeConnect must
     // route through loadStripeConnectStatus(), which looks up the container and
     // renders status (sign-in prompt / not-connected / connected / error) into
-    // it — every branch fills the box, none leaves it blank.
+    // it: every branch fills the box, none leaves it blank.
     test('Manage tap-target renders status into the box, never an empty panel', async () => {
       const r = await page.evaluate(async () => {
         let el = document.getElementById('stripe-connect-status-ui');
@@ -821,7 +821,7 @@ test.describe('settings.js — exhaustive coverage', () => {
         let threw = null;
         try { _openStripeConnect(); } catch (e) { threw = e.message; }
         // loadStripeConnectStatus renders synchronously in the no-cloud branch and
-        // async after a fetch otherwise — poll briefly to cover both.
+        // async after a fetch otherwise, poll briefly to cover both.
         const start = Date.now();
         while (el.innerHTML.trim() === '' && Date.now() - start < 3000) {
           await new Promise(res => setTimeout(res, 50));
@@ -837,10 +837,10 @@ test.describe('settings.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // disconnectStripeConnect — in-app unlink (replaces the manual Supabase clear)
+  // disconnectStripeConnect, in-app unlink (replaces the manual Supabase clear)
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('disconnectStripeConnect', () => {
-    test('signed-out — alerts, opens no confirm, does not throw', async () => {
+    test('signed-out: alerts, opens no confirm, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const savedUser = window._supaUser;
         document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
@@ -848,7 +848,7 @@ test.describe('settings.js — exhaustive coverage', () => {
         let threw = null;
         try { disconnectStripeConnect(); } catch (e) { threw = e.message; }
         await new Promise(res => setTimeout(res, 30));
-        // The guard shows a zAlert ('Sign in first') — itself a .zmodal-overlay.
+        // The guard shows a zAlert ('Sign in first'): itself a .zmodal-overlay.
         // What must NOT appear is the Disconnect CONFIRM dialog ('Disconnect Stripe?').
         const confirmShown = [...document.querySelectorAll('.zmodal-overlay')]
           .some(o => (o.querySelector('.zmodal-title')?.textContent || '').includes('Disconnect Stripe'));
@@ -860,7 +860,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.confirmShown).toBe(false); // guarded before ever reaching the confirm
     });
 
-    test('signed-in — opens a Disconnect confirm dialog', async () => {
+    test('signed-in: opens a Disconnect confirm dialog', async () => {
       const r = await page.evaluate(async () => {
         const savedUser = window._supaUser;
         const savedEnabled = window.supaEnabled;
@@ -882,7 +882,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.yesLabel).toContain('Disconnect');
     });
 
-    test('confirmed — clears status + cached state, re-renders, no throw', async () => {
+    test('confirmed: clears status + cached state, re-renders, no throw', async () => {
       const r = await page.evaluate(async () => {
         const savedUser = window._supaUser;
         const savedEnabled = window.supaEnabled;
@@ -912,7 +912,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.connected).toBe(false);
     });
 
-    // Regression — an existing account the backend can't verify in THIS
+    // Regression: an existing account the backend can't verify in THIS
     // environment (live account on a test-mode preview, or a deleted account)
     // must NOT render a dead Connect button. It offers an explicit Reset.
     test('unverifiable stored account → offers Reset connection (not a dead Connect)', async () => {
@@ -937,7 +937,7 @@ test.describe('settings.js — exhaustive coverage', () => {
     });
 
     // The connected state must expose an in-app unlink (the whole point of the
-    // feature) alongside Manage — so Stripe can be disconnected without SQL.
+    // feature) alongside Manage, so Stripe can be disconnected without SQL.
     test('connected state renders a Disconnect (unlink) control', async () => {
       const html = await page.evaluate(() => {
         const el = document.createElement('div');
@@ -954,18 +954,18 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _filterSetRows
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_filterSetRows', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _filterSetRows(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // null.toLowerCase() will throw — acceptable if the function handles it
+      // null.toLowerCase() will throw, acceptable if the function handles it
       // (the function calls q.toLowerCase() so we just check it is survivable at call site)
-      // Either ok or err is fine — just no uncaught page crash
+      // Either ok or err is fine, just no uncaught page crash
       expect(typeof r).toBe('object');
     });
 
-    test('empty string — shows all rows', async () => {
+    test('empty string, shows all rows', async () => {
       const r = await page.evaluate(() => {
         // Create fake set-index-view with rows
         let iv = document.getElementById('set-index-view');
@@ -980,7 +980,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(0);
     });
 
-    test('matching term — shows matching rows', async () => {
+    test('matching term, shows matching rows', async () => {
       const r = await page.evaluate(() => {
         let iv = document.getElementById('set-index-view');
         iv.innerHTML = '<div class="set-idx-row" data-search="billing">Billing</div>' +
@@ -996,7 +996,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(1);
     });
 
-    test('non-matching term — hides all rows', async () => {
+    test('non-matching term, hides all rows', async () => {
       const r = await page.evaluate(() => {
         let iv = document.getElementById('set-index-view');
         iv.innerHTML = '<div class="set-idx-row" data-search="billing">Billing</div>' +
@@ -1022,7 +1022,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('no rows in DOM — does not throw', async () => {
+    test('no rows in DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         let iv = document.getElementById('set-index-view');
         iv.innerHTML = '';
@@ -1032,7 +1032,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_filterSetRows("tax")', 5);
       expect(ok).toBe(5);
     });
@@ -1042,22 +1042,22 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licDaysUntil
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licDaysUntil', () => {
-    test('no expiryDate — returns null', async () => {
+    test('no expiryDate, returns null', async () => {
       const r = await page.evaluate(() => _licDaysUntil({}));
       expect(r).toBeNull();
     });
 
-    test('null expiryDate — returns null', async () => {
+    test('null expiryDate, returns null', async () => {
       const r = await page.evaluate(() => _licDaysUntil({ expiryDate: null }));
       expect(r).toBeNull();
     });
 
-    test('empty string expiryDate — returns null', async () => {
+    test('empty string expiryDate, returns null', async () => {
       const r = await page.evaluate(() => _licDaysUntil({ expiryDate: '' }));
       expect(r).toBeNull();
     });
 
-    test('future date — returns positive number', async () => {
+    test('future date, returns positive number', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 60).toISOString().split('T')[0];
         return _licDaysUntil({ expiryDate: future });
@@ -1065,7 +1065,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBeGreaterThan(0);
     });
 
-    test('past date — returns negative number', async () => {
+    test('past date, returns negative number', async () => {
       const r = await page.evaluate(() => {
         const past = new Date(Date.now() - 86400000 * 30).toISOString().split('T')[0];
         return _licDaysUntil({ expiryDate: past });
@@ -1073,7 +1073,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBeLessThan(0);
     });
 
-    test('today — returns 0 or 1 (boundary)', async () => {
+    test('today: returns 0 or 1 (boundary)', async () => {
       const r = await page.evaluate(() => {
         const today = new Date().toISOString().split('T')[0];
         return _licDaysUntil({ expiryDate: today });
@@ -1081,7 +1081,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(Math.abs(r)).toBeLessThanOrEqual(2);
     });
 
-    test('empty object — does not throw', async () => {
+    test('empty object, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _licDaysUntil({}) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1090,7 +1090,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licDaysUntil({ expiryDate: "2099-01-01" })', 5);
       expect(ok).toBe(5);
     });
@@ -1100,17 +1100,17 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licStatus
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licStatus', () => {
-    test('hepa_vacuum typeId — returns equipment', async () => {
+    test('hepa_vacuum typeId, returns equipment', async () => {
       const r = await page.evaluate(() => _licStatus({ typeId: 'hepa_vacuum' }));
       expect(r).toBe('equipment');
     });
 
-    test('no expiryDate — returns noexpiry', async () => {
+    test('no expiryDate, returns noexpiry', async () => {
       const r = await page.evaluate(() => _licStatus({ typeId: 'biz_license' }));
       expect(r).toBe('noexpiry');
     });
 
-    test('expired date — returns expired', async () => {
+    test('expired date, returns expired', async () => {
       const r = await page.evaluate(() => {
         const past = new Date(Date.now() - 86400000 * 60).toISOString().split('T')[0];
         return _licStatus({ typeId: 'biz_license', expiryDate: past });
@@ -1118,7 +1118,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('expired');
     });
 
-    test('expiry within 30 days — returns soon', async () => {
+    test('expiry within 30 days, returns soon', async () => {
       const r = await page.evaluate(() => {
         const soon = new Date(Date.now() + 86400000 * 15).toISOString().split('T')[0];
         return _licStatus({ typeId: 'biz_license', expiryDate: soon });
@@ -1126,7 +1126,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('soon');
     });
 
-    test('expiry beyond 30 days — returns current', async () => {
+    test('expiry beyond 30 days, returns current', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
         return _licStatus({ typeId: 'biz_license', expiryDate: future });
@@ -1134,7 +1134,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('current');
     });
 
-    test('null object — does not throw', async () => {
+    test('null object, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _licStatus({}) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1142,7 +1142,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licStatus({ typeId: "biz_license", expiryDate: "2099-01-01" })', 5);
       expect(ok).toBe(5);
     });
@@ -1152,7 +1152,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licStatusBadge
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licStatusBadge', () => {
-    test('expired lic — contains Expired text', async () => {
+    test('expired lic, contains Expired text', async () => {
       const r = await page.evaluate(() => {
         const past = new Date(Date.now() - 86400000 * 60).toISOString().split('T')[0];
         return _licStatusBadge({ typeId: 'biz_license', expiryDate: past });
@@ -1160,7 +1160,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Expired');
     });
 
-    test('soon lic — contains days left', async () => {
+    test('soon lic, contains days left', async () => {
       const r = await page.evaluate(() => {
         const soon = new Date(Date.now() + 86400000 * 15).toISOString().split('T')[0];
         return _licStatusBadge({ typeId: 'biz_license', expiryDate: soon });
@@ -1168,7 +1168,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('left');
     });
 
-    test('current lic — contains Current', async () => {
+    test('current lic, contains Current', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
         return _licStatusBadge({ typeId: 'biz_license', expiryDate: future });
@@ -1176,17 +1176,17 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Current');
     });
 
-    test('no expiry — contains No expiry set', async () => {
+    test('no expiry, contains No expiry set', async () => {
       const r = await page.evaluate(() => _licStatusBadge({ typeId: 'biz_license' }));
       expect(r).toContain('No expiry set');
     });
 
-    test('hepa_vacuum — returns empty string', async () => {
+    test('hepa_vacuum: returns empty string', async () => {
       const r = await page.evaluate(() => _licStatusBadge({ typeId: 'hepa_vacuum' }));
       expect(r).toBe('');
     });
 
-    test('empty object — does not throw', async () => {
+    test('empty object, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _licStatusBadge({}) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1194,7 +1194,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licStatusBadge({ typeId: "biz_license" })', 5);
       expect(ok).toBe(5);
     });
@@ -1204,7 +1204,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _stateNameOf
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_stateNameOf', () => {
-    test('null — returns null (no throw)', async () => {
+    test('null: returns null (no throw)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _stateNameOf(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1212,7 +1212,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _stateNameOf(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1220,23 +1220,23 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('known state KS — returns name string', async () => {
+    test('known state KS, returns name string', async () => {
       const r = await page.evaluate(() => _stateNameOf('KS'));
       expect(typeof r).toBe('string');
       expect(r.length).toBeGreaterThan(0);
     });
 
-    test('unknown state XX — returns XX', async () => {
+    test('unknown state XX, returns XX', async () => {
       const r = await page.evaluate(() => _stateNameOf('XX'));
       expect(r).toBe('XX');
     });
 
-    test('TX — returns string containing Texas', async () => {
+    test('TX: returns string containing Texas', async () => {
       const r = await page.evaluate(() => _stateNameOf('TX'));
       expect(r.toLowerCase()).toContain('texas');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_stateNameOf("KS")', 5);
       expect(ok).toBe(5);
     });
@@ -1246,42 +1246,42 @@ test.describe('settings.js — exhaustive coverage', () => {
   // detectStateFromAddr
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('detectStateFromAddr', () => {
-    test('null — returns null', async () => {
+    test('null: returns null', async () => {
       const r = await page.evaluate(() => detectStateFromAddr(null));
       expect(r).toBeNull();
     });
 
-    test('undefined — returns null', async () => {
+    test('undefined: returns null', async () => {
       const r = await page.evaluate(() => detectStateFromAddr(undefined));
       expect(r).toBeNull();
     });
 
-    test('empty string — returns null', async () => {
+    test('empty string, returns null', async () => {
       const r = await page.evaluate(() => detectStateFromAddr(''));
       expect(r).toBeNull();
     });
 
-    test('address with TX — returns TX', async () => {
+    test('address with TX, returns TX', async () => {
       const r = await page.evaluate(() => detectStateFromAddr('123 Main St, Austin TX 78701'));
       expect(r).toBe('TX');
     });
 
-    test('address with KS — returns KS', async () => {
+    test('address with KS, returns KS', async () => {
       const r = await page.evaluate(() => detectStateFromAddr('456 Elm Ave, Wichita, KS 67202'));
       expect(r).toBe('KS');
     });
 
-    test('address with no state abbr — returns null', async () => {
+    test('address with no state abbr, returns null', async () => {
       const r = await page.evaluate(() => detectStateFromAddr('123 Main St, Anytown 12345'));
       expect(r).toBeNull();
     });
 
-    test('CA in address — returns CA', async () => {
+    test('CA in address, returns CA', async () => {
       const r = await page.evaluate(() => detectStateFromAddr('1 Hollywood Blvd, Los Angeles CA 90001'));
       expect(r).toBe('CA');
     });
 
-    test('number input — does not throw', async () => {
+    test('number input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: detectStateFromAddr(42) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1289,7 +1289,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('detectStateFromAddr("Austin TX 78701")', 5);
       expect(ok).toBe(5);
     });
@@ -1299,7 +1299,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _initServiceStates
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_initServiceStates', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _initServiceStates(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1320,7 +1320,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('empty S.state and no clients — produces array', async () => {
+    test('empty S.state and no clients, produces array', async () => {
       const r = await page.evaluate(() => {
         const prevState = S.state;
         const prevSvcStates = S.serviceStates;
@@ -1335,7 +1335,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_initServiceStates()', 5);
       expect(ok).toBe(5);
     });
@@ -1345,7 +1345,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _getServiceStates
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getServiceStates', () => {
-    test('basic call — returns array', async () => {
+    test('basic call, returns array', async () => {
       const r = await page.evaluate(() => {
         const result = _getServiceStates();
         return Array.isArray(result);
@@ -1353,7 +1353,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('null serviceStates — initializes and returns array', async () => {
+    test('null serviceStates, initializes and returns array', async () => {
       const r = await page.evaluate(() => {
         const prev = S.serviceStates;
         S.serviceStates = null;
@@ -1364,7 +1364,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('empty serviceStates — initializes and returns array', async () => {
+    test('empty serviceStates, initializes and returns array', async () => {
       const r = await page.evaluate(() => {
         const prev = S.serviceStates;
         S.serviceStates = [];
@@ -1375,7 +1375,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('concurrent calls — stable result', async () => {
+    test('concurrent calls, stable result', async () => {
       const ok = await concurrent('_getServiceStates()', 5);
       expect(ok).toBe(5);
     });
@@ -1385,7 +1385,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // addServiceState
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('addServiceState', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { addServiceState(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1393,7 +1393,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { addServiceState(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1401,7 +1401,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('invalid state code — does nothing', async () => {
+    test('invalid state code, does nothing', async () => {
       const r = await page.evaluate(() => {
         const prev = [...(S.serviceStates || [])];
         addServiceState('XX');
@@ -1412,7 +1412,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('valid state TX — adds to serviceStates', async () => {
+    test('valid state TX, adds to serviceStates', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = (S.serviceStates || []).filter(s => s !== 'TX');
         addServiceState('TX');
@@ -1423,7 +1423,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('adding duplicate — stays deduplicated', async () => {
+    test('adding duplicate, stays deduplicated', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = ['KS'];
         addServiceState('KS');
@@ -1434,7 +1434,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('null S.serviceStates — initializes then adds', async () => {
+    test('null S.serviceStates: initializes then adds', async () => {
       const r = await page.evaluate(() => {
         const prev = S.serviceStates;
         S.serviceStates = null;
@@ -1446,7 +1446,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('addServiceState("FL")', 5);
       expect(ok).toBe(5);
     });
@@ -1456,7 +1456,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // removeServiceState
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('removeServiceState', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { removeServiceState(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1464,7 +1464,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { removeServiceState(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1472,7 +1472,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('primary S.state — does not remove', async () => {
+    test('primary S.state: does not remove', async () => {
       const r = await page.evaluate(() => {
         S.state = 'KS';
         S.serviceStates = ['KS', 'TX'];
@@ -1482,7 +1482,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('non-primary state — removes it', async () => {
+    test('non-primary state, removes it', async () => {
       const r = await page.evaluate(() => {
         S.state = 'KS';
         S.serviceStates = ['KS', 'TX'];
@@ -1492,7 +1492,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('state not in list — does not crash', async () => {
+    test('state not in list, does not crash', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = ['KS'];
         try { removeServiceState('ZZ'); return { ok: true }; }
@@ -1501,7 +1501,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null serviceStates — does not throw', async () => {
+    test('null serviceStates, does not throw', async () => {
       const r = await page.evaluate(() => {
         const prev = S.serviceStates;
         S.serviceStates = null;
@@ -1512,7 +1512,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         S.serviceStates = ['KS', 'TX', 'CA', 'MO', 'FL', 'CO'];
         S.state = 'KS';
@@ -1530,7 +1530,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // checkAddrServiceState
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('checkAddrServiceState', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { checkAddrServiceState(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1538,7 +1538,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { checkAddrServiceState(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1546,7 +1546,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — returns early', async () => {
+    test('empty string, returns early', async () => {
       const r = await page.evaluate(() => {
         try { checkAddrServiceState(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1554,7 +1554,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('addr with known state already in list — no overlay', async () => {
+    test('addr with known state already in list, no overlay', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = ['KS'];
         document.getElementById('_svc-state-ov')?.remove();
@@ -1565,7 +1565,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('addr with new state — creates overlay', async () => {
+    test('addr with new state, creates overlay', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = ['KS'];
         document.getElementById('_svc-state-ov')?.remove();
@@ -1578,7 +1578,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('addr with no detectable state — no overlay', async () => {
+    test('addr with no detectable state, no overlay', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_svc-state-ov')?.remove();
         checkAddrServiceState('123 Nowhere Road, Randomville 99999');
@@ -1588,7 +1588,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         S.serviceStates = ['KS'];
         let n = 0;
@@ -1606,7 +1606,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // renderLicensing
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderLicensing', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { renderLicensing(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1614,7 +1614,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty licenses — renders empty state', async () => {
+    test('empty licenses, renders empty state', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         licenses = [];
@@ -1627,7 +1627,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('No records yet');
     });
 
-    test('with a license — renders it', async () => {
+    test('with a license, renders it', async () => {
       const r = await page.evaluate(() => {
         const prevLics = [...licenses];
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
@@ -1641,7 +1641,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Business License');
     });
 
-    test('expired license — shows expired summary bar', async () => {
+    test('expired license, shows expired summary bar', async () => {
       const r = await page.evaluate(() => {
         const prevLics = [...licenses];
         const past = new Date(Date.now() - 86400000 * 10).toISOString().split('T')[0];
@@ -1671,7 +1671,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('missing lic-page-body — does not throw', async () => {
+    test('missing lic-page-body, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('lic-page-body');
         if (el) el.remove();
@@ -1689,7 +1689,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('renderLicensing()', 5);
       expect(ok).toBe(5);
     });
@@ -1699,7 +1699,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // setLicFilter
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setLicFilter', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setLicFilter(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1707,7 +1707,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('all — sets filter and renders', async () => {
+    test('all: sets filter and renders', async () => {
       const r = await page.evaluate(() => {
         try { setLicFilter('all'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1715,7 +1715,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('business — sets filter and renders without throw', async () => {
+    test('business: sets filter and renders without throw', async () => {
       const r = await page.evaluate(() => {
         try { setLicFilter('business'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1723,7 +1723,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown category — does not crash', async () => {
+    test('unknown category, does not crash', async () => {
       const r = await page.evaluate(() => {
         try { setLicFilter('nonexistent-cat'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1731,7 +1731,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('setLicFilter("all")', 5);
       expect(ok).toBe(5);
     });
@@ -1741,22 +1741,22 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licDateDisp
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licDateDisp', () => {
-    test('null — returns empty string', async () => {
+    test('null: returns empty string', async () => {
       const r = await page.evaluate(() => _licDateDisp(null));
       expect(r).toBe('');
     });
 
-    test('undefined — returns empty string', async () => {
+    test('undefined: returns empty string', async () => {
       const r = await page.evaluate(() => _licDateDisp(undefined));
       expect(r).toBe('');
     });
 
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => _licDateDisp(''));
       expect(r).toBe('');
     });
 
-    test('valid ISO date — returns MM/DD/YYYY', async () => {
+    test('valid ISO date, returns MM/DD/YYYY', async () => {
       const r = await page.evaluate(() => _licDateDisp('2026-03-15'));
       expect(r).toBe('03/15/2026');
     });
@@ -1766,7 +1766,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('01/01/2000');
     });
 
-    test('invalid format — returns original string (fallback)', async () => {
+    test('invalid format, returns original string (fallback)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _licDateDisp('not-a-date') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1774,7 +1774,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licDateDisp("2026-06-15")', 5);
       expect(ok).toBe(5);
     });
@@ -1784,57 +1784,57 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licDateParse
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licDateParse', () => {
-    test('null — returns empty string', async () => {
+    test('null: returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse(null));
       expect(r).toBe('');
     });
 
-    test('undefined — returns empty string', async () => {
+    test('undefined: returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse(undefined));
       expect(r).toBe('');
     });
 
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse(''));
       expect(r).toBe('');
     });
 
-    test('ISO format 2026-03-15 — returns same', async () => {
+    test('ISO format 2026-03-15, returns same', async () => {
       const r = await page.evaluate(() => _licDateParse('2026-03-15'));
       expect(r).toBe('2026-03-15');
     });
 
-    test('MM/DD/YYYY — converts to ISO', async () => {
+    test('MM/DD/YYYY: converts to ISO', async () => {
       const r = await page.evaluate(() => _licDateParse('03/15/2026'));
       expect(r).toBe('2026-03-15');
     });
 
-    test('M/D/YYYY (single digit) — converts to ISO', async () => {
+    test('M/D/YYYY (single digit), converts to ISO', async () => {
       const r = await page.evaluate(() => _licDateParse('3/5/2026'));
       expect(r).toBe('2026-03-05');
     });
 
-    test('2-digit year MM/DD/YY — converts with century heuristic', async () => {
+    test('2-digit year MM/DD/YY: converts with century heuristic', async () => {
       const r = await page.evaluate(() => _licDateParse('03/15/26'));
       expect(r).toBe('2026-03-15');
     });
 
-    test('2-digit year > 50 — uses 1900s', async () => {
+    test('2-digit year > 50: uses 1900s', async () => {
       const r = await page.evaluate(() => _licDateParse('01/01/55'));
       expect(r).toBe('1955-01-01');
     });
 
-    test('junk string — returns empty string', async () => {
+    test('junk string, returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse('not a date'));
       expect(r).toBe('');
     });
 
-    test('whitespace only — returns empty string', async () => {
+    test('whitespace only, returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse('   '));
       expect(r).toBe('');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licDateParse("03/15/2026")', 5);
       expect(ok).toBe(5);
     });
@@ -1844,7 +1844,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // openAddLicense
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openAddLicense', () => {
-    test('no arg — opens modal without throw', async () => {
+    test('no arg, opens modal without throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openAddLicense();
@@ -1858,7 +1858,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('null prefill — does not throw', async () => {
+    test('null prefill, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openAddLicense(null);
@@ -1869,7 +1869,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid prefillTypeId (biz_license) — sets type select', async () => {
+    test('valid prefillTypeId (biz_license): sets type select', async () => {
       const r = await page.evaluate(() => {
         try {
           openAddLicense('biz_license');
@@ -1883,7 +1883,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.val).toBe('biz_license');
     });
 
-    test('unknown prefillTypeId — does not throw', async () => {
+    test('unknown prefillTypeId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openAddLicense('nonexistent_type');
@@ -1905,7 +1905,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBeNull();
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         let n = 0;
         for (let i = 0; i < count; i++) {
@@ -1922,7 +1922,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // openEditLicense
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openEditLicense', () => {
-    test('nonexistent id — does not throw', async () => {
+    test('nonexistent id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openEditLicense(9999999);
@@ -1933,7 +1933,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openEditLicense(null);
@@ -1944,7 +1944,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('existing license — opens modal with data', async () => {
+    test('existing license, opens modal with data', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
         const lic = { id: 9998001, typeId: 'biz_license', cat: 'business', label: 'Test Lic', expiryDate: future };
@@ -1967,7 +1967,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.editId).toBe(9998001);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         let n = 0;
         for (let i = 0; i < count; i++) {
@@ -1984,7 +1984,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _showLicModal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_showLicModal', () => {
-    test('null lic — renders add form', async () => {
+    test('null lic, renders add form', async () => {
       const r = await page.evaluate(() => {
         try {
           _showLicModal(null);
@@ -1998,7 +1998,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('valid lic object — renders edit form', async () => {
+    test('valid lic object, renders edit form', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
         const lic = { id: 9997001, typeId: 'biz_license', cat: 'business', label: 'BL', licenseNumber: 'BL-123', expiryDate: future };
@@ -2015,7 +2015,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.numVal).toBe('BL-123');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         let n = 0;
         for (let i = 0; i < count; i++) {
@@ -2032,7 +2032,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licTypeChanged
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licTypeChanged', () => {
-    test('sel with empty value — returns early without throw', async () => {
+    test('sel with empty value, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         const sel = document.createElement('select');
         sel.value = '';
@@ -2042,16 +2042,16 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null sel — does not throw', async () => {
+    test('null sel, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _licTypeChanged(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // May throw on null.value — acceptable; page must not crash
+      // May throw on null.value: acceptable; page must not crash
       expect(typeof r).toBe('object');
     });
 
-    test('sel with biz_license — sets field visibility', async () => {
+    test('sel with biz_license, sets field visibility', async () => {
       const r = await page.evaluate(() => {
         // Open modal first to create DOM fields
         _showLicModal(null);
@@ -2076,7 +2076,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('sel with hepa_vacuum — shows equip fields', async () => {
+    test('sel with hepa_vacuum, shows equip fields', async () => {
       const r = await page.evaluate(() => {
         _showLicModal(null);
         const sel = document.getElementById('_lic-type-sel');
@@ -2092,7 +2092,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.show).toBe('block');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         _showLicModal(null);
         const sel = document.getElementById('_lic-type-sel');
@@ -2113,7 +2113,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // saveLicenseModal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('saveLicenseModal', () => {
-    test('no modal DOM — does not throw', async () => {
+    test('no modal DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_lic-modal-ov')?.remove();
         // Stub zAlert
@@ -2126,7 +2126,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('modal open but no typeId selected — calls zAlert', async () => {
+    test('modal open but no typeId selected, calls zAlert', async () => {
       const r = await page.evaluate(() => {
         _showLicModal(null);
         const sel = document.getElementById('_lic-type-sel');
@@ -2149,7 +2149,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.alerted).toBe(true);
     });
 
-    test('valid typeId — adds license and closes modal', async () => {
+    test('valid typeId, adds license and closes modal', async () => {
       const r = await page.evaluate(() => {
         _showLicModal(null);
         const sel = document.getElementById('_lic-type-sel');
@@ -2176,7 +2176,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.added).toBe(true);
     });
 
-    test('concurrent calls — no crash (with zAlert stub)', async () => {
+    test('concurrent calls, no crash (with zAlert stub)', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         const orig = window.zAlert;
         window.zAlert = () => {};
@@ -2196,7 +2196,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // deleteLicense
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('deleteLicense', () => {
-    test('nonexistent id — does not throw', async () => {
+    test('nonexistent id, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window.zConfirm;
         window.zConfirm = (msg, cb) => { if (cb) cb(); };
@@ -2207,7 +2207,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window.zConfirm;
         window.zConfirm = (msg, cb) => { if (cb) cb(); };
@@ -2218,7 +2218,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('existing id — removes license after confirm', async () => {
+    test('existing id, removes license after confirm', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9996001, typeId: 'biz_license', cat: 'business', label: 'DelTest' };
         licenses.push(lic);
@@ -2234,7 +2234,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.after).toBe(false);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         const orig = window.zConfirm;
         window.zConfirm = () => {};
@@ -2253,7 +2253,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // openHepaLog
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openHepaLog', () => {
-    test('nonexistent id — returns early, no modal', async () => {
+    test('nonexistent id, returns early, no modal', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_hepa-modal-ov')?.remove();
         try {
@@ -2266,7 +2266,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.exists).toBe(false);
     });
 
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openHepaLog(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2274,7 +2274,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('existing hepa_vacuum lic — opens log modal', async () => {
+    test('existing hepa_vacuum lic, opens log modal', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9995001, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA Vac', make: 'Ridgid', model: 'WD4870', equipmentLog: [] };
         licenses.push(lic);
@@ -2294,7 +2294,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         let n = 0;
         for (let i = 0; i < count; i++) {
@@ -2311,7 +2311,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _addHepaEntry
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_addHepaEntry', () => {
-    test('nonexistent licId — returns early without throw', async () => {
+    test('nonexistent licId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _addHepaEntry(9999666); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2319,7 +2319,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null licId — does not throw', async () => {
+    test('null licId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _addHepaEntry(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2327,7 +2327,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('existing lic — appends entry to equipmentLog', async () => {
+    test('existing lic, appends entry to equipmentLog', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9994001, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA Vac', equipmentLog: [] };
         licenses.push(lic);
@@ -2354,11 +2354,11 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.added).toBe(true);
     });
 
-    test('missing modal DOM — does not throw', async () => {
+    test('missing modal DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9994002, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA Vac 2', equipmentLog: [] };
         licenses.push(lic);
-        // Don't open modal — missing DOM
+        // Don't open modal, missing DOM
         try {
           _addHepaEntry(9994002);
           licenses = licenses.filter(l => l.id !== 9994002);
@@ -2371,7 +2371,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_addHepaEntry(9999666)', 5);
       expect(ok).toBe(5);
     });
@@ -2381,7 +2381,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _delHepaEntry
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_delHepaEntry', () => {
-    test('nonexistent licId — returns early without throw', async () => {
+    test('nonexistent licId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _delHepaEntry(9999555, 'entry-abc'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2389,7 +2389,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null licId — does not throw', async () => {
+    test('null licId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _delHepaEntry(null, 'abc'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2397,7 +2397,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null entryId — does not throw', async () => {
+    test('null entryId, does not throw', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9993001, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA', equipmentLog: [{ id: 'e1', type: 'Filter Change', date: '2026-01-01' }] };
         licenses.push(lic);
@@ -2413,7 +2413,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid licId and entryId — removes entry', async () => {
+    test('valid licId and entryId, removes entry', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9993002, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA', equipmentLog: [{ id: 'e-del-1', type: 'Filter Change', date: '2026-01-01' }] };
         licenses.push(lic);
@@ -2435,7 +2435,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.removed).toBe(true);
     });
 
-    test('nonexistent entryId — array unchanged', async () => {
+    test('nonexistent entryId, array unchanged', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9993003, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA', equipmentLog: [{ id: 'real-e1', type: 'Filter Change', date: '2026-01-01' }] };
         licenses.push(lic);
@@ -2449,7 +2449,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_delHepaEntry(9999555, "xyz")', 5);
       expect(ok).toBe(5);
     });
@@ -2459,7 +2459,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // getLicenseAlerts
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getLicenseAlerts', () => {
-    test('empty licenses — returns empty array', async () => {
+    test('empty licenses, returns empty array', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         licenses = [];
@@ -2471,7 +2471,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.length).toBe(0);
     });
 
-    test('all current licenses — returns empty array', async () => {
+    test('all current licenses, returns empty array', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
@@ -2483,7 +2483,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(0);
     });
 
-    test('expired license — returned in alerts', async () => {
+    test('expired license, returned in alerts', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         const past = new Date(Date.now() - 86400000 * 30).toISOString().split('T')[0];
@@ -2495,7 +2495,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('expiring soon — returned in alerts', async () => {
+    test('expiring soon, returned in alerts', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         const soon = new Date(Date.now() + 86400000 * 15).toISOString().split('T')[0];
@@ -2518,7 +2518,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(0);
     });
 
-    test('mixed — returns only expired/soon', async () => {
+    test('mixed: returns only expired/soon', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         const past = new Date(Date.now() - 86400000 * 30).toISOString().split('T')[0];
@@ -2536,7 +2536,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(2);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         const key = Object.keys(localStorage)[0] || 'zp3_s';
         const prev = localStorage.getItem(key);
@@ -2554,7 +2554,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — consistent results', async () => {
+    test('concurrent calls, consistent results', async () => {
       const ok = await concurrent('getLicenseAlerts()', 5);
       expect(ok).toBe(5);
     });
@@ -2576,7 +2576,7 @@ test.describe('settings.js — exhaustive coverage', () => {
         try { _renderSetIndex(); return { ok: true, threw }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // threw is a bonus assertion — what matters is the second call works
+      // threw is a bonus assertion, what matters is the second call works
       expect(r.ok).toBe(true);
     });
   });
@@ -2584,7 +2584,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // No console errors
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — settings.js', async () => {
+  test('no console errors, settings.js', async () => {
     assertNoErrors(page, 'settings.js');
   });
 });

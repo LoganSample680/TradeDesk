@@ -1,6 +1,6 @@
-// ── Contractor Legal Compliance — State-by-State ──────────────────────────
+// ── Contractor Legal Compliance, State-by-State ──────────────────────────
 // Both cancellation rights and mechanic's lien rights in one place.
-// Neither belongs in tax.js — they serve contractor legal compliance, not tax.
+// Neither belongs in tax.js: they serve contractor legal compliance, not tax.
 
 // ── Home Solicitation Cancellation Rights ─────────────────────────────────
 // All 50 states mirror FTC Cooling-Off Rule (16 CFR Part 429): 3 business days
@@ -58,7 +58,7 @@ const STATE_CANCEL={
   WY:{days:3,statute:'Wyo. Stat. §40-12-201'},
 };
 
-// ── State Names (self-contained — legal.js loads on sign.html where tax.js is absent) ──────
+// ── State Names (self-contained: legal.js loads on sign.html where tax.js is absent) ──────
 const STATE_NAMES={
   AL:'Alabama',AK:'Alaska',AZ:'Arizona',AR:'Arkansas',CA:'California',
   CO:'Colorado',CT:'Connecticut',DE:'Delaware',FL:'Florida',GA:'Georgia',
@@ -128,12 +128,12 @@ const STATE_LIEN={
 };
 
 // ── Maximum Deposit / Down-Payment Caps (Home Improvement) ────────────────
-// NOT LEGAL ADVICE — verify with a licensed attorney; deposit-cap statutes change.
+// NOT LEGAL ADVICE, verify with a licensed attorney; deposit-cap statutes change.
 // Several states cap the up-front deposit a home-improvement contractor may collect.
 // Each entry: { pct: max % of contract (number) or null, flat: max $ flat cap or null,
 //   rule: 'lesser'|'pct'|'flat'|'none', statute: '<cite>', note: '<plain English>' }.
 // Only well-documented statutory caps are encoded. States with no clear statutory
-// cap are rule:'none' (no cap) rather than a guessed number — do not invent caps.
+// cap are rule:'none' (no cap) rather than a guessed number, do not invent caps.
 const STATE_DEPOSIT_CAP={
   AL:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
   AK:{pct:null,flat:null,rule:'none',statute:'',note:'No statutory deposit cap.'},
@@ -238,7 +238,7 @@ async function lookupDepositCap(state){
         _DEPOSIT_CAP_CACHE[st]=live;
         return live;
       }
-    }catch(e){ /* network / missing-table / no-supa — fall through to hardcoded */ }
+    }catch(e){ /* network / missing-table / no-supa: fall through to hardcoded */ }
   }
   // Miss/error/no-supa: cache the hardcoded value so we don't re-query each call.
   _DEPOSIT_CAP_CACHE[st]=fallback;
@@ -265,7 +265,7 @@ async function _maxDepositLive(state,contractAmount){
 
 // Boot-time refresh: pull the live cap for the contractor's state and patch the
 // in-memory STATE_DEPOSIT_CAP entry so the existing SYNC _maxDeposit (the clamp
-// in saveGenericEstimate) transparently uses the live value — no async needed at
+// in saveGenericEstimate) transparently uses the live value, no async needed at
 // the point of use. Mirrors autoRefreshTaxBrackets/autoRefreshLienRules: wired
 // into the boot timer in cloud.js. No-op offline / when nothing changed.
 let _depositCapRefreshInProgress=false;
@@ -287,7 +287,7 @@ async function autoRefreshDepositCaps(){
         note:live.note||STATE_DEPOSIT_CAP[st].note||'',
       };
     }
-  }catch(e){ /* offline / missing table — hardcoded values remain in effect */ }
+  }catch(e){ /* offline / missing table, hardcoded values remain in effect */ }
   finally{_depositCapRefreshInProgress=false;}
 }
 
@@ -329,12 +329,12 @@ function _cancelCitation(state){
 }
 
 // The reduced set of protective clauses that apply to ANY signed document,
-// not just a full estimate — lien rights, finance charges on late balances,
+// not just a full estimate, lien rights, finance charges on late balances,
 // and dispute resolution. Rolled into small documents (diagnostic charge /
 // quick invoice) that skip the estimate-only clauses (deposit, cancellation,
-// warranty, permits — none of which apply to a flat one-time fee for work
+// warranty, permits, none of which apply to a flat one-time fee for work
 // already done). Owner directive 2026-07-13: "already handle that in terms
-// and conditions" — same protection, no matter how small the document.
+// and conditions", same protection, no matter how small the document.
 function _coreProtectionTermsHtml(state,party){
   const _fcPct=(typeof S!=='undefined'&&S&&S.financeChargePct!=null?parseFloat(S.financeChargePct):1.5);
   const _fcApr=Math.round(_fcPct*12*10)/10;
@@ -349,12 +349,12 @@ function _coreProtectionTermsHtml(state,party){
 // ── Terms & Conditions accordion ─────────────────────────────────────────────
 // Every terms section ("Terms & Conditions" + legacy "Payment Terms" headers)
 // merges under ONE "Terms & Conditions" toggle at the first section's position.
-// Match by exact header text (whitelist) — layout labels never get toggles.
+// Match by exact header text (whitelist): layout labels never get toggles.
 // The Required Notice (home solicitation law) and the Notice of Cancellation
 // form each keep their own separate toggle.
 // Shared between sign.html (the real client-facing signing page) and the
 // contractor's "Preview" overlay (js/generic-estimate.js _showProposalPreviewOverlay)
-// so the preview is a true match of what the client actually sees — one
+// so the preview is a true match of what the client actually sees, one
 // function, one behavior, can't silently drift between the two views again.
 function _applyTermsAccordion(root){
   if(!root)return;
@@ -405,7 +405,7 @@ function _applyTermsAccordion(root){
 
 // ── Dev: Legal Compliance Inspector ──────────────────────────────────────────
 // Shows the exact strings that will appear on proposals, sign page, and client hub
-// for any state. Client-side only — no API calls.
+// for any state. Client-side only, no API calls.
 function renderLegalInspector(){
   const el=document.getElementById('dev-legal-inspector');if(!el)return;
   const st=document.getElementById('dev-legal-state')?.value||S?.state||'KS';
@@ -418,7 +418,7 @@ function renderLegalInspector(){
   // Deadline preview
   const rawDate=document.getElementById('dev-legal-date')?.value;
   const sigDate=rawDate?new Date(rawDate+'T08:00:00'):new Date();
-  let deadlineTxt='—';
+  let deadlineTxt='-';
   let holidaysHit=[];
   if(typeof _fedHolidays==='function'){
     const yr=sigDate.getFullYear();
@@ -436,7 +436,7 @@ function renderLegalInspector(){
     }
     d.setHours(23,59,59,999);
     deadlineTxt=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})+' at midnight';
-    el.querySelector('#dev-legal-steps').innerHTML=steps.map(s=>'<div style="font-size:10px;padding:2px 0;color:'+(s.skip?'#94a3b8':'var(--text)')+'">'+s.date+' — '+(s.skip?'<em>skipped ('+s.reason+')</em>':s.reason)+'</div>').join('');
+    el.querySelector('#dev-legal-steps').innerHTML=steps.map(s=>'<div style="font-size:10px;padding:2px 0;color:'+(s.skip?'#94a3b8':'var(--text)')+'">'+s.date+', '+(s.skip?'<em>skipped ('+s.reason+')</em>':s.reason)+'</div>').join('');
   }
 
   el.querySelector('#dev-legal-cancel-stat').textContent=cancelTxt;

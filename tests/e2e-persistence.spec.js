@@ -1,9 +1,9 @@
 // @ts-check
 /**
- * Data persistence — verifies saveAll() correctly writes all localStorage-backed
+ * Data persistence, verifies saveAll() correctly writes all localStorage-backed
  * arrays and that the stored data matches what was written.
  *
- * Does NOT rely on page.reload() — that path is already tested by
+ * Does NOT rely on page.reload(): that path is already tested by
  * e2e-settings-persistence.spec.js. Instead, each test:
  *   1. Injects a sentinel into the target array
  *   2. Calls saveAll()
@@ -27,7 +27,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('Data persistence — saveAll() writes all localStorage keys correctly', () => {
+test.describe('Data persistence, saveAll() writes all localStorage keys correctly', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -160,7 +160,7 @@ test.describe('Data persistence — saveAll() writes all localStorage keys corre
 
   // ── Complete localStorage key inventory ───────────────────────────────────
   // If a key is added, removed, or renamed in saveAll(), this test fails
-  // on the next CI run — before any data loss reaches production.
+  // on the next CI run, before any data loss reaches production.
   test('saveAll() writes every expected localStorage key', async () => {
     const missingKeys = await page.evaluate(() => {
       if (typeof saveAll !== 'function') return null;
@@ -169,7 +169,7 @@ test.describe('Data persistence — saveAll() writes all localStorage keys corre
       return required.filter(k => localStorage.getItem(k) === null);
     });
     if (missingKeys !== null) {
-      expect(missingKeys, 'saveAll() must write all expected keys — missing: ' + missingKeys.join(', ')).toEqual([]);
+      expect(missingKeys, 'saveAll() must write all expected keys, missing: ' + missingKeys.join(', ')).toEqual([]);
     }
     assertNoErrors(page, 'saveAll key inventory');
   });
@@ -199,7 +199,7 @@ test.describe('Data persistence — saveAll() writes all localStorage keys corre
     assertNoErrors(page, 'loadAll reads zp3_ev');
   });
 
-  // ── Events capped at 600 — truncation guard ───────────────────────────────
+  // ── Events capped at 600, truncation guard ───────────────────────────────
   // events.slice(-600) is the cap in saveAll(). A small array must not be truncated.
   test('events below the 600-record cap are not truncated by saveAll()', async () => {
     const id = 'trunc-guard-' + Date.now();

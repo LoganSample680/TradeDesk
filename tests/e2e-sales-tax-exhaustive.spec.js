@@ -16,7 +16,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('sales-tax.js — exhaustive coverage', () => {
+test.describe('sales-tax.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -54,7 +54,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── null / undefined inputs ────────────────────────────────────────────
-    test('null state — does not throw, defaults to KS logic', async () => {
+    test('null state, does not throw, defaults to KS logic', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment(null, 'electrical', 'repair', 'residential');
@@ -65,7 +65,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('undefined state — does not throw, defaults to KS logic', async () => {
+    test('undefined state, does not throw, defaults to KS logic', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment(undefined, 'electrical', 'repair', 'residential');
@@ -76,7 +76,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('null tradeType — does not throw, defaults to construction category', async () => {
+    test('null tradeType, does not throw, defaults to construction category', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', null, 'repair', 'residential');
@@ -87,7 +87,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('undefined tradeType — does not throw', async () => {
+    test('undefined tradeType, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', undefined, 'repair', 'residential');
@@ -98,7 +98,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('null scope — does not throw', async () => {
+    test('null scope, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', null, 'residential');
@@ -109,7 +109,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('undefined scope — does not throw', async () => {
+    test('undefined scope, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', undefined, 'residential');
@@ -120,7 +120,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('null propertyType — does not throw', async () => {
+    test('null propertyType, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', 'repair', null);
@@ -131,7 +131,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('all null — does not throw', async () => {
+    test('all null, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment(null, null, null, null);
@@ -143,7 +143,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── empty inputs ────────────────────────────────────────────────────────
-    test('empty string state — does not throw, defaults to KS', async () => {
+    test('empty string state, does not throw, defaults to KS', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('', 'electrical', 'repair', 'residential');
@@ -154,7 +154,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('empty string tradeType — defaults to construction category', async () => {
+    test('empty string tradeType, defaults to construction category', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', '', 'repair', 'residential');
@@ -165,7 +165,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('repair');
     });
 
-    test('empty string scope — falls through to repair path', async () => {
+    test('empty string scope, falls through to repair path', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', '', 'residential');
@@ -178,7 +178,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── type mismatch ───────────────────────────────────────────────────────
-    test('number as state — does not throw (coerces to string)', async () => {
+    test('number as state, does not throw (coerces to string)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment(42, 'electrical', 'repair', 'residential');
@@ -188,7 +188,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('object as state — does not throw', async () => {
+    test('object as state, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment({}, 'electrical', 'repair', 'residential');
@@ -198,7 +198,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('array as tradeType — does not throw', async () => {
+    test('array as tradeType, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', [], 'repair', 'residential');
@@ -209,7 +209,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── boundary / special state values ─────────────────────────────────────
-    test('no-tax state OR — returns no_tax type', async () => {
+    test('no-tax state OR, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('OR', 'electrical', 'repair', 'residential');
@@ -223,7 +223,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(false);
     });
 
-    test('no-tax state AK — returns no_tax type', async () => {
+    test('no-tax state AK, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('AK', 'roofing', 'repair', 'commercial');
@@ -234,7 +234,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('no-tax state DE — returns no_tax type', async () => {
+    test('no-tax state DE, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('DE', 'plumbing', 'improvement', 'residential');
@@ -245,7 +245,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('no-tax state MT — returns no_tax type', async () => {
+    test('no-tax state MT, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('MT', 'general', 'tm', 'commercial');
@@ -256,7 +256,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('no-tax state NH — returns no_tax type', async () => {
+    test('no-tax state NH, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NH', 'hvac', 'repair', 'residential');
@@ -267,7 +267,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('gross receipts state HI — returns gross_receipts type with correct label', async () => {
+    test('gross receipts state HI, returns gross_receipts type with correct label', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('HI', 'electrical', 'repair', 'residential');
@@ -282,7 +282,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(true);
     });
 
-    test('gross receipts state NM — returns gross_receipts type with GRT label', async () => {
+    test('gross receipts state NM, returns gross_receipts type with GRT label', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NM', 'roofing', 'repair', 'commercial');
@@ -294,7 +294,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.label).toBe('GRT');
     });
 
-    test('capital improvement scope returns contractor_consumer — no customer tax', async () => {
+    test('capital improvement scope returns contractor_consumer, no customer tax', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', 'improvement', 'residential');
@@ -306,7 +306,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.customerTax).toBe(false);
     });
 
-    test('NY capital improvement — returns certificate ST-124', async () => {
+    test('NY capital improvement, returns certificate ST-124', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NY', 'electrical', 'improvement', 'residential');
@@ -318,7 +318,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.certForm).toBe('ST-124');
     });
 
-    test('NJ capital improvement — returns certificate ST-8', async () => {
+    test('NJ capital improvement, returns certificate ST-8', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NJ', 'plumbing', 'improvement', 'residential');
@@ -329,7 +329,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.certForm).toBe('ST-8');
     });
 
-    test('PA capital improvement — returns certificate REV-1220', async () => {
+    test('PA capital improvement, returns certificate REV-1220', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('PA', 'hvac', 'improvement', 'commercial');
@@ -340,7 +340,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.certForm).toBe('REV-1220');
     });
 
-    test('CT capital improvement — returns certificate CERT-106', async () => {
+    test('CT capital improvement, returns certificate CERT-106', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('CT', 'general', 'improvement', 'residential');
@@ -351,7 +351,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.certForm).toBe('CERT-106');
     });
 
-    test('KS improvement — no certificate needed (null)', async () => {
+    test('KS improvement, no certificate needed (null)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'roofing', 'improvement', 'residential');
@@ -363,7 +363,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── landscaping in service states ────────────────────────────────────────
-    test('landscaping in TX — returns service type (full invoice taxable)', async () => {
+    test('landscaping in TX, returns service type (full invoice taxable)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('TX', 'landscaping', 'maintenance', 'residential');
@@ -376,7 +376,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.laborTaxable).toBe(true);
     });
 
-    test('landscaping in NY — returns service type', async () => {
+    test('landscaping in NY, returns service type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NY', 'lawn', 'maintenance', 'residential');
@@ -387,7 +387,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('service');
     });
 
-    test('landscaping in WA — returns service type', async () => {
+    test('landscaping in WA, returns service type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('WA', 'tree', 'repair', 'residential');
@@ -398,7 +398,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('service');
     });
 
-    test('landscaping in AZ — returns contractor_consumer (not in service set)', async () => {
+    test('landscaping in AZ, returns contractor_consumer (not in service set)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('AZ', 'landscaping', 'repair', 'residential');
@@ -410,7 +410,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.customerTax).toBe(false);
     });
 
-    test('landscaping in FL — returns contractor_consumer', async () => {
+    test('landscaping in FL, returns contractor_consumer', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('FL', 'landscaping', 'maintenance', 'commercial');
@@ -421,8 +421,8 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('contractor_consumer');
     });
 
-    // ── repair path — commercial labor ───────────────────────────────────────
-    test('commercial repair in CT — laborTaxable is true', async () => {
+    // ── repair path, commercial labor ───────────────────────────────────────
+    test('commercial repair in CT, laborTaxable is true', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('CT', 'electrical', 'repair', 'commercial');
@@ -435,7 +435,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(true);
     });
 
-    test('commercial repair in SD — laborTaxable is true', async () => {
+    test('commercial repair in SD, laborTaxable is true', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('SD', 'plumbing', 'repair', 'commercial');
@@ -446,7 +446,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.laborTaxable).toBe(true);
     });
 
-    test('commercial repair in WV — laborTaxable is true', async () => {
+    test('commercial repair in WV, laborTaxable is true', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('WV', 'hvac', 'repair', 'commercial');
@@ -457,7 +457,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.laborTaxable).toBe(true);
     });
 
-    test('residential repair in CT — laborTaxable is false (labor exempt)', async () => {
+    test('residential repair in CT, laborTaxable is false (labor exempt)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('CT', 'electrical', 'repair', 'residential');
@@ -469,7 +469,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(true);
     });
 
-    test('residential repair in KS — laborTaxable false, materialsTaxable true', async () => {
+    test('residential repair in KS, laborTaxable false, materialsTaxable true', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'plumbing', 'repair', 'residential');
@@ -483,7 +483,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(true);
     });
 
-    test('maintenance scope — treated same as repair', async () => {
+    test('maintenance scope, treated same as repair', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', 'maintenance', 'residential');
@@ -494,7 +494,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('repair');
     });
 
-    test('tm scope — treated same as repair', async () => {
+    test('tm scope, treated same as repair', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', 'tm', 'commercial');
@@ -519,7 +519,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.missing).toHaveLength(0);
     });
 
-    test('lowercase state auto-uppercased — or/OR both yield no_tax', async () => {
+    test('lowercase state auto-uppercased, or/OR both yield no_tax', async () => {
       const r = await page.evaluate(() => {
         try {
           const upper = getJobTaxTreatment('OR', 'electrical', 'repair', 'residential');
@@ -544,7 +544,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('repair');
     });
 
-    test('unknown state (ZZ) — does not throw', async () => {
+    test('unknown state (ZZ): does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('ZZ', 'electrical', 'repair', 'residential');
@@ -556,7 +556,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── all 50 states + DC ────────────────────────────────────────────────────
-    test('all states — none throw', async () => {
+    test('all states, none throw', async () => {
       const r = await page.evaluate(() => {
         const states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
           'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
@@ -574,13 +574,13 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── concurrent calls ─────────────────────────────────────────────────────
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent("getJobTaxTreatment('KS','electrical','repair','residential')", 5);
       expect(ok).toBe(5);
     });
 
     // ── corrupted localStorage ───────────────────────────────────────────────
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_settings', '{INVALID{{{{');
         try {
@@ -607,7 +607,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── null / undefined ───────────────────────────────────────────────────
-    test('null params object — does not throw (destructures with undefined fields)', async () => {
+    test('null params object, does not throw (destructures with undefined fields)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: null, tradeType: null, scope: null, propertyType: null, taxRate: null });
@@ -618,7 +618,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBe(0);
     });
 
-    test('undefined taxRate — returns taxAmount 0', async () => {
+    test('undefined taxRate, returns taxAmount 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: undefined, flatTotal: 1000 });
@@ -629,7 +629,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBe(0);
     });
 
-    test('zero taxRate — returns taxAmount 0', async () => {
+    test('zero taxRate, returns taxAmount 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 0, flatTotal: 5000 });
@@ -640,7 +640,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBe(0);
     });
 
-    test('null lineItems — uses flatTotal fallback', async () => {
+    test('null lineItems, uses flatTotal fallback', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 9.35, lineItems: null, flatTotal: 1000 });
@@ -652,7 +652,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(93.5, 1);
     });
 
-    test('empty lineItems array — uses flatTotal fallback', async () => {
+    test('empty lineItems array, uses flatTotal fallback', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 9.35, lineItems: [], flatTotal: 2000 });
@@ -664,7 +664,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(187, 0);
     });
 
-    test('null flatTotal and no lineItems — taxableBase 0, taxAmount 0', async () => {
+    test('null flatTotal and no lineItems, taxableBase 0, taxAmount 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 9.35 });
@@ -677,7 +677,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── no-tax states ──────────────────────────────────────────────────────
-    test('no-tax state OR with non-zero rate — always returns 0', async () => {
+    test('no-tax state OR with non-zero rate, always returns 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'OR', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 8.0, flatTotal: 10000 });
@@ -689,7 +689,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('no-tax state MT — ignores passed rate', async () => {
+    test('no-tax state MT, ignores passed rate', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'MT', tradeType: 'plumbing', scope: 'repair', propertyType: 'residential', taxRate: 5.0, flatTotal: 500 });
@@ -701,7 +701,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── improvement scope ──────────────────────────────────────────────────
-    test('improvement scope — customerTax false, taxAmount always 0', async () => {
+    test('improvement scope, customerTax false, taxAmount always 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'improvement', propertyType: 'residential', taxRate: 9.35, flatTotal: 50000 });
@@ -713,7 +713,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.customerTax).toBe(false);
     });
 
-    test('improvement scope CA — still no customer tax', async () => {
+    test('improvement scope CA, still no customer tax', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'CA', tradeType: 'roofing', scope: 'improvement', propertyType: 'residential', taxRate: 9.75, flatTotal: 25000 });
@@ -725,7 +725,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── gross receipts (HI/NM) ─────────────────────────────────────────────
-    test('HI gross receipts — taxableBase is sum of all line items including labor', async () => {
+    test('HI gross receipts, taxableBase is sum of all line items including labor', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -743,7 +743,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(56, 2);
     });
 
-    test('HI gross receipts with flatTotal (no lineItems) — taxable is flatTotal', async () => {
+    test('HI gross receipts with flatTotal (no lineItems), taxable is flatTotal', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'HI', tradeType: 'plumbing', scope: 'repair', propertyType: 'commercial', taxRate: 4.0, flatTotal: 3000 });
@@ -755,7 +755,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(120, 2);
     });
 
-    test('NM GRT — taxes full contract value', async () => {
+    test('NM GRT, taxes full contract value', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'NM', tradeType: 'roofing', scope: 'repair', propertyType: 'commercial', taxRate: 5.125, flatTotal: 2000 });
@@ -767,8 +767,8 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(102.5, 2);
     });
 
-    // ── repair path — line items ───────────────────────────────────────────
-    test('repair with line items — labor exempt, materials taxable', async () => {
+    // ── repair path, line items ───────────────────────────────────────────
+    test('repair with line items, labor exempt, materials taxable', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -784,7 +784,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(300 * 0.0935, 2);
     });
 
-    test('repair with null lineType — unclassified defaults to materials (taxed)', async () => {
+    test('repair with null lineType, unclassified defaults to materials (taxed)', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -798,7 +798,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(400);
     });
 
-    test('repair with undefined lineType — defaults to materials (taxed)', async () => {
+    test('repair with undefined lineType, defaults to materials (taxed)', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -812,7 +812,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(250);
     });
 
-    test('repair commercial CT — labor and materials both taxable', async () => {
+    test('repair commercial CT, labor and materials both taxable', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -828,7 +828,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(800 * 0.0635, 2);
     });
 
-    test('repair residential CT — only materials taxable', async () => {
+    test('repair residential CT, only materials taxable', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -843,8 +843,8 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(200);
     });
 
-    // ── repair path — materialsTotal / laborTotal ─────────────────────────
-    test('repair with materialsTotal only (no lineItems) — taxes materialsTotal', async () => {
+    // ── repair path, materialsTotal / laborTotal ─────────────────────────
+    test('repair with materialsTotal only (no lineItems), taxes materialsTotal', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'painting', scope: 'repair', propertyType: 'residential', taxRate: 9.35, materialsTotal: 800, laborTotal: 1200 });
@@ -855,7 +855,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(800);
     });
 
-    test('repair commercial CT with materialsTotal/laborTotal — taxes both', async () => {
+    test('repair commercial CT with materialsTotal/laborTotal: taxes both', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'CT', tradeType: 'electrical', scope: 'repair', propertyType: 'commercial', taxRate: 6.35, materialsTotal: 500, laborTotal: 700 });
@@ -866,7 +866,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(1200);
     });
 
-    test('repair with materialsTotal 0 — taxableBase is 0', async () => {
+    test('repair with materialsTotal 0, taxableBase is 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'painting', scope: 'repair', propertyType: 'residential', taxRate: 9.35, materialsTotal: 0, laborTotal: 1000 });
@@ -879,7 +879,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── service type (landscaping) ─────────────────────────────────────────
-    test('TX landscaping — full invoice taxable (service type)', async () => {
+    test('TX landscaping, full invoice taxable (service type)', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -896,7 +896,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(350 * 0.0825, 2);
     });
 
-    test('TX landscaping with flatTotal — full flatTotal taxable', async () => {
+    test('TX landscaping with flatTotal, full flatTotal taxable', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'TX', tradeType: 'lawn', scope: 'maintenance', propertyType: 'residential', taxRate: 8.25, flatTotal: 1000 });
@@ -948,7 +948,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── boundary values ────────────────────────────────────────────────────
-    test('boundary: very large flatTotal — no overflow, does not throw', async () => {
+    test('boundary: very large flatTotal, no overflow, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'TX', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 8.25, flatTotal: 9999999 });
@@ -960,7 +960,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(Number.isFinite(r.taxAmount)).toBe(true);
     });
 
-    test('boundary: flatTotal -1 — taxableBase becomes -1 (negative, no throw)', async () => {
+    test('boundary: flatTotal -1, taxableBase becomes -1 (negative, no throw)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 9.35, flatTotal: -1 });
@@ -968,11 +968,11 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // negative inputs are not blocked — code passes them through
+      // negative inputs are not blocked, code passes them through
       expect(typeof r.taxableBase).toBe('number');
     });
 
-    test('boundary: taxRate 100 — does not throw', async () => {
+    test('boundary: taxRate 100, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 100, flatTotal: 100 });
@@ -983,7 +983,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(100, 0);
     });
 
-    test('boundary: taxRate 0.001 — small but valid rate', async () => {
+    test('boundary: taxRate 0.001: small but valid rate', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 0.001, flatTotal: 10000 });
@@ -997,7 +997,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── type mismatch ──────────────────────────────────────────────────────
-    test('string taxRate — coerces or returns 0', async () => {
+    test('string taxRate, coerces or returns 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: '9.35', flatTotal: 1000 });
@@ -1009,7 +1009,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.taxAmount).toBe('number');
     });
 
-    test('lineItems with missing total — uses 0 fallback', async () => {
+    test('lineItems with missing total, uses 0 fallback', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -1039,7 +1039,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── concurrent calls ───────────────────────────────────────────────────
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent(
         "calcSalesTax({state:'KS',tradeType:'electrical',scope:'repair',propertyType:'residential',taxRate:9.35,flatTotal:1000})",
         5
@@ -1048,7 +1048,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── corrupted localStorage ─────────────────────────────────────────────
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_est_full_draft', '{INVALID{{{{');
         try {
@@ -1064,7 +1064,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── golden paths ───────────────────────────────────────────────────────
-    test('golden path TX repair flatTotal — taxAmount is correct', async () => {
+    test('golden path TX repair flatTotal, taxAmount is correct', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'TX', tradeType: 'plumbing', scope: 'repair', propertyType: 'residential', taxRate: 8.25, flatTotal: 1000 });
@@ -1076,7 +1076,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(82.5, 2);
     });
 
-    test('golden path HI GET with line items — all items taxed', async () => {
+    test('golden path HI GET with line items, all items taxed', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -1106,7 +1106,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── null / undefined ───────────────────────────────────────────────────
-    test('null — does not throw, returns null', async () => {
+    test('null: does not throw, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip(null);
@@ -1117,7 +1117,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('undefined — does not throw, returns null', async () => {
+    test('undefined: does not throw, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip(undefined);
@@ -1129,7 +1129,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── empty inputs ───────────────────────────────────────────────────────
-    test('empty string — returns null', async () => {
+    test('empty string, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('');
@@ -1140,7 +1140,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('whitespace only — returns null', async () => {
+    test('whitespace only, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('   ');
@@ -1152,7 +1152,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── type mismatch ──────────────────────────────────────────────────────
-    test('number input — does not throw (coerced to empty string via addr||empty)', async () => {
+    test('number input, does not throw (coerced to empty string via addr||empty)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip(12345);
@@ -1160,11 +1160,11 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // 12345 coerces to '12345' via string match — returns '12345'
+      // 12345 coerces to '12345' via string match, returns '12345'
       expect(r.result).toBe('12345');
     });
 
-    test('object input — does not throw', async () => {
+    test('object input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip({});
@@ -1174,7 +1174,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('array input — does not throw', async () => {
+    test('array input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip([]);
@@ -1185,7 +1185,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── golden paths ───────────────────────────────────────────────────────
-    test('full address with 5-digit ZIP — extracts ZIP', async () => {
+    test('full address with 5-digit ZIP, extracts ZIP', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('123 Main St, Wichita KS 67202');
@@ -1196,7 +1196,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('67202');
     });
 
-    test('address with ZIP+4 format — returns only 5-digit portion', async () => {
+    test('address with ZIP+4 format, returns only 5-digit portion', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('456 Oak Ave, Austin TX 78701-1234');
@@ -1207,7 +1207,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('78701');
     });
 
-    test('ZIP at start of string — extracts correctly', async () => {
+    test('ZIP at start of string, extracts correctly', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('67202 some other text');
@@ -1218,7 +1218,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('67202');
     });
 
-    test('ZIP at end of string — extracts correctly', async () => {
+    test('ZIP at end of string, extracts correctly', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('Wichita KS 67202');
@@ -1229,7 +1229,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('67202');
     });
 
-    test('multiple ZIPs in string — returns first match', async () => {
+    test('multiple ZIPs in string, returns first match', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('From 67202 to 78701');
@@ -1240,7 +1240,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('67202');
     });
 
-    test('only ZIP no other text — returns it', async () => {
+    test('only ZIP no other text, returns it', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('90210');
@@ -1251,7 +1251,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('90210');
     });
 
-    test('no ZIP in address — returns null', async () => {
+    test('no ZIP in address, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('123 Main Street, Springfield, IL');
@@ -1262,7 +1262,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('4-digit number — not a valid ZIP, returns null', async () => {
+    test('4-digit number, not a valid ZIP, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('1234 Main St');
@@ -1273,7 +1273,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('6-digit number — not extracted as 5-digit ZIP', async () => {
+    test('6-digit number, not extracted as 5-digit ZIP', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('123456 is not a zip');
@@ -1281,12 +1281,12 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // \b(\d{5})\b — 6-digit boundary does not match 5-digit
+      // \b(\d{5})\b: 6-digit boundary does not match 5-digit
       expect(r.result).toBeNull();
     });
 
     // ── boundary values ────────────────────────────────────────────────────
-    test('ZIP 00000 — extracts (technically valid format)', async () => {
+    test('ZIP 00000, extracts (technically valid format)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('Addr 00000');
@@ -1297,7 +1297,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('00000');
     });
 
-    test('ZIP 99999 — extracts', async () => {
+    test('ZIP 99999, extracts', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('99999');
@@ -1308,7 +1308,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('99999');
     });
 
-    test('very long address string — does not throw', async () => {
+    test('very long address string, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const longAddr = 'Suite 100, Building A, 1234 Long Street Name Boulevard, City Name Here, State Abbreviation 78701, Country';
@@ -1321,13 +1321,13 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── concurrent calls ───────────────────────────────────────────────────
-    test('concurrent calls — no corruption', async () => {
+    test('concurrent calls, no corruption', async () => {
       const ok = await concurrent("_extractZip('123 Main St, KS 67202')", 5);
       expect(ok).toBe(5);
     });
 
     // ── corrupted localStorage ─────────────────────────────────────────────
-    test('corrupted localStorage — does not affect _extractZip', async () => {
+    test('corrupted localStorage, does not affect _extractZip', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_settings', '{INVALID{{{{');
         try {
@@ -1355,7 +1355,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── null / undefined ───────────────────────────────────────────────────
-    test('null zip, null state — does not throw, defaults to KS hardcoded rate', async () => {
+    test('null zip, null state, does not throw, defaults to KS hardcoded rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate(null, null);
@@ -1367,7 +1367,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBeGreaterThanOrEqual(0);
     });
 
-    test('undefined zip, undefined state — does not throw', async () => {
+    test('undefined zip, undefined state, does not throw', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate(undefined, undefined);
@@ -1379,7 +1379,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── empty inputs ───────────────────────────────────────────────────────
-    test('empty zip string — skips ZIP lookup, falls to hardcoded rate', async () => {
+    test('empty zip string, skips ZIP lookup, falls to hardcoded rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('', 'KS');
@@ -1392,7 +1392,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(6.5); // KS base rate
     });
 
-    test('empty state — defaults to KS', async () => {
+    test('empty state, defaults to KS', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('', '');
@@ -1405,7 +1405,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── no-tax states ──────────────────────────────────────────────────────
-    test('no-tax state OR — returns rate 0, source no_tax', async () => {
+    test('no-tax state OR, returns rate 0, source no_tax', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('97401', 'OR');
@@ -1417,7 +1417,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('no_tax');
     });
 
-    test('no-tax state AK — returns rate 0', async () => {
+    test('no-tax state AK, returns rate 0', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('99501', 'AK');
@@ -1429,7 +1429,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('no_tax');
     });
 
-    test('no-tax state DE — returns rate 0', async () => {
+    test('no-tax state DE, returns rate 0', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('19801', 'DE');
@@ -1440,7 +1440,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(0);
     });
 
-    test('no-tax state MT — returns rate 0', async () => {
+    test('no-tax state MT, returns rate 0', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('59601', 'MT');
@@ -1451,7 +1451,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(0);
     });
 
-    test('no-tax state NH — returns rate 0', async () => {
+    test('no-tax state NH, returns rate 0', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('03301', 'NH');
@@ -1463,7 +1463,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── hardcoded fallback rates ───────────────────────────────────────────
-    test('KS with no DB hit — returns hardcoded 6.5 base rate', async () => {
+    test('KS with no DB hit, returns hardcoded 6.5 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('66604', 'KS');
@@ -1475,7 +1475,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(6.5);
     });
 
-    test('TX with no DB hit — returns hardcoded 6.25 base rate', async () => {
+    test('TX with no DB hit, returns hardcoded 6.25 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('78701', 'TX');
@@ -1487,7 +1487,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(6.25);
     });
 
-    test('CA with no DB hit — returns hardcoded 7.25 base rate', async () => {
+    test('CA with no DB hit, returns hardcoded 7.25 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('90210', 'CA');
@@ -1498,7 +1498,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(7.25);
     });
 
-    test('NY with no DB hit — returns hardcoded 4.0 base rate', async () => {
+    test('NY with no DB hit, returns hardcoded 4.0 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('10001', 'NY');
@@ -1509,7 +1509,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(4.0);
     });
 
-    test('FL with no DB hit — returns hardcoded 6.0 base rate', async () => {
+    test('FL with no DB hit, returns hardcoded 6.0 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('33101', 'FL');
@@ -1520,7 +1520,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(6.0);
     });
 
-    test('unknown state (ZZ) — returns 0 fallback', async () => {
+    test('unknown state (ZZ): returns 0 fallback', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('12345', 'ZZ');
@@ -1597,7 +1597,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── ZIP format validation ──────────────────────────────────────────────
-    test('4-digit ZIP fails regex — falls to hardcoded state rate', async () => {
+    test('4-digit ZIP fails regex, falls to hardcoded state rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('1234', 'KS');
@@ -1609,7 +1609,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('hardcoded');
     });
 
-    test('6-digit ZIP fails regex — falls to hardcoded state rate', async () => {
+    test('6-digit ZIP fails regex, falls to hardcoded state rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('123456', 'KS');
@@ -1620,7 +1620,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('hardcoded');
     });
 
-    test('ZIP with letters fails regex — falls to hardcoded state rate', async () => {
+    test('ZIP with letters fails regex, falls to hardcoded state rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('6660A', 'KS');
@@ -1631,7 +1631,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('hardcoded');
     });
 
-    test('valid 5-digit ZIP — passes validation (source is hardcoded when DB returns null)', async () => {
+    test('valid 5-digit ZIP, passes validation (source is hardcoded when DB returns null)', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('66604', 'KS');
@@ -1644,7 +1644,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── lowercase state auto-uppercased ────────────────────────────────────
-    test('lowercase state "ks" — treated same as "KS"', async () => {
+    test('lowercase state "ks", treated same as "KS"', async () => {
       const r = await page.evaluate(async () => {
         try {
           const lower = await lookupSalesTaxRate('', 'ks');
@@ -1677,7 +1677,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── concurrent calls ───────────────────────────────────────────────────
-    test('concurrent calls — all resolve without exception', async () => {
+    test('concurrent calls, all resolve without exception', async () => {
       const r = await page.evaluate(async () => {
         const calls = [];
         for (let i = 0; i < 5; i++) {
@@ -1694,7 +1694,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── corrupted localStorage ─────────────────────────────────────────────
-    test('corrupted localStorage — does not affect lookupSalesTaxRate', async () => {
+    test('corrupted localStorage, does not affect lookupSalesTaxRate', async () => {
       const r = await page.evaluate(async () => {
         localStorage.setItem('td_settings', '{INVALID{{{{');
         localStorage.setItem('td_sales_tax_rate', 'NOT_A_NUMBER');
@@ -1906,7 +1906,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
   });
 
   // ── no console errors ──────────────────────────────────────────────────────
-  test('no console errors — sales-tax.js', async () => {
+  test('no console errors, sales-tax.js', async () => {
     assertNoErrors(page, 'sales-tax.js');
   });
 });
