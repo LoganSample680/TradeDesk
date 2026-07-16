@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.16.26.2';
+const APP_VERSION='07.16.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1466,28 +1466,34 @@ function _armBootCascade(){
     d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});
   }catch(_e){}},total);
 }
-function _removeBootOverlay(){
+function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
   // A version/SW update arrived during this boot and a reload is queued (new
   // preview/production build). Keep the loading screen UP and reload beneath it,
   // fading out, flashing the dash, then re-showing a second loading screen is the
   // "boot screen shows twice" bug. One continuous load, slightly longer.
   if(typeof _deferredReload!=='undefined'&&(_deferredReload||_reloadPending))return;
-  // MIN STAGE TIME (owner: "is our boot screen too short?", yes, on fast loads
-  // the intro was cut off mid-breath). Hold the overlay until it has been on
-  // screen ≥2s: one halo pulse + a wordmark sheen play before the lift-away.
-  // Slow loads are unaffected, real loading always governs.
-  try{
-    const _t0=window._sboT0||0;
-    if(_t0&&!o._minWaited){
-      const _left=4000-(Date.now()-_t0);   // ≥4s on screen (owner: 2.8s felt too short), the intro gets room to breathe
-      if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
-    }
-  }catch(_e){}
-  // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
-  // no popups → after boot load"). _armBootCascade holds the cards invisible,
-  // waits out any boot popup (collect alert, verdicts), then pours them in.
-  try{_armBootCascade();}catch(_e){}
+  // Signed-out boot goes straight to the login screen (immediate=true): there's no
+  // dashboard to reveal, so the "let the intro breathe" min-hold and the card
+  // cascade below are pure dead time, the owner sits watching a spinner before a
+  // login they could already be typing into. Skip both and let the login fade in.
+  if(!immediate){
+    // MIN STAGE TIME (owner: "is our boot screen too short?", yes, on fast loads
+    // the intro was cut off mid-breath). Hold the overlay until it has been on
+    // screen ≥2s: one halo pulse + a wordmark sheen play before the lift-away.
+    // Slow loads are unaffected, real loading always governs.
+    try{
+      const _t0=window._sboT0||0;
+      if(_t0&&!o._minWaited){
+        const _left=4000-(Date.now()-_t0);   // ≥4s on screen (owner: 2.8s felt too short), the intro gets room to breathe
+        if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
+      }
+    }catch(_e){}
+    // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
+    // no popups → after boot load"). _armBootCascade holds the cards invisible,
+    // waits out any boot popup (collect alert, verdicts), then pours them in.
+    try{_armBootCascade();}catch(_e){}
+  }
   o.classList.add('td-fadeout');
   setTimeout(()=>{
     o.remove();
@@ -1634,6 +1640,30 @@ async function supaInit(){
         _supa.realtime.endPoint=_SUPA_DIRECT_URL.replace(/^https/,'wss')+'/realtime/v1/websocket';
       }
     }catch(_e){}
+    // OAuth return handshake. signInWithOAuth (Google/Apple) redirects the browser
+    // to the provider and back here with the session in the URL (?code= for PKCE,
+    // or #access_token= for implicit). The client is built detectSessionInUrl:false
+    // so recovery / magic links aren't silently consumed, which means an OAuth
+    // return would otherwise be ignored and the user never actually signs in. We
+    // complete it by hand, but ONLY when _oauthPending was set by _obOAuth right
+    // before the redirect, so a stray recovery ?code= is never touched. Then scrub
+    // the params so a refresh or Back can't re-run the exchange or leave the token
+    // sitting in the address bar / history.
+    try{
+      if(localStorage.getItem('_oauthPending')){
+        const _u=new URL(window.location.href);
+        const _code=_u.searchParams.get('code');
+        const _hp=new URLSearchParams((window.location.hash||'').replace(/^#/,''));
+        const _htok=_hp.get('access_token');
+        if(_code&&_supa.auth.exchangeCodeForSession){
+          try{await _supa.auth.exchangeCodeForSession(_code);}catch(_e){}
+        } else if(_htok&&_supa.auth.setSession){
+          try{await _supa.auth.setSession({access_token:_htok,refresh_token:_hp.get('refresh_token')});}catch(_e){}
+        }
+        localStorage.removeItem('_oauthPending');
+        try{history.replaceState(null,'',_u.origin+_u.pathname);}catch(_e){}
+      }
+    }catch(_e){}
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
       _supaUser=session.user;
@@ -1683,8 +1713,10 @@ async function supaInit(){
         }catch(_ce){}
       }
       if(!_cacheLoaded){
-        // Online or cache parse failed, show login screen
-        _removeBootOverlay();
+        // Online or cache parse failed, show login screen. immediate=true: no
+        // session means we're going to login, not a dashboard, so fade the boot
+        // overlay out now instead of holding the spinner for the 4s intro.
+        _removeBootOverlay(true);
         renderDash();
         supaSetStatus('local');
         supaShowLogin();

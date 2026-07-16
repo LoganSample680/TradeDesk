@@ -287,8 +287,12 @@ test.describe('Client management, CRUD and validation', () => {
       document.getElementById('diag-amount').value = '150';
       saveDiagnosticCharge(501);
 
-      // 2. Charge saved → the SIGN step opens (not the pay panel).
-      await new Promise(r => setTimeout(r, 170));
+      // 2. Charge saved → the SIGN step opens (not the pay panel). saveDiagnosticCharge
+      // builds the sign modal AND wires the pad synchronously (clients.js _openDiagnosticSign,
+      // esignWire is deliberately sync), so everything is already in the DOM right here.
+      // Capture the bid NOW, before any yield: an await let a background save/merge reassign
+      // the live `bids` array and drop the just-pushed diagnostic bid, making `bid` undefined
+      // → `bid.id` threw. Reading synchronously with the write keeps it atomic.
       modal = document.querySelector('.zmodal-overlay .zmodal');
       const signHtml = modal ? modal.innerHTML : '';
       const bid = bids.find(b => b.kind === 'diagnostic');

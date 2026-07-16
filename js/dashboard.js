@@ -91,6 +91,17 @@ function _renderDashSetupTodo(){
     drive.title=hasVehicle?'':'Add a vehicle first to log mileage';
   }
   if(typeof _isEmployee!=='undefined'&&_isEmployee){el.style.display='none';el.innerHTML='';return;}
+  // No flash on sign-in. renderDash() fires once the moment we land on the
+  // dashboard (goPg('pg-dash')), BEFORE the account's cloud settings have loaded,
+  // so S.setupDone / vehicles / logo / skipped are all still empty. Rendering the
+  // full "get job-ready" list here and then collapsing it a beat later once the
+  // real (completed) state lands is exactly the brief flash the owner saw. Keep
+  // the card hidden until settings are authoritative (_authSettingsLoaded, the same
+  // "settings saves are safe" gate cloud.js sets after the cloud round-trip). A
+  // signed-out/local user has no cloud load pending, so they're never gated.
+  const _signedIn=typeof _supaUser!=='undefined'&&!!_supaUser;
+  const _settingsReady=typeof _authSettingsLoaded!=='undefined'&&_authSettingsLoaded;
+  if(_signedIn&&!_settingsReady){el.style.display='none';return;}
   // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
   // from day one and drops off the moment it's done (or the contractor skips an
   // optional one); the whole card collapses once nothing's left. Copy is money/

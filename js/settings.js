@@ -1362,10 +1362,15 @@ function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAl
 function _obOAuth(provider){
   try{
     if(typeof _supa==='undefined'||!_supa||!_supa.auth||!_supa.auth.signInWithOAuth){if(typeof showToast==='function')showToast(provider.charAt(0).toUpperCase()+provider.slice(1)+' sign-in isn\'t available yet','⚠️');return;}
+    // Mark this as an OAuth round-trip. The client is built detectSessionInUrl:false
+    // (so recovery / magic links aren't auto-consumed), so supaInit() completes the
+    // handshake by hand ONLY when this flag is set, never for a stray ?code=. Cleared
+    // on return or on error below.
+    try{localStorage.setItem('_oauthPending',provider);}catch(_e){}
     _supa.auth.signInWithOAuth({provider,options:{redirectTo:location.origin}}).then(({error})=>{
-      if(error&&typeof showToast==='function')showToast(provider.charAt(0).toUpperCase()+provider.slice(1)+' sign-in isn\'t turned on yet, use email for now','⚠️',5000);
-    }).catch(()=>{});
-  }catch(_e){if(typeof showToast==='function')showToast('Sign-in unavailable, use email for now','⚠️');}
+      if(error){try{localStorage.removeItem('_oauthPending');}catch(_e){}if(typeof showToast==='function')showToast(provider.charAt(0).toUpperCase()+provider.slice(1)+' sign-in isn\'t turned on yet, use email for now','⚠️',5000);}
+    }).catch(()=>{try{localStorage.removeItem('_oauthPending');}catch(_e){}});
+  }catch(_e){try{localStorage.removeItem('_oauthPending');}catch(_e2){}if(typeof showToast==='function')showToast('Sign-in unavailable, use email for now','⚠️');}
 }
 function obNextAccount(){
   const err=document.getElementById('ob-err');
