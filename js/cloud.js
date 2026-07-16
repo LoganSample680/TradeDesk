@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.16.26.10';
+const APP_VERSION='07.16.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5852,7 +5852,10 @@ async function supaLoadFromCloud({silent=false}={}){
     }
 
     if(!silent){
-      setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
+      // Re-render the setup checklist once the Stripe status resolves: the card
+      // treats unknown-Stripe as handled (no flash), so a contractor who actually
+      // needs to connect only sees "Turn on card payments" appear here, cleanly.
+      setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().then(()=>{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}).catch(()=>{});},500);
       _removeBootOverlay();goPg('pg-dash');
     }
 

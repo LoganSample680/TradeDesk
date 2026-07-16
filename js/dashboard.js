@@ -110,7 +110,14 @@ function _renderDashSetupTodo(){
   // did real work, account, trade, payment method, so we credit it and the bar
   // never opens at 0. No points/badges/streaks (they backfire with pros).
   const skipped=Array.isArray(S.setupSkipped)?S.setupSkipped:[];
-  const stripeOk=!!(typeof _stripeConnectStatus!=='undefined'&&_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
+  // _stripeConnectStatus is fetched ASYNC, ~500ms AFTER the first dash render. Until
+  // it resolves it's null (unknown). Treat unknown as "handled": otherwise a
+  // contractor who already connected Stripe sees "Turn on card payments" render as a
+  // todo and then vanish the instant the status lands, that show-then-hide is the
+  // one-second checklist flash on sign-in. Once the status is actually known-and-false
+  // the next render surfaces the item for someone who genuinely still needs it.
+  const _stripeKnown=typeof _stripeConnectStatus!=='undefined'&&_stripeConnectStatus!==null;
+  const stripeOk=!_stripeKnown||!!(_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
   const hasLogo=!!(S.logoData||S.logoUrl);
   const ALL=[
     {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your vehicles',
