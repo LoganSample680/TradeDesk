@@ -1251,6 +1251,28 @@ async function showOnboarding(){
   renderObStep();
 }
 
+// Brand-new social (Google/Apple) sign-in. The provider already created the auth
+// user + a live session, so there is NO email/password to collect, that half of
+// onboarding is already done. Drop them into the SAME wizard, prefilled from the
+// provider and with the account-creation step slimmed down (business/trade/pay
+// only). obSubmit sees _ob.oauth and writes the business against the existing
+// session instead of calling signUp. Called from the boot / SIGNED_IN brand-new
+// branches in cloud.js so a first-time social tap never lands on an empty dashboard.
+function _beginOAuthOnboarding(){
+  try{
+    _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:'',acceptCash:true,acceptCheck:true,allowPayLater:true,wantCards:true,jobs:[],oauth:true};
+    if(typeof _supaUser!=='undefined'&&_supaUser){
+      const m=_supaUser.user_metadata||{};
+      _ob.name=m.full_name||m.name||m.given_name||'';
+      _ob.email=_supaUser.email||'';
+    }
+    // Guard: a later auth event (TOKEN_REFRESHED fires as SIGNED_IN) must not re-run
+    // the boot flow while they're mid-onboarding. obSubmit clears this when it lands.
+    window._obInProgress=true;
+    showOnboarding();
+  }catch(_e){if(typeof console!=='undefined')console.warn('OAuth onboarding launch failed:',_e);}
+}
+
 function renderObStep(){
   const ov=document.getElementById('onboarding-overlay');if(!ov)return;
   // 3-step wizard (§9.9 restructure). Everything else, logo, vehicles, team,
@@ -1338,17 +1360,22 @@ function obInput(id,label,placeholder,type,value){
 // sign-in on top collapses this to near-nothing (name/email come from the provider).
 const OB_STATE_OPTS=['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
 function obStepAccount(el){
+  // OAuth mode: the provider already handled sign-in, so no social buttons, no
+  // email, no password, just their name (prefilled) + business details.
+  const oauth=!!_ob.oauth;
   const _stateOpts='<option value="">- Select your state -</option>'+OB_STATE_OPTS.map(s=>'<option value="'+s+'"'+(_ob.state===s?' selected':'')+'>'+s+'</option>').join('');
   const _socialBtn=(prov,label,bg,fg,bd)=>'<button onclick="_obOAuth(\''+prov+'\')" style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px;border-radius:9px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+label+'</button>';
   el.innerHTML=
-    '<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>'+
-    // Social sign-in (primary). Activates once the provider is configured in Supabase.
-    _socialBtn('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0')+
-    _socialBtn('apple','Continue with Apple','#000','#fff','1.5px solid #000')+
-    '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 16px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600">or sign up with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>'+
+    (oauth
+      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in'+(_ob.email?' as '+escHtml(_ob.email):'')+'. Just your business details and you\'re in.</div></div>'
+      :'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>'+
+        // Social sign-in (primary). Activates once the provider is configured in Supabase.
+        _socialBtn('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0')+
+        _socialBtn('apple','Continue with Apple','#000','#fff','1.5px solid #000')+
+        '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 16px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600">or sign up with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>')+
     obInput('ob-name','Your full name','John Smith','text',_ob.name)+
-    obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
-    obInput('ob-pass','Password (min 6 chars)','••••••••','password','')+
+    (oauth?'':obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
+    obInput('ob-pass','Password (min 6 chars)','••••••••','password',''))+
     obInput('ob-bname','Business name','Smith Painting Co','text',_ob.businessName)+
     '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Phone</label>'+
     '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
@@ -1373,6 +1400,7 @@ function _obOAuth(provider){
   }catch(_e){try{localStorage.removeItem('_oauthPending');}catch(_e2){}if(typeof showToast==='function')showToast('Sign-in unavailable, use email for now','⚠️');}
 }
 function obNextAccount(){
+  const oauth=!!_ob.oauth;
   const err=document.getElementById('ob-err');
   const name=document.getElementById('ob-name')?.value.trim();
   const email=document.getElementById('ob-email')?.value.trim();
@@ -1381,12 +1409,16 @@ function obNextAccount(){
   const phone=document.getElementById('ob-bphone')?.value.trim();
   const state=document.getElementById('ob-state')?.value||'';
   if(!name){if(err)err.textContent='Enter your name.';return;}
-  if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
-  if(!pass||pass.length<6){if(err)err.textContent='Password must be at least 6 characters.';return;}
+  // Email + password only exist (and are only required) on the email signup path.
+  // OAuth users are already authenticated, those fields aren't on the screen.
+  if(!oauth){
+    if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
+    if(!pass||pass.length<6){if(err)err.textContent='Password must be at least 6 characters.';return;}
+  }
   if(!bname){if(err)err.textContent='Enter your business name.';return;}
   if(!phone){if(err)err.textContent='Enter a phone number.';return;}
   if(!state){if(err)err.textContent='Select your state.';return;}
-  _ob.name=name;_ob.email=email;_ob.password=pass;_ob.businessName=bname;_ob.phone=phone;_ob.state=state;
+  _ob.name=name;if(!oauth){_ob.email=email;_ob.password=pass;}_ob.businessName=bname;_ob.phone=phone;_ob.state=state;
   // Prefill sales tax from state base, contractor refines later.
   if(state&&typeof lookupSalesTaxRate==='function'&&!(parseFloat(S.salesTaxRate)>0)){
     lookupSalesTaxRate('',state).then(r=>{if(r.rate>0){S.salesTaxRate=r.rate;S.salesTaxRateSource='onboarding';}}).catch(()=>{});
@@ -1509,23 +1541,33 @@ async function obSubmit(){
   function setProgress(msg){if(prog){prog.style.display='';prog.textContent=msg;}}
   window._obInProgress=true;
   try{
-    setProgress('Creating your account...');
-    const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
-    if(authErr){
-      if(authErr.message?.toLowerCase().includes('already registered')||authErr.status===422){
-        document.getElementById('onboarding-overlay')?.remove();
-        supaShowLogin();
-        setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Account already exists, sign in below.';el.style.color='var(--blue)';}},150);
-        return;
+    let uid;
+    if(_ob.oauth&&typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id){
+      // Social sign-in already created the auth user AND a live session (RLS works),
+      // so there is nothing to signUp/signInWithPassword. Use the session we have and
+      // pull the email from the provider (there was no email field on the screen).
+      uid=_supaUser.id;
+      _ob.email=_supaUser.email||_ob.email||'';
+      setProgress('Setting up your business...');
+    } else {
+      setProgress('Creating your account...');
+      const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
+      if(authErr){
+        if(authErr.message?.toLowerCase().includes('already registered')||authErr.status===422){
+          document.getElementById('onboarding-overlay')?.remove();
+          supaShowLogin();
+          setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Account already exists, sign in below.';el.style.color='var(--blue)';}},150);
+          return;
+        }
+        throw authErr;
       }
-      throw authErr;
+      // Sign in immediately to get a live session so RLS works for inserts
+      const{data:signInData,error:signInErr}=await _supa.auth.signInWithPassword({email:_ob.email,password:_ob.password});
+      if(signInErr)throw new Error('Account created, please sign in to continue.');
+      uid=signInData.user?.id;
+      if(!uid)throw new Error('Could not get user ID');
+      _supaUser=signInData.user;
     }
-    // Sign in immediately to get a live session so RLS works for inserts
-    const{data:signInData,error:signInErr}=await _supa.auth.signInWithPassword({email:_ob.email,password:_ob.password});
-    if(signInErr)throw new Error('Account created, please sign in to continue.');
-    const uid=signInData.user?.id;
-    if(!uid)throw new Error('Could not get user ID');
-    _supaUser=signInData.user;
 
     setProgress('Setting up your business...');
     const{data:acct,error:acctErr}=await _supa.from('accounts').insert({

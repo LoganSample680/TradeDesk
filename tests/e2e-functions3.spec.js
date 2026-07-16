@@ -3270,6 +3270,74 @@ test.describe('Cloud realtime, LP touch, and onboarding step functions', () => {
     expect(result.advanced, 'a complete step 1 advances to trade with data captured').toBe(true);
   });
 
+  // ── Social (Google/Apple) signup → onboarding routing ──────────────────────
+  // A first-time Google/Apple sign-in creates the auth user but no business data,
+  // so the app must drop them INTO onboarding (prefilled, no email/password step),
+  // never onto an empty dashboard. These lock the OAuth-mode wizard + prefill.
+  test('_beginOAuthOnboarding: enters oauth mode, prefills from provider, launches onboarding', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _beginOAuthOnboarding !== 'function') return { skip: true };
+      const _savedUser = typeof _supaUser !== 'undefined' ? _supaUser : null;
+      const _savedOb = _ob;
+      document.getElementById('onboarding-overlay')?.remove();
+      _supaUser = { id: 'oauth-uid-1', email: 'grace@greenpaint.com', user_metadata: { full_name: 'Grace Green' } };
+      window._obInProgress = false;
+      _beginOAuthOnboarding();
+      const ov = document.getElementById('onboarding-overlay');
+      const body = document.getElementById('ob-body');
+      const txt = body ? body.textContent : '';
+      const r = {
+        launched: !!ov,
+        oauthFlag: _ob.oauth === true,
+        namePrefill: _ob.name === 'Grace Green',
+        emailPrefill: _ob.email === 'grace@greenpaint.com',
+        obInProgress: window._obInProgress === true,
+        header: /finish setting up/i.test(txt),
+        noEmailField: !document.getElementById('ob-email'),
+        noPassField: !document.getElementById('ob-pass'),
+        noSocial: !/continue with google/i.test(txt),
+        hasBusiness: !!document.getElementById('ob-bname') && !!document.getElementById('ob-bphone') && !!document.getElementById('ob-state'),
+      };
+      ov?.remove();
+      _ob = _savedOb; _ob.oauth = false;
+      _supaUser = _savedUser;
+      window._obInProgress = false;
+      return r;
+    });
+    if (result.skip) return;
+    expect(result.launched, 'onboarding overlay opened').toBe(true);
+    expect(result.oauthFlag, '_ob.oauth set').toBe(true);
+    expect(result.namePrefill, 'name prefilled from provider').toBe(true);
+    expect(result.emailPrefill, 'email prefilled from provider').toBe(true);
+    expect(result.obInProgress, '_obInProgress guard set so a later auth event cannot re-run boot').toBe(true);
+    expect(result.header, '"Finish setting up" header shown, not "Create your account"').toBe(true);
+    expect(result.noEmailField && result.noPassField, 'no email/password fields in oauth mode').toBe(true);
+    expect(result.noSocial, 'no social buttons inside oauth-mode onboarding').toBe(true);
+    expect(result.hasBusiness, 'business name/phone/state still collected').toBe(true);
+  });
+
+  test('obNextAccount (oauth): advances to trade with no email/password, provider email kept', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof obNextAccount !== 'function' || typeof obStepAccount !== 'function') return { skip: true };
+      const _savedOb = _ob; const _origRender = window.renderObStep; window.renderObStep = () => {};
+      document.querySelectorAll('#ob-body,#ob-err').forEach(n => n.remove());
+      const el = document.createElement('div'); el.id = 'ob-body'; document.body.appendChild(el);
+      _ob = { ..._savedOb, step: 1, oauth: true, name: 'Grace Green', email: 'grace@greenpaint.com', businessName: '', phone: '', state: '' };
+      obStepAccount(el);
+      // No email/password inputs exist in oauth mode; fill only the business fields.
+      el.querySelector('#ob-name').value = 'Grace Green';
+      el.querySelector('#ob-bname').value = 'Green Painting';
+      el.querySelector('#ob-bphone').value = '316-555-0100';
+      el.querySelector('#ob-state').value = 'KS';
+      obNextAccount();
+      const advanced = _ob.step === 2 && _ob.businessName === 'Green Painting' && _ob.state === 'KS' && _ob.email === 'grace@greenpaint.com';
+      el.remove(); window.renderObStep = _origRender; _ob = _savedOb; _ob.oauth = false;
+      return { advanced };
+    });
+    if (result.skip) return;
+    expect(result.advanced, 'oauth step 1 advances with no email/password, provider email preserved').toBe(true);
+  });
+
   test('onboarding restructure, cut steps are actually gone (§7.1)', async () => {
     const gone = await page.evaluate(() => [
       'obStep1', 'obStep2', 'obNext2', 'obStep4', 'obNext4', 'obStepBrand',
