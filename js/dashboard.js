@@ -110,14 +110,22 @@ function _renderDashSetupTodo(){
   // did real work, account, trade, payment method, so we credit it and the bar
   // never opens at 0. No points/badges/streaks (they backfire with pros).
   const skipped=Array.isArray(S.setupSkipped)?S.setupSkipped:[];
-  // _stripeConnectStatus is fetched ASYNC, ~500ms AFTER the first dash render. Until
-  // it resolves it's null (unknown). Treat unknown as "handled": otherwise a
-  // contractor who already connected Stripe sees "Turn on card payments" render as a
-  // todo and then vanish the instant the status lands, that show-then-hide is the
-  // one-second checklist flash on sign-in. Once the status is actually known-and-false
-  // the next render surfaces the item for someone who genuinely still needs it.
-  const _stripeKnown=typeof _stripeConnectStatus!=='undefined'&&_stripeConnectStatus!==null;
-  const stripeOk=!_stripeKnown||!!(_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
+  // Prime the Stripe status SYNCHRONOUSLY from its localStorage cache
+  // (td_stripe_status_<uid>, 1h TTL, written by _fetchStripeConnectStatus). Otherwise
+  // _stripeConnectStatus is null until the async fetch lands ~500ms after the first
+  // render, so a contractor who already connected Stripe sees "Turn on card payments"
+  // render as a todo and then vanish the instant the status arrives, that show-then-hide
+  // is the one-second checklist flash on sign-in. With the cache primed, a connected
+  // owner is known on frame one (item stays hidden), while a genuinely fresh account has
+  // no cache and correctly shows the item.
+  try{
+    if((typeof _stripeConnectStatus==='undefined'||_stripeConnectStatus===null)&&typeof _supaUser!=='undefined'&&_supaUser){
+      const _sUid=(typeof _effectiveUid==='function'&&_effectiveUid())||_supaUser.id||'';
+      const _sc=JSON.parse(localStorage.getItem('td_stripe_status_'+_sUid)||'null');
+      if(_sc&&_sc.ts&&(Date.now()-_sc.ts)<3600000&&_sc.data)_stripeConnectStatus=_sc.data;
+    }
+  }catch(_e){}
+  const stripeOk=!!(typeof _stripeConnectStatus!=='undefined'&&_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
   const hasLogo=!!(S.logoData||S.logoUrl);
   const ALL=[
     {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your vehicles',
