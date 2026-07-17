@@ -285,7 +285,7 @@ async function renderTimeLog(){
     const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
     const wkStartStr=wkStart.toISOString().slice(0,10),wkEndStr=wkEnd.toISOString().slice(0,10);
     const wkMin=visible.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr).reduce((s,r)=>s+(r.minutes||0),0);
-    weekEl.textContent=(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+' this week (Sun–Sat)';
+    weekEl.textContent=(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+' This week (Sun–Sat)';
   }
   const years=_tlYears(visible);
   _tlPopulateYearSel(years);

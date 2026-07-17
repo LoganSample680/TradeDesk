@@ -529,7 +529,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.17.26.2';
+const APP_VERSION='07.17.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5023,6 +5023,74 @@ function _sigFeedStatus(status){
     try{if(window._obs)_obs.track('sig_feed_down_'+String(status).toLowerCase());}catch(_e){}
   }
 }
+// Applies one signed_proposals row's decline/signed state to its local bid.
+// Shared by the live poll loop below and _reconcilePendingSigStatuses, so the
+// two paths can never drift apart on what "declined" vs "signed" means.
+// Returns true if it mutated the bid.
+function _applySigStatusToBid(bid,s){
+  let changed=false;
+  if(s.payment_status==='declined'){
+    // Client declined, mark as Closed Lost, not Closed Won
+    if(bid.status!=='Closed Lost'){
+      bid.status='Closed Lost';bid.draft=false;
+      bid.declinedAt=s.signed_at;
+      changed=true;
+    }
+    // Client-picked reason (sign.html's decline modal), same field a
+    // contractor's own manual "Mark Lost" action populates, so it shows
+    // up in the Declined tab / dashboard with no new UI needed.
+    if(s.decline_reason&&bid.lostReason!==s.decline_reason){
+      bid.lostReason=s.decline_reason;bid.lostAt=bid.lostAt||s.signed_at;
+      changed=true;
+    }
+  }else{
+    if(bid.status!=='Closed Won'){
+      // Always fix the status regardless of seenCache, data may have been reset
+      bid.status='Closed Won';bid.draft=false;
+      bid.signedAt=s.signed_at;
+      bid.signedName=s.client_signed_name||s.client_name;
+      bid.paymentMethod=s.payment_method;
+      changed=true;
+    }
+    // Refresh signature metadata even when already won, the signature image and
+    // EPA ack can land after the status flip (or the DB columns were added later).
+    if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
+    if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
+    if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
+    if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
+  }
+  return changed;
+}
+// Self-heals bids whose status is stuck out of sync with signed_proposals, e.g.
+// a decline landed while this contractor's account had already accumulated
+// 100+ more recent signed_proposals rows: checkNewSignatures' full poll only
+// ever looks at the most recent 100 (ordered by signed_at), and the delta poll
+// only looks past its watermark, so an old stale row can never resurface
+// through either path. This runs a direct lookup on the small set of bids
+// still showing "Pending" with a signingToken (however few that is, regardless
+// of total signature volume), so drift like that gets corrected for good.
+async function _reconcilePendingSigStatuses(){
+  if(!_supa||!_supaUser)return;
+  const pending=(typeof bids!=='undefined'?bids:[]).filter(b=>b.signingToken&&b.status==='Pending'&&b.id);
+  if(!pending.length)return;
+  try{
+    const{data,error}=await _supa.from('signed_proposals')
+      .select('*')
+      .eq('contractor_user_id',_supaUser.id)
+      .in('bid_id',pending.map(b=>String(b.id)));
+    if(error||!data||!data.length)return;
+    let changed=false;
+    data.forEach(s=>{
+      const bid=pending.find(b=>String(b.id)===String(s.bid_id));
+      if(bid&&_applySigStatusToBid(bid,s))changed=true;
+    });
+    if(changed){
+      saveAll();
+      renderDash();
+      if(typeof renderProposalsPage==='function')renderProposalsPage();
+    }
+  }catch(e){console.warn('reconcilePendingSigStatuses:',e);}
+}
 let _checkSigsPending=false;
 async function checkNewSignatures(_src){
   // Coalescing guard: a call landing while another run is in flight must NOT be
@@ -5046,6 +5114,7 @@ async function checkNewSignatures(_src){
       .order('signed_at',{ascending:false})
       .limit(100);
     let data,error;
+    const _wasFullPoll=!_sigPollWatermark;
     if(_sigPollWatermark){
       // Delta poll: INSERTs land with updated_at=now(); every mutation the loop
       // below cares about (cancellation, remote CO signing, payment-status flip)
@@ -5125,38 +5194,10 @@ async function checkNewSignatures(_src){
             coSignedAlerts.push({client:s.client_name||'Client',coNum:lc.coNum,newTotal:bid.amount,clientId:bid.client_id});
           }
         }
-        if(s.payment_status==='declined'){
-          // Client declined, mark as Closed Lost, not Closed Won
-          if(bid.status!=='Closed Lost'){
-            bid.status='Closed Lost';bid.draft=false;
-            bid.declinedAt=s.signed_at;
-            changed=true;
-          }
-          // Client-picked reason (sign.html's decline modal), same field a
-          // contractor's own manual "Mark Lost" action populates, so it shows
-          // up in the Declined tab / dashboard with no new UI needed.
-          if(s.decline_reason&&bid.lostReason!==s.decline_reason){
-            bid.lostReason=s.decline_reason;bid.lostAt=bid.lostAt||s.signed_at;
-            changed=true;
-          }
-        } else {
-          if(bid.status!=='Closed Won'){
-            // Always fix the status regardless of seenCache, data may have been reset
-            bid.status='Closed Won';bid.draft=false;
-            bid.signedAt=s.signed_at;
-            bid.signedName=s.client_signed_name||s.client_name;
-            bid.paymentMethod=s.payment_method;
-            changed=true;
-            if(!alreadySeen){
-              alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
-            }
-          }
-          // Refresh signature metadata even when already won, the signature image and
-          // EPA ack can land after the status flip (or the DB columns were added later).
-          if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
-          if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
-          if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
-          if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
+        const _wasWon=bid.status==='Closed Won';
+        if(_applySigStatusToBid(bid,s))changed=true;
+        if(s.payment_status!=='declined'&&!_wasWon&&bid.status==='Closed Won'&&!alreadySeen){
+          alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
         }
         if(!alreadySeen)newSeen.push(key);
       }
@@ -5181,6 +5222,11 @@ async function checkNewSignatures(_src){
         if(!window._showingScheduleAlert)setTimeout(showScheduleAlerts,400);
       }
     }
+    // Once per fresh load only, piggybacking on the full poll: catches any bid
+    // still stuck "Pending" that this poll's own 100-row/watermark window can't
+    // reach. Fire-and-forget, it has its own error handling and never blocks
+    // _checkSigsBusy.
+    if(_wasFullPoll)_reconcilePendingSigStatuses();
   }catch(e){console.warn('checkNewSignatures:',e);}finally{
     _checkSigsBusy=false;
     if(_checkSigsPending){_checkSigsPending=false;checkNewSignatures(_src);}

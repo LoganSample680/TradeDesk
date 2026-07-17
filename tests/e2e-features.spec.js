@@ -1391,6 +1391,31 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
   });
 
+  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up) has the smooth-transition class', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
+      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
+      S.vehicles = []; S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      _renderDashSetupTodo();
+      const card = document.getElementById('dash-setup-todo');
+      const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
+      const cs = ctas[0] ? getComputedStyle(ctas[0]) : null;
+      const out = {
+        ctaCount: ctas.length,
+        allHaveClass: ctas.every(b => b.classList.contains('td-setup-cta')),
+        hasTransition: !!(cs && cs.transitionDuration && cs.transitionDuration !== '0s'),
+      };
+      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
+      return out;
+    });
+    if (r.skip) return;
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 4 CTAs').toBe(4);
+    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up all carry the transition class').toBe(true);
+    expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
+  });
+
   test('_setupTeamChooser: offers W-2 / 1099 / no-team, and "no team" clears the item', async () => {
     const r = await page.evaluate(() => {
       if (typeof _setupTeamChooser !== 'function' || typeof _skipSetupTodo !== 'function') return { skip: true };

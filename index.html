@@ -236,6 +236,9 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .btn-full{width:100%;justify-content:center}
 .btn-icon{width:36px;height:36px;padding:0}
 .btn-del{background:none;border:none;color:var(--text-3);cursor:pointer;font-size:13px;font-family:inherit;padding:3px 7px}
+.td-setup-cta{transition:transform .08s,box-shadow .12s,opacity .12s}
+.td-setup-cta:hover{opacity:.92}
+.td-setup-cta:active{transform:scale(.94)}
 .btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* ── Badges ── */
@@ -2142,8 +2145,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-title">Time Log</div>
     <div id="tl-total" style="font-size:12px;font-weight:700;color:var(--text3)"></div>
   </div>
+  <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Year</div>
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
-    <select id="tl-year-sel" onchange="setTimeLogYear(parseInt(this.value))" style="flex:1;min-width:0;font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer"></select>
+    <select id="tl-year-sel" onchange="setTimeLogYear(parseInt(this.value))" class="btn btn-sm" style="flex:1;min-width:0;justify-content:flex-start;cursor:pointer"></select>
     <button class="btn btn-sm" onclick="_tlExportCSV()" style="flex-shrink:0">⬇ Export</button>
   </div>
   <div id="tl-week-total" style="font-size:11px;color:var(--text3);margin-bottom:14px"></div>

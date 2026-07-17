@@ -1080,7 +1080,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         } finally { timeEntries = orig; }
       });
       expect(r).toContain('2h 15m');
-      expect(r).toContain('this week');
+      expect(r).toContain('This week');
     });
 
     test('week total excludes entries outside the current calendar week', async () => {
@@ -1097,7 +1097,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
       });
       expect(r).not.toContain('500');
       expect(r).not.toContain('8h'); // 500min = 8h20m, must not leak into the current-week total
-      expect(r).toContain('this week');
+      expect(r).toContain('This week');
     });
 
     test('renders the Export CSV button', async () => {
@@ -1107,6 +1107,29 @@ test.describe('timelog.js: exhaustive coverage', () => {
         return !!document.querySelector('button[onclick="_tlExportCSV()"]');
       });
       expect(r).toBe(true);
+    });
+
+    test('the year selector has a visible "Year" header and matches the Export button\'s size (owner report: they looked mismatched)', async () => {
+      const r = await page.evaluate(async () => {
+        setTimeLogYear(new Date().getFullYear());
+        await renderTimeLog();
+        const yearSel = document.getElementById('tl-year-sel');
+        const exportBtn = document.querySelector('button[onclick="_tlExportCSV()"]');
+        const yearRect = yearSel.getBoundingClientRect();
+        const exportRect = exportBtn.getBoundingClientRect();
+        // The header label sits immediately before the year-select/export row.
+        const row = yearSel.closest('div');
+        const header = row?.previousElementSibling;
+        return {
+          headerText: header?.textContent?.trim(),
+          sameClass: yearSel.classList.contains('btn') && yearSel.classList.contains('btn-sm')
+            && exportBtn.classList.contains('btn') && exportBtn.classList.contains('btn-sm'),
+          heightDiff: Math.abs(yearRect.height - exportRect.height),
+        };
+      });
+      expect(r.headerText).toBe('Year');
+      expect(r.sameClass, 'the year select and Export button must share the same .btn.btn-sm sizing').toBe(true);
+      expect(r.heightDiff, 'both controls must render at the same height').toBeLessThanOrEqual(1);
     });
   });
 

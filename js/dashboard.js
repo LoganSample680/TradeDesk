@@ -180,7 +180,7 @@ function _renderDashSetupTodo(){
             '<span style="display:block;font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px">'+it.sub+'</span>'+
             '<button onclick="_skipSetupTodo(\''+it.id+'\')" style="margin-top:4px;background:none;border:none;padding:0;font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>'+
           '</span>'+
-          '<button onclick="_setupTodoGo(\''+it.id+'\')" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">'+it.cta+'</button>'+
+          '<button class="td-setup-cta" onclick="_setupTodoGo(\''+it.id+'\')" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">'+it.cta+'</button>'+
         '</div>'
       ).join('')+
     '</div>';

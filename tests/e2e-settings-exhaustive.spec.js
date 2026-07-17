@@ -219,6 +219,46 @@ test.describe('settings.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // goPg('pg-settings') always lands on the settings home list, never the
+  // last-viewed detail panel (owner report: it was showing whatever sub-page
+  // was open before you navigated away).
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe("goPg('pg-settings') always resets to the index view", () => {
+    test('a detail panel left open from a prior visit is closed on the next settings visit', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-settings');
+        _openSetDetail('branding');
+        const openedDetail = document.getElementById('setd-branding')?.classList.contains('active');
+        const openedIndexHidden = document.getElementById('set-index-view')?.classList.contains('hidden');
+        goPg('pg-dash');          // navigate away, detail panel state stays in the DOM
+        goPg('pg-settings');      // and back, must reset to home
+        return {
+          openedDetail, openedIndexHidden,
+          detailStillActive: document.getElementById('setd-branding')?.classList.contains('active'),
+          indexHiddenAfterReturn: document.getElementById('set-index-view')?.classList.contains('hidden'),
+        };
+      });
+      expect(r.openedDetail, 'sanity: the detail panel did open').toBe(true);
+      expect(r.openedIndexHidden, 'sanity: the index view was hidden while a detail panel was open').toBe(true);
+      expect(r.detailStillActive, 'returning to Settings must close the stale detail panel').toBe(false);
+      expect(r.indexHiddenAfterReturn, 'returning to Settings must show the index/home view').toBe(false);
+    });
+
+    test('a deep-link caller (setup-todo card) can still open a specific panel right after goPg', async () => {
+      // Mirrors _setupTodoGo('logo'): goPg('pg-settings') then _openSetDetail('biz')
+      // in a setTimeout, which must still win over the always-home reset.
+      const r = await page.evaluate(async () => {
+        goPg('pg-dash');
+        goPg('pg-settings');
+        await new Promise(res => setTimeout(res, 0));
+        _openSetDetail('biz');
+        return { bizActive: document.getElementById('setd-biz')?.classList.contains('active') };
+      });
+      expect(r.bizActive, 'an explicit deep-link into a detail panel after goPg still works').toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // _renderSetIndex
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderSetIndex', () => {
