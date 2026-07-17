@@ -250,6 +250,197 @@ test.describe('Platform billing: export gate', () => {
     });
   });
 
+  test.describe('_checkBillingGate (app-wide gridlock)', () => {
+    const cleanupOverlay = () => page.evaluate(() => { document.getElementById('billing-gate-overlay')?.remove(); });
+
+    test('RPC true: renders the gate overlay', async () => {
+      await installRpcStub({ td_billing_gate_locked: true });
+      const r = await page.evaluate(async () => {
+        document.getElementById('billing-gate-overlay')?.remove();
+        const origFetchStatus = window._fetchBillingStatus;
+        window._fetchBillingStatus = async () => ({ status: 'canceled' });
+        try {
+          await _checkBillingGate();
+          return { present: !!document.getElementById('billing-gate-overlay'), locked: window._billingGateLocked };
+        } finally { window._fetchBillingStatus = origFetchStatus; }
+      });
+      expect(r.present).toBe(true);
+      expect(r.locked).toBe(true);
+      await cleanupOverlay();
+      await restore();
+    });
+
+    test('RPC false: no overlay, removes a stale one if present', async () => {
+      await installRpcStub({ td_billing_gate_locked: false });
+      const r = await page.evaluate(async () => {
+        document.body.appendChild(Object.assign(document.createElement('div'), { id: 'billing-gate-overlay' }));
+        await _checkBillingGate();
+        return { present: !!document.getElementById('billing-gate-overlay'), locked: window._billingGateLocked };
+      });
+      expect(r.present).toBe(false);
+      expect(r.locked).toBe(false);
+      await restore();
+    });
+
+    test('RPC errors: fails OPEN (never locks a customer out on a transient failure)', async () => {
+      await installRpcStub({ td_billing_gate_locked: { error: { message: 'network blip' } } });
+      const r = await page.evaluate(async () => {
+        document.getElementById('billing-gate-overlay')?.remove();
+        await _checkBillingGate();
+        return { present: !!document.getElementById('billing-gate-overlay'), locked: window._billingGateLocked };
+      });
+      expect(r.present, 'a transient RPC error must never brick the whole app').toBe(false);
+      expect(r.locked).toBe(false);
+      await restore();
+    });
+
+    test('not signed in: no-op, no throw', async () => {
+      const r = await page.evaluate(async () => {
+        const savedUser = _supaUser;
+        _supaUser = null;
+        document.getElementById('billing-gate-overlay')?.remove();
+        try { await _checkBillingGate(); return { ok: true, present: !!document.getElementById('billing-gate-overlay') }; }
+        catch (e) { return { ok: false, msg: e.message }; }
+        finally { _supaUser = savedUser; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.present).toBe(false);
+    });
+
+    test('overlay CTA: past_due status shows "Update payment method" wired to openBillingPortal', async () => {
+      await installRpcStub({ td_billing_gate_locked: true });
+      const r = await page.evaluate(async () => {
+        document.getElementById('billing-gate-overlay')?.remove();
+        const origFetchStatus = window._fetchBillingStatus;
+        window._fetchBillingStatus = async () => ({ status: 'past_due' });
+        try {
+          await _checkBillingGate();
+          const btn = document.querySelector('#billing-gate-overlay button');
+          return { text: btn?.textContent || '', onclick: btn?.getAttribute('onclick') || '' };
+        } finally { window._fetchBillingStatus = origFetchStatus; }
+      });
+      expect(r.text).toContain('Update payment method');
+      expect(r.onclick).toContain('openBillingPortal');
+      await cleanupOverlay();
+      await restore();
+    });
+
+    test('overlay CTA: canceled/no status shows "Subscribe" wired to startTradeDeskBilling', async () => {
+      await installRpcStub({ td_billing_gate_locked: true });
+      const r = await page.evaluate(async () => {
+        document.getElementById('billing-gate-overlay')?.remove();
+        const origFetchStatus = window._fetchBillingStatus;
+        window._fetchBillingStatus = async () => ({ status: 'canceled' });
+        try {
+          await _checkBillingGate();
+          const btn = document.querySelector('#billing-gate-overlay button');
+          return { text: btn?.textContent || '', onclick: btn?.getAttribute('onclick') || '' };
+        } finally { window._fetchBillingStatus = origFetchStatus; }
+      });
+      expect(r.text).toContain('Subscribe');
+      expect(r.onclick).toContain('startTradeDeskBilling');
+      await cleanupOverlay();
+      await restore();
+    });
+
+    test('calling twice while already locked does not stack a second overlay', async () => {
+      await installRpcStub({ td_billing_gate_locked: true });
+      const r = await page.evaluate(async () => {
+        document.getElementById('billing-gate-overlay')?.remove();
+        const origFetchStatus = window._fetchBillingStatus;
+        window._fetchBillingStatus = async () => ({ status: 'canceled' });
+        try {
+          await _checkBillingGate();
+          await _checkBillingGate();
+          return document.querySelectorAll('#billing-gate-overlay').length;
+        } finally { window._fetchBillingStatus = origFetchStatus; }
+      });
+      expect(r).toBe(1);
+      await cleanupOverlay();
+      await restore();
+    });
+  });
+
+  test.describe('_handleBillingReturn', () => {
+    test('?billing=success: strips the param, shows a toast, triggers a gate re-check', async () => {
+      await installRpcStub({ td_billing_gate_locked: false });
+      const r = await page.evaluate(async () => {
+        const url = new URL(window.location.href);
+        url.search = '?billing=success&foo=bar';
+        history.replaceState({}, '', url);
+        let toasted = null;
+        const origToast = window.showToast;
+        window.showToast = (m) => { toasted = m; };
+        let checked = false;
+        const origCheck = window._checkBillingGate;
+        window._checkBillingGate = () => { checked = true; return Promise.resolve(); };
+        try {
+          _handleBillingReturn();
+          await new Promise((r) => setTimeout(r, 10));
+          return { search: window.location.search, toasted, checked };
+        } finally {
+          window.showToast = origToast;
+          window._checkBillingGate = origCheck;
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.search = '';
+          history.replaceState({}, '', cleanUrl);
+        }
+      });
+      expect(r.search).not.toContain('billing=success');
+      expect(r.search).toContain('foo=bar');
+      expect(r.toasted).toContain('Subscription active');
+      expect(r.checked).toBe(true);
+      await restore();
+    });
+
+    test('?billing=return (from the billing portal): re-checks, no toast', async () => {
+      const r = await page.evaluate(async () => {
+        const url = new URL(window.location.href);
+        url.search = '?billing=return';
+        history.replaceState({}, '', url);
+        let toasted = false;
+        const origToast = window.showToast;
+        window.showToast = () => { toasted = true; };
+        let checked = false;
+        const origCheck = window._checkBillingGate;
+        window._checkBillingGate = () => { checked = true; return Promise.resolve(); };
+        try {
+          _handleBillingReturn();
+          return { search: window.location.search, toasted, checked };
+        } finally {
+          window.showToast = origToast;
+          window._checkBillingGate = origCheck;
+          const cleanUrl = new URL(window.location.href);
+          cleanUrl.search = '';
+          history.replaceState({}, '', cleanUrl);
+        }
+      });
+      expect(r.search).not.toContain('billing=return');
+      expect(r.toasted).toBe(false);
+      expect(r.checked).toBe(true);
+    });
+
+    test('no ?billing= param: no-op', async () => {
+      const r = await page.evaluate(() => {
+        const cleanUrl = new URL(window.location.href);
+        cleanUrl.search = '?foo=bar';
+        history.replaceState({}, '', cleanUrl);
+        let checked = false;
+        const origCheck = window._checkBillingGate;
+        window._checkBillingGate = () => { checked = true; return Promise.resolve(); };
+        try {
+          _handleBillingReturn();
+          return { search: window.location.search, checked };
+        } finally {
+          window._checkBillingGate = origCheck;
+          history.replaceState({}, '', cleanUrl.pathname);
+        }
+      });
+      expect(r.search).toBe('?foo=bar');
+      expect(r.checked).toBe(false);
+    });
+  });
+
   test('no console errors from the billing-gate plumbing', async () => {
     assertNoErrors(page, 'billing export gate');
   });

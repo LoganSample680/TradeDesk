@@ -48,10 +48,14 @@ Deno.serve(async (req) => {
     const stripe = new Stripe(stripeSecretKey(mode), { apiVersion: '2023-10-16' });
     const { returnUrl } = await req.json().catch(() => ({ returnUrl: null }));
     const baseUrl = returnUrl || 'https://logansample680.github.io/TradeDesk/';
+    // billing=return marker lets the client force a fresh gate re-check the
+    // instant they land back (e.g. after fixing a past_due payment method),
+    // same pattern as create-billing-checkout's success/cancel markers.
+    const returnWithMarker = baseUrl + (baseUrl.includes('?') ? '&' : '?') + 'billing=return';
 
     const portal = await stripe.billingPortal.sessions.create({
       customer: sub.stripe_customer_id,
-      return_url: baseUrl,
+      return_url: returnWithMarker,
     });
 
     return new Response(

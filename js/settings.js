@@ -1651,6 +1651,24 @@ async function obSubmit(){
 
     await _supa.from('zj_data').insert({user_id:uid,account_id:acct.id});
 
+    // Owner spec 2026-07-17: the 14-day free trial starts HERE, silently,
+    // the moment the account exists, not whenever (if ever) someone finds
+    // the Subscribe button in Settings. No card prompt, no redirect, nothing
+    // is due during a full trial so there's nothing to collect. Never blocks
+    // onboarding: if this fails (network hiccup, billing not configured yet
+    // in this env), the Settings billing card's Subscribe button is the
+    // manual fallback, and start-billing-trial is idempotent so a retry from
+    // there can't double-create a subscription.
+    try{
+      const _bSess=await _supa.auth.getSession();
+      const _bTok=_bSess?.data?.session?.access_token;
+      if(_bTok){
+        await fetch(SUPA_URL+'/functions/v1/start-billing-trial',{
+          method:'POST',headers:{Authorization:'Bearer '+_bTok,'Content-Type':'application/json'}
+        });
+      }
+    }catch(_e){}
+
     S.bname=_ob.businessName;S.bphone=_ob.phone;S.blic=_ob.licenseInfo;S.state=_ob.state||'KS';S.warrantyPeriod=_ob.warrantyPeriod||'1 year';
     // Payment methods the contractor chose on the "How do you want to get paid?"
     // step. Stored as explicit booleans so an unchecked box is a real false, not

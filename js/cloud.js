@@ -306,6 +306,64 @@ async function _requireExportsUnlocked(){
   return false;
 }
 
+// ── App-wide billing gridlock ───────────────────────────────────────────
+// Owner spec 2026-07-17: once a contractor's 14-day trial ends (or an active
+// subscription lapses to past_due/canceled) with nothing paid, the ENTIRE
+// app locks behind a single "Manage billing" screen, no peeking at existing
+// data, until they pay. Exempt accounts, and crew members whose employer is
+// current, never see this. td_billing_gate_locked() (see the
+// 20260805_billing_trial_gate migration) resolves the effective billing
+// owner server-side (self, or the employer for a crew member) so a client
+// can't fake its way past the gate.
+let _billingGateLocked=false;
+async function _checkBillingGate(){
+  if(!supaEnabled()||!_supaUser)return;
+  try{
+    const{data,error}=await _supa.rpc('td_billing_gate_locked');
+    // Never fail open TO a lockout: a transient RPC error must never brick a
+    // paying customer's whole app. Only a CONFIRMED "true" locks it.
+    _billingGateLocked=(!error&&data===true);
+  }catch(e){_billingGateLocked=false;}
+  if(_billingGateLocked)await _renderBillingGateOverlay();
+  else _removeBillingGateOverlay();
+}
+async function _renderBillingGateOverlay(){
+  if(document.getElementById('billing-gate-overlay'))return;
+  const status=await _fetchBillingStatus();
+  const isPastDue=status?.status==='past_due';
+  const ov=document.createElement('div');
+  ov.id='billing-gate-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;animation:td-pg-enter .3s cubic-bezier(.22,1,.36,1) both';
+  ov.innerHTML=
+    '<div style="max-width:360px;text-align:center">'+
+      '<div style="font-size:40px;margin-bottom:12px">'+(isPastDue?'⚠️':'⏳')+'</div>'+
+      '<div style="font-size:19px;font-weight:800;color:var(--text);margin-bottom:8px">'+(isPastDue?'Payment past due':'Your free trial has ended')+'</div>'+
+      '<div style="font-size:14px;color:var(--text2);line-height:1.5;margin-bottom:22px">'+(isPastDue?'We couldn’t process your last payment. Update your payment method to keep using TradeDesk.':'Subscribe for $99/mo to keep using TradeDesk. Your clients, bids, and jobs are all safe and waiting.')+'</div>'+
+      '<button class="btn btn-p" style="width:100%;padding:14px;font-size:15px" onclick="'+(isPastDue?'openBillingPortal()':'startTradeDeskBilling()')+'">'+(isPastDue?'Update payment method':'Subscribe')+'</button>'+
+    '</div>';
+  document.body.appendChild(ov);
+}
+function _removeBillingGateOverlay(){document.getElementById('billing-gate-overlay')?.remove();}
+// Detects landing back from Stripe Checkout/Billing Portal (?billing=success|
+// cancel|return) so the gate re-checks immediately instead of waiting for the
+// user to reload. Stripe's webhook can land a beat after the redirect, so a
+// success/return retries the check a couple times over the next few seconds
+// rather than trusting the very first (possibly still-stale) result.
+function _handleBillingReturn(){
+  const params=new URLSearchParams(window.location.search);
+  const billing=params.get('billing');
+  if(!billing)return;
+  params.delete('billing');
+  const qs=params.toString();
+  try{history.replaceState({},'',window.location.pathname+(qs?'?'+qs:'')+window.location.hash);}catch(_e){}
+  if(billing==='success'||billing==='return'){
+    if(billing==='success')showToast('Subscription active! 🎉','✅');
+    _checkBillingGate();
+    setTimeout(_checkBillingGate,2000);
+    setTimeout(_checkBillingGate,5000);
+  }
+}
+
 async function sendPaymentLink(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const c=getClientById(bid.client_id);if(!c)return;
@@ -630,7 +688,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.17.26.11';
+const APP_VERSION='07.17.26.12';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1816,6 +1874,8 @@ async function supaInit(){
       if(hasAccount){
         await supaLoadFromCloud();
         _supaCloudLoaded=true;
+        await _checkBillingGate();
+        _handleBillingReturn();
       } else {
         // Signed in but no data at all. Route them INTO onboarding ONLY when THIS boot
         // actually came back from a Google/Apple redirect (_oauthRet is set by the
@@ -1996,6 +2056,7 @@ async function supaInit(){
           supaSetStatus('cloud');
           goPg('pg-dash');
         }
+        if(hasAccount)await _checkBillingGate();
         // Existing-account sub-invite: a contractor who already runs TradeDesk
         // arrived via a referral link and SIGNED IN (not onboarded, new
         // accounts are suppressed by the _obInProgress return at the top, and

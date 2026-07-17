@@ -70,34 +70,44 @@ Deno.serve(async (req) => {
 
     const { returnUrl } = await req.json().catch(() => ({ returnUrl: null }));
     const baseUrl = returnUrl || 'https://logansample680.github.io/TradeDesk/';
+    const withParam = (url: string, kv: string) => url + (url.includes('?') ? '&' : '?') + kv;
 
-    // Owner spec 2026-07-17 (revised): a genuine free trial, no card required
-    // to start it. 14 days, bills on the trial-end anniversary from then on
-    // (no forced calendar-day anchor, that's not how most SaaS does it and it
-    // isn't worth the added complexity). payment_method_collection:'if_required'
-    // is the actual Stripe mechanism for this: since nothing is due today
-    // (full trial, $0), Checkout skips the card form entirely. A card only
-    // gets asked for once Stripe actually needs one, at trial end, via the
-    // billing portal (see openBillingPortal, js/cloud.js) or Stripe's own
-    // trial-ending reminder email.
+    // Owner spec 2026-07-17 (revised again): the trial itself now starts
+    // silently at signup (start-billing-trial, called once from obSubmit),
+    // so by the time anyone reaches THIS checkout call they almost always
+    // already have a td_subscriptions row — either still trialing (they
+    // wouldn't see a Subscribe button), or lapsed/canceled/past_due. A
+    // second free trial_period_days here would let a lapsed trial reset
+    // itself indefinitely just by clicking Subscribe again. Only grant a
+    // trial when this account has genuinely never had a subscription record
+    // at all (the silent start-billing-trial call never landed — billing
+    // wasn't configured yet, or this is a pre-existing account from before
+    // this feature shipped).
+    const isFirstEverSubscription = !existingSub;
+
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: existingSub?.stripe_customer_id || undefined,
       customer_email: existingSub?.stripe_customer_id ? undefined : (user.email || undefined),
+      // payment_method_collection:'if_required' is what lets a genuine full
+      // trial skip the card form entirely (nothing due today, $0). A
+      // resubscribe with no trial always has something due today, so
+      // Checkout collects a card as normal either way.
       payment_method_collection: 'if_required',
       line_items: [{ price: priceId, quantity: 1 }],
       client_reference_id: user.id,
       subscription_data: {
         metadata: { tradedesk_user_id: user.id },
-        trial_period_days: 14,
-        // No card was collected at signup, so if one still hasn't been added
-        // by day 14, cancel cleanly instead of leaving a dangling unpaid
-        // invoice and a past_due subscription nobody asked for. Exports were
-        // already locked the whole time either way (0 paid cycles).
-        trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
+        ...(isFirstEverSubscription ? {
+          trial_period_days: 14,
+          // No card was collected at signup, so if one still hasn't been
+          // added by day 14, cancel cleanly instead of leaving a dangling
+          // unpaid invoice and a past_due subscription nobody asked for.
+          trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
+        } : {}),
       },
-      success_url: baseUrl + '?billing=success',
-      cancel_url: baseUrl + '?billing=cancel',
+      success_url: withParam(baseUrl, 'billing=success'),
+      cancel_url: withParam(baseUrl, 'billing=cancel'),
     });
 
     return new Response(
