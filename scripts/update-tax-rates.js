@@ -44,7 +44,7 @@ async function resolveServiceKey() {
   SUPABASE_SERVICE_KEY = svcKey.api_key;
 }
 
-// Direct REST upsert with retry — avoids native fetch which fails on Proxmox TLS
+// Direct REST upsert with retry, avoids native fetch which fails on Proxmox TLS
 function _supaPostOnce(apiPath, bodyStr, extraHeaders) {
   return new Promise((resolve) => {
     const host = SUPABASE_URL.replace(/^https?:\/\//, '').replace(/\/$/, '');
@@ -79,7 +79,7 @@ function _supaPostOnce(apiPath, bodyStr, extraHeaders) {
 
 async function supaPost(apiPath, body, extraHeaders = {}) {
   const bodyStr = JSON.stringify(body);
-  // Longer backoff for DNS failures — gives the resolver time to recover
+  // Longer backoff for DNS failures, gives the resolver time to recover
   const delays = [2000, 4000, 8000, 16000, 30000, 30000];
   let result;
   for (let attempt = 0; attempt <= delays.length; attempt++) {
@@ -197,7 +197,7 @@ function unzipTo(zipPath, destDir) {
   });
 }
 
-// Simple CSV/pipe parser — handles quoted fields
+// Simple CSV/pipe parser, handles quoted fields
 function parseDelimited(text, delimiter = ',') {
   const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n');
   if (!lines.length) return [];
@@ -255,7 +255,7 @@ async function seedFloridaCountyRates() {
 // Files are free, no API key required.
 // Directory: https://www.streamlinedsalestax.org/ratesandboundry/Rates/
 // The script scrapes the directory listing to find the current filename for each state
-// rather than guessing — SST changes naming conventions and publication dates unpredictably.
+// rather than guessing, SST changes naming conventions and publication dates unpredictably.
 
 const SST_RATE_DIR     = 'https://www.streamlinedsalestax.org/ratesandboundry/Rates/';
 const SST_BOUNDARY_DIR = 'https://www.streamlinedsalestax.org/ratesandboundry/Boundary/';
@@ -314,7 +314,7 @@ async function updateSSTState(st, _unused, tmpDir) {
   const stateDir = path.join(tmpDir, st);
   const ratePath = path.join(tmpDir, `${st}_R${rateEntry.name.toLowerCase().endsWith('.zip') ? '.zip' : '.csv'}`);
 
-  // If we have a separate boundary file — download both and join on jurisdiction code
+  // If we have a separate boundary file, download both and join on jurisdiction code
   if (boundaryEntry) {
     const boundaryPath = path.join(tmpDir, `${st}_B${boundaryEntry.name.toLowerCase().endsWith('.zip') ? '.zip' : '.csv'}`);
     const bdirPath = path.join(stateDir, 'boundary');
@@ -328,7 +328,7 @@ async function updateSSTState(st, _unused, tmpDir) {
     }
   }
 
-  // No boundary file available — download rate file and attempt combined parse
+  // No boundary file available, download rate file and attempt combined parse
   const rateCsvs = await _downloadAndExtract(rateEntry, ratePath, stateDir);
   process.stdout.write(`    → ${rateEntry.name}\n`);
 
@@ -401,7 +401,7 @@ async function _processSSTFiles(st, boundaryPath, ratePath) {
     return [];
   }
 
-  // Rate file is small — load fully to build jCode → {state_rate, local_rate}
+  // Rate file is small, load fully to build jCode → {state_rate, local_rate}
   let rText = fs.readFileSync(ratePath, 'utf8').replace(/^﻿/, '');
   const rDelim = rText.slice(0, 500).includes('|') ? '|' : ',';
   const rLines = rText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim().split('\n').filter(l => l.trim());
@@ -463,7 +463,7 @@ async function _processSSTFiles(st, boundaryPath, ratePath) {
     }
   }
 
-  // Stream boundary file line-by-line — handles 300MB+ without OOM
+  // Stream boundary file line-by-line, handles 300MB+ without OOM
   const rows = [];
   const seen = new Set();
   let bDelim = ',', lineCount = 0, bHasHeaders = false;
@@ -527,7 +527,7 @@ async function _processSSTFiles(st, boundaryPath, ratePath) {
         }
       }
     } else if (zipCol >= 0) {
-      // Has headers — use detected column positions
+      // Has headers, use detected column positions
       const zip = (fields[zipCol] || '').replace(/\D/g,'').slice(0,5);
       const jc = jCodeCol >= 0 ? (fields[jCodeCol] || '') : '';
       const k = jc ? String(parseInt(jc, 10)) : '';
@@ -569,7 +569,7 @@ async function updateSSTStates() {
         skipped.push(st + '(empty)');
       }
     } catch (e) {
-      process.stdout.write(`SKIP — ${e.message}\n`);
+      process.stdout.write(`SKIP, ${e.message}\n`);
       skipped.push(st);
     }
   }
@@ -596,16 +596,16 @@ async function updateTexasRates() {
   try {
     text = await fetchText(TX_RATES_CSV);
   } catch (e) {
-    console.log(`  SKIP — could not fetch TX rates (${e.message})`);
+    console.log(`  SKIP, could not fetch TX rates (${e.message})`);
     console.log('  Verify URL at: https://comptroller.texas.gov/taxes/sales/rates/');
     return;
   }
 
   const records = parseDelimited(text, ',');
-  if (!records.length) { console.log('  SKIP — empty TX rates file'); return; }
+  if (!records.length) { console.log('  SKIP, empty TX rates file'); return; }
 
   // TX file columns: City, County, SPD (Special Purpose District), combined rate
-  // We need ZIP-level data — TX also publishes a ZIP-to-jurisdiction crosswalk
+  // We need ZIP-level data, TX also publishes a ZIP-to-jurisdiction crosswalk
   // For now seed city-level rates keyed as TX-CITY-{NAME} (ZIP-level in Phase 2b)
   const rows = [];
   const seen = new Set();
@@ -637,7 +637,7 @@ async function updateTexasRates() {
 // CDTFA publishes a downloadable tax rate file by ZIP code.
 // Source: https://www.cdtfa.ca.gov/taxes-and-fees/rates.html
 // Direct CSV: https://www.cdtfa.ca.gov/formspubs/cdtfa95.csv
-// (verify at the rates page — file is updated quarterly)
+// (verify at the rates page, file is updated quarterly)
 
 async function updateCaliforniaRates() {
   console.log('California CDTFA rates...');
@@ -648,13 +648,13 @@ async function updateCaliforniaRates() {
   try {
     text = await fetchText(CA_CSV);
   } catch (e) {
-    console.log(`  SKIP — could not fetch CA rates (${e.message})`);
+    console.log(`  SKIP, could not fetch CA rates (${e.message})`);
     console.log('  Verify URL at: https://www.cdtfa.ca.gov/taxes-and-fees/rates.html');
     return;
   }
 
   const records = parseDelimited(text, ',');
-  if (!records.length) { console.log('  SKIP — empty CA rates file'); return; }
+  if (!records.length) { console.log('  SKIP, empty CA rates file'); return; }
 
   const rows = [];
   const seen = new Set();
@@ -684,7 +684,7 @@ async function updateCaliforniaRates() {
 
 // ── Phase 3: New York ────────────────────────────────────────────────────────
 // NY Dept of Tax & Finance publishes quarterly ZIP-level rate schedules.
-// Source: https://www.tax.ny.gov/pdf/publications/sales/pub718.pdf (PDF — harder)
+// Source: https://www.tax.ny.gov/pdf/publications/sales/pub718.pdf (PDF, harder)
 //         or the jurisdiction rate table:
 // Direct CSV: https://www.tax.ny.gov/data/stats/zip_code_sales_tax_rates.csv
 // (verify at: https://www.tax.ny.gov/bus/st/qrtrly_rate.htm)
@@ -698,13 +698,13 @@ async function updateNewYorkRates() {
   try {
     text = await fetchText(NY_CSV);
   } catch (e) {
-    console.log(`  SKIP — could not fetch NY rates (${e.message})`);
+    console.log(`  SKIP, could not fetch NY rates (${e.message})`);
     console.log('  Verify URL at: https://www.tax.ny.gov/bus/st/qrtrly_rate.htm');
     return;
   }
 
   const records = parseDelimited(text, ',');
-  if (!records.length) { console.log('  SKIP — empty NY rates file'); return; }
+  if (!records.length) { console.log('  SKIP, empty NY rates file'); return; }
 
   const rows = [];
   const seen = new Set();
@@ -746,13 +746,13 @@ async function updateIllinoisRates() {
   try {
     text = await fetchText(IL_CSV);
   } catch (e) {
-    console.log(`  SKIP — could not fetch IL rates (${e.message})`);
+    console.log(`  SKIP, could not fetch IL rates (${e.message})`);
     console.log('  Verify URL at: https://tax.illinois.gov/research/taxinformation/sales/rot.html');
     return;
   }
 
   const records = parseDelimited(text, ',');
-  if (!records.length) { console.log('  SKIP — empty IL rates file'); return; }
+  if (!records.length) { console.log('  SKIP, empty IL rates file'); return; }
 
   const rows = [];
   const seen = new Set();
@@ -795,13 +795,13 @@ async function updateColoradoRates() {
   try {
     text = await fetchText(CO_CSV);
   } catch (e) {
-    console.log(`  SKIP — could not fetch CO rates (${e.message})`);
+    console.log(`  SKIP, could not fetch CO rates (${e.message})`);
     console.log('  Verify URL at: https://tax.colorado.gov/sales-use-tax-rates');
     return;
   }
 
   const records = parseDelimited(text, ',');
-  if (!records.length) { console.log('  SKIP — empty CO rates file'); return; }
+  if (!records.length) { console.log('  SKIP, empty CO rates file'); return; }
 
   const rows = [];
   const seen = new Set();
@@ -838,19 +838,19 @@ async function main() {
   console.log('Run date:', new Date().toISOString());
   console.log('');
 
-  // Phase 1 — always runs (hardcoded data, never fails)
+  // Phase 1, always runs (hardcoded data, never fails)
   await seedStateBaseRates();
   await seedFloridaCountyRates();
 
-  // Phase 2 — SST member states (23 states) + Texas
+  // Phase 2, SST member states (23 states) + Texas
   await updateSSTStates();
   await updateTexasRates();
 
-  // Phase 2.5 — Kansas KDOR hardcoded rates removed — KS is an SST member state and SST data
+  // Phase 2.5, Kansas KDOR hardcoded rates removed, KS is an SST member state and SST data
   // is authoritative. The hardcoded override was causing stale rates (e.g. Shawnee County
   // went 1.15% → 1.35% but hardcoded table wasn't updated). SST now wins for all KS ZIPs.
 
-  // Phase 3 — large non-SST states with DOR CSV files
+  // Phase 3, large non-SST states with DOR CSV files
   await updateCaliforniaRates();
   await updateNewYorkRates();
   await updateIllinoisRates();

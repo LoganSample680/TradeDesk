@@ -86,7 +86,7 @@ function onStateChange(state){
     fetchStateBrackets(state);
   }
   applySettings();saveAll();
-  // No loadSettingsForm() here — the sf() calls above already updated the rate
+  // No loadSettingsForm() here, the sf() calls above already updated the rate
   // inputs, and a full-form refill erases every other unsaved field the user typed.
   showToast(info.name+' tax rates loaded','🗺️');
 }
@@ -112,11 +112,11 @@ function _populateTaxYearSel(){
 }
 function setTaxYear(yr){_taxPageYear=yr;const hd=document.getElementById('tx-data-hd');if(hd)hd.textContent=yr+' income & deductions';calcTax();}
 
-// Social Security wage base by year — SS portion (12.4% SE / 6.2%+6.2% payroll)
+// Social Security wage base by year, SS portion (12.4% SE / 6.2%+6.2% payroll)
 // is capped at this amount, Medicare (2.9% SE / 1.45%+1.45% payroll) is not.
-// 2026 confirmed via SSA's official Oct 2025 COLA announcement (ssa.gov/news/en/cola/factsheets/2026.html) —
+// 2026 confirmed via SSA's official Oct 2025 COLA announcement (ssa.gov/news/en/cola/factsheets/2026.html):
 // was previously a stale copy of the 2025 figure. Unlike the income-tax brackets below,
-// this table is NOT yet wired into autoRefreshTaxBrackets()'s yearly auto-update — it's a
+// this table is NOT yet wired into autoRefreshTaxBrackets()'s yearly auto-update, it's a
 // static table a developer edits each year until that's added.
 const _SS_WAGE_BASE={2019:132900,2020:137700,2021:142800,2022:147000,2023:160200,2024:168600,2025:176100,2026:184500};
 function _getSsWageBase(yr){return _SS_WAGE_BASE[parseInt(yr)]||184500;}
@@ -127,20 +127,20 @@ function _calcSeTax(netSelf,yr){
 }
 
 // Employer W-2 payroll tax LIABILITY for one employee, one pay period.
-// Deliberately NOT federal/state income tax withholding — that requires the
+// Deliberately NOT federal/state income tax withholding, that requires the
 // literal IRS Pub 15-T percentage-method bracket table, which this app has no
 // verified source for (network-blocked in dev; not something to guess at for
 // real payroll dollars). This is scoped to the flat-rate federal payroll
 // taxes every employer owes regardless of the employee's W-4: FICA (both the
 // amount withheld from the employee and the employer's own match) and FUTA.
 // "Take the gross wages + this number to your accountant" is the intended
-// use — not a replacement for one.
+// use: not a replacement for one.
 //
 // ytdSsWages/ytdFutaWages = this employee's SS-taxable / FUTA-taxable wages
-// already paid THIS CALENDAR YEAR, before this period — required so the caps
+// already paid THIS CALENDAR YEAR, before this period, required so the caps
 // (SS wage base, $7,000 FUTA base) land in the right pay period instead of
 // every period independently assuming it starts the year at $0.
-const _ADDL_MEDICARE_THRESHOLD=200000; // flat federal threshold — same for every filing status on the EMPLOYER withholding side (IRC §3101(b)(2)); the employee reconciles their actual status on Form 8959
+const _ADDL_MEDICARE_THRESHOLD=200000; // flat federal threshold, same for every filing status on the EMPLOYER withholding side (IRC §3101(b)(2)); the employee reconciles their actual status on Form 8959
 const _FUTA_WAGE_BASE=7000;
 function _calcPayrollLiability(grossWages,ytdSsWages,ytdFutaWages,yr){
   const gw=Math.max(0,Number(grossWages)||0);
@@ -153,12 +153,12 @@ function _calcPayrollLiability(grossWages,ytdSsWages,ytdFutaWages,yr){
   const employeeMedicare=gw*0.0145;
   const employerMedicare=gw*0.0145;
   // Additional Medicare is employee-only (no employer match) and only kicks in
-  // once THIS employee's cumulative wages for the year cross the threshold —
+  // once THIS employee's cumulative wages for the year cross the threshold,
   // the portion of this period's wages that falls above the line is taxed.
   const addlMedicareTaxable=Math.max(0,Math.min(gw,(priorSs+gw)-_ADDL_MEDICARE_THRESHOLD));
   const employeeAddlMedicare=addlMedicareTaxable*0.009;
   const futaTaxable=Math.max(0,Math.min(gw,_FUTA_WAGE_BASE-priorFuta));
-  const futa=futaTaxable*0.006; // net rate assuming timely state SUTA payment (standard 5.4% credit) — see FUTA credit-reduction-state caveat below
+  const futa=futaTaxable*0.006; // net rate assuming timely state SUTA payment (standard 5.4% credit), see FUTA credit-reduction-state caveat below
   const r2=v=>Math.round(v*100)/100;
   const employeeFica=r2(employeeSS+employeeMedicare+employeeAddlMedicare);
   const employerFicaMatch=r2(employerSS+employerMedicare);
@@ -167,23 +167,23 @@ function _calcPayrollLiability(grossWages,ytdSsWages,ytdFutaWages,yr){
     employeeSS:r2(employeeSS),employeeMedicare:r2(employeeMedicare),employeeAddlMedicare:r2(employeeAddlMedicare),
     employerSS:r2(employerSS),employerMedicare:r2(employerMedicare),
     employeeFica,employerFicaMatch,
-    fica941Total:r2(employeeFica+employerFicaMatch), // FICA portion of the Form 941 deposit (income tax withholding NOT included — out of scope)
-    futa940:r2(futa), // separate — Form 940, typically quarterly/annual, not bundled with the 941 deposit
-    ssWageBaseHit:ssTaxable<gw, // this period's wages exceeded the remaining SS cap — worth surfacing so a mid-year cap crossing isn't silently invisible
+    fica941Total:r2(employeeFica+employerFicaMatch), // FICA portion of the Form 941 deposit (income tax withholding NOT included, out of scope)
+    futa940:r2(futa), // separate: Form 940, typically quarterly/annual, not bundled with the 941 deposit
+    ssWageBaseHit:ssTaxable<gw, // this period's wages exceeded the remaining SS cap, worth surfacing so a mid-year cap crossing isn't silently invisible
     futaWageBaseHit:futaTaxable<gw
   };
 }
 
-// Actual PAYROLL gross wages for one pay period — distinct from
+// Actual PAYROLL gross wages for one pay period, distinct from
 // _empEffectiveHourly (js/cloud.js), which derives an hourly-equivalent from
 // salary but is explicitly for JOB-COSTING only (labor cost per job hour). A
 // salaried W-2 employee's paycheck is a FIXED amount every pay period
-// regardless of hours worked — using the job-costing conversion here would
+// regardless of hours worked, using the job-costing conversion here would
 // make their pay incorrectly track their clocked hours.
 //
 // comp = {pay_type:'hourly'|'salary', pay_rate}. periodRegularMin/periodOtMin
 // are this person's already-split regular vs overtime minutes for the period
-// (hourly only — salary ignores hours entirely). payPeriodsPerYear: how many
+// (hourly only, salary ignores hours entirely). payPeriodsPerYear: how many
 // times a year the salary is divided (52 weekly, 26 biweekly, 24
 // semimonthly, 12 monthly). otMultiplier defaults to time-and-a-half.
 function _calcGrossWages(comp,periodRegularMin,periodOtMin,payPeriodsPerYear,otMultiplier){
@@ -201,7 +201,7 @@ function _calcGrossWages(comp,periodRegularMin,periodOtMin,payPeriodsPerYear,otM
 }
 
 // Estimate state income tax on an apportioned income amount using STATE_TAX data.
-// Used for non-resident (out-of-state job) portions — no standard deduction applied
+// Used for non-resident (out-of-state job) portions, no standard deduction applied
 // since deduction is pro-rated to near-zero for small income fractions.
 function _calcStateEstimate(stateAgi,stInfo){
   if(!stInfo||stInfo.noTax||stateAgi<=0)return 0;
@@ -220,7 +220,7 @@ function calcTax(){
   const _tExRaw=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0);
   const tMi=mileage.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+(r.miles||0),0);
   const _yrIrsRate=_getIrsRateForYear(_taxYr);
-  // Vehicle deduction engine — enforces the IRS one-method-per-vehicle rule.
+  // Vehicle deduction engine, enforces the IRS one-method-per-vehicle rule.
   // Mileage-method vehicles: miles deduct, their vehicle expenses don't (expAdjust).
   // Actual-method vehicles: expenses deduct at biz-use %, their miles don't.
   const _vd=(typeof _vehSchedC==='function')?_vehSchedC(_taxYr):null;
@@ -230,7 +230,7 @@ function calcTax(){
   const spouseInc=nv('tx-spouse');
   const taxPaid=nv('tx-paid');
   const status=v('tx-status')||S.txStatus||'single';
-  if(S.txStatus!==status){S.txStatus=status;S.settingsTs=Date.now();} // conditional — calc runs on every render
+  if(S.txStatus!==status){S.txStatus=status;S.settingsTs=Date.now();} // conditional: calc runs on every render
   const sumSel=document.getElementById('sum-tx-status');if(sumSel)sumSel.value=status;
 
   const seTax=_calcSeTax(netSelf,_taxYr);
@@ -309,7 +309,7 @@ function calcTax(){
             '<div style="font-size:13px;color:#A32D2D;font-weight:700">&nbsp;</div>'+
           '</div>'+
           '<div style="font-size:12px;color:var(--text2);line-height:1.5">'+
-            'Set aside '+fmt(reserveAmt)+' from every payment — you\'ll need it at tax time.'+
+            'Set aside '+fmt(reserveAmt)+' from every payment, you\'ll need it at tax time.'+
           '</div>'+
           (taxPaid>0?
             '<div style="margin-top:8px;font-size:12px;font-weight:700;color:'+(taxPaid>=reserveAmt?'var(--green-mid)':'var(--amber)')+'">'+
@@ -333,17 +333,17 @@ function calcTax(){
     '</div>';
   }
 
-  // Per-vehicle "which method wins" comparison — the year-end decision aid. Shows
+  // Per-vehicle "which method wins" comparison: the year-end decision aid. Shows
   // standard-mileage vs actual side by side per vehicle and flags when the vehicle's
   // configured method is leaving money on the table.
   let _vehCmpHtml='';
   if(_vd&&_vd.hasVehicles&&_vd.perVehicle.some(p=>p.miles>0||p.expTotal>0)){
     _vehCmpHtml='<div style="margin-top:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r)">'+
-      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">'+svgIcon('🚗')+' Vehicle deduction — which method wins ('+_vd.yr+')</div>'+
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:6px">'+svgIcon('🚗')+' Vehicle deduction, which method wins ('+_vd.yr+')</div>'+
       _vd.perVehicle.filter(p=>p.miles>0||p.costTotal>0).map(p=>{
         // Dual-logging nudges: a verdict is only honest when BOTH sides are logged.
-        if(p.miles>0&&p.costTotal===0)return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5"><span style="font-weight:700">'+escHtml(p.label)+'</span>: mileage '+fmt(p.mileDed)+' ('+p.miles.toFixed(0)+' mi) — <span style="color:var(--amber);font-weight:700">no vehicle costs logged. Log gas, parts &amp; service all year so we can prove which method wins.</span></div>';
-        if(p.costTotal>0&&p.miles===0)return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5"><span style="font-weight:700">'+escHtml(p.label)+'</span>: actual costs '+fmt(p.actualCmp)+' — <span style="color:var(--amber);font-weight:700">no trips logged. Track drives all year so the mileage side is real.</span></div>';
+        if(p.miles>0&&p.costTotal===0)return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5"><span style="font-weight:700">'+escHtml(p.label)+'</span>: mileage '+fmt(p.mileDed)+' ('+p.miles.toFixed(0)+' mi): <span style="color:var(--amber);font-weight:700">no vehicle costs logged. Log gas, parts &amp; service all year so we can prove which method wins.</span></div>';
+        if(p.costTotal>0&&p.miles===0)return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5"><span style="font-weight:700">'+escHtml(p.label)+'</span>: actual costs '+fmt(p.actualCmp)+', <span style="color:var(--amber);font-weight:700">no trips logged. Track drives all year so the mileage side is real.</span></div>';
         const winLbl=p.winner==='mileage'?'Standard mileage':'Actual expenses';
         const usingWinner=p.winner===p.method;
         return '<div style="font-size:11px;margin-bottom:5px;line-height:1.5">'+
@@ -351,11 +351,11 @@ function calcTax(){
           'Mileage '+fmt(p.mileDed)+' ('+p.miles.toFixed(0)+' mi) vs Actual '+fmt(p.actualCmp)+' (all logged costs) → '+
           '<span style="font-weight:700;color:'+(usingWinner?'var(--green-mid)':'var(--amber)')+'">'+winLbl+' wins by '+fmt(p.delta)+'</span>'+
           ' · using '+(p.method==='mileage'?'mileage':'actual')+
-          (usingWinner?' ✓':' — <span style="color:var(--amber);font-weight:700">switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply — confirm with your tax pro)</span>')+
+          (usingWinner?' ✓':', <span style="color:var(--amber);font-weight:700">switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply, confirm with your tax pro)</span>')+
         '</div>';
       }).join('')+
-      (_vd.untagged?'<div style="font-size:10px;color:var(--amber);margin-top:4px">'+svgIcon('⚠️')+' '+_vd.untagged+' vehicle expense'+(_vd.untagged>1?'s':'')+' ('+fmt(_vd.untaggedTotal)+') not linked to a vehicle — not deducted. Edit each expense and pick its vehicle.</div>':'')+
-      '<div style="font-size:9px;color:var(--text3);margin-top:4px">One method per vehicle (IRS). Not tax advice — verify with your tax professional.</div>'+
+      (_vd.untagged?'<div style="font-size:10px;color:var(--amber);margin-top:4px">'+svgIcon('⚠️')+' '+_vd.untagged+' vehicle expense'+(_vd.untagged>1?'s':'')+' ('+fmt(_vd.untaggedTotal)+') not linked to a vehicle, not deducted. Edit each expense and pick its vehicle.</div>':'')+
+      '<div style="font-size:9px;color:var(--text3);margin-top:4px">One method per vehicle (IRS). Not tax advice, verify with your tax professional.</div>'+
     '</div>';
   }
   const _txInputsEl=document.getElementById('tx-inputs');
@@ -372,14 +372,14 @@ function calcTax(){
     _stateBarHtml+
     _vehCmpHtml;
 
-  // ── State tax rows — single state keeps old display, multi-state shows breakdown
+  // ── State tax rows, single state keeps old display, multi-state shows breakdown
   const _homeStateName=STATE_TAX[_homeState]?.name||_homeState||'State';
   let _stateRows='';
   if(_isMultiState&&_nonHomeTaxes.length){
     _stateRows=
       '<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax'+(_credit>0?' <span style="font-size:10px;color:var(--text3)">(after credit)</span>':'')+'</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>'+
       _nonHomeTaxes.map(t=>'<div class="tax-row"><span style="padding-left:14px;color:var(--text2)">'+escHtml(t.name)+(t.noTax?'':' non-resident income tax')+'</span><span style="color:#A32D2D">'+(t.noTax?'No income tax':fmt(t.stTax))+'</span></div>').join('')+
-      '<div style="font-size:10px;color:var(--text3);margin:4px 0 2px;font-style:italic">'+svgIcon('⚠')+' Multi-state estimate — review total with your CPA</div>';
+      '<div style="font-size:10px;color:var(--text3);margin:4px 0 2px;font-style:italic">'+svgIcon('⚠')+' Multi-state estimate, review total with your CPA</div>';
   } else {
     _stateRows='<div class="tax-row"><span>'+escHtml(_homeStateName)+' income tax</span><span style="color:#A32D2D">'+fmt(ksTax)+'</span></div>';
   }
@@ -407,7 +407,7 @@ function calcTax(){
   const safeHarborNote=safeHarborQ>0
     ? '<div style="background:#F0FDF4;border:1.5px solid #16A34A;border-radius:var(--r);padding:10px 12px;margin-bottom:12px">'+
         '<div style="font-size:12px;font-weight:700;color:#166534;margin-bottom:3px">✓ Penalty-free plan</div>'+
-        '<div style="font-size:11px;color:#166534;line-height:1.5">Pay <strong>'+fmt(safeHarborQ)+'</strong> each quarter and you\'re covered — no IRS underpayment penalty.</div>'+
+        '<div style="font-size:11px;color:#166534;line-height:1.5">Pay <strong>'+fmt(safeHarborQ)+'</strong> each quarter and you\'re covered, no IRS underpayment penalty.</div>'+
       '</div>'
     : '<div style="background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:8px 10px;margin-bottom:12px;font-size:11px;color:#92400E">'+
         svgIcon('💡')+' Enter last year\'s total tax above for the simplest quarterly number.'+
@@ -438,10 +438,10 @@ function calcTax(){
     const difColors={high:['#7f1d1d','#FEF2F2','#A32D2D'],medium:['#78350f','#FFFBEB','#D97706'],low:['#14532d','#F0FDF4','#16A34A']};
     const [tc,bg,border]=difColors[difRisk];
     const difHTML='<div style="background:'+bg+';border:1.5px solid '+border+';border-radius:var(--r);padding:10px 12px;margin-top:12px">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:'+tc+';margin-bottom:3px">Audit Risk Indicator — '+Math.round(difPct*100)+'% expense ratio</div>'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:'+tc+';margin-bottom:3px">Audit Risk Indicator, '+Math.round(difPct*100)+'% expense ratio</div>'+
       '<div style="font-size:11px;color:'+tc+';line-height:1.5">'+
         (difRisk==='high'?svgIcon('⚠️')+' Your expense ratio is on the high end compared to similar contractors. Keep detailed receipts and records.':
-         difRisk==='medium'?svgIcon('⚡')+' Moderate: '+Math.round(difPct*100)+'% of revenue in deductions. Keep all receipts — you\'re in the range the IRS notices.':
+         difRisk==='medium'?svgIcon('⚡')+' Moderate: '+Math.round(difPct*100)+'% of revenue in deductions. Keep all receipts, you\'re in the range the IRS notices.':
          '✓ Low risk: '+Math.round(difPct*100)+'% expense ratio looks normal for your industry.')+
       '</div></div>';
     difResultsEl.innerHTML+=difHTML;
@@ -456,45 +456,45 @@ function calcTax(){
     const naics=NAICS_MAP[activeTrade]||NAICS_MAP.general;
     const tips=[];
 
-    // SEP-IRA — show actual dollar amount based on their income
-    if(sepMax>0)tips.push({icon:svgIcon('🏦'),color:'#0369a1',bg:'#f0f9ff',title:'Retirement Account — Stash '+fmt(sepMax)+' and Reduce Your Tax Bill',body:'You can set aside $'+sepMax.toLocaleString()+' for retirement and reduce your tax bill — ask your CPA about a SEP-IRA. You have until Oct 15 (with extension) to fund it. At your income level that\'s roughly '+fmt(Math.round(sepMax*0.25))+' back in your pocket right now. Open one at Fidelity or Vanguard in 15 minutes — they walk you through it.'});
+    // SEP-IRA: show actual dollar amount based on their income
+    if(sepMax>0)tips.push({icon:svgIcon('🏦'),color:'#0369a1',bg:'#f0f9ff',title:'Retirement Account, Stash '+fmt(sepMax)+' and Reduce Your Tax Bill',body:'You can set aside $'+sepMax.toLocaleString()+' for retirement and reduce your tax bill, ask your CPA about a SEP-IRA. You have until Oct 15 (with extension) to fund it. At your income level that\'s roughly '+fmt(Math.round(sepMax*0.25))+' back in your pocket right now. Open one at Fidelity or Vanguard in 15 minutes, they walk you through it.'});
 
-    // Kansas commercial labor tax — critical for KS contractors
+    // Kansas commercial labor tax, critical for KS contractors
     if(S.state==='KS')tips.push({icon:svgIcon('🏗️'),color:'#92400e',bg:'#fffbeb',title:'Kansas Commercial Jobs: Labor Is Taxable',body:'Kansas commercial jobs: you must collect sales tax on labor, not just materials. Get this wrong and it comes out of your pocket.'});
 
     // Home office commuting unlock
-    if(!S.homeOffice)tips.push({icon:svgIcon('🏠'),color:'#0369a1',bg:'#f0f9ff',title:'Home Office = Every Drive to a Job Site Becomes Deductible',body:'Right now, your drive from home to your first job site each day is "commuting" — not deductible. But if you have a room at home used ONLY for business (scheduling, estimates, billing), that changes everything. Your home becomes your business location and every drive to a job site is a deductible business trip. Check the home office box in Settings if this applies to you.'});
-    if(S.homeOffice)tips.push({icon:svgIcon('🏠'),color:'#166534',bg:'#f0fdf4',title:'Home Office Active — Your Drives to Job Sites Are Deductible',body:'Because you have a qualifying home office, the IRS treats your home as your business location. Every drive from home to a job site counts as business mileage — not commuting. Make sure every trip is logged in TradeDesk. This is also the biggest thing to document if you\'re ever audited: photograph the dedicated office space and keep records of what business work you do there.'});
+    if(!S.homeOffice)tips.push({icon:svgIcon('🏠'),color:'#0369a1',bg:'#f0f9ff',title:'Home Office = Every Drive to a Job Site Becomes Deductible',body:'Right now, your drive from home to your first job site each day is "commuting", not deductible. But if you have a room at home used ONLY for business (scheduling, estimates, billing), that changes everything. Your home becomes your business location and every drive to a job site is a deductible business trip. Check the home office box in Settings if this applies to you.'});
+    if(S.homeOffice)tips.push({icon:svgIcon('🏠'),color:'#166534',bg:'#f0fdf4',title:'Home Office Active, Your Drives to Job Sites Are Deductible',body:'Because you have a qualifying home office, the IRS treats your home as your business location. Every drive from home to a job site counts as business mileage, not commuting. Make sure every trip is logged in TradeDesk. This is also the biggest thing to document if you\'re ever audited: photograph the dedicated office space and keep records of what business work you do there.'});
 
     // Health insurance line placement
-    tips.push({icon:svgIcon('💊'),color:'#1d4ed8',bg:'#eff6ff',title:'Health Insurance Deduction — Location Matters',body:'Health insurance premiums are deductible — put them in the right place or you\'ll pay more in self-employment tax than you need to. Ask your CPA.'});
+    tips.push({icon:svgIcon('💊'),color:'#1d4ed8',bg:'#eff6ff',title:'Health Insurance Deduction, Location Matters',body:'Health insurance premiums are deductible, put them in the right place or you\'ll pay more in self-employment tax than you need to. Ask your CPA.'});
 
     // NAICS code
-    tips.push({icon:svgIcon('📋'),color:'#374151',bg:'#f9fafb',title:'Your Trade Code: '+naics.code,body:'Your trade code tells the IRS what kind of contractor you are. We set this automatically — it affects how your numbers look compared to similar businesses.'});
+    tips.push({icon:svgIcon('📋'),color:'#374151',bg:'#f9fafb',title:'Your Trade Code: '+naics.code,body:'Your trade code tells the IRS what kind of contractor you are. We set this automatically, it affects how your numbers look compared to similar businesses.'});
 
     // Commingling
     tips.push({icon:svgIcon('🏦'),color:'#7c3aed',bg:'#f5f3ff',title:'Keep Business Money in a Separate Account',body:'Keep business money in a separate account. Mixed personal and business deposits are an audit headache you don\'t want.'});
 
     // De minimis election
-    tips.push({icon:svgIcon('🧾'),color:'#166534',bg:'#f0fdf4',title:'Write Off Tools & Equipment This Year',body:'Tools and equipment under $2,500 might be fully deductible this year instead of written off over time — ask your CPA about expensing them upfront.'});
+    tips.push({icon:svgIcon('🧾'),color:'#166534',bg:'#f0fdf4',title:'Write Off Tools & Equipment This Year',body:'Tools and equipment under $2,500 might be fully deductible this year instead of written off over time, ask your CPA about expensing them upfront.'});
 
     // December constructive receipt
     if(mo>=10)tips.push({icon:svgIcon('📅'),color:'#92400e',bg:'#fffbeb',title:'December: Income Counts When You Earn It',body:'Income counts when you earn it, not always when you collect it. If a check arrives in January for December work, it may still count as last year\'s income.'});
 
     // Depreciation recapture
-    tips.push({icon:svgIcon('🔄'),color:'#92400e',bg:'#fffbeb',title:'Selling Old Equipment? You May Owe Tax',body:'Selling equipment you\'ve already written off? You may owe tax on the sale — check with your CPA before you sell.'});
+    tips.push({icon:svgIcon('🔄'),color:'#92400e',bg:'#fffbeb',title:'Selling Old Equipment? You May Owe Tax',body:'Selling equipment you\'ve already written off? You may owe tax on the sale, check with your CPA before you sell.'});
 
     // Minor child FICA
-    tips.push({icon:svgIcon('👶'),color:'#7c3aed',bg:'#f5f3ff',title:'Paying Your Kids Can Lower Your Tax Bill',body:'If your kids help with the business, paying them a fair wage can reduce your tax bill. Ask your CPA — the rules depend on your business structure.'});
+    tips.push({icon:svgIcon('👶'),color:'#7c3aed',bg:'#f5f3ff',title:'Paying Your Kids Can Lower Your Tax Bill',body:'If your kids help with the business, paying them a fair wage can reduce your tax bill. Ask your CPA, the rules depend on your business structure.'});
 
     // Tool trailer
-    tips.push({icon:svgIcon('🚛'),color:'#0369a1',bg:'#f0f9ff',title:'Tool Trailers: Ask About the Write-Off',body:'Tool trailers may depreciate differently than vehicles. If you bought a trailer this year, ask your CPA — it could mean a bigger write-off.'});
+    tips.push({icon:svgIcon('🚛'),color:'#0369a1',bg:'#f0f9ff',title:'Tool Trailers: Ask About the Write-Off',body:'Tool trailers may depreciate differently than vehicles. If you bought a trailer this year, ask your CPA, it could mean a bigger write-off.'});
 
     // Record retention
-    tips.push({icon:svgIcon('📁'),color:'#374151',bg:'#f9fafb',title:'How Long to Keep Records (The 7-Year Rule)',body:'General rule: 7 years for all tax records. But equipment purchase records need to be kept until 7 years AFTER you sell the equipment — so that 2019 truck purchase receipt needs to stay until 2032 if you sell it in 2025. Equipment you still own: keep those records permanently while you own it. IRS has 6 years (not 3) if you underreported income by more than 25%. Photograph everything and store in Google Drive or Dropbox.'});
+    tips.push({icon:svgIcon('📁'),color:'#374151',bg:'#f9fafb',title:'How Long to Keep Records (The 7-Year Rule)',body:'General rule: 7 years for all tax records. But equipment purchase records need to be kept until 7 years AFTER you sell the equipment, so that 2019 truck purchase receipt needs to stay until 2032 if you sell it in 2025. Equipment you still own: keep those records permanently while you own it. IRS has 6 years (not 3) if you underreported income by more than 25%. Photograph everything and store in Google Drive or Dropbox.'});
 
     // OBBBA 2025 update
-    tips.push({icon:svgIcon('⚡'),color:'#0369a1',bg:'#f0f9ff',title:'2025 Law Change: 100% Bonus Depreciation Is Back',body:'The One Big Beautiful Bill Act (signed July 2025) permanently restored 100% bonus depreciation. Any qualifying equipment, tools, vehicles, or machinery placed in service after January 19, 2025 can be fully written off in year one. This was phasing down (60% in 2024, 40% early 2025) — now it\'s back to 100% permanently. Also: 1099-NEC threshold rises to $2,000 starting with the 2026 tax year. For 2025, the $600 threshold still applies.'});
+    tips.push({icon:svgIcon('⚡'),color:'#0369a1',bg:'#f0f9ff',title:'2025 Law Change: 100% Bonus Depreciation Is Back',body:'The One Big Beautiful Bill Act (signed July 2025) permanently restored 100% bonus depreciation. Any qualifying equipment, tools, vehicles, or machinery placed in service after January 19, 2025 can be fully written off in year one. This was phasing down (60% in 2024, 40% early 2025), now it\'s back to 100% permanently. Also: 1099-NEC threshold rises to $2,000 starting with the 2026 tax year. For 2025, the $600 threshold still applies.'});
 
     _taxTipIdx=_taxTipIdx%tips.length;
     const _t=tips[_taxTipIdx];
@@ -539,7 +539,7 @@ Object.defineProperty(window,'_bracketRefreshInProgress',{get:()=>_bracketRefres
 async function autoRefreshTaxBrackets(){
   if(!_supa||!_supaUser||_bracketRefreshInProgress)return;
   const thisYear=new Date().getFullYear();
-  // S.bracketYear syncs to Supabase — once ANY device fetches for this year, all devices skip it
+  // S.bracketYear syncs to Supabase, once ANY device fetches for this year, all devices skip it
   if(S.bracketYear===thisYear)return;
   _bracketRefreshInProgress=true;
   try{
@@ -553,7 +553,7 @@ async function autoRefreshTaxBrackets(){
     if(!resp.ok)return;
     const d=await resp.json();
     if(d.error)return;
-    // Strict bounds — each threshold must be within ±15% of 2025 IRS baseline
+    // Strict bounds, each threshold must be within ±15% of 2025 IRS baseline
     const base={fedSingle:15000,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350};
     const fields=Object.keys(base);
     const valid=fields.every(k=>typeof d[k]==='number'&&d[k]>base[k]*0.85&&d[k]<base[k]*1.15);
@@ -567,14 +567,14 @@ async function autoRefreshTaxBrackets(){
       applySettings();saveAll();
       showToast('Federal tax brackets updated for '+(d.year||thisYear),'📊');
     }
-    // Update KS rates if returned (loose bounds — KS rates vary more)
+    // Update KS rates if returned (loose bounds, KS rates vary more)
     if(typeof d.ksLow==='number'&&d.ksLow>0&&d.ksLow<15)S.ksLow=d.ksLow;
     if(typeof d.ksHigh==='number'&&d.ksHigh>0&&d.ksHigh<15)S.ksHigh=d.ksHigh;
     if(typeof d.ksTop==='number'&&d.ksTop>5000&&d.ksTop<100000)S.ksTop=d.ksTop;
     if(typeof d.ksStdS==='number'&&d.ksStdS>1000&&d.ksStdS<15000)S.ksStdS=d.ksStdS;
     if(typeof d.ksStdM==='number'&&d.ksStdM>1000&&d.ksStdM<20000)S.ksStdM=d.ksStdM;
     S.bracketYear=thisYear;saveAll();
-    _refillSettingsFormUnlessEditing(); // refresh display spans — but never clobber in-progress edits
+    _refillSettingsFormUnlessEditing(); // refresh display spans, but never clobber in-progress edits
     if(S.state)fetchStateBrackets(S.state);
   }catch(e){}finally{_bracketRefreshInProgress=false;}
 }

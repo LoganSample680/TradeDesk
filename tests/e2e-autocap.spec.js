@@ -1,6 +1,6 @@
 // @ts-check
 // Auto-capitalization (utils.js _autoCapWords + the spacebar-triggered
-// normalizers). Every typed word title-cases as you type — via the native
+// normalizers). Every typed word title-cases as you type, via the native
 // autocapitalize="words" attribute on mobile and a desktop spacebar-keydown
 // fallback. Critically, NEITHER mutates a field during a programmatic value-set
 // (page.fill fires no keydown), so the rest of the suite is unaffected.
@@ -68,7 +68,7 @@ test.describe('auto-capitalize free-text fields', () => {
 
   test('eligible fields also get autocorrect="on" + spellcheck="true"; opt-outs and excluded types do not', async () => {
     // iOS/Safari heuristically disable autocorrect on unclassifiable fields
-    // (ours mostly carry autocomplete="off") — the tagger must force it back on
+    // (ours mostly carry autocomplete="off"): the tagger must force it back on
     // for free-text fields, and only those.
     const r = await page.evaluate(() => {
       const host = document.createElement('div'); document.body.appendChild(host);
@@ -108,7 +108,7 @@ test.describe('auto-capitalize free-text fields', () => {
     expect(out).toBe('Master Bedroom');
   });
 
-  test('page.fill does NOT capitalize (no keydown) — the suite stays safe', async () => {
+  test('page.fill does NOT capitalize (no keydown), the suite stays safe', async () => {
     await page.evaluate(() => {
       const i = document.createElement('input'); i.type = 'text'; i.id = '_ac_fill';
       document.body.appendChild(i);
@@ -119,7 +119,7 @@ test.describe('auto-capitalize free-text fields', () => {
     expect(v).toBe('master bedroom');   // programmatic fill is left untouched
   });
 
-  test('no console errors — auto-capitalize', async () => {
+  test('no console errors, auto-capitalize', async () => {
     assertNoErrors(page, 'auto-capitalize');
   });
 });

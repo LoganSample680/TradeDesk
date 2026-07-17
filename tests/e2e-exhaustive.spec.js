@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * TradeDesk — Exhaustive Function Coverage
+ * TradeDesk, Exhaustive Function Coverage
  * Auto-generated: every global function × every input class
  * null / undefined / empty / boundary / type-mismatch / missing-DOM / golden-path / concurrent / post-failure
  */
@@ -11,7 +11,7 @@ const { bootApp, mockAllExternal, assertNoErrors, waitForAppBoot,
 
 
 // ═══ e2e-dashboard.spec.js ═══
-test.describe('dashboard.js — exhaustive coverage', () => {
+test.describe('dashboard.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -70,7 +70,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toContain('vs LY');
   });
 
-  test('_trendHtml: positive trend, normal color — contains green and up arrow', async () => {
+  test('_trendHtml: positive trend, normal color, contains green and up arrow', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _trendHtml(200, 100, false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -81,7 +81,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toContain('100%');
   });
 
-  test('_trendHtml: negative trend, normal color — contains red and down arrow', async () => {
+  test('_trendHtml: negative trend, normal color, contains red and down arrow', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _trendHtml(50, 100, false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -106,7 +106,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.dnGreen).toBe(true);
   });
 
-  test('_trendHtml: boundary — very large numbers do not throw', async () => {
+  test('_trendHtml: boundary: very large numbers do not throw', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: typeof _trendHtml(1e15, 1e14, false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -115,7 +115,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('string');
   });
 
-  test('_trendHtml: boundary — negative curr with positive prev', async () => {
+  test('_trendHtml: boundary: negative curr with positive prev', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _trendHtml(-100, 100, false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -124,7 +124,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(typeof r.result).toBe('string');
   });
 
-  test('_trendHtml: type mismatch — string inputs do not throw', async () => {
+  test('_trendHtml: type mismatch, string inputs do not throw', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: typeof _trendHtml('abc', 'xyz', false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -155,7 +155,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderDash
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderDash: golden path — runs without throwing', async () => {
+  test('renderDash: golden path, runs without throwing', async () => {
     const r = await page.evaluate(() => {
       try { renderDash(); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -175,7 +175,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.running).toBe(false);
   });
 
-  test('renderDash: concurrent calls — second call returns early (cascade guard)', async () => {
+  test('renderDash: concurrent calls, second call returns early (cascade guard)', async () => {
     const r = await page.evaluate(() => {
       try {
         // Manually set guard to simulate an in-progress render
@@ -232,7 +232,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _empSetStatus
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_empSetStatus: missing job ID — returns without throwing', async () => {
+  test('_empSetStatus: missing job ID, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _empSetStatus(999999999, 'enroute'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -240,7 +240,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empSetStatus: null jobId — graceful', async () => {
+  test('_empSetStatus: null jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _empSetStatus(null, 'enroute'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -248,7 +248,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empSetStatus: undefined jobId — graceful', async () => {
+  test('_empSetStatus: undefined jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _empSetStatus(undefined, 'arrived'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -256,7 +256,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empSetStatus: valid job, no employee record — returns without crashing', async () => {
+  test('_empSetStatus: valid job, no employee record, returns without crashing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88881, name: 'Test Job', client_id: 9999, empStatus: {} };
       jobs.unshift(fakeJob);
@@ -269,7 +269,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empSetStatus: done state — opens confirmation sheet without crashing', async () => {
+  test('_empSetStatus: done state, opens confirmation sheet without crashing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88882, name: 'Test Job', client_id: 9999, empStatus: {} };
       jobs.unshift(fakeJob);
@@ -289,7 +289,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.sheetExists).toBe(true);
   });
 
-  test('_empSetStatus: 5 concurrent calls with missing job — no stack corruption', async () => {
+  test('_empSetStatus: 5 concurrent calls with missing job, no stack corruption', async () => {
     const r = await page.evaluate(() => {
       try {
         _empSetStatus(0, 'enroute');
@@ -308,7 +308,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _empConfirmDone
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_empConfirmDone: missing job — returns without throwing', async () => {
+  test('_empConfirmDone: missing job, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _empConfirmDone(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -316,7 +316,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empConfirmDone: null jobId — graceful', async () => {
+  test('_empConfirmDone: null jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _empConfirmDone(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -324,7 +324,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empConfirmDone: valid job, no employee record — returns gracefully', async () => {
+  test('_empConfirmDone: valid job, no employee record, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88883, name: 'Test Job', empStatus: {} };
       jobs.unshift(fakeJob);
@@ -337,7 +337,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empConfirmDone: golden path — marks job done, removes overlay', async () => {
+  test('_empConfirmDone: golden path, marks job done, removes overlay', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88884, name: 'Test Job', empStatus: {} };
       jobs.unshift(fakeJob);
@@ -373,7 +373,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _fmtEmpTaskTime
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_fmtEmpTaskTime: null input — returns empty string', async () => {
+  test('_fmtEmpTaskTime: null input, returns empty string', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _fmtEmpTaskTime(null) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -382,7 +382,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('');
   });
 
-  test('_fmtEmpTaskTime: undefined input — returns empty string', async () => {
+  test('_fmtEmpTaskTime: undefined input, returns empty string', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _fmtEmpTaskTime(undefined) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -391,7 +391,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('');
   });
 
-  test('_fmtEmpTaskTime: invalid date string — returns empty string', async () => {
+  test('_fmtEmpTaskTime: invalid date string, returns empty string', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _fmtEmpTaskTime('not-a-date') }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -400,7 +400,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(typeof r.result).toBe('string');
   });
 
-  test('_fmtEmpTaskTime: empty string — returns empty string', async () => {
+  test('_fmtEmpTaskTime: empty string, returns empty string', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _fmtEmpTaskTime('') }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -409,7 +409,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('');
   });
 
-  test('_fmtEmpTaskTime: valid ISO string — returns time string', async () => {
+  test('_fmtEmpTaskTime: valid ISO string, returns time string', async () => {
     const r = await page.evaluate(() => {
       try {
         const iso = new Date('2025-06-15T14:30:00').toISOString();
@@ -423,7 +423,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toMatch(/\d/);
   });
 
-  test('_fmtEmpTaskTime: numeric timestamp — graceful', async () => {
+  test('_fmtEmpTaskTime: numeric timestamp, graceful', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: typeof _fmtEmpTaskTime(1234567890) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -432,7 +432,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('string');
   });
 
-  test('_fmtEmpTaskTime: 5 concurrent calls — all return strings', async () => {
+  test('_fmtEmpTaskTime: 5 concurrent calls, all return strings', async () => {
     const r = await page.evaluate(() => {
       try {
         const iso = new Date().toISOString();
@@ -455,7 +455,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _empToggleTask
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_empToggleTask: missing job — returns without throwing', async () => {
+  test('_empToggleTask: missing job, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _empToggleTask(999999999, 1); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -463,7 +463,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empToggleTask: null jobId — graceful', async () => {
+  test('_empToggleTask: null jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _empToggleTask(null, 1); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -471,7 +471,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empToggleTask: job exists but no tasks array — returns without throwing', async () => {
+  test('_empToggleTask: job exists but no tasks array, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88885, name: 'Test' };
       jobs.unshift(fakeJob);
@@ -482,7 +482,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empToggleTask: task not found in array — returns without throwing', async () => {
+  test('_empToggleTask: task not found in array, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88886, name: 'Test', tasks: [{ id: 1, text: 'Task 1', done: false }] };
       jobs.unshift(fakeJob);
@@ -493,7 +493,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empToggleTask: golden path — toggles task done state', async () => {
+  test('_empToggleTask: golden path, toggles task done state', async () => {
     const r = await page.evaluate(() => {
       const fakeTask = { id: 42, text: 'Paint walls', done: false };
       const fakeJob = { id: 88887, name: 'Test Job', tasks: [fakeTask], empStatus: {} };
@@ -536,7 +536,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderDashToday
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderDashToday: no DOM element — returns gracefully', async () => {
+  test('renderDashToday: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-today');
       if (el) el.id = 'dash-today-hidden';
@@ -547,7 +547,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderDashToday: empty jobs array — renders no-job placeholder', async () => {
+  test('renderDashToday: empty jobs array, renders no-job placeholder', async () => {
     const r = await page.evaluate(() => {
       const origJobs = [...jobs];
       jobs.length = 0;
@@ -563,7 +563,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasContent).toBe(true);
   });
 
-  test('renderDashToday: corrupted localStorage — graceful', async () => {
+  test('renderDashToday: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_jobs', '{INVALID{{');
       try { renderDashToday(); return { ok: true }; }
@@ -595,7 +595,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderDashToday: 5 concurrent calls — no crash', async () => {
+  test('renderDashToday: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       try {
         renderDashToday(); renderDashToday(); renderDashToday(); renderDashToday(); renderDashToday();
@@ -610,7 +610,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _openCrewAssignSheet
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_openCrewAssignSheet: missing job — returns without throwing', async () => {
+  test('_openCrewAssignSheet: missing job, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _openCrewAssignSheet(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -618,7 +618,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_openCrewAssignSheet: null jobId — graceful', async () => {
+  test('_openCrewAssignSheet: null jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _openCrewAssignSheet(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -626,7 +626,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_openCrewAssignSheet: no employees — shows toast without crashing', async () => {
+  test('_openCrewAssignSheet: no employees, shows toast without crashing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 77701, name: 'Crew Test', client_id: null };
       jobs.unshift(fakeJob);
@@ -639,7 +639,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_openCrewAssignSheet: with employees — opens sheet', async () => {
+  test('_openCrewAssignSheet: with employees, opens sheet', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 77702, name: 'Crew Test 2', client_id: null };
       jobs.unshift(fakeJob);
@@ -660,7 +660,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.sheetExists).toBe(true);
   });
 
-  test('_openCrewAssignSheet: 5 concurrent calls — only one sheet in DOM', async () => {
+  test('_openCrewAssignSheet: 5 concurrent calls, only one sheet in DOM', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 77703, name: 'Crew Multi', client_id: null };
       jobs.unshift(fakeJob);
@@ -687,7 +687,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _assignCrewToJob
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_assignCrewToJob: missing job — returns without throwing', async () => {
+  test('_assignCrewToJob: missing job, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _assignCrewToJob(999999999, 'emp-1'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -695,7 +695,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_assignCrewToJob: null empId — removes assignment', async () => {
+  test('_assignCrewToJob: null empId, removes assignment', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 66601, name: 'Assign Test', assignedTo: 'emp-1', assignedDate: todayKey() };
       jobs.unshift(fakeJob);
@@ -711,7 +711,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.assignedDate).toBeNull();
   });
 
-  test('_assignCrewToJob: golden path — assigns employee and builds crewHistory', async () => {
+  test('_assignCrewToJob: golden path, assigns employee and builds crewHistory', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 66602, name: 'Golden Assign', crewHistory: [] };
       jobs.unshift(fakeJob);
@@ -751,7 +751,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // getNextCollAction
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('getNextCollAction: null stage — returns none default', async () => {
+  test('getNextCollAction: null stage, returns none default', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: getNextCollAction(null) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -761,7 +761,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result.label).toContain('Send Reminder');
   });
 
-  test('getNextCollAction: unknown stage — falls back to none', async () => {
+  test('getNextCollAction: unknown stage, falls back to none', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: getNextCollAction('nonexistent_stage') }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -770,7 +770,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result.label).toContain('Send Reminder');
   });
 
-  test('getNextCollAction: empty string stage — graceful', async () => {
+  test('getNextCollAction: empty string stage, graceful', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: getNextCollAction('') }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -797,7 +797,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.results[5].action.next).toBe('resolved');
   });
 
-  test('getNextCollAction: 5 concurrent calls — consistent results', async () => {
+  test('getNextCollAction: 5 concurrent calls, consistent results', async () => {
     const r = await page.evaluate(() => {
       try {
         const r1 = getNextCollAction('none');
@@ -821,7 +821,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // emitEvent
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('emitEvent: null type and clientId — does not throw', async () => {
+  test('emitEvent: null type and clientId, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { emitEvent(null, null, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -829,7 +829,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('emitEvent: undefined extra — does not throw', async () => {
+  test('emitEvent: undefined extra, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { emitEvent('contact', 123, undefined); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -837,7 +837,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('emitEvent: golden path — pushes event to events array', async () => {
+  test('emitEvent: golden path, pushes event to events array', async () => {
     const r = await page.evaluate(() => {
       const before = (events || []).length;
       try {
@@ -866,14 +866,14 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.len).toBeLessThanOrEqual(600);
   });
 
-  test('emitEvent: 5 concurrent calls — all events recorded', async () => {
+  test('emitEvent: 5 concurrent calls, all events recorded', async () => {
     const r = await page.evaluate(() => {
       // Pre-trim: the prior bulk test fills the array to 600; drain it so 5 additions register.
       if (typeof _tdGetEvents === 'function') {
         const arr = _tdGetEvents();
         if (arr.length > 594) arr.splice(0, arr.length - 500);
       }
-      // Use _tdGetEvents() — `events` is a module-scoped let, not directly on window.
+      // Use _tdGetEvents(): `events` is a module-scoped let, not directly on window.
       const before = (typeof _tdGetEvents === 'function' ? _tdGetEvents() : []).length;
       try {
         emitEvent('e1', 1, null);
@@ -894,7 +894,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // autoLogContact
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('autoLogContact: missing client — returns without throwing', async () => {
+  test('autoLogContact: missing client, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { autoLogContact(999999999, 'call'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -902,7 +902,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('autoLogContact: null clientId — graceful', async () => {
+  test('autoLogContact: null clientId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { autoLogContact(null, 'call'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -910,7 +910,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('autoLogContact: golden path — sets last_contact_date', async () => {
+  test('autoLogContact: golden path, sets last_contact_date', async () => {
     const r = await page.evaluate(() => {
       const fakeClient = { id: 55501, name: 'Contact Test', phone: '555-1234' };
       clients.unshift(fakeClient);
@@ -948,7 +948,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // markFollowupSent
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('markFollowupSent: missing bid — returns without throwing', async () => {
+  test('markFollowupSent: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { markFollowupSent(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -956,7 +956,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('markFollowupSent: null bidId — graceful', async () => {
+  test('markFollowupSent: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { markFollowupSent(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -964,7 +964,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('markFollowupSent: golden path — increments followupStage', async () => {
+  test('markFollowupSent: golden path, increments followupStage', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 44401, status: 'Pending', followupStage: 1, noResponseCount: 0, followup: null };
       bids.unshift(fakeBid);
@@ -1000,7 +1000,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _snoozeFollowup
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_snoozeFollowup: missing bid — returns without throwing', async () => {
+  test('_snoozeFollowup: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _snoozeFollowup(999999999, 2); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1008,7 +1008,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_snoozeFollowup: null bidId — graceful', async () => {
+  test('_snoozeFollowup: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _snoozeFollowup(null, 2); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1016,7 +1016,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_snoozeFollowup: golden path — sets followup to today + days', async () => {
+  test('_snoozeFollowup: golden path, sets followup to today + days', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 33301, status: 'Pending', followup: '2020-01-01' };
       bids.unshift(fakeBid);
@@ -1051,7 +1051,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // openExpenseForJob
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('openExpenseForJob: missing job — does not throw', async () => {
+  test('openExpenseForJob: missing job, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { openExpenseForJob(999999999, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1059,7 +1059,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('openExpenseForJob: null inputs — graceful', async () => {
+  test('openExpenseForJob: null inputs, graceful', async () => {
     const r = await page.evaluate(() => {
       try { openExpenseForJob(null, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1067,7 +1067,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('openExpenseForJob: golden path — navigates to tracker page', async () => {
+  test('openExpenseForJob: golden path, navigates to tracker page', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 22201, name: 'Expense Job' };
       jobs.unshift(fakeJob);
@@ -1085,7 +1085,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderDashCollect
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderDashCollect: no DOM element — returns gracefully', async () => {
+  test('renderDashCollect: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-collect');
       if (el) el.id = 'dash-collect-hidden';
@@ -1096,7 +1096,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderDashCollect: no collectible bids — renders empty state', async () => {
+  test('renderDashCollect: no collectible bids, renders empty state', async () => {
     const r = await page.evaluate(() => {
       const origBids = [...bids];
       bids.length = 0;
@@ -1112,7 +1112,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasEmpty).toBe(true);
   });
 
-  test('renderDashCollect: 3 calls — no duplicate entries', async () => {
+  test('renderDashCollect: 3 calls, no duplicate entries', async () => {
     const r = await page.evaluate(() => {
       const fakeClient = { id: 77001, name: 'Collect Dupe Test' };
       const fakeBid = { id: 77001, client_id: 77001, status: 'Closed Won', amount: 5000,
@@ -1138,7 +1138,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderDashCollect: corrupted localStorage — graceful', async () => {
+  test('renderDashCollect: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_bids', '{INVALID{{');
       try { renderDashCollect(); return { ok: true }; }
@@ -1152,7 +1152,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // checkUnpaidOnLoad
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('checkUnpaidOnLoad: guard prevents second modal — one-shot behavior', async () => {
+  test('checkUnpaidOnLoad: guard prevents second modal, one-shot behavior', async () => {
     const r = await page.evaluate(() => {
       window._collOnLoadShown = false;
       const origBids = [...bids];
@@ -1176,7 +1176,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.wasShown2).toBe(true); // guard still set
   });
 
-  test('checkUnpaidOnLoad: no unpaid bids — no modal created', async () => {
+  test('checkUnpaidOnLoad: no unpaid bids, no modal created', async () => {
     const r = await page.evaluate(() => {
       window._collOnLoadShown = false;
       const origBids = [...bids];
@@ -1197,7 +1197,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.added).toBe(0);
   });
 
-  test('checkUnpaidOnLoad: unpaid completed job — shows modal', async () => {
+  test('checkUnpaidOnLoad: unpaid completed job, shows modal', async () => {
     const r = await page.evaluate(() => {
       window._collOnLoadShown = false;
       const fakeClient = { id: 98001, name: 'Unpaid Alert Test', phone: '555-1212' };
@@ -1231,7 +1231,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // printKansasLien
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('printKansasLien: missing bid — returns without throwing', async () => {
+  test('printKansasLien: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { printKansasLien(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1239,7 +1239,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('printKansasLien: null bidId — graceful', async () => {
+  test('printKansasLien: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { printKansasLien(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1247,7 +1247,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('printKansasLien: bid exists but no lien record — returns gracefully', async () => {
+  test('printKansasLien: bid exists but no lien record, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 11101, status: 'Closed Won', client_id: 11101, amount: 5000, addr: '123 Main St' };
       bids.unshift(fakeBid);
@@ -1258,7 +1258,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('printKansasLien: bid and lien exist but no client — returns gracefully', async () => {
+  test('printKansasLien: bid and lien exist but no client, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 11102, status: 'Closed Won', client_id: 99999999, amount: 5000, addr: '456 Elm St',
         lien: { amount: 5000, county: 'Sedgwick', date: '2025-01-01' } };
@@ -1276,7 +1276,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _mmtToggle
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_mmtToggle: undefined id — does not throw', async () => {
+  test('_mmtToggle: undefined id, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _mmtToggle(undefined); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1284,7 +1284,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_mmtToggle: null id — does not throw', async () => {
+  test('_mmtToggle: null id, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _mmtToggle(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1292,7 +1292,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_mmtToggle: toggles boolean — false then true', async () => {
+  test('_mmtToggle: toggles boolean, false then true', async () => {
     const r = await page.evaluate(() => {
       window['_mmtCol_testId'] = false;
       try {
@@ -1307,7 +1307,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.val).toBe(true);
   });
 
-  test('_mmtToggle: toggles boolean — undefined becomes false', async () => {
+  test('_mmtToggle: toggles boolean, undefined becomes false', async () => {
     const r = await page.evaluate(() => {
       delete window['_mmtCol_newId'];
       try {
@@ -1321,7 +1321,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.val).toBe(false);
   });
 
-  test('_mmtToggle: 5 concurrent calls — state reflects parity', async () => {
+  test('_mmtToggle: 5 concurrent calls, state reflects parity', async () => {
     const r = await page.evaluate(() => {
       window['_mmtCol_parity'] = false;
       try {
@@ -1343,7 +1343,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _markDepositCash
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_markDepositCash: missing bid — returns without throwing', async () => {
+  test('_markDepositCash: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _markDepositCash(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1351,7 +1351,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_markDepositCash: null bidId — graceful', async () => {
+  test('_markDepositCash: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _markDepositCash(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1359,7 +1359,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_markDepositCash: valid bid — shows zConfirm dialog', async () => {
+  test('_markDepositCash: valid bid, shows zConfirm dialog', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 55001, client_id: null, status: 'Closed Won', amount: 2500, deposit: 500 };
       bids.unshift(fakeBid);
@@ -1381,7 +1381,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderTodayFeed
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderTodayFeed: no DOM element — returns gracefully', async () => {
+  test('renderTodayFeed: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-money-feed');
       if (el) el.id = 'dash-money-feed-hidden';
@@ -1392,7 +1392,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderTodayFeed: empty data — renders without crashing', async () => {
+  test('renderTodayFeed: empty data, renders without crashing', async () => {
     const r = await page.evaluate(() => {
       const origBids = [...bids];
       bids.length = 0;
@@ -1406,7 +1406,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   test('renderTodayFeed: no duplicate cards after 3 calls', async () => {
     const r = await page.evaluate(() => {
       // The Collect section now DEFAULTS COLLAPSED (its card bodies aren't in the
-      // HTML until expanded — CLAUDE.md §11.6). Expand it so the completed-bid card
+      // HTML until expanded, CLAUDE.md §11.6). Expand it so the completed-bid card
       // renders and we can count occurrences. (Previously Collect auto-expanded.)
       window._mmtCol_collect = false;
       const fakeClient = { id: 76001, name: 'Feed No Dupe' };
@@ -1436,7 +1436,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderTodayFeed: corrupted localStorage — graceful', async () => {
+  test('renderTodayFeed: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_payments', '{INVALID{{');
       try { renderTodayFeed(); return { ok: true }; }
@@ -1446,7 +1446,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderTodayFeed: 5 concurrent calls — no crash', async () => {
+  test('renderTodayFeed: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       try {
         renderTodayFeed(); renderTodayFeed(); renderTodayFeed(); renderTodayFeed(); renderTodayFeed();
@@ -1461,7 +1461,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // checkGoalPrompt
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('checkGoalPrompt: goal already set — returns without showing modal', async () => {
+  test('checkGoalPrompt: goal already set, returns without showing modal', async () => {
     const r = await page.evaluate(() => {
       const orig = S.goalMonthly;
       S.goalMonthly = 5000;
@@ -1479,7 +1479,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.added).toBe(0);
   });
 
-  test('checkGoalPrompt: fewer than 5 paid jobs — no prompt', async () => {
+  test('checkGoalPrompt: fewer than 5 paid jobs, no prompt', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 0;
@@ -1522,7 +1522,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.added).toBe(0);
   });
 
-  test('checkGoalPrompt: 5 concurrent calls — at most one prompt queued', async () => {
+  test('checkGoalPrompt: 5 concurrent calls, at most one prompt queued', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 0;
@@ -1547,7 +1547,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderGoal
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderGoal: no DOM element — returns gracefully', async () => {
+  test('renderGoal: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-goal');
       if (el) el.id = 'dash-goal-hidden';
@@ -1558,7 +1558,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderGoal: no goal set — renders empty', async () => {
+  test('renderGoal: no goal set, renders empty', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 0;
@@ -1574,7 +1574,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.empty).toBe(true);
   });
 
-  test('renderGoal: goal set, fewer than 5 paid jobs — renders empty', async () => {
+  test('renderGoal: goal set, fewer than 5 paid jobs, renders empty', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 5000;
@@ -1592,7 +1592,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.empty).toBe(true);
   });
 
-  test('renderGoal: golden path — renders goal bar with progress', async () => {
+  test('renderGoal: golden path, renders goal bar with progress', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       const origBids = [...bids];
@@ -1622,7 +1622,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasContent).toBe(true);
   });
 
-  test('renderGoal: 3 calls — no duplicate content', async () => {
+  test('renderGoal: 3 calls, no duplicate content', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 8000;
@@ -1660,7 +1660,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderLeadSources
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderLeadSources: no DOM element — returns gracefully', async () => {
+  test('renderLeadSources: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-sources');
       if (el) el.id = 'dash-sources-hidden';
@@ -1671,7 +1671,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderLeadSources: no clients — renders empty state', async () => {
+  test('renderLeadSources: no clients, renders empty state', async () => {
     const r = await page.evaluate(() => {
       const origClients = [...clients];
       clients.length = 0;
@@ -1687,7 +1687,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasEmpty).toBe(true);
   });
 
-  test('renderLeadSources: clients with sources — renders table', async () => {
+  test('renderLeadSources: clients with sources, renders table', async () => {
     const r = await page.evaluate(() => {
       const fakeClients = [
         { id: 91001, name: 'Source A Client', source: 'Referral' },
@@ -1711,7 +1711,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasTable).toBe(true);
   });
 
-  test('renderLeadSources: 3 calls — no duplicate rows', async () => {
+  test('renderLeadSources: 3 calls, no duplicate rows', async () => {
     const r = await page.evaluate(() => {
       const fakeClient = { id: 91003, name: 'No Dupe Source', source: 'Word of mouth' };
       clients.unshift(fakeClient);
@@ -1732,7 +1732,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderLeadSources: corrupted localStorage — graceful', async () => {
+  test('renderLeadSources: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_clients', '{INVALID{{');
       try { renderLeadSources(); return { ok: true }; }
@@ -1746,7 +1746,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // closeSourceDetail / showSourceDetail
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('closeSourceDetail: no DOM element — graceful', async () => {
+  test('closeSourceDetail: no DOM element, graceful', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('source-detail');
       if (el) el.id = 'source-detail-hidden';
@@ -1780,7 +1780,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.display).toBe('none');
   });
 
-  test('showSourceDetail: no DOM element — returns gracefully', async () => {
+  test('showSourceDetail: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('source-detail');
       if (el) el.id = 'source-detail-hidden';
@@ -1791,7 +1791,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('showSourceDetail: null source — graceful', async () => {
+  test('showSourceDetail: null source, graceful', async () => {
     const r = await page.evaluate(() => {
       try { showSourceDetail(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1799,7 +1799,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('showSourceDetail: empty string — graceful', async () => {
+  test('showSourceDetail: empty string, graceful', async () => {
     const r = await page.evaluate(() => {
       try { showSourceDetail(''); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1807,7 +1807,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('showSourceDetail: valid source — makes element visible', async () => {
+  test('showSourceDetail: valid source, makes element visible', async () => {
     const r = await page.evaluate(() => {
       let el = document.getElementById('source-detail');
       const created = !el;
@@ -1838,7 +1838,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderPipeline
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderPipeline: no DOM element — returns gracefully', async () => {
+  test('renderPipeline: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-pipeline');
       if (el) el.id = 'dash-pipeline-hidden';
@@ -1849,7 +1849,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderPipeline: empty jobs — renders without crashing', async () => {
+  test('renderPipeline: empty jobs, renders without crashing', async () => {
     const r = await page.evaluate(() => {
       const origJobs = [...jobs];
       jobs.length = 0;
@@ -1865,13 +1865,13 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasContent).toBe(true);
   });
 
-  test('renderPipeline: 3 calls — no duplicate pipeline blocks', async () => {
+  test('renderPipeline: 3 calls, no duplicate pipeline blocks', async () => {
     const r = await page.evaluate(() => {
       try {
         renderPipeline(); renderPipeline(); renderPipeline();
         const el = document.getElementById('dash-pipeline');
         if (!el) return { ok: true, count: 0 };
-        // Count top-level children — "Pipeline" title + health message both appear in one
+        // Count top-level children, "Pipeline" title + health message both appear in one
         // render, so counting el.children (the one wrapper div) is the correct idempotency check.
         const count = el.children.length;
         return { ok: true, count };
@@ -1882,7 +1882,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderPipeline: corrupted localStorage — graceful', async () => {
+  test('renderPipeline: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_jobs', '{INVALID{{');
       try { renderPipeline(); return { ok: true }; }
@@ -1913,7 +1913,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasIntake).toBe(true);
   });
 
-  test('openIntakeFormModal: 5 concurrent calls — no crash', async () => {
+  test('openIntakeFormModal: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
       try {
@@ -1934,7 +1934,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _copyIntakeUrl
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_copyIntakeUrl: null url — does not throw', async () => {
+  test('_copyIntakeUrl: null url, does not throw', async () => {
     const r = await page.evaluate(async () => {
       try { await _copyIntakeUrl(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1942,7 +1942,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_copyIntakeUrl: empty string — does not crash', async () => {
+  test('_copyIntakeUrl: empty string, does not crash', async () => {
     const r = await page.evaluate(async () => {
       try { _copyIntakeUrl(''); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1950,13 +1950,13 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_copyIntakeUrl: valid URL, no copy button — still does not crash', async () => {
+  test('_copyIntakeUrl: valid URL, no copy button, still does not crash', async () => {
     const r = await page.evaluate(async () => {
       // Ensure copy button does not exist in DOM
       const existing = document.getElementById('_intake-copy-btn');
       if (existing) existing.id = '_intake-copy-btn-hidden';
       try {
-        // clipboard may not be available in test — function should catch the error
+        // clipboard may not be available in test, function should catch the error
         _copyIntakeUrl('https://example.com/intake.html');
         return { ok: true };
       }
@@ -1966,7 +1966,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_copyIntakeUrl: with copy button in DOM — updates button text on success', async () => {
+  test('_copyIntakeUrl: with copy button in DOM, updates button text on success', async () => {
     const r = await page.evaluate(async () => {
       const btn = document.createElement('button');
       btn.id = '_intake-copy-btn';
@@ -2000,7 +2000,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderLeadsPage
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderLeadsPage: no DOM element — returns gracefully', async () => {
+  test('renderLeadsPage: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('leads-list');
       if (el) el.id = 'leads-list-hidden';
@@ -2011,7 +2011,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderLeadsPage: no clients — renders empty state', async () => {
+  test('renderLeadsPage: no clients, renders empty state', async () => {
     const r = await page.evaluate(() => {
       const origClients = [...clients];
       clients.length = 0;
@@ -2027,7 +2027,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasEmpty).toBe(true);
   });
 
-  test('renderLeadsPage: 3 calls — no duplicate client cards', async () => {
+  test('renderLeadsPage: 3 calls, no duplicate client cards', async () => {
     const r = await page.evaluate(() => {
       const origClients = [...clients];
       clients.length = 0;
@@ -2037,7 +2037,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
         renderLeadsPage(); renderLeadsPage(); renderLeadsPage();
         const el = document.getElementById('leads-list');
         if (!el) return { ok: true, count: 0 };
-        // Count rendered client cards via data attribute — the client name also appears in
+        // Count rendered client cards via data attribute, the client name also appears in
         // data-lp-label attribute so a text match would give 2 per render, not 1.
         const count = el.querySelectorAll('[data-lp-id]').length;
         return { ok: true, count };
@@ -2052,7 +2052,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderLeadsPage: corrupted localStorage — graceful', async () => {
+  test('renderLeadsPage: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_clients', '{INVALID{{');
       try { renderLeadsPage(); return { ok: true }; }
@@ -2066,7 +2066,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _pfToggleYr
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_pfToggleYr: null year — does not throw', async () => {
+  test('_pfToggleYr: null year, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _pfToggleYr(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2074,7 +2074,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_pfToggleYr: string year — toggles window state', async () => {
+  test('_pfToggleYr: string year, toggles window state', async () => {
     const r = await page.evaluate(() => {
       window['_pfYr_2024'] = false;
       try {
@@ -2088,7 +2088,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.val).toBe(true);
   });
 
-  test('_pfToggleYr: 5 concurrent calls — state reflects parity', async () => {
+  test('_pfToggleYr: 5 concurrent calls, state reflects parity', async () => {
     const r = await page.evaluate(() => {
       window['_pfYr_2023'] = false;
       try {
@@ -2110,7 +2110,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _pfToggleMo
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_pfToggleMo: null params — does not throw', async () => {
+  test('_pfToggleMo: null params, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _pfToggleMo(null, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2136,7 +2136,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // openBidDetail
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('openBidDetail: missing bid — returns without throwing', async () => {
+  test('openBidDetail: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { openBidDetail(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2144,7 +2144,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('openBidDetail: null bidId — graceful', async () => {
+  test('openBidDetail: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { openBidDetail(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2152,7 +2152,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('openBidDetail: valid bid — creates overlay', async () => {
+  test('openBidDetail: valid bid, creates overlay', async () => {
     const r = await page.evaluate(() => {
       document.querySelector('[data-bdov]')?.remove();
       const fakeBid = {
@@ -2229,7 +2229,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _bddView
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_bddView: missing panes — does not throw', async () => {
+  test('_bddView: missing panes, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _bddView('bid'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2237,7 +2237,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_bddView: null view — does not throw', async () => {
+  test('_bddView: null view, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _bddView(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2245,7 +2245,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_bddView: with panes in DOM — switches active pane correctly', async () => {
+  test('_bddView: with panes in DOM, switches active pane correctly', async () => {
     const r = await page.evaluate(() => {
       const bidPane = document.createElement('div');
       bidPane.id = 'bdd-bid-pane';
@@ -2272,7 +2272,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.propDisplay).toBe(''); // active pane has no display:none
   });
 
-  test('_bddView: 5 concurrent calls — no crash', async () => {
+  test('_bddView: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       try {
         _bddView('bid');
@@ -2291,7 +2291,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // setProposalFilter
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('setProposalFilter: null filter — graceful', async () => {
+  test('setProposalFilter: null filter, graceful', async () => {
     const r = await page.evaluate(() => {
       try { setProposalFilter(null, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2299,7 +2299,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('setProposalFilter: empty string — graceful', async () => {
+  test('setProposalFilter: empty string, graceful', async () => {
     const r = await page.evaluate(() => {
       try { setProposalFilter('', null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2307,7 +2307,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('setProposalFilter: valid filter — updates _proposalFilter', async () => {
+  test('setProposalFilter: valid filter, updates _proposalFilter', async () => {
     const r = await page.evaluate(() => {
       try {
         setProposalFilter('signed', null);
@@ -2320,7 +2320,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.filter).toBe('signed');
   });
 
-  test('setProposalFilter: with button arg — adds active class', async () => {
+  test('setProposalFilter: with button arg, adds active class', async () => {
     const r = await page.evaluate(() => {
       const btn = document.createElement('button');
       btn.className = 'fb';
@@ -2336,7 +2336,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasActive).toBe(true);
   });
 
-  test('setProposalFilter: 5 concurrent calls — last one wins', async () => {
+  test('setProposalFilter: 5 concurrent calls, last one wins', async () => {
     const r = await page.evaluate(() => {
       try {
         setProposalFilter('draft', null);
@@ -2352,7 +2352,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.filter).toBe('all');
   });
 
-  test('setProposalFilter: corrupted localStorage — graceful', async () => {
+  test('setProposalFilter: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_bids', '{INVALID{{');
       try { setProposalFilter('all', null); return { ok: true }; }
@@ -2366,7 +2366,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // Cross-function integration
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('integration: emitEvent + autoLogContact together — no conflict', async () => {
+  test('integration: emitEvent + autoLogContact together, no conflict', async () => {
     const r = await page.evaluate(() => {
       const fakeClient = { id: 95001, name: 'Integration Test' };
       clients.unshift(fakeClient);
@@ -2386,7 +2386,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.lastContact).toBeTruthy();
   });
 
-  test('integration: openBidDetail + _bddView toggle — no crash', async () => {
+  test('integration: openBidDetail + _bddView toggle, no crash', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 95002, status: 'Pending', client_id: null, amount: 500, proposalHtml: '<p>hi</p>' };
       bids.unshift(fakeBid);
@@ -2406,7 +2406,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('integration: renderDash after corrupted S object — guard released', async () => {
+  test('integration: renderDash after corrupted S object, guard released', async () => {
     const r = await page.evaluate(() => {
       const origS = Object.assign({}, S);
       S.employees = 'not-an-array';
@@ -2425,14 +2425,14 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // Final console-error check
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('no console errors — dashboard.js', () => {
+  test('no console errors, dashboard.js', () => {
     assertNoErrors(page, 'dashboard.js');
   });
 });
 
 
 // ═══ e2e-bids-exhaustive.spec.js ═══
-test.describe('bids.js — exhaustive coverage', () => {
+test.describe('bids.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -2466,9 +2466,9 @@ test.describe('bids.js — exhaustive coverage', () => {
           bid_date: '2026-04-01', trade_type: 'electrical', type: 'Electrical diagnostic', notes: 'Follow up', draft: false }
       );
       jobs.push(
-        { id: 66601, client_id: 88801, bid_id: 77701, name: 'Alpha job — estimate', eventType: 'estimate',
+        { id: 66601, client_id: 88801, bid_id: 77701, name: 'Alpha job, estimate', eventType: 'estimate',
           status: 'scheduled', start: '2099-12-01', time: '09:00', addr: '1 Alpha Dr' },
-        { id: 66602, client_id: 88801, bid_id: 77701, name: 'Alpha job — job',      eventType: 'job',
+        { id: 66602, client_id: 88801, bid_id: 77701, name: 'Alpha job, job',      eventType: 'job',
           status: 'scheduled', start: '2099-12-05' }
       );
       payments.push(
@@ -2509,7 +2509,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 1. addTradeOpportunity
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('addTradeOpportunity', () => {
-    test('null clientId — does not throw', async () => {
+    test('null clientId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { addTradeOpportunity(null, 'painting', 'Test', ''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2517,7 +2517,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined args — does not throw', async () => {
+    test('undefined args, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { addTradeOpportunity(undefined, undefined, undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2525,7 +2525,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty strings — does not throw', async () => {
+    test('empty strings, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { addTradeOpportunity('', '', '', ''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2533,7 +2533,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — adds opportunity to bids array', async () => {
+    test('golden path, adds opportunity to bids array', async () => {
       const r = await page.evaluate(() => {
         const before = bids.length;
         addTradeOpportunity(88801, 'painting', 'New opportunity title', 'Some notes');
@@ -2545,7 +2545,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.found).toBe(true);
     });
 
-    test('valid clientId but unknown trade — does not throw', async () => {
+    test('valid clientId but unknown trade, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { addTradeOpportunity(88801, 'unknown_trade_xyz', 'T', ''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2554,7 +2554,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very long title string — does not throw', async () => {
+    test('very long title string, does not throw', async () => {
       const longStr = 'x'.repeat(5000);
       const r = await page.evaluate((s) => {
         try { addTradeOpportunity(88801, 'painting', s, ''); return { ok: true }; }
@@ -2564,7 +2564,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no stack corruption', async () => {
+    test('concurrent calls (5x): no stack corruption', async () => {
       const ok = await page.evaluate(() => {
         let count = 0;
         for (let i = 0; i < 5; i++) {
@@ -2583,7 +2583,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 2. convertOpportunityToEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('convertOpportunityToEstimate', () => {
-    test('null bidId — does not throw, returns early', async () => {
+    test('null bidId, does not throw, returns early', async () => {
       const r = await page.evaluate(() => {
         try { convertOpportunityToEstimate(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2591,7 +2591,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent bidId — returns without modifying bids', async () => {
+    test('non-existent bidId, returns without modifying bids', async () => {
       const r = await page.evaluate(() => {
         const before = bids.length;
         try { convertOpportunityToEstimate(999999999); }
@@ -2601,7 +2601,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.sameLen).toBe(true);
     });
 
-    test('undefined bidId — does not throw', async () => {
+    test('undefined bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { convertOpportunityToEstimate(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2609,7 +2609,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string id that does not match — does not throw', async () => {
+    test('string id that does not match, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { convertOpportunityToEstimate('bogus-id'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2617,7 +2617,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — opportunity removed from bids array', async () => {
+    test('golden path, opportunity removed from bids array', async () => {
       const r = await page.evaluate(() => {
         // Seed a fresh opportunity with a known client
         const oppId = 77710;
@@ -2634,7 +2634,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.removed).toBe(true);
     });
 
-    test('concurrent calls with same id — does not corrupt bids', async () => {
+    test('concurrent calls with same id, does not corrupt bids', async () => {
       const r = await page.evaluate(() => {
         const oppId = 77711;
         bids.push({ id: oppId, client_id: 88801, status: 'opportunity', trade_type: 'painting', bid_date: '2026-01-01' });
@@ -2653,7 +2653,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 3. deleteOpportunity
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('deleteOpportunity', () => {
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { deleteOpportunity(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2661,7 +2661,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined id — does not throw', async () => {
+    test('undefined id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { deleteOpportunity(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2669,7 +2669,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent id — bids array unchanged', async () => {
+    test('non-existent id, bids array unchanged', async () => {
       const r = await page.evaluate(() => {
         const before = bids.length;
         deleteOpportunity(999999);
@@ -2678,7 +2678,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.same).toBe(true);
     });
 
-    test('golden path — removes bid with matching id', async () => {
+    test('golden path, removes bid with matching id', async () => {
       const r = await page.evaluate(() => {
         const delId = 77720;
         bids.push({ id: delId, client_id: 88801, status: 'opportunity', bid_date: '2026-01-01' });
@@ -2688,7 +2688,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.gone).toBe(true);
     });
 
-    test('string-type id — does not throw', async () => {
+    test('string-type id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { deleteOpportunity('not-a-number'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2696,7 +2696,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent deletes of same id — does not throw', async () => {
+    test('concurrent deletes of same id, does not throw', async () => {
       const r = await page.evaluate(() => {
         const delId = 77721;
         bids.push({ id: delId, client_id: 88801, status: 'opportunity', bid_date: '2026-01-01' });
@@ -2715,7 +2715,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 4. renderCDOpportunities
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderCDOpportunities', () => {
-    test('missing DOM element — does not throw', async () => {
+    test('missing DOM element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { renderCDOpportunities(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2723,7 +2723,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — renders into #cd-opportunities when present', async () => {
+    test('golden path, renders into #cd-opportunities when present', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('#cd-opportunities').forEach(e => e.remove());
         const el = document.createElement('div');
@@ -2742,7 +2742,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.html).toBeGreaterThan(0);
     });
 
-    test('called 3× — no duplicate headers', async () => {
+    test('called 3×, no duplicate headers', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('#cd-opportunities').forEach(e => e.remove());
         const el = document.createElement('div');
@@ -2765,7 +2765,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.addBtns).toBeLessThan(10); // not N copies of the header
     });
 
-    test('no opportunities — renders empty-state message', async () => {
+    test('no opportunities, renders empty-state message', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('#cd-opportunities').forEach(e => e.remove());
         const el = document.createElement('div');
@@ -2784,7 +2784,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.text).toContain('No opportunities');
     });
 
-    test('corrupted localStorage before render — does not throw', async () => {
+    test('corrupted localStorage before render, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_bids', '{INVALID{{{{');
         const el = document.createElement('div');
@@ -2808,7 +2808,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 5. openAddOpportunity
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openAddOpportunity', () => {
-    test('no currentClientId — returns early without throw', async () => {
+    test('no currentClientId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         const orig = currentClientId;
         currentClientId = null;
@@ -2819,7 +2819,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates modal overlay in DOM', async () => {
+    test('golden path, creates modal overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_opp-ov')?.remove();
         currentClientId = 88801;
@@ -2833,7 +2833,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.found).toBe(true);
     });
 
-    test('called twice — only one overlay in DOM', async () => {
+    test('called twice, only one overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('#_opp-ov').forEach(e => e.remove());
         currentClientId = 88801;
@@ -2842,11 +2842,11 @@ test.describe('bids.js — exhaustive coverage', () => {
         document.querySelectorAll('#_opp-ov').forEach(e => e.remove());
         return { count };
       });
-      // IDs are unique; second call may replace or stack — either way, page must not crash
+      // IDs are unique; second call may replace or stack, either way, page must not crash
       expect(r.count).toBeGreaterThanOrEqual(1);
     });
 
-    test('unknown clientId — does not throw', async () => {
+    test('unknown clientId, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = currentClientId;
         currentClientId = 999888777;
@@ -2862,7 +2862,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 6. oppPickTrade
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('oppPickTrade', () => {
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { oppPickTrade(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2870,7 +2870,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined id — does not throw', async () => {
+    test('undefined id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { oppPickTrade(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2878,7 +2878,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets _oppSelTrade and updates button styles when buttons exist', async () => {
+    test('golden path, sets _oppSelTrade and updates button styles when buttons exist', async () => {
       const r = await page.evaluate(() => {
         // Create a fake trade button
         const btn = document.createElement('button');
@@ -2894,7 +2894,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.tradeSet).toBe(true);
     });
 
-    test('no trade buttons in DOM — does not throw', async () => {
+    test('no trade buttons in DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('[id^=opptrade-]').forEach(b => b.remove());
         try { oppPickTrade('electrical'); return { ok: true }; }
@@ -2903,7 +2903,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — last call wins for _oppSelTrade', async () => {
+    test('concurrent calls, last call wins for _oppSelTrade', async () => {
       const r = await page.evaluate(() => {
         try {
           oppPickTrade('painting');
@@ -2923,7 +2923,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 7. submitAddOpportunity
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('submitAddOpportunity', () => {
-    test('no trade selected — shows toast, does not add bid', async () => {
+    test('no trade selected, shows toast, does not add bid', async () => {
       const r = await page.evaluate(() => {
         window._oppSelTrade = null;
         const before = bids.length;
@@ -2939,7 +2939,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.bidsUnchanged).toBe(true);
     });
 
-    test('trade selected but no title — shows toast', async () => {
+    test('trade selected but no title, shows toast', async () => {
       const r = await page.evaluate(() => {
         window._oppSelTrade = 'painting';
         // No #opp-title in DOM → value will be ''
@@ -2955,7 +2955,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.toasted).toBe(true);
     });
 
-    test('golden path — adds opportunity when trade + title present', async () => {
+    test('golden path, adds opportunity when trade + title present', async () => {
       const r = await page.evaluate(() => {
         window._oppSelTrade = 'painting';
         currentClientId = 88801;
@@ -2980,7 +2980,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.added).toBe(true);
     });
 
-    test('type-mismatch trade (number) — does not throw', async () => {
+    test('type-mismatch trade (number): does not throw', async () => {
       const r = await page.evaluate(() => {
         window._oppSelTrade = 12345; // number instead of string
         const titleEl = document.createElement('input');
@@ -3002,7 +3002,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 8. renderCDEstimatesUpcoming
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderCDEstimatesUpcoming', () => {
-    test('missing DOM element — does not throw', async () => {
+    test('missing DOM element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { renderCDEstimatesUpcoming(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3010,7 +3010,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — renders upcoming estimate for client with no won bid', async () => {
+    test('golden path, renders upcoming estimate for client with no won bid', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div');
         el.id = 'cd-estimates-upcoming';
@@ -3027,7 +3027,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(typeof r.html).toBe('string');
     });
 
-    test('client with no upcoming estimates — innerHTML empty', async () => {
+    test('client with no upcoming estimates, innerHTML empty', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div');
         el.id = 'cd-estimates-upcoming';
@@ -3043,7 +3043,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.html).toBe('');
     });
 
-    test('called 3× — no duplicate entries', async () => {
+    test('called 3×, no duplicate entries', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('#cd-estimates-upcoming').forEach(e => e.remove());
         const el = document.createElement('div');
@@ -3068,11 +3068,11 @@ test.describe('bids.js — exhaustive coverage', () => {
           currentClientId = origId;
         }
       });
-      // innerHTML is replaced each time — expect exactly 1
+      // innerHTML is replaced each time, expect exactly 1
       expect(r.count).toBe(1);
     });
 
-    test('null currentClientId — does not throw', async () => {
+    test('null currentClientId, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div');
         el.id = 'cd-estimates-upcoming';
@@ -3091,7 +3091,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 9. cancelEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('cancelEstimate', () => {
-    test('null jobId — does not throw', async () => {
+    test('null jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { cancelEstimate(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3099,7 +3099,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined jobId — does not throw', async () => {
+    test('undefined jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { cancelEstimate(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3107,7 +3107,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent jobId — no state change', async () => {
+    test('non-existent jobId, no state change', async () => {
       const r = await page.evaluate(() => {
         const before = jobs.map(j => j.status).join(',');
         cancelEstimate(999999999);
@@ -3117,7 +3117,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.same).toBe(true);
     });
 
-    test('golden path — sets job status to canceled', async () => {
+    test('golden path, sets job status to canceled', async () => {
       const r = await page.evaluate(() => {
         const testId = 66620;
         jobs.push({ id: testId, client_id: 88801, eventType: 'estimate', status: 'scheduled', start: '2099-10-01' });
@@ -3130,7 +3130,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.status).toBe('canceled');
     });
 
-    test('boundary: zero jobId — does not throw', async () => {
+    test('boundary: zero jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { cancelEstimate(0); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3138,7 +3138,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent cancel of same job — does not corrupt status', async () => {
+    test('concurrent cancel of same job, does not corrupt status', async () => {
       const r = await page.evaluate(() => {
         const testId = 66621;
         jobs.push({ id: testId, client_id: 88801, eventType: 'estimate', status: 'scheduled', start: '2099-09-01' });
@@ -3159,7 +3159,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 10. rescheduleEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('rescheduleEstimate', () => {
-    test('null jobId — does not throw', async () => {
+    test('null jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { rescheduleEstimate(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3167,7 +3167,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent jobId — does not throw', async () => {
+    test('non-existent jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { rescheduleEstimate(999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3175,7 +3175,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — marks job canceled with Rescheduled reason', async () => {
+    test('golden path, marks job canceled with Rescheduled reason', async () => {
       const r = await page.evaluate(() => {
         const testId = 66630;
         jobs.push({ id: testId, client_id: 88801, eventType: 'estimate', status: 'scheduled', start: '2099-08-01' });
@@ -3188,7 +3188,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.cancelReason).toBe('Rescheduled');
     });
 
-    test('job is a job type with bid_id — calls schedFromBid path without throw', async () => {
+    test('job is a job type with bid_id, calls schedFromBid path without throw', async () => {
       const r = await page.evaluate(() => {
         const testId = 66631;
         jobs.push({ id: testId, client_id: 88801, bid_id: 77702, eventType: 'job', status: 'scheduled', start: '2099-07-01' });
@@ -3204,7 +3204,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 11. showJobScorecard
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('showJobScorecard', () => {
-    test('null jobId — does not throw', async () => {
+    test('null jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showJobScorecard(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3212,7 +3212,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined jobId — does not throw', async () => {
+    test('undefined jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showJobScorecard(undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3220,7 +3220,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent jobId — returns early without adding modal', async () => {
+    test('non-existent jobId, returns early without adding modal', async () => {
       const r = await page.evaluate(() => {
         const before = document.querySelectorAll('.zmodal-overlay').length;
         try { showJobScorecard(999999888, null); } catch (_) {}
@@ -3230,7 +3230,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.same).toBe(true);
     });
 
-    test('golden path — creates scorecard modal in DOM', async () => {
+    test('golden path, creates scorecard modal in DOM', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         try { showJobScorecard(66602, 77701); } catch (_) {}
@@ -3241,7 +3241,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.found).toBe(true);
     });
 
-    test('zero revenue job — shows $0 without NaN', async () => {
+    test('zero revenue job, shows $0 without NaN', async () => {
       const r = await page.evaluate(() => {
         const jobId = 66640;
         jobs.push({ id: jobId, client_id: 88801, bid_id: null, status: 'complete', start: '2026-02-01', name: 'Zero rev' });
@@ -3255,7 +3255,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.hasNaN).toBe(false);
     });
 
-    test('concurrent calls with same jobId — no stacked modals beyond 5', async () => {
+    test('concurrent calls with same jobId, no stacked modals beyond 5', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         for (let i = 0; i < 5; i++) {
@@ -3265,7 +3265,7 @@ test.describe('bids.js — exhaustive coverage', () => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         return { count };
       });
-      // Each call appends — count will be up to 5; page must not crash
+      // Each call appends, count will be up to 5; page must not crash
       expect(r.count).toBeGreaterThanOrEqual(1);
       expect(r.count).toBeLessThanOrEqual(5);
     });
@@ -3275,7 +3275,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 12. showSupplyList
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('showSupplyList', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showSupplyList(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3283,7 +3283,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined bidId — does not throw', async () => {
+    test('undefined bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showSupplyList(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3291,7 +3291,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent bidId — returns early without modal', async () => {
+    test('non-existent bidId, returns early without modal', async () => {
       const r = await page.evaluate(() => {
         const before = document.querySelectorAll('.zmodal-overlay').length;
         try { showSupplyList(999999888); } catch (_) {}
@@ -3301,7 +3301,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.same).toBe(true);
     });
 
-    test('golden path — creates supply list modal', async () => {
+    test('golden path, creates supply list modal', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         try { showSupplyList(77701); } catch (_) {}
@@ -3312,7 +3312,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.found).toBe(true);
     });
 
-    test('bid with empty surfaces — renders without throw', async () => {
+    test('bid with empty surfaces, renders without throw', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         try { showSupplyList(77702); return { ok: true }; }
@@ -3322,7 +3322,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('bid with no roomScopeMap — does not throw', async () => {
+    test('bid with no roomScopeMap, does not throw', async () => {
       const r = await page.evaluate(() => {
         const testBid = { id: 77730, client_id: 88801, amount: 500, surfaces: [], status: 'Closed Won' };
         bids.push(testBid);
@@ -3337,7 +3337,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage key — does not throw', async () => {
+    test('corrupted localStorage key, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('supplyChecked_77701', '{BAD JSON{{');
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -3356,7 +3356,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 13. supplyCheckAll / supplyUncheckAll
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('supplyCheckAll', () => {
-    test('no #supply-list-body in DOM — does not throw', async () => {
+    test('no #supply-list-body in DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { supplyCheckAll(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3364,7 +3364,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — checks all supply-check checkboxes', async () => {
+    test('golden path, checks all supply-check checkboxes', async () => {
       const r = await page.evaluate(() => {
         const body = document.createElement('tbody');
         body.id = 'supply-list-body';
@@ -3400,7 +3400,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.allChecked).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         const body = document.createElement('tbody');
         body.id = 'supply-list-body';
@@ -3419,7 +3419,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   });
 
   test.describe('supplyUncheckAll', () => {
-    test('no #supply-list-body — does not throw', async () => {
+    test('no #supply-list-body, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { supplyUncheckAll(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3427,7 +3427,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — unchecks all checkboxes', async () => {
+    test('golden path, unchecks all checkboxes', async () => {
       const r = await page.evaluate(() => {
         const body = document.createElement('tbody');
         body.id = 'supply-list-body';
@@ -3473,7 +3473,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         let errs = 0;
         for (let i = 0; i < 5; i++) {
@@ -3498,7 +3498,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null currentClientId — does not throw', async () => {
+    test('null currentClientId, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = currentClientId;
         currentClientId = null;
@@ -3514,7 +3514,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 16. schedFromBid
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('schedFromBid', () => {
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { schedFromBid(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3522,7 +3522,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined id — does not throw', async () => {
+    test('undefined id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { schedFromBid(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3530,7 +3530,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid bid id — does not throw', async () => {
+    test('valid bid id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { schedFromBid(77701); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3538,7 +3538,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent bid id — does not throw', async () => {
+    test('non-existent bid id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { schedFromBid(999888777); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3551,7 +3551,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 17. schedFromDate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('schedFromDate', () => {
-    test('null dateKey — does not throw', async () => {
+    test('null dateKey, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { schedFromDate(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3559,7 +3559,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined dateKey — does not throw', async () => {
+    test('undefined dateKey, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { schedFromDate(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3567,7 +3567,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — does not throw with valid date key', async () => {
+    test('golden path, does not throw with valid date key', async () => {
       const r = await page.evaluate(() => {
         try { schedFromDate('2026-06-26'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3575,7 +3575,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — does not throw', async () => {
+    test('empty string, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { schedFromDate(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3588,7 +3588,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 18. getBidPayments
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getBidPayments', () => {
-    test('null bidId — returns array (no throw)', async () => {
+    test('null bidId, returns array (no throw)', async () => {
       const r = await page.evaluate(() => {
         try { const res = getBidPayments(null); return { ok: true, isArr: Array.isArray(res) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3597,7 +3597,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.isArr).toBe(true);
     });
 
-    test('undefined bidId — returns empty array', async () => {
+    test('undefined bidId, returns empty array', async () => {
       const r = await page.evaluate(() => {
         try { return { len: getBidPayments(undefined).length }; }
         catch (e) { return { err: e.message }; }
@@ -3605,7 +3605,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.len).toBe(0);
     });
 
-    test('golden path — returns payments for bid 77701', async () => {
+    test('golden path, returns payments for bid 77701', async () => {
       const r = await page.evaluate(() => {
         // beforeAll seed drains in WebKit; idempotently ensure 77701 payments exist
         if (!payments.find(p => p.bid_id === 77701)) {
@@ -3618,14 +3618,14 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.allMatch).toBe(true);
     });
 
-    test('bid with no payments — returns empty array', async () => {
+    test('bid with no payments, returns empty array', async () => {
       const r = await page.evaluate(() => {
         return { len: getBidPayments(77703).length };
       });
       expect(r.len).toBe(0);
     });
 
-    test('boundary: bidId 0 — returns empty array without throw', async () => {
+    test('boundary: bidId 0, returns empty array without throw', async () => {
       const r = await page.evaluate(() => {
         try { return { len: getBidPayments(0).length }; }
         catch (e) { return { err: e.message }; }
@@ -3633,7 +3633,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.len).toBe(0);
     });
 
-    test('very large bidId — returns empty array', async () => {
+    test('very large bidId, returns empty array', async () => {
       const r = await page.evaluate(() => {
         return { len: getBidPayments(Number.MAX_SAFE_INTEGER).length };
       });
@@ -3645,7 +3645,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 19. getBidPaid
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getBidPaid', () => {
-    test('null bidId — returns 0 or number without throw', async () => {
+    test('null bidId, returns 0 or number without throw', async () => {
       const r = await page.evaluate(() => {
         try { const v = getBidPaid(null); return { ok: true, v, isNaN: isNaN(v) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3654,7 +3654,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.isNaN).toBe(false);
     });
 
-    test('golden path — returns correct total for bid 77701', async () => {
+    test('golden path, returns correct total for bid 77701', async () => {
       const r = await page.evaluate(() => {
         // beforeAll seed drains in WebKit; idempotently ensure a 3000 total exists
         if (!payments.find(p => p.bid_id === 77701)) {
@@ -3665,7 +3665,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.paid).toBe(3000); // 750 + 2250
     });
 
-    test('payments with missing amount — returns 0 not NaN', async () => {
+    test('payments with missing amount, returns 0 not NaN', async () => {
       const r = await page.evaluate(() => {
         payments.push({ id: 99901, bid_id: 77740, amount: undefined });
         payments.push({ id: 99902, bid_id: 77740, amount: null });
@@ -3678,7 +3678,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.paid).toBe(0);
     });
 
-    test('boundary: negative payment amounts — handles gracefully', async () => {
+    test('boundary: negative payment amounts, handles gracefully', async () => {
       const r = await page.evaluate(() => {
         payments.push({ id: 99904, bid_id: 77741, amount: -100 });
         const paid = getBidPaid(77741);
@@ -3694,7 +3694,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 20. getBidBalance
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getBidBalance', () => {
-    test('null bid object — does not throw', async () => {
+    test('null bid object, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const v = getBidBalance(null); return { ok: true, v }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3703,7 +3703,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(typeof r.ok).toBe('boolean');
     });
 
-    test('bid with no amount — returns 0 not NaN', async () => {
+    test('bid with no amount, returns 0 not NaN', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77750, client_id: 88801 }; // no amount field
         const bal = getBidBalance(bid);
@@ -3713,7 +3713,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.bal).toBe(0);
     });
 
-    test('golden path — bid fully paid returns 0', async () => {
+    test('golden path, bid fully paid returns 0', async () => {
       const r = await page.evaluate(() => {
         // Self-contained: seed a throwaway bid + a matching full payment, compute,
         // then clean up. Previously this read the shared id 77701, whose payment
@@ -3731,7 +3731,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.bal).toBe(0); // 3000 paid, 3000 amount → 0
     });
 
-    test('partial payment — returns positive balance', async () => {
+    test('partial payment, returns positive balance', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77760, client_id: 88801, amount: 2000 };
         bids.push(bid);
@@ -3744,7 +3744,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.bal).toBe(1500);
     });
 
-    test('overpaid — returns 0 not negative', async () => {
+    test('overpaid: returns 0 not negative', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77761, client_id: 88801, amount: 1000 };
         bids.push(bid);
@@ -3757,7 +3757,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.bal).toBe(0);
     });
 
-    test('boundary: amount=0 — returns 0', async () => {
+    test('boundary: amount=0: returns 0', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77762, amount: 0 };
         return { bal: getBidBalance(bid) };
@@ -3770,7 +3770,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 21. _calcFinanceCharge
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_calcFinanceCharge', () => {
-    test('null bid — returns 0', async () => {
+    test('null bid, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { v: _calcFinanceCharge(null) }; }
         catch (e) { return { err: e.message }; }
@@ -3778,7 +3778,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('undefined bid — returns 0', async () => {
+    test('undefined bid, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { v: _calcFinanceCharge(undefined) }; }
         catch (e) { return { err: e.message }; }
@@ -3786,7 +3786,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('bid with no completion_date or signedAt — returns 0', async () => {
+    test('bid with no completion_date or signedAt, returns 0', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77770, amount: 1000 };
         return { v: _calcFinanceCharge(bid) };
@@ -3794,7 +3794,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('paid-in-full bid — returns 0', async () => {
+    test('paid-in-full bid, returns 0', async () => {
       const r = await page.evaluate(() => {
         const testBid = { id: 99911, amount: 500, signedAt: new Date(Date.now() - 90*86400000).toISOString() };
         bids.push(testBid);
@@ -3807,7 +3807,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.v).toBe(0); // balance is 0 so no finance charge
     });
 
-    test('overdue unpaid bid — returns positive charge', async () => {
+    test('overdue unpaid bid, returns positive charge', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77771, amount: 1000, signedAt: new Date(Date.now() - 60 * 86400000).toISOString() };
         bids.push(bid);
@@ -3821,7 +3821,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.positive).toBe(true);
     });
 
-    test('30-days-exactly — returns 0 (grace period not exceeded)', async () => {
+    test('30-days-exactly: returns 0 (grace period not exceeded)', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77772, amount: 1000, signedAt: new Date().toISOString() };
         bids.push(bid);
@@ -3834,7 +3834,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.charge).toBe(0);
     });
 
-    test('boundary: 31 days — returns positive charge', async () => {
+    test('boundary: 31 days, returns positive charge', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77773, amount: 1000, signedAt: new Date().toISOString() };
         bids.push(bid);
@@ -3863,7 +3863,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 22. sendBidEmail
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('sendBidEmail', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { sendBidEmail(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3871,7 +3871,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent bidId — returns without side effects', async () => {
+    test('non-existent bidId, returns without side effects', async () => {
       const r = await page.evaluate(() => {
         let redirected = false;
         const orig = Object.getOwnPropertyDescriptor(window, 'location');
@@ -3885,18 +3885,18 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — constructs mailto href without throw', async () => {
+    test('golden path, constructs mailto href without throw', async () => {
       const r = await page.evaluate(() => {
         let hrefSet = '';
         // Intercept location.href assignment
         const desc = Object.getOwnPropertyDescriptor(window, 'location');
         let intercepted = false;
         try {
-          // Wrap in try — JSDOM may throw on mailto: navigation
+          // Wrap in try, JSDOM may throw on mailto: navigation
           sendBidEmail(77702);
           return { ok: true };
         } catch (e) {
-          // Navigation may throw in test environment — that's acceptable
+          // Navigation may throw in test environment, that's acceptable
           if (e.message && (e.message.includes('Not implemented') || e.message.includes('navigation'))) {
             return { ok: true, nav: true };
           }
@@ -3906,7 +3906,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('bid with no surfaces or scope — does not throw', async () => {
+    test('bid with no surfaces or scope, does not throw', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77780, client_id: 88801, client_name: 'Test Client Alpha',
           amount: 500, bid_date: '2026-01-01', days: 2 };
@@ -3927,7 +3927,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 23. toggleBidSummary
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('toggleBidSummary', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { toggleBidSummary(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3935,7 +3935,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent bid — returns early', async () => {
+    test('non-existent bid, returns early', async () => {
       const r = await page.evaluate(() => {
         try { toggleBidSummary(999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -3943,7 +3943,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('existing bid but missing #bid-card — returns early without throw', async () => {
+    test('existing bid but missing #bid-card, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('bid-card-77701')?.remove();
         try { toggleBidSummary(77701); return { ok: true }; }
@@ -3952,7 +3952,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates summary panel in bid card', async () => {
+    test('golden path, creates summary panel in bid card', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('bid-summary-77701')?.remove();
         const card = document.createElement('div');
@@ -3970,7 +3970,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.created).toBe(true);
     });
 
-    test('called twice — toggles panel visibility', async () => {
+    test('called twice, toggles panel visibility', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('bid-summary-77701')?.remove();
         const card = document.createElement('div');
@@ -3997,7 +3997,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 24. printInvoice
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('printInvoice', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { printInvoice(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4005,7 +4005,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent bidId — returns early', async () => {
+    test('non-existent bidId, returns early', async () => {
       const r = await page.evaluate(() => {
         try { printInvoice(999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4013,7 +4013,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — opens print window without throw', async () => {
+    test('golden path, opens print window without throw', async () => {
       const r = await page.evaluate(() => {
         let opened = false;
         const origOpen = window.open;
@@ -4034,7 +4034,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.opened).toBe(true);
     });
 
-    test('window.open blocked (returns null) — shows alert without throw', async () => {
+    test('window.open blocked (returns null), shows alert without throw', async () => {
       const r = await page.evaluate(() => {
         const origOpen = window.open;
         const origAlert = window.zAlert;
@@ -4055,7 +4055,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.alerted).toBe(true);
     });
 
-    test('bid with no payments — invoice shows $0 paid without NaN', async () => {
+    test('bid with no payments, invoice shows $0 paid without NaN', async () => {
       const r = await page.evaluate(() => {
         let invoiceHtml = '';
         const origOpen = window.open;
@@ -4073,7 +4073,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 25. getBidLien
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getBidLien', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const v = getBidLien(null); return { ok: true, v: v === undefined || v === null }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4081,7 +4081,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined bidId — does not throw', async () => {
+    test('undefined bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { getBidLien(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4089,7 +4089,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent lien — returns undefined', async () => {
+    test('non-existent lien, returns undefined', async () => {
       const r = await page.evaluate(() => {
         const v = getBidLien(77701);
         return { undef: v === undefined };
@@ -4097,7 +4097,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.undef).toBe(true);
     });
 
-    test('existing lien — returns lien object', async () => {
+    test('existing lien, returns lien object', async () => {
       const r = await page.evaluate(() => {
         liens.push({ id: 11101, bid_id: 77701, amount: 3000 });
         const lien = getBidLien(77701);
@@ -4113,22 +4113,22 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 26. daysSince
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('daysSince', () => {
-    test('null — returns 0', async () => {
+    test('null: returns 0', async () => {
       const r = await page.evaluate(() => daysSince(null));
       expect(r).toBe(0);
     });
 
-    test('undefined — returns 0', async () => {
+    test('undefined: returns 0', async () => {
       const r = await page.evaluate(() => daysSince(undefined));
       expect(r).toBe(0);
     });
 
-    test('empty string — returns 0', async () => {
+    test('empty string, returns 0', async () => {
       const r = await page.evaluate(() => daysSince(''));
       expect(r).toBe(0);
     });
 
-    test('today — returns 0', async () => {
+    test('today: returns 0', async () => {
       const r = await page.evaluate(() => {
         const today = new Date().toISOString().slice(0, 10);
         return daysSince(today);
@@ -4136,7 +4136,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r).toBe(0);
     });
 
-    test('1 year ago — returns ~365', async () => {
+    test('1 year ago, returns ~365', async () => {
       const r = await page.evaluate(() => {
         const d = new Date(Date.now() - 365 * 86400000).toISOString().slice(0, 10);
         return daysSince(d);
@@ -4153,12 +4153,12 @@ test.describe('bids.js — exhaustive coverage', () => {
       r.forEach(item => expect(item.isNaN).toBe(false));
     });
 
-    test('boundary: very old date — returns large positive number', async () => {
+    test('boundary: very old date, returns large positive number', async () => {
       const r = await page.evaluate(() => daysSince('1970-01-01'));
       expect(r).toBeGreaterThan(10000);
     });
 
-    test('future date — returns negative or 0 (no throw)', async () => {
+    test('future date, returns negative or 0 (no throw)', async () => {
       const r = await page.evaluate(() => {
         try { const v = daysSince('2099-12-31'); return { ok: true, v }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4172,16 +4172,16 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 27. payStatus
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('payStatus', () => {
-    test('null bid — does not throw', async () => {
+    test('null bid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { payStatus(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // Allowed to throw on null — just must not crash page
+      // Allowed to throw on null, just must not crash page
       expect(typeof r.ok).toBe('boolean');
     });
 
-    test('bid with no payments — returns Unpaid', async () => {
+    test('bid with no payments, returns Unpaid', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77790, amount: 1000, status: 'Closed Won' };
         bids.push(bid);
@@ -4192,7 +4192,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.label).toBe('Unpaid');
     });
 
-    test('deposit paid — returns Deposit paid', async () => {
+    test('deposit paid, returns Deposit paid', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77791, amount: 2000, deposit: 500, status: 'Closed Won' };
         bids.push(bid);
@@ -4205,7 +4205,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.label).toBe('Deposit paid');
     });
 
-    test('paid in full — returns Paid in full', async () => {
+    test('paid in full, returns Paid in full', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77793, amount: 2000, status: 'Closed Won' };
         bids.push(bid);
@@ -4218,7 +4218,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.label).toBe('Paid in full');
     });
 
-    test('amount=0 bid — returns Paid in full (0 balance)', async () => {
+    test('amount=0 bid, returns Paid in full (0 balance)', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 77792, amount: 0 };
         const ps = payStatus(bid);
@@ -4256,7 +4256,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 28. openQuickPayFromOverview
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openQuickPayFromOverview', () => {
-    test('client with no won bids — returns early without throw', async () => {
+    test('client with no won bids, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         const orig = currentClientId;
         currentClientId = 88802;
@@ -4270,7 +4270,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null currentClientId — does not throw', async () => {
+    test('null currentClientId, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = currentClientId;
         currentClientId = null;
@@ -4289,7 +4289,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 29. openPayPanel
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openPayPanel', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openPayPanel(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4298,7 +4298,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent bidId — returns early', async () => {
+    test('non-existent bidId, returns early', async () => {
       const r = await page.evaluate(() => {
         const before = document.querySelectorAll('.pay-modal-overlay').length;
         try { openPayPanel(999999999); } catch (_) {}
@@ -4308,7 +4308,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.same).toBe(true);
     });
 
-    test('golden path — creates pay modal', async () => {
+    test('golden path, creates pay modal', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.pay-modal-overlay').forEach(e => e.remove());
         try { openPayPanel(77701); }
@@ -4320,7 +4320,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.found).toBe(true);
     });
 
-    test('autoType=deposit — does not throw', async () => {
+    test('autoType=deposit: does not throw', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.pay-modal-overlay').forEach(e => e.remove());
         try { openPayPanel(77702, 'deposit'); return { ok: true }; }
@@ -4330,7 +4330,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('autoType=final — does not throw', async () => {
+    test('autoType=final: does not throw', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.pay-modal-overlay').forEach(e => e.remove());
         try { openPayPanel(77702, 'final'); return { ok: true }; }
@@ -4351,7 +4351,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.id).toBe(77701);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.pay-modal-overlay').forEach(e => e.remove());
         let errs = 0;
@@ -4369,7 +4369,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 30. autoFillPayAmount
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('autoFillPayAmount', () => {
-    test('is a no-op — does not throw when called', async () => {
+    test('is a no-op, does not throw when called', async () => {
       const r = await page.evaluate(() => {
         try { autoFillPayAmount(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4377,7 +4377,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         let errs = 0;
         for (let i = 0; i < 5; i++) {
@@ -4393,7 +4393,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 31. closePayPanel
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('closePayPanel', () => {
-    test('no panel open — does not throw', async () => {
+    test('no panel open, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.pay-modal-overlay').forEach(e => e.remove());
         try { closePayPanel(); return { ok: true }; }
@@ -4402,7 +4402,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — removes pay-modal-overlay', async () => {
+    test('golden path, removes pay-modal-overlay', async () => {
       const r = await page.evaluate(() => {
         const ov = document.createElement('div');
         ov.className = 'pay-modal-overlay';
@@ -4422,7 +4422,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.id).toBeNull();
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let errs = 0;
         for (let i = 0; i < 5; i++) {
@@ -4438,7 +4438,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 32. showPayQr
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('showPayQr', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showPayQr(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4447,7 +4447,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent bidId — returns without creating QR overlay', async () => {
+    test('non-existent bidId, returns without creating QR overlay', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_pay-qr-ov')?.remove();
         try { showPayQr(999999); } catch (_) {}
@@ -4456,7 +4456,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.absent).toBe(true);
     });
 
-    test('bid without clientToken — shows toast without throw', async () => {
+    test('bid without clientToken, shows toast without throw', async () => {
       const r = await page.evaluate(() => {
         let toasted = false;
         const orig = window.showToast;
@@ -4475,7 +4475,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 33. showCancellationRefund
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('showCancellationRefund', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showCancellationRefund(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4484,7 +4484,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent bidId — returns early', async () => {
+    test('non-existent bidId, returns early', async () => {
       const r = await page.evaluate(() => {
         const before = document.querySelectorAll('.zmodal-overlay').length;
         try { showCancellationRefund(999999); } catch (_) {}
@@ -4494,7 +4494,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.same).toBe(true);
     });
 
-    test('bid with no payments — alerts, no modal', async () => {
+    test('bid with no payments, alerts, no modal', async () => {
       const r = await page.evaluate(() => {
         let alerted = false;
         const orig = window.zAlert;
@@ -4509,7 +4509,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.noOverlay).toBe(true);
     });
 
-    test('golden path — creates cancellation modal for paid bid', async () => {
+    test('golden path, creates cancellation modal for paid bid', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_cr-overlay')?.remove();
         // 77701 needs payments > 0 or showCancellationRefund zAlerts instead of
@@ -4530,7 +4530,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.found).toBe(true);
     });
 
-    test('undefined bidId — does not throw', async () => {
+    test('undefined bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showCancellationRefund(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4544,7 +4544,7 @@ test.describe('bids.js — exhaustive coverage', () => {
   // 34. _crCalc
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_crCalc', () => {
-    test('no #_cr-mat in DOM — does not throw', async () => {
+    test('no #_cr-mat in DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_cr-mat')?.remove();
         document.getElementById('_cr-result')?.remove();
@@ -4554,7 +4554,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path: materials < deposit — shows refund amount', async () => {
+    test('golden path: materials < deposit, shows refund amount', async () => {
       const r = await page.evaluate(() => {
         // Build the DOM _crCalc expects
         const inp = document.createElement('input');
@@ -4576,7 +4576,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.text).toContain('550'); // 750 - 200 = 550 refund
     });
 
-    test('materials >= deposit — shows no refund message', async () => {
+    test('materials >= deposit, shows no refund message', async () => {
       const r = await page.evaluate(() => {
         const inp = document.createElement('input');
         inp.id = '_cr-mat'; inp.type = 'number'; inp.dataset.paid = '500'; inp.value = '600';
@@ -4597,7 +4597,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.text).toContain('no refund');
     });
 
-    test('empty/zero materials — refund equals full deposit', async () => {
+    test('empty/zero materials, refund equals full deposit', async () => {
       const r = await page.evaluate(() => {
         const inp = document.createElement('input');
         inp.id = '_cr-mat'; inp.type = 'number'; inp.dataset.paid = '300'; inp.value = '';
@@ -4618,7 +4618,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.text).toContain('300'); // full refund
     });
 
-    test('NaN materials input — does not produce NaN in result', async () => {
+    test('NaN materials input, does not produce NaN in result', async () => {
       const r = await page.evaluate(() => {
         const inp = document.createElement('input');
         inp.id = '_cr-mat'; inp.type = 'number'; inp.dataset.paid = '500'; inp.value = 'abc';
@@ -4639,7 +4639,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.hasNaN).toBe(false);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const inp = document.createElement('input');
         inp.id = '_cr-mat'; inp.dataset.paid = '500'; inp.value = '100';
@@ -4660,8 +4660,8 @@ test.describe('bids.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // 35. Cross-cutting: corrupted localStorage on boot
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('corrupted localStorage — cross-cutting', () => {
-    test('corrupt zp3_payments before getBidPaid — returns 0 not NaN', async () => {
+  test.describe('corrupted localStorage, cross-cutting', () => {
+    test('corrupt zp3_payments before getBidPaid, returns 0 not NaN', async () => {
       const r = await page.evaluate(() => {
         const saved = localStorage.getItem('zp3_payments');
         localStorage.setItem('zp3_payments', '{INVALID{{{');
@@ -4680,7 +4680,7 @@ test.describe('bids.js — exhaustive coverage', () => {
       expect(r.isNaN).toBe(false);
     });
 
-    test('corrupt zp3_bids before deleteOpportunity — does not throw', async () => {
+    test('corrupt zp3_bids before deleteOpportunity, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = localStorage.getItem('zp3_bids');
         localStorage.setItem('zp3_bids', '{BAD{');
@@ -4698,15 +4698,15 @@ test.describe('bids.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // 36. No console errors introduced by bids.js
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — bids.js', async () => {
+  test('no console errors, bids.js', async () => {
     assertNoErrors(page, 'bids.js');
   });
 });
 
 // The interior/exterior "Scope & Price" surface estimator (js/paint-estimate.js) was
-// fully deleted — every trade now uses the generic estimator (Scope & Price / T&M / BYO).
+// fully deleted, every trade now uses the generic estimator (Scope & Price / T&M / BYO).
 // §7.1: assert the old entry points are actually gone, not just unused.
-test.describe('paint-estimate.js — deleted', () => {
+test.describe('paint-estimate.js: deleted', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -4749,14 +4749,14 @@ test.describe('paint-estimate.js — deleted', () => {
     expect(r.surfStepA).toBe(false);
   });
 
-  test('no console errors — paint estimator deletion checks', async () => {
+  test('no console errors, paint estimator deletion checks', async () => {
     assertNoErrors(page, 'paint-estimate.js deletion');
   });
 });
 
 
 // ═══ e2e-generic-estimate-exhaustive.spec.js ═══
-test.describe('generic-estimate.js — exhaustive coverage', () => {
+test.describe('generic-estimate.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -4823,7 +4823,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 1. openBidNotes
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openBidNotes', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4831,7 +4831,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined bidId — does not throw', async () => {
+    test('undefined bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4839,7 +4839,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string bidId — does not throw', async () => {
+    test('empty string bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4847,7 +4847,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('zero bidId — does not throw', async () => {
+    test('zero bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(0); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4855,7 +4855,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('negative bidId — does not throw', async () => {
+    test('negative bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(-1); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4863,7 +4863,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets editingBidId and lastCreatedBidId', async () => {
+    test('golden path, sets editingBidId and lastCreatedBidId', async () => {
       const r = await page.evaluate(() => {
         openBidNotes(44401);
         return { editingBidId, lastCreatedBidId };
@@ -4872,7 +4872,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.lastCreatedBidId).toBe(44401);
     });
 
-    test('string bidId (type mismatch) — does not throw', async () => {
+    test('string bidId (type mismatch), does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes('not-a-number'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4880,7 +4880,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very large bidId — does not throw', async () => {
+    test('very large bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openBidNotes(Number.MAX_SAFE_INTEGER); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4888,7 +4888,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no state corruption', async () => {
+    test('concurrent calls (5x): no state corruption', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -4900,7 +4900,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(typeof r.finalId).toBe('number');
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_notes_44401', '{INVALID{{{{');
         try { openBidNotes(44401); return { ok: true }; }
@@ -4915,7 +4915,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 2. showNotesFab
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('showNotesFab', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showNotesFab(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4923,7 +4923,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('called with extra args — does not throw', async () => {
+    test('called with extra args, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showNotesFab(null, undefined, 'extra'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4931,7 +4931,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('showNotesFab()');
       expect(ok).toBe(5);
     });
@@ -4941,7 +4941,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 3. hideNotesFab
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('hideNotesFab', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { hideNotesFab(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4949,7 +4949,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('hideNotesFab()');
       expect(ok).toBe(5);
     });
@@ -4959,7 +4959,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 4. toggleNotesPanel
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('toggleNotesPanel', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { toggleNotesPanel(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4967,7 +4967,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('toggleNotesPanel()');
       expect(ok).toBe(5);
     });
@@ -4977,7 +4977,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 5. notesExpandCanvas
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('notesExpandCanvas', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { notesExpandCanvas(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -4985,7 +4985,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('notesExpandCanvas()');
       expect(ok).toBe(5);
     });
@@ -4995,7 +4995,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 6. clearNotesPanel
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('clearNotesPanel', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { clearNotesPanel(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5003,7 +5003,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('clearNotesPanel()');
       expect(ok).toBe(5);
     });
@@ -5013,7 +5013,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 7. _resetNotesForNewEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_resetNotesForNewEstimate', () => {
-    test('no-op — does not throw', async () => {
+    test('no-op: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _resetNotesForNewEstimate(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5021,7 +5021,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_resetNotesForNewEstimate()');
       expect(ok).toBe(5);
     });
@@ -5031,7 +5031,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 8. setHittersFilter
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setHittersFilter', () => {
-    test('null filter — does not throw', async () => {
+    test('null filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setHittersFilter(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5039,7 +5039,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined filter — does not throw', async () => {
+    test('undefined filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setHittersFilter(undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5047,7 +5047,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string filter — sets hittersFilter', async () => {
+    test('empty string filter, sets hittersFilter', async () => {
       const r = await page.evaluate(() => {
         try { setHittersFilter('', null); return { ok: true, hf: hittersFilter }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5056,7 +5056,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hf).toBe('');
     });
 
-    test('golden path — filter "A" sets hittersFilter to "A"', async () => {
+    test('golden path, filter "A" sets hittersFilter to "A"', async () => {
       const r = await page.evaluate(() => {
         setHittersFilter('A', null);
         return { hf: hittersFilter };
@@ -5064,7 +5064,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hf).toBe('A');
     });
 
-    test('golden path — filter "B" sets hittersFilter to "B"', async () => {
+    test('golden path, filter "B" sets hittersFilter to "B"', async () => {
       const r = await page.evaluate(() => {
         setHittersFilter('B', null);
         return { hf: hittersFilter };
@@ -5072,7 +5072,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hf).toBe('B');
     });
 
-    test('golden path — filter "all" sets hittersFilter to "all"', async () => {
+    test('golden path, filter "all" sets hittersFilter to "all"', async () => {
       const r = await page.evaluate(() => {
         setHittersFilter('all', null);
         return { hf: hittersFilter };
@@ -5080,7 +5080,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hf).toBe('all');
     });
 
-    test('with DOM filter buttons present — highlights correct button', async () => {
+    test('with DOM filter buttons present, highlights correct button', async () => {
       const r = await page.evaluate(() => {
         // Create mock filter buttons
         ['all','A','B'].forEach(t => {
@@ -5102,7 +5102,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.AllEmpty).toBe(true);
     });
 
-    test('type mismatch (number) — does not throw', async () => {
+    test('type mismatch (number): does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setHittersFilter(42, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5110,7 +5110,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — last value sticks', async () => {
+    test('concurrent calls (5x): last value sticks', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         const vals = ['all', 'A', 'B', 'all', 'A'];
@@ -5123,7 +5123,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.final).toBe('A');
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_hitters_filter', '{INVALID{{{{');
         try { setHittersFilter('all', null); return { ok: true }; }
@@ -5138,7 +5138,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 9. renderHittersList
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderHittersList', () => {
-    test('missing DOM (no hl-list element) — returns early, no throw', async () => {
+    test('missing DOM (no hl-list element), returns early, no throw', async () => {
       const r = await page.evaluate(() => {
         const existing = document.getElementById('hl-list');
         if (existing) existing.remove();
@@ -5148,7 +5148,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty clients array — shows empty message', async () => {
+    test('empty clients array, shows empty message', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'hl-list';
         const stats = document.createElement('div'); stats.id = 'hl-stats';
@@ -5164,7 +5164,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasEmpty).toBe(true);
     });
 
-    test('golden path with clients — renders cards', async () => {
+    test('golden path with clients, renders cards', async () => {
       const r = await page.evaluate(() => {
         let wrap = document.getElementById('hl-list');
         let stats = document.getElementById('hl-stats');
@@ -5184,7 +5184,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasStats).toBe(true);
     });
 
-    test('filter "A" — shows only A-tier or empty message', async () => {
+    test('filter "A", shows only A-tier or empty message', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'hl-list';
         const stats = document.createElement('div'); stats.id = 'hl-stats';
@@ -5218,7 +5218,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.total).toBe(r.unique);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'hl-list';
         const stats = document.createElement('div'); stats.id = 'hl-stats';
@@ -5238,7 +5238,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 10. applyPermissions
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('applyPermissions', () => {
-    test('no DOM elements present — does not throw', async () => {
+    test('no DOM elements present, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { applyPermissions(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5246,7 +5246,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('as employee (_isEmployee=true) — hides restricted nav items', async () => {
+    test('as employee (_isEmployee=true): hides restricted nav items', async () => {
       const r = await page.evaluate(() => {
         const savedEmployee = _isEmployee;
         // Create restricted nav elements
@@ -5268,7 +5268,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('as owner (_isEmployee=false) — does not hide owner nav items', async () => {
+    test('as owner (_isEmployee=false): does not hide owner nav items', async () => {
       const r = await page.evaluate(() => {
         const savedEmployee = _isEmployee;
         window._isEmployee = false;
@@ -5279,7 +5279,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with nav-user-name element — sets name text', async () => {
+    test('with nav-user-name element, sets name text', async () => {
       const r = await page.evaluate(() => {
         let el = document.getElementById('nav-user-name');
         const created = !el;
@@ -5312,7 +5312,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.notEmail).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('applyPermissions()');
       expect(ok).toBe(5);
     });
@@ -5322,7 +5322,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 11. getActiveTrade
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getActiveTrade', () => {
-    test('returns string — not null/undefined', async () => {
+    test('returns string, not null/undefined', async () => {
       const r = await page.evaluate(() => {
         const t = getActiveTrade();
         return { t, isString: typeof t === 'string', notEmpty: t.length > 0 };
@@ -5341,7 +5341,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.valid).toBe(true);
     });
 
-    test('_activeTrade set to "electrical" — returns "electrical"', async () => {
+    test('_activeTrade set to "electrical", returns "electrical"', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade; _activeTrade = 'electrical';
         const t = getActiveTrade();
@@ -5351,7 +5351,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.t).toBe('electrical');
     });
 
-    test('concurrent calls (10x) — all return same value', async () => {
+    test('concurrent calls (10x): all return same value', async () => {
       const r = await page.evaluate(() => {
         _activeTrade = 'painting';
         const results = [];
@@ -5366,7 +5366,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 12. setActiveTrade
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setActiveTrade', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setActiveTrade(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5374,7 +5374,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setActiveTrade(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5382,7 +5382,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — does not throw', async () => {
+    test('empty string, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         try { setActiveTrade(''); return { ok: true }; }
@@ -5392,7 +5392,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path "plumbing" — _activeTrade becomes "plumbing"', async () => {
+    test('golden path "plumbing", _activeTrade becomes "plumbing"', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         setActiveTrade('plumbing');
@@ -5403,7 +5403,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.t).toBe('plumbing');
     });
 
-    test('unknown trade string — does not throw, sets _activeTrade', async () => {
+    test('unknown trade string, does not throw, sets _activeTrade', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         try { setActiveTrade('underwater-basket-weaving'); return { ok: true, t: _activeTrade }; }
@@ -5414,7 +5414,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.t).toBe('underwater-basket-weaving');
     });
 
-    test('number type — does not throw', async () => {
+    test('number type, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         try { setActiveTrade(42); return { ok: true }; }
@@ -5424,7 +5424,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — last value sticks', async () => {
+    test('concurrent calls (5x): last value sticks', async () => {
       const r = await page.evaluate(() => {
         const saved = _activeTrade;
         const trades = ['painting','plumbing','electrical','roofing','hvac'];
@@ -5445,7 +5445,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 13. _getTradeLines
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getTradeLines', () => {
-    test('_config null/undefined — returns [activeTrade]', async () => {
+    test('_config null/undefined: returns [activeTrade]', async () => {
       const r = await page.evaluate(() => {
         const savedConfig = typeof _config !== 'undefined' ? _config : null;
         window._config = null;
@@ -5461,7 +5461,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.lines.length).toBeGreaterThanOrEqual(1);
     });
 
-    test('_config.trade_lines as array — returns that array', async () => {
+    test('_config.trade_lines as array, returns that array', async () => {
       const r = await page.evaluate(() => {
         const savedConfig = typeof _config !== 'undefined' ? _config : null;
         window._config = { trade_lines: ['painting', 'electrical', 'plumbing'] };
@@ -5475,7 +5475,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.lines).toEqual(['painting', 'electrical', 'plumbing']);
     });
 
-    test('_config.trade_lines as comma string — splits correctly', async () => {
+    test('_config.trade_lines as comma string, splits correctly', async () => {
       const r = await page.evaluate(() => {
         const savedConfig = typeof _config !== 'undefined' ? _config : null;
         window._config = { trade_lines: 'painting,electrical, plumbing' };
@@ -5491,7 +5491,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.lines).toContain('plumbing');
     });
 
-    test('_config.trade_lines empty string — returns array without empty entries', async () => {
+    test('_config.trade_lines empty string, returns array without empty entries', async () => {
       const r = await page.evaluate(() => {
         const savedConfig = typeof _config !== 'undefined' ? _config : null;
         window._config = { trade_lines: '' };
@@ -5505,7 +5505,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.noEmpty).toBe(true);
     });
 
-    test('concurrent calls (5x) — stable result', async () => {
+    test('concurrent calls (5x): stable result', async () => {
       const r = await page.evaluate(() => {
         let ok = 0, last;
         for (let i = 0; i < 5; i++) {
@@ -5522,7 +5522,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 14. _renderNavTradeSwitcher
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderNavTradeSwitcher', () => {
-    test('missing DOM — returns early, no throw', async () => {
+    test('missing DOM, returns early, no throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('nav-trade-switcher')?.remove();
         document.getElementById('nav-trade-pills')?.remove();
@@ -5532,7 +5532,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('single trade line — hides switcher', async () => {
+    test('single trade line, hides switcher', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher'; wrap.style.display = 'block';
         const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
@@ -5551,7 +5551,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('multiple trade lines — shows switcher with pills', async () => {
+    test('multiple trade lines, shows switcher with pills', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher';
         const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
@@ -5589,7 +5589,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.btnCount).toBe(2);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'nav-trade-switcher';
         const pills = document.createElement('div'); pills.id = 'nav-trade-pills';
@@ -5609,7 +5609,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 15. _geiOnAddrInput
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_geiOnAddrInput', () => {
-    test('no DOM — does not throw', async () => {
+    test('no DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _geiOnAddrInput(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5617,7 +5617,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('sets debounce timer — does not crash', async () => {
+    test('sets debounce timer, does not crash', async () => {
       const r = await page.evaluate(() => {
         // Clear any existing timer
         if (typeof _geiTaxLookupTimer !== 'undefined') clearTimeout(_geiTaxLookupTimer);
@@ -5628,7 +5628,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.timerSet).toBe(true);
     });
 
-    test('concurrent calls (5x) — debounce does not throw', async () => {
+    test('concurrent calls (5x): debounce does not throw', async () => {
       const ok = await concurrent('_geiOnAddrInput()');
       expect(ok).toBe(5);
     });
@@ -5638,7 +5638,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 16. _geiLookupClientTaxRate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_geiLookupClientTaxRate', () => {
-    test('no gei-addr element — does not throw', async () => {
+    test('no gei-addr element, does not throw', async () => {
       const r = await page.evaluate(async () => {
         document.getElementById('gei-addr')?.remove();
         try { await _geiLookupClientTaxRate(); return { ok: true }; }
@@ -5647,7 +5647,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty address — sets _geiClientTaxRate to null', async () => {
+    test('empty address, sets _geiClientTaxRate to null', async () => {
       const r = await page.evaluate(async () => {
         const el = document.createElement('input'); el.id = 'gei-addr'; el.value = '';
         document.body.appendChild(el);
@@ -5661,7 +5661,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.rateNull).toBe(true);
     });
 
-    test('address with no zip or state — does not throw', async () => {
+    test('address with no zip or state, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const el = document.createElement('input'); el.id = 'gei-addr'; el.value = 'No zip here at all';
         document.body.appendChild(el);
@@ -5672,7 +5672,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid zip address — does not throw', async () => {
+    test('valid zip address, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const el = document.createElement('input'); el.id = 'gei-addr'; el.value = '123 Main St, Wichita KS 67202';
         document.body.appendChild(el);
@@ -5683,7 +5683,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent async calls — no unhandled rejection', async () => {
+    test('concurrent async calls, no unhandled rejection', async () => {
       const r = await page.evaluate(async () => {
         const el = document.createElement('input'); el.id = 'gei-addr'; el.value = '123 Main St, KS 67202';
         document.body.appendChild(el);
@@ -5705,7 +5705,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 17. openTMEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openTMEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openTMEstimate(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5713,7 +5713,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined client — does not throw', async () => {
+    test('undefined client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openTMEstimate(undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5738,7 +5738,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.isFreeForm).toBe(false);
     });
 
-    test('golden path with client — does not throw', async () => {
+    test('golden path with client, does not throw', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         try { openTMEstimate(c, null); return { ok: true }; }
@@ -5747,7 +5747,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with existing TM bid — restores TM fields', async () => {
+    test('with existing TM bid, restores TM fields', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         try { openTMEstimate(c, 44402); return { ok: true, isTM: _geiIsTM }; }
@@ -5762,7 +5762,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 18. openFreeFormEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openFreeFormEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openFreeFormEstimate(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5788,7 +5788,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.isTM).toBe(false);
     });
 
-    test('golden path with client — does not throw', async () => {
+    test('golden path with client, does not throw', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         try { openFreeFormEstimate(c, null); return { ok: true }; }
@@ -5797,7 +5797,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with existing freeform bid — restores items', async () => {
+    test('with existing freeform bid, restores items', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         try { openFreeFormEstimate(c, 44401); return { ok: true, isFreeForm: _geiIsFreeForm }; }
@@ -5812,7 +5812,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 19. openGenericEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openGenericEstimate', () => {
-    test('null client, null bidId, null tradePick — does not throw', async () => {
+    test('null client, null bidId, null tradePick, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openGenericEstimate(null, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5820,7 +5820,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined all args — does not throw', async () => {
+    test('undefined all args, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openGenericEstimate(undefined, undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5828,7 +5828,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty client object {} — does not throw', async () => {
+    test('empty client object {}, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openGenericEstimate({}, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5836,7 +5836,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path with client and trade — sets _geiClientId', async () => {
+    test('golden path with client and trade, sets _geiClientId', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         openGenericEstimate(c, null, 'painting');
@@ -5846,7 +5846,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.trade).toBe('painting');
     });
 
-    test('opening with existing bidId — sets _geiEditBidId', async () => {
+    test('opening with existing bidId, sets _geiEditBidId', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 55501);
         _geiIsFreeForm = true; _geiIsTM = false;
@@ -5856,7 +5856,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.editBidId).toBe(44401);
     });
 
-    test('resets state on new estimate — geiLines is empty []', async () => {
+    test('resets state on new estimate, geiLines is empty []', async () => {
       const r = await page.evaluate(() => {
         _geiLines = [{ desc: 'old line', qty: 1, rate: 100, total: 100 }];
         openGenericEstimate(null, null, null);
@@ -5877,7 +5877,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.t).toBe('roofing');
     });
 
-    test('type mismatch bidId (string "abc") — does not throw', async () => {
+    test('type mismatch bidId (string "abc"): does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openGenericEstimate(null, 'abc', null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5885,7 +5885,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_bids', '{INVALID{{{{');
         try { openGenericEstimate(null, null, null); return { ok: true }; }
@@ -5895,7 +5895,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         const c = clients.find(x => x.id === 55501) || null;
@@ -5912,7 +5912,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 20. goGeiStep
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('goGeiStep', () => {
-    test('null step — does not throw', async () => {
+    test('null step, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5920,7 +5920,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined step — does not throw', async () => {
+    test('undefined step, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5928,7 +5928,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('step 0 (boundary) — does not throw', async () => {
+    test('step 0 (boundary): does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep(0); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5936,7 +5936,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('step -1 (boundary) — does not throw', async () => {
+    test('step -1 (boundary): does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep(-1); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -5944,7 +5944,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('step 1 — sets _geiStep to 1', async () => {
+    test('step 1, sets _geiStep to 1', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = false; _geiIsFreeForm = false;
         goGeiStep(1);
@@ -5953,7 +5953,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.step).toBe(1);
     });
 
-    test('step 3 — sets _geiStep to 3', async () => {
+    test('step 3, sets _geiStep to 3', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = false; _geiIsFreeForm = false;
         goGeiStep(3);
@@ -5962,7 +5962,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.step).toBe(3);
     });
 
-    test('TM mode step 1 — calls _tmHidePage, does not throw', async () => {
+    test('TM mode step 1, calls _tmHidePage, does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = true; _geiIsFreeForm = false;
         try { goGeiStep(1); return { ok: true, step: _geiStep }; }
@@ -5972,7 +5972,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('TM mode step 2 — calls _tmShowPage, does not throw', async () => {
+    test('TM mode step 2, calls _tmShowPage, does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = true; _geiIsFreeForm = false;
         try { goGeiStep(2); return { ok: true, step: _geiStep }; }
@@ -5982,7 +5982,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('freeform mode step 2 — calls _byoShowPage, does not throw', async () => {
+    test('freeform mode step 2, calls _byoShowPage, does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiIsFreeForm = true; _geiIsTM = false;
         try { goGeiStep(2); return { ok: true }; }
@@ -5992,7 +5992,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very large step number — does not throw', async () => {
+    test('very large step number, does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = false; _geiIsFreeForm = false;
         try { goGeiStep(9999); return { ok: true }; }
@@ -6001,7 +6001,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string step "2" (type mismatch) — does not throw', async () => {
+    test('string step "2" (type mismatch), does not throw', async () => {
       const r = await page.evaluate(() => {
         try { goGeiStep('2'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6009,7 +6009,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — last step sticks', async () => {
+    test('concurrent calls (5x): last step sticks', async () => {
       const r = await page.evaluate(() => {
         _geiIsTM = false; _geiIsFreeForm = false;
         let ok = 0;
@@ -6027,7 +6027,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 21. _tmAdj
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmAdj', () => {
-    test('null delta — does not throw', async () => {
+    test('null delta, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmAdj(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6035,7 +6035,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined delta — does not throw', async () => {
+    test('undefined delta, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmAdj(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6043,7 +6043,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('delta +1 — increments crew count', async () => {
+    test('delta +1, increments crew count', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 2;
         _tmAdj(1);
@@ -6052,7 +6052,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(3);
     });
 
-    test('delta -1 — decrements crew count', async () => {
+    test('delta -1, decrements crew count', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 3;
         _tmAdj(-1);
@@ -6061,7 +6061,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(2);
     });
 
-    test('crew count floor at 1 — never goes below 1', async () => {
+    test('crew count floor at 1, never goes below 1', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 1;
         _tmAdj(-10);
@@ -6070,7 +6070,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('very large delta — does not throw', async () => {
+    test('very large delta, does not throw', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 1;
         try { _tmAdj(Number.MAX_SAFE_INTEGER); return { ok: true, count: _tmCrewCount }; }
@@ -6080,7 +6080,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('delta 0 — crew count unchanged', async () => {
+    test('delta 0, crew count unchanged', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 4;
         _tmAdj(0);
@@ -6089,7 +6089,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(4);
     });
 
-    test('string delta (type mismatch) — does not throw', async () => {
+    test('string delta (type mismatch), does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmAdj('abc'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6097,7 +6097,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with tm-crew-display DOM element — updates display', async () => {
+    test('with tm-crew-display DOM element, updates display', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div'); el.id = 'tm-crew-display'; el.textContent = '2';
         document.body.appendChild(el);
@@ -6110,7 +6110,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(3);
     });
 
-    test('concurrent calls (5x) — crew count is valid integer', async () => {
+    test('concurrent calls (5x): crew count is valid integer', async () => {
       const r = await page.evaluate(() => {
         _tmCrewCount = 1;
         let ok = 0;
@@ -6128,7 +6128,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 22. _tmRecalc
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmRecalc', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmRecalc(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6136,7 +6136,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('zero rate and hours — labor is 0, displays "—"', async () => {
+    test('zero rate and hours, labor is 0, displays "-"', async () => {
       const r = await page.evaluate(() => {
         // Create minimal DOM
         ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => {
@@ -6157,10 +6157,10 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => document.getElementById(id)?.remove());
         return { laborTxt };
       });
-      expect(r.laborTxt).toBe('—');
+      expect(r.laborTxt).toBe('-');
     });
 
-    test('golden path — calculates labor correctly', async () => {
+    test('golden path, calculates labor correctly', async () => {
       const r = await page.evaluate(() => {
         ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => {
           let el = document.getElementById(id);
@@ -6184,7 +6184,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasLaborLine).toBe(true);
     });
 
-    test('upserts existing labor line — no duplicates after 3 calls', async () => {
+    test('upserts existing labor line, no duplicates after 3 calls', async () => {
       const r = await page.evaluate(() => {
         ['tm-crew-display','tm-rate','tm-hours','tm-labor-est','tm-crew-formula'].forEach(id => {
           let el = document.getElementById(id);
@@ -6207,7 +6207,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.laborLinesCount).toBe(1);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_est_full_draft', '{INVALID{{{{');
         try { _tmRecalc(); return { ok: true }; }
@@ -6217,7 +6217,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmRecalc()');
       expect(ok).toBe(5);
     });
@@ -6227,7 +6227,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 23. _tmCalcDeposit
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmCalcDeposit', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmCalcDeposit(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6235,7 +6235,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('zero subtotal — shows "—"', async () => {
+    test('zero subtotal, shows "-"', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
         const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = '20'; document.body.appendChild(pctEl);
@@ -6245,10 +6245,10 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         finally { el.remove(); pctEl.remove(); }
       });
       expect(r.ok).toBe(true);
-      expect(r.txt).toBe('—');
+      expect(r.txt).toBe('-');
     });
 
-    test('golden path — calculates 20% deposit', async () => {
+    test('golden path, calculates 20% deposit', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
         const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = '20'; document.body.appendChild(pctEl);
@@ -6261,7 +6261,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('NaN pct — falls back to 20%', async () => {
+    test('NaN pct, falls back to 20%', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('div'); el.id = 'tm-dep-amt'; document.body.appendChild(el);
         const pctEl = document.createElement('input'); pctEl.id = 'tm-dep-pct'; pctEl.value = 'not-a-number'; document.body.appendChild(pctEl);
@@ -6273,7 +6273,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmCalcDeposit()');
       expect(ok).toBe(5);
     });
@@ -6283,7 +6283,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 24. _tmCalcNte
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmCalcNte', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmCalcNte(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6291,7 +6291,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('NTE off — wrap hidden', async () => {
+    test('NTE off, wrap hidden', async () => {
       const r = await page.evaluate(() => {
         let onEl = document.getElementById('tm-nte-on');
         let wrap = document.getElementById('tm-nte-wrap');
@@ -6313,7 +6313,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('NTE on, empty cap — auto-sets cap to sub * 1.15 rounded to $500', async () => {
+    test('NTE on, empty cap, auto-sets cap to sub * 1.15 rounded to $500', async () => {
       const r = await page.evaluate(() => {
         let onEl = document.getElementById('tm-nte-on');
         let wrap = document.getElementById('tm-nte-wrap');
@@ -6344,7 +6344,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cap % 500).toBe(0);
     });
 
-    test('NTE on, cap already set — does not overwrite', async () => {
+    test('NTE on, cap already set, does not overwrite', async () => {
       const r = await page.evaluate(() => {
         const onEl = document.createElement('input'); onEl.type = 'checkbox'; onEl.id = 'tm-nte-on'; onEl.checked = true; document.body.appendChild(onEl);
         const wrap = document.createElement('div'); wrap.id = 'tm-nte-wrap'; document.body.appendChild(wrap);
@@ -6358,7 +6358,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cap).toBe('5000');
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmCalcNte()');
       expect(ok).toBe(5);
     });
@@ -6368,7 +6368,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 25. _tmSetCycle
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmSetCycle', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmSetCycle(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6376,7 +6376,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmSetCycle(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6384,7 +6384,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — does not throw', async () => {
+    test('empty string, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmSetCycle(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6392,7 +6392,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path "weekly" — sets _tmBillingCycle', async () => {
+    test('golden path "weekly", sets _tmBillingCycle', async () => {
       const r = await page.evaluate(() => {
         _tmSetCycle('weekly');
         return { cycle: _tmBillingCycle };
@@ -6400,7 +6400,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cycle).toBe('weekly');
     });
 
-    test('golden path "milestone" — sets _tmBillingCycle', async () => {
+    test('golden path "milestone", sets _tmBillingCycle', async () => {
       const r = await page.evaluate(() => {
         _tmSetCycle('milestone');
         return { cycle: _tmBillingCycle };
@@ -6408,7 +6408,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cycle).toBe('milestone');
     });
 
-    test('"completion" — sets _tmBillingCycle', async () => {
+    test('"completion", sets _tmBillingCycle', async () => {
       const r = await page.evaluate(() => {
         _tmSetCycle('completion');
         return { cycle: _tmBillingCycle };
@@ -6416,7 +6416,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.cycle).toBe('completion');
     });
 
-    test('concurrent calls (5x) — last value sticks', async () => {
+    test('concurrent calls (5x): last value sticks', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         const cycles = ['weekly','biweekly','milestone','completion','weekly'];
@@ -6434,7 +6434,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 26. _tmSyncCycleButtons
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmSyncCycleButtons', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmSyncCycleButtons(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6479,7 +6479,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.weeklyActive).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmSyncCycleButtons()');
       expect(ok).toBe(5);
     });
@@ -6489,7 +6489,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 27. _tmShowPage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmShowPage', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmShowPage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6497,7 +6497,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with gei-tm-page element — makes it visible', async () => {
+    test('with gei-tm-page element, makes it visible', async () => {
       const r = await page.evaluate(() => {
         let p = document.getElementById('gei-tm-page');
         const created = !p;
@@ -6528,7 +6528,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmShowPage()');
       expect(ok).toBe(5);
     });
@@ -6538,7 +6538,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 28. _tmHidePage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_tmHidePage', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tmHidePage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6546,7 +6546,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with gei-tm-page element — hides it', async () => {
+    test('with gei-tm-page element, hides it', async () => {
       const r = await page.evaluate(() => {
         let p = document.getElementById('gei-tm-page');
         const created = !p;
@@ -6578,7 +6578,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.restored).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_tmHidePage()');
       expect(ok).toBe(5);
     });
@@ -6588,7 +6588,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 29. _byoShowPage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_byoShowPage', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _byoShowPage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6596,7 +6596,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with gei-byo-page element — makes it visible', async () => {
+    test('with gei-byo-page element, makes it visible', async () => {
       const r = await page.evaluate(() => {
         let p = document.getElementById('gei-byo-page');
         const created = !p;
@@ -6628,7 +6628,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('with valid bid — loads byoItems from bid', async () => {
+    test('with valid bid, loads byoItems from bid', async () => {
       const r = await page.evaluate(() => {
         const p = document.createElement('div'); p.id = 'gei-byo-page'; document.body.appendChild(p);
         _geiEditBidId = 44401;
@@ -6641,7 +6641,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.items).toBeGreaterThanOrEqual(0);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_byoShowPage()');
       expect(ok).toBe(5);
     });
@@ -6651,7 +6651,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 30. _byoHidePage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_byoHidePage', () => {
-    test('no DOM elements — does not throw', async () => {
+    test('no DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _byoHidePage(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6659,7 +6659,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with gei-byo-page element — hides it', async () => {
+    test('with gei-byo-page element, hides it', async () => {
       const r = await page.evaluate(() => {
         let p = document.getElementById('gei-byo-page');
         const created = !p;
@@ -6691,7 +6691,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.restored).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_byoHidePage()');
       expect(ok).toBe(5);
     });
@@ -6701,7 +6701,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 31. _toggleScopeChip
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_toggleScopeChip', () => {
-    test('null label — does not throw', async () => {
+    test('null label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _toggleScopeChip(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6709,7 +6709,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined label — does not throw', async () => {
+    test('undefined label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _toggleScopeChip(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6717,7 +6717,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string label — does not throw', async () => {
+    test('empty string label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _toggleScopeChip(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6725,7 +6725,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — adds label to _geiScopeChips', async () => {
+    test('golden path, adds label to _geiScopeChips', async () => {
       const r = await page.evaluate(() => {
         _geiScopeChips = [];
         _geiScopeNoScope = false;
@@ -6735,7 +6735,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.chips).toContain('Interior painting');
     });
 
-    test('toggle same label twice — removes it (toggle off)', async () => {
+    test('toggle same label twice, removes it (toggle off)', async () => {
       const r = await page.evaluate(() => {
         _geiScopeChips = [];
         _geiScopeNoScope = false;
@@ -6768,7 +6768,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.count).toBe(3);
     });
 
-    test('type mismatch (number) — does not throw', async () => {
+    test('type mismatch (number): does not throw', async () => {
       const r = await page.evaluate(() => {
         _geiScopeChips = [];
         try { _toggleScopeChip(42); return { ok: true }; }
@@ -6777,7 +6777,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very long label — does not throw', async () => {
+    test('very long label, does not throw', async () => {
       const r = await page.evaluate(() => {
         const longLabel = 'x'.repeat(1000);
         _geiScopeChips = [];
@@ -6789,7 +6789,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.added).toBe(true);
     });
 
-    test('concurrent calls with same label (5x) — alternates on/off, no crash', async () => {
+    test('concurrent calls with same label (5x): alternates on/off, no crash', async () => {
       const r = await page.evaluate(() => {
         _geiScopeChips = []; _geiScopeNoScope = false;
         let ok = 0;
@@ -6845,7 +6845,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.noScope).toBe(false);
     });
 
-    test('concurrent calls (5x) — alternates state, no crash', async () => {
+    test('concurrent calls (5x): alternates state, no crash', async () => {
       const r = await page.evaluate(() => {
         _geiScopeNoScope = false; _geiScopeChips = [];
         let ok = 0;
@@ -6864,7 +6864,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 33. _updateScopeSheetBtn
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_updateScopeSheetBtn', () => {
-    test('null label — does not throw', async () => {
+    test('null label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _updateScopeSheetBtn(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6872,7 +6872,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined label — does not throw', async () => {
+    test('undefined label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _updateScopeSheetBtn(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6880,7 +6880,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('label with no matching DOM button — returns early', async () => {
+    test('label with no matching DOM button, returns early', async () => {
       const r = await page.evaluate(() => {
         try { _updateScopeSheetBtn('NonExistentScopeItem12345'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6888,7 +6888,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — updates active chip button style', async () => {
+    test('golden path, updates active chip button style', async () => {
       const r = await page.evaluate(() => {
         const label = 'Interior painting';
         const sid = '_scb-' + label.replace(/[^a-z0-9]/gi, '_');
@@ -6905,7 +6905,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.isBlue).toBe(true);
     });
 
-    test('inactive chip — renders without blue styling', async () => {
+    test('inactive chip, renders without blue styling', async () => {
       const r = await page.evaluate(() => {
         const label = 'Sanding';
         const sid = '_scb-' + label.replace(/[^a-z0-9]/gi, '_');
@@ -6922,7 +6922,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.notBlue).toBe(true);
     });
 
-    test('special chars in label — does not throw', async () => {
+    test('special chars in label, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _updateScopeSheetBtn('Label with <script> & "quotes"'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6930,7 +6930,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const ok = await concurrent('_updateScopeSheetBtn("Interior painting")');
       expect(ok).toBe(5);
     });
@@ -6940,7 +6940,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 34. _renderScopeChips
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderScopeChips', () => {
-    test('null containerId — does not throw', async () => {
+    test('null containerId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderScopeChips(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6948,7 +6948,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined containerId — does not throw', async () => {
+    test('undefined containerId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderScopeChips(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6956,7 +6956,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing container element — returns early', async () => {
+    test('missing container element, returns early', async () => {
       const r = await page.evaluate(() => {
         try { _renderScopeChips('nonexistent-container-id-12345'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -6964,7 +6964,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty chips array — shows "Add scope" button', async () => {
+    test('empty chips array, shows "Add scope" button', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-wrap'; document.body.appendChild(wrap);
         _geiScopeChips = []; _geiScopeNoScope = false;
@@ -6977,7 +6977,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasAddBtn).toBe(true);
     });
 
-    test('scope chips selected — renders chip items', async () => {
+    test('scope chips selected, renders chip items', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-wrap2'; document.body.appendChild(wrap);
         _geiScopeChips = ['Interior painting', 'Tape & masking'];
@@ -6995,7 +6995,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasTape).toBe(true);
     });
 
-    test('noScope=true — shows "None" chip', async () => {
+    test('noScope=true: shows "None" chip', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-wrap3'; document.body.appendChild(wrap);
         _geiScopeChips = []; _geiScopeNoScope = true;
@@ -7024,7 +7024,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.matchCount).toBe(3);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-concurrent'; document.body.appendChild(wrap);
         _geiScopeChips = ['Interior painting'];
@@ -7039,7 +7039,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(5);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_scope_chips', '{INVALID{{{{');
         const wrap = document.createElement('div'); wrap.id = 'test-scope-corrupt'; document.body.appendChild(wrap);
@@ -7051,7 +7051,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown trade — falls back to generic scope chips', async () => {
+    test('unknown trade, falls back to generic scope chips', async () => {
       const r = await page.evaluate(() => {
         const wrap = document.createElement('div'); wrap.id = 'test-scope-unknown'; document.body.appendChild(wrap);
         _geiScopeChips = []; _geiScopeNoScope = false; _geiTrade = 'unknown_trade_xyz';
@@ -7067,7 +7067,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   // 35. _openScopeSheet
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_openScopeSheet', () => {
-    test('null containerId — does not throw', async () => {
+    test('null containerId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openScopeSheet(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -7076,7 +7076,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined containerId — does not throw', async () => {
+    test('undefined containerId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openScopeSheet(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -7085,7 +7085,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates overlay in DOM', async () => {
+    test('golden path, creates overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         _geiTrade = 'painting'; _geiScopeChips = [];
         try { _openScopeSheet('byo-scope-wrap'); }
@@ -7111,7 +7111,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasClass).toBe(true);
     });
 
-    test('called twice — replaces existing overlay (no duplicates)', async () => {
+    test('called twice, replaces existing overlay (no duplicates)', async () => {
       const r = await page.evaluate(() => {
         _geiTrade = 'painting'; _geiScopeChips = [];
         try { _openScopeSheet('byo-scope-wrap'); _openScopeSheet('byo-scope-wrap'); }
@@ -7132,7 +7132,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
         const html = ov?.innerHTML || '';
         ov?.remove();
         // TRADE_SCOPE_ITEMS['painting'] = SCOPE_ITEMS which has 'Sanding'; TRADE_SCOPE_CHIPS['painting']
-        // has 'Interior painting' — only reached when TRADE_SCOPE_ITEMS is undefined.
+        // has 'Interior painting', only reached when TRADE_SCOPE_ITEMS is undefined.
         return { hasPaintingItem: html.includes('Sanding') || html.includes('Interior painting') || html.includes('interior') };
       });
       expect(r.hasPaintingItem).toBe(true);
@@ -7151,7 +7151,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.hasHeading).toBe(true);
     });
 
-    test('concurrent calls (5x) — only one overlay in DOM', async () => {
+    test('concurrent calls (5x): only one overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         _geiTrade = 'painting'; _geiScopeChips = [];
         let ok = 0;
@@ -7166,7 +7166,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ovCount).toBe(1);
     });
 
-    test('unknown trade — uses generic scope chips without crash', async () => {
+    test('unknown trade, uses generic scope chips without crash', async () => {
       const r = await page.evaluate(() => {
         _geiTrade = 'underwater-basket-weaving'; _geiScopeChips = [];
         try { _openScopeSheet('byo-scope-wrap'); return { ok: true }; }
@@ -7176,7 +7176,7 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_scope_sheet_data', '{INVALID{{{{');
         _geiTrade = 'painting'; _geiScopeChips = [];
@@ -7189,16 +7189,16 @@ test.describe('generic-estimate.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 36. No console errors — generic-estimate.js
+  // 36. No console errors, generic-estimate.js
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — generic-estimate.js', async () => {
+  test('no console errors, generic-estimate.js', async () => {
     assertNoErrors(page, 'generic-estimate.js');
   });
 });
 
 
 // ═══ e2e-data-exhaustive.spec.js ═══
-test.describe('data.js — exhaustive coverage', () => {
+test.describe('data.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -7246,7 +7246,7 @@ test.describe('data.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 1. _pickEstAddr — removed with the paint estimator's multi-property address
+  // 1. _pickEstAddr: removed with the paint estimator's multi-property address
   //    hint (§7.1: assert the old entry point is actually gone)
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_pickEstAddr', () => {
@@ -7265,7 +7265,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 2. _wmoIcon
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_wmoIcon', () => {
-    test('null/undefined inputs — does not throw', async () => {
+    test('null/undefined inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const a = _wmoIcon(null, null);
@@ -7375,7 +7375,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.label).toBe('');
     });
 
-    test('negative code, precip 0 — does not throw', async () => {
+    test('negative code, precip 0, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = _wmoIcon(-5, 0); return { ok: true, hasIcon: !!res?.icon }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -7383,7 +7383,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string inputs — does not throw', async () => {
+    test('string inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = _wmoIcon('abc', 'xyz'); return { ok: true, hasIcon: !!res?.icon }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -7391,7 +7391,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — all return valid objects', async () => {
+    test('concurrent calls (5x): all return valid objects', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) {
@@ -7428,7 +7428,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 3. fetchWeather
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('fetchWeather', () => {
-    test('no location set — returns empty object without throwing', async () => {
+    test('no location set, returns empty object without throwing', async () => {
       const r = await page.evaluate(async () => {
         const origLat = S.weatherLat;
         const origLon = S.weatherLon;
@@ -7489,14 +7489,14 @@ test.describe('data.js — exhaustive coverage', () => {
         _weatherCache = null;
         _weatherCacheTime = 0;
         _weatherLoading = false;
-        // fetch will fail because CI has the real URL blocked — just confirm flag resets
+        // fetch will fail because CI has the real URL blocked, just confirm flag resets
         await fetchWeather();
         return { loadingReset: _weatherLoading === false };
       });
       expect(r.loadingReset).toBe(true);
     });
 
-    test('concurrent calls — second call returns cache of first, no double-load', async () => {
+    test('concurrent calls, second call returns cache of first, no double-load', async () => {
       const r = await page.evaluate(async () => {
         _weatherCache = { today: { icon: '☀️' } };
         _weatherCacheTime = Date.now();
@@ -7512,7 +7512,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 4. _proposalBizHeader
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_proposalBizHeader', () => {
-    test('null/undefined/empty args — does not throw', async () => {
+    test('null/undefined/empty args, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const a = _proposalBizHeader(null, null, null);
@@ -7525,7 +7525,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.aStr).toBe(true);
     });
 
-    test('golden path — returns HTML string containing biz name', async () => {
+    test('golden path, returns HTML string containing biz name', async () => {
       const r = await page.evaluate(() => {
         const orig = S.logoData;
         S.logoData = '';
@@ -7538,7 +7538,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasLic).toBe(true);
     });
 
-    test('with logoData set — renders img tag instead of text', async () => {
+    test('with logoData set, renders img tag instead of text', async () => {
       const r = await page.evaluate(() => {
         const orig = S.logoData;
         S.logoData = 'data:image/png;base64,abc123';
@@ -7550,7 +7550,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasImgSrc).toBe(true);
     });
 
-    test('empty phone — phone line is omitted', async () => {
+    test('empty phone, phone line is omitted', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const html = _proposalBizHeader('Test Biz', '', 'Licensed');
@@ -7559,7 +7559,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasPhone).toBe(false);
     });
 
-    test('empty lic — lic line is omitted', async () => {
+    test('empty lic, lic line is omitted', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const html = _proposalBizHeader('Test Biz', '555-0000', '');
@@ -7568,7 +7568,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasLic).toBe(false);
     });
 
-    test('XSS in bname — HTML-escaped', async () => {
+    test('XSS in bname, HTML-escaped', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const html = _proposalBizHeader('<script>alert(1)</script>', '', '');
@@ -7578,7 +7578,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.escaped).toBe(true);
     });
 
-    test('XSS in phone — HTML-escaped', async () => {
+    test('XSS in phone, HTML-escaped', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const html = _proposalBizHeader('Biz', '<img onerror=alert(1)>', '');
@@ -7587,7 +7587,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.safe).toBe(true);
     });
 
-    test('concurrent calls (5x) — all return strings', async () => {
+    test('concurrent calls (5x): all return strings', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         let ok = 0;
@@ -7602,7 +7602,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(5);
     });
 
-    test('very long strings — does not throw, returns string', async () => {
+    test('very long strings, does not throw, returns string', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const long = 'A'.repeat(5000);
@@ -7620,7 +7620,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 5. getRole
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getRole', () => {
-    test('_user is null — returns "owner"', async () => {
+    test('_user is null, returns "owner"', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = null;
@@ -7631,7 +7631,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('owner');
     });
 
-    test('_user has no role — returns "owner"', async () => {
+    test('_user has no role, returns "owner"', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { name: 'Test', id: 'x' };
@@ -7642,7 +7642,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('owner');
     });
 
-    test('_user.role = "co-owner" — returns "co-owner"', async () => {
+    test('_user.role = "co-owner", returns "co-owner"', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { role: 'co-owner' };
@@ -7653,7 +7653,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('co-owner');
     });
 
-    test('_user.role = "employee" — returns "employee"', async () => {
+    test('_user.role = "employee", returns "employee"', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { role: 'employee' };
@@ -7664,7 +7664,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('employee');
     });
 
-    test('concurrent calls (5x) — stable result', async () => {
+    test('concurrent calls (5x): stable result', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { role: 'owner' };
@@ -7681,7 +7681,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 6. isOwner
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('isOwner', () => {
-    test('owner role, not employee — returns true', async () => {
+    test('owner role, not employee, returns true', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'owner' };
@@ -7693,7 +7693,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('co-owner role, not employee — returns true', async () => {
+    test('co-owner role, not employee, returns true', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'co-owner' };
@@ -7705,7 +7705,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('employee role — returns false', async () => {
+    test('employee role, returns false', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'employee' };
@@ -7717,7 +7717,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_isEmployee = true — returns false even if role is owner', async () => {
+    test('_isEmployee = true, returns false even if role is owner', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'owner' };
@@ -7729,7 +7729,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_user null, _isEmployee false — returns true (defaults to owner)', async () => {
+    test('_user null, _isEmployee false, returns true (defaults to owner)', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = null;
@@ -7746,7 +7746,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 7. isEmployee
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('isEmployee', () => {
-    test('_isEmployee false — returns false', async () => {
+    test('_isEmployee false, returns false', async () => {
       const r = await page.evaluate(() => {
         const orig = _isEmployee;
         _isEmployee = false;
@@ -7757,7 +7757,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_isEmployee true — returns true', async () => {
+    test('_isEmployee true, returns true', async () => {
       const r = await page.evaluate(() => {
         const orig = _isEmployee;
         _isEmployee = true;
@@ -7773,7 +7773,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 8. canSeeTaxes
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('canSeeTaxes', () => {
-    test('owner — returns true', async () => {
+    test('owner: returns true', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'owner' };
@@ -7785,7 +7785,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('employee — returns false', async () => {
+    test('employee: returns false', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _isEmployee = true;
@@ -7802,7 +7802,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 9. isLifetimeAccount
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('isLifetimeAccount', () => {
-    test('_account null — returns false', async () => {
+    test('_account null, returns false', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = null;
@@ -7813,7 +7813,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_account.is_lifetime = false — returns false', async () => {
+    test('_account.is_lifetime = false, returns false', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { is_lifetime: false };
@@ -7824,7 +7824,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_account.is_lifetime = true — returns true', async () => {
+    test('_account.is_lifetime = true, returns true', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { is_lifetime: true };
@@ -7835,7 +7835,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('_account.is_lifetime = 1 (truthy) — returns true', async () => {
+    test('_account.is_lifetime = 1 (truthy): returns true', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { is_lifetime: 1 };
@@ -7846,7 +7846,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('_account missing is_lifetime key — returns false', async () => {
+    test('_account missing is_lifetime key, returns false', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { business_name: 'No Lifetime' };
@@ -7862,7 +7862,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 10. getBusinessName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getBusinessName', () => {
-    test('_account null, S.bname empty — returns "TradeDesk"', async () => {
+    test('_account null, S.bname empty, returns "TradeDesk"', async () => {
       const r = await page.evaluate(() => {
         const origAcc = _account, origBname = S.bname;
         _account = null;
@@ -7874,7 +7874,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('TradeDesk');
     });
 
-    test('_account has business_name — returns it', async () => {
+    test('_account has business_name, returns it', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { business_name: 'Elite Painters LLC' };
@@ -7885,7 +7885,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Elite Painters LLC');
     });
 
-    test('_account null, S.bname set — returns S.bname', async () => {
+    test('_account null, S.bname set, returns S.bname', async () => {
       const r = await page.evaluate(() => {
         const origAcc = _account, origBname = S.bname;
         _account = null;
@@ -7897,7 +7897,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Fallback Name');
     });
 
-    test('_account.business_name empty string — falls through to S.bname', async () => {
+    test('_account.business_name empty string, falls through to S.bname', async () => {
       const r = await page.evaluate(() => {
         const origAcc = _account, origBname = S.bname;
         _account = { business_name: '' };
@@ -7914,7 +7914,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 11. getUserName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getUserName', () => {
-    test('_user null — returns empty string', async () => {
+    test('_user null, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = null;
@@ -7925,7 +7925,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('_user.name is email address — returns empty string', async () => {
+    test('_user.name is email address, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { name: 'zach@test.com' };
@@ -7936,7 +7936,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('_user.name is real name — returns it', async () => {
+    test('_user.name is real name, returns it', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { name: 'Zach Johnson' };
@@ -7947,7 +7947,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Zach Johnson');
     });
 
-    test('_user.name empty string — returns empty string', async () => {
+    test('_user.name empty string, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { name: '' };
@@ -7958,7 +7958,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('_user.name undefined — returns empty string', async () => {
+    test('_user.name undefined, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { id: 'test-id' };
@@ -7974,7 +7974,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 12. getOwnerName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getOwnerName', () => {
-    test('no supaUser, no S.ownerName, _user null — returns empty string', async () => {
+    test('no supaUser, no S.ownerName, _user null, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
         const origUser = _user;
@@ -7996,7 +7996,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.result).toBe('');
     });
 
-    test('S.ownerName is an email — ignored, returns ""', async () => {
+    test('S.ownerName is an email, ignored, returns ""', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
         const origUser = _user, origOwner = S.ownerName;
@@ -8013,7 +8013,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('S.ownerName is a real name — returns it', async () => {
+    test('S.ownerName is a real name, returns it', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
         const origUser = _user, origOwner = S.ownerName;
@@ -8030,7 +8030,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Zachary Johnson');
     });
 
-    test('_user.name is real name (last fallback) — returns it', async () => {
+    test('_user.name is real name (last fallback), returns it', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
         const origUser = _user, origOwner = S.ownerName;
@@ -8074,7 +8074,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 13. setOwnerName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setOwnerName', () => {
-    test('null — silently sets empty, does not throw', async () => {
+    test('null: silently sets empty, does not throw', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -8088,7 +8088,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.sOwnerName).toBe('');
     });
 
-    test('undefined — silently sets empty', async () => {
+    test('undefined: silently sets empty', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -8102,7 +8102,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ownerName).toBe('');
     });
 
-    test('email address — silently rejected (email guard)', async () => {
+    test('email address, silently rejected (email guard)', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -8117,7 +8117,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.userName).toBe('');
     });
 
-    test('golden path — sets S.ownerName and _user.name', async () => {
+    test('golden path, sets S.ownerName and _user.name', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -8130,7 +8130,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.userName).toBe('Jane Contractor');
     });
 
-    test('empty string — clears name without throwing', async () => {
+    test('empty string, clears name without throwing', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -8144,7 +8144,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ownerName).toBe('');
     });
 
-    test('_user null — does not throw (guards _user assignment)', async () => {
+    test('_user null, does not throw (guards _user assignment)', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -8158,7 +8158,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ownerName).toBe('Bob Builder');
     });
 
-    test('concurrent calls (5x) — last write wins, no corruption', async () => {
+    test('concurrent calls (5x): last write wins, no corruption', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         _user = { name: '' };
@@ -8170,7 +8170,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Name 4');
     });
 
-    test('very long name — does not throw', async () => {
+    test('very long name, does not throw', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         _user = { name: '' };
@@ -8189,7 +8189,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 14. _getBracketsForYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getBracketsForYear', () => {
-    test('null — does not throw, returns brackets object', async () => {
+    test('null: does not throw, returns brackets object', async () => {
       const r = await page.evaluate(() => {
         try { const b = _getBracketsForYear(null); return { ok: true, hasB10: 'b10' in b }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -8197,7 +8197,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const b = _getBracketsForYear(undefined); return { ok: true, hasB10: 'b10' in b }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -8205,7 +8205,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('current year — returns S-based values', async () => {
+    test('current year, returns S-based values', async () => {
       const r = await page.evaluate(() => {
         const yr = new Date().getFullYear();
         const b = _getBracketsForYear(yr);
@@ -8215,7 +8215,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasIrsRate).toBe(true);
     });
 
-    test('2025 — returns TAX_HISTORY values', async () => {
+    test('2025: returns TAX_HISTORY values', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear(2025);
         return { b10: b.b10, irsRate: b.irsRate };
@@ -8224,7 +8224,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.irsRate).toBe(0.700);
     });
 
-    test('2023 — returns correct historical data', async () => {
+    test('2023: returns correct historical data', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear(2023);
         return { b10: b.b10, fedSingle: b.fedSingle };
@@ -8233,7 +8233,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.fedSingle).toBe(13850);
     });
 
-    test('2019 (oldest in history) — returns data', async () => {
+    test('2019 (oldest in history), returns data', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear(2019);
         return { b10: b.b10 };
@@ -8241,7 +8241,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.b10).toBe(9700);
     });
 
-    test('1800 (before history) — falls through to TAX_HISTORY[2025]', async () => {
+    test('1800 (before history), falls through to TAX_HISTORY[2025]', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear(1800);
         return { b10: b.b10 };
@@ -8249,7 +8249,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.b10).toBe(11925);
     });
 
-    test('string year "2023" — parses correctly', async () => {
+    test('string year "2023", parses correctly', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear('2023');
         return { b10: b.b10 };
@@ -8257,7 +8257,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.b10).toBe(11000);
     });
 
-    test('0 — does not throw, returns fallback', async () => {
+    test('0: does not throw, returns fallback', async () => {
       const r = await page.evaluate(() => {
         try { const b = _getBracketsForYear(0); return { ok: true, hasB10: 'b10' in b }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -8265,7 +8265,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — consistent results', async () => {
+    test('concurrent calls (5x): consistent results', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(_getBracketsForYear(2023).b10); }
@@ -8279,7 +8279,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 15. _getFedBracketsForYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getFedBracketsForYear', () => {
-    test('null — does not throw, returns bracket object', async () => {
+    test('null: does not throw, returns bracket object', async () => {
       const r = await page.evaluate(() => {
         try { const b = _getFedBracketsForYear(null); return { ok: true, hasSingle: Array.isArray(b.single) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -8287,7 +8287,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — returns single, mfj, mfs, hoh bracket arrays', async () => {
+    test('golden path, returns single, mfj, mfs, hoh bracket arrays', async () => {
       const r = await page.evaluate(() => {
         const b = _getFedBracketsForYear(2023);
         return {
@@ -8331,7 +8331,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 16. _getStdDedForYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getStdDedForYear', () => {
-    test('null/undefined — does not throw', async () => {
+    test('null/undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const a = _getStdDedForYear(null, null);
@@ -8342,27 +8342,27 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path single — returns correct deduction', async () => {
+    test('golden path single, returns correct deduction', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2025, 'single'));
       expect(r).toBe(15000);
     });
 
-    test('golden path mfj — returns correct deduction', async () => {
+    test('golden path mfj, returns correct deduction', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2025, 'mfj'));
       expect(r).toBe(30000);
     });
 
-    test('golden path mfs — returns correct deduction', async () => {
+    test('golden path mfs, returns correct deduction', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2025, 'mfs'));
       expect(r).toBe(15000);
     });
 
-    test('golden path hoh — returns correct deduction', async () => {
+    test('golden path hoh, returns correct deduction', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2025, 'hoh'));
       expect(r).toBe(22500);
     });
 
-    test('unknown status — falls back to fedSingle', async () => {
+    test('unknown status, falls back to fedSingle', async () => {
       const r = await page.evaluate(() => {
         const result = _getStdDedForYear(2025, 'unknown_status');
         const b = _getBracketsForYear(2025);
@@ -8371,7 +8371,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.result).toBe(r.expected);
     });
 
-    test('historical year 2023 single — returns correct value', async () => {
+    test('historical year 2023 single, returns correct value', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2023, 'single'));
       expect(r).toBe(13850);
     });
@@ -8381,7 +8381,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 17. _getIrsRateForYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getIrsRateForYear', () => {
-    test('null — does not throw, returns a number', async () => {
+    test('null: does not throw, returns a number', async () => {
       const r = await page.evaluate(() => {
         try { const v = _getIrsRateForYear(null); return { ok: true, isNum: typeof v === 'number' }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -8390,22 +8390,22 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isNum).toBe(true);
     });
 
-    test('2025 — returns 0.700', async () => {
+    test('2025: returns 0.700', async () => {
       const r = await page.evaluate(() => _getIrsRateForYear(2025));
       expect(r).toBe(0.700);
     });
 
-    test('2023 — returns 0.655', async () => {
+    test('2023: returns 0.655', async () => {
       const r = await page.evaluate(() => _getIrsRateForYear(2023));
       expect(r).toBe(0.655);
     });
 
-    test('2019 — returns 0.580', async () => {
+    test('2019: returns 0.580', async () => {
       const r = await page.evaluate(() => _getIrsRateForYear(2019));
       expect(r).toBe(0.580);
     });
 
-    test('current year — returns S.irsRate', async () => {
+    test('current year, returns S.irsRate', async () => {
       const r = await page.evaluate(() => {
         const yr = new Date().getFullYear();
         const origRate = S.irsRate;
@@ -8417,7 +8417,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(0.725);
     });
 
-    test('unknown year — falls back to S.irsRate or default', async () => {
+    test('unknown year, falls back to S.irsRate or default', async () => {
       const r = await page.evaluate(() => {
         const result = _getIrsRateForYear(1990);
         return { isNum: typeof result === 'number', gtZero: result > 0 };
@@ -8431,7 +8431,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 18. _getActiveStateData
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getActiveStateData', () => {
-    test('no stateRates — returns KS-default-like object', async () => {
+    test('no stateRates, returns KS-default-like object', async () => {
       const r = await page.evaluate(() => {
         const origRates = S.stateRates, origState = S.state;
         S.stateRates = {};
@@ -8445,7 +8445,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasTop).toBe(true);
     });
 
-    test('stateRates[state] set — returns that data', async () => {
+    test('stateRates[state] set, returns that data', async () => {
       const r = await page.evaluate(() => {
         const origRates = S.stateRates, origState = S.state;
         S.state = 'MO';
@@ -8458,7 +8458,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.high).toBe(5.4);
     });
 
-    test('stateRates null — does not throw', async () => {
+    test('stateRates null, does not throw', async () => {
       const r = await page.evaluate(() => {
         const origRates = S.stateRates;
         S.stateRates = null;
@@ -8469,7 +8469,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('S.state set but stateRates does not have that key — returns KS defaults', async () => {
+    test('S.state set but stateRates does not have that key, returns KS defaults', async () => {
       const r = await page.evaluate(() => {
         const origRates = S.stateRates, origState = S.state;
         S.state = 'ZZ'; // non-existent state
@@ -8486,32 +8486,32 @@ test.describe('data.js — exhaustive coverage', () => {
   // 19. _buildStateBrackets
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_buildStateBrackets', () => {
-    test('null data — returns [[Infinity, 0]]', async () => {
+    test('null data, returns [[Infinity, 0]]', async () => {
       const r = await page.evaluate(() => _buildStateBrackets(null, 'single'));
       expect(r).toEqual([[Infinity, 0]]);
     });
 
-    test('undefined data — returns [[Infinity, 0]]', async () => {
+    test('undefined data, returns [[Infinity, 0]]', async () => {
       const r = await page.evaluate(() => _buildStateBrackets(undefined, 'single'));
       expect(r).toEqual([[Infinity, 0]]);
     });
 
-    test('data.noTax = true — returns [[Infinity, 0]]', async () => {
+    test('data.noTax = true, returns [[Infinity, 0]]', async () => {
       const r = await page.evaluate(() => _buildStateBrackets({ noTax: true, low: 3, high: 5 }, 'single'));
       expect(r).toEqual([[Infinity, 0]]);
     });
 
-    test('data with no high rate — returns [[Infinity, 0]]', async () => {
+    test('data with no high rate, returns [[Infinity, 0]]', async () => {
       const r = await page.evaluate(() => _buildStateBrackets({ low: 3, high: 0, top: 0 }, 'single'));
       expect(r).toEqual([[Infinity, 0]]);
     });
 
-    test('single-rate state (low === high) — returns flat rate bracket', async () => {
+    test('single-rate state (low === high), returns flat rate bracket', async () => {
       const r = await page.evaluate(() => _buildStateBrackets({ low: 5, high: 5, top: 50000 }, 'single'));
       expect(r).toEqual([[Infinity, 0.05]]);
     });
 
-    test('two-bracket state single — returns two brackets', async () => {
+    test('two-bracket state single, returns two brackets', async () => {
       const r = await page.evaluate(() => {
         return _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'single');
       });
@@ -8522,7 +8522,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r[1][1]).toBeCloseTo(0.057);
     });
 
-    test('mfj status — top threshold doubled', async () => {
+    test('mfj status, top threshold doubled', async () => {
       const r = await page.evaluate(() => {
         const single = _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'single');
         const mfj    = _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'mfj');
@@ -8531,7 +8531,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.mfjTop).toBe(r.singleTop * 2);
     });
 
-    test('qss status — same as mfj', async () => {
+    test('qss status, same as mfj', async () => {
       const r = await page.evaluate(() => {
         const mfj = _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'mfj');
         const qss = _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'qss');
@@ -8540,7 +8540,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.qssTop).toBe(r.mfjTop);
     });
 
-    test('mfs status — top = 0.9 * base', async () => {
+    test('mfs status, top = 0.9 * base', async () => {
       const r = await page.evaluate(() => {
         const single = _buildStateBrackets({ low: 3.1, high: 5.7, top: 10000, noTax: false }, 'single');
         const mfs    = _buildStateBrackets({ low: 3.1, high: 5.7, top: 10000, noTax: false }, 'mfs');
@@ -8549,7 +8549,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.mfsTop).toBe(Math.round(r.singleTop * 0.9));
     });
 
-    test('data with brackets array — uses bracket structure', async () => {
+    test('data with brackets array, uses bracket structure', async () => {
       const r = await page.evaluate(() => {
         const data = { noTax: false, brackets: [
           { top: 15000, rate: 3.1 },
@@ -8562,7 +8562,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.last).toBe(Infinity);
     });
 
-    test('concurrent calls (5x) — consistent result', async () => {
+    test('concurrent calls (5x): consistent result', async () => {
       const r = await page.evaluate(() => {
         const data = { low: 3.1, high: 5.7, top: 15000 };
         const results = [];
@@ -8596,7 +8596,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.valid).toBe(true);
     });
 
-    test('concurrent calls (5x) — always updates S.settingsTs', async () => {
+    test('concurrent calls (5x): always updates S.settingsTs', async () => {
       const r = await page.evaluate(() => {
         S.settingsTs = 0;
         for (let i = 0; i < 5; i++) { _settingsChanged(); }
@@ -8641,7 +8641,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.testKey).toBe(true);
     });
 
-    test('handles corrupted localStorage — does not throw', async () => {
+    test('handles corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_S', '{INVALID{{{{');
         try { saveAll(); return { ok: true }; }
@@ -8651,7 +8651,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no corruption', async () => {
+    test('concurrent calls (5x): no corruption', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -8711,7 +8711,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.goal).toBe(9999);
     });
 
-    test('corrupted zp3_S — does not throw, uses defaults', async () => {
+    test('corrupted zp3_S, does not throw, uses defaults', async () => {
       const r = await page.evaluate(() => {
         const orig = localStorage.getItem('zp3_S');
         localStorage.setItem('zp3_S', '{INVALID{{{{');
@@ -8725,7 +8725,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted zp3_chk — does not throw', async () => {
+    test('corrupted zp3_chk, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = localStorage.getItem('zp3_chk');
         localStorage.setItem('zp3_chk', '{bad json{{');
@@ -8739,7 +8739,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted zp3_ev — does not throw', async () => {
+    test('corrupted zp3_ev, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = localStorage.getItem('zp3_ev');
         localStorage.setItem('zp3_ev', '[bad{{');
@@ -8813,7 +8813,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         const savedC = [...clients]; const savedB = [...bids]; const savedJ = [...jobs];
         const savedI = [...income]; const savedE = [...expenses]; const savedP = [...payments];
@@ -8878,7 +8878,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 23. getClientById
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientById', () => {
-    test('null id — returns undefined', async () => {
+    test('null id, returns undefined', async () => {
       const r = await page.evaluate(() => {
         const result = getClientById(null);
         return { isUndef: result === undefined };
@@ -8886,7 +8886,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isUndef).toBe(true);
     });
 
-    test('undefined id — returns undefined', async () => {
+    test('undefined id, returns undefined', async () => {
       const r = await page.evaluate(() => {
         const result = getClientById(undefined);
         return { isUndef: result === undefined };
@@ -8894,7 +8894,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isUndef).toBe(true);
     });
 
-    test('non-existent id — returns undefined', async () => {
+    test('non-existent id, returns undefined', async () => {
       const r = await page.evaluate(() => {
         const result = getClientById(9999999);
         return { isUndef: result === undefined };
@@ -8902,7 +8902,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isUndef).toBe(true);
     });
 
-    test('golden path — returns correct client object', async () => {
+    test('golden path, returns correct client object', async () => {
       const r = await page.evaluate(() => {
         const c = getClientById(55501);
         return { found: !!c, name: c?.name };
@@ -8911,7 +8911,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.name).toBe('Data Test Alpha');
     });
 
-    test('string id matching numeric — may return undefined (strict equality)', async () => {
+    test('string id matching numeric, may return undefined (strict equality)', async () => {
       const r = await page.evaluate(() => {
         // clients use numeric ids; string '55501' should not match id 55501 via ===
         const result = getClientById('55501');
@@ -8921,7 +8921,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(typeof r.isUndef).toBe('boolean');
     });
 
-    test('concurrent calls (5x) — all return same client', async () => {
+    test('concurrent calls (5x): all return same client', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(getClientById(55501)?.name); }
@@ -8935,87 +8935,87 @@ test.describe('data.js — exhaustive coverage', () => {
   // 24. getClientTier
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientTier', () => {
-    test('null client — returns "C"', async () => {
+    test('null client, returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier(null));
       expect(r).toBe('C');
     });
 
-    test('undefined client — returns "C"', async () => {
+    test('undefined client, returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier(undefined));
       expect(r).toBe('C');
     });
 
-    test('client with explicit tier "A" — returns "A"', async () => {
+    test('client with explicit tier "A", returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ tier: 'A' }));
       expect(r).toBe('A');
     });
 
-    test('client with explicit tier "B" — returns "B"', async () => {
+    test('client with explicit tier "B", returns "B"', async () => {
       const r = await page.evaluate(() => getClientTier({ tier: 'B' }));
       expect(r).toBe('B');
     });
 
-    test('client with explicit tier "C" — returns "C"', async () => {
+    test('client with explicit tier "C", returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier({ tier: 'C' }));
       expect(r).toBe('C');
     });
 
-    test('client source Referral — returns "A"', async () => {
+    test('client source Referral, returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ source: 'Referral' }));
       expect(r).toBe('A');
     });
 
-    test('client source "Real estate agent" — returns "A"', async () => {
+    test('client source "Real estate agent", returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ source: 'Real estate agent' }));
       expect(r).toBe('A');
     });
 
-    test('client source "Repeat customer" — returns "A"', async () => {
+    test('client source "Repeat customer", returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ source: 'Repeat customer' }));
       expect(r).toBe('A');
     });
 
-    test('A-occupation Realtor — returns "A"', async () => {
+    test('A-occupation Realtor, returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Realtor / Real estate agent' }));
       expect(r).toBe('A');
     });
 
-    test('A-occupation Attorney — returns "A"', async () => {
+    test('A-occupation Attorney, returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Attorney / lawyer' }));
       expect(r).toBe('A');
     });
 
-    test('A-occupation Doctor — returns "A"', async () => {
+    test('A-occupation Doctor, returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Doctor / physician' }));
       expect(r).toBe('A');
     });
 
-    test('B-occupation Engineer — returns "B"', async () => {
+    test('B-occupation Engineer, returns "B"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Engineer / tech' }));
       expect(r).toBe('B');
     });
 
-    test('B-occupation Nurse — returns "B"', async () => {
+    test('B-occupation Nurse, returns "B"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Nurse / healthcare' }));
       expect(r).toBe('B');
     });
 
-    test('B-occupation Teacher — returns "B"', async () => {
+    test('B-occupation Teacher, returns "B"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Teacher / educator' }));
       expect(r).toBe('B');
     });
 
-    test('unknown occupation — returns "C"', async () => {
+    test('unknown occupation, returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Astronaut' }));
       expect(r).toBe('C');
     });
 
-    test('empty client object — returns "C"', async () => {
+    test('empty client object, returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier({}));
       expect(r).toBe('C');
     });
 
-    test('concurrent calls (5x) — stable', async () => {
+    test('concurrent calls (5x): stable', async () => {
       const r = await page.evaluate(() => {
         const c = { source: 'Referral' };
         const results = [];
@@ -9045,17 +9045,17 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('var(--text3)');
     });
 
-    test('null — returns text3 (fallback)', async () => {
+    test('null: returns text3 (fallback)', async () => {
       const r = await page.evaluate(() => getTierColor(null));
       expect(r).toBe('var(--text3)');
     });
 
-    test('undefined — returns text3 (fallback)', async () => {
+    test('undefined: returns text3 (fallback)', async () => {
       const r = await page.evaluate(() => getTierColor(undefined));
       expect(r).toBe('var(--text3)');
     });
 
-    test('unknown tier — returns text3', async () => {
+    test('unknown tier, returns text3', async () => {
       const r = await page.evaluate(() => getTierColor('Z'));
       expect(r).toBe('var(--text3)');
     });
@@ -9072,23 +9072,23 @@ test.describe('data.js — exhaustive coverage', () => {
   // 26. getClientMileage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientMileage', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientMileage(null));
       expect(Array.isArray(r)).toBe(true);
       expect(r.length).toBe(0);
     });
 
-    test('undefined cid — returns empty array', async () => {
+    test('undefined cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientMileage(undefined));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('non-existent cid — returns empty array', async () => {
+    test('non-existent cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientMileage(9999999));
       expect(r.length).toBe(0);
     });
 
-    test('golden path — returns matching mileage entries', async () => {
+    test('golden path, returns matching mileage entries', async () => {
       const r = await page.evaluate(() => {
         const rows = getClientMileage(55501);
         return { len: rows.length, miles: rows[0]?.miles };
@@ -9097,7 +9097,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.miles).toBe(12.5);
     });
 
-    test('concurrent calls (5x) — all return same result', async () => {
+    test('concurrent calls (5x): all return same result', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(getClientMileage(55501).length); }
@@ -9111,12 +9111,12 @@ test.describe('data.js — exhaustive coverage', () => {
   // 27. getClientExpenses
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientExpenses', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientExpenses(null));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('golden path — returns matching expenses', async () => {
+    test('golden path, returns matching expenses', async () => {
       const r = await page.evaluate(() => {
         const rows = getClientExpenses(55501);
         return { len: rows.length, amount: rows[0]?.amount };
@@ -9125,7 +9125,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.amount).toBe(100);
     });
 
-    test('non-existent cid — empty', async () => {
+    test('non-existent cid, empty', async () => {
       const r = await page.evaluate(() => getClientExpenses(9999999));
       expect(r.length).toBe(0);
     });
@@ -9135,18 +9135,18 @@ test.describe('data.js — exhaustive coverage', () => {
   // 28. getClientBids
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientBids', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientBids(null));
       expect(Array.isArray(r)).toBe(true);
       expect(r.length).toBe(0);
     });
 
-    test('undefined cid — returns empty array', async () => {
+    test('undefined cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientBids(undefined));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('golden path — excludes opportunities', async () => {
+    test('golden path, excludes opportunities', async () => {
       const r = await page.evaluate(() => {
         const rows = getClientBids(55501);
         const hasOpportunity = rows.some(b => b.status === 'opportunity');
@@ -9157,12 +9157,12 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasOpportunity).toBe(false);
     });
 
-    test('non-existent cid — returns empty array', async () => {
+    test('non-existent cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientBids(9999999));
       expect(r.length).toBe(0);
     });
 
-    test('concurrent calls (5x) — stable', async () => {
+    test('concurrent calls (5x): stable', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(getClientBids(55501).length); }
@@ -9176,12 +9176,12 @@ test.describe('data.js — exhaustive coverage', () => {
   // 29. getClientJobs
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientJobs', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientJobs(null));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('golden path — returns jobs for client', async () => {
+    test('golden path, returns jobs for client', async () => {
       const r = await page.evaluate(() => {
         const rows = getClientJobs(55501);
         return { len: rows.length, name: rows[0]?.name };
@@ -9190,7 +9190,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.name).toBe('Data job');
     });
 
-    test('non-existent cid — empty', async () => {
+    test('non-existent cid, empty', async () => {
       const r = await page.evaluate(() => getClientJobs(9999999));
       expect(r.length).toBe(0);
     });
@@ -9200,12 +9200,12 @@ test.describe('data.js — exhaustive coverage', () => {
   // 30. getClientIncome
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientIncome', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientIncome(null));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('golden path — returns income for client', async () => {
+    test('golden path, returns income for client', async () => {
       const r = await page.evaluate(() => {
         const rows = getClientIncome(55501);
         return { len: rows.length, amount: rows[0]?.amount };
@@ -9214,12 +9214,12 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.amount).toBe(2000);
     });
 
-    test('non-existent cid — empty', async () => {
+    test('non-existent cid, empty', async () => {
       const r = await page.evaluate(() => getClientIncome(9999999));
       expect(r.length).toBe(0);
     });
 
-    test('concurrent calls (5x) — stable', async () => {
+    test('concurrent calls (5x): stable', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(getClientIncome(55501).length); }
@@ -9233,7 +9233,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 31. _lookupProperty
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_lookupProperty', () => {
-    test('no card element in DOM — returns immediately without throwing', async () => {
+    test('no card element in DOM, returns immediately without throwing', async () => {
       const r = await page.evaluate(async () => {
         // Ensure no prop-card-test-id element
         document.getElementById('prop-card-test-id')?.remove();
@@ -9243,7 +9243,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null addr — returns early (card display none or early return)', async () => {
+    test('null addr, returns early (card display none or early return)', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-null-test';
@@ -9255,7 +9255,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined addr — does not throw', async () => {
+    test('undefined addr, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-undef-test';
@@ -9267,7 +9267,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string addr — card hidden (no zip/city-state match)', async () => {
+    test('empty string addr, card hidden (no zip/city-state match)', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-empty-test';
@@ -9280,11 +9280,11 @@ test.describe('data.js — exhaustive coverage', () => {
         finally { card.remove(); }
       });
       expect(r.ok).toBe(true);
-      // Short address has no zip or city/state — card should be hidden
+      // Short address has no zip or city/state: card should be hidden
       expect(r.display).toBe('none');
     });
 
-    test('valid address with zip — does not throw, card visible after debounce', async () => {
+    test('valid address with zip, does not throw, card visible after debounce', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-zip-test';
@@ -9302,7 +9302,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — last call wins (timer reset), no crash', async () => {
+    test('concurrent calls, last call wins (timer reset), no crash', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-concurrent';
@@ -9323,7 +9323,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 32. _applyScopeRates
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_applyScopeRates', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _applyScopeRates(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9331,7 +9331,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _applyScopeRates(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9339,7 +9339,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty array — sets _scopeRates to empty object', async () => {
+    test('empty array, sets _scopeRates to empty object', async () => {
       const r = await page.evaluate(() => {
         _applyScopeRates([]);
         return { isEmpty: Object.keys(window._scopeRates).length === 0 };
@@ -9347,7 +9347,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isEmpty).toBe(true);
     });
 
-    test('golden path — maps rows to scope_id:trade keys', async () => {
+    test('golden path, maps rows to scope_id:trade keys', async () => {
       const r = await page.evaluate(() => {
         _applyScopeRates([
           { scope_id: 'prime', trade: 'painting', median_min: 60, p25_min: 45, p75_min: 75, sample_count: 100 },
@@ -9361,7 +9361,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.medianMin).toBe(60);
     });
 
-    test('duplicate rows — last write wins', async () => {
+    test('duplicate rows, last write wins', async () => {
       const r = await page.evaluate(() => {
         _applyScopeRates([
           { scope_id: 'tape', trade: 'painting', median_min: 20 },
@@ -9372,7 +9372,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(99);
     });
 
-    test('missing scope_id — uses "undefined:trade" key without throwing', async () => {
+    test('missing scope_id, uses "undefined:trade" key without throwing', async () => {
       const r = await page.evaluate(() => {
         try { _applyScopeRates([{ trade: 'painting', median_min: 10 }]); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9380,7 +9380,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — _scopeRates stays an object', async () => {
+    test('concurrent calls (5x): _scopeRates stays an object', async () => {
       const r = await page.evaluate(() => {
         for (let i = 0; i < 5; i++) {
           _applyScopeRates([{ scope_id: 'caulk' + i, trade: 'painting', median_min: i * 10 }]);
@@ -9395,7 +9395,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 33. _fetchScopeRates
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_fetchScopeRates', () => {
-    test('_supa undefined — returns immediately without throwing', async () => {
+    test('_supa undefined, returns immediately without throwing', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supa !== 'undefined' ? _supa : '__MISSING__';
         try {
@@ -9411,7 +9411,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_supa null — returns immediately without throwing', async () => {
+    test('_supa null, returns immediately without throwing', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supa !== 'undefined' ? _supa : null;
         try {
@@ -9432,7 +9432,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -9448,7 +9448,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 34. _submitScopeBenchmarks
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_submitScopeBenchmarks', () => {
-    test('empty rows — returns immediately without throwing', async () => {
+    test('empty rows, returns immediately without throwing', async () => {
       const r = await page.evaluate(() => {
         try { _submitScopeBenchmarks([]); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9456,19 +9456,19 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null rows — does not throw (length check guards against undefined)', async () => {
+    test('null rows, does not throw (length check guards against undefined)', async () => {
       const r = await page.evaluate(() => {
         try { _submitScopeBenchmarks(null); return { ok: true }; }
         catch (e) {
-          // If it throws because null.length fails, that is acceptable — test that it doesn't crash the page
+          // If it throws because null.length fails, that is acceptable, test that it doesn't crash the page
           return { ok: true, threw: true, err: e.message };
         }
       });
-      // Must not cause page crash — function itself may throw safely
+      // Must not cause page crash, function itself may throw safely
       expect(r.ok).toBe(true);
     });
 
-    test('_user null — returns early without throwing', async () => {
+    test('_user null, returns early without throwing', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user;
         _user = null;
@@ -9481,7 +9481,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_supa undefined — returns early without throwing', async () => {
+    test('_supa undefined, returns early without throwing', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supa !== 'undefined' ? _supa : null;
         const origUser = _user;
@@ -9496,7 +9496,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path with mocked supa — does not throw', async () => {
+    test('golden path with mocked supa, does not throw', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user;
         _user = { id: 'test-user' };
@@ -9511,7 +9511,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user;
         _user = { id: 'test-user' };
@@ -9530,7 +9530,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // 35. Module state variable accessibility
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('module state vars — accessible and correct types', () => {
+  test.describe('module state vars, accessible and correct types', () => {
     test('clients/bids/jobs/income/expenses/mileage are arrays', async () => {
       const r = await page.evaluate(() => ({
         clients:  Array.isArray(clients),
@@ -9638,7 +9638,7 @@ test.describe('data.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 36. _newBidId — internal utility
+  // 36. _newBidId: internal utility
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_newBidId', () => {
     test('returns a number', async () => {
@@ -9668,14 +9668,14 @@ test.describe('data.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // 37. No console errors
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — data.js', async () => {
+  test('no console errors, data.js', async () => {
     assertNoErrors(page, 'data.js');
   });
 });
 
 
 // ═══ e2e-utils-exhaustive.spec.js ═══
-test.describe('utils.js — exhaustive coverage', () => {
+test.describe('utils.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -9705,32 +9705,32 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 1. fmt
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('fmt', () => {
-    test('null — returns $0.00', async () => {
+    test('null: returns $0.00', async () => {
       const r = await page.evaluate(() => fmt(null));
       expect(r).toBe('$0.00');
     });
-    test('undefined — returns $0.00', async () => {
+    test('undefined: returns $0.00', async () => {
       const r = await page.evaluate(() => fmt(undefined));
       expect(r).toBe('$0.00');
     });
-    test('0 — returns $0.00', async () => {
+    test('0: returns $0.00', async () => {
       const r = await page.evaluate(() => fmt(0));
       expect(r).toBe('$0.00');
     });
-    test('negative — returns negative string', async () => {
+    test('negative: returns negative string', async () => {
       const r = await page.evaluate(() => fmt(-1));
       expect(r).toContain('$');
       expect(r).toContain('-');
     });
-    test('1 — returns $1.00', async () => {
+    test('1: returns $1.00', async () => {
       const r = await page.evaluate(() => fmt(1));
       expect(r).toBe('$1.00');
     });
-    test('golden path 2375 — returns formatted string', async () => {
+    test('golden path 2375, returns formatted string', async () => {
       const r = await page.evaluate(() => fmt(2375));
       expect(r).toBe('$2,375.00');
     });
-    test('very large number — does not throw', async () => {
+    test('very large number, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: fmt(9999999999) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9738,7 +9738,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toContain('$');
     });
-    test('string number — coerces gracefully', async () => {
+    test('string number, coerces gracefully', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: fmt('500') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9746,7 +9746,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('$500.00');
     });
-    test('non-numeric string — returns $0.00', async () => {
+    test('non-numeric string, returns $0.00', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: fmt('abc') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9754,7 +9754,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('$0.00');
     });
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent('fmt(1234.56)', 5);
       expect(ok).toBe(5);
     });
@@ -9764,35 +9764,35 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 2. fmtShort
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('fmtShort', () => {
-    test('null — returns $0', async () => {
+    test('null: returns $0', async () => {
       const r = await page.evaluate(() => fmtShort(null));
       expect(r).toBe('$0');
     });
-    test('undefined — returns $0', async () => {
+    test('undefined: returns $0', async () => {
       const r = await page.evaluate(() => fmtShort(undefined));
       expect(r).toBe('$0');
     });
-    test('0 — returns $0', async () => {
+    test('0: returns $0', async () => {
       const r = await page.evaluate(() => fmtShort(0));
       expect(r).toBe('$0');
     });
-    test('999 — returns under-1k format', async () => {
+    test('999: returns under-1k format', async () => {
       const r = await page.evaluate(() => fmtShort(999));
       expect(r).toBe('$999');
     });
-    test('1000 — returns K suffix', async () => {
+    test('1000: returns K suffix', async () => {
       const r = await page.evaluate(() => fmtShort(1000));
       expect(r).toMatch(/\$1\.0K/);
     });
-    test('1500 — returns 1.5K', async () => {
+    test('1500: returns 1.5K', async () => {
       const r = await page.evaluate(() => fmtShort(1500));
       expect(r).toMatch(/\$1\.5K/);
     });
-    test('1000000 — returns M suffix', async () => {
+    test('1000000: returns M suffix', async () => {
       const r = await page.evaluate(() => fmtShort(1000000));
       expect(r).toMatch(/\$1\.0M/);
     });
-    test('negative large — returns negative M', async () => {
+    test('negative large, returns negative M', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: fmtShort(-2000000) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9800,7 +9800,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toContain('M');
     });
-    test('string number — coerces', async () => {
+    test('string number, coerces', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: fmtShort('5000') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9808,7 +9808,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toContain('K');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('fmtShort(123456)', 5);
       expect(ok).toBe(5);
     });
@@ -9818,43 +9818,43 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 3. formatPhoneDisplay
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('formatPhoneDisplay', () => {
-    test('null — returns empty string', async () => {
+    test('null: returns empty string', async () => {
       const r = await page.evaluate(() => formatPhoneDisplay(null));
       expect(r).toBe('');
     });
-    test('undefined — returns empty string', async () => {
+    test('undefined: returns empty string', async () => {
       const r = await page.evaluate(() => formatPhoneDisplay(undefined));
       expect(r).toBe('');
     });
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => formatPhoneDisplay(''));
       expect(r).toBe('');
     });
-    test('3 digits only — returns digits only', async () => {
+    test('3 digits only, returns digits only', async () => {
       const r = await page.evaluate(() => formatPhoneDisplay('316'));
       expect(r).toBe('316');
     });
-    test('6 digits — returns dashed partial', async () => {
+    test('6 digits, returns dashed partial', async () => {
       const r = await page.evaluate(() => formatPhoneDisplay('316555'));
       expect(r).toBe('316-555');
     });
-    test('10 digits — returns full formatted', async () => {
+    test('10 digits, returns full formatted', async () => {
       const r = await page.evaluate(() => formatPhoneDisplay('3165550100'));
       expect(r).toBe('316-555-0100');
     });
-    test('already formatted — strips and reformats', async () => {
+    test('already formatted, strips and reformats', async () => {
       const r = await page.evaluate(() => formatPhoneDisplay('316-555-0100'));
       expect(r).toBe('316-555-0100');
     });
-    test('more than 10 digits — truncates to 10', async () => {
+    test('more than 10 digits, truncates to 10', async () => {
       const r = await page.evaluate(() => formatPhoneDisplay('31655501001234'));
       expect(r).toBe('316-555-0100');
     });
-    test('letters mixed in — strips non-digits', async () => {
+    test('letters mixed in, strips non-digits', async () => {
       const r = await page.evaluate(() => formatPhoneDisplay('abc3165550100xyz'));
       expect(r).toBe('316-555-0100');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('formatPhoneDisplay("3165550100")', 5);
       expect(ok).toBe(5);
     });
@@ -9864,7 +9864,7 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 4. fmtPhone
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('fmtPhone', () => {
-    test('golden path — formats input element value', async () => {
+    test('golden path, formats input element value', async () => {
       const r = await page.evaluate(() => {
         try {
           const inp = document.createElement('input');
@@ -9876,7 +9876,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('316-555-0100');
     });
-    test('value with letters — strips and formats', async () => {
+    test('value with letters, strips and formats', async () => {
       const r = await page.evaluate(() => {
         try {
           const inp = document.createElement('input');
@@ -9888,7 +9888,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('316-555-0100');
     });
-    test('empty value — does not throw', async () => {
+    test('empty value, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const inp = document.createElement('input');
@@ -9900,7 +9900,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('');
     });
-    test('6-digit value — partial format', async () => {
+    test('6-digit value, partial format', async () => {
       const r = await page.evaluate(() => {
         try {
           const inp = document.createElement('input');
@@ -9912,7 +9912,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('316-555');
     });
-    test('more than 10 digits — truncates to 10', async () => {
+    test('more than 10 digits, truncates to 10', async () => {
       const r = await page.evaluate(() => {
         try {
           const inp = document.createElement('input');
@@ -9924,16 +9924,16 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('316-555-0100');
     });
-    test('null input object — throws or graceful', async () => {
+    test('null input object, throws or graceful', async () => {
       const r = await page.evaluate(() => {
         try { fmtPhone(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // fmtPhone accesses input.value — null throws TypeError, that is acceptable
+      // fmtPhone accesses input.value: null throws TypeError, that is acceptable
       // but page must not crash
       expect(typeof r.ok).toBe('boolean');
     });
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await page.evaluate(() => {
         let count = 0;
         for (let i = 0; i < 5; i++) {
@@ -9954,39 +9954,39 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 5. fmt2
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('fmt2', () => {
-    test('null — returns $0', async () => {
+    test('null: returns $0', async () => {
       const r = await page.evaluate(() => fmt2(null));
       expect(r).toMatch(/^\$0/);
     });
-    test('undefined — returns $0', async () => {
+    test('undefined: returns $0', async () => {
       const r = await page.evaluate(() => fmt2(undefined));
       expect(r).toMatch(/^\$0/);
     });
-    test('0 — returns $0', async () => {
+    test('0: returns $0', async () => {
       const r = await page.evaluate(() => fmt2(0));
       expect(r).toMatch(/^\$0/);
     });
-    test('1 — rounds up to $5', async () => {
+    test('1: rounds up to $5', async () => {
       const r = await page.evaluate(() => fmt2(1));
       expect(r).toBe('$5');
     });
-    test('5 — stays at $5', async () => {
+    test('5: stays at $5', async () => {
       const r = await page.evaluate(() => fmt2(5));
       expect(r).toBe('$5');
     });
-    test('6 — rounds up to $10', async () => {
+    test('6: rounds up to $10', async () => {
       const r = await page.evaluate(() => fmt2(6));
       expect(r).toBe('$10');
     });
-    test('2375 — rounds to nearest 5', async () => {
+    test('2375: rounds to nearest 5', async () => {
       const r = await page.evaluate(() => fmt2(2375));
       expect(r).toBe('$2,375');
     });
-    test('2376 — rounds up to $2380', async () => {
+    test('2376: rounds up to $2380', async () => {
       const r = await page.evaluate(() => fmt2(2376));
       expect(r).toBe('$2,380');
     });
-    test('string number — coerces', async () => {
+    test('string number, coerces', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: fmt2('100') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -9994,7 +9994,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toContain('$');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('fmt2(2376)', 5);
       expect(ok).toBe(5);
     });
@@ -10004,27 +10004,27 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 6. fmtD
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('fmtD', () => {
-    test('null — returns $0.00', async () => {
+    test('null: returns $0.00', async () => {
       const r = await page.evaluate(() => fmtD(null));
       expect(r).toBe('$0.00');
     });
-    test('undefined — returns $0.00', async () => {
+    test('undefined: returns $0.00', async () => {
       const r = await page.evaluate(() => fmtD(undefined));
       expect(r).toBe('$0.00');
     });
-    test('0 — returns $0.00', async () => {
+    test('0: returns $0.00', async () => {
       const r = await page.evaluate(() => fmtD(0));
       expect(r).toBe('$0.00');
     });
-    test('1.5 — returns $1.50', async () => {
+    test('1.5: returns $1.50', async () => {
       const r = await page.evaluate(() => fmtD(1.5));
       expect(r).toBe('$1.50');
     });
-    test('2375.99 — two decimal places', async () => {
+    test('2375.99: two decimal places', async () => {
       const r = await page.evaluate(() => fmtD(2375.99));
       expect(r).toBe('$2,375.99');
     });
-    test('string number — coerces', async () => {
+    test('string number, coerces', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: fmtD('99.5') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -10032,7 +10032,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('$99.50');
     });
-    test('non-numeric string — returns $0.00', async () => {
+    test('non-numeric string, returns $0.00', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: fmtD('abc') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -10040,7 +10040,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('$0.00');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('fmtD(123.45)', 5);
       expect(ok).toBe(5);
     });
@@ -10050,23 +10050,23 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 7. dateKey
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('dateKey', () => {
-    test('golden path date — returns YYYY-MM-DD', async () => {
+    test('golden path date, returns YYYY-MM-DD', async () => {
       const r = await page.evaluate(() => dateKey(new Date('2026-06-26T12:00:00')));
       expect(r).toBe('2026-06-26');
     });
-    test('Jan 1 — pads month and day', async () => {
+    test('Jan 1, pads month and day', async () => {
       const r = await page.evaluate(() => dateKey(new Date('2026-01-01T12:00:00')));
       expect(r).toBe('2026-01-01');
     });
-    test('Dec 31 — correct key', async () => {
+    test('Dec 31, correct key', async () => {
       const r = await page.evaluate(() => dateKey(new Date('2025-12-31T12:00:00')));
       expect(r).toBe('2025-12-31');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('dateKey(new Date())', 5);
       expect(ok).toBe(5);
     });
-    test('invalid date object — does not throw or produces NaN string', async () => {
+    test('invalid date object, does not throw or produces NaN string', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: dateKey(new Date('not-a-date')) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -10089,7 +10089,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       const year = new Date().getFullYear().toString();
       expect(r.startsWith(year)).toBe(true);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('todayKey()', 5);
       expect(ok).toBe(5);
     });
@@ -10099,27 +10099,27 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 9. parseD
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('parseD', () => {
-    test('golden path — returns Date at noon', async () => {
+    test('golden path, returns Date at noon', async () => {
       const r = await page.evaluate(() => {
         const d = parseD('2026-06-15');
         return { ok: true, iso: d.toISOString(), hours: d.getHours() };
       });
       expect(r.ok).toBe(true);
-      // Date parses at local noon — hours depend on timezone; just verify it is a valid date
+      // Date parses at local noon, hours depend on timezone; just verify it is a valid date
       expect(isNaN(new Date(r.iso).getTime())).toBe(false);
     });
     test('returns Date object', async () => {
       const r = await page.evaluate(() => parseD('2026-01-01') instanceof Date);
       expect(r).toBe(true);
     });
-    test('empty string — returns Date (possibly invalid)', async () => {
+    test('empty string, returns Date (possibly invalid)', async () => {
       const r = await page.evaluate(() => {
         try { const d = parseD(''); return { ok: true, isDate: d instanceof Date }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('parseD("2026-06-26")', 5);
       expect(ok).toBe(5);
     });
@@ -10129,15 +10129,15 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 10. addDays
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('addDays', () => {
-    test('add 1 day — increments date', async () => {
+    test('add 1 day, increments date', async () => {
       const r = await page.evaluate(() => addDays('2026-06-25', 1));
       expect(r).toBe('2026-06-26');
     });
-    test('add 0 days — same date', async () => {
+    test('add 0 days, same date', async () => {
       const r = await page.evaluate(() => addDays('2026-06-26', 0));
       expect(r).toBe('2026-06-26');
     });
-    test('add negative — goes back', async () => {
+    test('add negative, goes back', async () => {
       const r = await page.evaluate(() => addDays('2026-06-26', -1));
       expect(r).toBe('2026-06-25');
     });
@@ -10149,7 +10149,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       const r = await page.evaluate(() => addDays('2025-12-31', 1));
       expect(r).toBe('2026-01-01');
     });
-    test('large n — does not throw', async () => {
+    test('large n, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: addDays('2026-01-01', 365) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -10157,7 +10157,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('addDays("2026-06-26", 1)', 5);
       expect(ok).toBe(5);
     });
@@ -10167,11 +10167,11 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 11. v (DOM value getter)
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('v', () => {
-    test('missing element — returns empty string', async () => {
+    test('missing element, returns empty string', async () => {
       const r = await page.evaluate(() => v('__nonexistent_id_xyz__'));
       expect(r).toBe('');
     });
-    test('element with value — returns value', async () => {
+    test('element with value, returns value', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('input');
         el.id = '__test_v_el__';
@@ -10183,7 +10183,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe('hello');
     });
-    test('element with empty value — returns empty string', async () => {
+    test('element with empty value, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('input');
         el.id = '__test_v_empty__';
@@ -10195,7 +10195,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe('');
     });
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: v(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -10203,7 +10203,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe('');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('v("__nonexistent_id_xyz__")', 5);
       expect(ok).toBe(5);
     });
@@ -10213,11 +10213,11 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 12. nv (DOM numeric value getter)
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('nv', () => {
-    test('missing element — returns 0', async () => {
+    test('missing element, returns 0', async () => {
       const r = await page.evaluate(() => nv('__nonexistent_id_xyz__'));
       expect(r).toBe(0);
     });
-    test('element with numeric value — returns number', async () => {
+    test('element with numeric value, returns number', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('input');
         el.id = '__test_nv_el__';
@@ -10229,7 +10229,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(42.5);
     });
-    test('element with text value — returns 0', async () => {
+    test('element with text value, returns 0', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('input');
         el.id = '__test_nv_text__';
@@ -10241,7 +10241,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(0);
     });
-    test('null id — returns 0', async () => {
+    test('null id, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: nv(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -10249,7 +10249,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe(0);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('nv("__nonexistent_id_xyz__")', 5);
       expect(ok).toBe(5);
     });
@@ -10279,7 +10279,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(0.67);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('IRS()', 5);
       expect(ok).toBe(5);
     });
@@ -10289,43 +10289,43 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 14. fmtTime
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('fmtTime', () => {
-    test('null — returns empty string', async () => {
+    test('null: returns empty string', async () => {
       const r = await page.evaluate(() => fmtTime(null));
       expect(r).toBe('');
     });
-    test('undefined — returns empty string', async () => {
+    test('undefined: returns empty string', async () => {
       const r = await page.evaluate(() => fmtTime(undefined));
       expect(r).toBe('');
     });
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => fmtTime(''));
       expect(r).toBe('');
     });
-    test('00:00 — midnight', async () => {
+    test('00:00: midnight', async () => {
       const r = await page.evaluate(() => fmtTime('00:00'));
       expect(r).toBe('12:00 AM');
     });
-    test('12:00 — noon', async () => {
+    test('12:00: noon', async () => {
       const r = await page.evaluate(() => fmtTime('12:00'));
       expect(r).toBe('12:00 PM');
     });
-    test('09:00 — 9:00 AM', async () => {
+    test('09:00: 9:00 AM', async () => {
       const r = await page.evaluate(() => fmtTime('09:00'));
       expect(r).toBe('9:00 AM');
     });
-    test('13:30 — 1:30 PM', async () => {
+    test('13:30: 1:30 PM', async () => {
       const r = await page.evaluate(() => fmtTime('13:30'));
       expect(r).toBe('1:30 PM');
     });
-    test('23:59 — 11:59 PM', async () => {
+    test('23:59: 11:59 PM', async () => {
       const r = await page.evaluate(() => fmtTime('23:59'));
       expect(r).toBe('11:59 PM');
     });
-    test('single-digit minute — pads with zero', async () => {
+    test('single-digit minute, pads with zero', async () => {
       const r = await page.evaluate(() => fmtTime('09:05'));
       expect(r).toBe('9:05 AM');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('fmtTime("09:30")', 5);
       expect(ok).toBe(5);
     });
@@ -10355,7 +10355,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(400);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('COVERAGE()', 5);
       expect(ok).toBe(5);
     });
@@ -10385,7 +10385,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBeCloseTo(0.30);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('MARGIN()', 5);
       expect(ok).toBe(5);
     });
@@ -10415,7 +10415,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBeCloseTo(1.50);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('MATMARK()', 5);
       expect(ok).toBe(5);
     });
@@ -10465,7 +10465,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r).toContain('doors');
       expect(r).toContain('windows');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('LABOR_RATES()', 5);
       expect(ok).toBe(5);
     });
@@ -10475,39 +10475,39 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 19. initials
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('initials', () => {
-    test('null — returns ?', async () => {
+    test('null: returns ?', async () => {
       const r = await page.evaluate(() => initials(null));
       expect(r).toMatch(/^\?\?$|^\?/);
     });
-    test('undefined — returns ?', async () => {
+    test('undefined: returns ?', async () => {
       const r = await page.evaluate(() => initials(undefined));
       expect(r).toMatch(/^\?\?$|^\?/);
     });
-    test('empty string — uses fallback', async () => {
+    test('empty string, uses fallback', async () => {
       const r = await page.evaluate(() => initials(''));
       expect(r.length).toBeGreaterThanOrEqual(1);
     });
-    test('single name — two chars from name', async () => {
+    test('single name, two chars from name', async () => {
       const r = await page.evaluate(() => initials('Zach'));
       expect(r).toBe('ZA');
     });
-    test('two-word name — first and last initials', async () => {
+    test('two-word name, first and last initials', async () => {
       const r = await page.evaluate(() => initials('John Doe'));
       expect(r).toBe('JD');
     });
-    test('three-word name — first and last initials', async () => {
+    test('three-word name, first and last initials', async () => {
       const r = await page.evaluate(() => initials('Mary Jane Watson'));
       expect(r).toBe('MW');
     });
-    test('lowercase name — returns uppercase', async () => {
+    test('lowercase name, returns uppercase', async () => {
       const r = await page.evaluate(() => initials('john doe'));
       expect(r).toBe('JD');
     });
-    test('extra whitespace — trims', async () => {
+    test('extra whitespace, trims', async () => {
       const r = await page.evaluate(() => initials('  Alice  Smith  '));
       expect(r).toBe('AS');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('initials("John Doe")', 5);
       expect(ok).toBe(5);
     });
@@ -10517,39 +10517,39 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 20. stageAvatar
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('stageAvatar', () => {
-    test('null — returns default blue style', async () => {
+    test('null: returns default blue style', async () => {
       const r = await page.evaluate(() => stageAvatar(null));
       expect(r).toContain('blue');
     });
-    test('undefined — returns default style', async () => {
+    test('undefined: returns default style', async () => {
       const r = await page.evaluate(() => stageAvatar(undefined));
       expect(r).toContain('background');
     });
-    test('empty string — returns default style', async () => {
+    test('empty string, returns default style', async () => {
       const r = await page.evaluate(() => stageAvatar(''));
       expect(r).toContain('background');
     });
-    test('new — blue style', async () => {
+    test('new: blue style', async () => {
       const r = await page.evaluate(() => stageAvatar('new'));
       expect(r).toContain('blue');
     });
-    test('signed — green style', async () => {
+    test('signed: green style', async () => {
       const r = await page.evaluate(() => stageAvatar('signed'));
       expect(r).toContain('green');
     });
-    test('balance_due — red style', async () => {
+    test('balance_due: red style', async () => {
       const r = await page.evaluate(() => stageAvatar('balance_due'));
       expect(r).toContain('#FEE8E8');
     });
-    test('paid — muted style', async () => {
+    test('paid: muted style', async () => {
       const r = await page.evaluate(() => stageAvatar('paid'));
       expect(r).toContain('bg2');
     });
-    test('unknown stage — returns default', async () => {
+    test('unknown stage, returns default', async () => {
       const r = await page.evaluate(() => stageAvatar('not_a_real_stage'));
       expect(r).toContain('blue');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('stageAvatar("signed")', 5);
       expect(ok).toBe(5);
     });
@@ -10559,35 +10559,35 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 21. lighten
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('lighten', () => {
-    test('valid hex — returns rgba string', async () => {
+    test('valid hex, returns rgba string', async () => {
       const r = await page.evaluate(() => lighten('#2D5DA8'));
       expect(r).toMatch(/^rgba\(\d+,\d+,\d+,0\.15\)$/);
     });
-    test('black — returns rgba(0,0,0,0.15)', async () => {
+    test('black: returns rgba(0,0,0,0.15)', async () => {
       const r = await page.evaluate(() => lighten('#000000'));
       expect(r).toBe('rgba(0,0,0,0.15)');
     });
-    test('white — returns rgba(255,255,255,0.15)', async () => {
+    test('white: returns rgba(255,255,255,0.15)', async () => {
       const r = await page.evaluate(() => lighten('#ffffff'));
       expect(r).toBe('rgba(255,255,255,0.15)');
     });
-    test('null — returns #eee fallback', async () => {
+    test('null: returns #eee fallback', async () => {
       const r = await page.evaluate(() => lighten(null));
       expect(r).toBe('#eee');
     });
-    test('undefined — returns #eee fallback', async () => {
+    test('undefined: returns #eee fallback', async () => {
       const r = await page.evaluate(() => lighten(undefined));
       expect(r).toBe('#eee');
     });
-    test('empty string — returns #eee fallback', async () => {
+    test('empty string, returns #eee fallback', async () => {
       const r = await page.evaluate(() => lighten(''));
       expect(r).toBe('#eee');
     });
-    test('malformed hex — returns #eee fallback', async () => {
+    test('malformed hex, returns #eee fallback', async () => {
       const r = await page.evaluate(() => lighten('not-a-color'));
       expect(r).toBe('#eee');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('lighten("#2D5DA8")', 5);
       expect(ok).toBe(5);
     });
@@ -10597,36 +10597,36 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 22. barChart
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('barChart', () => {
-    test('golden path — returns HTML string', async () => {
+    test('golden path, returns HTML string', async () => {
       const r = await page.evaluate(() => barChart('Labor', 500, 1000, '#2D5DA8'));
       expect(r).toContain('Labor');
       expect(r).toContain('prog-fill');
       expect(r).toContain('50%');
     });
-    test('zero total — does not throw (pct is NaN or Infinity)', async () => {
+    test('zero total, does not throw (pct is NaN or Infinity)', async () => {
       const r = await page.evaluate(() => {
         try { const html = barChart('Test', 0, 0, '#000'); return { ok: true, html }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
     });
-    test('val equals total — 100%', async () => {
+    test('val equals total, 100%', async () => {
       const r = await page.evaluate(() => barChart('Full', 1000, 1000, '#0f0'));
       expect(r).toContain('100%');
     });
-    test('null label — escapes gracefully', async () => {
+    test('null label, escapes gracefully', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, html: barChart(null, 100, 200, '#000') }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
     });
-    test('XSS in label — escapes HTML', async () => {
+    test('XSS in label, escapes HTML', async () => {
       const r = await page.evaluate(() => barChart('<script>alert(1)</script>', 100, 200, '#000'));
       expect(r).not.toContain('<script>');
       expect(r).toContain('&lt;script&gt;');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('barChart("Label", 500, 1000, "#000")', 5);
       expect(ok).toBe(5);
     });
@@ -10638,11 +10638,11 @@ test.describe('utils.js — exhaustive coverage', () => {
   test.describe('calcBrackets', () => {
     const BRACKETS = [[10000, 0.10], [40000, 0.12], [89075, 0.22], [Infinity, 0.24]];
 
-    test('zero income — returns 0 tax', async () => {
+    test('zero income, returns 0 tax', async () => {
       const r = await page.evaluate((b) => calcBrackets(0, b), BRACKETS);
       expect(r).toBe(0);
     });
-    test('income in first bracket — correct tax', async () => {
+    test('income in first bracket, correct tax', async () => {
       const r = await page.evaluate((b) => calcBrackets(5000, b), BRACKETS);
       expect(r).toBeCloseTo(500, 1); // 5000 * 0.10
     });
@@ -10651,7 +10651,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       // 10000 * 0.10 + 10000 * 0.12 = 1000 + 1200 = 2200
       expect(r).toBeCloseTo(2200, 1);
     });
-    test('null income — handles gracefully', async () => {
+    test('null income, handles gracefully', async () => {
       const r = await page.evaluate((b) => {
         try { return { ok: true, result: calcBrackets(null, b) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -10659,11 +10659,11 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe(0);
     });
-    test('empty brackets — returns 0', async () => {
+    test('empty brackets, returns 0', async () => {
       const r = await page.evaluate(() => calcBrackets(50000, []));
       expect(r).toBe(0);
     });
-    test('negative income — returns 0 (no negative tax)', async () => {
+    test('negative income, returns 0 (no negative tax)', async () => {
       const r = await page.evaluate((b) => {
         try { return { ok: true, result: calcBrackets(-1000, b) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -10671,7 +10671,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.result).toBe(0);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate((b) => {
         const bStr = JSON.stringify(b);
         let count = 0;
@@ -10688,31 +10688,31 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 24. fmtDateShort
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('fmtDateShort', () => {
-    test('null — returns empty string', async () => {
+    test('null: returns empty string', async () => {
       const r = await page.evaluate(() => fmtDateShort(null));
       expect(r).toBe('');
     });
-    test('undefined — returns empty string', async () => {
+    test('undefined: returns empty string', async () => {
       const r = await page.evaluate(() => fmtDateShort(undefined));
       expect(r).toBe('');
     });
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => fmtDateShort(''));
       expect(r).toBe('');
     });
-    test('valid date string — returns human-readable date', async () => {
+    test('valid date string, returns human-readable date', async () => {
       const r = await page.evaluate(() => fmtDateShort('2026-06-15'));
       expect(r).toContain('Jun');
       expect(r).toContain('2026');
     });
-    test('invalid date string — returns input or fallback', async () => {
+    test('invalid date string, returns input or fallback', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: fmtDateShort('not-a-date') }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('fmtDateShort("2026-06-15")', 5);
       expect(ok).toBe(5);
     });
@@ -10722,48 +10722,48 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 25. escHtml
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('escHtml', () => {
-    test('null — returns "null" string escaped', async () => {
+    test('null: returns "null" string escaped', async () => {
       const r = await page.evaluate(() => escHtml(null));
       expect(r).toBe('null');
     });
-    test('undefined — returns "undefined" string', async () => {
+    test('undefined: returns "undefined" string', async () => {
       const r = await page.evaluate(() => escHtml(undefined));
       expect(r).toBe('undefined');
     });
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => escHtml(''));
       expect(r).toBe('');
     });
-    test('& — escapes to &amp;', async () => {
+    test('&: escapes to &amp;', async () => {
       const r = await page.evaluate(() => escHtml('foo & bar'));
       expect(r).toBe('foo &amp; bar');
     });
-    test('< — escapes to &lt;', async () => {
+    test('<: escapes to &lt;', async () => {
       const r = await page.evaluate(() => escHtml('<div>'));
       expect(r).toBe('&lt;div&gt;');
     });
-    test('> — escapes to &gt;', async () => {
+    test('>, escapes to &gt;', async () => {
       const r = await page.evaluate(() => escHtml('>'));
       expect(r).toBe('&gt;');
     });
-    test('" — escapes to &quot;', async () => {
+    test('", escapes to &quot;', async () => {
       const r = await page.evaluate(() => escHtml('"hello"'));
       expect(r).toBe('&quot;hello&quot;');
     });
-    test("' — escapes to &#39;", async () => {
+    test("', escapes to &#39;", async () => {
       const r = await page.evaluate(() => escHtml("it's"));
       expect(r).toBe("it&#39;s");
     });
-    test('full XSS string — fully escaped', async () => {
+    test('full XSS string, fully escaped', async () => {
       const r = await page.evaluate(() => escHtml('<script>alert("xss")</script>'));
       expect(r).not.toContain('<script>');
       expect(r).toContain('&lt;script&gt;');
     });
-    test('number — coerces to string', async () => {
+    test('number: coerces to string', async () => {
       const r = await page.evaluate(() => escHtml(42));
       expect(r).toBe('42');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('escHtml("<b>test</b>")', 5);
       expect(ok).toBe(5);
     });
@@ -10773,7 +10773,7 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 26. closeTopModal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('closeTopModal', () => {
-    test('no modal present — does not throw', async () => {
+    test('no modal present, does not throw', async () => {
       const r = await page.evaluate(() => {
         // Ensure no modal is in DOM
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -10782,7 +10782,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('modal present — removes it', async () => {
+    test('modal present, removes it', async () => {
       const r = await page.evaluate(() => {
         const ov = document.createElement('div');
         ov.className = 'zmodal-overlay';
@@ -10792,7 +10792,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(0);
     });
-    test('multiple modals — removes first found', async () => {
+    test('multiple modals, removes first found', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         for (let i = 0; i < 3; i++) {
@@ -10808,7 +10808,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(2);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(() => {
         let count = 0;
         for (let i = 0; i < 5; i++) {
@@ -10845,7 +10845,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toContain('Delete this item?');
     });
-    test('null msg — does not throw', async () => {
+    test('null msg, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -10856,7 +10856,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('null onYes — throws on yes click but modal opens', async () => {
+    test('null onYes, throws on yes click but modal opens', async () => {
       const r = await page.evaluate(() => {
         try {
           document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -10866,10 +10866,10 @@ test.describe('utils.js — exhaustive coverage', () => {
           return { ok: true, hasModal };
         } catch (e) { return { ok: false, err: e.message }; }
       });
-      // modal may open before the null callback is used — either way page must not crash at call time
+      // modal may open before the null callback is used, either way page must not crash at call time
       expect(typeof r.ok).toBe('boolean');
     });
-    test('yes button click — calls onYes and removes modal', async () => {
+    test('yes button click, calls onYes and removes modal', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         let called = false;
@@ -10880,7 +10880,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
       expect(r.modalGone).toBe(true);
     });
-    test('cancel button click — removes modal without calling onYes', async () => {
+    test('cancel button click, removes modal without calling onYes', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         let called = false;
@@ -10913,7 +10913,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r).toContain('Confirm');
       expect(r).toContain('Nope');
     });
-    test('overlay click — removes modal', async () => {
+    test('overlay click, removes modal', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         zConfirm('Test?', () => {});
@@ -10923,7 +10923,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(true);
     });
-    test('concurrent calls — opens multiple modals without crash', async () => {
+    test('concurrent calls, opens multiple modals without crash', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         let count = 0;
@@ -10973,7 +10973,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toContain('Custom Title');
     });
-    test('null msg — does not throw', async () => {
+    test('null msg, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -10984,7 +10984,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('OK button — removes modal', async () => {
+    test('OK button, removes modal', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         zAlert('Click OK');
@@ -10993,7 +10993,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(true);
     });
-    test('overlay click — removes modal', async () => {
+    test('overlay click, removes modal', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         zAlert('Test');
@@ -11003,7 +11003,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(true);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         let count = 0;
@@ -11031,7 +11031,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(true);
     });
-    test('null msg — does not throw', async () => {
+    test('null msg, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -11042,7 +11042,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('OK button — calls onOk with input value', async () => {
+    test('OK button, calls onOk with input value', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         let received = null;
@@ -11054,7 +11054,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.received).toBe('TestValue');
       expect(r.modalGone).toBe(true);
     });
-    test('OK with empty input — calls onOk with empty string', async () => {
+    test('OK with empty input, calls onOk with empty string', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         let received = null;
@@ -11065,7 +11065,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe('');
     });
-    test('cancel — removes modal without calling onOk', async () => {
+    test('cancel: removes modal without calling onOk', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         let called = false;
@@ -11086,7 +11086,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe('prepopulated');
     });
-    test('Enter key — fires OK callback', async () => {
+    test('Enter key, fires OK callback', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         let received = null;
@@ -11099,7 +11099,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.received).toBe('KeyEnterVal');
       expect(r.modalGone).toBe(true);
     });
-    test('overlay click — removes modal', async () => {
+    test('overlay click, removes modal', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         zPrompt('Test', () => {});
@@ -11109,7 +11109,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(true);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
         let count = 0;
@@ -11137,7 +11137,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toContain('Toast message');
     });
-    test('null msg — does not throw', async () => {
+    test('null msg, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           showToast(null);
@@ -11150,10 +11150,10 @@ test.describe('utils.js — exhaustive coverage', () => {
     // Old behavior: showToast rendered its icon arg as a literal emoji character,
     // so .toast-icon's textContent equaled the glyph itself ('✓', '★', etc.).
     // New behavior: showToast (js/utils.js) now renders any icon it has an SVG
-    // mapping for (js/icons.js) as an inline <svg> via innerHTML — an SVG element
+    // mapping for (js/icons.js) as an inline <svg> via innerHTML, an SVG element
     // has no text content, so textContent is empty even though the icon rendered
     // correctly. Assert on the SVG markup instead of the (now absent) text.
-    test('no icon — defaults to checkmark', async () => {
+    test('no icon, defaults to checkmark', async () => {
       const r = await page.evaluate(() => {
         showToast('Hello');
         const el = document.querySelector('.toast .toast-icon');
@@ -11181,7 +11181,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe(true);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         let count = 0;
         for (let i = 0; i < 5; i++) {
@@ -11198,7 +11198,7 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 31. _fmtExpDate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_fmtExpDate', () => {
-    test('2 digits — no slash', async () => {
+    test('2 digits, no slash', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('input');
         el.value = '12';
@@ -11207,7 +11207,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe('12');
     });
-    test('3 digits — inserts slash after 2', async () => {
+    test('3 digits, inserts slash after 2', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('input');
         el.value = '123';
@@ -11216,7 +11216,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe('12/3');
     });
-    test('6 digits — MM/YY format', async () => {
+    test('6 digits, MM/YY format', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('input');
         el.value = '122026';
@@ -11225,7 +11225,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe('12/2026');
     });
-    test('already formatted — keeps format', async () => {
+    test('already formatted, keeps format', async () => {
       const r = await page.evaluate(() => {
         const el = document.createElement('input');
         el.value = '12/26';
@@ -11234,7 +11234,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r).toBe('12/26');
     });
-    test('empty value — does not throw', async () => {
+    test('empty value, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const el = document.createElement('input');
@@ -11246,15 +11246,15 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.val).toBe('');
     });
-    test('null element — throws TypeError (acceptable)', async () => {
+    test('null element, throws TypeError (acceptable)', async () => {
       const r = await page.evaluate(() => {
         try { _fmtExpDate(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // Accessing null.value is a TypeError — page must not crash
+      // Accessing null.value is a TypeError, page must not crash
       expect(typeof r.ok).toBe('boolean');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(() => {
         let count = 0;
         for (let i = 0; i < 5; i++) {
@@ -11275,23 +11275,23 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 32. _ymdToMdY
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_ymdToMdY', () => {
-    test('null — returns empty string', async () => {
+    test('null: returns empty string', async () => {
       const r = await page.evaluate(() => _ymdToMdY(null));
       expect(r).toBe('');
     });
-    test('undefined — returns empty string', async () => {
+    test('undefined: returns empty string', async () => {
       const r = await page.evaluate(() => _ymdToMdY(undefined));
       expect(r).toBe('');
     });
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => _ymdToMdY(''));
       expect(r).toBe('');
     });
-    test('no dash — returns input as-is', async () => {
+    test('no dash, returns input as-is', async () => {
       const r = await page.evaluate(() => _ymdToMdY('20260615'));
       expect(r).toBe('20260615');
     });
-    test('golden path — converts YYYY-MM-DD to MM/DD/YYYY', async () => {
+    test('golden path, converts YYYY-MM-DD to MM/DD/YYYY', async () => {
       const r = await page.evaluate(() => _ymdToMdY('2026-06-15'));
       expect(r).toBe('06/15/2026');
     });
@@ -11299,7 +11299,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       const r = await page.evaluate(() => _ymdToMdY('2026-01-05'));
       expect(r).toBe('01/05/2026');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_ymdToMdY("2026-06-15")', 5);
       expect(ok).toBe(5);
     });
@@ -11309,31 +11309,31 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 33. _mdYToYmd
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_mdYToYmd', () => {
-    test('null — returns empty string', async () => {
+    test('null: returns empty string', async () => {
       const r = await page.evaluate(() => _mdYToYmd(null));
       expect(r).toBe('');
     });
-    test('undefined — returns empty string', async () => {
+    test('undefined: returns empty string', async () => {
       const r = await page.evaluate(() => _mdYToYmd(undefined));
       expect(r).toBe('');
     });
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => _mdYToYmd(''));
       expect(r).toBe('');
     });
-    test('no slash — returns input as-is', async () => {
+    test('no slash, returns input as-is', async () => {
       const r = await page.evaluate(() => _mdYToYmd('06152026'));
       expect(r).toBe('06152026');
     });
-    test('golden path — converts MM/DD/YYYY to YYYY-MM-DD', async () => {
+    test('golden path, converts MM/DD/YYYY to YYYY-MM-DD', async () => {
       const r = await page.evaluate(() => _mdYToYmd('06/15/2026'));
       expect(r).toBe('2026-06-15');
     });
-    test('invalid year length — returns empty string', async () => {
+    test('invalid year length, returns empty string', async () => {
       const r = await page.evaluate(() => _mdYToYmd('06/15/26'));
       expect(r).toBe('');
     });
-    test('wrong part count — returns empty string', async () => {
+    test('wrong part count, returns empty string', async () => {
       const r = await page.evaluate(() => _mdYToYmd('06/2026'));
       expect(r).toBe('');
     });
@@ -11341,7 +11341,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       const r = await page.evaluate(() => _mdYToYmd('6/5/2026'));
       expect(r).toBe('2026-06-05');
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_mdYToYmd("06/15/2026")', 5);
       expect(ok).toBe(5);
     });
@@ -11351,7 +11351,7 @@ test.describe('utils.js — exhaustive coverage', () => {
   // 34. geoIfGranted
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('geoIfGranted', () => {
-    test('no geolocation support — returns early without throw', async () => {
+    test('no geolocation support, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         const origGeo = navigator.geolocation;
         try {
@@ -11366,7 +11366,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('null callbacks — does not throw on early return', async () => {
+    test('null callbacks, does not throw on early return', async () => {
       const r = await page.evaluate(() => {
         const origGeo = navigator.geolocation;
         try {
@@ -11381,7 +11381,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('S.locationGranted true — calls getCurrentPosition', async () => {
+    test('S.locationGranted true, calls getCurrentPosition', async () => {
       const r = await page.evaluate(() => {
         try {
           const origGranted = S.locationGranted;
@@ -11404,7 +11404,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.called).toBe(true);
     });
-    test('S.locationGranted false, no permissions API — returns early', async () => {
+    test('S.locationGranted false, no permissions API, returns early', async () => {
       const r = await page.evaluate(() => {
         try {
           const origGranted = S.locationGranted;
@@ -11422,7 +11422,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           localStorage.setItem('zp3_S', '{INVALID{{{{');
@@ -11439,7 +11439,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const origGeo = navigator.geolocation;
         Object.defineProperty(navigator, 'geolocation', { value: null, configurable: true });
@@ -11458,10 +11458,10 @@ test.describe('utils.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // Corrupted localStorage resilience — cross-function
+  // Corrupted localStorage resilience, cross-function
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('corrupted localStorage resilience', () => {
-    test('fmt — graceful with corrupted localStorage', async () => {
+    test('fmt: graceful with corrupted localStorage', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_S', '{INVALID{{{{');
         try { return { ok: true, result: fmt(1234) }; }
@@ -11470,7 +11470,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('IRS — graceful with corrupted localStorage', async () => {
+    test('IRS: graceful with corrupted localStorage', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_S', '{INVALID{{{{');
         try { return { ok: true, result: IRS() }; }
@@ -11479,7 +11479,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('showToast — graceful with corrupted localStorage', async () => {
+    test('showToast: graceful with corrupted localStorage', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_S', '{INVALID{{{{');
         try {
@@ -11491,7 +11491,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('zConfirm — graceful with corrupted localStorage', async () => {
+    test('zConfirm: graceful with corrupted localStorage', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_S', '{INVALID{{{{');
         try {
@@ -11504,7 +11504,7 @@ test.describe('utils.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
     });
-    test('calcBrackets — graceful with corrupted localStorage', async () => {
+    test('calcBrackets: graceful with corrupted localStorage', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_S', '{INVALID{{{{');
         try {
@@ -11520,14 +11520,14 @@ test.describe('utils.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // No console errors
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — utils.js', async () => {
+  test('no console errors, utils.js', async () => {
     assertNoErrors(page, 'utils.js');
   });
 });
 
 
 // ═══ e2e-settings-exhaustive.spec.js ═══
-test.describe('settings.js — exhaustive coverage', () => {
+test.describe('settings.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -11608,7 +11608,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _openSetDetail
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_openSetDetail', () => {
-    test('null key — does not throw', async () => {
+    test('null key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11616,7 +11616,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined key — does not throw', async () => {
+    test('undefined key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11624,7 +11624,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string key — does not throw', async () => {
+    test('empty string key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11632,7 +11632,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent key — set-index-view gets hidden class', async () => {
+    test('nonexistent key, set-index-view gets hidden class', async () => {
       const r = await page.evaluate(() => {
         try {
           _openSetDetail('nonexistent-key-xyz');
@@ -11644,7 +11644,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(true);
     });
 
-    test('key=integrations — calls _renderIntegrations without throw', async () => {
+    test('key=integrations: calls _renderIntegrations without throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail('integrations'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11652,7 +11652,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('key=branding — calls _renderBrandSwatches without throw', async () => {
+    test('key=branding: calls _renderBrandSwatches without throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail('branding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11660,7 +11660,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('numeric type input — does not throw', async () => {
+    test('numeric type input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openSetDetail(42); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11668,12 +11668,12 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent('_openSetDetail("branding")', 5);
       expect(ok).toBe(5);
     });
 
-    test('missing set-index-view DOM — does not throw', async () => {
+    test('missing set-index-view DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const iv = document.getElementById('set-index-view');
         if (iv) iv.remove();
@@ -11697,7 +11697,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _closeSetDetail
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_closeSetDetail', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _closeSetDetail(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11715,7 +11715,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('missing set-index-view — does not throw', async () => {
+    test('missing set-index-view, does not throw', async () => {
       const r = await page.evaluate(() => {
         const iv = document.getElementById('set-index-view');
         if (iv) iv.remove();
@@ -11733,7 +11733,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_closeSetDetail()', 5);
       expect(ok).toBe(5);
     });
@@ -11743,7 +11743,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _renderSetIndex
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderSetIndex', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderSetIndex(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11751,11 +11751,11 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with S.bname set — renders business name into set-meta-biz', async () => {
+    test('with S.bname set, renders business name into set-meta-biz', async () => {
       const r = await page.evaluate(() => {
         const prev = S.bname;
         S.bname = 'Acme Painting';
-        // Ensure element exists — beforeAll creates it but re-create if missing
+        // Ensure element exists, beforeAll creates it but re-create if missing
         let el = document.getElementById('set-meta-biz');
         const created = !el;
         if (created) { el = document.createElement('div'); el.id = 'set-meta-biz'; document.body.appendChild(el); }
@@ -11768,11 +11768,11 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Acme Painting');
     });
 
-    test('with S.brandColor — renders color into set-meta-branding', async () => {
+    test('with S.brandColor: renders color into set-meta-branding', async () => {
       const r = await page.evaluate(() => {
         const prev = S.brandColor;
         S.brandColor = '#166534';
-        // Ensure element exists — beforeAll creates it but re-create if missing
+        // Ensure element exists, beforeAll creates it but re-create if missing
         let el = document.getElementById('set-meta-branding');
         const created = !el;
         if (created) { el = document.createElement('div'); el.id = 'set-meta-branding'; document.body.appendChild(el); }
@@ -11791,14 +11791,14 @@ test.describe('settings.js — exhaustive coverage', () => {
         _renderSetIndex();
         _renderSetIndex();
         const el = document.getElementById('set-meta-biz');
-        // innerHTML should be set exactly once — not appended 3 times
+        // innerHTML should be set exactly once, not appended 3 times
         return el ? el.children.length : 0;
       });
       // Should have at most 1 child (strong tag), not 3x duplicates
       expect(r).toBeLessThanOrEqual(2);
     });
 
-    test('missing all meta DOM — does not throw', async () => {
+    test('missing all meta DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const ids = ['set-meta-biz','set-meta-branding','set-meta-rates','set-meta-legal',
                      'set-meta-taxes','set-meta-cloud','set-meta-notifications','set-meta-integrations','set-index-meta'];
@@ -11824,7 +11824,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage before call — does not throw', async () => {
+    test('corrupted localStorage before call, does not throw', async () => {
       const r = await page.evaluate(() => {
         const key = Object.keys(localStorage)[0] || 'zp3_s';
         const prev = localStorage.getItem(key);
@@ -11836,7 +11836,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_renderSetIndex()', 5);
       expect(ok).toBe(5);
     });
@@ -11846,57 +11846,57 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _brandColorName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_brandColorName', () => {
-    test('null — returns Custom', async () => {
+    test('null: returns Custom', async () => {
       const r = await page.evaluate(() => _brandColorName(null));
       expect(r).toBe('Custom');
     });
 
-    test('undefined — returns Custom', async () => {
+    test('undefined: returns Custom', async () => {
       const r = await page.evaluate(() => _brandColorName(undefined));
       expect(r).toBe('Custom');
     });
 
-    test('empty string — returns Custom', async () => {
+    test('empty string, returns Custom', async () => {
       const r = await page.evaluate(() => _brandColorName(''));
       expect(r).toBe('Custom');
     });
 
-    test('unknown hex — returns Custom', async () => {
+    test('unknown hex, returns Custom', async () => {
       const r = await page.evaluate(() => _brandColorName('#ffffff'));
       expect(r).toBe('Custom');
     });
 
-    test('#2D5DA8 — returns Denim', async () => {
+    test('#2D5DA8: returns Denim', async () => {
       const r = await page.evaluate(() => _brandColorName('#2D5DA8'));
       expect(r).toBe('Denim');
     });
 
-    test('#166534 — returns Forest', async () => {
+    test('#166534: returns Forest', async () => {
       const r = await page.evaluate(() => _brandColorName('#166534'));
       expect(r).toBe('Forest');
     });
 
-    test('#92400e — returns Amber (lowercase)', async () => {
+    test('#92400e: returns Amber (lowercase)', async () => {
       const r = await page.evaluate(() => _brandColorName('#92400e'));
       expect(r).toBe('Amber');
     });
 
-    test('#991b1b — returns Crimson', async () => {
+    test('#991b1b: returns Crimson', async () => {
       const r = await page.evaluate(() => _brandColorName('#991b1b'));
       expect(r).toBe('Crimson');
     });
 
-    test('#6d28d9 — returns Violet', async () => {
+    test('#6d28d9: returns Violet', async () => {
       const r = await page.evaluate(() => _brandColorName('#6d28d9'));
       expect(r).toBe('Violet');
     });
 
-    test('#18181b — returns Charcoal', async () => {
+    test('#18181b: returns Charcoal', async () => {
       const r = await page.evaluate(() => _brandColorName('#18181b'));
       expect(r).toBe('Charcoal');
     });
 
-    test('number input — does not throw', async () => {
+    test('number input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _brandColorName(42) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11904,7 +11904,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — consistent results', async () => {
+    test('concurrent calls, consistent results', async () => {
       const ok = await concurrent('_brandColorName("#2D5DA8")', 5);
       expect(ok).toBe(5);
     });
@@ -11914,7 +11914,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _renderBrandSwatches
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderBrandSwatches', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderBrandSwatches(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11922,7 +11922,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderBrandSwatches(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11930,7 +11930,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — falls back to default color', async () => {
+    test('empty string, falls back to default color', async () => {
       const r = await page.evaluate(() => {
         try { _renderBrandSwatches(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -11938,7 +11938,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid preset color — renders active swatch', async () => {
+    test('valid preset color, renders active swatch', async () => {
       const r = await page.evaluate(() => {
         _renderBrandSwatches('#2D5DA8');
         const container = document.getElementById('set-brand-swatches');
@@ -11948,7 +11948,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('#2D5DA8');
     });
 
-    test('custom color — renders custom swatch as active', async () => {
+    test('custom color, renders custom swatch as active', async () => {
       const r = await page.evaluate(() => {
         _renderBrandSwatches('#abcdef');
         const container = document.getElementById('set-brand-swatches');
@@ -11966,7 +11966,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('#2D5DA8');
     });
 
-    test('missing container DOM — does not throw', async () => {
+    test('missing container DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('set-brand-swatches');
         if (el) el.remove();
@@ -11996,7 +11996,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_renderBrandSwatches("#166534")', 5);
       expect(ok).toBe(5);
     });
@@ -12006,7 +12006,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _pickedBrandColor
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_pickedBrandColor', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _pickedBrandColor(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12014,7 +12014,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _pickedBrandColor(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12022,7 +12022,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid hex — sets input value', async () => {
+    test('valid hex, sets input value', async () => {
       const r = await page.evaluate(() => {
         _pickedBrandColor('#991b1b');
         const inp = document.getElementById('set-brandcolor');
@@ -12031,7 +12031,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('#991b1b');
     });
 
-    test('missing input DOM — does not throw', async () => {
+    test('missing input DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const inp = document.getElementById('set-brandcolor');
         if (inp) inp.remove();
@@ -12049,7 +12049,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_pickedBrandColor("#2D5DA8")', 5);
       expect(ok).toBe(5);
     });
@@ -12059,7 +12059,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _checkSubdomain
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_checkSubdomain', () => {
-    test('null — clears status element', async () => {
+    test('null: clears status element', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('set-subdomain-status');
         if (el) el.textContent = 'old text';
@@ -12070,7 +12070,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.text).toBe('');
     });
 
-    test('undefined — clears status element', async () => {
+    test('undefined: clears status element', async () => {
       const r = await page.evaluate(() => {
         try { _checkSubdomain(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12078,7 +12078,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — clears status element', async () => {
+    test('empty string, clears status element', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('set-subdomain-status');
         if (el) el.textContent = 'old';
@@ -12088,7 +12088,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('valid subdomain (abc123) — shows available', async () => {
+    test('valid subdomain (abc123): shows available', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('abc123');
         const el = document.getElementById('set-subdomain-status');
@@ -12097,7 +12097,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Available');
     });
 
-    test('too short (ab) — shows error', async () => {
+    test('too short (ab): shows error', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('ab');
         const el = document.getElementById('set-subdomain-status');
@@ -12106,7 +12106,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('lowercase');
     });
 
-    test('invalid chars (UPPER) — shows error', async () => {
+    test('invalid chars (UPPER): shows error', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('INVALID');
         const el = document.getElementById('set-subdomain-status');
@@ -12115,7 +12115,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('lowercase');
     });
 
-    test('too long (31 chars) — shows error', async () => {
+    test('too long (31 chars), shows error', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('a'.repeat(31));
         const el = document.getElementById('set-subdomain-status');
@@ -12124,7 +12124,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('lowercase');
     });
 
-    test('30 chars exactly — shows available', async () => {
+    test('30 chars exactly, shows available', async () => {
       const r = await page.evaluate(() => {
         _checkSubdomain('a'.repeat(30));
         const el = document.getElementById('set-subdomain-status');
@@ -12133,7 +12133,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Available');
     });
 
-    test('missing DOM — does not throw', async () => {
+    test('missing DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('set-subdomain-status');
         if (el) el.remove();
@@ -12151,7 +12151,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_checkSubdomain("myshop")', 5);
       expect(ok).toBe(5);
     });
@@ -12161,7 +12161,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _manageSubscription
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_manageSubscription', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         // Stub zAlert to prevent modal side-effects
         const orig = window.zAlert;
@@ -12180,7 +12180,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         const orig = window.zAlert;
         window.zAlert = () => {};
@@ -12199,7 +12199,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _renderIntegrations
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_renderIntegrations', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _renderIntegrations(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12216,7 +12216,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Stripe');
     });
 
-    test('Stripe not connected — shows Not connected', async () => {
+    test('Stripe not connected, shows Not connected', async () => {
       const r = await page.evaluate(() => {
         const prev = window._stripeConnectStatus;
         window._stripeConnectStatus = { connected: false };
@@ -12229,7 +12229,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Not connected');
     });
 
-    test('Stripe connected — shows Connected', async () => {
+    test('Stripe connected, shows Connected', async () => {
       const r = await page.evaluate(() => {
         const prev = window._stripeConnectStatus;
         window._stripeConnectStatus = { connected: true, charges_enabled: true, stripe_account_id: 'acct_test123' };
@@ -12242,7 +12242,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Connected');
     });
 
-    test('missing integrations-list DOM — does not throw', async () => {
+    test('missing integrations-list DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('integrations-list');
         if (el) el.remove();
@@ -12271,7 +12271,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_renderIntegrations()', 5);
       expect(ok).toBe(5);
     });
@@ -12281,7 +12281,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _openStripeConnect
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_openStripeConnect', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _openStripeConnect(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12289,10 +12289,10 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing DOM — does not throw', async () => {
+    test('missing DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('stripe-connect-status-ui');
-        // element doesn't exist — should handle gracefully
+        // element doesn't exist, should handle gracefully
         try { _openStripeConnect(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
@@ -12323,7 +12323,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_openStripeConnect()', 5);
       expect(ok).toBe(5);
     });
@@ -12333,18 +12333,18 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _filterSetRows
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_filterSetRows', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _filterSetRows(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // null.toLowerCase() will throw — acceptable if the function handles it
+      // null.toLowerCase() will throw, acceptable if the function handles it
       // (the function calls q.toLowerCase() so we just check it is survivable at call site)
-      // Either ok or err is fine — just no uncaught page crash
+      // Either ok or err is fine, just no uncaught page crash
       expect(typeof r).toBe('object');
     });
 
-    test('empty string — shows all rows', async () => {
+    test('empty string, shows all rows', async () => {
       const r = await page.evaluate(() => {
         // Create fake set-index-view with rows
         let iv = document.getElementById('set-index-view');
@@ -12359,7 +12359,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(0);
     });
 
-    test('matching term — shows matching rows', async () => {
+    test('matching term, shows matching rows', async () => {
       const r = await page.evaluate(() => {
         let iv = document.getElementById('set-index-view');
         iv.innerHTML = '<div class="set-idx-row" data-search="billing">Billing</div>' +
@@ -12375,7 +12375,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.hidden).toBe(1);
     });
 
-    test('non-matching term — hides all rows', async () => {
+    test('non-matching term, hides all rows', async () => {
       const r = await page.evaluate(() => {
         let iv = document.getElementById('set-index-view');
         iv.innerHTML = '<div class="set-idx-row" data-search="billing">Billing</div>' +
@@ -12401,7 +12401,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('no rows in DOM — does not throw', async () => {
+    test('no rows in DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         let iv = document.getElementById('set-index-view');
         iv.innerHTML = '';
@@ -12411,7 +12411,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_filterSetRows("tax")', 5);
       expect(ok).toBe(5);
     });
@@ -12421,22 +12421,22 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licDaysUntil
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licDaysUntil', () => {
-    test('no expiryDate — returns null', async () => {
+    test('no expiryDate, returns null', async () => {
       const r = await page.evaluate(() => _licDaysUntil({}));
       expect(r).toBeNull();
     });
 
-    test('null expiryDate — returns null', async () => {
+    test('null expiryDate, returns null', async () => {
       const r = await page.evaluate(() => _licDaysUntil({ expiryDate: null }));
       expect(r).toBeNull();
     });
 
-    test('empty string expiryDate — returns null', async () => {
+    test('empty string expiryDate, returns null', async () => {
       const r = await page.evaluate(() => _licDaysUntil({ expiryDate: '' }));
       expect(r).toBeNull();
     });
 
-    test('future date — returns positive number', async () => {
+    test('future date, returns positive number', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 60).toISOString().split('T')[0];
         return _licDaysUntil({ expiryDate: future });
@@ -12444,7 +12444,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBeGreaterThan(0);
     });
 
-    test('past date — returns negative number', async () => {
+    test('past date, returns negative number', async () => {
       const r = await page.evaluate(() => {
         const past = new Date(Date.now() - 86400000 * 30).toISOString().split('T')[0];
         return _licDaysUntil({ expiryDate: past });
@@ -12452,7 +12452,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBeLessThan(0);
     });
 
-    test('today — returns 0 or 1 (boundary)', async () => {
+    test('today: returns 0 or 1 (boundary)', async () => {
       const r = await page.evaluate(() => {
         const today = new Date().toISOString().split('T')[0];
         return _licDaysUntil({ expiryDate: today });
@@ -12460,7 +12460,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(Math.abs(r)).toBeLessThanOrEqual(2);
     });
 
-    test('empty object — does not throw', async () => {
+    test('empty object, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _licDaysUntil({}) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12469,7 +12469,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licDaysUntil({ expiryDate: "2099-01-01" })', 5);
       expect(ok).toBe(5);
     });
@@ -12479,17 +12479,17 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licStatus
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licStatus', () => {
-    test('hepa_vacuum typeId — returns equipment', async () => {
+    test('hepa_vacuum typeId, returns equipment', async () => {
       const r = await page.evaluate(() => _licStatus({ typeId: 'hepa_vacuum' }));
       expect(r).toBe('equipment');
     });
 
-    test('no expiryDate — returns noexpiry', async () => {
+    test('no expiryDate, returns noexpiry', async () => {
       const r = await page.evaluate(() => _licStatus({ typeId: 'biz_license' }));
       expect(r).toBe('noexpiry');
     });
 
-    test('expired date — returns expired', async () => {
+    test('expired date, returns expired', async () => {
       const r = await page.evaluate(() => {
         const past = new Date(Date.now() - 86400000 * 60).toISOString().split('T')[0];
         return _licStatus({ typeId: 'biz_license', expiryDate: past });
@@ -12497,7 +12497,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('expired');
     });
 
-    test('expiry within 30 days — returns soon', async () => {
+    test('expiry within 30 days, returns soon', async () => {
       const r = await page.evaluate(() => {
         const soon = new Date(Date.now() + 86400000 * 15).toISOString().split('T')[0];
         return _licStatus({ typeId: 'biz_license', expiryDate: soon });
@@ -12505,7 +12505,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('soon');
     });
 
-    test('expiry beyond 30 days — returns current', async () => {
+    test('expiry beyond 30 days, returns current', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
         return _licStatus({ typeId: 'biz_license', expiryDate: future });
@@ -12513,7 +12513,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('current');
     });
 
-    test('null object — does not throw', async () => {
+    test('null object, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _licStatus({}) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12521,7 +12521,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licStatus({ typeId: "biz_license", expiryDate: "2099-01-01" })', 5);
       expect(ok).toBe(5);
     });
@@ -12531,7 +12531,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licStatusBadge
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licStatusBadge', () => {
-    test('expired lic — contains Expired text', async () => {
+    test('expired lic, contains Expired text', async () => {
       const r = await page.evaluate(() => {
         const past = new Date(Date.now() - 86400000 * 60).toISOString().split('T')[0];
         return _licStatusBadge({ typeId: 'biz_license', expiryDate: past });
@@ -12539,7 +12539,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Expired');
     });
 
-    test('soon lic — contains days left', async () => {
+    test('soon lic, contains days left', async () => {
       const r = await page.evaluate(() => {
         const soon = new Date(Date.now() + 86400000 * 15).toISOString().split('T')[0];
         return _licStatusBadge({ typeId: 'biz_license', expiryDate: soon });
@@ -12547,7 +12547,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('left');
     });
 
-    test('current lic — contains Current', async () => {
+    test('current lic, contains Current', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
         return _licStatusBadge({ typeId: 'biz_license', expiryDate: future });
@@ -12555,17 +12555,17 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Current');
     });
 
-    test('no expiry — contains No expiry set', async () => {
+    test('no expiry, contains No expiry set', async () => {
       const r = await page.evaluate(() => _licStatusBadge({ typeId: 'biz_license' }));
       expect(r).toContain('No expiry set');
     });
 
-    test('hepa_vacuum — returns empty string', async () => {
+    test('hepa_vacuum: returns empty string', async () => {
       const r = await page.evaluate(() => _licStatusBadge({ typeId: 'hepa_vacuum' }));
       expect(r).toBe('');
     });
 
-    test('empty object — does not throw', async () => {
+    test('empty object, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _licStatusBadge({}) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12573,7 +12573,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licStatusBadge({ typeId: "biz_license" })', 5);
       expect(ok).toBe(5);
     });
@@ -12583,7 +12583,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _stateNameOf
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_stateNameOf', () => {
-    test('null — returns null (no throw)', async () => {
+    test('null: returns null (no throw)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _stateNameOf(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12591,7 +12591,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _stateNameOf(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12599,23 +12599,23 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('known state KS — returns name string', async () => {
+    test('known state KS, returns name string', async () => {
       const r = await page.evaluate(() => _stateNameOf('KS'));
       expect(typeof r).toBe('string');
       expect(r.length).toBeGreaterThan(0);
     });
 
-    test('unknown state XX — returns XX', async () => {
+    test('unknown state XX, returns XX', async () => {
       const r = await page.evaluate(() => _stateNameOf('XX'));
       expect(r).toBe('XX');
     });
 
-    test('TX — returns string containing Texas', async () => {
+    test('TX: returns string containing Texas', async () => {
       const r = await page.evaluate(() => _stateNameOf('TX'));
       expect(r.toLowerCase()).toContain('texas');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_stateNameOf("KS")', 5);
       expect(ok).toBe(5);
     });
@@ -12625,42 +12625,42 @@ test.describe('settings.js — exhaustive coverage', () => {
   // detectStateFromAddr
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('detectStateFromAddr', () => {
-    test('null — returns null', async () => {
+    test('null: returns null', async () => {
       const r = await page.evaluate(() => detectStateFromAddr(null));
       expect(r).toBeNull();
     });
 
-    test('undefined — returns null', async () => {
+    test('undefined: returns null', async () => {
       const r = await page.evaluate(() => detectStateFromAddr(undefined));
       expect(r).toBeNull();
     });
 
-    test('empty string — returns null', async () => {
+    test('empty string, returns null', async () => {
       const r = await page.evaluate(() => detectStateFromAddr(''));
       expect(r).toBeNull();
     });
 
-    test('address with TX — returns TX', async () => {
+    test('address with TX, returns TX', async () => {
       const r = await page.evaluate(() => detectStateFromAddr('123 Main St, Austin TX 78701'));
       expect(r).toBe('TX');
     });
 
-    test('address with KS — returns KS', async () => {
+    test('address with KS, returns KS', async () => {
       const r = await page.evaluate(() => detectStateFromAddr('456 Elm Ave, Wichita, KS 67202'));
       expect(r).toBe('KS');
     });
 
-    test('address with no state abbr — returns null', async () => {
+    test('address with no state abbr, returns null', async () => {
       const r = await page.evaluate(() => detectStateFromAddr('123 Main St, Anytown 12345'));
       expect(r).toBeNull();
     });
 
-    test('CA in address — returns CA', async () => {
+    test('CA in address, returns CA', async () => {
       const r = await page.evaluate(() => detectStateFromAddr('1 Hollywood Blvd, Los Angeles CA 90001'));
       expect(r).toBe('CA');
     });
 
-    test('number input — does not throw', async () => {
+    test('number input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: detectStateFromAddr(42) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12668,7 +12668,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('detectStateFromAddr("Austin TX 78701")', 5);
       expect(ok).toBe(5);
     });
@@ -12678,7 +12678,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _initServiceStates
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_initServiceStates', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _initServiceStates(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12699,7 +12699,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('empty S.state and no clients — produces array', async () => {
+    test('empty S.state and no clients, produces array', async () => {
       const r = await page.evaluate(() => {
         const prevState = S.state;
         const prevSvcStates = S.serviceStates;
@@ -12714,7 +12714,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_initServiceStates()', 5);
       expect(ok).toBe(5);
     });
@@ -12724,7 +12724,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _getServiceStates
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getServiceStates', () => {
-    test('basic call — returns array', async () => {
+    test('basic call, returns array', async () => {
       const r = await page.evaluate(() => {
         const result = _getServiceStates();
         return Array.isArray(result);
@@ -12732,7 +12732,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('null serviceStates — initializes and returns array', async () => {
+    test('null serviceStates, initializes and returns array', async () => {
       const r = await page.evaluate(() => {
         const prev = S.serviceStates;
         S.serviceStates = null;
@@ -12743,7 +12743,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('empty serviceStates — initializes and returns array', async () => {
+    test('empty serviceStates, initializes and returns array', async () => {
       const r = await page.evaluate(() => {
         const prev = S.serviceStates;
         S.serviceStates = [];
@@ -12754,7 +12754,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('concurrent calls — stable result', async () => {
+    test('concurrent calls, stable result', async () => {
       const ok = await concurrent('_getServiceStates()', 5);
       expect(ok).toBe(5);
     });
@@ -12764,7 +12764,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // addServiceState
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('addServiceState', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { addServiceState(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12772,7 +12772,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { addServiceState(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12780,7 +12780,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('invalid state code — does nothing', async () => {
+    test('invalid state code, does nothing', async () => {
       const r = await page.evaluate(() => {
         const prev = [...(S.serviceStates || [])];
         addServiceState('XX');
@@ -12791,7 +12791,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('valid state TX — adds to serviceStates', async () => {
+    test('valid state TX, adds to serviceStates', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = (S.serviceStates || []).filter(s => s !== 'TX');
         addServiceState('TX');
@@ -12802,7 +12802,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('adding duplicate — stays deduplicated', async () => {
+    test('adding duplicate, stays deduplicated', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = ['KS'];
         addServiceState('KS');
@@ -12813,7 +12813,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('null S.serviceStates — initializes then adds', async () => {
+    test('null S.serviceStates: initializes then adds', async () => {
       const r = await page.evaluate(() => {
         const prev = S.serviceStates;
         S.serviceStates = null;
@@ -12825,7 +12825,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('addServiceState("FL")', 5);
       expect(ok).toBe(5);
     });
@@ -12835,7 +12835,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // removeServiceState
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('removeServiceState', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { removeServiceState(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12843,7 +12843,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { removeServiceState(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12851,7 +12851,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('primary S.state — does not remove', async () => {
+    test('primary S.state: does not remove', async () => {
       const r = await page.evaluate(() => {
         S.state = 'KS';
         S.serviceStates = ['KS', 'TX'];
@@ -12861,7 +12861,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('non-primary state — removes it', async () => {
+    test('non-primary state, removes it', async () => {
       const r = await page.evaluate(() => {
         S.state = 'KS';
         S.serviceStates = ['KS', 'TX'];
@@ -12871,7 +12871,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('state not in list — does not crash', async () => {
+    test('state not in list, does not crash', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = ['KS'];
         try { removeServiceState('ZZ'); return { ok: true }; }
@@ -12880,7 +12880,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null serviceStates — does not throw', async () => {
+    test('null serviceStates, does not throw', async () => {
       const r = await page.evaluate(() => {
         const prev = S.serviceStates;
         S.serviceStates = null;
@@ -12891,7 +12891,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         S.serviceStates = ['KS', 'TX', 'CA', 'MO', 'FL', 'CO'];
         S.state = 'KS';
@@ -12909,7 +12909,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // checkAddrServiceState
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('checkAddrServiceState', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { checkAddrServiceState(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12917,7 +12917,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { checkAddrServiceState(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12925,7 +12925,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — returns early', async () => {
+    test('empty string, returns early', async () => {
       const r = await page.evaluate(() => {
         try { checkAddrServiceState(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12933,7 +12933,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('addr with known state already in list — no overlay', async () => {
+    test('addr with known state already in list, no overlay', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = ['KS'];
         document.getElementById('_svc-state-ov')?.remove();
@@ -12944,7 +12944,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('addr with new state — creates overlay', async () => {
+    test('addr with new state, creates overlay', async () => {
       const r = await page.evaluate(() => {
         S.serviceStates = ['KS'];
         document.getElementById('_svc-state-ov')?.remove();
@@ -12957,7 +12957,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('addr with no detectable state — no overlay', async () => {
+    test('addr with no detectable state, no overlay', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_svc-state-ov')?.remove();
         checkAddrServiceState('123 Nowhere Road, Randomville 99999');
@@ -12967,7 +12967,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         S.serviceStates = ['KS'];
         let n = 0;
@@ -12985,7 +12985,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // renderLicensing
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderLicensing', () => {
-    test('basic call — does not throw', async () => {
+    test('basic call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { renderLicensing(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -12993,7 +12993,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty licenses — renders empty state', async () => {
+    test('empty licenses, renders empty state', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         licenses = [];
@@ -13006,7 +13006,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('No records yet');
     });
 
-    test('with a license — renders it', async () => {
+    test('with a license, renders it', async () => {
       const r = await page.evaluate(() => {
         const prevLics = [...licenses];
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
@@ -13020,7 +13020,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toContain('Business License');
     });
 
-    test('expired license — shows expired summary bar', async () => {
+    test('expired license, shows expired summary bar', async () => {
       const r = await page.evaluate(() => {
         const prevLics = [...licenses];
         const past = new Date(Date.now() - 86400000 * 10).toISOString().split('T')[0];
@@ -13050,7 +13050,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('missing lic-page-body — does not throw', async () => {
+    test('missing lic-page-body, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('lic-page-body');
         if (el) el.remove();
@@ -13068,7 +13068,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('renderLicensing()', 5);
       expect(ok).toBe(5);
     });
@@ -13078,7 +13078,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // setLicFilter
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setLicFilter', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setLicFilter(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13086,7 +13086,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('all — sets filter and renders', async () => {
+    test('all: sets filter and renders', async () => {
       const r = await page.evaluate(() => {
         try { setLicFilter('all'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13094,7 +13094,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('business — sets filter and renders without throw', async () => {
+    test('business: sets filter and renders without throw', async () => {
       const r = await page.evaluate(() => {
         try { setLicFilter('business'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13102,7 +13102,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown category — does not crash', async () => {
+    test('unknown category, does not crash', async () => {
       const r = await page.evaluate(() => {
         try { setLicFilter('nonexistent-cat'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13110,7 +13110,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('setLicFilter("all")', 5);
       expect(ok).toBe(5);
     });
@@ -13120,22 +13120,22 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licDateDisp
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licDateDisp', () => {
-    test('null — returns empty string', async () => {
+    test('null: returns empty string', async () => {
       const r = await page.evaluate(() => _licDateDisp(null));
       expect(r).toBe('');
     });
 
-    test('undefined — returns empty string', async () => {
+    test('undefined: returns empty string', async () => {
       const r = await page.evaluate(() => _licDateDisp(undefined));
       expect(r).toBe('');
     });
 
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => _licDateDisp(''));
       expect(r).toBe('');
     });
 
-    test('valid ISO date — returns MM/DD/YYYY', async () => {
+    test('valid ISO date, returns MM/DD/YYYY', async () => {
       const r = await page.evaluate(() => _licDateDisp('2026-03-15'));
       expect(r).toBe('03/15/2026');
     });
@@ -13145,7 +13145,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe('01/01/2000');
     });
 
-    test('invalid format — returns original string (fallback)', async () => {
+    test('invalid format, returns original string (fallback)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _licDateDisp('not-a-date') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13153,7 +13153,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licDateDisp("2026-06-15")', 5);
       expect(ok).toBe(5);
     });
@@ -13163,57 +13163,57 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licDateParse
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licDateParse', () => {
-    test('null — returns empty string', async () => {
+    test('null: returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse(null));
       expect(r).toBe('');
     });
 
-    test('undefined — returns empty string', async () => {
+    test('undefined: returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse(undefined));
       expect(r).toBe('');
     });
 
-    test('empty string — returns empty string', async () => {
+    test('empty string, returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse(''));
       expect(r).toBe('');
     });
 
-    test('ISO format 2026-03-15 — returns same', async () => {
+    test('ISO format 2026-03-15, returns same', async () => {
       const r = await page.evaluate(() => _licDateParse('2026-03-15'));
       expect(r).toBe('2026-03-15');
     });
 
-    test('MM/DD/YYYY — converts to ISO', async () => {
+    test('MM/DD/YYYY: converts to ISO', async () => {
       const r = await page.evaluate(() => _licDateParse('03/15/2026'));
       expect(r).toBe('2026-03-15');
     });
 
-    test('M/D/YYYY (single digit) — converts to ISO', async () => {
+    test('M/D/YYYY (single digit), converts to ISO', async () => {
       const r = await page.evaluate(() => _licDateParse('3/5/2026'));
       expect(r).toBe('2026-03-05');
     });
 
-    test('2-digit year MM/DD/YY — converts with century heuristic', async () => {
+    test('2-digit year MM/DD/YY: converts with century heuristic', async () => {
       const r = await page.evaluate(() => _licDateParse('03/15/26'));
       expect(r).toBe('2026-03-15');
     });
 
-    test('2-digit year > 50 — uses 1900s', async () => {
+    test('2-digit year > 50: uses 1900s', async () => {
       const r = await page.evaluate(() => _licDateParse('01/01/55'));
       expect(r).toBe('1955-01-01');
     });
 
-    test('junk string — returns empty string', async () => {
+    test('junk string, returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse('not a date'));
       expect(r).toBe('');
     });
 
-    test('whitespace only — returns empty string', async () => {
+    test('whitespace only, returns empty string', async () => {
       const r = await page.evaluate(() => _licDateParse('   '));
       expect(r).toBe('');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_licDateParse("03/15/2026")', 5);
       expect(ok).toBe(5);
     });
@@ -13223,7 +13223,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // openAddLicense
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openAddLicense', () => {
-    test('no arg — opens modal without throw', async () => {
+    test('no arg, opens modal without throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openAddLicense();
@@ -13237,7 +13237,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('null prefill — does not throw', async () => {
+    test('null prefill, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openAddLicense(null);
@@ -13248,7 +13248,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid prefillTypeId (biz_license) — sets type select', async () => {
+    test('valid prefillTypeId (biz_license): sets type select', async () => {
       const r = await page.evaluate(() => {
         try {
           openAddLicense('biz_license');
@@ -13262,7 +13262,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.val).toBe('biz_license');
     });
 
-    test('unknown prefillTypeId — does not throw', async () => {
+    test('unknown prefillTypeId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openAddLicense('nonexistent_type');
@@ -13284,7 +13284,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBeNull();
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         let n = 0;
         for (let i = 0; i < count; i++) {
@@ -13301,7 +13301,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // openEditLicense
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openEditLicense', () => {
-    test('nonexistent id — does not throw', async () => {
+    test('nonexistent id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openEditLicense(9999999);
@@ -13312,7 +13312,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           openEditLicense(null);
@@ -13323,7 +13323,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('existing license — opens modal with data', async () => {
+    test('existing license, opens modal with data', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
         const lic = { id: 9998001, typeId: 'biz_license', cat: 'business', label: 'Test Lic', expiryDate: future };
@@ -13346,7 +13346,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.editId).toBe(9998001);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         let n = 0;
         for (let i = 0; i < count; i++) {
@@ -13363,7 +13363,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _showLicModal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_showLicModal', () => {
-    test('null lic — renders add form', async () => {
+    test('null lic, renders add form', async () => {
       const r = await page.evaluate(() => {
         try {
           _showLicModal(null);
@@ -13377,7 +13377,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('valid lic object — renders edit form', async () => {
+    test('valid lic object, renders edit form', async () => {
       const r = await page.evaluate(() => {
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
         const lic = { id: 9997001, typeId: 'biz_license', cat: 'business', label: 'BL', licenseNumber: 'BL-123', expiryDate: future };
@@ -13394,7 +13394,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.numVal).toBe('BL-123');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         let n = 0;
         for (let i = 0; i < count; i++) {
@@ -13411,7 +13411,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _licTypeChanged
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_licTypeChanged', () => {
-    test('sel with empty value — returns early without throw', async () => {
+    test('sel with empty value, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         const sel = document.createElement('select');
         sel.value = '';
@@ -13421,16 +13421,16 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null sel — does not throw', async () => {
+    test('null sel, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _licTypeChanged(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // May throw on null.value — acceptable; page must not crash
+      // May throw on null.value: acceptable; page must not crash
       expect(typeof r).toBe('object');
     });
 
-    test('sel with biz_license — sets field visibility', async () => {
+    test('sel with biz_license, sets field visibility', async () => {
       const r = await page.evaluate(() => {
         // Open modal first to create DOM fields
         _showLicModal(null);
@@ -13455,7 +13455,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('sel with hepa_vacuum — shows equip fields', async () => {
+    test('sel with hepa_vacuum, shows equip fields', async () => {
       const r = await page.evaluate(() => {
         _showLicModal(null);
         const sel = document.getElementById('_lic-type-sel');
@@ -13471,7 +13471,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.show).toBe('block');
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         _showLicModal(null);
         const sel = document.getElementById('_lic-type-sel');
@@ -13492,7 +13492,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // saveLicenseModal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('saveLicenseModal', () => {
-    test('no modal DOM — does not throw', async () => {
+    test('no modal DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_lic-modal-ov')?.remove();
         // Stub zAlert
@@ -13505,7 +13505,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('modal open but no typeId selected — calls zAlert', async () => {
+    test('modal open but no typeId selected, calls zAlert', async () => {
       const r = await page.evaluate(() => {
         _showLicModal(null);
         const sel = document.getElementById('_lic-type-sel');
@@ -13528,7 +13528,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.alerted).toBe(true);
     });
 
-    test('valid typeId — adds license and closes modal', async () => {
+    test('valid typeId, adds license and closes modal', async () => {
       const r = await page.evaluate(() => {
         _showLicModal(null);
         const sel = document.getElementById('_lic-type-sel');
@@ -13555,7 +13555,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.added).toBe(true);
     });
 
-    test('concurrent calls — no crash (with zAlert stub)', async () => {
+    test('concurrent calls, no crash (with zAlert stub)', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         const orig = window.zAlert;
         window.zAlert = () => {};
@@ -13575,7 +13575,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // deleteLicense
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('deleteLicense', () => {
-    test('nonexistent id — does not throw', async () => {
+    test('nonexistent id, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window.zConfirm;
         window.zConfirm = (msg, cb) => { if (cb) cb(); };
@@ -13586,7 +13586,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window.zConfirm;
         window.zConfirm = (msg, cb) => { if (cb) cb(); };
@@ -13597,7 +13597,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('existing id — removes license after confirm', async () => {
+    test('existing id, removes license after confirm', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9996001, typeId: 'biz_license', cat: 'business', label: 'DelTest' };
         licenses.push(lic);
@@ -13613,7 +13613,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.after).toBe(false);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         const orig = window.zConfirm;
         window.zConfirm = () => {};
@@ -13632,7 +13632,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // openHepaLog
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openHepaLog', () => {
-    test('nonexistent id — returns early, no modal', async () => {
+    test('nonexistent id, returns early, no modal', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_hepa-modal-ov')?.remove();
         try {
@@ -13645,7 +13645,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.exists).toBe(false);
     });
 
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openHepaLog(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13653,7 +13653,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('existing hepa_vacuum lic — opens log modal', async () => {
+    test('existing hepa_vacuum lic, opens log modal', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9995001, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA Vac', make: 'Ridgid', model: 'WD4870', equipmentLog: [] };
         licenses.push(lic);
@@ -13673,7 +13673,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await page.evaluate(([expr, count]) => {
         let n = 0;
         for (let i = 0; i < count; i++) {
@@ -13690,7 +13690,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _addHepaEntry
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_addHepaEntry', () => {
-    test('nonexistent licId — returns early without throw', async () => {
+    test('nonexistent licId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _addHepaEntry(9999666); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13698,7 +13698,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null licId — does not throw', async () => {
+    test('null licId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _addHepaEntry(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13706,7 +13706,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('existing lic — appends entry to equipmentLog', async () => {
+    test('existing lic, appends entry to equipmentLog', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9994001, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA Vac', equipmentLog: [] };
         licenses.push(lic);
@@ -13733,11 +13733,11 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.added).toBe(true);
     });
 
-    test('missing modal DOM — does not throw', async () => {
+    test('missing modal DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9994002, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA Vac 2', equipmentLog: [] };
         licenses.push(lic);
-        // Don't open modal — missing DOM
+        // Don't open modal, missing DOM
         try {
           _addHepaEntry(9994002);
           licenses = licenses.filter(l => l.id !== 9994002);
@@ -13750,7 +13750,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_addHepaEntry(9999666)', 5);
       expect(ok).toBe(5);
     });
@@ -13760,7 +13760,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // _delHepaEntry
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_delHepaEntry', () => {
-    test('nonexistent licId — returns early without throw', async () => {
+    test('nonexistent licId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _delHepaEntry(9999555, 'entry-abc'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13768,7 +13768,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null licId — does not throw', async () => {
+    test('null licId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _delHepaEntry(null, 'abc'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -13776,7 +13776,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null entryId — does not throw', async () => {
+    test('null entryId, does not throw', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9993001, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA', equipmentLog: [{ id: 'e1', type: 'Filter Change', date: '2026-01-01' }] };
         licenses.push(lic);
@@ -13792,7 +13792,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid licId and entryId — removes entry', async () => {
+    test('valid licId and entryId, removes entry', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9993002, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA', equipmentLog: [{ id: 'e-del-1', type: 'Filter Change', date: '2026-01-01' }] };
         licenses.push(lic);
@@ -13814,7 +13814,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.removed).toBe(true);
     });
 
-    test('nonexistent entryId — array unchanged', async () => {
+    test('nonexistent entryId, array unchanged', async () => {
       const r = await page.evaluate(() => {
         const lic = { id: 9993003, typeId: 'hepa_vacuum', cat: 'epa', label: 'HEPA', equipmentLog: [{ id: 'real-e1', type: 'Filter Change', date: '2026-01-01' }] };
         licenses.push(lic);
@@ -13828,7 +13828,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('concurrent calls — no crash', async () => {
+    test('concurrent calls, no crash', async () => {
       const ok = await concurrent('_delHepaEntry(9999555, "xyz")', 5);
       expect(ok).toBe(5);
     });
@@ -13838,7 +13838,7 @@ test.describe('settings.js — exhaustive coverage', () => {
   // getLicenseAlerts
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getLicenseAlerts', () => {
-    test('empty licenses — returns empty array', async () => {
+    test('empty licenses, returns empty array', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         licenses = [];
@@ -13850,7 +13850,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.length).toBe(0);
     });
 
-    test('all current licenses — returns empty array', async () => {
+    test('all current licenses, returns empty array', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         const future = new Date(Date.now() + 86400000 * 90).toISOString().split('T')[0];
@@ -13862,7 +13862,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(0);
     });
 
-    test('expired license — returned in alerts', async () => {
+    test('expired license, returned in alerts', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         const past = new Date(Date.now() - 86400000 * 30).toISOString().split('T')[0];
@@ -13874,7 +13874,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(1);
     });
 
-    test('expiring soon — returned in alerts', async () => {
+    test('expiring soon, returned in alerts', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         const soon = new Date(Date.now() + 86400000 * 15).toISOString().split('T')[0];
@@ -13897,7 +13897,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(0);
     });
 
-    test('mixed — returns only expired/soon', async () => {
+    test('mixed: returns only expired/soon', async () => {
       const r = await page.evaluate(() => {
         const prev = [...licenses];
         const past = new Date(Date.now() - 86400000 * 30).toISOString().split('T')[0];
@@ -13915,7 +13915,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r).toBe(2);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         const key = Object.keys(localStorage)[0] || 'zp3_s';
         const prev = localStorage.getItem(key);
@@ -13933,7 +13933,7 @@ test.describe('settings.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — consistent results', async () => {
+    test('concurrent calls, consistent results', async () => {
       const ok = await concurrent('getLicenseAlerts()', 5);
       expect(ok).toBe(5);
     });
@@ -13955,7 +13955,7 @@ test.describe('settings.js — exhaustive coverage', () => {
         try { _renderSetIndex(); return { ok: true, threw }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // threw is a bonus assertion — what matters is the second call works
+      // threw is a bonus assertion, what matters is the second call works
       expect(r.ok).toBe(true);
     });
   });
@@ -13963,14 +13963,14 @@ test.describe('settings.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // No console errors
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — settings.js', async () => {
+  test('no console errors, settings.js', async () => {
     assertNoErrors(page, 'settings.js');
   });
 });
 
 
 // ═══ e2e-jobs-exhaustive.spec.js ═══
-test.describe('jobs.js — exhaustive coverage', () => {
+test.describe('jobs.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -14073,7 +14073,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // getJobScopes
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getJobScopes', () => {
-    test('null jobId — returns array without throw', async () => {
+    test('null jobId, returns array without throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(null); return { ok: true, isArray: Array.isArray(res) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14082,7 +14082,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.isArray).toBe(true);
     });
 
-    test('undefined jobId — returns array without throw', async () => {
+    test('undefined jobId, returns array without throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(undefined); return { ok: true, isArray: Array.isArray(res) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14091,7 +14091,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.isArray).toBe(true);
     });
 
-    test('nonexistent jobId — returns default scopes array', async () => {
+    test('nonexistent jobId, returns default scopes array', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(999999999); return { ok: true, len: res.length }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14100,7 +14100,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.len).toBeGreaterThan(0);
     });
 
-    test('string jobId — does not throw', async () => {
+    test('string jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes('notanumber'); return { ok: true, isArray: Array.isArray(res) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14108,7 +14108,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('zero jobId — does not throw', async () => {
+    test('zero jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(0); return { ok: true, isArray: Array.isArray(res) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14116,7 +14116,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('negative jobId — does not throw', async () => {
+    test('negative jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopes(-1); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14124,7 +14124,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — job with bid roomScopeMap returns active scopes + extraScopes', async () => {
+    test('golden path, job with bid roomScopeMap returns active scopes + extraScopes', async () => {
       const r = await page.evaluate(() => {
         try {
           const res = getJobScopes(77701);
@@ -14137,7 +14137,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasPopcorn).toBe(true);
     });
 
-    test('job with no bid — falls back to default clock scopes', async () => {
+    test('job with no bid, falls back to default clock scopes', async () => {
       const r = await page.evaluate(() => {
         try {
           const res = getJobScopes(77703);
@@ -14165,7 +14165,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasDup).toBe(false);
     });
 
-    test('extraScopes as object with id — included correctly', async () => {
+    test('extraScopes as object with id, included correctly', async () => {
       const r = await page.evaluate(() => {
         try {
           const j = jobs.find(x => x.id === 77701);
@@ -14180,7 +14180,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasCustom).toBe(true);
     });
 
-    test('concurrent calls — no corruption', async () => {
+    test('concurrent calls, no corruption', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -14196,7 +14196,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // getJobScopeBreakdown
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getJobScopeBreakdown', () => {
-    test('null — returns empty object without throw', async () => {
+    test('null: returns empty object without throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopeBreakdown(null); return { ok: true, type: typeof res }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14205,7 +14205,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.type).toBe('object');
     });
 
-    test('undefined — returns empty object', async () => {
+    test('undefined: returns empty object', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopeBreakdown(undefined); return { ok: true, keys: Object.keys(res).length }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14214,7 +14214,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.keys).toBe(0);
     });
 
-    test('nonexistent jobId — returns empty object', async () => {
+    test('nonexistent jobId, returns empty object', async () => {
       const r = await page.evaluate(() => {
         try { const res = getJobScopeBreakdown(999999); return { ok: true, keys: Object.keys(res).length }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14223,7 +14223,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.keys).toBe(0);
     });
 
-    test('golden path — correct minutes per scope_id, __other for null scope', async () => {
+    test('golden path, correct minutes per scope_id, __other for null scope', async () => {
       const r = await page.evaluate(() => {
         try {
           const res = getJobScopeBreakdown(77701);
@@ -14236,7 +14236,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.other).toBe(30);
     });
 
-    test('string jobId — does not throw', async () => {
+    test('string jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { getJobScopeBreakdown('abc'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14244,7 +14244,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — stable results', async () => {
+    test('concurrent calls, stable results', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -14260,7 +14260,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // getJobClockTotal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getJobClockTotal', () => {
-    test('null — returns 0', async () => {
+    test('null: returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: getJobClockTotal(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14269,7 +14269,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('undefined — returns 0', async () => {
+    test('undefined: returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: getJobClockTotal(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14278,7 +14278,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('nonexistent job — returns 0', async () => {
+    test('nonexistent job, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: getJobClockTotal(999999) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14287,7 +14287,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('golden path — sum of minutes across all time entries for job', async () => {
+    test('golden path, sum of minutes across all time entries for job', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: getJobClockTotal(77701) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14296,7 +14296,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(165); // 90 + 45 + 30
     });
 
-    test('entry with missing minutes — treated as 0', async () => {
+    test('entry with missing minutes, treated as 0', async () => {
       const r = await page.evaluate(() => {
         try {
           timeEntries.push({ id: 9990099, job_id: 77701, date: '2026-06-02', scope_id: 'sand' }); // no minutes field
@@ -14309,7 +14309,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(165);
     });
 
-    test('concurrent calls — stable', async () => {
+    test('concurrent calls, stable', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -14325,7 +14325,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _fmtMin
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_fmtMin', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14333,7 +14333,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14341,7 +14341,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('0 — returns empty string', async () => {
+    test('0: returns empty string', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(0) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14350,7 +14350,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('');
     });
 
-    test('30 — returns "30m"', async () => {
+    test('30: returns "30m"', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(30) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14359,7 +14359,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('30m');
     });
 
-    test('60 — returns "1h "', async () => {
+    test('60: returns "1h "', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(60) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14368,7 +14368,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toContain('1h');
     });
 
-    test('90 — returns "1h 30m"', async () => {
+    test('90: returns "1h 30m"', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(90) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14377,7 +14377,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('1h 30m');
     });
 
-    test('120 — returns "2h "', async () => {
+    test('120: returns "2h "', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(120) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14386,7 +14386,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toContain('2h');
     });
 
-    test('negative -1 — does not throw', async () => {
+    test('negative -1, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(-1) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14394,7 +14394,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very large number — does not throw', async () => {
+    test('very large number, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin(99999) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14403,7 +14403,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toContain('h');
     });
 
-    test('string input — does not throw', async () => {
+    test('string input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _fmtMin('abc') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14411,7 +14411,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — all succeed', async () => {
+    test('concurrent calls, all succeed', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -14427,7 +14427,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // openClockInSheet
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openClockInSheet', () => {
-    test('null jobId — returns early without throw', async () => {
+    test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { openClockInSheet(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14435,7 +14435,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined jobId — returns early without throw', async () => {
+    test('undefined jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { openClockInSheet(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14443,7 +14443,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent jobId — returns early without throw', async () => {
+    test('nonexistent jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { openClockInSheet(999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14451,7 +14451,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates overlay with id _cks-ov', async () => {
+    test('golden path, creates overlay with id _cks-ov', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('_cks-ov')?.remove();
@@ -14465,7 +14465,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('called 3 times — no duplicate overlays', async () => {
+    test('called 3 times, no duplicate overlays', async () => {
       const r = await page.evaluate(() => {
         try {
           openClockInSheet(77701);
@@ -14480,7 +14480,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('job with no bid — uses job name as client name fallback', async () => {
+    test('job with no bid, uses job name as client name fallback', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('_cks-ov')?.remove();
@@ -14495,7 +14495,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasJobName).toBe(true);
     });
 
-    test('concurrent calls — no throw, only 1 overlay', async () => {
+    test('concurrent calls, no throw, only 1 overlay', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -14514,7 +14514,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _clockAddTask
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clockAddTask', () => {
-    test('null jobId — does not throw', async () => {
+    test('null jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTask(null); document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove()); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14522,7 +14522,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined jobId — does not throw', async () => {
+    test('undefined jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTask(undefined); document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove()); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14530,7 +14530,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates overlay with add-task UI', async () => {
+    test('golden path, creates overlay with add-task UI', async () => {
       const r = await page.evaluate(() => {
         try {
           document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
@@ -14544,7 +14544,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasInput).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -14561,7 +14561,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _clockAddTaskConfirm
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clockAddTaskConfirm', () => {
-    test('null jobId — returns early without throw', async () => {
+    test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTaskConfirm(null, 'sand', 'Sanding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14569,7 +14569,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent jobId — returns early without throw', async () => {
+    test('nonexistent jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _clockAddTaskConfirm(999999, 'sand', 'Sanding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14577,7 +14577,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — adds scopeId to job extraScopes', async () => {
+    test('golden path, adds scopeId to job extraScopes', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null; // ensure clean state
@@ -14594,7 +14594,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasIt).toBe(true);
     });
 
-    test('null scopeId (custom task) — generates custom_ id and pushes object', async () => {
+    test('null scopeId (custom task), generates custom_ id and pushes object', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -14628,7 +14628,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('undefined scopeLabel — does not throw', async () => {
+    test('undefined scopeLabel, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -14645,7 +14645,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _markJobComplete
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_markJobComplete', () => {
-    test('null jobId — does not throw (zConfirm fires cb, job not found)', async () => {
+    test('null jobId, does not throw (zConfirm fires cb, job not found)', async () => {
       const r = await page.evaluate(() => {
         try { _markJobComplete(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14653,7 +14653,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent jobId — does not throw', async () => {
+    test('nonexistent jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _markJobComplete(999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14661,7 +14661,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets job status to done', async () => {
+    test('golden path, sets job status to done', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -14678,7 +14678,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.isDone).toBe(true);
     });
 
-    test('with active timer on same job — clocks out first', async () => {
+    test('with active timer on same job, clocks out first', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 120000, timerInterval: null };
@@ -14707,7 +14707,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       await page.evaluate(() => { _activeTimer = null; });
     });
 
-    test('null jobId — returns early without throw', async () => {
+    test('null jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
         try { clockIn(null, 'sand', 'Sanding'); return { ok: true, timerNull: _activeTimer === null }; }
@@ -14717,7 +14717,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.timerNull).toBe(true);
     });
 
-    test('undefined jobId — returns early without throw', async () => {
+    test('undefined jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { clockIn(undefined, 'sand', 'Sanding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14725,7 +14725,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent jobId — returns early without throw', async () => {
+    test('nonexistent jobId, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { clockIn(999999, 'sand', 'Sanding'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14733,7 +14733,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets _activeTimer correctly', async () => {
+    test('golden path, sets _activeTimer correctly', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -14750,7 +14750,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.scopeLabel).toBe('Sanding');
     });
 
-    test('clocking in to already-active same job+scope — shows toast, no duplicate timer', async () => {
+    test('clocking in to already-active same job+scope, shows toast, no duplicate timer', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -14766,7 +14766,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('switching scope on same job — saves silently and restarts', async () => {
+    test('switching scope on same job, saves silently and restarts', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -14782,7 +14782,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.newScope).toBe('prime');
     });
 
-    test('null scopeId — stores null in timer', async () => {
+    test('null scopeId, stores null in timer', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = null;
@@ -14797,7 +14797,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.sid).toBeNull();
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
         let ok = 0;
@@ -14820,7 +14820,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       await page.evaluate(() => { _activeTimer = null; });
     });
 
-    test('no active timer — returns early without throw', async () => {
+    test('no active timer, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; clockOut(true, true); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14828,7 +14828,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('saveEntry=false — does not push time entry', async () => {
+    test('saveEntry=false: does not push time entry', async () => {
       const r = await page.evaluate(() => {
         try {
           const prevLen = timeEntries.length;
@@ -14842,7 +14842,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.timerNull).toBe(true);
     });
 
-    test('saveEntry=true — pushes time entry and clears timer', async () => {
+    test('saveEntry=true: pushes time entry and clears timer', async () => {
       const r = await page.evaluate(() => {
         try {
           const prevLen = timeEntries.length;
@@ -14876,7 +14876,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.minutes).toBe(1);
     });
 
-    test('concurrent calls — only first executes, no double-entry', async () => {
+    test('concurrent calls, only first executes, no double-entry', async () => {
       const r = await page.evaluate(() => {
         try {
           const prevLen = timeEntries.length;
@@ -14898,7 +14898,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // updateClockTimer
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('updateClockTimer', () => {
-    test('no active timer — returns early without throw', async () => {
+    test('no active timer, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; updateClockTimer(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14906,7 +14906,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing DOM element — does not throw', async () => {
+    test('missing DOM element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('clock-banner-time')?.remove();
@@ -14919,7 +14919,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with DOM element — sets text content', async () => {
+    test('with DOM element, sets text content', async () => {
       const r = await page.evaluate(() => {
         try {
           let el = document.getElementById('clock-banner-time');
@@ -14939,7 +14939,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasContent).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = { jobId: 77701, jobName: 'T', clientName: 'C', scopeId: 'sand', scopeLabel: 'S', startTime: Date.now() - 5000, timerInterval: null };
         let ok = 0;
@@ -14957,7 +14957,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // showClockBanner / hideClockBanner
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('showClockBanner', () => {
-    test('missing clock-banner element — does not throw', async () => {
+    test('missing clock-banner element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('clock-banner')?.remove();
@@ -14970,7 +14970,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with banner element — sets display:flex', async () => {
+    test('with banner element, sets display:flex', async () => {
       const r = await page.evaluate(() => {
         try {
           let b = document.getElementById('clock-banner');
@@ -14987,7 +14987,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.disp).toBe('flex');
     });
 
-    test('null _activeTimer — does not throw', async () => {
+    test('null _activeTimer, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; showClockBanner(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -14997,7 +14997,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   });
 
   test.describe('hideClockBanner', () => {
-    test('missing element — does not throw', async () => {
+    test('missing element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('clock-banner')?.remove();
@@ -15008,7 +15008,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with element — sets display:none and removes clock-active class', async () => {
+    test('with element, sets display:none and removes clock-active class', async () => {
       const r = await page.evaluate(() => {
         try {
           let b = document.getElementById('clock-banner');
@@ -15024,7 +15024,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasClass).toBe(false);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -15040,7 +15040,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // nextClockTask
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('nextClockTask', () => {
-    test('no active timer — returns early without throw', async () => {
+    test('no active timer, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; nextClockTask(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15048,7 +15048,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — clocks out and opens sheet after delay', async () => {
+    test('golden path, clocks out and opens sheet after delay', async () => {
       const r = await page.evaluate(() => {
         try {
           _activeTimer = { jobId: 77701, jobName: 'Test', clientName: 'C', scopeId: 'sand', scopeLabel: 'Sanding', startTime: Date.now() - 60000, timerInterval: null };
@@ -15062,7 +15062,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.cleared).toBe(true);
     });
 
-    test('concurrent calls without timer — no throw', async () => {
+    test('concurrent calls without timer, no throw', async () => {
       const r = await page.evaluate(() => {
         _activeTimer = null;
         let ok = 0;
@@ -15079,7 +15079,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // doneForDay
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('doneForDay', () => {
-    test('no active timer — returns early without throw', async () => {
+    test('no active timer, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         try { _activeTimer = null; doneForDay(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15087,7 +15087,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — clocks out and timer becomes null', async () => {
+    test('golden path, clocks out and timer becomes null', async () => {
       const r = await page.evaluate(() => {
         try {
           const prevLen = timeEntries.length;
@@ -15103,7 +15103,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.cleared).toBe(true);
     });
 
-    test('concurrent calls — only first executes, timer null after', async () => {
+    test('concurrent calls, only first executes, timer null after', async () => {
       const r = await page.evaluate(() => {
         const prevLen = timeEntries.length;
         _activeTimer = { jobId: 77701, jobName: 'Alpha', clientName: 'C', scopeId: 'sand', scopeLabel: 'S', startTime: Date.now() - 60000, timerInterval: null };
@@ -15124,7 +15124,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _haversineKm
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_haversineKm', () => {
-    test('all zeros — returns 0', async () => {
+    test('all zeros, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(0, 0, 0, 0) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15133,7 +15133,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe(0);
     });
 
-    test('null inputs — does not throw', async () => {
+    test('null inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(null, null, null, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15141,7 +15141,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined inputs — does not throw', async () => {
+    test('undefined inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(undefined, undefined, undefined, undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15149,7 +15149,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string inputs — does not throw', async () => {
+    test('string inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm('a', 'b', 'c', 'd') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15157,10 +15157,10 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — Wichita to Kansas City ~278km', async () => {
+    test('golden path, Wichita to Kansas City ~278km', async () => {
       const r = await page.evaluate(() => {
         try {
-          // Wichita KS: 37.6872, -97.3301 — Kansas City MO: 39.0997, -94.5786
+          // Wichita KS: 37.6872, -97.3301: Kansas City MO: 39.0997, -94.5786
           const km = _haversineKm(37.6872, -97.3301, 39.0997, -94.5786);
           return { ok: true, km };
         } catch (e) { return { ok: false, err: e.message }; }
@@ -15170,7 +15170,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.km).toBeLessThan(350);
     });
 
-    test('same point — returns 0', async () => {
+    test('same point, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(37.6872, -97.3301, 37.6872, -97.3301) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15179,7 +15179,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBeCloseTo(0, 5);
     });
 
-    test('boundary — antipodal points ~20015km', async () => {
+    test('boundary: antipodal points ~20015km', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _haversineKm(0, 0, 0, 180) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15188,7 +15188,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBeGreaterThan(19000);
     });
 
-    test('concurrent calls — stable results', async () => {
+    test('concurrent calls, stable results', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -15207,7 +15207,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // _geocodeAddr
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_geocodeAddr', () => {
-    test('null addr — returns a promise that resolves to null (no throw)', async () => {
+    test('null addr, returns a promise that resolves to null (no throw)', async () => {
       const r = await page.evaluate(async () => {
         try {
           const res = await _geocodeAddr(null);
@@ -15217,7 +15217,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — resolves without throw', async () => {
+    test('empty string, resolves without throw', async () => {
       const r = await page.evaluate(async () => {
         try {
           const res = await _geocodeAddr('');
@@ -15227,7 +15227,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid address string — resolves (mock returns null from blocked network)', async () => {
+    test('valid address string, resolves (mock returns null from blocked network)', async () => {
       const r = await page.evaluate(async () => {
         try {
           const res = await _geocodeAddr('123 Main St, Wichita KS');
@@ -15242,7 +15242,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // checkNearbyJob
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('checkNearbyJob', () => {
-    test('no _supaUser — returns early without throw', async () => {
+    test('no _supaUser, returns early without throw', async () => {
       const r = await page.evaluate(async () => {
         try {
           const prev = window._supaUser;
@@ -15255,7 +15255,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('no geolocation — returns early without throw', async () => {
+    test('no geolocation, returns early without throw', async () => {
       const r = await page.evaluate(async () => {
         try {
           const prevGeo = navigator.geolocation;
@@ -15268,7 +15268,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('called 5 times — no throw', async () => {
+    test('called 5 times, no throw', async () => {
       const r = await page.evaluate(async () => {
         const prev = window._supaUser;
         window._supaUser = null;
@@ -15287,7 +15287,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // sendReminderSMS
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('sendReminderSMS', () => {
-    test('null cid — calls zAlert without throw', async () => {
+    test('null cid, calls zAlert without throw', async () => {
       const r = await page.evaluate(() => {
         try { sendReminderSMS(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15295,7 +15295,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined cid — does not throw', async () => {
+    test('undefined cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { sendReminderSMS(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15303,7 +15303,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent cid — does not throw', async () => {
+    test('nonexistent cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { sendReminderSMS(999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15311,7 +15311,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('client with no phone — calls zAlert without throw', async () => {
+    test('client with no phone, calls zAlert without throw', async () => {
       const r = await page.evaluate(() => {
         try {
           clients.push({ id: 79999, name: 'No Phone Client', phone: '', addr: '1 St' });
@@ -15323,7 +15323,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -15339,7 +15339,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // renderTodayLegs
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderTodayLegs', () => {
-    test('missing DOM element — does not throw', async () => {
+    test('missing DOM element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           document.getElementById('cd-today-legs')?.remove();
@@ -15350,7 +15350,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('with element, no mileage today — clears innerHTML', async () => {
+    test('with element, no mileage today, clears innerHTML', async () => {
       const r = await page.evaluate(() => {
         try {
           let el = document.getElementById('cd-today-legs');
@@ -15368,7 +15368,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('called 3 times — no duplicate entries', async () => {
+    test('called 3 times, no duplicate entries', async () => {
       const r = await page.evaluate(() => {
         try {
           let el = document.getElementById('cd-today-legs');
@@ -15391,7 +15391,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.matches).toBe(1);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -15404,10 +15404,10 @@ test.describe('jobs.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // buildScopeGrid / toggleScopeRoom / scopeOn / roomScopeOn / setRoomScope —
+  // buildScopeGrid / toggleScopeRoom / scopeOn / roomScopeOn / setRoomScope:
   // removed with the paint estimator's scope-item grid (§7.1: assert gone)
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('paint scope-grid functions — deleted', () => {
+  test.describe('paint scope-grid functions, deleted', () => {
     test('buildScopeGrid, roomScopeOn, scopeOn, setRoomScope no longer exist', async () => {
       const r = await page.evaluate(() => {
         const names = ['buildScopeGrid', 'toggleScopeRoom', '_saveScopeHoursRoom', '_cancelScopeHoursRoom',
@@ -15423,7 +15423,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // setLeadFilter
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setLeadFilter', () => {
-    test('null filter — does not throw', async () => {
+    test('null filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setLeadFilter(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15431,7 +15431,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined filter — does not throw', async () => {
+    test('undefined filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setLeadFilter(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15439,7 +15439,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets leadFilter global', async () => {
+    test('golden path, sets leadFilter global', async () => {
       const r = await page.evaluate(() => {
         try {
           setLeadFilter('new', null);
@@ -15450,7 +15450,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('new');
     });
 
-    test('with btn element — adds active class', async () => {
+    test('with btn element, adds active class', async () => {
       const r = await page.evaluate(() => {
         try {
           const btn = document.createElement('button');
@@ -15466,7 +15466,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasActive).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -15477,7 +15477,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r).toBe(5);
     });
 
-    test('corrupted localStorage — does not affect function', async () => {
+    test('corrupted localStorage, does not affect function', async () => {
       const r = await page.evaluate(() => {
         try {
           localStorage.setItem('zp3_leads', '{INVALID{{{{');
@@ -15494,7 +15494,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // setJobFilter
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setJobFilter', () => {
-    test('null filter — does not throw', async () => {
+    test('null filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setJobFilter(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15502,7 +15502,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets jobFilter global and calls renderJobsPage', async () => {
+    test('golden path, sets jobFilter global and calls renderJobsPage', async () => {
       const r = await page.evaluate(() => {
         try {
           setJobFilter('active', null);
@@ -15513,7 +15513,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.v).toBe('active');
     });
 
-    test('with btn — marks active class on btn', async () => {
+    test('with btn, marks active class on btn', async () => {
       const r = await page.evaluate(() => {
         try {
           const btn = document.createElement('button');
@@ -15544,7 +15544,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.b1Active).toBe(false);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -15560,7 +15560,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // getBidStage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getBidStage', () => {
-    test('null bid — does not throw', async () => {
+    test('null bid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const v = getBidStage(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15568,7 +15568,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined bid — does not throw', async () => {
+    test('undefined bid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { getBidStage(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15576,7 +15576,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty object bid — does not throw', async () => {
+    test('empty object bid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const v = getBidStage({}); return { ok: true, hasStage: !!(v && v.stage) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15584,7 +15584,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('bid with no linked jobs and no completion_date — returns signed stage', async () => {
+    test('bid with no linked jobs and no completion_date, returns signed stage', async () => {
       const r = await page.evaluate(() => {
         try {
           const v = getBidStage({ id: 78801, client_id: 79901, status: 'Closed Won', amount: 3500, completion_date: null });
@@ -15597,7 +15597,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasColor).toBe(true);
     });
 
-    test('bid with completion_date and zero balance — paid stage', async () => {
+    test('bid with completion_date and zero balance, paid stage', async () => {
       const r = await page.evaluate(() => {
         try {
           // Use client_id 79998 (no orphan jobs) so legacy fallback doesn't pick up a
@@ -15615,7 +15615,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.stage).toBe('paid');
     });
 
-    test('bid with active job today — active stage', async () => {
+    test('bid with active job today, active stage', async () => {
       const r = await page.evaluate(() => {
         try {
           const tk = todayKey();
@@ -15654,7 +15654,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r.hasJobs).toBe(true);
     });
 
-    test('concurrent calls — stable results', async () => {
+    test('concurrent calls, stable results', async () => {
       const r = await page.evaluate(() => {
         const bid = { id: 78801, client_id: 79901, amount: 3500, status: 'Closed Won' };
         let ok = 0;
@@ -15666,7 +15666,7 @@ test.describe('jobs.js — exhaustive coverage', () => {
       expect(r).toBe(5);
     });
 
-    test('corrupted localStorage before call — does not throw', async () => {
+    test('corrupted localStorage before call, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           localStorage.setItem('zp3_bids', '{INVALID{{{{');
@@ -15682,14 +15682,14 @@ test.describe('jobs.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // Console error guard
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — jobs.js', async () => {
+  test('no console errors, jobs.js', async () => {
     assertNoErrors(page, 'jobs.js');
   });
 });
 
 
 // ═══ e2e-clients-exhaustive.spec.js ═══
-test.describe('clients.js — exhaustive coverage', () => {
+test.describe('clients.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -15812,7 +15812,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // openClientDetail
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openClientDetail', () => {
-    test('null cid — does not throw', async () => {
+    test('null cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openClientDetail(null, 'clients'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15820,7 +15820,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined cid — does not throw', async () => {
+    test('undefined cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openClientDetail(undefined, 'dash'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15828,7 +15828,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string cid — does not throw', async () => {
+    test('string cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openClientDetail('notanumber', 'clients'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15836,7 +15836,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent numeric cid — does not throw', async () => {
+    test('nonexistent numeric cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openClientDetail(9999999, 'clients'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -15844,7 +15844,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets currentClientId and _clientDetailOrigin', async () => {
+    test('golden path, sets currentClientId and _clientDetailOrigin', async () => {
       const r = await page.evaluate(() => {
         try {
           openClientDetail(77701, 'clients');
@@ -15857,7 +15857,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.origin).toBe('clients');
     });
 
-    test('origin=dash — sets _fromDash true', async () => {
+    test('origin=dash: sets _fromDash true', async () => {
       const r = await page.evaluate(() => {
         try {
           openClientDetail(77701, 'dash');
@@ -15870,7 +15870,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.origin).toBe('dash');
     });
 
-    test('origin=leads — sets leads origin', async () => {
+    test('origin=leads: sets leads origin', async () => {
       const r = await page.evaluate(() => {
         try {
           openClientDetail(77702, 'leads');
@@ -15882,7 +15882,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.origin).toBe('leads');
     });
 
-    test('origin=true (legacy) — maps to dash', async () => {
+    test('origin=true (legacy): maps to dash', async () => {
       const r = await page.evaluate(() => {
         try {
           openClientDetail(77701, true);
@@ -15908,7 +15908,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.txt).toBe('← All clients');
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) openClientDetail(77701, 'clients');
@@ -15924,7 +15924,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // openEstimateForClient
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openEstimateForClient', () => {
-    test('no currentClientId — shows gate, does not throw', async () => {
+    test('no currentClientId, shows gate, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = currentClientId;
         currentClientId = null;
@@ -15945,7 +15945,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('blacklisted client — calls zAlert, does not throw', async () => {
+    test('blacklisted client, calls zAlert, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = currentClientId;
         currentClientId = 77701;
@@ -15970,7 +15970,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.alerted).toBe(true);
     });
 
-    test('high_risk client — calls zConfirm, does not throw', async () => {
+    test('high_risk client, calls zConfirm, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = currentClientId;
         currentClientId = 77701;
@@ -16000,7 +16000,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _rrpGateThenEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_rrpGateThenEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _rrpGateThenEstimate(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16008,7 +16008,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('client without yearBuilt — skips RRP modal', async () => {
+    test('client without yearBuilt, skips RRP modal', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave', yearBuilt: null };
         let rrpShown = false;
@@ -16025,7 +16025,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.rrpShown).toBe(false);
     });
 
-    test('pre-1978 client with address — shows style picker AND RRP modal', async () => {
+    test('pre-1978 client with address, shows style picker AND RRP modal', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, name: 'CL Alpha', addr: '101 Alpha St', yearBuilt: 1955 };
         let rrpShown = false;
@@ -16045,7 +16045,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.rrpShown).toBe(true);
     });
 
-    test('landscaping trade — skips RRP even for pre-1978 home', async () => {
+    test('landscaping trade, skips RRP even for pre-1978 home', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, name: 'CL Alpha', addr: '101 Alpha St', yearBuilt: 1950 };
         const origGetTrade = typeof getActiveTrade === 'function' ? getActiveTrade : null;
@@ -16066,7 +16066,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.rrpShown).toBe(false);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta', yearBuilt: 2000 };
         try {
@@ -16084,7 +16084,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _showRrpModal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_showRrpModal', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _showRrpModal(null, () => {}); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16092,7 +16092,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null callback — does not throw', async () => {
+    test('null callback, does not throw', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, yearBuilt: 1955, name: 'CL Alpha', addr: '101 Alpha' };
         try {
@@ -16105,7 +16105,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates overlay in DOM', async () => {
+    test('golden path, creates overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, yearBuilt: 1955, name: 'CL Alpha', addr: '101 Alpha' };
         try {
@@ -16153,7 +16153,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, yearBuilt: 1955, name: 'CL Alpha', addr: '101 Alpha' };
         try {
@@ -16173,7 +16173,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _gateAddressThenEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_gateAddressThenEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _gateAddressThenEstimate(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16181,7 +16181,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('client with no address — shows address gate overlay', async () => {
+    test('client with no address, shows address gate overlay', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77703, name: 'CL Gamma', addr: '', phone: '316-555-7703' };
         try {
@@ -16197,7 +16197,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('client with whitespace-only address — shows gate', async () => {
+    test('client with whitespace-only address, shows gate', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77703, name: 'CL Gamma', addr: '   ', phone: '316-555-7703' };
         try {
@@ -16213,7 +16213,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('client with address — proceeds to _checkMultiProperty (no gate overlay)', async () => {
+    test('client with address, proceeds to _checkMultiProperty (no gate overlay)', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave, Wichita, KS', phone: '316-555-7702' };
         let checkCalled = false;
@@ -16236,7 +16236,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _checkMultiPropertyThenOpen
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_checkMultiPropertyThenOpen', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _checkMultiPropertyThenOpen(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16244,7 +16244,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('client with no in-progress bids — calls _doOpenEstimate', async () => {
+    test('client with no in-progress bids, calls _doOpenEstimate', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave', phone: '316-555-7702' };
         let openCalled = false;
@@ -16261,7 +16261,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.openCalled).toBe(true);
     });
 
-    test('client with active draft bid — shows zConfirm resume dialog', async () => {
+    test('client with active draft bid, shows zConfirm resume dialog', async () => {
       const r = await page.evaluate(() => {
         // Temporarily add a draft pending bid for client 77701
         const draftBid = { id: 88899, client_id: 77701, status: 'Pending', draft: true, surfaces: [{ type: 'walls' }] };
@@ -16290,7 +16290,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _askNewPropertyAddress
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_askNewPropertyAddress', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _askNewPropertyAddress(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16298,7 +16298,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid client — creates overlay with input', async () => {
+    test('valid client, creates overlay with input', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave', phone: '316-555-7702' };
         try {
@@ -16315,7 +16315,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('concurrent calls — no duplicate overlays', async () => {
+    test('concurrent calls, no duplicate overlays', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave', phone: '316-555-7702' };
         try {
@@ -16336,7 +16336,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _showTradePicker
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_showTradePicker', () => {
-    test('null title and null cb — does not throw', async () => {
+    test('null title and null cb, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           _showTradePicker(null, null);
@@ -16348,7 +16348,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string title — creates overlay', async () => {
+    test('empty string title, creates overlay', async () => {
       const r = await page.evaluate(() => {
         try {
           _showTradePicker('', () => {});
@@ -16362,7 +16362,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('golden path — renders trade buttons in DOM', async () => {
+    test('golden path, renders trade buttons in DOM', async () => {
       const r = await page.evaluate(() => {
         try {
           _showTradePicker('Pick a trade', (id) => {});
@@ -16389,7 +16389,7 @@ test.describe('clients.js — exhaustive coverage', () => {
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // At most 2 (function doesn't auto-remove old one) — just must not throw
+      // At most 2 (function doesn't auto-remove old one), just must not throw
     });
   });
 
@@ -16397,7 +16397,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _pickTrade
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_pickTrade', () => {
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _pickTrade(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16405,7 +16405,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined id — does not throw', async () => {
+    test('undefined id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _pickTrade(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16431,7 +16431,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.cbCalled).toBe(true);
     });
 
-    test('_industrial id — calls openIndustrialEquipEstimate stub', async () => {
+    test('_industrial id, calls openIndustrialEquipEstimate stub', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = typeof openIndustrialEquipEstimate === 'function' ? openIndustrialEquipEstimate : null;
@@ -16450,7 +16450,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('_tm id — calls openTMEstimate stub', async () => {
+    test('_tm id, calls openTMEstimate stub', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = typeof openTMEstimate === 'function' ? openTMEstimate : null;
@@ -16469,7 +16469,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) _pickTrade('painting');
@@ -16485,7 +16485,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _closeStylePicker
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_closeStylePicker', () => {
-    test('no overlay present — does not throw', async () => {
+    test('no overlay present, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_style-pick-ov')?.remove();
         try { _closeStylePicker(); return { ok: true }; }
@@ -16494,7 +16494,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('overlay present — sets opacity to 0 and schedules removal', async () => {
+    test('overlay present, sets opacity to 0 and schedules removal', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('#_style-pick-ov').forEach(el => el.remove());
         const ov = document.createElement('div');
@@ -16511,7 +16511,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.opacity).toBe('0');
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('#_style-pick-ov').forEach(el => el.remove());
         const ov = document.createElement('div');
@@ -16531,7 +16531,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _showEstimateStylePicker
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_showEstimateStylePicker', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           _showEstimateStylePicker(null, null);
@@ -16543,7 +16543,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid client — creates full-screen overlay', async () => {
+    test('valid client, creates full-screen overlay', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 77702);
         try {
@@ -16589,7 +16589,7 @@ test.describe('clients.js — exhaustive coverage', () => {
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // Function appends each time but must not throw — count assertion is informational
+      // Function appends each time but must not throw, count assertion is informational
     });
   });
 
@@ -16597,7 +16597,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _pickEstStyle
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_pickEstStyle', () => {
-    test('null style — does not throw', async () => {
+    test('null style, does not throw', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = null;
         try { _pickEstStyle(null); return { ok: true }; }
@@ -16606,7 +16606,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('style=scope — no longer a valid style, does not throw and calls nothing', async () => {
+    test('style=scope: no longer a valid style, does not throw and calls nothing', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = { c: clients.find(x => x.id === 77702), overrideAddr: null };
         const ov = document.createElement('div');
@@ -16618,7 +16618,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('style=tm — calls openTMEstimate', async () => {
+    test('style=tm: calls openTMEstimate', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = { c: clients.find(x => x.id === 77702), overrideAddr: null };
         let tmCalled = false;
@@ -16638,7 +16638,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.tmCalled).toBe(true);
     });
 
-    test('style=freeform — calls openFreeFormEstimate', async () => {
+    test('style=freeform: calls openFreeFormEstimate', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = { c: clients.find(x => x.id === 77702), overrideAddr: null };
         let ffCalled = false;
@@ -16658,7 +16658,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ffCalled).toBe(true);
     });
 
-    test('unknown style with no overlay — does not throw', async () => {
+    test('unknown style with no overlay, does not throw', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = null;
         document.getElementById('_style-pick-ov')?.remove();
@@ -16670,7 +16670,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // _doOpenScopeEstimate — Scope & Price mode removed; only T&M and BYO remain
+  // _doOpenScopeEstimate: Scope & Price mode removed; only T&M and BYO remain
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_doOpenScopeEstimate', () => {
     test('function was removed with the Scope & Price estimate mode', async () => {
@@ -16686,7 +16686,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _doOpenEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_doOpenEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _doOpenEstimate(null, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16694,7 +16694,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid client no forceTrade — shows style picker (multi-trade) or style picker (single)', async () => {
+    test('valid client no forceTrade, shows style picker (multi-trade) or style picker (single)', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 77702);
         try {
@@ -16711,7 +16711,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_bids', '{INVALID{{{{');
         const c = clients.find(x => x.id === 77702);
@@ -16727,7 +16727,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 77702);
         try {
@@ -16746,7 +16746,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _dashInRange
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_dashInRange', () => {
-    test('null — returns false', async () => {
+    test('null: returns false', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _dashInRange(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16755,7 +16755,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('undefined — returns false', async () => {
+    test('undefined: returns false', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _dashInRange(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16764,7 +16764,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('empty string — returns false', async () => {
+    test('empty string, returns false', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _dashInRange('') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16773,7 +16773,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('period=all — always returns true', async () => {
+    test('period=all: always returns true', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod;
         dashPeriod = 'all';
@@ -16785,7 +16785,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(true);
     });
 
-    test('period=year, matching year — returns true', async () => {
+    test('period=year, matching year, returns true', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; const savedY = dashYear;
         dashPeriod = 'year'; dashYear = 2026;
@@ -16797,7 +16797,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(true);
     });
 
-    test('period=year, non-matching year — returns false', async () => {
+    test('period=year, non-matching year, returns false', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; const savedY = dashYear;
         dashPeriod = 'year'; dashYear = 2025;
@@ -16809,7 +16809,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('period=month — date in current month returns true', async () => {
+    test('period=month: date in current month returns true', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; const savedY = dashYear;
         dashPeriod = 'month';
@@ -16825,7 +16825,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(true);
     });
 
-    test('period=quarter — current quarter date returns true', async () => {
+    test('period=quarter: current quarter date returns true', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; const savedY = dashYear;
         dashPeriod = 'quarter';
@@ -16841,7 +16841,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(true);
     });
 
-    test('boundary — year 0 string — does not throw', async () => {
+    test('boundary: year 0 string, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; dashPeriod = 'year';
         try { return { ok: true, result: _dashInRange('0000-01-01') }; }
@@ -16851,7 +16851,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type mismatch — number input — does not throw', async () => {
+    test('type mismatch, number input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _dashInRange(20260615) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -16864,7 +16864,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // initDashYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('initDashYear', () => {
-    test('missing dash-year-sel DOM — does not throw', async () => {
+    test('missing dash-year-sel DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('dash-year-sel');
         const parent = el?.parentNode;
@@ -16876,7 +16876,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — populates select with at least current year', async () => {
+    test('golden path, populates select with at least current year', async () => {
       const r = await page.evaluate(() => {
         try {
           initDashYear();
@@ -16906,7 +16906,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.noDupes).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) initDashYear();
@@ -16922,7 +16922,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // setDashYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setDashYear', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -16932,7 +16932,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string year — parses and sets dashYear', async () => {
+    test('string year, parses and sets dashYear', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -16948,7 +16948,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.yr).toBe(2025);
     });
 
-    test('numeric year — sets dashYear', async () => {
+    test('numeric year, sets dashYear', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -16980,7 +16980,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.txt).toBe('2024');
     });
 
-    test('missing label DOM — does not throw', async () => {
+    test('missing label DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const lbl = document.getElementById('dash-year-label');
         const parent = lbl?.parentNode;
@@ -17003,7 +17003,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // setDashPeriod
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setDashPeriod', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -17013,7 +17013,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('period=year — sets dashPeriod and toggles button class', async () => {
+    test('period=year: sets dashPeriod and toggles button class', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -17028,7 +17028,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.period).toBe('year');
     });
 
-    test('period=all — hides year button wrap', async () => {
+    test('period=all: hides year button wrap', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -17044,7 +17044,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('period=month — shows year wrap', async () => {
+    test('period=month: shows year wrap', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -17060,7 +17060,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).not.toBe('none');
     });
 
-    test('invalid period string — does not throw', async () => {
+    test('invalid period string, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -17070,7 +17070,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -17099,7 +17099,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url.length).toBeGreaterThan(0);
     });
 
-    test('with S.subdomain — uses subdomain URL', async () => {
+    test('with S.subdomain: uses subdomain URL', async () => {
       const r = await page.evaluate(() => {
         const saved = S.subdomain;
         S.subdomain = 'testco';
@@ -17114,7 +17114,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url).toContain('testco.tradedeskpro.app');
     });
 
-    test('without subdomain — returns origin-based URL', async () => {
+    test('without subdomain, returns origin-based URL', async () => {
       const r = await page.evaluate(() => {
         const saved = S.subdomain;
         S.subdomain = null;
@@ -17148,7 +17148,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _clientHubUrl
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clientHubUrl', () => {
-    test('null client — returns null, no throw', async () => {
+    test('null client, returns null, no throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, url: _clientHubUrl(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17157,7 +17157,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url).toBeNull();
     });
 
-    test('client with no token — returns null', async () => {
+    test('client with no token, returns null', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 99999, name: 'No Token', phone: '0', clientToken: null };
         try { return { ok: true, url: _clientHubUrl(c) }; }
@@ -17167,7 +17167,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url).toBeNull();
     });
 
-    test('no _supaUser — returns null', async () => {
+    test('no _supaUser, returns null', async () => {
       const r = await page.evaluate(() => {
         const savedUser = window._supaUser;
         window._supaUser = null;
@@ -17183,7 +17183,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url).toBeNull();
     });
 
-    test('golden path — returns URL string with token and client id', async () => {
+    test('golden path, returns URL string with token and client id', async () => {
       const r = await page.evaluate(() => {
         const savedUser = window._supaUser;
         window._supaUser = { id: 'e2e-user-0001' };
@@ -17205,7 +17205,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // renderClientHubPage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderClientHubPage', () => {
-    test('missing client-hub-list DOM — returns early, no throw', async () => {
+    test('missing client-hub-list DOM, returns early, no throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('client-hub-list');
         const parent = el?.parentNode;
@@ -17217,7 +17217,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('no clients — shows empty state', async () => {
+    test('no clients, shows empty state', async () => {
       const r = await page.evaluate(() => {
         const saved = [...clients];
         clients = [];
@@ -17234,7 +17234,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.hasEmpty).toBe(true);
     });
 
-    test('with clients — renders rows', async () => {
+    test('with clients, renders rows', async () => {
       const r = await page.evaluate(() => {
         window._supaUser = { id: 'e2e-user-0001' };
         try {
@@ -17272,7 +17272,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _previewClientHub
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_previewClientHub', () => {
-    test('null url — does not throw', async () => {
+    test('null url, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _previewClientHub(null, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17281,7 +17281,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid url — creates preview overlay with iframe', async () => {
+    test('valid url, creates preview overlay with iframe', async () => {
       const r = await page.evaluate(() => {
         const savedUser = window._supaUser;
         window._supaUser = { id: 'e2e-user-0001' };
@@ -17299,7 +17299,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.hasIframe).toBe(true);
     });
 
-    test('no _supaUser — does not throw', async () => {
+    test('no _supaUser, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = window._supaUser;
         window._supaUser = null;
@@ -17338,7 +17338,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _clientHubCopy
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clientHubCopy', () => {
-    test('null url and null btn — does not throw', async () => {
+    test('null url and null btn, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _clientHubCopy(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17346,7 +17346,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid url — calls clipboard.writeText without throwing', async () => {
+    test('valid url, calls clipboard.writeText without throwing', async () => {
       const r = await page.evaluate(async () => {
         let writtenUrl = null;
         const origClip = navigator.clipboard;
@@ -17372,7 +17372,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // pipelineResendSms
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('pipelineResendSms', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { pipelineResendSms(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17380,7 +17380,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent bidId — returns early', async () => {
+    test('nonexistent bidId, returns early', async () => {
       const r = await page.evaluate(() => {
         try { pipelineResendSms(9999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17388,7 +17388,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('bid without signingToken — returns early', async () => {
+    test('bid without signingToken, returns early', async () => {
       const r = await page.evaluate(() => {
         try { pipelineResendSms(88803); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17396,11 +17396,11 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid bid with signingToken — attempts SMS redirect without throw', async () => {
+    test('valid bid with signingToken, attempts SMS redirect without throw', async () => {
       const r = await page.evaluate(() => {
         let navHref = null;
         const origHref = Object.getOwnPropertyDescriptor(window.location, 'href');
-        // In Chromium, window.location.href may not be configurable — ignore and proceed.
+        // In Chromium, window.location.href may not be configurable, ignore and proceed.
         try {
           Object.defineProperty(window.location, 'href', {
             set: (v) => { navHref = v; },
@@ -17426,7 +17426,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // onClientSearch
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('onClientSearch', () => {
-    test('null input — does not throw', async () => {
+    test('null input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onClientSearch({ value: '' }); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17434,7 +17434,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty value — calls renderClientList', async () => {
+    test('empty value, calls renderClientList', async () => {
       const r = await page.evaluate(() => {
         let renderCalled = false;
         const orig = window.renderClientList;
@@ -17450,7 +17450,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.renderCalled).toBe(true);
     });
 
-    test('matching query — renders matched clients', async () => {
+    test('matching query, renders matched clients', async () => {
       const r = await page.evaluate(() => {
         try {
           onClientSearch({ value: 'CL Alpha' });
@@ -17463,7 +17463,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.html).toContain('CL Alpha');
     });
 
-    test('no-match query — shows empty message', async () => {
+    test('no-match query, shows empty message', async () => {
       const r = await page.evaluate(() => {
         try {
           onClientSearch({ value: 'XYZZY_NOMATCH_12345' });
@@ -17477,7 +17477,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.hasEmpty).toBe(true);
     });
 
-    test('phone-only query — matches by phone digits', async () => {
+    test('phone-only query, matches by phone digits', async () => {
       const r = await page.evaluate(() => {
         try {
           onClientSearch({ value: '3165557701' });
@@ -17490,7 +17490,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.html).toContain('CL Alpha');
     });
 
-    test('special chars in query — does not throw', async () => {
+    test('special chars in query, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onClientSearch({ value: '<script>alert(1)</script>' }); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17498,7 +17498,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) onClientSearch({ value: 'Alpha' });
@@ -17514,7 +17514,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // setCF
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setCF', () => {
-    test('null filter — does not throw', async () => {
+    test('null filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setCF(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17522,7 +17522,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets clientFilter and renders', async () => {
+    test('golden path, sets clientFilter and renders', async () => {
       const r = await page.evaluate(() => {
         let renderCalled = false;
         const orig = window.renderClientList;
@@ -17539,7 +17539,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.filter).toBe('all');
     });
 
-    test('with btn — adds active class', async () => {
+    test('with btn, adds active class', async () => {
       const r = await page.evaluate(() => {
         const btn = document.createElement('button');
         btn.id = 'test-cf-btn';
@@ -17588,7 +17588,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.count).toBeGreaterThan(1);
     });
 
-    test('missing selector DOM — does not throw', async () => {
+    test('missing selector DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const sel = document.getElementById('e-client-sel');
         const parent = sel?.parentNode;
@@ -17622,7 +17622,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // getClientStage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientStage', () => {
-    test('null cid — does not throw', async () => {
+    test('null cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(null); return { ok: true, stage: s?.stage }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17630,7 +17630,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined cid — does not throw', async () => {
+    test('undefined cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17638,7 +17638,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent cid — returns incomplete or new stage', async () => {
+    test('nonexistent cid, returns incomplete or new stage', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(9999999); return { ok: true, stage: s?.stage }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17647,7 +17647,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(typeof r.stage).toBe('string');
     });
 
-    test('client with Closed Won bid — returns paid or signed stage', async () => {
+    test('client with Closed Won bid, returns paid or signed stage', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(77701); return { ok: true, stage: s?.stage }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17657,7 +17657,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(['paid','signed','scheduled','balance_due','active']).toContain(r.stage);
     });
 
-    test('client with Pending bid — returns pipeline stage', async () => {
+    test('client with Pending bid, returns pipeline stage', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(77702); return { ok: true, stage: s?.stage }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17666,7 +17666,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(typeof r.stage).toBe('string');
     });
 
-    test('client with no address — returns incomplete stage', async () => {
+    test('client with no address, returns incomplete stage', async () => {
       const r = await page.evaluate(() => {
         // 77703 has empty addr and no bids
         try { const s = getClientStage(77703); return { ok: true, stage: s?.stage }; }
@@ -17691,7 +17691,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.hasPriority).toBe(true);
     });
 
-    test('concurrent calls — consistent result', async () => {
+    test('concurrent calls, consistent result', async () => {
       const r = await page.evaluate(() => {
         try {
           const results = [];
@@ -17704,7 +17704,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.allSame).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_clients', '{INVALID{{{{');
         try { const s = getClientStage(77701); return { ok: true }; }
@@ -17719,7 +17719,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // renderClientList
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderClientList', () => {
-    test('missing client-list DOM — does not throw (via populateClientSelectors early return pattern)', async () => {
+    test('missing client-list DOM, does not throw (via populateClientSelectors early return pattern)', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('client-list');
         const parent = el?.parentNode;
@@ -17731,7 +17731,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — renders client cards or empty message', async () => {
+    test('golden path, renders client cards or empty message', async () => {
       const r = await page.evaluate(() => {
         try {
           clientFilter = 'all';
@@ -17762,7 +17762,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('filter=won — shows only won clients', async () => {
+    test('filter=won: shows only won clients', async () => {
       const r = await page.evaluate(() => {
         try {
           clientFilter = 'won';
@@ -17775,7 +17775,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_bids', '{INVALID{{{{');
         try { renderClientList(); return { ok: true }; }
@@ -17785,7 +17785,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) renderClientList();
@@ -17801,7 +17801,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // togglePipeGroup
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('togglePipeGroup', () => {
-    test('null key — does not throw', async () => {
+    test('null key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { togglePipeGroup(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17809,7 +17809,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty key — does not throw', async () => {
+    test('empty key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { togglePipeGroup(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17817,7 +17817,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing DOM group — does not throw', async () => {
+    test('missing DOM group, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { togglePipeGroup('nonexistent-key-xyz'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17825,7 +17825,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — toggles _pipelineExpand and shows/hides group', async () => {
+    test('golden path, toggles _pipelineExpand and shows/hides group', async () => {
       const r = await page.evaluate(() => {
         // Create a test group element
         const grp = document.createElement('div');
@@ -17845,7 +17845,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.expanded).toBe(true);
     });
 
-    test('double toggle — restores original state', async () => {
+    test('double toggle, restores original state', async () => {
       const r = await page.evaluate(() => {
         const grp = document.createElement('div');
         grp.id = 'pipe-grp-testkey2';
@@ -17865,7 +17865,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.collapsed).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) togglePipeGroup('concurrent-key');
@@ -17881,7 +17881,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // checkClientDupe
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('checkClientDupe', () => {
-    test('null val — hides warn, no throw', async () => {
+    test('null val, hides warn, no throw', async () => {
       const r = await page.evaluate(() => {
         try { checkClientDupe(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17889,7 +17889,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — hides warn', async () => {
+    test('empty string, hides warn', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         if (warn) warn.style.display = 'block';
@@ -17903,7 +17903,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('short val (<3 chars) — hides warn', async () => {
+    test('short val (<3 chars), hides warn', async () => {
       const r = await page.evaluate(() => {
         try { checkClientDupe('ab'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -17911,7 +17911,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('exact name match — shows warning', async () => {
+    test('exact name match, shows warning', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         window.editClientId = null;
@@ -17926,7 +17926,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.text).toContain('CL Alpha');
     });
 
-    test('no match — hides warn', async () => {
+    test('no match, hides warn', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         if (warn) warn.style.display = 'block';
@@ -17941,7 +17941,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('editing current client — does not flag self as dupe', async () => {
+    test('editing current client, does not flag self as dupe', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         if (warn) warn.style.display = 'block';
@@ -17957,7 +17957,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('missing warn DOM — does not throw', async () => {
+    test('missing warn DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         const parent = warn?.parentNode;
@@ -18025,7 +18025,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) openNewClient();
@@ -18041,7 +18041,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // checkYearBuilt
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('checkYearBuilt', () => {
-    test('missing DOM — does not throw', async () => {
+    test('missing DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const parent = yb?.parentNode;
@@ -18053,7 +18053,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('pre-1978 year — shows warning', async () => {
+    test('pre-1978 year, shows warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const warn = document.getElementById('cf-year-warn');
@@ -18068,7 +18068,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('post-1978 year — hides warning', async () => {
+    test('post-1978 year, hides warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const warn = document.getElementById('cf-year-warn');
@@ -18084,7 +18084,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('exact 1978 — hides warning (not pre-1978)', async () => {
+    test('exact 1978, hides warning (not pre-1978)', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const warn = document.getElementById('cf-year-warn');
@@ -18100,7 +18100,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('empty value — hides warning', async () => {
+    test('empty value, hides warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const warn = document.getElementById('cf-year-warn');
@@ -18116,7 +18116,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('boundary — 0 — hides warning', async () => {
+    test('boundary: 0, hides warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         if (yb) yb.value = '0';
@@ -18126,7 +18126,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('boundary — very large year — hides warning', async () => {
+    test('boundary: very large year, hides warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         if (yb) yb.value = '9999';
@@ -18136,7 +18136,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type mismatch — string year — does not throw', async () => {
+    test('type mismatch, string year, does not throw', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         if (yb) yb.value = 'notayear';
@@ -18151,7 +18151,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _updateAddrComputed / updateYearLookupBtn
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_updateAddrComputed and updateYearLookupBtn', () => {
-    test('_updateAddrComputed — missing DOM — does not throw', async () => {
+    test('_updateAddrComputed: missing DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const btn = document.getElementById('cf-year-lookup');
         const parent = btn?.parentNode;
@@ -18163,7 +18163,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_updateAddrComputed — both street and city filled — shows lookup btn', async () => {
+    test('_updateAddrComputed: both street and city filled, shows lookup btn', async () => {
       const r = await page.evaluate(() => {
         const street = document.getElementById('cf-street');
         const city = document.getElementById('cf-city');
@@ -18180,7 +18180,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('inline-block');
     });
 
-    test('_updateAddrComputed — empty street — hides lookup btn', async () => {
+    test('_updateAddrComputed: empty street, hides lookup btn', async () => {
       const r = await page.evaluate(() => {
         const street = document.getElementById('cf-street');
         const city = document.getElementById('cf-city');
@@ -18198,7 +18198,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('_updateAddrComputed — empty city — hides lookup btn', async () => {
+    test('_updateAddrComputed: empty city, hides lookup btn', async () => {
       const r = await page.evaluate(() => {
         const street = document.getElementById('cf-street');
         const city = document.getElementById('cf-city');
@@ -18216,7 +18216,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('updateYearLookupBtn — delegates to _updateAddrComputed without throw', async () => {
+    test('updateYearLookupBtn: delegates to _updateAddrComputed without throw', async () => {
       const r = await page.evaluate(() => {
         try { updateYearLookupBtn(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18224,7 +18224,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_updateAddrComputed — concurrent calls — no throw', async () => {
+    test('_updateAddrComputed: concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) _updateAddrComputed();
@@ -18239,14 +18239,14 @@ test.describe('clients.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // no console errors
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — clients.js', async () => {
+  test('no console errors, clients.js', async () => {
     assertNoErrors(page, 'clients.js');
   });
 });
 
 
 // ═══ e2e-tax-exhaustive.spec.js ═══
-test.describe('tax.js — exhaustive coverage', () => {
+test.describe('tax.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -18366,7 +18366,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 1. onStateChange
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('onStateChange', () => {
-    test('null — does not throw, returns early', async () => {
+    test('null: does not throw, returns early', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18374,7 +18374,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18382,7 +18382,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — does not throw, returns early (no STATE_TAX match)', async () => {
+    test('empty string, does not throw, returns early (no STATE_TAX match)', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18390,7 +18390,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown state code — does not throw', async () => {
+    test('unknown state code, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange('ZZ'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18398,7 +18398,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('number type mismatch — does not throw', async () => {
+    test('number type mismatch, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange(42); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18406,7 +18406,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path KS — sets S.state and populates rate inputs', async () => {
+    test('golden path KS, sets S.state and populates rate inputs', async () => {
       const r = await page.evaluate(() => {
         try {
           onStateChange('KS');
@@ -18424,7 +18424,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.high).toBe('number');
     });
 
-    test('no-income-tax state (TX) — sets S.state to TX', async () => {
+    test('no-income-tax state (TX): sets S.state to TX', async () => {
       const r = await page.evaluate(() => {
         try {
           onStateChange('TX');
@@ -18435,7 +18435,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.state).toBe('TX');
     });
 
-    test('state with note (AZ flat) — does not throw', async () => {
+    test('state with note (AZ flat), does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange('AZ'); return { ok: true, state: S.state }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18444,7 +18444,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.state).toBe('AZ');
     });
 
-    test('missing DOM elements — does not throw', async () => {
+    test('missing DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         // Temporarily remove DOM stubs
         const ids = ['set-state-label','set-state-info','set-ksl','set-ksh','set-kst','set-kss','set-ksm'];
@@ -18459,12 +18459,12 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent("onStateChange('KS')", 5);
       expect(ok).toBe(5);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_settings', '{INVALID{{{{');
         try { onStateChange('FL'); return { ok: true }; }
@@ -18474,7 +18474,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('all 50 state codes — none throw', async () => {
+    test('all 50 state codes, none throw', async () => {
       const r = await page.evaluate(() => {
         const states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
           'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
@@ -18517,7 +18517,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 2. setTaxTab
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setTaxTab', () => {
-    test('null tab — does not throw', async () => {
+    test('null tab, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18525,7 +18525,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined tab — does not throw', async () => {
+    test('undefined tab, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab(undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18533,7 +18533,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string tab — does not throw (pane will not be found)', async () => {
+    test('empty string tab, does not throw (pane will not be found)', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab('', null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18541,7 +18541,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent pane name — does not throw', async () => {
+    test('non-existent pane name, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab('nonexistent', null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18549,7 +18549,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path summary tab — shows pane, marks btn active', async () => {
+    test('golden path summary tab, shows pane, marks btn active', async () => {
       const r = await page.evaluate(() => {
         const btn = document.getElementById('tx-tab-summary');
         const pane = document.getElementById('tx-summary-pane');
@@ -18567,7 +18567,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       if (r.paneDisplay !== null) expect(r.paneDisplay).toBe('block');
     });
 
-    test('btn is null — does not throw, pane still shown', async () => {
+    test('btn is null, does not throw, pane still shown', async () => {
       const r = await page.evaluate(() => {
         const pane = document.getElementById('tx-quarters-pane');
         try {
@@ -18600,7 +18600,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       if (r.shownTips !== undefined) expect(r.shownTips).toBe(true);
     });
 
-    test('missing DOM (no tabs or panes) — does not throw', async () => {
+    test('missing DOM (no tabs or panes), does not throw', async () => {
       const r = await page.evaluate(() => {
         // Remove all tab/pane stubs
         const ids = ['tx-tab-summary','tx-tab-quarters','tx-tab-tips',
@@ -18618,12 +18618,12 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no exception', async () => {
+    test('concurrent calls, no exception', async () => {
       const ok = await concurrent("setTaxTab('summary',null)", 5);
       expect(ok).toBe(5);
     });
 
-    test('number as tab — does not throw', async () => {
+    test('number as tab, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab(123, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18636,7 +18636,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 3. _populateTaxYearSel
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_populateTaxYearSel', () => {
-    test('no selector in DOM — returns early without throw', async () => {
+    test('no selector in DOM, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         const sel = document.getElementById('tax-yr-sel');
         if (sel) sel.parentNode.removeChild(sel);
@@ -18651,7 +18651,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — populates options with current year', async () => {
+    test('golden path, populates options with current year', async () => {
       const r = await page.evaluate(() => {
         const curYr = new Date().getFullYear();
         try {
@@ -18666,7 +18666,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.count).toBeGreaterThanOrEqual(1);
     });
 
-    test('with income records spanning multiple years — includes data years', async () => {
+    test('with income records spanning multiple years, includes data years', async () => {
       const r = await page.evaluate(() => {
         income = [
           { date: '2022-06-15', amount: 5000 },
@@ -18685,7 +18685,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.has2023).toBe(true);
     });
 
-    test('income records with invalid dates — does not throw', async () => {
+    test('income records with invalid dates, does not throw', async () => {
       const r = await page.evaluate(() => {
         income = [
           { date: null, amount: 100 },
@@ -18731,11 +18731,11 @@ test.describe('tax.js — exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // innerHTML replace means each call replaces the options — no duplicates
+      // innerHTML replace means each call replaces the options, no duplicates
       expect(r.total).toBe(r.unique);
     });
 
-    test('concurrent calls — selector is left in a valid state', async () => {
+    test('concurrent calls, selector is left in a valid state', async () => {
       const ok = await concurrent('_populateTaxYearSel()', 5);
       const r = await page.evaluate(() => {
         const sel = document.getElementById('tax-yr-sel');
@@ -18744,7 +18744,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r).toBeGreaterThanOrEqual(1);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_income', '{INVALID{{{{');
         try { _populateTaxYearSel(); return { ok: true }; }
@@ -18774,7 +18774,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 4. setTaxYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setTaxYear', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18782,7 +18782,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18790,7 +18790,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('0 — does not throw', async () => {
+    test('0: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(0); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18798,7 +18798,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string year — does not throw, sets _taxPageYear', async () => {
+    test('string year, does not throw, sets _taxPageYear', async () => {
       const r = await page.evaluate(() => {
         try {
           setTaxYear('2023');
@@ -18808,7 +18808,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path integer year 2024 — header updated', async () => {
+    test('golden path integer year 2024, header updated', async () => {
       const r = await page.evaluate(() => {
         const hd = document.getElementById('tx-data-hd');
         try {
@@ -18820,7 +18820,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       if (r.hdText !== null) expect(r.hdText).toContain('2024');
     });
 
-    test('boundary year -1 — does not throw', async () => {
+    test('boundary year -1, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(-1); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18828,7 +18828,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very large year — does not throw', async () => {
+    test('very large year, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(9999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18836,7 +18836,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing tx-data-hd — does not throw', async () => {
+    test('missing tx-data-hd, does not throw', async () => {
       const r = await page.evaluate(() => {
         const hd = document.getElementById('tx-data-hd');
         if (hd) hd.parentNode.removeChild(hd);
@@ -18851,12 +18851,12 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent('setTaxYear(2025)', 5);
       expect(ok).toBe(5);
     });
 
-    test('object type mismatch — does not throw', async () => {
+    test('object type mismatch, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear({}); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18869,7 +18869,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 5. _getSsWageBase
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getSsWageBase', () => {
-    test('null — returns default 184500', async () => {
+    test('null: returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18878,7 +18878,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('undefined — returns default 184500', async () => {
+    test('undefined: returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18887,7 +18887,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('0 — returns default 184500', async () => {
+    test('0: returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(0) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18896,7 +18896,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('-1 — returns default 184500', async () => {
+    test('-1: returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(-1) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18905,7 +18905,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('year 2024 — returns 168600', async () => {
+    test('year 2024, returns 168600', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2024) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18914,7 +18914,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(168600);
     });
 
-    test('year 2025 — returns 176100', async () => {
+    test('year 2025, returns 176100', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18923,7 +18923,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(176100);
     });
 
-    test('year 2026 — returns 184500 (SSA-confirmed 2026 wage base, not a copy of 2025)', async () => {
+    test('year 2026, returns 184500 (SSA-confirmed 2026 wage base, not a copy of 2025)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18932,7 +18932,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('year 2019 — returns 132900', async () => {
+    test('year 2019, returns 132900', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2019) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18941,7 +18941,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(132900);
     });
 
-    test('string year "2023" — parses and returns 160200', async () => {
+    test('string year "2023", parses and returns 160200', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase('2023') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18950,7 +18950,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(160200);
     });
 
-    test('unknown future year 3000 — returns default 184500', async () => {
+    test('unknown future year 3000, returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(3000) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18959,7 +18959,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('object type mismatch — does not throw', async () => {
+    test('object type mismatch, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase({}) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18969,7 +18969,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('concurrent calls — consistent results', async () => {
+    test('concurrent calls, consistent results', async () => {
       const ok = await concurrent('_getSsWageBase(2024)', 5);
       expect(ok).toBe(5);
     });
@@ -18979,7 +18979,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 6. _calcSeTax
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_calcSeTax', () => {
-    test('null netSelf — does not throw', async () => {
+    test('null netSelf, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(null, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18987,7 +18987,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined netSelf — does not throw', async () => {
+    test('undefined netSelf, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(undefined, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -18995,7 +18995,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('0 netSelf — returns 0 (no self-employment tax on zero income)', async () => {
+    test('0 netSelf, returns 0 (no self-employment tax on zero income)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(0, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19004,7 +19004,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('negative netSelf — returns 0 or negative, does not throw', async () => {
+    test('negative netSelf, returns 0 or negative, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(-1000, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19014,7 +19014,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.result).toBe('number');
     });
 
-    test('golden path 50000 in 2025 — returns positive integer tax', async () => {
+    test('golden path 50000 in 2025, returns positive integer tax', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _calcSeTax(50000, 2025);
@@ -19031,7 +19031,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(Number.isInteger(r.result)).toBe(true);
     });
 
-    test('income above SS wage base (300000) — SS capped, Medicare uncapped', async () => {
+    test('income above SS wage base (300000): SS capped, Medicare uncapped', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _calcSeTax(300000, 2025);
@@ -19047,7 +19047,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeLessThan(35000);
     });
 
-    test('null year — uses default wage base 184500, does not throw', async () => {
+    test('null year, uses default wage base 184500, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(50000, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19056,7 +19056,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.result).toBe('number');
     });
 
-    test('year 2019 with income at 2019 wage base — correct cap', async () => {
+    test('year 2019 with income at 2019 wage base, correct cap', async () => {
       const r = await page.evaluate(() => {
         try {
           // At exactly 2019 SS wage base: seBase = 132900 / 0.9235 ≈ 143918 so income ~155828
@@ -19068,7 +19068,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('string netSelf — does not throw (coerces)', async () => {
+    test('string netSelf, does not throw (coerces)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax('50000', 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19077,7 +19077,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.result).toBe('number');
     });
 
-    test('very large income 10000000 — does not throw', async () => {
+    test('very large income 10000000, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(10000000, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19097,7 +19097,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.isInteger).toBe(true);
     });
 
-    test('concurrent calls — all succeed', async () => {
+    test('concurrent calls, all succeed', async () => {
       const ok = await concurrent('_calcSeTax(50000, 2025)', 5);
       expect(ok).toBe(5);
     });
@@ -19107,7 +19107,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 7. _calcStateEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_calcStateEstimate', () => {
-    test('null stInfo — returns 0', async () => {
+    test('null stInfo, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcStateEstimate(50000, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19116,7 +19116,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('undefined stInfo — returns 0', async () => {
+    test('undefined stInfo, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcStateEstimate(50000, undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19125,7 +19125,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('noTax state info — returns 0', async () => {
+    test('noTax state info, returns 0', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: true, low: 0, high: 0, top: 0 };
         try { return { ok: true, result: _calcStateEstimate(50000, txInfo) }; }
@@ -19135,7 +19135,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('zero stateAgi — returns 0', async () => {
+    test('zero stateAgi, returns 0', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 5, high: 9, top: 50000 };
         try { return { ok: true, result: _calcStateEstimate(0, txInfo) }; }
@@ -19145,7 +19145,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('negative stateAgi — returns 0', async () => {
+    test('negative stateAgi, returns 0', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 5, high: 9, top: 50000 };
         try { return { ok: true, result: _calcStateEstimate(-1000, txInfo) }; }
@@ -19155,7 +19155,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('flat rate state (low === high) — uses high rate flat', async () => {
+    test('flat rate state (low === high), uses high rate flat', async () => {
       const r = await page.evaluate(() => {
         // AZ-style flat 2.5%
         const txInfo = { noTax: false, low: 2.5, high: 2.5, top: 999999 };
@@ -19169,7 +19169,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(2500);
     });
 
-    test('top>=999999 (flat bracket) — applies high rate', async () => {
+    test('top>=999999 (flat bracket), applies high rate', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 4.0, high: 4.0, top: 999999 };
         try {
@@ -19182,7 +19182,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(2000);
     });
 
-    test('bracketed state income below top — applies low rate only', async () => {
+    test('bracketed state income below top, applies low rate only', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 3.0, high: 6.0, top: 50000 };
         try {
@@ -19195,7 +19195,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(900);
     });
 
-    test('bracketed state income above top — splits into low+high parts', async () => {
+    test('bracketed state income above top, splits into low+high parts', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 3.0, high: 6.0, top: 50000 };
         try {
@@ -19209,7 +19209,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(3300);
     });
 
-    test('golden path using real KS data — returns positive integer', async () => {
+    test('golden path using real KS data, returns positive integer', async () => {
       const r = await page.evaluate(() => {
         const ksInfo = STATE_TAX['KS'];
         try {
@@ -19222,7 +19222,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.isInteger).toBe(true);
     });
 
-    test('very large stateAgi — does not throw', async () => {
+    test('very large stateAgi, does not throw', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 5.0, high: 10.0, top: 100000 };
         try { return { ok: true, result: _calcStateEstimate(99999999, txInfo) }; }
@@ -19232,7 +19232,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('stInfo missing low/high fields — does not throw', async () => {
+    test('stInfo missing low/high fields, does not throw', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false };
         try { return { ok: true, result: _calcStateEstimate(50000, txInfo) }; }
@@ -19241,7 +19241,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — all succeed', async () => {
+    test('concurrent calls, all succeed', async () => {
       const ok = await concurrent("_calcStateEstimate(40000, {noTax:false,low:3,high:6,top:50000})", 5);
       expect(ok).toBe(5);
     });
@@ -19264,7 +19264,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 8. calcTax
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('calcTax', () => {
-    test('no income, no expenses — does not throw', async () => {
+    test('no income, no expenses, does not throw', async () => {
       await resetData();
       const r = await page.evaluate(() => {
         income = []; expenses = []; mileage = []; payments = []; bids = [];
@@ -19274,7 +19274,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing required DOM elements — does not throw', async () => {
+    test('missing required DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         const ids = ['tx-inputs','tx-results','tx-quarters','tx-tips','tx-reserve-banner'];
         const saved = {};
@@ -19290,7 +19290,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path: income present, single filer, KS state — renders results', async () => {
+    test('golden path: income present, single filer, KS state, renders results', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-03-15', amount: 80000 }];
         expenses = [{ date: '2025-04-10', amount: 5000 }];
@@ -19311,7 +19311,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.hasContent).toBe(true);
     });
 
-    test('married filing jointly status — does not throw', async () => {
+    test('married filing jointly status, does not throw', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-06-01', amount: 120000 }];
         const txStatus = document.getElementById('tx-status');
@@ -19324,7 +19324,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('head of household status — does not throw', async () => {
+    test('head of household status, does not throw', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-01-10', amount: 60000 }];
         const txStatus = document.getElementById('tx-status');
@@ -19335,7 +19335,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('expenses exceed income (net self <= 0) — does not throw, SE tax is 0', async () => {
+    test('expenses exceed income (net self <= 0), does not throw, SE tax is 0', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-02-01', amount: 5000 }];
         expenses = [{ date: '2025-02-15', amount: 20000 }];
@@ -19350,7 +19350,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('taxPaid covers total owed — stillOwed is 0', async () => {
+    test('taxPaid covers total owed, stillOwed is 0', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-01-05', amount: 50000 }];
         const paidEl = document.getElementById('tx-paid');
@@ -19365,7 +19365,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('prior year tax set — safe harbor note shown', async () => {
+    test('prior year tax set, safe harbor note shown', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-03-01', amount: 70000 }];
         const priorEl = document.getElementById('tx-prior-yr');
@@ -19409,7 +19409,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('multi-state payments (KS + TX job) — no throw', async () => {
+    test('multi-state payments (KS + TX job), no throw', async () => {
       const r = await page.evaluate(() => {
         bids = [{ id: 99991, addr: '100 Main St, Austin TX 78701', status: 'Closed Won' }];
         bids.push({ id: 99992, addr: '200 Oak Ave, Wichita KS 67202', status: 'Closed Won' });
@@ -19444,7 +19444,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.matches).toBe(1);
     });
 
-    test('high expense ratio > 63% — audit risk block rendered', async () => {
+    test('high expense ratio > 63%: audit risk block rendered', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2026-01-01', amount: 100000 }];
         expenses = [{ date: '2026-01-15', amount: 70000 }];
@@ -19459,7 +19459,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.hasAudit).toBe(true);
     });
 
-    test('medium expense ratio 52–63% — audit medium shown', async () => {
+    test('medium expense ratio 52–63%, audit medium shown', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2026-02-01', amount: 100000 }];
         expenses = [{ date: '2026-02-10', amount: 57000 }];
@@ -19474,7 +19474,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.hasAudit).toBe(true);
     });
 
-    test('low expense ratio < 52% — low risk shown', async () => {
+    test('low expense ratio < 52%, low risk shown', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2026-03-01', amount: 100000 }];
         expenses = [{ date: '2026-03-05', amount: 20000 }];
@@ -19531,7 +19531,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.hasFn).toBe(true);
     });
 
-    test('_nextTaxTip cycling — advances tip index and re-renders', async () => {
+    test('_nextTaxTip cycling, advances tip index and re-renders', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-02-20', amount: 55000 }];
         try {
@@ -19546,7 +19546,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — calcTax does not throw', async () => {
+    test('corrupted localStorage, calcTax does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_income', '{INVALID{{{{');
         localStorage.setItem('td_expenses', '[bad json');
@@ -19561,7 +19561,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no exception', async () => {
+    test('concurrent calls, no exception', async () => {
       await page.evaluate(() => {
         income = [{ date: '2025-04-01', amount: 40000 }];
       });
@@ -19570,7 +19570,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(ok).toBe(5);
     });
 
-    test('payment with amount 0 — filtered out (not counted in income)', async () => {
+    test('payment with amount 0, filtered out (not counted in income)', async () => {
       const r = await page.evaluate(() => {
         income = [];
         payments = [{ bid_id: null, amount: 0, date: '2025-01-01' }];
@@ -19583,7 +19583,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('payments with null date — filtered safely', async () => {
+    test('payments with null date, filtered safely', async () => {
       const r = await page.evaluate(() => {
         payments = [
           { bid_id: 1, amount: 5000, date: null },
@@ -19662,7 +19662,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       if (r.val !== null) expect(r.val).toBe('mfj');
     });
 
-    test('selected year filters correctly — only counts income for that year', async () => {
+    test('selected year filters correctly, only counts income for that year', async () => {
       const r = await page.evaluate(() => {
         income = [
           { date: '2024-05-01', amount: 50000 },
@@ -19687,7 +19687,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 9. estimateTax
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('estimateTax', () => {
-    test('null netSelf — returns 0', async () => {
+    test('null netSelf, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19696,7 +19696,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('undefined netSelf — returns 0', async () => {
+    test('undefined netSelf, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19705,7 +19705,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('0 netSelf — returns 0 (early exit for <= 0)', async () => {
+    test('0 netSelf, returns 0 (early exit for <= 0)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(0) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19714,7 +19714,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('-1 netSelf — returns 0 (early exit for <= 0)', async () => {
+    test('-1 netSelf, returns 0 (early exit for <= 0)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(-1) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19723,7 +19723,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('-999999 netSelf — returns 0', async () => {
+    test('-999999 netSelf, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(-999999) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -19732,7 +19732,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('golden path 80000 single 2025 — returns positive integer', async () => {
+    test('golden path 80000 single 2025, returns positive integer', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -19746,7 +19746,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.isInteger).toBe(true);
     });
 
-    test('mfj status — returns lower tax than single (doubled brackets)', async () => {
+    test('mfj status, returns lower tax than single (doubled brackets)', async () => {
       const r = await page.evaluate(() => {
         try {
           S.txStatus = 'mfj';
@@ -19761,7 +19761,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.mfjTax).toBeLessThanOrEqual(r.singleTax);
     });
 
-    test('year 2024 — uses 2024 brackets, not current year', async () => {
+    test('year 2024, uses 2024 brackets, not current year', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -19776,7 +19776,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result2025).toBeGreaterThan(0);
     });
 
-    test('no year provided — uses current year brackets', async () => {
+    test('no year provided, uses current year brackets', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -19788,7 +19788,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('1 dollar netSelf — returns positive tax', async () => {
+    test('1 dollar netSelf, returns positive tax', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -19800,7 +19800,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThanOrEqual(0);
     });
 
-    test('very large income 5000000 — does not throw, returns large number', async () => {
+    test('very large income 5000000, does not throw, returns large number', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -19812,7 +19812,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(100000);
     });
 
-    test('string netSelf "50000" — behaves gracefully (early-exit branch: "50000" > 0 is true)', async () => {
+    test('string netSelf "50000", behaves gracefully (early-exit branch: "50000" > 0 is true)', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -19825,7 +19825,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.result).toBe('number');
     });
 
-    test('string "0" — returns 0 (early exit: "0" <= 0 is false in JS, but 0 returns 0)', async () => {
+    test('string "0", returns 0 (early exit: "0" <= 0 is false in JS, but 0 returns 0)', async () => {
       const r = await page.evaluate(() => {
         try {
           // estimateTax(0) → netSelf<=0 → return 0
@@ -19837,7 +19837,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('MFS status — does not throw', async () => {
+    test('MFS status, does not throw', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'mfs';
         try {
@@ -19850,7 +19850,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('HOH status — does not throw', async () => {
+    test('HOH status, does not throw', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'hoh';
         try {
@@ -19893,7 +19893,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.t2).toBeLessThan(r.t3);
     });
 
-    test('concurrent calls — all return same result', async () => {
+    test('concurrent calls, all return same result', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         const results = [];
@@ -19908,7 +19908,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(unique).toHaveLength(1);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_settings', '{BAD{{JSON');
         S.txStatus = 'single';
@@ -19921,7 +19921,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('year 2019 — uses 2019 brackets', async () => {
+    test('year 2019, uses 2019 brackets', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -19933,7 +19933,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('fractional income 0.01 — does not throw', async () => {
+    test('fractional income 0.01: does not throw', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -19947,7 +19947,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 10. Integration — setTaxYear + calcTax loop
+  // 10. Integration: setTaxYear + calcTax loop
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('integration: setTaxYear + calcTax', () => {
     test('switching year updates displayed header', async () => {
@@ -19971,7 +19971,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.text2025).toContain('2025');
     });
 
-    test('tab switch then calcTax — all work together', async () => {
+    test('tab switch then calcTax, all work together', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-01-01', amount: 45000 }];
         try {
@@ -19985,7 +19985,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('onStateChange then calcTax — state rates applied', async () => {
+    test('onStateChange then calcTax, state rates applied', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-03-10', amount: 60000 }];
         try {
@@ -20003,14 +20003,14 @@ test.describe('tax.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // 11. Console error guard
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — tax.js', () => {
+  test('no console errors, tax.js', () => {
     assertNoErrors(page, 'tax.js');
   });
 });
 
 
 // ═══ e2e-sales-tax-exhaustive.spec.js ═══
-test.describe('sales-tax.js — exhaustive coverage', () => {
+test.describe('sales-tax.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -20048,7 +20048,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── null / undefined inputs ────────────────────────────────────────────
-    test('null state — does not throw, defaults to KS logic', async () => {
+    test('null state, does not throw, defaults to KS logic', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment(null, 'electrical', 'repair', 'residential');
@@ -20059,7 +20059,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('undefined state — does not throw, defaults to KS logic', async () => {
+    test('undefined state, does not throw, defaults to KS logic', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment(undefined, 'electrical', 'repair', 'residential');
@@ -20070,7 +20070,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('null tradeType — does not throw, defaults to construction category', async () => {
+    test('null tradeType, does not throw, defaults to construction category', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', null, 'repair', 'residential');
@@ -20081,7 +20081,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('undefined tradeType — does not throw', async () => {
+    test('undefined tradeType, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', undefined, 'repair', 'residential');
@@ -20092,7 +20092,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('null scope — does not throw', async () => {
+    test('null scope, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', null, 'residential');
@@ -20103,7 +20103,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('undefined scope — does not throw', async () => {
+    test('undefined scope, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', undefined, 'residential');
@@ -20114,7 +20114,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('null propertyType — does not throw', async () => {
+    test('null propertyType, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', 'repair', null);
@@ -20125,7 +20125,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('all null — does not throw', async () => {
+    test('all null, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment(null, null, null, null);
@@ -20137,7 +20137,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── empty inputs ────────────────────────────────────────────────────────
-    test('empty string state — does not throw, defaults to KS', async () => {
+    test('empty string state, does not throw, defaults to KS', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('', 'electrical', 'repair', 'residential');
@@ -20148,7 +20148,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.type).toBe('string');
     });
 
-    test('empty string tradeType — defaults to construction category', async () => {
+    test('empty string tradeType, defaults to construction category', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', '', 'repair', 'residential');
@@ -20159,7 +20159,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('repair');
     });
 
-    test('empty string scope — falls through to repair path', async () => {
+    test('empty string scope, falls through to repair path', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', '', 'residential');
@@ -20172,7 +20172,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── type mismatch ───────────────────────────────────────────────────────
-    test('number as state — does not throw (coerces to string)', async () => {
+    test('number as state, does not throw (coerces to string)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment(42, 'electrical', 'repair', 'residential');
@@ -20182,7 +20182,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('object as state — does not throw', async () => {
+    test('object as state, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment({}, 'electrical', 'repair', 'residential');
@@ -20192,7 +20192,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('array as tradeType — does not throw', async () => {
+    test('array as tradeType, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', [], 'repair', 'residential');
@@ -20203,7 +20203,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── boundary / special state values ─────────────────────────────────────
-    test('no-tax state OR — returns no_tax type', async () => {
+    test('no-tax state OR, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('OR', 'electrical', 'repair', 'residential');
@@ -20217,7 +20217,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(false);
     });
 
-    test('no-tax state AK — returns no_tax type', async () => {
+    test('no-tax state AK, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('AK', 'roofing', 'repair', 'commercial');
@@ -20228,7 +20228,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('no-tax state DE — returns no_tax type', async () => {
+    test('no-tax state DE, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('DE', 'plumbing', 'improvement', 'residential');
@@ -20239,7 +20239,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('no-tax state MT — returns no_tax type', async () => {
+    test('no-tax state MT, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('MT', 'general', 'tm', 'commercial');
@@ -20250,7 +20250,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('no-tax state NH — returns no_tax type', async () => {
+    test('no-tax state NH, returns no_tax type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NH', 'hvac', 'repair', 'residential');
@@ -20261,7 +20261,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('gross receipts state HI — returns gross_receipts type with correct label', async () => {
+    test('gross receipts state HI, returns gross_receipts type with correct label', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('HI', 'electrical', 'repair', 'residential');
@@ -20276,7 +20276,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(true);
     });
 
-    test('gross receipts state NM — returns gross_receipts type with GRT label', async () => {
+    test('gross receipts state NM, returns gross_receipts type with GRT label', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NM', 'roofing', 'repair', 'commercial');
@@ -20288,7 +20288,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.label).toBe('GRT');
     });
 
-    test('capital improvement scope returns contractor_consumer — no customer tax', async () => {
+    test('capital improvement scope returns contractor_consumer, no customer tax', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', 'improvement', 'residential');
@@ -20300,7 +20300,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.customerTax).toBe(false);
     });
 
-    test('NY capital improvement — returns certificate ST-124', async () => {
+    test('NY capital improvement, returns certificate ST-124', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NY', 'electrical', 'improvement', 'residential');
@@ -20312,7 +20312,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.certForm).toBe('ST-124');
     });
 
-    test('NJ capital improvement — returns certificate ST-8', async () => {
+    test('NJ capital improvement, returns certificate ST-8', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NJ', 'plumbing', 'improvement', 'residential');
@@ -20323,7 +20323,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.certForm).toBe('ST-8');
     });
 
-    test('PA capital improvement — returns certificate REV-1220', async () => {
+    test('PA capital improvement, returns certificate REV-1220', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('PA', 'hvac', 'improvement', 'commercial');
@@ -20334,7 +20334,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.certForm).toBe('REV-1220');
     });
 
-    test('CT capital improvement — returns certificate CERT-106', async () => {
+    test('CT capital improvement, returns certificate CERT-106', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('CT', 'general', 'improvement', 'residential');
@@ -20345,7 +20345,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.certForm).toBe('CERT-106');
     });
 
-    test('KS improvement — no certificate needed (null)', async () => {
+    test('KS improvement, no certificate needed (null)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'roofing', 'improvement', 'residential');
@@ -20357,7 +20357,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── landscaping in service states ────────────────────────────────────────
-    test('landscaping in TX — returns service type (full invoice taxable)', async () => {
+    test('landscaping in TX, returns service type (full invoice taxable)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('TX', 'landscaping', 'maintenance', 'residential');
@@ -20370,7 +20370,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.laborTaxable).toBe(true);
     });
 
-    test('landscaping in NY — returns service type', async () => {
+    test('landscaping in NY, returns service type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('NY', 'lawn', 'maintenance', 'residential');
@@ -20381,7 +20381,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('service');
     });
 
-    test('landscaping in WA — returns service type', async () => {
+    test('landscaping in WA, returns service type', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('WA', 'tree', 'repair', 'residential');
@@ -20392,7 +20392,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('service');
     });
 
-    test('landscaping in AZ — returns contractor_consumer (not in service set)', async () => {
+    test('landscaping in AZ, returns contractor_consumer (not in service set)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('AZ', 'landscaping', 'repair', 'residential');
@@ -20404,7 +20404,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.customerTax).toBe(false);
     });
 
-    test('landscaping in FL — returns contractor_consumer', async () => {
+    test('landscaping in FL, returns contractor_consumer', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('FL', 'landscaping', 'maintenance', 'commercial');
@@ -20415,8 +20415,8 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('contractor_consumer');
     });
 
-    // ── repair path — commercial labor ───────────────────────────────────────
-    test('commercial repair in CT — laborTaxable is true', async () => {
+    // ── repair path, commercial labor ───────────────────────────────────────
+    test('commercial repair in CT, laborTaxable is true', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('CT', 'electrical', 'repair', 'commercial');
@@ -20429,7 +20429,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(true);
     });
 
-    test('commercial repair in SD — laborTaxable is true', async () => {
+    test('commercial repair in SD, laborTaxable is true', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('SD', 'plumbing', 'repair', 'commercial');
@@ -20440,7 +20440,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.laborTaxable).toBe(true);
     });
 
-    test('commercial repair in WV — laborTaxable is true', async () => {
+    test('commercial repair in WV, laborTaxable is true', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('WV', 'hvac', 'repair', 'commercial');
@@ -20451,7 +20451,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.laborTaxable).toBe(true);
     });
 
-    test('residential repair in CT — laborTaxable is false (labor exempt)', async () => {
+    test('residential repair in CT, laborTaxable is false (labor exempt)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('CT', 'electrical', 'repair', 'residential');
@@ -20463,7 +20463,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(true);
     });
 
-    test('residential repair in KS — laborTaxable false, materialsTaxable true', async () => {
+    test('residential repair in KS, laborTaxable false, materialsTaxable true', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'plumbing', 'repair', 'residential');
@@ -20477,7 +20477,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.materialsTaxable).toBe(true);
     });
 
-    test('maintenance scope — treated same as repair', async () => {
+    test('maintenance scope, treated same as repair', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', 'maintenance', 'residential');
@@ -20488,7 +20488,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('repair');
     });
 
-    test('tm scope — treated same as repair', async () => {
+    test('tm scope, treated same as repair', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('KS', 'electrical', 'tm', 'commercial');
@@ -20513,7 +20513,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.missing).toHaveLength(0);
     });
 
-    test('lowercase state auto-uppercased — or/OR both yield no_tax', async () => {
+    test('lowercase state auto-uppercased, or/OR both yield no_tax', async () => {
       const r = await page.evaluate(() => {
         try {
           const upper = getJobTaxTreatment('OR', 'electrical', 'repair', 'residential');
@@ -20538,7 +20538,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('repair');
     });
 
-    test('unknown state (ZZ) — does not throw', async () => {
+    test('unknown state (ZZ): does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = getJobTaxTreatment('ZZ', 'electrical', 'repair', 'residential');
@@ -20550,7 +20550,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── all 50 states + DC ────────────────────────────────────────────────────
-    test('all states — none throw', async () => {
+    test('all states, none throw', async () => {
       const r = await page.evaluate(() => {
         const states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
           'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
@@ -20568,13 +20568,13 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── concurrent calls ─────────────────────────────────────────────────────
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent("getJobTaxTreatment('KS','electrical','repair','residential')", 5);
       expect(ok).toBe(5);
     });
 
     // ── corrupted localStorage ───────────────────────────────────────────────
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_settings', '{INVALID{{{{');
         try {
@@ -20601,7 +20601,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── null / undefined ───────────────────────────────────────────────────
-    test('null params object — does not throw (destructures with undefined fields)', async () => {
+    test('null params object, does not throw (destructures with undefined fields)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: null, tradeType: null, scope: null, propertyType: null, taxRate: null });
@@ -20612,7 +20612,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBe(0);
     });
 
-    test('undefined taxRate — returns taxAmount 0', async () => {
+    test('undefined taxRate, returns taxAmount 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: undefined, flatTotal: 1000 });
@@ -20623,7 +20623,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBe(0);
     });
 
-    test('zero taxRate — returns taxAmount 0', async () => {
+    test('zero taxRate, returns taxAmount 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 0, flatTotal: 5000 });
@@ -20634,7 +20634,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBe(0);
     });
 
-    test('null lineItems — uses flatTotal fallback', async () => {
+    test('null lineItems, uses flatTotal fallback', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 9.35, lineItems: null, flatTotal: 1000 });
@@ -20646,7 +20646,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(93.5, 1);
     });
 
-    test('empty lineItems array — uses flatTotal fallback', async () => {
+    test('empty lineItems array, uses flatTotal fallback', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 9.35, lineItems: [], flatTotal: 2000 });
@@ -20658,7 +20658,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(187, 0);
     });
 
-    test('null flatTotal and no lineItems — taxableBase 0, taxAmount 0', async () => {
+    test('null flatTotal and no lineItems, taxableBase 0, taxAmount 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 9.35 });
@@ -20671,7 +20671,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── no-tax states ──────────────────────────────────────────────────────
-    test('no-tax state OR with non-zero rate — always returns 0', async () => {
+    test('no-tax state OR with non-zero rate, always returns 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'OR', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 8.0, flatTotal: 10000 });
@@ -20683,7 +20683,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.type).toBe('no_tax');
     });
 
-    test('no-tax state MT — ignores passed rate', async () => {
+    test('no-tax state MT, ignores passed rate', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'MT', tradeType: 'plumbing', scope: 'repair', propertyType: 'residential', taxRate: 5.0, flatTotal: 500 });
@@ -20695,7 +20695,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── improvement scope ──────────────────────────────────────────────────
-    test('improvement scope — customerTax false, taxAmount always 0', async () => {
+    test('improvement scope, customerTax false, taxAmount always 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'improvement', propertyType: 'residential', taxRate: 9.35, flatTotal: 50000 });
@@ -20707,7 +20707,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.customerTax).toBe(false);
     });
 
-    test('improvement scope CA — still no customer tax', async () => {
+    test('improvement scope CA, still no customer tax', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'CA', tradeType: 'roofing', scope: 'improvement', propertyType: 'residential', taxRate: 9.75, flatTotal: 25000 });
@@ -20719,7 +20719,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── gross receipts (HI/NM) ─────────────────────────────────────────────
-    test('HI gross receipts — taxableBase is sum of all line items including labor', async () => {
+    test('HI gross receipts, taxableBase is sum of all line items including labor', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -20737,7 +20737,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(56, 2);
     });
 
-    test('HI gross receipts with flatTotal (no lineItems) — taxable is flatTotal', async () => {
+    test('HI gross receipts with flatTotal (no lineItems), taxable is flatTotal', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'HI', tradeType: 'plumbing', scope: 'repair', propertyType: 'commercial', taxRate: 4.0, flatTotal: 3000 });
@@ -20749,7 +20749,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(120, 2);
     });
 
-    test('NM GRT — taxes full contract value', async () => {
+    test('NM GRT, taxes full contract value', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'NM', tradeType: 'roofing', scope: 'repair', propertyType: 'commercial', taxRate: 5.125, flatTotal: 2000 });
@@ -20761,8 +20761,8 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(102.5, 2);
     });
 
-    // ── repair path — line items ───────────────────────────────────────────
-    test('repair with line items — labor exempt, materials taxable', async () => {
+    // ── repair path, line items ───────────────────────────────────────────
+    test('repair with line items, labor exempt, materials taxable', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -20778,7 +20778,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(300 * 0.0935, 2);
     });
 
-    test('repair with null lineType — unclassified defaults to materials (taxed)', async () => {
+    test('repair with null lineType, unclassified defaults to materials (taxed)', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -20792,7 +20792,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(400);
     });
 
-    test('repair with undefined lineType — defaults to materials (taxed)', async () => {
+    test('repair with undefined lineType, defaults to materials (taxed)', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -20806,7 +20806,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(250);
     });
 
-    test('repair commercial CT — labor and materials both taxable', async () => {
+    test('repair commercial CT, labor and materials both taxable', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -20822,7 +20822,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(800 * 0.0635, 2);
     });
 
-    test('repair residential CT — only materials taxable', async () => {
+    test('repair residential CT, only materials taxable', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -20837,8 +20837,8 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(200);
     });
 
-    // ── repair path — materialsTotal / laborTotal ─────────────────────────
-    test('repair with materialsTotal only (no lineItems) — taxes materialsTotal', async () => {
+    // ── repair path, materialsTotal / laborTotal ─────────────────────────
+    test('repair with materialsTotal only (no lineItems), taxes materialsTotal', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'painting', scope: 'repair', propertyType: 'residential', taxRate: 9.35, materialsTotal: 800, laborTotal: 1200 });
@@ -20849,7 +20849,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(800);
     });
 
-    test('repair commercial CT with materialsTotal/laborTotal — taxes both', async () => {
+    test('repair commercial CT with materialsTotal/laborTotal: taxes both', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'CT', tradeType: 'electrical', scope: 'repair', propertyType: 'commercial', taxRate: 6.35, materialsTotal: 500, laborTotal: 700 });
@@ -20860,7 +20860,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxableBase).toBe(1200);
     });
 
-    test('repair with materialsTotal 0 — taxableBase is 0', async () => {
+    test('repair with materialsTotal 0, taxableBase is 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'painting', scope: 'repair', propertyType: 'residential', taxRate: 9.35, materialsTotal: 0, laborTotal: 1000 });
@@ -20873,7 +20873,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── service type (landscaping) ─────────────────────────────────────────
-    test('TX landscaping — full invoice taxable (service type)', async () => {
+    test('TX landscaping, full invoice taxable (service type)', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -20890,7 +20890,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(350 * 0.0825, 2);
     });
 
-    test('TX landscaping with flatTotal — full flatTotal taxable', async () => {
+    test('TX landscaping with flatTotal, full flatTotal taxable', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'TX', tradeType: 'lawn', scope: 'maintenance', propertyType: 'residential', taxRate: 8.25, flatTotal: 1000 });
@@ -20942,7 +20942,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── boundary values ────────────────────────────────────────────────────
-    test('boundary: very large flatTotal — no overflow, does not throw', async () => {
+    test('boundary: very large flatTotal, no overflow, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'TX', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 8.25, flatTotal: 9999999 });
@@ -20954,7 +20954,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(Number.isFinite(r.taxAmount)).toBe(true);
     });
 
-    test('boundary: flatTotal -1 — taxableBase becomes -1 (negative, no throw)', async () => {
+    test('boundary: flatTotal -1, taxableBase becomes -1 (negative, no throw)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 9.35, flatTotal: -1 });
@@ -20962,11 +20962,11 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // negative inputs are not blocked — code passes them through
+      // negative inputs are not blocked, code passes them through
       expect(typeof r.taxableBase).toBe('number');
     });
 
-    test('boundary: taxRate 100 — does not throw', async () => {
+    test('boundary: taxRate 100, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 100, flatTotal: 100 });
@@ -20977,7 +20977,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(100, 0);
     });
 
-    test('boundary: taxRate 0.001 — small but valid rate', async () => {
+    test('boundary: taxRate 0.001: small but valid rate', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: 0.001, flatTotal: 10000 });
@@ -20991,7 +20991,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── type mismatch ──────────────────────────────────────────────────────
-    test('string taxRate — coerces or returns 0', async () => {
+    test('string taxRate, coerces or returns 0', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'KS', tradeType: 'electrical', scope: 'repair', propertyType: 'residential', taxRate: '9.35', flatTotal: 1000 });
@@ -21003,7 +21003,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(typeof r.taxAmount).toBe('number');
     });
 
-    test('lineItems with missing total — uses 0 fallback', async () => {
+    test('lineItems with missing total, uses 0 fallback', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -21033,7 +21033,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── concurrent calls ───────────────────────────────────────────────────
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent(
         "calcSalesTax({state:'KS',tradeType:'electrical',scope:'repair',propertyType:'residential',taxRate:9.35,flatTotal:1000})",
         5
@@ -21042,7 +21042,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── corrupted localStorage ─────────────────────────────────────────────
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_est_full_draft', '{INVALID{{{{');
         try {
@@ -21058,7 +21058,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── golden paths ───────────────────────────────────────────────────────
-    test('golden path TX repair flatTotal — taxAmount is correct', async () => {
+    test('golden path TX repair flatTotal, taxAmount is correct', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = calcSalesTax({ state: 'TX', tradeType: 'plumbing', scope: 'repair', propertyType: 'residential', taxRate: 8.25, flatTotal: 1000 });
@@ -21070,7 +21070,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.taxAmount).toBeCloseTo(82.5, 2);
     });
 
-    test('golden path HI GET with line items — all items taxed', async () => {
+    test('golden path HI GET with line items, all items taxed', async () => {
       const r = await page.evaluate(() => {
         try {
           const items = [
@@ -21100,7 +21100,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── null / undefined ───────────────────────────────────────────────────
-    test('null — does not throw, returns null', async () => {
+    test('null: does not throw, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip(null);
@@ -21111,7 +21111,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('undefined — does not throw, returns null', async () => {
+    test('undefined: does not throw, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip(undefined);
@@ -21123,7 +21123,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── empty inputs ───────────────────────────────────────────────────────
-    test('empty string — returns null', async () => {
+    test('empty string, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('');
@@ -21134,7 +21134,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('whitespace only — returns null', async () => {
+    test('whitespace only, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('   ');
@@ -21146,7 +21146,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── type mismatch ──────────────────────────────────────────────────────
-    test('number input — does not throw (coerced to empty string via addr||empty)', async () => {
+    test('number input, does not throw (coerced to empty string via addr||empty)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip(12345);
@@ -21154,11 +21154,11 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // 12345 coerces to '12345' via string match — returns '12345'
+      // 12345 coerces to '12345' via string match, returns '12345'
       expect(r.result).toBe('12345');
     });
 
-    test('object input — does not throw', async () => {
+    test('object input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip({});
@@ -21168,7 +21168,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('array input — does not throw', async () => {
+    test('array input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip([]);
@@ -21179,7 +21179,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── golden paths ───────────────────────────────────────────────────────
-    test('full address with 5-digit ZIP — extracts ZIP', async () => {
+    test('full address with 5-digit ZIP, extracts ZIP', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('123 Main St, Wichita KS 67202');
@@ -21190,7 +21190,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('67202');
     });
 
-    test('address with ZIP+4 format — returns only 5-digit portion', async () => {
+    test('address with ZIP+4 format, returns only 5-digit portion', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('456 Oak Ave, Austin TX 78701-1234');
@@ -21201,7 +21201,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('78701');
     });
 
-    test('ZIP at start of string — extracts correctly', async () => {
+    test('ZIP at start of string, extracts correctly', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('67202 some other text');
@@ -21212,7 +21212,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('67202');
     });
 
-    test('ZIP at end of string — extracts correctly', async () => {
+    test('ZIP at end of string, extracts correctly', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('Wichita KS 67202');
@@ -21223,7 +21223,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('67202');
     });
 
-    test('multiple ZIPs in string — returns first match', async () => {
+    test('multiple ZIPs in string, returns first match', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('From 67202 to 78701');
@@ -21234,7 +21234,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('67202');
     });
 
-    test('only ZIP no other text — returns it', async () => {
+    test('only ZIP no other text, returns it', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('90210');
@@ -21245,7 +21245,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('90210');
     });
 
-    test('no ZIP in address — returns null', async () => {
+    test('no ZIP in address, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('123 Main Street, Springfield, IL');
@@ -21256,7 +21256,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('4-digit number — not a valid ZIP, returns null', async () => {
+    test('4-digit number, not a valid ZIP, returns null', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('1234 Main St');
@@ -21267,7 +21267,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBeNull();
     });
 
-    test('6-digit number — not extracted as 5-digit ZIP', async () => {
+    test('6-digit number, not extracted as 5-digit ZIP', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('123456 is not a zip');
@@ -21275,12 +21275,12 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // \b(\d{5})\b — 6-digit boundary does not match 5-digit
+      // \b(\d{5})\b: 6-digit boundary does not match 5-digit
       expect(r.result).toBeNull();
     });
 
     // ── boundary values ────────────────────────────────────────────────────
-    test('ZIP 00000 — extracts (technically valid format)', async () => {
+    test('ZIP 00000, extracts (technically valid format)', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('Addr 00000');
@@ -21291,7 +21291,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('00000');
     });
 
-    test('ZIP 99999 — extracts', async () => {
+    test('ZIP 99999, extracts', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _extractZip('99999');
@@ -21302,7 +21302,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.result).toBe('99999');
     });
 
-    test('very long address string — does not throw', async () => {
+    test('very long address string, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const longAddr = 'Suite 100, Building A, 1234 Long Street Name Boulevard, City Name Here, State Abbreviation 78701, Country';
@@ -21315,13 +21315,13 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── concurrent calls ───────────────────────────────────────────────────
-    test('concurrent calls — no corruption', async () => {
+    test('concurrent calls, no corruption', async () => {
       const ok = await concurrent("_extractZip('123 Main St, KS 67202')", 5);
       expect(ok).toBe(5);
     });
 
     // ── corrupted localStorage ─────────────────────────────────────────────
-    test('corrupted localStorage — does not affect _extractZip', async () => {
+    test('corrupted localStorage, does not affect _extractZip', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_settings', '{INVALID{{{{');
         try {
@@ -21349,7 +21349,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── null / undefined ───────────────────────────────────────────────────
-    test('null zip, null state — does not throw, defaults to KS hardcoded rate', async () => {
+    test('null zip, null state, does not throw, defaults to KS hardcoded rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate(null, null);
@@ -21361,7 +21361,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBeGreaterThanOrEqual(0);
     });
 
-    test('undefined zip, undefined state — does not throw', async () => {
+    test('undefined zip, undefined state, does not throw', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate(undefined, undefined);
@@ -21373,7 +21373,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── empty inputs ───────────────────────────────────────────────────────
-    test('empty zip string — skips ZIP lookup, falls to hardcoded rate', async () => {
+    test('empty zip string, skips ZIP lookup, falls to hardcoded rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('', 'KS');
@@ -21386,7 +21386,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(6.5); // KS base rate
     });
 
-    test('empty state — defaults to KS', async () => {
+    test('empty state, defaults to KS', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('', '');
@@ -21399,7 +21399,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── no-tax states ──────────────────────────────────────────────────────
-    test('no-tax state OR — returns rate 0, source no_tax', async () => {
+    test('no-tax state OR, returns rate 0, source no_tax', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('97401', 'OR');
@@ -21411,7 +21411,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('no_tax');
     });
 
-    test('no-tax state AK — returns rate 0', async () => {
+    test('no-tax state AK, returns rate 0', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('99501', 'AK');
@@ -21423,7 +21423,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('no_tax');
     });
 
-    test('no-tax state DE — returns rate 0', async () => {
+    test('no-tax state DE, returns rate 0', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('19801', 'DE');
@@ -21434,7 +21434,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(0);
     });
 
-    test('no-tax state MT — returns rate 0', async () => {
+    test('no-tax state MT, returns rate 0', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('59601', 'MT');
@@ -21445,7 +21445,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(0);
     });
 
-    test('no-tax state NH — returns rate 0', async () => {
+    test('no-tax state NH, returns rate 0', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('03301', 'NH');
@@ -21457,7 +21457,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── hardcoded fallback rates ───────────────────────────────────────────
-    test('KS with no DB hit — returns hardcoded 6.5 base rate', async () => {
+    test('KS with no DB hit, returns hardcoded 6.5 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('66604', 'KS');
@@ -21469,7 +21469,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(6.5);
     });
 
-    test('TX with no DB hit — returns hardcoded 6.25 base rate', async () => {
+    test('TX with no DB hit, returns hardcoded 6.25 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('78701', 'TX');
@@ -21481,7 +21481,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(6.25);
     });
 
-    test('CA with no DB hit — returns hardcoded 7.25 base rate', async () => {
+    test('CA with no DB hit, returns hardcoded 7.25 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('90210', 'CA');
@@ -21492,7 +21492,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(7.25);
     });
 
-    test('NY with no DB hit — returns hardcoded 4.0 base rate', async () => {
+    test('NY with no DB hit, returns hardcoded 4.0 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('10001', 'NY');
@@ -21503,7 +21503,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(4.0);
     });
 
-    test('FL with no DB hit — returns hardcoded 6.0 base rate', async () => {
+    test('FL with no DB hit, returns hardcoded 6.0 base rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('33101', 'FL');
@@ -21514,7 +21514,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.rate).toBe(6.0);
     });
 
-    test('unknown state (ZZ) — returns 0 fallback', async () => {
+    test('unknown state (ZZ): returns 0 fallback', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('12345', 'ZZ');
@@ -21591,7 +21591,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── ZIP format validation ──────────────────────────────────────────────
-    test('4-digit ZIP fails regex — falls to hardcoded state rate', async () => {
+    test('4-digit ZIP fails regex, falls to hardcoded state rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('1234', 'KS');
@@ -21603,7 +21603,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('hardcoded');
     });
 
-    test('6-digit ZIP fails regex — falls to hardcoded state rate', async () => {
+    test('6-digit ZIP fails regex, falls to hardcoded state rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('123456', 'KS');
@@ -21614,7 +21614,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('hardcoded');
     });
 
-    test('ZIP with letters fails regex — falls to hardcoded state rate', async () => {
+    test('ZIP with letters fails regex, falls to hardcoded state rate', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('6660A', 'KS');
@@ -21625,7 +21625,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
       expect(r.source).toBe('hardcoded');
     });
 
-    test('valid 5-digit ZIP — passes validation (source is hardcoded when DB returns null)', async () => {
+    test('valid 5-digit ZIP, passes validation (source is hardcoded when DB returns null)', async () => {
       const r = await page.evaluate(async () => {
         try {
           const result = await lookupSalesTaxRate('66604', 'KS');
@@ -21638,7 +21638,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── lowercase state auto-uppercased ────────────────────────────────────
-    test('lowercase state "ks" — treated same as "KS"', async () => {
+    test('lowercase state "ks", treated same as "KS"', async () => {
       const r = await page.evaluate(async () => {
         try {
           const lower = await lookupSalesTaxRate('', 'ks');
@@ -21671,7 +21671,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── concurrent calls ───────────────────────────────────────────────────
-    test('concurrent calls — all resolve without exception', async () => {
+    test('concurrent calls, all resolve without exception', async () => {
       const r = await page.evaluate(async () => {
         const calls = [];
         for (let i = 0; i < 5; i++) {
@@ -21688,7 +21688,7 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
     });
 
     // ── corrupted localStorage ─────────────────────────────────────────────
-    test('corrupted localStorage — does not affect lookupSalesTaxRate', async () => {
+    test('corrupted localStorage, does not affect lookupSalesTaxRate', async () => {
       const r = await page.evaluate(async () => {
         localStorage.setItem('td_settings', '{INVALID{{{{');
         localStorage.setItem('td_sales_tax_rate', 'NOT_A_NUMBER');
@@ -21900,14 +21900,14 @@ test.describe('sales-tax.js — exhaustive coverage', () => {
   });
 
   // ── no console errors ──────────────────────────────────────────────────────
-  test('no console errors — sales-tax.js', async () => {
+  test('no console errors, sales-tax.js', async () => {
     assertNoErrors(page, 'sales-tax.js');
   });
 });
 
 
 // ═══ e2e-finance-exhaustive.spec.js ═══
-test.describe('finance.js — exhaustive coverage', () => {
+test.describe('finance.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -21965,7 +21965,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('openExpenseFlow', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('golden path — creates #expense-modal in DOM', async () => {
+    test('golden path, creates #expense-modal in DOM', async () => {
       const r = await page.evaluate(() => {
         try { openExpenseFlow(); return { ok: true, exists: !!document.getElementById('expense-modal') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -21974,7 +21974,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('idempotent — second call does not create duplicate modal', async () => {
+    test('idempotent: second call does not create duplicate modal', async () => {
       const r = await page.evaluate(() => {
         try {
           openExpenseFlow(); openExpenseFlow();
@@ -22005,7 +22005,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasSaveBtn).toBe(true);
     });
 
-    test('5 concurrent calls — no stack corruption, exactly 1 modal', async () => {
+    test('5 concurrent calls, no stack corruption, exactly 1 modal', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) openExpenseFlow();
@@ -22016,7 +22016,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('corrupted localStorage before call — does not crash', async () => {
+    test('corrupted localStorage before call, does not crash', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_data', '{INVALID{{{{');
         try { openExpenseFlow(); return { ok: true }; }
@@ -22041,7 +22041,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // closeExpenseFlow
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('closeExpenseFlow', () => {
-    test('golden path — removes #expense-modal', async () => {
+    test('golden path, removes #expense-modal', async () => {
       const r = await page.evaluate(() => {
         try { openExpenseFlow(); closeExpenseFlow(); return { ok: true, gone: !document.getElementById('expense-modal') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -22050,7 +22050,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.gone).toBe(true);
     });
 
-    test('no modal present — does not throw', async () => {
+    test('no modal present, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         try { closeExpenseFlow(); return { ok: true }; }
@@ -22071,7 +22071,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.editId).toBe(null);
     });
 
-    test('multiple consecutive closes — no throw', async () => {
+    test('multiple consecutive closes, no throw', async () => {
       const r = await page.evaluate(() => {
         try { closeExpenseFlow(); closeExpenseFlow(); closeExpenseFlow(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -22089,7 +22089,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('empty imagePages — hides preview element', async () => {
+    test('empty imagePages, hides preview element', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [];
         try { _renderExpPages(); return { ok: true, display: document.getElementById('exp-preview-img')?.style.display }; }
@@ -22099,7 +22099,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('one page — shows preview with page thumbnail', async () => {
+    test('one page, shows preview with page thumbnail', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }];
         try { _renderExpPages(); return { ok: true, display: document.getElementById('exp-preview-img')?.style.display }; }
@@ -22109,7 +22109,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('missing preview element — does not throw', async () => {
+    test('missing preview element, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('exp-preview-img')?.remove();
         try { _renderExpPages(); return { ok: true }; }
@@ -22118,7 +22118,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('3 repeated calls — no duplicate thumbnails', async () => {
+    test('3 repeated calls, no duplicate thumbnails', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }];
         try {
@@ -22131,7 +22131,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.imgCount).toBe(1);
     });
 
-    test('large page count (100 pages) — no throw', async () => {
+    test('large page count (100 pages), no throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = Array.from({ length: 100 }, (_, i) => ({ b64: 'aA==', key: 'k' + i }));
         try { _renderExpPages(); return { ok: true }; }
@@ -22141,14 +22141,14 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null imagePages entry — renders without crash', async () => {
+    test('null imagePages entry, renders without crash', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [null];
         try { _renderExpPages(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
         finally { _expState.imagePages = []; _renderExpPages(); }
       });
-      // May throw if page data is null — graceful means page doesn't crash
+      // May throw if page data is null, graceful means page doesn't crash
       expect(typeof r.ok).toBe('boolean');
     });
   });
@@ -22160,7 +22160,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     test.beforeEach(async () => { await page.evaluate(() => { openExpenseFlow(); }); });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('golden path — removes page at valid index', async () => {
+    test('golden path, removes page at valid index', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }, { b64: 'dGVzdA==', key: null }];
         try { _removeExpPage(0); return { ok: true, len: _expState.imagePages.length, firstB64: _expState.imagePages[0]?.b64 }; }
@@ -22171,7 +22171,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.firstB64).toBe('dGVzdA==');
     });
 
-    test('null index — does not throw', async () => {
+    test('null index, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage(null); return { ok: true }; }
@@ -22180,7 +22180,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined index — does not throw', async () => {
+    test('undefined index, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage(undefined); return { ok: true }; }
@@ -22189,7 +22189,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('index -1 — does not throw', async () => {
+    test('index -1, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage(-1); return { ok: true }; }
@@ -22198,7 +22198,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('index beyond array length — does not throw', async () => {
+    test('index beyond array length, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage(999); return { ok: true, len: _expState.imagePages.length }; }
@@ -22207,7 +22207,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty imagePages — does not throw', async () => {
+    test('empty imagePages, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [];
         try { _removeExpPage(0); return { ok: true }; }
@@ -22216,7 +22216,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('removes last page — sets hasReceipt false', async () => {
+    test('removes last page, sets hasReceipt false', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         _expState.hasReceipt = true;
@@ -22227,7 +22227,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasReceipt).toBe(false);
     });
 
-    test('string index — does not throw', async () => {
+    test('string index, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage('bad'); return { ok: true }; }
@@ -22243,7 +22243,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('expTriggerAttach', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('called without modal present — does not throw', async () => {
+    test('called without modal present, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         // Stub out _showReceiptScanner to prevent file picker
@@ -22256,7 +22256,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('addPage=true — does not throw', async () => {
+    test('addPage=true: does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -22267,7 +22267,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('addPage=false — does not throw', async () => {
+    test('addPage=false: does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -22278,7 +22278,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null arg — does not throw', async () => {
+    test('null arg, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -22289,7 +22289,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -22305,7 +22305,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // expAttachPhotoOnly
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('expAttachPhotoOnly', () => {
-    test('null input — delegates to expTriggerAttach without crash', async () => {
+    test('null input, delegates to expTriggerAttach without crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -22316,7 +22316,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined input — does not throw', async () => {
+    test('undefined input, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -22334,7 +22334,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('expTriggerScan', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('called without modal — does not throw', async () => {
+    test('called without modal, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         const orig = window._showReceiptScanner;
@@ -22346,7 +22346,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -22362,7 +22362,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // expProcessPhoto
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('expProcessPhoto', () => {
-    test('null input — delegates without crash', async () => {
+    test('null input, delegates without crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -22373,7 +22373,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined input — does not throw', async () => {
+    test('undefined input, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -22389,16 +22389,16 @@ test.describe('finance.js — exhaustive coverage', () => {
   // compressAndEncodeImage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('compressAndEncodeImage', () => {
-    test('null file — rejects gracefully (does not crash page)', async () => {
+    test('null file, rejects gracefully (does not crash page)', async () => {
       const r = await page.evaluate(async () => {
         try { await compressAndEncodeImage(null); return { ok: false }; }
         catch (e) { return { ok: true, isError: true, msg: e.message }; }
       });
-      // Should reject — important thing is page is still alive
+      // Should reject, important thing is page is still alive
       expect(r.ok).toBe(true);
     });
 
-    test('undefined file — rejects gracefully', async () => {
+    test('undefined file, rejects gracefully', async () => {
       const r = await page.evaluate(async () => {
         try { await compressAndEncodeImage(undefined); return { ok: false }; }
         catch (e) { return { ok: true, isError: true }; }
@@ -22406,7 +22406,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid minimal Blob — resolves to base64 string', async () => {
+    test('valid minimal Blob, resolves to base64 string', async () => {
       const r = await page.evaluate(async () => {
         // 1x1 white JPEG
         const b64 = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k=';
@@ -22424,7 +22424,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasContent).toBe(true);
     });
 
-    test('maxPx=0 — handles degenerate dimensions without crash', async () => {
+    test('maxPx=0: handles degenerate dimensions without crash', async () => {
       const r = await page.evaluate(async () => {
         const bytes = new Uint8Array([
           0xFF,0xD8,0xFF,0xE0,0,16,74,70,73,70,0,1,1,0,0,1,0,1,0,0,
@@ -22450,7 +22450,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('maxPx=Number.MAX_SAFE_INTEGER — does not crash', async () => {
+    test('maxPx=Number.MAX_SAFE_INTEGER: does not crash', async () => {
       const r = await page.evaluate(async () => {
         const bytes = new Uint8Array([0xFF,0xD8,0xFF,0xD9]); // minimal valid JPEG
         const blob = new Blob([bytes], { type: 'image/jpeg' });
@@ -22465,7 +22465,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _gpuInit
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_gpuInit', () => {
-    test('no WebGPU available — returns false gracefully', async () => {
+    test('no WebGPU available, returns false gracefully', async () => {
       const r = await page.evaluate(async () => {
         const origGpu = navigator.gpu;
         // Temporarily hide GPU
@@ -22478,7 +22478,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('zero dimensions — does not throw', async () => {
+    test('zero dimensions, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const origGpu = navigator.gpu;
         Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true });
@@ -22489,7 +22489,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null dimensions — does not throw', async () => {
+    test('null dimensions, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const origGpu = navigator.gpu;
         Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true });
@@ -22505,7 +22505,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _gpuSobelAsync
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_gpuSobelAsync', () => {
-    test('no GPU device initialised — returns null gracefully', async () => {
+    test('no GPU device initialised, returns null gracefully', async () => {
       const r = await page.evaluate(async () => {
         _gpuDestroy(); // ensure clean state
         const fakeVideo = { videoWidth: 0 };
@@ -22516,12 +22516,12 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('null video — returns null gracefully', async () => {
+    test('null video, returns null gracefully', async () => {
       const r = await page.evaluate(async () => {
         try { const result = await _gpuSobelAsync(null, 180, 180); return { ok: true, result }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // May throw or return null — page must survive
+      // May throw or return null, page must survive
       expect(['boolean'].includes(typeof r.ok)).toBe(true);
     });
   });
@@ -22530,7 +22530,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _gpuDestroy
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_gpuDestroy', () => {
-    test('golden path — resets _gpu state to null values', async () => {
+    test('golden path, resets _gpu state to null values', async () => {
       const r = await page.evaluate(() => {
         try { _gpuDestroy(); return { ok: true, dev: window._gpu?.dev, tw: window._gpu?.tw }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -22540,7 +22540,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.tw).toBe(0);
     });
 
-    test('called twice — no throw', async () => {
+    test('called twice, no throw', async () => {
       const r = await page.evaluate(() => {
         try { _gpuDestroy(); _gpuDestroy(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -22548,7 +22548,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         try { for (let i = 0; i < 5; i++) _gpuDestroy(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -22567,7 +22567,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       });
     });
 
-    test('fileOrNull=null — appends file input to body', async () => {
+    test('fileOrNull=null: appends file input to body', async () => {
       const r = await page.evaluate(() => {
         const orig = window._loadAndBuildScanUI;
         window._loadAndBuildScanUI = () => {};
@@ -22579,7 +22579,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('fileOrNull provided — calls _loadAndBuildScanUI', async () => {
+    test('fileOrNull provided, calls _loadAndBuildScanUI', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window._loadAndBuildScanUI;
@@ -22593,7 +22593,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('null callback — does not throw', async () => {
+    test('null callback, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._loadAndBuildScanUI;
         window._loadAndBuildScanUI = () => {};
@@ -22614,7 +22614,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await page.evaluate(() => { document.getElementById('live-scan-ui')?.remove(); });
     });
 
-    test('no camera — falls back to file input without crashing', async () => {
+    test('no camera, falls back to file input without crashing', async () => {
       const r = await page.evaluate(async () => {
         // Stub getUserMedia to fail (no camera in test env)
         const origMD = navigator.mediaDevices;
@@ -22637,7 +22637,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null callback — falls back without crash', async () => {
+    test('null callback, falls back without crash', async () => {
       const r = await page.evaluate(async () => {
         const origMD = navigator.mediaDevices;
         Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: async () => { throw new Error('no cam'); } }, configurable: true });
@@ -22689,7 +22689,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await page.evaluate(() => { document.getElementById('rcpt-scan-ui')?.remove(); });
     });
 
-    test('valid jpeg blob — calls _buildScanUI', async () => {
+    test('valid jpeg blob, calls _buildScanUI', async () => {
       const r = await page.evaluate(async () => {
         let called = false;
         const orig = window._buildScanUI;
@@ -22712,7 +22712,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null file — does not throw (onerror path calls callback)', async () => {
+    test('null file, does not throw (onerror path calls callback)', async () => {
       const r = await page.evaluate(() => {
         const orig = window._buildScanUI;
         window._buildScanUI = () => {};
@@ -22732,7 +22732,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await page.evaluate(() => { document.getElementById('rcpt-scan-ui')?.remove(); });
     });
 
-    test('valid image — creates #rcpt-scan-ui', async () => {
+    test('valid image, creates #rcpt-scan-ui', async () => {
       const r = await page.evaluate(() => {
         const img = new Image(); img.width = 100; img.height = 100;
         // Use naturalWidth/naturalHeight by drawing to canvas first
@@ -22766,17 +22766,17 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('null image — does not crash page', async () => {
+    test('null image, does not crash page', async () => {
       const r = await page.evaluate(() => {
         const blob = new Blob(['dummy'], { type: 'image/jpeg' });
         try { _buildScanUI(null, blob, () => {}); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // Either returns ok or throws cleanly — page must survive
+      // Either returns ok or throws cleanly, page must survive
       expect(typeof r.ok).toBe('boolean');
     });
 
-    test('null callback — does not throw on construction', async () => {
+    test('null callback, does not throw on construction', async () => {
       const r = await page.evaluate(() => {
         const fakeImg = new Image();
         Object.defineProperty(fakeImg, 'naturalWidth', { value: 100 });
@@ -22793,7 +22793,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _detectDocCorners
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_detectDocCorners', () => {
-    test('valid edge data with detectable rectangle — returns 4 corner points', async () => {
+    test('valid edge data with detectable rectangle, returns 4 corner points', async () => {
       const r = await page.evaluate(() => {
         const tw = 20, th = 20;
         // Create an image data with a white rectangle on black background
@@ -22811,13 +22811,13 @@ test.describe('finance.js — exhaustive coverage', () => {
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // May return null if heuristics don't find a rect in 20x20 — that is acceptable
+      // May return null if heuristics don't find a rect in 20x20, that is acceptable
       if (r.result !== null) {
         expect(r.result).toHaveLength(4);
       }
     });
 
-    test('empty data array — returns null gracefully', async () => {
+    test('empty data array, returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         try { const result = _detectDocCorners(new Uint8Array(0), 0, 0, 640, 480); return { ok: true, result }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -22826,7 +22826,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('null data — returns null gracefully', async () => {
+    test('null data, returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         try { const result = _detectDocCorners(null, 10, 10, 640, 480); return { ok: true, result }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -22835,7 +22835,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('all-black image — returns null (no edges)', async () => {
+    test('all-black image, returns null (no edges)', async () => {
       const r = await page.evaluate(() => {
         const tw = 40, th = 40;
         const data = new Uint8Array(tw * th * 4); // all zeros
@@ -22846,7 +22846,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('1x1 data — returns null gracefully', async () => {
+    test('1x1 data, returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         const data = new Uint8Array([255, 255, 255, 255]);
         try { const result = _detectDocCorners(data, 1, 1, 100, 100); return { ok: true, result }; }
@@ -22856,7 +22856,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('negative dimensions — returns null gracefully', async () => {
+    test('negative dimensions, returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         const data = new Uint8Array(4);
         try { const result = _detectDocCorners(data, -1, -1, 100, 100); return { ok: true, result }; }
@@ -22865,7 +22865,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('outW=0, outH=0 — does not throw', async () => {
+    test('outW=0, outH=0, does not throw', async () => {
       const r = await page.evaluate(() => {
         const tw = 10, th = 10;
         const data = new Uint8Array(tw * th * 4).fill(128);
@@ -22880,7 +22880,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _scanDetectCorners / _scanDetectCornersFromCanvas
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_scanDetectCorners + _scanDetectCornersFromCanvas', () => {
-    test('_scanDetectCorners — valid canvas context — does not throw', async () => {
+    test('_scanDetectCorners: valid canvas context, does not throw', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 40; canvas.height = 40;
         const ctx = canvas.getContext('2d');
@@ -22891,7 +22891,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_scanDetectCorners — zero width/height — returns null gracefully', async () => {
+    test('_scanDetectCorners: zero width/height: returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1;
         const ctx = canvas.getContext('2d');
@@ -22901,7 +22901,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_scanDetectCornersFromCanvas — delegates to _scanDetectCorners', async () => {
+    test('_scanDetectCornersFromCanvas, delegates to _scanDetectCorners', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 40; canvas.height = 40;
         const ctx = canvas.getContext('2d');
@@ -22921,7 +22921,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _scanWarp
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_scanWarp', () => {
-    test('golden path — produces output canvas', async () => {
+    test('golden path, produces output canvas', async () => {
       const r = await page.evaluate(() => {
         const img = new Image();
         const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 100;
@@ -22940,7 +22940,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.h).toBeGreaterThan(0);
     });
 
-    test('degenerate corners (all same point) — produces canvas without crash', async () => {
+    test('degenerate corners (all same point), produces canvas without crash', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 50; canvas.height = 50;
         canvas.getContext('2d').fillRect(0,0,50,50);
@@ -22951,17 +22951,17 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null image — does not crash page', async () => {
+    test('null image, does not crash page', async () => {
       const r = await page.evaluate(() => {
         const corners = [{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}];
         try { _scanWarp(null, 100, 100, corners); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // Graceful — either succeeds or throws but page lives
+      // Graceful: either succeeds or throws but page lives
       expect(typeof r.ok).toBe('boolean');
     });
 
-    test('null corners — does not crash page', async () => {
+    test('null corners, does not crash page', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 10; canvas.height = 10;
         try { _scanWarp(canvas, 10, 10, null); return { ok: true }; }
@@ -22975,7 +22975,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _scanHomography
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_scanHomography', () => {
-    test('golden path — returns 8-element array', async () => {
+    test('golden path, returns 8-element array', async () => {
       const r = await page.evaluate(() => {
         const src = [[0,0],[100,0],[100,100],[0,100]];
         const dst = [[10,10],[90,10],[90,90],[10,90]];
@@ -22987,7 +22987,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.len).toBe(8);
     });
 
-    test('identity transform — diagonal values near 1', async () => {
+    test('identity transform, diagonal values near 1', async () => {
       const r = await page.evaluate(() => {
         const pts = [[0,0],[100,0],[100,100],[0,100]];
         try { const h = _scanHomography(pts, pts); return { ok: true, h0: h[0], h4: h[4] }; }
@@ -22999,9 +22999,9 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(Math.abs(r.h4 - 1)).toBeLessThan(0.01);
     });
 
-    test('degenerate (collinear points) — returns array without crash', async () => {
+    test('degenerate (collinear points), returns array without crash', async () => {
       const r = await page.evaluate(() => {
-        // Collinear points — matrix will be singular
+        // Collinear points, matrix will be singular
         const src = [[0,0],[1,0],[2,0],[3,0]];
         const dst = [[0,0],[1,0],[2,0],[3,0]];
         try { const h = _scanHomography(src, dst); return { ok: true, isArray: Array.isArray(h) }; }
@@ -23010,7 +23010,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null input — does not crash page', async () => {
+    test('null input, does not crash page', async () => {
       const r = await page.evaluate(() => {
         try { _scanHomography(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23023,7 +23023,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _scanEnhance
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_scanEnhance', () => {
-    test('golden path — modifies canvas in-place without throw', async () => {
+    test('golden path, modifies canvas in-place without throw', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 50; canvas.height = 50;
         const ctx = canvas.getContext('2d');
@@ -23036,7 +23036,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.w).toBe(50);
     });
 
-    test('1x1 canvas — does not crash', async () => {
+    test('1x1 canvas, does not crash', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1;
         try { _scanEnhance(canvas); return { ok: true }; }
@@ -23045,7 +23045,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null canvas — does not crash page', async () => {
+    test('null canvas, does not crash page', async () => {
       const r = await page.evaluate(() => {
         try { _scanEnhance(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23053,9 +23053,9 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(typeof r.ok).toBe('boolean');
     });
 
-    test('uniform solid-color canvas — stretches contrast without crash', async () => {
+    test('uniform solid-color canvas, stretches contrast without crash', async () => {
       const r = await page.evaluate(() => {
-        // All pixels identical — denominator would be 0 if not guarded
+        // All pixels identical, denominator would be 0 if not guarded
         const canvas = document.createElement('canvas'); canvas.width = 10; canvas.height = 10;
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = 'rgb(128,128,128)'; ctx.fillRect(0,0,10,10);
@@ -23078,7 +23078,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await cleanModals();
     });
 
-    test('valid ISO date — creates confirmation widget', async () => {
+    test('valid ISO date, creates confirmation widget', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -23090,7 +23090,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('null aiDate — shows "(no date found)" label', async () => {
+    test('null aiDate, shows "(no date found)" label', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -23105,7 +23105,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasLabel).toBe(true);
     });
 
-    test('empty aiDate — does not throw', async () => {
+    test('empty aiDate, does not throw', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -23116,7 +23116,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null statusEl — does not throw', async () => {
+    test('null statusEl, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _confirmReceiptDate('2025-06-15', null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23125,7 +23125,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('removes existing rcpt-date-confirm before creating new — no duplicate', async () => {
+    test('removes existing rcpt-date-confirm before creating new, no duplicate', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -23140,7 +23140,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('yes button — sets em-date value and removes widget', async () => {
+    test('yes button, sets em-date value and removes widget', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -23157,7 +23157,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.dateVal).toBe('06/15/2025');
     });
 
-    test('no button — clears em-date and removes widget', async () => {
+    test('no button, clears em-date and removes widget', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -23182,7 +23182,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     test.beforeEach(async () => { await page.evaluate(() => { openExpenseFlow(); }); });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('no expense modal — does not throw', async () => {
+    test('no expense modal, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         try { toggleExpenseSections(); return { ok: true }; }
@@ -23191,7 +23191,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('category=meals — shows meal section', async () => {
+    test('category=meals: shows meal section', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('em-cat').value = 'meals';
         try { toggleExpenseSections(); return { ok: true, display: document.getElementById('em-meal-section')?.style.display }; }
@@ -23201,7 +23201,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('category=marketing — shows marketing section', async () => {
+    test('category=marketing: shows marketing section', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('em-cat').value = 'marketing';
         try { toggleExpenseSections(); return { ok: true, display: document.getElementById('em-marketing-section')?.style.display }; }
@@ -23211,7 +23211,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('category=other — hides both sections', async () => {
+    test('category=other: hides both sections', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('em-cat').value = 'other';
         try {
@@ -23228,7 +23228,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.mkt).toBe('none');
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         try { for (let i = 0; i < 5; i++) toggleExpenseSections(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23244,7 +23244,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     test.beforeEach(async () => { await page.evaluate(() => { openExpenseFlow(); }); });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('delegates to toggleExpenseSections — does not throw', async () => {
+    test('delegates to toggleExpenseSections, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { toggleMealFields(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23257,7 +23257,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // toggleCashWarning
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('toggleCashWarning', () => {
-    test('no _inc-method element — does not throw', async () => {
+    test('no _inc-method element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { toggleCashWarning(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23265,7 +23265,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('method=Cash — shows cash warning', async () => {
+    test('method=Cash: shows cash warning', async () => {
       const r = await page.evaluate(() => {
         const sel = document.createElement('select'); sel.id = '_inc-method';
         const opt = document.createElement('option'); opt.value = 'Cash'; sel.appendChild(opt); sel.value = 'Cash';
@@ -23279,7 +23279,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('method=Card — hides warning, unchecks confirm', async () => {
+    test('method=Card: hides warning, unchecks confirm', async () => {
       const r = await page.evaluate(() => {
         const sel = document.createElement('select'); sel.id = '_inc-method';
         const opt = document.createElement('option'); opt.value = 'Card'; sel.appendChild(opt); sel.value = 'Card';
@@ -23295,7 +23295,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.checked).toBe(false);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         try { for (let i = 0; i < 5; i++) toggleCashWarning(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23313,7 +23313,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await page.evaluate(() => { expenses = expenses.filter(e => e.id < 1700000000000); });
     });
 
-    test('missing vendor — shows error, does not save', async () => {
+    test('missing vendor, shows error, does not save', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = '';
@@ -23328,7 +23328,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.added).toBe(0);
     });
 
-    test('missing amount — shows error, does not save', async () => {
+    test('missing amount, shows error, does not save', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
@@ -23343,7 +23343,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.added).toBe(0);
     });
 
-    test('zero amount — shows error', async () => {
+    test('zero amount, shows error', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
@@ -23357,7 +23357,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.added).toBe(0);
     });
 
-    test('negative amount — shows error', async () => {
+    test('negative amount, shows error', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
@@ -23371,7 +23371,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.added).toBe(0);
     });
 
-    test('meal category without purpose — shows IRS error', async () => {
+    test('meal category without purpose, shows IRS error', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Denny\'s';
@@ -23388,7 +23388,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.errText).toMatch(/business purpose/i);
     });
 
-    test('golden path — adds expense to array and closes modal', async () => {
+    test('golden path, adds expense to array and closes modal', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Sherwin-Williams';
@@ -23410,7 +23410,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.modalGone).toBe(true);
     });
 
-    test('no expense-modal — does not throw', async () => {
+    test('no expense-modal, does not throw', async () => {
       const r = await page.evaluate(async () => {
         document.getElementById('expense-modal')?.remove();
         try { await expSave(); return { ok: true }; }
@@ -23419,7 +23419,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not crash', async () => {
+    test('corrupted localStorage, does not crash', async () => {
       const r = await page.evaluate(async () => {
         localStorage.setItem('zp3_data', '{INVALID{{{{');
         openExpenseFlow();
@@ -23440,7 +23440,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('quickAction', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('type="expense" — opens expense modal', async () => {
+    test('type="expense", opens expense modal', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         try { quickAction('expense'); return { ok: true, hasModal: !!document.getElementById('expense-modal') }; }
@@ -23450,7 +23450,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasModal).toBe(true);
     });
 
-    test('type="drive" — calls openDriveModal or catches safely', async () => {
+    test('type="drive", calls openDriveModal or catches safely', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('drive'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23458,7 +23458,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type="collect" — delegates to openCollectModal', async () => {
+    test('type="collect", delegates to openCollectModal', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.openCollectModal;
@@ -23471,7 +23471,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('type="estimate" — does not throw', async () => {
+    test('type="estimate", does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('estimate'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23479,7 +23479,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type="schedule" — does not throw', async () => {
+    test('type="schedule", does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('schedule'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23487,7 +23487,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type="complete" — does not throw', async () => {
+    test('type="complete", does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('complete'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23495,7 +23495,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null type — does not throw', async () => {
+    test('null type, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23503,7 +23503,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined type — does not throw', async () => {
+    test('undefined type, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23511,7 +23511,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string type — does not throw', async () => {
+    test('empty string type, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23519,7 +23519,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown type — does not throw', async () => {
+    test('unknown type, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('unknown_action_xyz'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23527,7 +23527,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window.openCollectModal;
         window.openCollectModal = () => {};
@@ -23538,7 +23538,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not crash', async () => {
+    test('corrupted localStorage, does not crash', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_data', '{INVALID{{{{');
         try { quickAction('expense'); return { ok: true }; }
@@ -23555,7 +23555,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('openCompleteJobModal', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('golden path — creates zmodal-overlay in DOM', async () => {
+    test('golden path, creates zmodal-overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         try { openCompleteJobModal(); return { ok: true, hasModal: !!document.querySelector('.zmodal-overlay') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23564,7 +23564,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasModal).toBe(true);
     });
 
-    test('no active jobs — shows "No active jobs" message', async () => {
+    test('no active jobs, shows "No active jobs" message', async () => {
       const r = await page.evaluate(() => {
         const origJobs = [...jobs];
         jobs = [];
@@ -23579,7 +23579,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasNoJobs).toBe(true);
     });
 
-    test('active job present — shows job in list', async () => {
+    test('active job present, shows job in list', async () => {
       const r = await page.evaluate(() => {
         // Our fixture job 56601 belongs to Finance Test Alpha
         try {
@@ -23592,7 +23592,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.text).toMatch(/Finance Test Alpha/);
     });
 
-    test('5 concurrent calls — no crash, modals stack but page survives', async () => {
+    test('5 concurrent calls, no crash, modals stack but page survives', async () => {
       const r = await page.evaluate(() => {
         try { for (let i = 0; i < 5; i++) openCompleteJobModal(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23617,7 +23617,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('markJobCompleteFromDash', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('invalid jobId — returns early without crash', async () => {
+    test('invalid jobId, returns early without crash', async () => {
       const r = await page.evaluate(() => {
         try { markJobCompleteFromDash(999999, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23625,7 +23625,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null jobId — does not throw', async () => {
+    test('null jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { markJobCompleteFromDash(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23633,7 +23633,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid jobId with zmodal-overlay triggerBtn — closes sheet', async () => {
+    test('valid jobId with zmodal-overlay triggerBtn, closes sheet', async () => {
       const r = await page.evaluate(() => {
         // Create a fake overlay
         const ov = document.createElement('div'); ov.className = 'zmodal-overlay';
@@ -23652,7 +23652,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ovGone).toBe(true);
     });
 
-    test('valid jobId null triggerBtn — calls markJobDone', async () => {
+    test('valid jobId null triggerBtn, calls markJobDone', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.markJobDone;
@@ -23665,7 +23665,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('undefined jobId — does not throw', async () => {
+    test('undefined jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { markJobCompleteFromDash(undefined, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23680,7 +23680,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('showQuickPicker', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('golden path — creates overlay with title and search input', async () => {
+    test('golden path, creates overlay with title and search input', async () => {
       const r = await page.evaluate(() => {
         try {
           document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
@@ -23694,7 +23694,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasSearch).toBe(true);
     });
 
-    test('suggestions array with items — renders suggestion buttons', async () => {
+    test('suggestions array with items, renders suggestion buttons', async () => {
       const r = await page.evaluate(() => {
         const suggestions = [
           { label: 'Alice', sub: 'Estimate today', clientId: 78801, icon: '📅' },
@@ -23711,7 +23711,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.btnCount).toBeGreaterThanOrEqual(2);
     });
 
-    test('empty suggestions — does not crash', async () => {
+    test('empty suggestions, does not crash', async () => {
       const r = await page.evaluate(() => {
         try { showQuickPicker('T', 'S', [], 'estimate', false); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23719,7 +23719,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null title — does not throw', async () => {
+    test('null title, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showQuickPicker(null, null, [], 'estimate', false); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23727,7 +23727,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('allowNew=true — shows + New client button', async () => {
+    test('allowNew=true: shows + New client button', async () => {
       const r = await page.evaluate(() => {
         try {
           showQuickPicker('T', 'S', [], 'estimate', true);
@@ -23739,7 +23739,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('allowNew=false — no new-client button', async () => {
+    test('allowNew=false: no new-client button', async () => {
       const r = await page.evaluate(() => {
         try {
           showQuickPicker('T', 'S', [], 'estimate', false);
@@ -23765,7 +23765,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.len).toBe(1);
     });
 
-    test('click outside overlay — removes it (and click inside does not)', async () => {
+    test('click outside overlay, removes it (and click inside does not)', async () => {
       // Exercises BOTH branches of the production backdrop handler
       // (finance.js:961 `overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove()})`):
       //   • a click whose target IS the overlay backdrop → removes it
@@ -23808,7 +23808,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('empty query — clears results', async () => {
+    test('empty query, clears results', async () => {
       const r = await page.evaluate(() => {
         const inp = document.getElementById('qp-search');
         inp.value = '';
@@ -23819,7 +23819,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.html).toBe('');
     });
 
-    test('matching query — renders client buttons', async () => {
+    test('matching query, renders client buttons', async () => {
       const r = await page.evaluate(() => {
         const inp = document.getElementById('qp-search');
         inp.value = 'Finance Test Alpha';
@@ -23834,7 +23834,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.btnCount).toBeGreaterThanOrEqual(1);
     });
 
-    test('no match — shows "No match found" and new-wrap', async () => {
+    test('no match, shows "No match found" and new-wrap', async () => {
       const r = await page.evaluate(() => {
         const inp = document.getElementById('qp-search');
         inp.value = 'xyzzynonexistentclientxyz';
@@ -23851,7 +23851,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.wrapVisible).toBe('block');
     });
 
-    test('no qp-results element — does not throw', async () => {
+    test('no qp-results element, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('qp-results')?.remove();
         const inp = document.getElementById('qp-search');
@@ -23862,7 +23862,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null element — does not throw', async () => {
+    test('null element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onQPSearch(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23877,7 +23877,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('pickQuickClient', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('valid button with dataset — calls executeQuickAction and removes overlay', async () => {
+    test('valid button with dataset, calls executeQuickAction and removes overlay', async () => {
       const r = await page.evaluate(() => {
         const suggestions = [{ label: 'Finance Test Alpha', sub: 'S', clientId: 78801, icon: '📅' }];
         showQuickPicker('T', 'S', suggestions, 'estimate', false);
@@ -23898,7 +23898,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.overlayGone).toBe(true);
     });
 
-    test('invalid idx — returns early without crash', async () => {
+    test('invalid idx, returns early without crash', async () => {
       const r = await page.evaluate(() => {
         const overlay = document.createElement('div'); overlay.className = 'zmodal-overlay';
         overlay.dataset.suggestions = '[]';
@@ -23911,7 +23911,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null btn — does not throw', async () => {
+    test('null btn, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { pickQuickClient(null, 'estimate'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -23926,7 +23926,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('pickQPClient', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('valid cid — removes overlay and calls executeQuickAction', async () => {
+    test('valid cid, removes overlay and calls executeQuickAction', async () => {
       const r = await page.evaluate(() => {
         const overlay = document.createElement('div'); overlay.className = 'zmodal-overlay';
         document.body.appendChild(overlay);
@@ -23945,7 +23945,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.overlayGone).toBe(true);
     });
 
-    test('null cid — does not throw', async () => {
+    test('null cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window.executeQuickAction;
         window.executeQuickAction = () => {};
@@ -23956,7 +23956,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('no overlay present — does not throw', async () => {
+    test('no overlay present, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
         const orig = window.executeQuickAction;
@@ -23968,7 +23968,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown actionType — does not crash', async () => {
+    test('unknown actionType, does not crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window.executeQuickAction;
         window.executeQuickAction = () => {};
@@ -23986,7 +23986,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('executeQuickAction', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('actionType="expense" — calls showQuickExpenseModal', async () => {
+    test('actionType="expense", calls showQuickExpenseModal', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.showQuickExpenseModal;
@@ -23999,7 +23999,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('actionType="estimate" — calls openEstimateForClient', async () => {
+    test('actionType="estimate", calls openEstimateForClient', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.openEstimateForClient;
@@ -24014,7 +24014,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('actionType="schedule" with bidId — calls schedFromBid', async () => {
+    test('actionType="schedule" with bidId, calls schedFromBid', async () => {
       const r = await page.evaluate(() => {
         let called = false, calledWith = null;
         const orig = window.schedFromBid;
@@ -24030,7 +24030,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.calledWith).toBe(67701);
     });
 
-    test('actionType="schedule" without bidId — calls openClientDetail', async () => {
+    test('actionType="schedule" without bidId, calls openClientDetail', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.openClientDetail;
@@ -24045,7 +24045,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('actionType="drive" — calls openLogTripModal', async () => {
+    test('actionType="drive", calls openLogTripModal', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.openLogTripModal;
@@ -24060,7 +24060,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('null actionType — does not throw', async () => {
+    test('null actionType, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { executeQuickAction(null, 78801, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -24068,7 +24068,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null clientId — does not throw', async () => {
+    test('null clientId, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window.showQuickExpenseModal;
         window.showQuickExpenseModal = () => {};
@@ -24079,7 +24079,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('sets currentClientId — global updated', async () => {
+    test('sets currentClientId, global updated', async () => {
       const r = await page.evaluate(() => {
         const orig = window.showQuickExpenseModal;
         window.showQuickExpenseModal = () => {};
@@ -24091,7 +24091,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.clientId).toBe(78801);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window.showQuickExpenseModal;
         window.showQuickExpenseModal = () => {};
@@ -24106,7 +24106,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // no console errors
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — finance.js', async () => {
+  test('no console errors, finance.js', async () => {
     assertNoErrors(page, 'finance.js');
   });
 });

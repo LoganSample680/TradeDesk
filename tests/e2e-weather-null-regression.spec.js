@@ -1,12 +1,12 @@
 // @ts-check
 /**
- * Regression guard — fetchWeather() must NEVER resolve to null/undefined (§14).
+ * Regression guard, fetchWeather() must NEVER resolve to null/undefined (§14).
  *
- * BUG — "Cannot read properties of null (reading '2026-06-01')" unhandled rejection
+ * BUG, "Cannot read properties of null (reading '2026-06-01')" unhandled rejection
  *       fired on pg-cal navigation and during realtime-triggered re-renders.
  *       Root cause: fetchWeather() (data.js) returns `_weatherCache` while a fetch
  *       is in-flight (`_weatherLoading`), but `_weatherCache` is null until the
- *       first fetch resolves — so a concurrent caller got null, and the calendar
+ *       first fetch resolves, so a concurrent caller got null, and the calendar
  *       renderers (finance.js / proposals.js) deref `weather[dateKey]` on it.
  *       Fix: fetchWeather() returns `_weatherCache||{}`; the two call sites also
  *       guard with `||{}`.
@@ -36,7 +36,7 @@ test.describe('fetchWeather null-safety', () => {
       window._weatherLoading = true;
       const w = await fetchWeather();
       window._weatherLoading = false;
-      // The crash was `weather[dateKey]` on null — prove that deref is now safe.
+      // The crash was `weather[dateKey]` on null, prove that deref is now safe.
       let threw = false;
       try { const _ = w['2026-06-01']; } catch (e) { threw = true; }
       return { isObject: w !== null && w !== undefined && typeof w === 'object', threw };

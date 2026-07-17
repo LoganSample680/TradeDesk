@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Exhaustive E2E coverage for js/timelog.js — the Time Log page. Structure
+ * Exhaustive E2E coverage for js/timelog.js: the Time Log page. Structure
  * mirrors Books exactly: year selector → month accordions (newest first,
  * current month open by default) → day accordions within each month (newest
  * first), reusing _bkTogMonth/_bkTogDay/_bkRenderDays from js/finance.js.
@@ -8,7 +8,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('timelog.js — exhaustive coverage', () => {
+test.describe('timelog.js: exhaustive coverage', () => {
   let page;
   const thisYear = String(new Date().getFullYear());
   const lastYear = String(new Date().getFullYear() - 1);
@@ -34,12 +34,12 @@ test.describe('timelog.js — exhaustive coverage', () => {
     );
     const now = new Date();
     timeEntries.push(
-      // Current month/day — this month's accordion should default open.
+      // Current month/day: this month's accordion should default open.
       { id: 8990001, job_id: 87701, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 90, scope_id: 'sand', scope_label: 'Sanding', logged_by_uid: null, logged_by_name: 'Owner (me)' },
       { id: 8990002, job_id: 87702, date: now.toISOString().slice(0, 10), start_time: now.toISOString(), end_time: now.toISOString(), minutes: 45, scope_id: null, scope_label: null, logged_by_uid: 'emp-test-uid', logged_by_name: 'Test Crew Member' },
-      // A prior month, same year — proves month grouping/sorting works.
+      // A prior month, same year, proves month grouping/sorting works.
       { id: 8990003, job_id: 87701, date: `${new Date().getFullYear()}-01-05`, start_time: `${new Date().getFullYear()}-01-05T09:00:00Z`, end_time: `${new Date().getFullYear()}-01-05T10:00:00Z`, minutes: 60, scope_id: null, scope_label: null, logged_by_uid: null, logged_by_name: 'Owner (me)' },
-      // A prior year — proves the year selector filters correctly.
+      // A prior year, proves the year selector filters correctly.
       { id: 8990004, job_id: 87701, date: `${new Date().getFullYear() - 1}-05-10`, start_time: `${new Date().getFullYear() - 1}-05-10T09:00:00Z`, end_time: `${new Date().getFullYear() - 1}-05-10T10:00:00Z`, minutes: 30, scope_id: null, scope_label: null, logged_by_uid: null, logged_by_name: 'Owner (me)' }
     );
   };
@@ -71,32 +71,32 @@ test.describe('timelog.js — exhaustive coverage', () => {
   });
 
   test.describe('_tlJobClientInfo', () => {
-    test('job with bid — resolves client name/addr through the bid', async () => {
+    test('job with bid, resolves client name/addr through the bid', async () => {
       const r = await page.evaluate(() => _tlJobClientInfo(87701));
       expect(r.clientName).toBe('Timelog Test Client');
       expect(r.addr).toBe('1 Timelog St, Wichita KS 67202');
     });
 
-    test('job with no bid — resolves client directly via job.client_id', async () => {
+    test('job with no bid, resolves client directly via job.client_id', async () => {
       const r = await page.evaluate(() => _tlJobClientInfo(87702));
       expect(r.clientName).toBe('Timelog No-Bid Client');
     });
 
-    test('nonexistent jobId — returns em-dash placeholders, does not throw', async () => {
+    test('nonexistent jobId, returns em-dash placeholders, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _tlJobClientInfo(999999) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.v.jobName).toBe('—');
+      expect(r.v.jobName).toBe('-');
     });
 
-    test('null jobId — does not throw', async () => {
+    test('null jobId, does not throw', async () => {
       const r = await page.evaluate(() => { try { _tlJobClientInfo(null); return true; } catch (e) { return false; } });
       expect(r).toBe(true);
     });
 
-    test('bid.addr (job-site address) takes precedence over the client\'s billing address — property managers/multi-site accounts', async () => {
+    test('bid.addr (job-site address) takes precedence over the client\'s billing address, property managers/multi-site accounts', async () => {
       const r = await page.evaluate(() => {
         bids.push({ id: 889011, client_id: 89901, client_name: 'Timelog Test Client', amount: 500, status: 'Closed Won', bid_date: '2026-01-01', addr: '99 Job Site Rd, Wichita KS 67203' });
         jobs.push({ id: 877011, client_id: 89901, bid_id: 889011, name: 'Job-site addr test', eventType: 'job', status: 'scheduled', start: '2099-06-01', actualHours: 0 });
@@ -117,7 +117,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
   });
 
   test.describe('_timeLogRows', () => {
-    test('golden path — includes manual entries with resolved client/job info', async () => {
+    test('golden path, includes manual entries with resolved client/job info', async () => {
       const r = await page.evaluate(async () => {
         const rows = await _timeLogRows(null);
         const mine = rows.find(x => x.id === 'm8990001');
@@ -141,7 +141,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.personName).toBe('Test Crew Member');
     });
 
-    test('sinceISO null — includes entries from every seeded year', async () => {
+    test('sinceISO null, includes entries from every seeded year', async () => {
       const r = await page.evaluate(async () => {
         const rows = await _timeLogRows(null);
         return rows.filter(x => ['m8990001', 'm8990002', 'm8990003', 'm8990004'].includes(x.id)).length;
@@ -149,7 +149,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(4);
     });
 
-    test('empty timeEntries and no crew data — resolves to empty array, no throw', async () => {
+    test('empty timeEntries and no crew data, resolves to empty array, no throw', async () => {
       const r = await page.evaluate(async () => {
         const orig = timeEntries;
         timeEntries = [];
@@ -161,7 +161,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.len).toBe(0);
     });
 
-    test('concurrent calls — no throw, no corruption', async () => {
+    test('concurrent calls, no throw, no corruption', async () => {
       const r = await page.evaluate(async () => {
         try {
           const results = await Promise.all([_timeLogRows(null), _timeLogRows(null), _timeLogRows(null)]);
@@ -172,7 +172,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.allSameLength).toBe(true);
     });
 
-    test('still-open (currently clocked in) entries are excluded — they belong in the banner, not the history', async () => {
+    test('still-open (currently clocked in) entries are excluded, they belong in the banner, not the history', async () => {
       const r = await page.evaluate(async () => {
         timeEntries.push({ id: 8990099, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
         try {
@@ -202,7 +202,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       await page.evaluate((id) => { timeEntries = timeEntries.filter(e => e.id !== id); }, OPEN_ID);
     });
 
-    test('golden path — a clocked-in entry shows elapsed minutes and resolved client/job info', async () => {
+    test('golden path, a clocked-in entry shows elapsed minutes and resolved client/job info', async () => {
       const r = await page.evaluate((id) => {
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 15 * 60000).toISOString(), end_time: null, minutes: null, open: true, scope_label: 'Sanding', logged_by_uid: null, logged_by_name: 'Owner (me)' });
         const rows = _tlOpenEntries();
@@ -220,7 +220,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('no open entries — returns empty array, no throw', async () => {
+    test('no open entries, returns empty array, no throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, len: _tlOpenEntries().length }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -241,7 +241,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.indexOf(OPEN_ID + 1)).toBeLessThan(r.indexOf(OPEN_ID));
     });
 
-    test('missing/malformed start_time — does not throw', async () => {
+    test('missing/malformed start_time, does not throw', async () => {
       const r = await page.evaluate((id) => {
         timeEntries.push({ id, job_id: 87701, date: '', start_time: null, end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
         try { const rows = _tlOpenEntries(); return { ok: true, elapsed: rows.find(x => x.rawId === id)?.elapsedMin }; }
@@ -252,7 +252,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
   });
 
   test.describe('_tlYears', () => {
-    test('golden path — distinct years, sorted newest first', async () => {
+    test('golden path, distinct years, sorted newest first', async () => {
       const r = await page.evaluate(() => {
         const rows = [{ date: '2024-01-01' }, { date: '2026-05-01' }, { date: '2025-06-01' }, { date: '2026-08-01' }];
         return _tlYears(rows);
@@ -260,12 +260,12 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toEqual(['2026', '2025', '2024']);
     });
 
-    test('empty rows — falls back to the current calendar year', async () => {
+    test('empty rows, falls back to the current calendar year', async () => {
       const r = await page.evaluate(() => _tlYears([]));
       expect(r).toEqual([String(new Date().getFullYear())]);
     });
 
-    test('rows with missing/malformed dates — skipped, does not throw', async () => {
+    test('rows with missing/malformed dates, skipped, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _tlYears([{ date: '' }, { date: null }, { }, { date: 'not-a-date' }]) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -276,7 +276,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
   });
 
   test.describe('_tlWeekKey', () => {
-    test('golden path — returns the Sunday of the week containing the date', async () => {
+    test('golden path, returns the Sunday of the week containing the date', async () => {
       // 2026-07-15 is a Wednesday; the Sunday before it is 2026-07-12.
       const r = await page.evaluate(() => _tlWeekKey('2026-07-15'));
       expect(r).toBe('2026-07-12');
@@ -293,7 +293,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe('2026-07-26');
     });
 
-    test('empty/null/malformed date — returns empty string, does not throw', async () => {
+    test('empty/null/malformed date, returns empty string, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: [_tlWeekKey(''), _tlWeekKey(null), _tlWeekKey(undefined), _tlWeekKey('not-a-date')] }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -308,7 +308,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         const rows = [
           { personUid: 'u1', date: '2026-07-13', minutes: 1300 }, // Mon
-          { personUid: 'u1', date: '2026-07-14', minutes: 1300 }, // Tue — total 2600 > 2400
+          { personUid: 'u1', date: '2026-07-14', minutes: 1300 }, // Tue: total 2600 > 2400
         ];
         _tlComputeOT(rows);
         return rows.map(r => r.weekOT);
@@ -320,7 +320,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         const rows = [
           { personUid: 'u1', date: '2026-07-13', minutes: 1200 },
-          { personUid: 'u1', date: '2026-07-14', minutes: 1200 }, // total 2400 — not over
+          { personUid: 'u1', date: '2026-07-14', minutes: 1200 }, // total 2400, not over
         ];
         _tlComputeOT(rows);
         return rows.map(r => r.weekOT);
@@ -365,7 +365,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toEqual([true, true]);
     });
 
-    test('empty array — does not throw', async () => {
+    test('empty array, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tlComputeOT([]); return true; } catch (e) { return false; }
       });
@@ -376,7 +376,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
   test.describe('_tlComputeWeeklyRunning', () => {
     test('accumulates day-by-day through the week, chronologically, regardless of input order', async () => {
       const r = await page.evaluate(() => {
-        // Deliberately out of order — newest first, matching how rows actually render.
+        // Deliberately out of order, newest first, matching how rows actually render.
         const rows = [
           { personUid: 'u1', date: '2026-07-15', minutes: 480 }, // Wed
           { personUid: 'u1', date: '2026-07-13', minutes: 480 }, // Mon
@@ -425,7 +425,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
         _tlComputeWeeklyRunning(rows);
         return rows.map(r => r.weekRunningMin);
       });
-      // Both entries are in DIFFERENT weeks — neither accumulates onto the other.
+      // Both entries are in DIFFERENT weeks, neither accumulates onto the other.
       expect(r).toEqual([480, 480]);
     });
 
@@ -441,14 +441,14 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toEqual([300, 100]);
     });
 
-    test('empty array — does not throw', async () => {
+    test('empty array, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tlComputeWeeklyRunning([]); return true; } catch (e) { return false; }
       });
       expect(r).toBe(true);
     });
 
-    test('rows with missing/malformed dates — does not throw', async () => {
+    test('rows with missing/malformed dates, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _tlComputeWeeklyRunning([{ personUid: 'u1', date: '', minutes: 30 }, { personUid: 'u1', date: null, minutes: 30 }]); return true; }
         catch (e) { return false; }
@@ -458,12 +458,12 @@ test.describe('timelog.js — exhaustive coverage', () => {
   });
 
   test.describe('_tlFmtTime', () => {
-    test('golden path — formats an ISO timestamp as a plain clock time', async () => {
+    test('golden path, formats an ISO timestamp as a plain clock time', async () => {
       const r = await page.evaluate(() => _tlFmtTime('2026-07-13T13:05:00.000Z'));
       expect(r).toMatch(/\d{1,2}:\d{2}\s?[AP]M/i);
     });
 
-    test('null/undefined/empty — returns empty string, does not throw', async () => {
+    test('null/undefined/empty: returns empty string, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: [_tlFmtTime(null), _tlFmtTime(undefined), _tlFmtTime('')] }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -472,7 +472,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.v).toEqual(['', '', '']);
     });
 
-    test('malformed timestamp — returns empty string, does not throw', async () => {
+    test('malformed timestamp, returns empty string, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _tlFmtTime('not-a-date') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -483,7 +483,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
   });
 
   test.describe('_tlExportCSV', () => {
-    test('no rows for the selected year — shows a toast, does not call downloadFile', async () => {
+    test('no rows for the selected year, shows a toast, does not call downloadFile', async () => {
       const r = await page.evaluate(() => {
         const orig = window.downloadFile, origToast = window.showToast;
         let downloadCalled = false, toastMsg = null;
@@ -498,7 +498,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.toastMsg).toContain('No time entries');
     });
 
-    test('golden path — builds a CSV with header, escaped fields, and an OT marker', async () => {
+    test('golden path, builds a CSV with header, escaped fields, and an OT marker', async () => {
       const r = await page.evaluate(() => {
         const orig = window.downloadFile, origToast = window.showToast;
         let captured = null;
@@ -553,12 +553,12 @@ test.describe('timelog.js — exhaustive coverage', () => {
     });
     test.afterEach(restore);
 
-    test('auto (GPS) source — never editable, even for the owner', async () => {
+    test('auto (GPS) source, never editable, even for the owner', async () => {
       const r = await page.evaluate(() => _tlCanEdit({ source: 'auto', personUid: null }));
       expect(r).toBe(false);
     });
 
-    test('auto (GPS) source — never editable, even with payroll permission', async () => {
+    test('auto (GPS) source, never editable, even with payroll permission', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = true;
         window._employeeRecord = { permissions: { payroll: true } };
@@ -568,7 +568,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('manual entry — owner (non-employee) can always edit, including others\' entries', async () => {
+    test('manual entry, owner (non-employee) can always edit, including others\' entries', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         return _tlCanEdit({ source: 'manual', personUid: 'someone-else' });
@@ -576,7 +576,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('manual entry — employee without payroll permission can edit their OWN entry', async () => {
+    test('manual entry, employee without payroll permission can edit their OWN entry', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = true;
         window._employeeRecord = { permissions: { payroll: false } };
@@ -586,7 +586,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('manual entry — employee without payroll permission CANNOT edit someone else\'s entry', async () => {
+    test('manual entry, employee without payroll permission CANNOT edit someone else\'s entry', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = true;
         window._employeeRecord = { permissions: { payroll: false } };
@@ -596,7 +596,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('manual entry — employee WITH payroll permission can edit someone else\'s entry', async () => {
+    test('manual entry, employee WITH payroll permission can edit someone else\'s entry', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = true;
         window._employeeRecord = { permissions: { payroll: true } };
@@ -606,7 +606,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('missing personUid/source — does not throw', async () => {
+    test('missing personUid/source: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, v: _tlCanEdit({}) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -616,8 +616,8 @@ test.describe('timelog.js — exhaustive coverage', () => {
     });
   });
 
-  test.describe('_tlRow — Edit/Delete controls', () => {
-    test('editable row — renders an Edit button and the long-press delete attributes, wired to the right entry id', async () => {
+  test.describe('_tlRow: Edit/Delete controls', () => {
+    test('editable row, renders an Edit button and the long-press delete attributes, wired to the right entry id', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         const html = _tlRow({ id: 'm123', rawId: 123, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 });
@@ -626,10 +626,10 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toContain('_openEditTimeEntry(123)');
       expect(r).toContain('data-lp-id="123"');
       expect(r).toContain('data-lp-type="timelog"');
-      expect(r).not.toContain('>Delete<'); // no visible Delete button — long-press only
+      expect(r).not.toContain('>Delete<'); // no visible Delete button, long-press only
     });
 
-    test('non-editable row (auto/GPS source) — no Edit button, no long-press attributes', async () => {
+    test('non-editable row (auto/GPS source), no Edit button, no long-press attributes', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         return _tlRow({ id: 'a1', rawId: 1, source: 'auto', personName: 'Crew', personUid: 'someone', clientName: 'X', addr: '', jobName: 'Y', detail: 'geo', minutes: 60 });
@@ -638,7 +638,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).not.toContain('data-lp-id');
     });
 
-    test('non-editable row (someone else\'s manual entry, no permission) — no Edit button, no long-press attributes', async () => {
+    test('non-editable row (someone else\'s manual entry, no permission), no Edit button, no long-press attributes', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = true;
         window._employeeRecord = { permissions: { payroll: false } };
@@ -651,7 +651,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).not.toContain('data-lp-id');
     });
 
-    test('weekOT true — renders the "OT WK" badge', async () => {
+    test('weekOT true, renders the "OT WK" badge', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         return _tlRow({ id: 'm7', rawId: 7, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, date: '2026-07-13', weekOT: true });
@@ -659,7 +659,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toContain('OT WK');
     });
 
-    test('weekOT false/undefined — no "OT WK" badge', async () => {
+    test('weekOT false/undefined: no "OT WK" badge', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         return _tlRow({ id: 'm8', rawId: 8, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60, date: '2026-07-13', weekOT: false });
@@ -680,7 +680,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toContain('Manual');
     });
 
-    test('no address on file — falls back to client/job/source only, no empty address line', async () => {
+    test('no address on file, falls back to client/job/source only, no empty address line', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         return _tlRow({ id: 'm10', rawId: 10, source: 'auto', personName: 'Crew A', personUid: 'u1', clientName: 'No-Addr Client', addr: '', jobName: 'Some Job', detail: '', minutes: 60 });
@@ -697,18 +697,18 @@ test.describe('timelog.js — exhaustive coverage', () => {
       });
       expect(r).toContain('data-label="Clock In"');
       expect(r).toContain('data-label="Clock Out"');
-      expect(r).not.toContain('data-label="Clock In">—<'); // a real time was provided, not the em-dash fallback
+      expect(r).not.toContain('data-label="Clock In">-<'); // a real time was provided, not the em-dash fallback
     });
 
-    test('missing startTime/endTime — Clock In/Out show an em-dash placeholder, not blank or throw', async () => {
+    test('missing startTime/endTime: Clock In/Out show an em-dash placeholder, not blank or throw', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         try { return { ok: true, html: _tlRow({ id: 'm12', rawId: 12, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 30, startTime: null, endTime: null }) }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      expect(r.html).toContain('data-label="Clock In">—<');
-      expect(r.html).toContain('data-label="Clock Out">—<');
+      expect(r.html).toContain('data-label="Clock In">-<');
+      expect(r.html).toContain('data-label="Clock Out">-<');
     });
 
     test('renders the Week total column from weekRunningMin', async () => {
@@ -720,7 +720,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toContain('40h 15m');
     });
 
-    test('missing weekRunningMin — Week total defaults to 0, does not throw', async () => {
+    test('missing weekRunningMin, Week total defaults to 0, does not throw', async () => {
       const r = await page.evaluate(() => {
         window._isEmployee = false;
         try { return { ok: true, html: _tlRow({ id: 'm14', rawId: 14, source: 'manual', personName: 'Owner (me)', personUid: null, clientName: 'X', addr: '', jobName: 'Y', detail: '', minutes: 60 }) }; }
@@ -731,8 +731,8 @@ test.describe('timelog.js — exhaustive coverage', () => {
     });
   });
 
-  test.describe('_lpDoDelete(type="timelog") — long-press delete dispatch', () => {
-    // Every other [data-lp-id] type is DEV-ONLY (gated on _canDelete()) — see
+  test.describe('_lpDoDelete(type="timelog"): long-press delete dispatch', () => {
+    // Every other [data-lp-id] type is DEV-ONLY (gated on _canDelete()): see
     // tests/e2e-features.spec.js "long-press delete is DEV-ONLY". timelog is
     // the deliberate exception: real contractors/employees use this gesture,
     // so these tests prove it works WITHOUT the dev bypass flag.
@@ -764,7 +764,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.stillThere).toBe(true);
     });
 
-    test('nonexistent id — does not throw', async () => {
+    test('nonexistent id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _lpDoDelete('999999', 'timelog'); return true; } catch (e) { return false; }
       });
@@ -797,7 +797,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       }, OPEN_ID);
     });
 
-    test('missing #tl-open DOM — no throw', async () => {
+    test('missing #tl-open DOM, no throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('tl-open');
         const id = el ? el.id : null;
@@ -809,7 +809,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('no open entries — banner is hidden and empty', async () => {
+    test('no open entries, banner is hidden and empty', async () => {
       const r = await page.evaluate(() => {
         _tlRenderOpenBanner();
         const el = document.getElementById('tl-open');
@@ -819,7 +819,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.html).toBe('');
     });
 
-    test('my own open entry — shown with person name, client, and elapsed time, with a real clockOut() button (not the manager force-close)', async () => {
+    test('my own open entry, shown with person name, client, and elapsed time, with a real clockOut() button (not the manager force-close)', async () => {
       const r = await page.evaluate((id) => {
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date(Date.now() - 10 * 60000).toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: null, logged_by_name: 'Owner (me)' });
         window._isEmployee = false;
@@ -855,7 +855,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).not.toContain('LONG SHIFT');
     });
 
-    test('employee without payroll permission — cannot see someone else\'s open entry', async () => {
+    test('employee without payroll permission, cannot see someone else\'s open entry', async () => {
       const r = await page.evaluate((id) => {
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: 'someone-else', logged_by_name: 'Someone Else' });
         window._isEmployee = true;
@@ -869,7 +869,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.html).toBe('');
     });
 
-    test('manager with payroll permission — sees others\' open entries with a "Clock out" force button', async () => {
+    test('manager with payroll permission, sees others\' open entries with a "Clock out" force button', async () => {
       const r = await page.evaluate((id) => {
         timeEntries.push({ id, job_id: 87701, date: new Date().toISOString().slice(0, 10), start_time: new Date().toISOString(), end_time: null, minutes: null, open: true, logged_by_uid: 'someone-else', logged_by_name: 'Someone Else' });
         window._isEmployee = true;
@@ -910,7 +910,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
   });
 
   test.describe('renderTimeLog', () => {
-    test('missing #tl-list DOM — returns gracefully, no throw', async () => {
+    test('missing #tl-list DOM, returns gracefully, no throw', async () => {
       const r = await page.evaluate(async () => {
         const el = document.getElementById('tl-list');
         const id = el ? el.id : null;
@@ -922,7 +922,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — year selector populated, current year shown, total in header', async () => {
+    test('golden path, year selector populated, current year shown, total in header', async () => {
       const r = await page.evaluate(async () => {
         goPg('pg-timelog');
         await renderTimeLog();
@@ -937,7 +937,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.total).toContain('total');
     });
 
-    test('current year — shows this year\'s entries, not last year\'s', async () => {
+    test('current year, shows this year\'s entries, not last year\'s', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
@@ -947,7 +947,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toContain('Timelog No-Bid Client');
     });
 
-    test('month accordions — newest month sorts first', async () => {
+    test('month accordions, newest month sorts first', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
@@ -969,7 +969,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('day accordions within a month — newest day sorts first', async () => {
+    test('day accordions within a month, newest day sorts first', async () => {
       const r = await page.evaluate(async () => {
         setTimeLogYear(new Date().getFullYear());
         await renderTimeLog();
@@ -983,7 +983,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
 
     test('requesting a year with no data clamps back to the newest year that has data (matches Books\' own year-selector behavior)', async () => {
       // The dropdown itself only ever lists years present in the data (same as
-      // Books' tracker-year-sel/getTrackerYears) — 1999 can never be a real
+      // Books' tracker-year-sel/getTrackerYears): 1999 can never be a real
       // selection, so _tlPopulateYearSel snaps it back to years[0] rather than
       // rendering a state the UI can't otherwise reach.
       const r = await page.evaluate(async () => {
@@ -995,7 +995,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.sel).not.toBe('1999');
     });
 
-    test('no time entries at all — shows the empty state for the fallback (current) year', async () => {
+    test('no time entries at all, shows the empty state for the fallback (current) year', async () => {
       const r = await page.evaluate(async () => {
         const orig = timeEntries;
         timeEntries = [];
@@ -1010,7 +1010,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r.total).toBe('');
     });
 
-    test('employee without payroll permission — sees only their own entries', async () => {
+    test('employee without payroll permission, sees only their own entries', async () => {
       const r = await page.evaluate(async () => {
         const origIsEmployee = window._isEmployee, origEmpRecord = window._employeeRecord, origSupaUser = window._supaUser;
         window._isEmployee = true;
@@ -1039,7 +1039,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('5 concurrent calls — no throw', async () => {
+    test('5 concurrent calls, no throw', async () => {
       const r = await page.evaluate(async () => {
         try {
           await Promise.all([renderTimeLog(), renderTimeLog(), renderTimeLog(), renderTimeLog(), renderTimeLog()]);
@@ -1096,7 +1096,7 @@ test.describe('timelog.js — exhaustive coverage', () => {
         } finally { timeEntries = orig; }
       });
       expect(r).not.toContain('500');
-      expect(r).not.toContain('8h'); // 500min = 8h20m — must not leak into the current-week total
+      expect(r).not.toContain('8h'); // 500min = 8h20m, must not leak into the current-week total
       expect(r).toContain('this week');
     });
 

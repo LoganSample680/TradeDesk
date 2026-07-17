@@ -1,4 +1,4 @@
-// REAL flow — the document-relationship chain (task #6): create a recurring
+// REAL flow, the document-relationship chain (task #6): create a recurring
 // maintenance contract for a client, then create a partnership/employment
 // agreement and mark it signed. Drives the actual UI funcs (contracts.js
 // openNewContractModal/_ctSaveNew, agreements.js openNewAgreement/_agSave/
@@ -68,7 +68,7 @@ test.describe('contracts & agreements (UI-driven)', () => {
         const k1 = await type(p, '#_ag-party', agParty);
         const k2 = await type(p, '#_ag-title', `E2E Profit-Share ${process.pid}`);
         // profit_share now REQUIRES a percentage (so a signed contract can never show the
-        // {X} placeholder) — enter one; the oninput re-fills the template body live.
+        // {X} placeholder), enter one; the oninput re-fills the template body live.
         const k3 = await type(p, '#_ag-pct', '20');
         await p.evaluate(() => { _agSave(); });
         await p.waitForTimeout(400);
@@ -119,7 +119,7 @@ test.describe('contracts & agreements (UI-driven)', () => {
       },
     });
 
-    // NO cleanup — the contract, agreement + client stay in the dev account on
+    // NO cleanup, the contract, agreement + client stay in the dev account on
     // purpose so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

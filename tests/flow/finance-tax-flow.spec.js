@@ -1,16 +1,16 @@
-// REAL flow — finance/books + tax-engine correctness (task #31). Two gaps the
+// REAL flow, finance/books + tax-engine correctness (task #31). Two gaps the
 // audit flagged: the books income path and the pg-taxes engine had no positive
 // contractor-correctness flow (only employee-lockout touched them).
 //
-//   A. INCOME LOGGING — log income through the real modal (finance.js
+//   A. INCOME LOGGING, log income through the real modal (finance.js
 //      saveManualIncome) and assert it lands in income[] AND round-trips to the
 //      cloud (td_income).
-//   B. TAX ENGINE — seed a clean FUTURE tax year (no real account data pollutes
+//   B. TAX ENGINE, seed a clean FUTURE tax year (no real account data pollutes
 //      it), drive the real calcTax() and assert the rendered Self-Employment tax
 //      and Federal income tax in #tx-results exactly equal the documented formula
 //      applied (with the app's own bracket/SE/mileage helpers) to the live inputs.
 //      This catches any wiring regression (wrong brackets, dropped mileage
-//      deduction, etc.) — not just the pure math the existing tax spec covers.
+//      deduction, etc.): not just the pure math the existing tax spec covers.
 //
 // Seed data is left in the account per CLAUDE.md §13.7.
 const { test, expect } = require('./flow-test');
@@ -64,7 +64,7 @@ test.describe('finance + tax correctness (UI-driven)', () => {
   // ── B. TAX ENGINE integration correctness ──────────────────────────────────
   test('calcTax renders SE + federal tax matching the formula over live inputs', async ({ page }) => {
     const FLOW = 'finance/tax-engine';
-    const YEAR = '2099'; // clean year — no real bids/payments/expenses land here
+    const YEAR = '2099'; // clean year, no real bids/payments/expenses land here
 
     await step(page, {
       label: 'seed a known income for 2099, run calcTax, verify rendered SE + fed tax',

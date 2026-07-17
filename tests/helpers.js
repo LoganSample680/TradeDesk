@@ -2,8 +2,8 @@
 /**
  * TradeDesk Playwright E2E Test Suite
  *
- * Targets: WebKit (Safari engine — primary) + Chromium
- * All external calls mocked — runs fully offline in CI.
+ * Targets: WebKit (Safari engine, primary) + Chromium
+ * All external calls mocked, runs fully offline in CI.
  *
  * Coverage:
  *  - All 16 original Puppeteer phases (ported & expanded)
@@ -68,7 +68,7 @@ async function mockAllExternal(page, opts = {}) {
     await page.addInitScript((pd) => { window.__mockProposalData = pd; }, proposalData);
   }
 
-  // Track console errors per page — caller reads them via page._consoleErrors
+  // Track console errors per page, caller reads them via page._consoleErrors
   page._consoleErrors = [];
   page.on('console', msg => {
     if (msg.type() === 'error') {
@@ -95,7 +95,7 @@ async function mockAllExternal(page, opts = {}) {
     const msg = err.message;
     // WebKit emits unhandledrejection pageerrors for fetch failures that ARE
     // caught in app code (e.g. geocoding.geo.census.gov has .catch(()=>null)).
-    // The app handles these gracefully — filter so assertNoErrors stays clean.
+    // The app handles these gracefully, filter so assertNoErrors stays clean.
     if (msg.includes('geocoding.geo.census.gov')) return;
     if (msg.includes('photon.komoot.io')) return;
     // The 15s version poll (index.html) has .catch(()=>{}) but WebKit still emits
@@ -104,7 +104,7 @@ async function mockAllExternal(page, opts = {}) {
     if (page._consoleErrors) page._consoleErrors.push('PAGE ERROR: ' + msg);
   });
 
-  // ── Block service worker registration — SW fetches bypass page.route
+  // ── Block service worker registration, SW fetches bypass page.route
   // entirely (including the SW script request itself), so once a SW installs,
   // a page.reload() serves the REAL supabase CDN (503 in CI) instead of the
   // shim and the boot hangs. Init scripts persist across reloads.
@@ -112,7 +112,7 @@ async function mockAllExternal(page, opts = {}) {
     if (navigator.serviceWorker) {
       navigator.serviceWorker.register = () => Promise.reject(new Error('SW disabled in tests'));
     }
-    // Oplog ships ON in prod (Phase 3) — so the offline shards run it ON too. Tests must
+    // Oplog ships ON in prod (Phase 3), so the offline shards run it ON too. Tests must
     // exercise the code path real users run; keeping it off here meant the authoritative
     // per-field merge was live in production while every mocked suite certified the
     // whole-row path instead (the review flagged exactly that gap). The mocked Supabase
@@ -127,12 +127,12 @@ async function mockAllExternal(page, opts = {}) {
       return route.fulfill({ status: 404, contentType: 'text/plain', body: '' });
     }
 
-    // ── Serve app locally — pass through ────────────────────────────────────
+    // ── Serve app locally, pass through ────────────────────────────────────
     if (url.startsWith('http://localhost') || url.startsWith('data:')) {
       return route.continue();
     }
 
-    // ── Supabase CDN — stub with minimal shim ───────────────────────────────
+    // ── Supabase CDN, stub with minimal shim ───────────────────────────────
     if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
       return route.fulfill({
         status: 200,
@@ -141,12 +141,12 @@ async function mockAllExternal(page, opts = {}) {
       });
     }
 
-    // ── Fonts — must return text/css or WebKit strict mode rejects them ────
+    // ── Fonts, must return text/css or WebKit strict mode rejects them ────
     if (url.includes('fonts.googleapis.com') || url.includes('fonts.gstatic.com')) {
       return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
     }
 
-    // ── Other blocked externals — empty plain response ───────────────────────
+    // ── Other blocked externals, empty plain response ───────────────────────
     if (
       url.includes('favicon') ||
       url.includes('cdn.apple-mapkit') ||
@@ -170,7 +170,7 @@ async function mockAllExternal(page, opts = {}) {
       });
     }
 
-    // ── Supabase REST — signed_proposals ────────────────────────────────────
+    // ── Supabase REST, signed_proposals ────────────────────────────────────
     if (url.includes('/rest/v1/signed_proposals')) {
       if (route.request().method() === 'GET' || url.includes('select')) {
         const rows = alreadySigned
@@ -193,12 +193,12 @@ async function mockAllExternal(page, opts = {}) {
       return route.fulfill({ status: 201, contentType: 'application/json', body: '[]' });
     }
 
-    // ── Supabase REST — proposal_views ───────────────────────────────────────
+    // ── Supabase REST, proposal_views ───────────────────────────────────────
     if (url.includes('/rest/v1/proposal_views')) {
       return route.fulfill({ status: 201, contentType: 'application/json', body: '[]' });
     }
 
-    // ── Supabase Storage — proposals bucket ──────────────────────────────────
+    // ── Supabase Storage, proposals bucket ──────────────────────────────────
     if (url.includes('/storage/v1/object/proposals/') || url.includes('/storage/v1/object/public/proposals/')) {
       return route.fulfill({
         status: 200,
@@ -207,7 +207,7 @@ async function mockAllExternal(page, opts = {}) {
       });
     }
 
-    // ── Supabase Storage — general (gallery, etc.) ───────────────────────────
+    // ── Supabase Storage, general (gallery, etc.) ───────────────────────────
     if (url.includes('/storage/v1/')) {
       return route.fulfill({
         status: 200,
@@ -224,12 +224,12 @@ async function mockAllExternal(page, opts = {}) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     }
 
-    // ── Supabase REST — anything else ────────────────────────────────────────
+    // ── Supabase REST, anything else ────────────────────────────────────────
     if (url.includes('.supabase.co')) {
       return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
     }
 
-    // ── Census geocoding API — return a minimal valid match so geo code
+    // ── Census geocoding API, return a minimal valid match so geo code
     // doesn't throw an unhandled rejection in WebKit strict mode ────────────────
     if (url.includes('geocoding.geo.census.gov')) {
       return route.fulfill({
@@ -255,19 +255,19 @@ async function mockAllExternal(page, opts = {}) {
 }
 
 /**
- * Minimal Supabase JS shim — satisfies createClient() calls without real network.
+ * Minimal Supabase JS shim, satisfies createClient() calls without real network.
  */
 function _supabaseShim() {
   return `
 (function(global){
   function noopResult(data){ return Promise.resolve({data,error:null}); }
-  // Returns an error result when window.__offlineMode is set — lets offline tests
+  // Returns an error result when window.__offlineMode is set, lets offline tests
   // simulate Supabase being unreachable without touching real network.
   function offlineResult(){ return Promise.resolve({data:null,error:{message:'Simulated offline',code:'offline'}}); }
   function maybeOffline(ok){ return global.__offlineMode ? offlineResult() : ok; }
-  // Returns a 401 Unauthorized error — simulates expired/invalid session.
+  // Returns a 401 Unauthorized error, simulates expired/invalid session.
   function authErrorResult(){ return Promise.resolve({data:null,error:{status:401,message:'Invalid JWT',code:'PGRST401'}}); }
-  // Returns a 500 server error — simulates Supabase REST outage.
+  // Returns a 500 server error, simulates Supabase REST outage.
   function serverErrorResult(){ return Promise.resolve({data:null,error:{status:500,message:'Internal server error',code:'PGRST500'}}); }
   function maybeAuthError(ok){ return global.__authFail401 ? authErrorResult() : ok; }
   function maybeServerError(ok){ return global.__serverError500 ? serverErrorResult() : ok; }
@@ -275,9 +275,9 @@ function _supabaseShim() {
   // ── Public-URL fetch interception ──────────────────────────────────────────
   // client.html / sign.html read mutable storage JSON (hub snapshot, proposal)
   // by fetching the PUBLIC object URL with cache:'no-store' + a cb= cache-buster
-  // (stale-balance fix — bypasses the browser HTTP cache that storage's default
+  // (stale-balance fix, bypasses the browser HTTP cache that storage's default
   // max-age=3600 would otherwise populate). Serve those fetches from the same
-  // in-page mocks download() uses — fully offline, no page.route dependency
+  // in-page mocks download() uses, fully offline, no page.route dependency
   // (WebKit-safe). Every intercepted call is recorded in __storageFetches so
   // specs can assert the cache-bypass behavior.
   var _origFetch = global.fetch ? global.fetch.bind(global) : null;
@@ -288,9 +288,9 @@ function _supabaseShim() {
       (global.__storageFetches = global.__storageFetches || []).push({ url: u, cache: (init && init.cache) || '' });
       // __storageFetchFail forces the app's download() fallback path; __offlineMode
       // simulates full Supabase outage (download() fails too → error UI).
-      // __storageFetchHang simulates a request that never settles (dead network) —
+      // __storageFetchHang simulates a request that never settles (dead network),
       // exercises the boot watchdog.
-      // __proposalNotFound404 simulates a 404 — proposal was deleted or never existed.
+      // __proposalNotFound404 simulates a 404, proposal was deleted or never existed.
       // __storageError401 simulates an access-denied response from storage.
       if(global.__storageFetchHang) return new Promise(function(){});
       if(global.__storageError401) return Promise.resolve(new Response('Unauthorized', { status: 401 }));
@@ -327,7 +327,7 @@ function _supabaseShim() {
           signInWithPassword: () => noopResult({ user: { id: 'e2e-user' }, session: { access_token: 'fake-jwt' } }),
           signOut:    () => noopResult(null),
           // Stash the registered callback so tests can fire a synthetic SIGNED_IN/
-          // SIGNED_OUT/etc. event and observe the app's real handler behavior —
+          // SIGNED_OUT/etc. event and observe the app's real handler behavior,
           // otherwise that logic (account-switch reset, post-sign-in navigation) is
           // unreachable from any offline test since the real Supabase client never
           // actually fires this callback in a mocked environment.
@@ -355,7 +355,7 @@ function _supabaseShim() {
               } else {
                 mockJson = JSON.stringify({id:1,status:'pending',businessName:'Test Biz',clientName:'Test Client',amount:1000,deposit:250,estDays:2,createdAt:new Date().toISOString(),signingToken:'tok',proposalHtml:'<p>Test proposal</p>',stripeConnectEnabled:false});
               }
-              // Return a plain Blob-like object — avoids Blob.text() edge cases in WebKit
+              // Return a plain Blob-like object, avoids Blob.text() edge cases in WebKit
               return noopResult({text:function(){return Promise.resolve(mockJson);},type:'application/json',size:mockJson.length});
             },
             // Real-shaped public URL so the fresh-fetch path in client.html/sign.html
@@ -387,7 +387,7 @@ function _supabaseShim() {
 }
 
 /**
- * Supabase shim tailored for intake.html — same structure but the `from()` query
+ * Supabase shim tailored for intake.html: same structure but the `from()` query
  * builder's `.then()` returns the mock accounts row so init() renders the form.
  */
 function _supabaseShimIntake() {
@@ -444,14 +444,14 @@ async function waitForAppBoot(page, timeout = 20000) {
       if (offBtn) offBtn.click();
       else ov.remove();
     });
-  } catch (_) { /* no overlay — that's fine */ }
+  } catch (_) { /* no overlay, that's fine */ }
 
   await page.waitForSelector('#dash-greet', { timeout });
 
   // Suppress day-of-week auto-modals (e.g. Friday "Week in Review") for the
   // entire test session. The Friday summary is triggered via setTimeout(checkFridaySummary, 800)
   // inside renderDash(). Replacing the function with a no-op means the pending timer
-  // fires harmlessly, and no modal is ever shown — regardless of which day CI runs.
+  // fires harmlessly, and no modal is ever shown, regardless of which day CI runs.
   await page.evaluate(() => {
     if (typeof checkFridaySummary === 'function') window.checkFridaySummary = () => {};
     document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
@@ -479,7 +479,7 @@ function assertNoErrors(page, label) {
     !e.includes('ERR_CONNECTION') &&       // WebKit omits the 'net::' prefix
     !e.includes('Failed to load resource') &&
     !e.includes('checkNew') &&
-    !e.includes('apple-mapkit') &&         // MapKit CDN — harmless in test env
+    !e.includes('apple-mapkit') &&         // MapKit CDN, harmless in test env
     !e.includes('cdn.apple-mapkit') &&
     !e.includes('js.stripe.com') &&
     !e.includes('cdn.jsdelivr') &&

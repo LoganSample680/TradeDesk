@@ -1,4 +1,4 @@
-// Adversarial flow spec — client/lead creation, realistic + combinatorial.
+// Adversarial flow spec, client/lead creation, realistic + combinatorial.
 //
 // Signs into the live app and abuses saveClient() with realistic varied names
 // and EVERY combination of entered data (email / address / property type / year
@@ -21,7 +21,7 @@ const ADDRESSES = [
   { street: '500 N Broadway', city: 'Pittsburg', state: 'KS', zip: '66762' },
 ];
 
-test.describe('clients/leads — realistic combinatorial breaker', () => {
+test.describe('clients/leads: realistic combinatorial breaker', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => {
@@ -50,7 +50,7 @@ test.describe('clients/leads — realistic combinatorial breaker', () => {
       const ac = ['316','620','785','913'][Math.floor(Math.random()*4)];
       const rand = String(Math.floor(2000000 + Math.random()*7999999));
       set('cf-phone', opts.phone || (ac + rand));
-      // required source — pick a RANDOM real option so sources spread out
+      // required source, pick a RANDOM real option so sources spread out
       const s = document.getElementById('cf-source');
       if (s && s.options && s.options.length > 1) s.value = s.options[1 + Math.floor(Math.random() * (s.options.length - 1))].value;
       set('cf-notes', '__E2E__ ' + opts.tag);          // hidden marker, real name shown

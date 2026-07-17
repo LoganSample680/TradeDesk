@@ -9,18 +9,18 @@ module.exports = defineConfig({
   // (playwright.flow.config.js) + workflow (flow-tests.yml). They authenticate
   // against the real project and must never run inside the fast offline shards.
   // tests/preview-smoke runs ONLY against a live Cloudflare deployment
-  // (playwright.preview-smoke.config.js) — likewise excluded from the offline shards.
+  // (playwright.preview-smoke.config.js), likewise excluded from the offline shards.
   testIgnore: ['**/flow/**', '**/preview-smoke/**'],
   // fullyParallel: false keeps tests within each describe block sequential
   // (they often share page state). Workers still run DIFFERENT describe blocks
-  // in parallel — safe because each worker gets its own browser context.
+  // in parallel, safe because each worker gets its own browser context.
   fullyParallel: false,
   forbidOnly: isCI,
 
   // Zero retries: a single failure means broken code, not a flaky test.
   retries: 0,
 
-  // CI: 4 workers — Playwright tests are I/O-bound (waiting for browser events,
+  // CI: 4 workers, Playwright tests are I/O-bound (waiting for browser events,
   // not burning CPU), so 4 workers run efficiently on a 2-vCPU GitHub Actions
   // runner. With 2 browser projects (webkit + chromium), this gives 2 workers
   // per browser instead of 1, halving per-browser time within each shard.
@@ -41,7 +41,7 @@ module.exports = defineConfig({
   use: {
     baseURL: 'http://localhost:8899',
 
-    // Capture a trace on failure — opens as a zip in the Playwright
+    // Capture a trace on failure, opens as a zip in the Playwright
     // report and lets you step through every network request, DOM state,
     // and screenshot at the moment of failure.
     trace: 'on-first-retry',

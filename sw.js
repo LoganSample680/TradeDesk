@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-07.14.26.30';
+const CACHE = 'tradedesk-07.17.26.2';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -31,7 +31,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
 
-  // Share target — POST from iOS share sheet with a photo file.
+  // Share target, POST from iOS share sheet with a photo file.
   // Cache the formData so the app can retrieve it after navigation.
   if (e.request.method === 'POST' && url.searchParams.get('shortcut') === 'share-photo') {
     e.respondWith(
@@ -44,7 +44,7 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Navigation — network-first with cache:'no-cache' so CDN and browser HTTP
+  // Navigation, network-first with cache:'no-cache' so CDN and browser HTTP
   // cache are both bypassed. Offline fallback to SW cache for iOS PWA support.
   if (e.request.mode === 'navigate') {
     const navPath = url.pathname;
@@ -52,7 +52,12 @@ self.addEventListener('fetch', e => {
     e.respondWith(
       fetch(new Request(e.request.url, {cache: 'no-cache'})).then(r => {
         if (!r.ok) return r;
-        caches.open(CACHE).then(c => c.put('/index.html', safeClone(r)));
+        // Clone SYNCHRONOUSLY, before `return r` hands the response to the browser
+        // and its body is consumed. safeClone inside the async caches.open().then()
+        // ran too late: the body was already used, throwing "Response body is already
+        // used" on every navigation (matches the working static-asset path below).
+        const toCache = safeClone(r);
+        caches.open(CACHE).then(c => c.put('/index.html', toCache));
         return r;
       }).catch(() => caches.match('/index.html'))
     );
@@ -62,18 +67,18 @@ self.addEventListener('fetch', e => {
   // Only cache GET requests over http/https
   if (e.request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) return;
 
-  // Never cache version.json — must always reflect the live server value
+  // Never cache version.json, must always reflect the live server value
   if (url.pathname === '/version.json') return;
 
-  // Never cache .well-known — Apple Pay domain verification must always be fetched fresh
+  // Never cache .well-known, Apple Pay domain verification must always be fetched fresh
   if (url.pathname.startsWith('/.well-known/')) return;
 
-  // Never intercept Supabase requests — REST and storage responses mutate (proposal
+  // Never intercept Supabase requests, REST and storage responses mutate (proposal
   // JSON is rewritten at signing). Cache-first here serves stale documents and can
   // pin failures. Let the network handle all of it.
   if (url.hostname.endsWith('supabase.co')) return;
 
-  // Static assets (JS, CSS, images) — cache-first, update in background
+  // Static assets (JS, CSS, images), cache-first, update in background
   e.respondWith(
     caches.match(e.request).then(cached => {
       const net = fetch(e.request).then(r => {
@@ -83,11 +88,11 @@ self.addEventListener('fetch', e => {
         }
         return r;
       }).catch(() => new Response('', { status: 503, statusText: 'Network Unavailable' }));
-      // .catch(() => new Response(503)) — if the SW's network fetch fails (offline,
+      // .catch(() => new Response(503)), if the SW's network fetch fails (offline,
       // external host unreachable, CI environment), resolve with a 503 instead of
       // leaving an unhandled rejection. Response.error() is NOT used here because
       // WebKit fires "Response served by service worker is an error" pageerror when
-      // the SW returns Response.error(). A real 503 Response resolves cleanly — the
+      // the SW returns Response.error(). A real 503 Response resolves cleanly, the
       // page's fetch() resolves (non-ok), r.json() throws SyntaxError on empty body,
       // and the caller's .catch(()=>null) handles it with zero pageerrors.
       return cached || net;

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Cloudflare Pages build step — swaps hardcoded Supabase credentials with
+// Cloudflare Pages build step, swaps hardcoded Supabase credentials with
 // environment variables so preview deployments point at Supabase preview
 // branches instead of production.
 //
@@ -20,7 +20,7 @@ const url = process.env.SUPABASE_URL      || PROD_URL;
 const key = process.env.SUPABASE_ANON_KEY || PROD_KEY;
 
 if (url === PROD_URL && key === PROD_KEY) {
-  console.log('[cf-build] No Supabase env vars set — using production values as-is.');
+  console.log('[cf-build] No Supabase env vars set, using production values as-is.');
   process.exit(0);
 }
 
@@ -37,7 +37,7 @@ for (const f of targets) {
 }
 
 if (patched === 0) {
-  console.warn('[cf-build] No substitutions made — check that SUPABASE_URL / SUPABASE_ANON_KEY match the hardcoded strings.');
+  console.warn('[cf-build] No substitutions made, check that SUPABASE_URL / SUPABASE_ANON_KEY match the hardcoded strings.');
 } else {
   console.log(`[cf-build] Done. ${patched} file(s) patched. Pointing at: ${url}`);
 }

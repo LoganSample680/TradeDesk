@@ -14,7 +14,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('payroll-summary.js — exhaustive coverage', () => {
+test.describe('payroll-summary.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -112,13 +112,13 @@ test.describe('payroll-summary.js — exhaustive coverage', () => {
 
   test('_paySummaryWeeklySplit over 40h/week splits the excess into OT (boundary at exactly 40h)', async () => {
     const result = await page.evaluate(() => _paySummaryWeeklySplit([
-      { date: '2026-07-13', minutes: 2400 }, // exactly 40h — all regular
+      { date: '2026-07-13', minutes: 2400 }, // exactly 40h, all regular
     ]));
     expect(result.regMin).toBe(2400);
     expect(result.otMin).toBe(0);
   });
 
-  test('_paySummaryWeeklySplit over 40h/week (40h1m) — 1 minute of OT', async () => {
+  test('_paySummaryWeeklySplit over 40h/week (40h1m): 1 minute of OT', async () => {
     const result = await page.evaluate(() => _paySummaryWeeklySplit([
       { date: '2026-07-13', minutes: 2401 },
     ]));
@@ -323,7 +323,7 @@ test.describe('payroll-summary.js — exhaustive coverage', () => {
     expect(lines[2]).toContain('Dana Lee');
     expect(lines[2]).toContain('Salary');
     expect(lines[3]).toContain('TOTAL');
-    // The TOTAL row mirrors the per-employee columns (gross/FICA/FUTA) — it
+    // The TOTAL row mirrors the per-employee columns (gross/FICA/FUTA): it
     // does not carry the on-screen "cash needed" figure, which is a derived
     // sum (gross + employer FICA + FUTA) a downstream system can compute
     // itself from the columns already present.

@@ -1,15 +1,15 @@
-// REAL flow — the remaining geo paths (finishing the honest edge-case list). Same
+// REAL flow, the remaining geo paths (finishing the honest edge-case list). Same
 // technique: drive geo-track.js _geoOnPing / the real listeners with synthetic
 // input. Covers the paths the first two geo specs left out:
 //
-//   1. EMPLOYEE PATH    — _geoMyJobs() filters to jobs dispatched to the employee
+//   1. EMPLOYEE PATH   , _geoMyJobs() filters to jobs dispatched to the employee
 //      (assignedTo + assignedDate), the distinct branch from the owner path.
-//   2. DRIVE-PERSONAL   — a drive leg in a PERSONAL vehicle logs source
+//   2. DRIVE-PERSONAL  : a drive leg in a PERSONAL vehicle logs source
 //      'drive-personal' (time is compensable, mileage stays private).
-//   3. BREADCRUMB THROTTLE — the first ping writes a location_pings breadcrumb;
+//   3. BREADCRUMB THROTTLE, the first ping writes a location_pings breadcrumb;
 //      a second ping within 60s is throttled (no duplicate write).
-//   4. BACKGROUNDING    — visibilitychange→hidden KEEPS the entry open (persisted
-//      to the device); the first post-gap ping resolves it — still inside ⇒ one
+//   4. BACKGROUNDING   : visibilitychange→hidden KEEPS the entry open (persisted
+//      to the device); the first post-gap ping resolves it, still inside ⇒ one
 //      continuous visit, outside ⇒ closed at the hidden moment as 'geofence-gap'.
 //
 // Soft-skips if geo tables are absent. Session globals it flips (_isEmployee etc.)
@@ -47,7 +47,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
     const base = Date.now() * 1000 + (process.pid % 1000);
     const jobEmp = base, jobA = base + 1, jobB = base + 2, jobBg = base + 3;
 
-    // ── 1. EMPLOYEE PATH — _geoMyJobs() returns only dispatched jobs. ──
+    // ── 1. EMPLOYEE PATH, _geoMyJobs() returns only dispatched jobs. ──
     await step(page, {
       label: 'employee only fences against jobs dispatched to them', page: 'geo', role: 'employee',
       suspect: 'geo-track.js _geoMyJobs employee branch (assignedTo + assignedDate)',
@@ -75,7 +75,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       rule: async (p) => ({ ok: String(p.__cur) === String(jobEmp), got: `currentJob=${p.__cur} expected=${jobEmp} (non-dispatched job must be ignored)` }),
     });
 
-    // ── 2. DRIVE-PERSONAL — personal vehicle leg logs source 'drive-personal'. ──
+    // ── 2. DRIVE-PERSONAL: personal vehicle leg logs source 'drive-personal'. ──
     await step(page, {
       label: 'a drive leg in a personal vehicle logs source drive-personal', page: 'geo', role: 'contractor',
       suspect: 'geo-track.js _geoDriveEntry (companyVeh ? drive : drive-personal)',
@@ -100,13 +100,13 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       },
       rule: async (p) => {
         const r = await jobRows(p, jobB);
-        if (r.absent) return { ok: true, got: 'SKIP — job_time_entries not provisioned' };
+        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned' };
         const leg = (r.rows || []).find(x => x.source === 'drive-personal');
         return { ok: !!leg, got: leg ? `source=${leg.source} minutes=${leg.minutes}` : `no drive-personal leg (rows=${JSON.stringify(r.rows)})` };
       },
     });
 
-    // ── 3. BREADCRUMB THROTTLE — 2nd ping within 60s doesn't re-write. ──
+    // ── 3. BREADCRUMB THROTTLE, 2nd ping within 60s doesn't re-write. ──
     await step(page, {
       label: 'the location breadcrumb is throttled to ~60s', page: 'geo', role: 'contractor',
       suspect: 'geo-track.js _geoOnPing breadcrumb throttle (_geoLastPingTs 60s)',
@@ -127,11 +127,11 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       },
       rule: async (p) => {
         const { t1, t2 } = p.__throttle || {};
-        return { ok: t1 > 0 && t2 === t1, got: `t1=${t1} t2=${t2} (must be equal — 2nd ping throttled)` };
+        return { ok: t1 > 0 && t2 === t1, got: `t1=${t1} t2=${t2} (must be equal, 2nd ping throttled)` };
       },
     });
 
-    // ── 4. BACKGROUNDING — the open entry SURVIVES a hidden gap; the next ping
+    // ── 4. BACKGROUNDING: the open entry SURVIVES a hidden gap; the next ping
     //       resolves it. (Behavior intentionally changed: the old handler closed on
     //       hidden, so a phone in a pocket all day logged only screen-on slivers and
     //       any visit hidden within 2 min of arrival was dropped entirely. Now:
@@ -165,7 +165,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
           persisted: !!localStorage.getItem('zp3_geo_open'),
           hiddenAt: (JSON.parse(localStorage.getItem('zp3_geo_open') || '{}')).hiddenAt || null,
         }));
-        // Return to the foreground OUTSIDE the fence — the worker left during the gap.
+        // Return to the foreground OUTSIDE the fence, the worker left during the gap.
         await p.evaluate(() => { try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); } catch (e) {} document.dispatchEvent(new Event('visibilitychange')); });
         await ping(p, 38.2000, -98.0000);            // far away → gap-close path
         await p.waitForTimeout(1500);                // let the durable queue drain
@@ -176,7 +176,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       },
       rule: async (p) => {
         const r = await jobRows(p, jobBg);
-        if (r.absent) return { ok: true, got: 'SKIP — job_time_entries not provisioned' };
+        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned' };
         const mid = p.__mid || {}, end = p.__end || {};
         const gapRow = (r.rows || []).find(x => x.source === 'geofence-gap');
         const ok = mid.cur != null && mid.persisted === true    // hidden did NOT close/reset

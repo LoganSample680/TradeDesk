@@ -8,7 +8,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('clients.js — exhaustive coverage', () => {
+test.describe('clients.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -131,7 +131,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // openClientDetail
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openClientDetail', () => {
-    test('null cid — does not throw', async () => {
+    test('null cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openClientDetail(null, 'clients'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -139,7 +139,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined cid — does not throw', async () => {
+    test('undefined cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openClientDetail(undefined, 'dash'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -147,7 +147,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string cid — does not throw', async () => {
+    test('string cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openClientDetail('notanumber', 'clients'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -155,7 +155,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent numeric cid — does not throw', async () => {
+    test('nonexistent numeric cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { openClientDetail(9999999, 'clients'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -163,7 +163,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets currentClientId and _clientDetailOrigin', async () => {
+    test('golden path, sets currentClientId and _clientDetailOrigin', async () => {
       const r = await page.evaluate(() => {
         try {
           openClientDetail(77701, 'clients');
@@ -176,7 +176,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.origin).toBe('clients');
     });
 
-    test('origin=dash — sets _fromDash true', async () => {
+    test('origin=dash: sets _fromDash true', async () => {
       const r = await page.evaluate(() => {
         try {
           openClientDetail(77701, 'dash');
@@ -189,7 +189,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.origin).toBe('dash');
     });
 
-    test('origin=leads — sets leads origin', async () => {
+    test('origin=leads: sets leads origin', async () => {
       const r = await page.evaluate(() => {
         try {
           openClientDetail(77702, 'leads');
@@ -201,7 +201,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.origin).toBe('leads');
     });
 
-    test('origin=true (legacy) — maps to dash', async () => {
+    test('origin=true (legacy): maps to dash', async () => {
       const r = await page.evaluate(() => {
         try {
           openClientDetail(77701, true);
@@ -227,7 +227,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.txt).toBe('← All clients');
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) openClientDetail(77701, 'clients');
@@ -243,7 +243,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // openEstimateForClient
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('openEstimateForClient', () => {
-    test('no currentClientId — shows gate, does not throw', async () => {
+    test('no currentClientId, shows gate, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = currentClientId;
         currentClientId = null;
@@ -264,7 +264,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('blacklisted client — calls zAlert, does not throw', async () => {
+    test('blacklisted client, calls zAlert, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = currentClientId;
         currentClientId = 77701;
@@ -289,7 +289,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.alerted).toBe(true);
     });
 
-    test('high_risk client — calls zConfirm, does not throw', async () => {
+    test('high_risk client, calls zConfirm, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = currentClientId;
         currentClientId = 77701;
@@ -319,7 +319,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _rrpGateThenEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_rrpGateThenEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _rrpGateThenEstimate(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -327,7 +327,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('client without yearBuilt — skips RRP modal', async () => {
+    test('client without yearBuilt, skips RRP modal', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave', yearBuilt: null };
         let rrpShown = false;
@@ -344,7 +344,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.rrpShown).toBe(false);
     });
 
-    test('pre-1978 client with address — shows style picker AND RRP modal', async () => {
+    test('pre-1978 client with address, shows style picker AND RRP modal', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, name: 'CL Alpha', addr: '101 Alpha St', yearBuilt: 1955 };
         let rrpShown = false;
@@ -364,7 +364,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.rrpShown).toBe(true);
     });
 
-    test('landscaping trade — skips RRP even for pre-1978 home', async () => {
+    test('landscaping trade, skips RRP even for pre-1978 home', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, name: 'CL Alpha', addr: '101 Alpha St', yearBuilt: 1950 };
         const origGetTrade = typeof getActiveTrade === 'function' ? getActiveTrade : null;
@@ -385,7 +385,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.rrpShown).toBe(false);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta', yearBuilt: 2000 };
         try {
@@ -403,7 +403,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _showRrpModal
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_showRrpModal', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _showRrpModal(null, () => {}); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -411,7 +411,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null callback — does not throw', async () => {
+    test('null callback, does not throw', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, yearBuilt: 1955, name: 'CL Alpha', addr: '101 Alpha' };
         try {
@@ -424,7 +424,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — creates overlay in DOM', async () => {
+    test('golden path, creates overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, yearBuilt: 1955, name: 'CL Alpha', addr: '101 Alpha' };
         try {
@@ -472,7 +472,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77701, yearBuilt: 1955, name: 'CL Alpha', addr: '101 Alpha' };
         try {
@@ -492,7 +492,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _gateAddressThenEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_gateAddressThenEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _gateAddressThenEstimate(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -500,7 +500,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('client with no address — shows address gate overlay', async () => {
+    test('client with no address, shows address gate overlay', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77703, name: 'CL Gamma', addr: '', phone: '316-555-7703' };
         try {
@@ -516,7 +516,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('client with whitespace-only address — shows gate', async () => {
+    test('client with whitespace-only address, shows gate', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77703, name: 'CL Gamma', addr: '   ', phone: '316-555-7703' };
         try {
@@ -532,7 +532,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('client with address — proceeds to _checkMultiProperty (no gate overlay)', async () => {
+    test('client with address, proceeds to _checkMultiProperty (no gate overlay)', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave, Wichita, KS', phone: '316-555-7702' };
         let checkCalled = false;
@@ -555,7 +555,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _checkMultiPropertyThenOpen
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_checkMultiPropertyThenOpen', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _checkMultiPropertyThenOpen(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -563,7 +563,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('client with no in-progress bids — calls _doOpenEstimate', async () => {
+    test('client with no in-progress bids, calls _doOpenEstimate', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave', phone: '316-555-7702' };
         let openCalled = false;
@@ -580,7 +580,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.openCalled).toBe(true);
     });
 
-    test('client with active draft bid — shows zConfirm resume dialog', async () => {
+    test('client with active draft bid, shows zConfirm resume dialog', async () => {
       const r = await page.evaluate(() => {
         // Temporarily add a draft pending bid for client 77701
         const draftBid = { id: 88899, client_id: 77701, status: 'Pending', draft: true, surfaces: [{ type: 'walls' }] };
@@ -609,7 +609,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _askNewPropertyAddress
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_askNewPropertyAddress', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _askNewPropertyAddress(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -617,7 +617,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid client — creates overlay with input', async () => {
+    test('valid client, creates overlay with input', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave', phone: '316-555-7702' };
         try {
@@ -634,7 +634,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('concurrent calls — no duplicate overlays', async () => {
+    test('concurrent calls, no duplicate overlays', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 77702, name: 'CL Beta', addr: '102 Beta Ave', phone: '316-555-7702' };
         try {
@@ -655,7 +655,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _showTradePicker
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_showTradePicker', () => {
-    test('null title and null cb — does not throw', async () => {
+    test('null title and null cb, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           _showTradePicker(null, null);
@@ -667,7 +667,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string title — creates overlay', async () => {
+    test('empty string title, creates overlay', async () => {
       const r = await page.evaluate(() => {
         try {
           _showTradePicker('', () => {});
@@ -681,7 +681,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('golden path — renders trade buttons in DOM', async () => {
+    test('golden path, renders trade buttons in DOM', async () => {
       const r = await page.evaluate(() => {
         try {
           _showTradePicker('Pick a trade', (id) => {});
@@ -708,7 +708,7 @@ test.describe('clients.js — exhaustive coverage', () => {
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // At most 2 (function doesn't auto-remove old one) — just must not throw
+      // At most 2 (function doesn't auto-remove old one), just must not throw
     });
   });
 
@@ -716,7 +716,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _pickTrade
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_pickTrade', () => {
-    test('null id — does not throw', async () => {
+    test('null id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _pickTrade(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -724,7 +724,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined id — does not throw', async () => {
+    test('undefined id, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _pickTrade(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -750,7 +750,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.cbCalled).toBe(true);
     });
 
-    test('_industrial id — calls openIndustrialEquipEstimate stub', async () => {
+    test('_industrial id, calls openIndustrialEquipEstimate stub', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = typeof openIndustrialEquipEstimate === 'function' ? openIndustrialEquipEstimate : null;
@@ -769,7 +769,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('_tm id — calls openTMEstimate stub', async () => {
+    test('_tm id, calls openTMEstimate stub', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = typeof openTMEstimate === 'function' ? openTMEstimate : null;
@@ -788,7 +788,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) _pickTrade('painting');
@@ -804,7 +804,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _closeStylePicker
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_closeStylePicker', () => {
-    test('no overlay present — does not throw', async () => {
+    test('no overlay present, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('_style-pick-ov')?.remove();
         try { _closeStylePicker(); return { ok: true }; }
@@ -813,7 +813,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('overlay present — sets opacity to 0 and schedules removal', async () => {
+    test('overlay present, sets opacity to 0 and schedules removal', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('#_style-pick-ov').forEach(el => el.remove());
         const ov = document.createElement('div');
@@ -830,7 +830,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.opacity).toBe('0');
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         const ov = document.createElement('div');
         ov.id = '_style-pick-ov';
@@ -849,7 +849,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _showEstimateStylePicker
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_showEstimateStylePicker', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           _showEstimateStylePicker(null, null);
@@ -861,7 +861,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid client — creates full-screen overlay', async () => {
+    test('valid client, creates full-screen overlay', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 77702);
         try {
@@ -907,7 +907,7 @@ test.describe('clients.js — exhaustive coverage', () => {
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // Function appends each time but must not throw — count assertion is informational
+      // Function appends each time but must not throw, count assertion is informational
     });
   });
 
@@ -915,7 +915,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _pickEstStyle
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_pickEstStyle', () => {
-    test('null style — does not throw', async () => {
+    test('null style, does not throw', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = null;
         try { _pickEstStyle(null); return { ok: true }; }
@@ -924,7 +924,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('style=scope — no longer a valid style, does not throw and calls nothing', async () => {
+    test('style=scope: no longer a valid style, does not throw and calls nothing', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = { c: clients.find(x => x.id === 77702), overrideAddr: null };
         const ov = document.createElement('div');
@@ -936,7 +936,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('style=tm — calls openTMEstimate', async () => {
+    test('style=tm: calls openTMEstimate', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = { c: clients.find(x => x.id === 77702), overrideAddr: null };
         let tmCalled = false;
@@ -956,7 +956,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.tmCalled).toBe(true);
     });
 
-    test('style=freeform — calls openFreeFormEstimate', async () => {
+    test('style=freeform: calls openFreeFormEstimate', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = { c: clients.find(x => x.id === 77702), overrideAddr: null };
         let ffCalled = false;
@@ -976,7 +976,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ffCalled).toBe(true);
     });
 
-    test('unknown style with no overlay — does not throw', async () => {
+    test('unknown style with no overlay, does not throw', async () => {
       const r = await page.evaluate(() => {
         window._stylePickState = null;
         document.getElementById('_style-pick-ov')?.remove();
@@ -988,7 +988,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // _doOpenScopeEstimate — Scope & Price mode removed; only T&M and BYO remain
+  // _doOpenScopeEstimate: Scope & Price mode removed; only T&M and BYO remain
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_doOpenScopeEstimate', () => {
     test('function was removed with the Scope & Price estimate mode', async () => {
@@ -1004,7 +1004,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _doOpenEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_doOpenEstimate', () => {
-    test('null client — does not throw', async () => {
+    test('null client, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _doOpenEstimate(null, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1012,7 +1012,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid client no forceTrade — shows style picker (multi-trade) or style picker (single)', async () => {
+    test('valid client no forceTrade, shows style picker (multi-trade) or style picker (single)', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 77702);
         try {
@@ -1029,7 +1029,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_bids', '{INVALID{{{{');
         const c = clients.find(x => x.id === 77702);
@@ -1045,7 +1045,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 77702);
         try {
@@ -1064,7 +1064,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _dashInRange
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_dashInRange', () => {
-    test('null — returns false', async () => {
+    test('null: returns false', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _dashInRange(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1073,7 +1073,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('undefined — returns false', async () => {
+    test('undefined: returns false', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _dashInRange(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1082,7 +1082,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('empty string — returns false', async () => {
+    test('empty string, returns false', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _dashInRange('') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1091,7 +1091,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('period=all — always returns true', async () => {
+    test('period=all: always returns true', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod;
         dashPeriod = 'all';
@@ -1103,7 +1103,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(true);
     });
 
-    test('period=year, matching year — returns true', async () => {
+    test('period=year, matching year, returns true', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; const savedY = dashYear;
         dashPeriod = 'year'; dashYear = 2026;
@@ -1115,7 +1115,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(true);
     });
 
-    test('period=year, non-matching year — returns false', async () => {
+    test('period=year, non-matching year, returns false', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; const savedY = dashYear;
         dashPeriod = 'year'; dashYear = 2025;
@@ -1127,7 +1127,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('period=month — date in current month returns true', async () => {
+    test('period=month: date in current month returns true', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; const savedY = dashYear;
         dashPeriod = 'month';
@@ -1143,7 +1143,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(true);
     });
 
-    test('period=quarter — current quarter date returns true', async () => {
+    test('period=quarter: current quarter date returns true', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; const savedY = dashYear;
         dashPeriod = 'quarter';
@@ -1159,7 +1159,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.result).toBe(true);
     });
 
-    test('boundary — year 0 string — does not throw', async () => {
+    test('boundary: year 0 string, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = dashPeriod; dashPeriod = 'year';
         try { return { ok: true, result: _dashInRange('0000-01-01') }; }
@@ -1169,7 +1169,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type mismatch — number input — does not throw', async () => {
+    test('type mismatch, number input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _dashInRange(20260615) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1182,7 +1182,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // initDashYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('initDashYear', () => {
-    test('missing dash-year-sel DOM — does not throw', async () => {
+    test('missing dash-year-sel DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('dash-year-sel');
         const parent = el?.parentNode;
@@ -1194,7 +1194,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — populates select with at least current year', async () => {
+    test('golden path, populates select with at least current year', async () => {
       const r = await page.evaluate(() => {
         try {
           initDashYear();
@@ -1224,7 +1224,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.noDupes).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) initDashYear();
@@ -1240,7 +1240,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // setDashYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setDashYear', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -1250,7 +1250,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string year — parses and sets dashYear', async () => {
+    test('string year, parses and sets dashYear', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -1266,7 +1266,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.yr).toBe(2025);
     });
 
-    test('numeric year — sets dashYear', async () => {
+    test('numeric year, sets dashYear', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -1298,7 +1298,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.txt).toBe('2024');
     });
 
-    test('missing label DOM — does not throw', async () => {
+    test('missing label DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const lbl = document.getElementById('dash-year-label');
         const parent = lbl?.parentNode;
@@ -1321,7 +1321,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // setDashPeriod
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setDashPeriod', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -1331,7 +1331,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('period=year — sets dashPeriod and toggles button class', async () => {
+    test('period=year: sets dashPeriod and toggles button class', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -1346,7 +1346,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.period).toBe('year');
     });
 
-    test('period=all — hides year button wrap', async () => {
+    test('period=all: hides year button wrap', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -1362,7 +1362,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('period=month — shows year wrap', async () => {
+    test('period=month: shows year wrap', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -1378,7 +1378,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).not.toBe('none');
     });
 
-    test('invalid period string — does not throw', async () => {
+    test('invalid period string, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -1388,7 +1388,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         const orig = typeof renderDash === 'function' ? renderDash : null;
         window.renderDash = () => {};
@@ -1417,7 +1417,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url.length).toBeGreaterThan(0);
     });
 
-    test('with S.subdomain — uses subdomain URL', async () => {
+    test('with S.subdomain: uses subdomain URL', async () => {
       const r = await page.evaluate(() => {
         const saved = S.subdomain;
         S.subdomain = 'testco';
@@ -1432,7 +1432,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url).toContain('testco.tradedeskpro.app');
     });
 
-    test('without subdomain — returns origin-based URL', async () => {
+    test('without subdomain, returns origin-based URL', async () => {
       const r = await page.evaluate(() => {
         const saved = S.subdomain;
         S.subdomain = null;
@@ -1466,7 +1466,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _clientHubUrl
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clientHubUrl', () => {
-    test('null client — returns null, no throw', async () => {
+    test('null client, returns null, no throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, url: _clientHubUrl(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1475,7 +1475,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url).toBeNull();
     });
 
-    test('client with no token — returns null', async () => {
+    test('client with no token, returns null', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 99999, name: 'No Token', phone: '0', clientToken: null };
         try { return { ok: true, url: _clientHubUrl(c) }; }
@@ -1485,7 +1485,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url).toBeNull();
     });
 
-    test('no _supaUser — returns null', async () => {
+    test('no _supaUser, returns null', async () => {
       const r = await page.evaluate(() => {
         const savedUser = window._supaUser;
         window._supaUser = null;
@@ -1501,7 +1501,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.url).toBeNull();
     });
 
-    test('golden path — returns URL string with token and client id', async () => {
+    test('golden path, returns URL string with token and client id', async () => {
       const r = await page.evaluate(() => {
         const savedUser = window._supaUser;
         window._supaUser = { id: 'e2e-user-0001' };
@@ -1523,7 +1523,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // renderClientHubPage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderClientHubPage', () => {
-    test('missing client-hub-list DOM — returns early, no throw', async () => {
+    test('missing client-hub-list DOM, returns early, no throw', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('client-hub-list');
         const parent = el?.parentNode;
@@ -1535,7 +1535,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('no clients — shows empty state', async () => {
+    test('no clients, shows empty state', async () => {
       const r = await page.evaluate(() => {
         const saved = [...clients];
         clients = [];
@@ -1552,7 +1552,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.hasEmpty).toBe(true);
     });
 
-    test('with clients — renders rows', async () => {
+    test('with clients, renders rows', async () => {
       const r = await page.evaluate(() => {
         window._supaUser = { id: 'e2e-user-0001' };
         try {
@@ -1590,7 +1590,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _previewClientHub
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_previewClientHub', () => {
-    test('null url — does not throw', async () => {
+    test('null url, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _previewClientHub(null, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1599,7 +1599,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid url — creates preview overlay with iframe', async () => {
+    test('valid url, creates preview overlay with iframe', async () => {
       const r = await page.evaluate(() => {
         const savedUser = window._supaUser;
         window._supaUser = { id: 'e2e-user-0001' };
@@ -1617,7 +1617,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.hasIframe).toBe(true);
     });
 
-    test('no _supaUser — does not throw', async () => {
+    test('no _supaUser, does not throw', async () => {
       const r = await page.evaluate(() => {
         const saved = window._supaUser;
         window._supaUser = null;
@@ -1656,7 +1656,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _clientHubCopy
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_clientHubCopy', () => {
-    test('null url and null btn — does not throw', async () => {
+    test('null url and null btn, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _clientHubCopy(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1664,7 +1664,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid url — calls clipboard.writeText without throwing', async () => {
+    test('valid url, calls clipboard.writeText without throwing', async () => {
       const r = await page.evaluate(async () => {
         let writtenUrl = null;
         const origClip = navigator.clipboard;
@@ -1690,7 +1690,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // pipelineResendSms
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('pipelineResendSms', () => {
-    test('null bidId — does not throw', async () => {
+    test('null bidId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { pipelineResendSms(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1698,7 +1698,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent bidId — returns early', async () => {
+    test('nonexistent bidId, returns early', async () => {
       const r = await page.evaluate(() => {
         try { pipelineResendSms(9999999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1706,7 +1706,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('bid without signingToken — returns early', async () => {
+    test('bid without signingToken, returns early', async () => {
       const r = await page.evaluate(() => {
         try { pipelineResendSms(88803); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1714,12 +1714,12 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid bid with signingToken — attempts SMS redirect without throw', async () => {
+    test('valid bid with signingToken, attempts SMS redirect without throw', async () => {
       const r = await page.evaluate(() => {
         let navHref = null;
         const origHref = Object.getOwnPropertyDescriptor(window.location, 'href');
         // Mock location.href so we capture the navigation intent without actually navigating.
-        // In Chromium, window.location.href may not be configurable — ignore the error and proceed.
+        // In Chromium, window.location.href may not be configurable, ignore the error and proceed.
         try {
           Object.defineProperty(window.location, 'href', {
             set: (v) => { navHref = v; },
@@ -1745,7 +1745,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // onClientSearch
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('onClientSearch', () => {
-    test('null input — does not throw', async () => {
+    test('null input, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onClientSearch({ value: '' }); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1753,7 +1753,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty value — calls renderClientList', async () => {
+    test('empty value, calls renderClientList', async () => {
       const r = await page.evaluate(() => {
         let renderCalled = false;
         const orig = window.renderClientList;
@@ -1769,7 +1769,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.renderCalled).toBe(true);
     });
 
-    test('matching query — renders matched clients', async () => {
+    test('matching query, renders matched clients', async () => {
       const r = await page.evaluate(() => {
         try {
           onClientSearch({ value: 'CL Alpha' });
@@ -1782,7 +1782,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.html).toContain('CL Alpha');
     });
 
-    test('no-match query — shows empty message', async () => {
+    test('no-match query, shows empty message', async () => {
       const r = await page.evaluate(() => {
         try {
           onClientSearch({ value: 'XYZZY_NOMATCH_12345' });
@@ -1796,7 +1796,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.hasEmpty).toBe(true);
     });
 
-    test('phone-only query — matches by phone digits', async () => {
+    test('phone-only query, matches by phone digits', async () => {
       const r = await page.evaluate(() => {
         try {
           onClientSearch({ value: '3165557701' });
@@ -1809,7 +1809,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.html).toContain('CL Alpha');
     });
 
-    test('special chars in query — does not throw', async () => {
+    test('special chars in query, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onClientSearch({ value: '<script>alert(1)</script>' }); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1817,7 +1817,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) onClientSearch({ value: 'Alpha' });
@@ -1833,7 +1833,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // setCF
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setCF', () => {
-    test('null filter — does not throw', async () => {
+    test('null filter, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setCF(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1841,7 +1841,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — sets clientFilter and renders', async () => {
+    test('golden path, sets clientFilter and renders', async () => {
       const r = await page.evaluate(() => {
         let renderCalled = false;
         const orig = window.renderClientList;
@@ -1858,7 +1858,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.filter).toBe('all');
     });
 
-    test('with btn — adds active class', async () => {
+    test('with btn, adds active class', async () => {
       const r = await page.evaluate(() => {
         const btn = document.createElement('button');
         btn.id = 'test-cf-btn';
@@ -1907,7 +1907,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.count).toBeGreaterThan(1);
     });
 
-    test('missing selector DOM — does not throw', async () => {
+    test('missing selector DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const sel = document.getElementById('e-client-sel');
         const parent = sel?.parentNode;
@@ -1941,7 +1941,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // getClientStage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientStage', () => {
-    test('null cid — does not throw', async () => {
+    test('null cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(null); return { ok: true, stage: s?.stage }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1949,7 +1949,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined cid — does not throw', async () => {
+    test('undefined cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1957,7 +1957,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('nonexistent cid — returns incomplete or new stage', async () => {
+    test('nonexistent cid, returns incomplete or new stage', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(9999999); return { ok: true, stage: s?.stage }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1966,7 +1966,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(typeof r.stage).toBe('string');
     });
 
-    test('client with Closed Won bid — returns paid or signed stage', async () => {
+    test('client with Closed Won bid, returns paid or signed stage', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(77701); return { ok: true, stage: s?.stage }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1976,7 +1976,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(['paid','signed','scheduled','balance_due','active']).toContain(r.stage);
     });
 
-    test('client with Pending bid — returns pipeline stage', async () => {
+    test('client with Pending bid, returns pipeline stage', async () => {
       const r = await page.evaluate(() => {
         try { const s = getClientStage(77702); return { ok: true, stage: s?.stage }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1985,7 +1985,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(typeof r.stage).toBe('string');
     });
 
-    test('client with no address — returns incomplete stage', async () => {
+    test('client with no address, returns incomplete stage', async () => {
       const r = await page.evaluate(() => {
         // 77703 has empty addr and no bids
         try { const s = getClientStage(77703); return { ok: true, stage: s?.stage }; }
@@ -2010,7 +2010,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.hasPriority).toBe(true);
     });
 
-    test('concurrent calls — consistent result', async () => {
+    test('concurrent calls, consistent result', async () => {
       const r = await page.evaluate(() => {
         try {
           const results = [];
@@ -2023,7 +2023,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.allSame).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_clients', '{INVALID{{{{');
         try { const s = getClientStage(77701); return { ok: true }; }
@@ -2038,7 +2038,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // renderClientList
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('renderClientList', () => {
-    test('missing client-list DOM — does not throw (via populateClientSelectors early return pattern)', async () => {
+    test('missing client-list DOM, does not throw (via populateClientSelectors early return pattern)', async () => {
       const r = await page.evaluate(() => {
         const el = document.getElementById('client-list');
         const parent = el?.parentNode;
@@ -2050,7 +2050,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — renders client cards or empty message', async () => {
+    test('golden path, renders client cards or empty message', async () => {
       const r = await page.evaluate(() => {
         try {
           clientFilter = 'all';
@@ -2081,7 +2081,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('filter=won — shows only won clients', async () => {
+    test('filter=won: shows only won clients', async () => {
       const r = await page.evaluate(() => {
         try {
           clientFilter = 'won';
@@ -2094,7 +2094,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_bids', '{INVALID{{{{');
         try { renderClientList(); return { ok: true }; }
@@ -2104,7 +2104,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) renderClientList();
@@ -2120,7 +2120,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // togglePipeGroup
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('togglePipeGroup', () => {
-    test('null key — does not throw', async () => {
+    test('null key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { togglePipeGroup(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2128,7 +2128,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty key — does not throw', async () => {
+    test('empty key, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { togglePipeGroup(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2136,7 +2136,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing DOM group — does not throw', async () => {
+    test('missing DOM group, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { togglePipeGroup('nonexistent-key-xyz'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2144,7 +2144,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — toggles _pipelineExpand and shows/hides group', async () => {
+    test('golden path, toggles _pipelineExpand and shows/hides group', async () => {
       const r = await page.evaluate(() => {
         // Create a test group element
         const grp = document.createElement('div');
@@ -2164,7 +2164,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.expanded).toBe(true);
     });
 
-    test('double toggle — restores original state', async () => {
+    test('double toggle, restores original state', async () => {
       const r = await page.evaluate(() => {
         const grp = document.createElement('div');
         grp.id = 'pipe-grp-testkey2';
@@ -2184,7 +2184,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.collapsed).toBe(true);
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) togglePipeGroup('concurrent-key');
@@ -2200,7 +2200,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // checkClientDupe
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('checkClientDupe', () => {
-    test('null val — hides warn, no throw', async () => {
+    test('null val, hides warn, no throw', async () => {
       const r = await page.evaluate(() => {
         try { checkClientDupe(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2208,7 +2208,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — hides warn', async () => {
+    test('empty string, hides warn', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         if (warn) warn.style.display = 'block';
@@ -2222,7 +2222,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('short val (<3 chars) — hides warn', async () => {
+    test('short val (<3 chars), hides warn', async () => {
       const r = await page.evaluate(() => {
         try { checkClientDupe('ab'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2230,7 +2230,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('exact name match — shows warning', async () => {
+    test('exact name match, shows warning', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         window.editClientId = null;
@@ -2245,7 +2245,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.text).toContain('CL Alpha');
     });
 
-    test('no match — hides warn', async () => {
+    test('no match, hides warn', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         if (warn) warn.style.display = 'block';
@@ -2260,7 +2260,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('editing current client — does not flag self as dupe', async () => {
+    test('editing current client, does not flag self as dupe', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         if (warn) warn.style.display = 'block';
@@ -2276,7 +2276,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('missing warn DOM — does not throw', async () => {
+    test('missing warn DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const warn = document.getElementById('cf-dupe-warn');
         const parent = warn?.parentNode;
@@ -2344,7 +2344,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('concurrent calls — no throw', async () => {
+    test('concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) openNewClient();
@@ -2360,7 +2360,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // checkYearBuilt
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('checkYearBuilt', () => {
-    test('missing DOM — does not throw', async () => {
+    test('missing DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const parent = yb?.parentNode;
@@ -2372,7 +2372,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('pre-1978 year — shows warning', async () => {
+    test('pre-1978 year, shows warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const warn = document.getElementById('cf-year-warn');
@@ -2387,7 +2387,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('post-1978 year — hides warning', async () => {
+    test('post-1978 year, hides warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const warn = document.getElementById('cf-year-warn');
@@ -2403,7 +2403,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('exact 1978 — hides warning (not pre-1978)', async () => {
+    test('exact 1978, hides warning (not pre-1978)', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const warn = document.getElementById('cf-year-warn');
@@ -2419,7 +2419,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('empty value — hides warning', async () => {
+    test('empty value, hides warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         const warn = document.getElementById('cf-year-warn');
@@ -2435,7 +2435,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('boundary — 0 — hides warning', async () => {
+    test('boundary: 0, hides warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         if (yb) yb.value = '0';
@@ -2445,7 +2445,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('boundary — very large year — hides warning', async () => {
+    test('boundary: very large year, hides warning', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         if (yb) yb.value = '9999';
@@ -2455,7 +2455,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type mismatch — string year — does not throw', async () => {
+    test('type mismatch, string year, does not throw', async () => {
       const r = await page.evaluate(() => {
         const yb = document.getElementById('cf-year-built');
         if (yb) yb.value = 'notayear';
@@ -2470,7 +2470,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // _updateAddrComputed / updateYearLookupBtn
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_updateAddrComputed and updateYearLookupBtn', () => {
-    test('_updateAddrComputed — missing DOM — does not throw', async () => {
+    test('_updateAddrComputed: missing DOM, does not throw', async () => {
       const r = await page.evaluate(() => {
         const btn = document.getElementById('cf-year-lookup');
         const parent = btn?.parentNode;
@@ -2482,7 +2482,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_updateAddrComputed — both street and city filled — shows lookup btn', async () => {
+    test('_updateAddrComputed: both street and city filled, shows lookup btn', async () => {
       const r = await page.evaluate(() => {
         const street = document.getElementById('cf-street');
         const city = document.getElementById('cf-city');
@@ -2499,7 +2499,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('inline-block');
     });
 
-    test('_updateAddrComputed — empty street — hides lookup btn', async () => {
+    test('_updateAddrComputed: empty street, hides lookup btn', async () => {
       const r = await page.evaluate(() => {
         const street = document.getElementById('cf-street');
         const city = document.getElementById('cf-city');
@@ -2517,7 +2517,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('_updateAddrComputed — empty city — hides lookup btn', async () => {
+    test('_updateAddrComputed: empty city, hides lookup btn', async () => {
       const r = await page.evaluate(() => {
         const street = document.getElementById('cf-street');
         const city = document.getElementById('cf-city');
@@ -2535,7 +2535,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('updateYearLookupBtn — delegates to _updateAddrComputed without throw', async () => {
+    test('updateYearLookupBtn: delegates to _updateAddrComputed without throw', async () => {
       const r = await page.evaluate(() => {
         try { updateYearLookupBtn(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2543,7 +2543,7 @@ test.describe('clients.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_updateAddrComputed — concurrent calls — no throw', async () => {
+    test('_updateAddrComputed: concurrent calls, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) _updateAddrComputed();
@@ -2558,7 +2558,7 @@ test.describe('clients.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // no console errors
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — clients.js', async () => {
+  test('no console errors, clients.js', async () => {
     assertNoErrors(page, 'clients.js');
   });
 });

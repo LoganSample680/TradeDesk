@@ -1,11 +1,11 @@
 // @ts-check
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
 
-test.describe('Drag-to-reorder — tab bar', () => {
+test.describe('Drag-to-reorder: tab bar', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
-    // Use mobile viewport (390×844) — tab bar only appears on mobile
+    // Use mobile viewport (390×844), tab bar only appears on mobile
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
     page = await ctx.newPage();
     await mockAllExternal(page);
@@ -141,12 +141,12 @@ test.describe('Drag-to-reorder — tab bar', () => {
     await page.waitForTimeout(300);
   });
 
-  test('assertNoErrors — no console errors from drag-reorder init', async () => {
+  test('assertNoErrors: no console errors from drag-reorder init', async () => {
     assertNoErrors(page, 'tab bar drag-to-reorder');
   });
 });
 
-test.describe('Drag-to-reorder — dashboard widgets', () => {
+test.describe('Drag-to-reorder: dashboard widgets', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -207,7 +207,7 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
   });
 
   test('_applyDashOrder reorders widgets in DOM (full 9-widget order; stale "crew" id skipped)', async () => {
-    // 'crew' stays in the input deliberately — real users have it in their
+    // 'crew' stays in the input deliberately, real users have it in their
     // SAVED order from before the 2026-07-14 deletion; it must be skipped
     // harmlessly, never crash or orphan.
     const full = ['sources', 'calendar', 'quick', 'feed', 'pipeline', 'goal', 'contracts', 'alerts', 'crew', 'kpi'];
@@ -227,7 +227,7 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
   });
 
   // §11.4 companion: a PRE-SPLIT saved order (6 ids) must not dump the new cards
-  // at the bottom — each new widget slots in right after its default predecessor.
+  // at the bottom, each new widget slots in right after its default predecessor.
   test('_mergeDashOrder inserts new widgets into an old saved order at their natural spot', async () => {
     const merged = await page.evaluate(() =>
       _mergeDashOrder(['sources', 'kpi', 'pipeline', 'feed', 'quick', 'calendar'])
@@ -245,7 +245,7 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
   });
 
   test('_dashSortActive flag prevents duplicate listener registration', async () => {
-    // _initDashDrag was called once by renderDash — _dashSortActive should be true
+    // _initDashDrag was called once by renderDash, _dashSortActive should be true
     const isActive = await page.evaluate(() => typeof _dashSortActive !== 'undefined' && _dashSortActive === true);
     expect(isActive).toBe(true);
   });
@@ -313,7 +313,7 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
 
   // ── iOS-polish package: FLIP glide, drop-settle, offline-reorder re-push ──
 
-  test('_flipShift — shifted siblings glide via a transient translate, mutation applied', async () => {
+  test('_flipShift: shifted siblings glide via a transient translate, mutation applied', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _flipShift !== 'function') return { skip: true };
       const box = document.createElement('div');
@@ -321,7 +321,7 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
       box.innerHTML = '<div style="height:40px" id="fs-a"></div><div style="height:40px" id="fs-b"></div>';
       document.body.appendChild(box);
       const a = box.children[0], b = box.children[1];
-      // Move A below B — B shifts up 40px. _flipShift inverts B to its OLD spot and
+      // Move A below B, B shifts up 40px. _flipShift inverts B to its OLD spot and
       // transitions to 0; the inline style is already the target ('0 0') when this
       // returns, so the observable proof is the COMPUTED position: read synchronously
       // (same task, transition at t=0), it must still sit at ~the old offset.
@@ -363,7 +363,7 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
     expect(r.lift).toContain('td-lift');
   });
 
-  test('offline reorder — dirty flag set without cloud, local layout wins over stale cloud, then clears', async () => {
+  test('offline reorder, dirty flag set without cloud, local layout wins over stale cloud, then clears', async () => {
     const r = await page.evaluate(async () => {
       if (typeof _saveUserPrefs !== 'function' || typeof _loadUserPrefs !== 'function') return { skip: true };
       const savedSupa = typeof _supa !== 'undefined' ? _supa : null;
@@ -408,7 +408,7 @@ test.describe('Drag-to-reorder — dashboard widgets', () => {
     expect(r.cloudAppliesWhenClean).toBe(true);// normal cloud-wins path intact when not dirty
   });
 
-  test('assertNoErrors — no console errors from dashboard drag-reorder', async () => {
+  test('assertNoErrors: no console errors from dashboard drag-reorder', async () => {
     assertNoErrors(page, 'dashboard widget drag-to-reorder');
   });
 });

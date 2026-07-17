@@ -1,7 +1,7 @@
-// REAL flow — live coverage for the three UI toggles shipped this round, driving the
+// REAL flow, live coverage for the three UI toggles shipped this round, driving the
 // actual app (no stubs): clicking a proposal stat tile filters the list, the team-member
 // Permissions block is a default-closed accordion that opens on tap, and a kanban column
-// header collapses the bid cards inside it. None need seeded data — they assert the real
+// header collapses the bid cards inside it. None need seeded data, they assert the real
 // render + the real click handler's effect on real globals/DOM.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, tap } = require('./live-helpers');
@@ -9,7 +9,7 @@ const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'ui/toggles';
 
-test.describe('UI toggles — proposal tiles, permissions accordion, kanban collapse (UI-driven)', () => {
+test.describe('UI toggles, proposal tiles, permissions accordion, kanban collapse (UI-driven)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
@@ -49,7 +49,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
       act: async (p) => {
         await p.evaluate(() => { openAddEmployeeModal(); });
         // 'attached', NOT 'visible': .perms-acc is the collapsed accordion (max-height:0),
-        // so it's present but zero-height until opened — waiting for visible would hang.
+        // so it's present but zero-height until opened, waiting for visible would hang.
         await p.waitForSelector('.perms-acc', { state: 'attached', timeout: 12000 });
         await p.waitForSelector('.perms-chev', { state: 'visible', timeout: 12000 });
         p.__closed0 = await p.evaluate(() => {
@@ -76,7 +76,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
   });
 
   // 2026-07-14 owner directive ("simplify before we scale"): the Crew Today
-  // dashboard card is DELETED — it duplicated the Time log "Currently clocked
+  // dashboard card is DELETED, it duplicated the Time log "Currently clocked
   // in" banner; crew cost lives in Books (_openCrewCost). Per §7.1 the live
   // suite asserts the deletion on the real app: function gone, element gone,
   // and the Books report entry point still intact.
@@ -84,7 +84,7 @@ test.describe('UI toggles — proposal tiles, permissions accordion, kanban coll
     await step(page, {
       label: 'assert the Crew Today card is gone on the live app', page: 'pg-dash', role: 'contractor',
       suspect: 'finance.js (deleted _renderDashCrewToday) + dashboard.js renderDash + index.html widget root',
-      ruleText: 'the deleted card must have NO function, NO element, NO crew widget wrapper — and _openCrewCost (Books) must still exist',
+      ruleText: 'the deleted card must have NO function, NO element, NO crew widget wrapper, and _openCrewCost (Books) must still exist',
       expected: 'fn gone + element gone + widget gone + Books report intact',
       act: async (p) => {
         await p.evaluate(() => { if (typeof renderDash === 'function') renderDash(); });

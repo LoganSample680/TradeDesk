@@ -324,7 +324,7 @@ function renderLicensing(){
       if(l.licenseNumber)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">'+svgIcon('🔢',{size:12})+' '+escHtml(l.licenseNumber)+'</div>';
       if(isEquip){
         if(l.make||l.model||l.serial)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:4px">'+escHtml([l.make,l.model,l.serial?'SN: '+l.serial:''].filter(Boolean).join(' · '))+'</div>';
-        if(lastLog)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Last entry: '+fmtDateShort(lastLog.date)+' — '+escHtml(lastLog.type)+'</div>';
+        if(lastLog)html+='<div style="font-size:12px;color:var(--text3);margin-bottom:8px">Last entry: '+fmtDateShort(lastLog.date)+', '+escHtml(lastLog.type)+'</div>';
         html+='<div style="display:flex;gap:8px;margin-top:8px"><button onclick="openHepaLog('+l.id+')" class="btn btn-sm" style="font-size:11px">'+svgIcon('📋',{size:11})+' Log ('+logCount+')</button><button onclick="openEditLicense('+l.id+')" class="btn btn-sm" style="font-size:11px">Edit</button></div>';
       } else {
         if(l.issueDate||l.expiryDate){
@@ -361,7 +361,7 @@ function _showLicModal(lic){
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_lic-modal-ov';
   const isEquip=lic?LIC_TYPES.find(x=>x.id===lic?.typeId)?.isEquip:false;
   // Build type options grouped by category
-  let typeOpts='<option value="">— Select type —</option>';
+  let typeOpts='<option value="">- Select type -</option>';
   LIC_CAT_ORDER.forEach(cat=>{
     const items=LIC_TYPES.filter(t=>t.cat===cat);
     typeOpts+='<optgroup label="'+LIC_CAT_LABELS[cat]+'">';
@@ -601,7 +601,7 @@ function openTimeOffModal(){
           '<div><label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">Start</label><input type="date" id="to-start" style="width:100%;padding:13px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:16px;font-family:inherit;box-sizing:border-box;color:var(--text)"></div>'+
           '<div><label style="font-size:12px;font-weight:700;color:var(--text2);display:block;margin-bottom:4px">End</label><input type="date" id="to-end" style="width:100%;padding:13px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg2);font-size:16px;font-family:inherit;box-sizing:border-box;color:var(--text)"></div>'+
         '</div>'+
-        '<input type="text" id="to-label" placeholder="Label (optional — Vacation, Holiday...)" style="width:100%;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-family:inherit;margin-bottom:8px;box-sizing:border-box">'+
+        '<input type="text" id="to-label" placeholder="Label (optional: Vacation, Holiday...)" style="width:100%;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg);font-size:13px;font-family:inherit;margin-bottom:8px;box-sizing:border-box">'+
         '<button onclick="_toAdd()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">+ Add time off</button>'+
       '</div>'+
       '<button onclick="document.getElementById(\'timeoff-modal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text3)">Close</button>';
@@ -622,7 +622,7 @@ function getBookedDays(){
   // Include time-off blocks as booked
   getTimeOffDays().forEach(d=>booked.add(d));
   jobs.forEach(j=>{
-    // Estimates never block a day — Zach can book multiple estimates on the same day
+    // Estimates never block a day, Zach can book multiple estimates on the same day
     // at different times (morning, afternoon, evening). Only paint jobs block days.
     if(j.eventType==='estimate')return;
     const workDays=getJobWorkDays(j);
@@ -634,7 +634,7 @@ function getBookedDays(){
   return{booked,buf};
 }
 function getNextAvail(){const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;let d=todayKey();for(let i=0;i<180;i++){const dow=parseD(d).getDay();const isWknd=dow===0||dow===6;if(!all.has(d)&&(allowWknd||!isWknd)){const dt=parseD(d);return{key:d,label:dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})};}d=addDays(d,1);}return{key:todayKey(),label:'Check calendar'};}
-// Standalone next-avail that doesn't need DOM — used for scheduling suggestions
+// Standalone next-avail that doesn't need DOM, used for scheduling suggestions
 function getNextAvailForBid(bid){
   const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);
   const allowWknd=!!(bid&&bid.allowWeekend);
@@ -672,7 +672,7 @@ function saveScopeDefault(id,checked){
 function _getSmsDefaults(){
   return {
     hub:`Hi {name}, here's your project hub from {business}: {url}`,
-    followup:`Hey {name}!\n\nJust following up — your proposal is still ready to go. Tap the link below to review and sign:\n\n{url}\n\nAny questions, just reply!\n\n— {business}`,
+    followup:`Hey {name}!\n\nJust following up, your proposal is still ready to go. Tap the link below to review and sign:\n\n{url}\n\nAny questions, just reply!\n\n- {business}`,
     reminder:`Hi {name}, this is {business}. Just a friendly reminder that a balance of {amount} is outstanding for the work at {address}. Please let us know when you're ready to take care of this. Thank you!`,
     second:`Hi {name}, this is a second notice from {business}. A balance of {amount} remains outstanding for work completed at {address}. Please respond within 5 business days to arrange payment and avoid further collection steps.`,
     intent:`{name}, this is formal written notice from {business} of our intent to file a Mechanic's Lien against the property at {address} for unpaid services totaling {amount}. You have 7 days to remit full payment before we proceed with filing. Please contact us immediately.`,
@@ -710,7 +710,7 @@ function applySettings(){
   if(typeof applyBrandLogo==='function')applyBrandLogo();
 }
 // Background syncs (broadcast from another device, auto rate/bracket refresh)
-// must never rewrite the form while the user is editing it — that silently
+// must never rewrite the form while the user is editing it, that silently
 // erases everything typed since the last Save. "Editing" = the user actually
 // typed since the last render/save (_settingsFormDirty, set by the input
 // listener below). A clean Settings page DOES refresh, so changes saved on
@@ -729,7 +729,7 @@ function _refillSettingsFormUnlessEditing(){
 })();
 function loadSettingsForm(){
   window._settingsFormFilled=true; // saveSettings() may now safely harvest the form
-  window._settingsFormDirty=false; // fresh render — no in-progress edits
+  window._settingsFormDirty=false; // fresh render, no in-progress edits
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
   const sd=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
   const fmt$=n=>'$'+(n||0).toLocaleString();
@@ -786,7 +786,7 @@ function loadSettingsForm(){
 function saveSettings(){
   // Guard: saveSettings harvests EVERY field from the form. If the form was
   // never filled this session (loadSettingsForm not yet run), harvesting would
-  // rebuild S from empty inputs and wipe every saved value — exactly the bug
+  // rebuild S from empty inputs and wipe every saved value, exactly the bug
   // where registerDevice() wiped settings on every boot. Persist S as-is instead.
   if(!window._settingsFormFilled){saveAll();return;}
   const gf=id=>parseFloat(v(id))||0,gs=id=>v(id);
@@ -801,7 +801,7 @@ function saveSettings(){
     txStatus:gs('set-txstatus')||'single',goalMonthly:gf('set-goal-monthly')||0,irsRate:gf('set-irs')||.700,taxYear:parseInt(v('set-year'))||2026,fedSingle:gf('set-fs')||15000,fedMFJ:gf('set-fm')||30000,fedMFS:gf('set-fms')||15000,fedHOH:gf('set-fh')||22500,b10:gf('set-b10')||11925,b12:gf('set-b12')||48475,b22:gf('set-b22')||103350,b24:gf('set-b24')||197300,b32:gf('set-b32')||250525,b35:gf('set-b35')||626350,ksLow:gf('set-ksl')||3.1,ksTop:gf('set-kst')||33000,ksHigh:gf('set-ksh')||5.7,ksStdS:gf('set-kss')||3500,ksStdM:gf('set-ksm')||8000,laborRate:gf('set-labor-rate')||45,bname:gs('set-bname'),bphone:gs('set-bphone'),blic:gs('set-blic'),state:gs('set-state')||S.state||'',bemail:gs('set-bemail'),veh:gs('set-veh'),bitlyKey:S.bitlyKey||'',subdomain:gs('set-subdomain')||'',vehicles:S.vehicles||[],margin:gf('set-margin')||25,depositPct:gf('set-deposit-pct')||25,cov:gf('set-cov')||350,mm:gf('set-mm')||20,suppliesRate:gf('set-supplies-rate')||0.25,sinceYear:parseInt(gs('set-since-year'))||0,reviewUrl:gs('set-review-url')||'',brandColor:adaBrand(gs('set-brandcolor'))||'',bwebsite:gs('set-bwebsite')||'',
     baddr:gs('set-baddr')||'',bcity:gs('set-bcity')||'',bzip:gs('set-bzip')||'',state:gs('set-bstate-display')||gs('set-state')||S.state||'',
     poweredBy:document.getElementById('set-powered-by')?.checked!==false,
-    teamTracking:true, // crew tracking is always on — a condition of using TradeDesk
+    teamTracking:true, // crew tracking is always on, a condition of using TradeDesk
     trackStart:gs('set-track-start')||'07:00',
     trackEnd:gs('set-track-end')||'18:00',
     laborBurden:1+((parseFloat(v('set-labor-burden'))||0)/100),
@@ -818,12 +818,12 @@ function saveSettings(){
     salesTaxRate:(()=>{const _sr=v('set-sales-tax-rate').trim();return _sr===''?0:parseFloat(_sr)||0;})(),
     salesTaxRateSource:S.salesTaxRateSource||'',
     swPrices:S.swPrices||{},
-    // Last explicit settings save — lets cloud/cache loads detect a stale
+    // Last explicit settings save, lets cloud/cache loads detect a stale
     // incoming copy and keep local (see _mergeIncomingSettings in cloud.js)
     settingsTs:Date.now()};
-  window._settingsFormDirty=false; // edits are now saved — background refills are safe again
+  window._settingsFormDirty=false; // edits are now saved, background refills are safe again
   applySettings();saveAll();
-  // Flush settings to Supabase immediately (don't rely on 2s debounce — user may refresh first)
+  // Flush settings to Supabase immediately (don't rely on 2s debounce, user may refresh first)
   if(typeof supaSaveToCloud==='function')supaSaveToCloud();
   // Keep accounts table in sync so loadAccountData() reads the correct values on next page load.
   // Without this, loadAccountData() overwrites S.bname with the original onboarding value every refresh.
@@ -914,19 +914,19 @@ function handleLogoUpload(input){
   const reader=new FileReader();
   reader.onload=e=>{
     S.logoData=e.target.result;_settingsChanged();_renderLogoPreview();applyBrandLogo();_updateBootPreview();
-    showToast('Logo saved — proposals will use your logo','🎨');
+    showToast('Logo saved, proposals will use your logo','🎨');
   };
   reader.readAsDataURL(file);
 }
 function clearLogoSetting(){
   S.logoData='';S.logoUrl='';S.logoHash='';_settingsChanged();_renderLogoPreview();_updateBootPreview();
-  showToast('Logo removed — proposals will show business name','✓');
+  showToast('Logo removed, proposals will show business name','✓');
 }
-// Crew "today"/contractor labor isn't a local store — it's cloud time-tracking
+// Crew "today"/contractor labor isn't a local store, it's cloud time-tracking
 // (job_time_entries + shop_time_entries) and raw GPS (location_pings), keyed by
 // contractor_user_id. "Clear all data" hard-deletes those so the Crew Today tile
 // empties too. team_members (the crew roster / invited accounts) is deliberately
-// left intact — that's identity, not tracking, and wiping it would break invites.
+// left intact, that's identity, not tracking, and wiping it would break invites.
 async function _clearCrewTrackingCloud(){
   if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
@@ -936,24 +936,24 @@ async function _clearCrewTrackingCloud(){
 }
 function clearAllData(){
   zConfirm('This will permanently delete ALL clients, bids, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
-    zConfirm('Last chance — are you absolutely sure you want to delete everything?',async()=>{
-      // Deliberate wipe — bypass supaSaveToCloud's accidental-wipe sanity guard so the
+    zConfirm('Last chance, are you absolutely sure you want to delete everything?',async()=>{
+      // Deliberate wipe, bypass supaSaveToCloud's accidental-wipe sanity guard so the
       // soft-delete actually reaches the cloud (otherwise the cleared rows, e.g. the
       // maintenance contracts behind the dashboard "Maintenance Due" card, resurrect).
       if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(true);
-      // Every user-data store declared in data.js must be wiped here — leaving any
+      // Every user-data store declared in data.js must be wiped here, leaving any
       // out (maintenance/events/photos/licenses/contracts/agreements were all
       // missing) means those records survive a "Clear all data" and resurface.
       _userDelete(()=>{
         clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
-        S.employees=[];_setVehicles([]); // stamped wipe — must beat any stale cloud copy in the merge
+        S.employees=[];_setVehicles([]); // stamped wipe, must beat any stale cloud copy in the merge
         estLinkedClientId=null;editingBidId=null;
         gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
         if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
         hideDriveBanner();saveAll();
       });
       // AWAIT the flush so the soft-delete lands in the cloud BEFORE we re-render or any
-      // realtime reload fires — this is what stops the cleared rows from re-hydrating.
+      // realtime reload fires, this is what stops the cleared rows from re-hydrating.
       try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}
       if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(false);
       await _clearCrewTrackingCloud();
@@ -1019,7 +1019,7 @@ function resetLocationPermission(){
 }
 function updateLocationBtn(){
   const btn=document.getElementById('location-settings-btn');if(!btn)return;
-  if(S.locationDenied){btn.innerHTML=svgIcon('📍')+' Location: Off — tap to enable';btn.style.color='var(--text3)';}
+  if(S.locationDenied){btn.innerHTML=svgIcon('📍')+' Location: Off: tap to enable';btn.style.color='var(--text3)';}
   else if(S.weatherLat){btn.innerHTML=svgIcon('📍')+' Location: On '+svgIcon('✓');btn.style.color='var(--green-mid)';}
   else{btn.innerHTML=svgIcon('📍')+' Location access';btn.style.color='';}
 }
@@ -1029,16 +1029,16 @@ function updateLocationBtn(){
 //   newer local fleet over an older incoming one.
 // - settingsTs: the blob-level last-writer-wins stamp. Without it a fleet edit
 //   looked "stale" to the save gate (cloud settingsTs newer → skip-settings) and
-//   NEVER UPLOADED — the added vehicle lived only in this device's cache and
+//   NEVER UPLOADED, the added vehicle lived only in this device's cache and
 //   vanished on the next sign-out/fresh boot (the "Zach's Ford deletes itself" bug).
 function _setVehicles(vehs){S.vehicles=vehs;S.vehiclesTs=Date.now();S.settingsTs=Date.now();}
 function getVehicles(){
   let vehs=Array.isArray(S.vehicles)?S.vehicles:[];
   // Legacy one-time seed from the old single-vehicle string field `S.veh`.
-  // Fire it ONLY when the fleet has NEVER been managed — i.e. no vehiclesTs
+  // Fire it ONLY when the fleet has NEVER been managed, i.e. no vehiclesTs
   // stamp. Every add/edit/delete stamps S.vehiclesTs (a plain settings save
-  // does not), so once the user has touched the fleet — including DELETING
-  // the last vehicle — this seed is permanently off and a removed vehicle can
+  // does not), so once the user has touched the fleet, including DELETING
+  // the last vehicle, this seed is permanently off and a removed vehicle can
   // never resurrect from S.veh (the "Zach Ford keeps coming back" bug).
   if(!vehs.length&&!S.vehiclesTs&&S.veh&&S.veh.trim()){vehs=[S.veh.trim()];}
   // Migrate legacy string array to object array
@@ -1057,7 +1057,7 @@ function getVehicleFullLabel(v){
 }
 
 // ══════════════════════════════════════════════════════════════════
-// ANNUAL ODOMETER CHECK — IRS Publication 463 compliance
+// ANNUAL ODOMETER CHECK, IRS Publication 463 compliance
 // Records Jan 1 start + Dec 31 end odometer per vehicle per year.
 // Calculates true business-use % = logged miles / total miles driven.
 // ══════════════════════════════════════════════════════════════════
@@ -1065,7 +1065,7 @@ function _checkOdometerPrompt(){
   const vehs=getVehicles();
   if(!vehs.length||_isEmployee||_devSupportMode)return;
   // Never slam this unsolicited compliance modal on top of a modal the user is
-  // already filling out (quick-expense, agreement, contract, etc.) — stacking a
+  // already filling out (quick-expense, agreement, contract, etc.): stacking a
   // fixed full-viewport overlay over an open form covers its inputs and blocks
   // the user mid-task. Defer: it re-fires on the next boot via cloud.js once the
   // open overlay is dismissed.
@@ -1078,15 +1078,15 @@ function _checkOdometerPrompt(){
 
   // Tasks needed:
   const tasks=[];
-  // 1. Current year start — always check regardless of month (mid-year signups need this too)
+  // 1. Current year start, always check regardless of month (mid-year signups need this too)
   vehs.forEach(v=>{
     const key=_vehKey(v);
     if(!(log[cy]&&log[cy][key]&&log[cy][key].start)){
-      // midYear=true when past April — modal shows "best estimate" language instead of "Jan 1"
+      // midYear=true when past April, modal shows "best estimate" language instead of "Jan 1"
       tasks.push({year:cy,type:'start',veh:v,midYear:mo>3});
     }
   });
-  // 2. End of previous year — prompt Jan through Mar only (after that, prior year is filed)
+  // 2. End of previous year, prompt Jan through Mar only (after that, prior year is filed)
   if(mo<=2){
     const ly=cy-1;
     vehs.forEach(v=>{
@@ -1099,7 +1099,7 @@ function _checkOdometerPrompt(){
 
   if(!tasks.length)return;
 
-  // Count how many times snoozed — after 3 snoozes, hard block
+  // Count how many times snoozed, after 3 snoozes, hard block
   const snoozeCount=S._odoSnoozeCount||0;
   _showOdometerModal(tasks,snoozeCount>=3);
 }
@@ -1145,7 +1145,7 @@ function renderSettingsTrades(){
   const allTrades=Object.keys(TRADE_META);
   const available=allTrades.filter(t=>!lines.includes(t));
   el.innerHTML=
-    (isLifetimeAccount()?'<div style="display:inline-flex;align-items:center;gap:6px;background:#D1FAE5;border:1px solid var(--green-mid);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;color:var(--green-mid);margin-bottom:12px">⭐ Lifetime access — no subscription ever</div><br>':'')+
+    (isLifetimeAccount()?'<div style="display:inline-flex;align-items:center;gap:6px;background:#D1FAE5;border:1px solid var(--green-mid);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;color:var(--green-mid);margin-bottom:12px">⭐ Lifetime access, no subscription ever</div><br>':'')+
     '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">Your active trade lines. Each gets its own estimate form and pipeline view.</div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">'+
     lines.map(t=>{
@@ -1171,7 +1171,7 @@ async function addTradeFromSettings(trade){
   const lineStr=newLines.join(',');
   if(supaEnabled()){
     const{error}=await _supa.from('account_config').update({trade_lines:lineStr}).eq('account_id',_config.account_id);
-    if(error){showToast('SQL migration needed — see notes','⚠️');console.error(error);return;}
+    if(error){showToast('SQL migration needed, see notes','⚠️');console.error(error);return;}
   }
   _config={..._config,trade_lines:lineStr};
   renderSettingsTrades();_renderNavTradeSwitcher();_renderSettingsTradeSections();
@@ -1185,7 +1185,7 @@ async function removeTradeFromSettings(trade){
   const lineStr=newLines.join(',');
   if(supaEnabled()){
     const{error}=await _supa.from('account_config').update({trade_lines:lineStr}).eq('account_id',_config.account_id);
-    if(error){showToast('SQL migration needed — see notes','⚠️');console.error(error);return;}
+    if(error){showToast('SQL migration needed, see notes','⚠️');console.error(error);return;}
   }
   _config={..._config,trade_lines:lineStr};
   if(_activeTrade===trade)_activeTrade=newLines[0];
@@ -1251,27 +1251,46 @@ async function showOnboarding(){
   renderObStep();
 }
 
+// Brand-new social (Google/Apple) sign-in. The provider already created the auth
+// user + a live session, so there is NO email/password to collect, that half of
+// onboarding is already done. Drop them into the SAME wizard, prefilled from the
+// provider and with the account-creation step slimmed down (business/trade/pay
+// only). obSubmit sees _ob.oauth and writes the business against the existing
+// session instead of calling signUp. Called from the boot / SIGNED_IN brand-new
+// branches in cloud.js so a first-time social tap never lands on an empty dashboard.
+function _beginOAuthOnboarding(){
+  try{
+    // Already onboarding? Don't restart (would wipe their in-progress answers). This
+    // is the re-entry guard, NOT a sticky global flag: setting window._obInProgress
+    // here and only clearing it in obSubmit meant an abandoned onboarding wedged the
+    // flag true forever, blocking every future sign-in (the SIGNED_IN handler returns
+    // early on _obInProgress). obSubmit owns _obInProgress during the actual write.
+    if(typeof document!=='undefined'&&document.getElementById('onboarding-overlay'))return;
+    _ob={step:1,name:'',email:'',password:'',businessType:'',tradeLines:[],businessName:'',phone:'',address:'',state:'',licenseInfo:'',role:'owner',vehicles:[],team:[],stripeKey:'',acceptCash:true,acceptCheck:true,allowPayLater:true,wantCards:true,jobs:[],oauth:true};
+    if(typeof _supaUser!=='undefined'&&_supaUser){
+      const m=_supaUser.user_metadata||{};
+      _ob.name=m.full_name||m.name||m.given_name||'';
+      _ob.email=_supaUser.email||'';
+    }
+    showOnboarding();
+  }catch(_e){if(typeof console!=='undefined')console.warn('OAuth onboarding launch failed:',_e);}
+}
+
 function renderObStep(){
   const ov=document.getElementById('onboarding-overlay');if(!ov)return;
+  // 3-step wizard (§9.9 restructure). Everything else, logo, vehicles, team,
+  // booked jobs, license/warranty: moved to the dashboard setup checklist.
   const steps=[
-    {icon:'🔨',title:'Welcome',sub:'Get set up in minutes'},
-    {icon:'👤',title:'Your account',sub:'Name, email and password'},
+    {icon:'👤',title:'Your account',sub:'Email, password & business'},
     {icon:'🎨',title:'Your trade',sub:'We configure your workflow'},
-    {icon:'🏢',title:'Business info',sub:'Appears on proposals'},
-    {icon:'🖼️',title:'Your brand',sub:'Logo and company look'},
-    {icon:'⚡',title:'Your role',sub:'Controls what you can see'},
-    {icon:'🚗',title:'Vehicles',sub:'For mileage tracking'},
-    {icon:'👥',title:'Your team',sub:'Add crew members'},
-    {icon:'💳',title:'Payments',sub:'How you get paid'},
-    {icon:'📋',title:'Your jobs',sub:'Import work already booked'},
-    {icon:'✓',title:'All set',sub:'Review and create'},
+    {icon:'💳',title:'Get paid',sub:'How you collect money'},
   ];
-  const pct=Math.round((_ob.step/11)*100);
+  const pct=Math.round((_ob.step/steps.length)*100);
   const cur=steps[_ob.step-1];
 
   ov.innerHTML=
     '<div style="display:flex;min-height:100vh;min-height:100dvh">'+
-    // Left panel — brand + step context
+    // Left panel, brand + step context
     '<div id="ob-left" style="width:340px;flex-shrink:0;background:#0D1117;padding:40px 32px;flex-direction:column;justify-content:space-between" id="ob-left">'+
       '<div>'+
         '<div style="display:flex;align-items:center;gap:10px;margin-bottom:48px">'+
@@ -1299,7 +1318,7 @@ function renderObStep(){
       '</div>'+
       '<div style="font-size:11px;color:rgba(255,255,255,.4)">© 2025 TradeDesk</div>'+
     '</div>'+
-    // Right panel — form content
+    // Right panel, form content
     '<div style="flex:1;display:flex;flex-direction:column;background:#fff;min-height:100%;overflow-y:auto">'+
       // Mobile header
       '<div style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border)" id="ob-mobile-hdr">'+
@@ -1309,7 +1328,7 @@ function renderObStep(){
           '</div>'+
           '<span class="brand-logo-slot" style="font-size:15px;font-weight:800;color:var(--text)">TradeDesk</span>'+
         '</div>'+
-        '<span style="font-size:12px;color:var(--text3);font-weight:600">'+_ob.step+' of 11</span>'+
+        '<span style="font-size:12px;color:var(--text3);font-weight:600">'+_ob.step+' of '+steps.length+'</span>'+
       '</div>'+
       // Progress bar
       '<div style="height:3px;background:var(--border)"><div style="height:100%;width:'+pct+'%;background:var(--blue);transition:width .4s ease"></div></div>'+
@@ -1323,17 +1342,9 @@ function renderObStep(){
   if(left)left.style.display=window.innerWidth>=640?'flex':'none';
 
   const body=document.getElementById('ob-body');
-  if(_ob.step===1)obStep1(body);
-  else if(_ob.step===2)obStep2(body);
-  else if(_ob.step===3)obStep3(body);
-  else if(_ob.step===4)obStep4(body);
-  else if(_ob.step===5)obStepBrand(body);
-  else if(_ob.step===6)obStep5(body);
-  else if(_ob.step===7)obStep6(body);
-  else if(_ob.step===8)obStep7(body);
-  else if(_ob.step===9)obStep8(body);
-  else if(_ob.step===10)obStepJobs(body);
-  else if(_ob.step===11)obStep9(body);
+  if(_ob.step===1)obStepAccount(body);
+  else if(_ob.step===2)obStep3(body);   // trade
+  else if(_ob.step===3)obStep8(body);   // get paid
 }
 
 function obBtn(label,onclick,secondary){
@@ -1346,54 +1357,76 @@ function obInput(id,label,placeholder,type,value){
   '</div>';
 }
 
-function obStep1(el){
+// Step 1 (§9.9 restructure): account + core business in one screen. Everything a
+// contractor knows off the top of their head, email, password, business name,
+// phone, state, so a branded proposal can go out the moment they're in. Social
+// sign-in on top collapses this to near-nothing (name/email come from the provider).
+const OB_STATE_OPTS=['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
+function obStepAccount(el){
+  // OAuth mode: the provider already handled sign-in, so no social buttons, no
+  // email, no password, just their name (prefilled) + business details.
+  const oauth=!!_ob.oauth;
+  const _stateOpts='<option value="">- Select your state -</option>'+OB_STATE_OPTS.map(s=>'<option value="'+s+'"'+(_ob.state===s?' selected':'')+'>'+s+'</option>').join('');
+  const _socialBtn=(prov,label,bg,fg,bd)=>'<button onclick="_obOAuth(\''+prov+'\')" style="display:flex;align-items:center;justify-content:center;gap:9px;width:100%;padding:12px;border-radius:9px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px">'+label+'</button>';
   el.innerHTML=
-    '<div style="padding-top:20px">'+
-      '<div style="font-size:40px;margin-bottom:20px">'+svgIcon('🔨',{size:40})+'</div>'+
-      '<div style="font-size:30px;font-weight:800;line-height:1.2;margin-bottom:12px;letter-spacing:-.02em">Run your business<br>from one place.</div>'+
-      '<div style="font-size:15px;color:var(--text3);line-height:1.7;margin-bottom:32px">Estimates, jobs, payments, mileage — everything a contractor needs, built for the field.</div>'+
-      '<div style="display:grid;gap:10px;margin-bottom:36px">'+
-        [svgIcon('📋')+' Estimates & proposals in minutes',svgIcon('💰')+' Collect payments on the spot',svgIcon('📍')+' Mileage & expense tracking',svgIcon('📊')+' Taxes and business analytics'].map(f=>
-          '<div style="display:flex;align-items:center;gap:10px;font-size:14px;font-weight:500;color:var(--text2)"><span>'+f+'</span></div>'
-        ).join('')+
-      '</div>'+
-      obBtn("Get started — it's free","_ob.step=2;renderObStep()")+
-    '</div>';
-}
-
-function obStep2(el){
-  el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Your email and password to sign in</div></div>'+
+    (oauth
+      ?'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Finish setting up</div><div style="font-size:14px;color:var(--text3)">You\'re signed in'+(_ob.email?' as '+escHtml(_ob.email):'')+'. Just your business details and you\'re in.</div></div>'
+      :'<div style="margin-bottom:20px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👤',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Create your account</div><div style="font-size:14px;color:var(--text3)">Takes about a minute, you can add the rest later.</div></div>'+
+        // Social sign-in (primary). Activates once the provider is configured in Supabase.
+        _socialBtn('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0')+
+        _socialBtn('apple','Continue with Apple','#000','#fff','1.5px solid #000')+
+        '<div style="display:flex;align-items:center;gap:10px;margin:14px 0 16px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600">or sign up with email</span><div style="flex:1;height:1px;background:var(--border)"></div></div>')+
     obInput('ob-name','Your full name','John Smith','text',_ob.name)+
-    obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
-    obInput('ob-pass','Password (min 6 chars)','••••••••','password','')+
+    (oauth?'':obInput('ob-email','Email','you@yourbusiness.com','email',_ob.email)+
+    obInput('ob-pass','Password (min 6 chars)','••••••••','password',''))+
+    obInput('ob-bname','Business name','Smith Painting Co','text',_ob.businessName)+
+    '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Phone</label>'+
+    '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;font-family:inherit"></div>'+
+    '<div class="f" style="margin-bottom:18px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">State</label>'+
+    '<select id="ob-state" style="font-size:15px;padding:11px 14px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+_stateOpts+'</select></div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
-    '<div style="border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px;overflow:hidden">'+
-      '<div style="padding:8px 12px;background:var(--bg2);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--text2)">Terms of Service — Please read</div>'+
-      '<div style="padding:10px 12px;max-height:160px;overflow-y:auto;font-size:11px;color:var(--text3);line-height:1.7">'+
-        '<strong style="color:var(--text2)">1. Not a Tax Service.</strong> TradeDesk provides mileage tracking, expense logging, and financial summaries as organizational tools for your own record-keeping. Nothing in this app constitutes tax advice, tax preparation, or accounting services. Consult a qualified tax professional or CPA regarding your tax obligations.<br><br>'+
-        '<strong style="color:var(--text2)">2. Not Legal Advice — Mechanic\'s Liens.</strong> Mechanic\'s lien laws, notice requirements, and deadlines vary significantly by state and project type. The lien tracking and notice features in TradeDesk are organizational tools only and do not constitute legal advice. Filing an improper lien can expose you to liability. Consult a licensed attorney in your state before filing any lien or taking legal action against a client.<br><br>'+
-        '<strong style="color:var(--text2)">3. Not Financial or Insurance Advice.</strong> Estimates, bids, and payment tracking are tools to help run your business. TradeDesk makes no representations about pricing, profitability, or business outcomes. Consult appropriate professionals for financial and insurance guidance.<br><br>'+
-        '<strong style="color:var(--text2)">4. Your Client\'s Data.</strong> You are responsible for ensuring you have appropriate authorization to store information about your clients within TradeDesk. Do not enter sensitive personal information beyond what is necessary to manage your business relationships.<br><br>'+
-        '<strong style="color:var(--text2)">5. Developer & Support Access.</strong> TradeDesk and its authorized developers may access your account data solely for troubleshooting, technical support, and service improvement purposes.<br><br>'+
-        '<strong style="color:var(--text2)">6. Data Storage.</strong> Your business data is stored securely via Supabase. TradeDesk is not liable for data loss due to circumstances outside our control. We recommend keeping your own backups of critical business records.<br><br>'+
-        '<strong style="color:var(--text2)">7. No Warranty.</strong> TradeDesk is provided "as is" without warranty of any kind. We are not liable for any business decisions made based on information displayed in the app.<br><br>'+
-        'By tapping Continue, you confirm you have read and agree to these terms.'+
-      '</div>'+
-    '</div>'+
-    obBtn('Continue','obNext2()');
+    '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:12px">By continuing you agree to our <a href="#" onclick="_obShowTos(event)" style="color:var(--blue);text-decoration:underline">Terms of Service</a>, a summary of what TradeDesk is and isn\'t (not tax, legal, or financial advice).</div>'+
+    obBtn('Continue','obNextAccount()');
 }
-
-function obNext2(){
+function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAlert('TradeDesk is an organizational tool for running your trade business, estimates, jobs, payments, mileage, and tax summaries. It is NOT tax, legal, or financial advice: consult a qualified professional for those. You are responsible for authorization to store client data. Data is stored securely via Supabase; keep your own backups of critical records. Provided "as is" with no warranty.',{title:'Terms of Service'});}
+function _obOAuth(provider){
+  try{
+    if(typeof _supa==='undefined'||!_supa||!_supa.auth||!_supa.auth.signInWithOAuth){if(typeof showToast==='function')showToast(provider.charAt(0).toUpperCase()+provider.slice(1)+' sign-in isn\'t available yet','⚠️');return;}
+    // Mark this as an OAuth round-trip. The client is built detectSessionInUrl:false
+    // (so recovery / magic links aren't auto-consumed), so supaInit() completes the
+    // handshake by hand ONLY when this flag is set, never for a stray ?code=. Cleared
+    // on return or on error below.
+    try{localStorage.setItem('_oauthPending',provider);}catch(_e){}
+    _supa.auth.signInWithOAuth({provider,options:{redirectTo:location.origin}}).then(({error})=>{
+      if(error){try{localStorage.removeItem('_oauthPending');}catch(_e){}if(typeof showToast==='function')showToast(provider.charAt(0).toUpperCase()+provider.slice(1)+' sign-in isn\'t turned on yet, use email for now','⚠️',5000);}
+    }).catch(()=>{try{localStorage.removeItem('_oauthPending');}catch(_e){}});
+  }catch(_e){try{localStorage.removeItem('_oauthPending');}catch(_e2){}if(typeof showToast==='function')showToast('Sign-in unavailable, use email for now','⚠️');}
+}
+function obNextAccount(){
+  const oauth=!!_ob.oauth;
+  const err=document.getElementById('ob-err');
   const name=document.getElementById('ob-name')?.value.trim();
   const email=document.getElementById('ob-email')?.value.trim();
   const pass=document.getElementById('ob-pass')?.value;
-  const err=document.getElementById('ob-err');
+  const bname=document.getElementById('ob-bname')?.value.trim();
+  const phone=document.getElementById('ob-bphone')?.value.trim();
+  const state=document.getElementById('ob-state')?.value||'';
   if(!name){if(err)err.textContent='Enter your name.';return;}
-  if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
-  if(!pass||pass.length<6){if(err)err.textContent='Password must be at least 6 characters.';return;}
-  _ob.name=name;_ob.email=email;_ob.password=pass;
-  _ob.step=3;renderObStep();
+  // Email + password only exist (and are only required) on the email signup path.
+  // OAuth users are already authenticated, those fields aren't on the screen.
+  if(!oauth){
+    if(!email||!email.includes('@')){if(err)err.textContent='Enter a valid email.';return;}
+    if(!pass||pass.length<6){if(err)err.textContent='Password must be at least 6 characters.';return;}
+  }
+  if(!bname){if(err)err.textContent='Enter your business name.';return;}
+  if(!phone){if(err)err.textContent='Enter a phone number.';return;}
+  if(!state){if(err)err.textContent='Select your state.';return;}
+  _ob.name=name;if(!oauth){_ob.email=email;_ob.password=pass;}_ob.businessName=bname;_ob.phone=phone;_ob.state=state;
+  // Prefill sales tax from state base, contractor refines later.
+  if(state&&typeof lookupSalesTaxRate==='function'&&!(parseFloat(S.salesTaxRate)>0)){
+    lookupSalesTaxRate('',state).then(r=>{if(r.rate>0){S.salesTaxRate=r.rate;S.salesTaxRateSource='onboarding';}}).catch(()=>{});
+  }
+  _ob.step=2;renderObStep();
 }
 
 function obStep3(el){
@@ -1408,7 +1441,7 @@ function obStep3(el){
     {id:'other',icon:'🛠️',label:'Other'},
   ];
   el.innerHTML=
-    '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🔧',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">What trades do you work?</div><div style="font-size:14px;color:var(--text3)">Select all that apply — tap to toggle. First selected = primary trade.</div></div>'+
+    '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🔧',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">What trades do you work?</div><div style="font-size:14px;color:var(--text3)">Select all that apply, tap to toggle. First selected = primary trade.</div></div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px">'+
     types.map(t=>{
       const sel=_ob.tradeLines.includes(t.id);
@@ -1423,7 +1456,7 @@ function obStep3(el){
     '</div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     obBtn('Continue','obNext3()')+
-    obBtn('Back','_ob.step=2;renderObStep()',true);
+    obBtn('Back','_ob.step=1;renderObStep()',true);
 }
 
 function obSelectType(t){
@@ -1465,177 +1498,7 @@ function obNext3(){
   const err=document.getElementById('ob-err');
   if(!_ob.tradeLines.length){if(err)err.textContent='Select at least one trade.';return;}
   _ob.businessType=_ob.tradeLines[0];
-  _ob.step=4;renderObStep();
-}
-
-function obStep4(el){
-  el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🏢',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Business info</div><div style="font-size:14px;color:var(--text3)">Appears on your proposals and estimates</div></div>'+
-    obInput('ob-bname','Business name','Your Business Name','text',_ob.businessName)+
-    '<div class="f" style="margin-bottom:14px"><label>Phone number</label>'+
-    '<input type="tel" id="ob-bphone" placeholder="316-555-0100" value="'+((_ob.phone)||'')+'" maxlength="12" oninput="this.value=this.value.replace(/[^0-9]/g,\'\').slice(0,10).replace(/^(\\d{3})(\\d{3})(\\d{1,4})$/,\'$1-$2-$3\').replace(/^(\\d{3})(\\d{1,3})$/,\'$1-$2\')" style="font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
-    obInput('ob-baddr','Business address (optional)','1234 Main St, Wichita KS','text',_ob.address)+
-    '<div class="f" style="margin-bottom:14px"><label>State <span style="color:#A32D2D">*</span></label><select id="ob-state" style="font-size:15px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"><option value="">— Select your state —</option><option value="AL">AL</option><option value="AK">AK</option><option value="AZ">AZ</option><option value="AR">AR</option><option value="CA">CA</option><option value="CO">CO</option><option value="CT">CT</option><option value="DE">DE</option><option value="FL">FL</option><option value="GA">GA</option><option value="HI">HI</option><option value="ID">ID</option><option value="IL">IL</option><option value="IN">IN</option><option value="IA">IA</option><option value="KS">KS</option><option value="KY">KY</option><option value="LA">LA</option><option value="ME">ME</option><option value="MD">MD</option><option value="MA">MA</option><option value="MI">MI</option><option value="MN">MN</option><option value="MS">MS</option><option value="MO">MO</option><option value="MT">MT</option><option value="NE">NE</option><option value="NV">NV</option><option value="NH">NH</option><option value="NJ">NJ</option><option value="NM">NM</option><option value="NY">NY</option><option value="NC">NC</option><option value="ND">ND</option><option value="OH">OH</option><option value="OK">OK</option><option value="OR">OR</option><option value="PA">PA</option><option value="RI">RI</option><option value="SC">SC</option><option value="SD">SD</option><option value="TN">TN</option><option value="TX">TX</option><option value="UT">UT</option><option value="VT">VT</option><option value="VA">VA</option><option value="WA">WA</option><option value="WV">WV</option><option value="WI">WI</option><option value="WY">WY</option></select></div>'+
-    obInput('ob-blic','License / insurance info (optional)','Licensed & Insured · KS #12345','text',_ob.licenseInfo)+
-    '<div class="f" style="margin-bottom:14px"><label>Workmanship warranty on proposals</label>'+
-    '<select id="ob-warranty" style="font-size:15px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+
-    ['90 days','6 months','1 year','2 years'].map(v=>'<option'+((_ob.warrantyPeriod||'1 year')===v?' selected':'')+'>'+v+'</option>').join('')+
-    '</select><div style="font-size:11px;color:var(--text3);margin-top:4px">Appears in Terms & Conditions on every proposal you send.</div></div>'+
-    '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
-    obBtn('Continue','obNext4()')+
-    obBtn('Back','_ob.step=3;renderObStep()',true);
-}
-
-function obNext4(){
-  const bname=document.getElementById('ob-bname')?.value.trim();
-  const phone=document.getElementById('ob-bphone')?.value.trim();
-  const err=document.getElementById('ob-err');
-  if(!bname){if(err)err.textContent='Enter your business name.';return;}
-  if(!phone){if(err)err.textContent='Enter a phone number.';return;}
-  _ob.businessName=bname;_ob.phone=phone;
-  _ob.address=document.getElementById('ob-baddr')?.value.trim()||'';
-  _ob.state=document.getElementById('ob-state')?.value||'';
-  if(!_ob.state){if(err)err.textContent='Please select your state.';return;}
-  _ob.licenseInfo=document.getElementById('ob-blic')?.value.trim()||'';
-  _ob.warrantyPeriod=document.getElementById('ob-warranty')?.value||'1 year';
-  // Pre-fill sales tax rate from state base — contractor refines later via openSalesTaxSetup
-  if(_ob.state&&typeof lookupSalesTaxRate==='function'&&!(parseFloat(S.salesTaxRate)>0)){
-    lookupSalesTaxRate('',_ob.state).then(r=>{if(r.rate>0){S.salesTaxRate=r.rate;S.salesTaxRateSource='onboarding';}}).catch(()=>{});
-  }
-  _ob.step=5;renderObStep();
-}
-
-function obStepBrand(el){
-  el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🖼',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your brand</div><div style="font-size:14px;color:var(--text3)">Add a logo to appear on every proposal</div></div>'+
-    '<div style="margin-bottom:20px">'+
-      '<div style="width:120px;height:120px;border:2px dashed var(--border2);border-radius:var(--rl);display:flex;align-items:center;justify-content:center;margin-bottom:10px;background:var(--bg2);cursor:pointer" onclick="document.getElementById(\'set-logo-file\').click()" id="set-logo-preview">'+
-        (S.logoData?'<img src="'+S.logoData+'" style="max-width:100%;max-height:100%;object-fit:contain">':'<span style="font-size:32px">'+svgIcon('🖼',{size:32})+'</span>')+
-      '</div>'+
-      '<button onclick="document.getElementById(\'set-logo-file\').click()" style="padding:9px 16px;border-radius:8px;border:1.5px solid var(--border2);background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;margin-right:8px">Upload PNG logo</button>'+
-      (S.logoData?'<button onclick="S.logoData=\'\';saveAll();applyBrandLogo();_renderLogoPreview();" style="padding:9px 16px;border-radius:8px;border:1.5px solid var(--border2);background:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text3)">Remove</button>':'')+
-    '</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:24px">PNG only. Appears on all proposals and the app header. You can change this later in Settings.</div>'+
-    obBtn('Continue','_ob.step=6;renderObStep()')+
-    obBtn('Skip for now','_ob.step=6;renderObStep()',true)+
-    obBtn('Back','_ob.step=4;renderObStep()',true);
-}
-function obHandleLogo(input){
-  const file=input.files&&input.files[0];if(!file)return;
-  const reader=new FileReader();
-  reader.onload=e=>{
-    S.logoData=e.target.result;saveAll();applyBrandLogo();
-    const prev=document.getElementById('ob-logo-preview');
-    if(prev)prev.innerHTML='<img src="'+S.logoData+'" style="max-width:100%;max-height:100%;object-fit:contain">';
-  };
-  reader.readAsDataURL(file);
-}
-
-function obStep5(el){
-  const roles=[
-    {id:'owner',icon:'👤',label:'Owner',desc:'Full access to everything'},
-    {id:'estimator',icon:'📋',label:'Estimator',desc:'Bids and proposals, no financials'},
-    {id:'technician',icon:'🔧',label:'Technician',desc:'Jobs and schedule only'},
-    {id:'apprentice',icon:'🛠️',label:'Apprentice',desc:'Limited view'},
-  ];
-  el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('⚡',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your role</div><div style="font-size:14px;color:var(--text3)">Controls what you can see and do in TradeDesk</div></div>'+
-    '<div style="display:grid;gap:10px;margin-bottom:20px">'+
-    roles.map(r=>'<button onclick="obSelectRole(\''+r.id+'\')" id="obrole-'+r.id+'" style="text-align:left;padding:14px;border-radius:var(--r);border:2px solid '+(
-      _ob.role===r.id?'var(--blue)':'var(--border2)'
-    )+';background:'+(
-      _ob.role===r.id?'var(--blue-lt)':'var(--bg2)'
-    )+';cursor:pointer;font-family:inherit;display:flex;gap:12px;align-items:center">'+
-      '<div style="font-size:24px">'+svgIcon(r.icon,{size:24})+'</div>'+
-      '<div><div style="font-size:14px;font-weight:700;color:var(--text)">'+r.label+'</div>'+
-      '<div style="font-size:11px;color:var(--text3)">'+r.desc+'</div></div>'+
-    '</button>').join('')+
-    '</div>'+
-    obBtn('Continue','_ob.step=7;renderObStep()')+
-    obBtn('Back','_ob.step=5;renderObStep()',true);
-}
-
-function obSelectRole(r){
-  _ob.role=r;
-  document.querySelectorAll('[id^=obrole-]').forEach(b=>{
-    const sel=b.id==='obrole-'+r;
-    b.style.borderColor=sel?'var(--blue)':'var(--border2)';
-    b.style.background=sel?'var(--blue-lt)':'var(--bg2)';
-  });
-}
-
-function obStep6(el){
-  el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('🚗',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Your vehicles</div><div style="font-size:14px;color:var(--text3)">At least one required for mileage tracking</div></div>'+
-    '<div id="ob-veh-list">'+(_ob.vehicles.length?_ob.vehicles.map((v,i)=>obVehRow(v,i)).join(''):'')+'</div>'+
-    '<button onclick="obAddVehicle()" style="width:100%;padding:12px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;color:var(--blue);font-weight:700;margin-bottom:14px">+ Add vehicle</button>'+
-    '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
-    obBtn('Continue','obNext6()')+
-    obBtn('Back','_ob.step=6;renderObStep()',true);
-}
-
-function obVehRow(v,i){
-  const needVin=_ob.vehicles.length>1;
-  return '<div style="border:1px solid var(--border2);border-radius:var(--r);padding:12px;margin-bottom:10px">'+
-    '<div style="display:flex;justify-content:space-between;margin-bottom:8px">'+
-      '<div style="font-size:13px;font-weight:700">Vehicle '+(i+1)+'</div>'+
-      '<button onclick="_ob.vehicles.splice('+i+',1);obStep6(document.getElementById(\'ob-body\'))" style="border:none;background:none;color:#A32D2D;cursor:pointer;font-size:18px;padding:0">×</button>'+
-    '</div>'+
-    '<input placeholder="Name (e.g. White F-150)" value="'+escHtml(v.name||'')+'" oninput="_ob.vehicles['+i+'].name=this.value" style="width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
-    '<select oninput="_ob.vehicles['+i+'].type=this.value" style="width:100%;box-sizing:border-box;'+(needVin?'margin-bottom:8px;':'')+'padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
-      ['Truck','Van','SUV','Car','Trailer'].map(t=>'<option'+(v.type===t?' selected':'')+'>'+t+'</option>').join('')+
-    '</select>'+
-    (needVin?'<input placeholder="VIN — exactly 17 characters" maxlength="17" value="'+(v.vin||'')+'" oninput="_ob.vehicles['+i+'].vin=this.value.toUpperCase().slice(0,17);this.value=this.value.toUpperCase().slice(0,17)" style="width:100%;box-sizing:border-box;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit;letter-spacing:.05em">':'')+
-  '</div>';
-}
-
-function obAddVehicle(){
-  _ob.vehicles.push({name:'',type:'Truck',vin:''});
-  obStep6(document.getElementById('ob-body'));
-}
-
-function obNext6(){
-  const err=document.getElementById('ob-err');
-  if(!_ob.vehicles.length){if(err)err.textContent='Add at least one vehicle.';return;}
-  for(const v of _ob.vehicles){
-    if(!v.name.trim()){if(err)err.textContent='Enter a name for each vehicle.';return;}
-  }
-  if(_ob.vehicles.length>1){
-    for(const v of _ob.vehicles){
-      const vin=(v.vin||'').trim();
-      if(!vin){if(err)err.textContent='VIN required when you have more than one vehicle.';return;}
-      if(vin.length!==17){if(err)err.textContent='VIN must be exactly 17 characters ('+vin.length+' entered).';return;}
-    }
-  }
-  _ob.step=8;renderObStep();
-}
-
-function obStep7(el){
-  el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('👥',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Add your team</div><div style="font-size:14px;color:var(--text3)">Optional — you can add crew later in Settings</div></div>'+
-    '<div id="ob-team-list">'+(_ob.team.length?_ob.team.map((m,i)=>obTeamRow(m,i)).join(''):'')+'</div>'+
-    '<button onclick="obAddTeam()" style="width:100%;padding:12px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;color:var(--blue);font-weight:700;margin-bottom:14px">+ Add team member</button>'+
-    obBtn('Continue','_ob.step=9;renderObStep()')+
-    obBtn('Back','_ob.step=7;renderObStep()',true);
-}
-
-function obTeamRow(m,i){
-  return '<div style="border:1px solid var(--border2);border-radius:var(--r);padding:12px;margin-bottom:10px">'+
-    '<div style="display:flex;justify-content:space-between;margin-bottom:8px">'+
-      '<div style="font-size:13px;font-weight:700">Member '+(i+1)+'</div>'+
-      '<button onclick="_ob.team.splice('+i+',1);obStep7(document.getElementById(\'ob-body\'))" style="border:none;background:none;color:#A32D2D;cursor:pointer;font-size:18px;padding:0">×</button>'+
-    '</div>'+
-    '<input placeholder="Name" value="'+(m.name||'')+'" oninput="_ob.team['+i+'].name=this.value" style="width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
-    '<input placeholder="Phone or email (optional)" value="'+(m.contact||'')+'" oninput="_ob.team['+i+'].contact=this.value" style="width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
-    '<select oninput="_ob.team['+i+'].role=this.value" style="width:100%;box-sizing:border-box;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
-      ['estimator','technician','apprentice'].map(r=>'<option'+(m.role===r?' selected':'')+'>'+r+'</option>').join('')+
-    '</select>'+
-  '</div>';
-}
-
-function obAddTeam(){
-  _ob.team.push({name:'',role:'technician',contact:''});
-  obStep7(document.getElementById('ob-body'));
+  _ob.step=3;renderObStep();
 }
 
 function obPayRow(key,label,desc){
@@ -1658,78 +1521,20 @@ function obStep8(el){
   el.innerHTML=
     '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('💳',{size:28})+'</div>'+
     '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">How do you want to get paid?</div>'+
-    '<div style="font-size:14px;color:var(--text3)">Turn on the ways you accept payment. Clients only see the options you enable when they sign — change any of this later in Settings.</div></div>'+
+    '<div style="font-size:14px;color:var(--text3)">Turn on the ways you accept payment. Clients only see the options you enable when they sign, change any of this later in Settings.</div></div>'+
     obPayRow('acceptCash','Cash','Client can tell you they\'ll pay cash in person.')+
     obPayRow('acceptCheck','Check','Client can tell you they\'ll pay by check.')+
-    obPayRow('allowPayLater','Pay later','Client signs now and settles up any way that works before the job\'s done — no money due at signing.')+
+    obPayRow('allowPayLater','Pay later','Client signs now and settles up any way that works before the job\'s done, no money due at signing.')+
     '<div style="border-top:1px solid var(--border);margin:20px 0 16px"></div>'+
     '<label id="obpay-wantCards" style="display:flex;align-items:flex-start;gap:12px;padding:14px;border:1.5px solid '+(_ob.wantCards!==false?'#86efac':'var(--border2)')+';border-radius:var(--r);background:#f0fdf4;margin-bottom:8px;cursor:pointer;user-select:none">'+
       '<input type="checkbox" '+(_ob.wantCards!==false?'checked':'')+' onchange="obTogglePay(\'wantCards\',this.checked)" style="width:19px;height:19px;margin-top:1px;accent-color:#16a34a;flex-shrink:0">'+
       '<div><div style="font-size:14px;font-weight:700;color:#166534">Take cards & bank transfers</div>'+
-      '<div style="font-size:12px;color:#166534;margin-top:2px;line-height:1.6">Clients pay their deposit straight to your bank. Card fee 2.9% + $0.30, auto-logged as a deductible expense. Leave this on and we\'ll open Stripe right after you create your account (~2 min; have your EIN or SSN and bank info handy). You can always do it later in <strong>Settings → Stripe Connect</strong>.</div></div>'+
+      '<div style="font-size:12px;color:#166534;margin-top:2px;line-height:1.6">Clients pay their deposit straight to your bank. Card fee 2.9% + $0.30, auto-logged as a deductible expense. Leave this on and <strong>Turn on card payments</strong> will be waiting on your dashboard, connect Stripe in ~2 min whenever you\'ve got your EIN and bank info handy. Cash & check work right now without it.</div></div>'+
     '</label>'+
-    '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
-    obBtn('Continue','_ob.step=10;renderObStep()')+
-    obBtn('Back','_ob.step=8;renderObStep()',true);
-}
-
-// Booked-jobs import (owner 2026-07-14): a mid-season contractor already has
-// work sold and scheduled. This step imports each as a lead (name + address)
-// with a job attached (date + value) so the calendar is populated the moment
-// they land on the dashboard — no lead→estimate→sign detour. obSubmit turns
-// each filled row into a client record + a bid-less job (bid_id:null).
-function obStepJobs(el){
-  el.innerHTML=
-    '<div style="margin-bottom:24px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('📋',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">Jobs already booked?</div><div style="font-size:14px;color:var(--text3)">Import work you\'ve already sold — each becomes a client with the job on your calendar. Optional; add crew, estimates, and more later. Skip if you\'re starting fresh.</div></div>'+
-    '<div id="ob-jobs-list">'+(_ob.jobs.length?_ob.jobs.map((j,i)=>obJobRow(j,i)).join(''):'')+'</div>'+
-    '<button onclick="obAddJob()" style="width:100%;padding:12px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;color:var(--blue);font-weight:700;margin-bottom:14px">+ Add a booked job</button>'+
-    '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
-    obBtn('Continue','obNextJobs()')+
-    obBtn(_ob.jobs.length?'Back':'Skip — none yet','_ob.step=9;renderObStep()',true);
-}
-function obJobRow(j,i){
-  return '<div style="border:1px solid var(--border2);border-radius:var(--r);padding:12px;margin-bottom:10px">'+
-    '<div style="display:flex;justify-content:space-between;margin-bottom:8px">'+
-      '<div style="font-size:13px;font-weight:700">Job '+(i+1)+'</div>'+
-      '<button onclick="_ob.jobs.splice('+i+',1);obStepJobs(document.getElementById(\'ob-body\'))" style="border:none;background:none;color:#A32D2D;cursor:pointer;font-size:18px;padding:0">×</button>'+
-    '</div>'+
-    '<input placeholder="Client name" autocapitalize="words" value="'+escHtml(j.client||'')+'" oninput="_ob.jobs['+i+'].client=this.value" style="width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
-    '<input placeholder="Job address" autocapitalize="words" value="'+escHtml(j.addr||'')+'" oninput="_ob.jobs['+i+'].addr=this.value" style="width:100%;box-sizing:border-box;margin-bottom:8px;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit">'+
-    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-      '<div><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:2px">Start date</label><input type="date" value="'+escHtml(j.start||'')+'" oninput="_ob.jobs['+i+'].start=this.value" style="width:100%;box-sizing:border-box;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit"></div>'+
-      '<div><label style="font-size:11px;color:var(--text3);display:block;margin-bottom:2px">Job value ($)</label><input type="number" inputmode="decimal" placeholder="0" value="'+escHtml(j.value!=null?String(j.value):'')+'" oninput="_ob.jobs['+i+'].value=this.value" style="width:100%;box-sizing:border-box;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-family:inherit"></div>'+
-    '</div>'+
-  '</div>';
-}
-function obAddJob(){
-  _ob.jobs.push({client:'',addr:'',start:'',value:''});
-  obStepJobs(document.getElementById('ob-body'));
-}
-function obNextJobs(){
-  const err=document.getElementById('ob-err');
-  // Optional step, but a row with a value or date needs a client name to become
-  // a lead — flag the incomplete row rather than silently dropping the work.
-  for(const j of _ob.jobs){
-    const hasData=(j.value&&parseFloat(j.value)>0)||j.start||(j.addr||'').trim();
-    if(hasData&&!(j.client||'').trim()){if(err)err.textContent='Add a client name for each job (or remove the empty row).';return;}
-  }
-  _ob.step=11;renderObStep();
-}
-function obStep9(el){
-  el.innerHTML=
-    '<div style="margin-bottom:28px"><div style="font-size:28px;margin-bottom:10px">'+svgIcon('✓',{size:28})+'</div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:4px">You\'re all set</div><div style="font-size:14px;color:var(--text3)">Review your details before creating your account</div></div>'+
-    '<div style="background:var(--bg2);border-radius:var(--r);padding:14px;margin-bottom:16px">'+
-      '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Name</span><strong>'+_ob.name+'</strong></div>'+
-      '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Email</span><strong>'+_ob.email+'</strong></div>'+
-      '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Business</span><strong>'+_ob.businessName+'</strong></div>'+
-      '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Trades</span><strong>'+(_ob.tradeLines.length?_ob.tradeLines.join(', '):_ob.businessType)+'</strong></div>'+
-      '<div style="display:flex;justify-content:space-between;margin-bottom:8px;font-size:13px"><span style="color:var(--text2)">Role</span><strong>'+_ob.role+'</strong></div>'+
-      '<div style="display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--text2)">Vehicles</span><strong>'+_ob.vehicles.length+'</strong></div>'+
-    '</div>'+
     '<div id="ob-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:8px"></div>'+
     '<div id="ob-progress" style="display:none;font-size:12px;color:var(--text3);text-align:center;margin-bottom:8px"></div>'+
     obBtn('Create my account','obSubmit()')+
-    obBtn('Back','_ob.step=10;renderObStep()',true);
+    obBtn('Back','_ob.step=2;renderObStep()',true);
 }
 
 async function obSubmit(){
@@ -1739,23 +1544,33 @@ async function obSubmit(){
   function setProgress(msg){if(prog){prog.style.display='';prog.textContent=msg;}}
   window._obInProgress=true;
   try{
-    setProgress('Creating your account...');
-    const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
-    if(authErr){
-      if(authErr.message?.toLowerCase().includes('already registered')||authErr.status===422){
-        document.getElementById('onboarding-overlay')?.remove();
-        supaShowLogin();
-        setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Account already exists — sign in below.';el.style.color='var(--blue)';}},150);
-        return;
+    let uid;
+    if(_ob.oauth&&typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id){
+      // Social sign-in already created the auth user AND a live session (RLS works),
+      // so there is nothing to signUp/signInWithPassword. Use the session we have and
+      // pull the email from the provider (there was no email field on the screen).
+      uid=_supaUser.id;
+      _ob.email=_supaUser.email||_ob.email||'';
+      setProgress('Setting up your business...');
+    } else {
+      setProgress('Creating your account...');
+      const{data:authData,error:authErr}=await _supa.auth.signUp({email:_ob.email,password:_ob.password});
+      if(authErr){
+        if(authErr.message?.toLowerCase().includes('already registered')||authErr.status===422){
+          document.getElementById('onboarding-overlay')?.remove();
+          supaShowLogin();
+          setTimeout(()=>{const el=document.getElementById('supa-login-err');if(el){el.textContent='Account already exists, sign in below.';el.style.color='var(--blue)';}},150);
+          return;
+        }
+        throw authErr;
       }
-      throw authErr;
+      // Sign in immediately to get a live session so RLS works for inserts
+      const{data:signInData,error:signInErr}=await _supa.auth.signInWithPassword({email:_ob.email,password:_ob.password});
+      if(signInErr)throw new Error('Account created, please sign in to continue.');
+      uid=signInData.user?.id;
+      if(!uid)throw new Error('Could not get user ID');
+      _supaUser=signInData.user;
     }
-    // Sign in immediately to get a live session so RLS works for inserts
-    const{data:signInData,error:signInErr}=await _supa.auth.signInWithPassword({email:_ob.email,password:_ob.password});
-    if(signInErr)throw new Error('Account created — please sign in to continue.');
-    const uid=signInData.user?.id;
-    if(!uid)throw new Error('Could not get user ID');
-    _supaUser=signInData.user;
 
     setProgress('Setting up your business...');
     const{data:acct,error:acctErr}=await _supa.from('accounts').insert({
@@ -1787,10 +1602,11 @@ async function obSubmit(){
     // step. Stored as explicit booleans so an unchecked box is a real false, not
     // an undefined that the default-true reader would flip back on.
     S.acceptCash=_ob.acceptCash!==false;S.acceptCheck=_ob.acceptCheck!==false;S.allowPayLater=_ob.allowPayLater!==false;
+    S.wantCards=_ob.wantCards!==false; // intent to take cards, nudged via the dashboard checklist, not auto-launched
     // Arrived via a sub-invite referral link? Record who brought them in, then
     // redeem the grant (single-use RPC): the inviter lands as this brand-new
     // account's first client/lead, and everything the inviter logged as paid
-    // to them becomes the opening income ledger — books start ready.
+    // to them becomes the opening income ledger, books start ready.
     if(typeof _claimSubReferralAttribution==='function')_claimSubReferralAttribution();
     if(typeof _redeemSubInviteGrant==='function'){
       setProgress('Loading your books...');
@@ -1802,7 +1618,7 @@ async function obSubmit(){
     // Import booked jobs (owner 2026-07-14): each filled row becomes a lead
     // (client) with a bid-less job attached, so the calendar is populated on
     // arrival. Pushed to the local arrays; the saveAll() below rides them up via
-    // supaSaveDebounced() — the same sync path every client/job uses. Rows
+    // supaSaveDebounced(): the same sync path every client/job uses. Rows
     // without a client name were already flagged in obNextJobs, so skip them here.
     if(Array.isArray(_ob.jobs)&&_ob.jobs.length){
       setProgress('Adding your booked jobs...');
@@ -1825,16 +1641,11 @@ async function obSubmit(){
     document.getElementById('onboarding-overlay')?.remove();
     window._obInProgress=false;
     saveAll();applyPermissions();renderDash();goPg('pg-dash');
-    // Owner chose auto-launch (2026-07-14): if they left "Take cards" on, kick
-    // off Stripe Connect now that the account row exists (it can't run earlier —
-    // there's nothing to attach Stripe to until obSubmit creates the account).
-    // startStripeConnect() redirects to Stripe's hosted onboarding on success; on
-    // error it just alerts and leaves them on the dashboard. Never blocks — a
-    // contractor without their EIN can bail and reconnect from Settings later.
-    if(_ob.wantCards!==false&&typeof startStripeConnect==='function'){
-      showToast&&showToast('Account created — let’s connect Stripe for card payments…','💳',5000);
-      setTimeout(()=>{try{startStripeConnect();}catch(_e){console.warn('[onboarding] Stripe auto-launch skipped:',_e);}},900);
-    }
+    // No Stripe auto-redirect (owner 2026-07-15): yanking a new contractor into an
+    // EIN/bank form the instant they sign up is the exact high-friction moment we
+    // defer everywhere else. Card setup lives ONLY on the dashboard checklist
+    // ("Turn on card payments"), so they connect Stripe when they're ready. Their
+    // intent is saved (S.wantCards) so we can nudge later; cash/check work now.
   }catch(e){
     window._obInProgress=false;
     console.error('Onboarding failed:',e);
@@ -1895,7 +1706,7 @@ function runSearch(q){
     }
   });
 
-  // Expenses — the main event for "Sherwin Williams" etc.
+  // Expenses: the main event for "Sherwin Williams" etc.
   (expenses||[]).forEach(e=>{
     if([e.vendor,e.notes,e.catLabel,e.job_name].some(f=>f?.toLowerCase().includes(q))){
       const dateStr=e.date?fmtDateShort(e.date):'';

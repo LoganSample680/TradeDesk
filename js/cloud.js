@@ -4,7 +4,7 @@ Object.defineProperty(window,'_stripeConnectStatus',{get:()=>_stripeConnectStatu
 // ── Invite URL handling (employee + sub referral) ────────────────────────────
 // ?sub_invite= is a REFERRAL, not an access grant: it carries only marketing
 // prefill (inviter's business name, the sub's name/trade) for the signup
-// screen. The sub creates their own completely separate account — nothing in
+// screen. The sub creates their own completely separate account, nothing in
 // the payload links to the inviter's data, so forgeable base64 is fine here,
 // unlike ?emp_invite= which mints server-verified claim tokens.
 function _parseSubInvitePayload(raw){
@@ -30,7 +30,7 @@ function _parseSubInvitePayload(raw){
   }
   // &grant= rides alongside ?sub_invite=: an opaque single-use token for the
   // server-side snapshot (inviter-as-lead + payment history). The data itself
-  // never travels in the URL — redemption happens post-signup via RPC.
+  // never travels in the URL, redemption happens post-signup via RPC.
   const grantTok=params.get('grant');
   if(grantTok&&/^[a-f0-9]{16,64}$/i.test(grantTok))localStorage.setItem('_pendingSubInviteGrant',grantTok);
   if(raw||subRaw||grantTok)history.replaceState(null,'',window.location.pathname);
@@ -39,7 +39,7 @@ function _parseSubInvitePayload(raw){
 async function _fetchStripeConnectStatus(){
   if(!supaEnabled()||!_supaUser)return null;
   // CREW: the status that matters is the BOSS's (payments from any link route to the
-  // account in the link's u= param — the effective uid). The Edge Function verifies
+  // account in the link's u= param, the effective uid). The Edge Function verifies
   // the team link server-side before honoring the target. Cache is keyed by the
   // EFFECTIVE account so an owner-and-crew dual identity never reads a stale mix.
   const _statusUid=(typeof _effectiveUid==='function'&&_effectiveUid())||_supaUser?.id||'';
@@ -71,7 +71,7 @@ async function loadStripeConnectStatus(){
     return;
   }
   // _supaUser may be null on first settings open if the app loaded from cache (offline mode).
-  // getSession() reads the token from localStorage instantly — no network needed.
+  // getSession() reads the token from localStorage instantly, no network needed.
   if(!_supaUser&&_supa){
     try{const{data:{session}}=await _supa.auth.getSession();if(session?.user)_supaUser=session.user;}catch(_e){}
   }
@@ -91,7 +91,7 @@ function _renderStripeConnectUI(el,data){
   if(!data||!data.connected){
     // A stored account the backend couldn't verify in THIS environment (e.g. a
     // live account viewed from a test-mode preview, or a deleted account). Offer
-    // an explicit reset so a fresh account can be connected — the dead-Connect trap.
+    // an explicit reset so a fresh account can be connected, the dead-Connect trap.
     if(data&&data.has_stored_account){
       el.innerHTML=
         '<div style="display:flex;align-items:flex-start;gap:8px;background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
@@ -128,7 +128,7 @@ function _renderStripeConnectUI(el,data){
     '<div style="display:flex;align-items:center;gap:8px;background:var(--green-lt);border:1px solid var(--green);border-radius:var(--r);padding:10px 12px;margin-bottom:10px">'+
       '<span style="font-size:18px">'+svgIcon('✅',{size:18})+'</span>'+
       '<div style="flex:1">'+
-        '<div style="font-size:13px;font-weight:700;color:var(--green-mid)">Stripe connected — payments active</div>'+
+        '<div style="font-size:13px;font-weight:700;color:var(--green-mid)">Stripe connected, payments active</div>'+
         '<div style="font-size:11px;color:var(--text3)">Account: '+escHtml(data.stripe_account_id)+(data.payouts_enabled?' · Payouts on':' · Payouts pending')+'</div>'+
       '</div>'+
     '</div>'+
@@ -161,14 +161,14 @@ function openStripeConnect(){
   window.open('https://express.stripe.com/','_blank');
 }
 
-// Unlink Stripe from this account — clears the stored pointer so the next
+// Unlink Stripe from this account, clears the stored pointer so the next
 // "Connect" starts fresh onboarding. Does NOT touch the Stripe account itself
 // (it may be the owner's real account). Replaces the manual Supabase clear we
 // used to run before reconnecting a test account.
 async function disconnectStripeConnect(){
   if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
   zConfirm(
-    'This unlinks Stripe from your TradeDesk account. Your Stripe account itself is not deleted — you can reconnect anytime. Clients won’t be able to pay online until you reconnect.',
+    'This unlinks Stripe from your TradeDesk account. Your Stripe account itself is not deleted, you can reconnect anytime. Clients won’t be able to pay online until you reconnect.',
     async ()=>{
       try{
         const session=await _supa.auth.getSession();
@@ -203,7 +203,7 @@ async function checkStripeConnectReturn(){
     if(st?.charges_enabled){
       showToast('Stripe connected! You can now receive card payments.','✅');
     } else {
-      showToast('Stripe setup needs a bit more info — check Settings → Stripe.','⚠️');
+      showToast('Stripe setup needs a bit more info, check Settings → Stripe.','⚠️');
     }
     goPg('pg-settings');
   } else if(params.get('stripe_reauth')==='1'){
@@ -218,7 +218,7 @@ async function sendPaymentLink(bidId){
   const balance=getBidBalance(bid);
   if(balance<0.50){zAlert('No balance outstanding on this bid.');return;}
   if(!navigator.onLine){
-    zAlert('Payment links require an internet connection — Stripe can\'t create a checkout session offline.\n\nOnce you\'re back online, tap Send Pay Link and it\'ll go right through. You can also record a manual cash or check payment now.',{title:'No internet connection'});
+    zAlert('Payment links require an internet connection, Stripe can\'t create a checkout session offline.\n\nOnce you\'re back online, tap Send Pay Link and it\'ll go right through. You can also record a manual cash or check payment now.',{title:'No internet connection'});
     return;
   }
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send payment links.');return;}
@@ -229,7 +229,7 @@ async function sendPaymentLink(bidId){
     showToast('Creating payment link…','⏳');
     // Send the client's HUB link, not a Stripe hosted-checkout redirect. The hub
     // homepage shows the balance and pays inline via the embedded Payment Element
-    // (client.html), so the customer never leaves for checkout.stripe.com — one
+    // (client.html), so the customer never leaves for checkout.stripe.com: one
     // consistent, higher-converting embedded flow. _uploadClientHub mints the token
     // (if absent) and publishes the current snapshot so the link resolves.
     await _uploadClientHub(c.id);
@@ -244,7 +244,7 @@ async function sendPaymentLink(bidId){
         '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+' · '+fmt(balance)+' due</div>'+
         '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
         '<button onclick="navigator.clipboard.writeText(\''+url+'\').then(()=>showToast(\'Copied!\',\'📋\'));this.textContent=\'✓ Copied\'" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
-        (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+escHtml(c.name.split(' ')[0])+', here\\\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+url+' — Thank you!\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Open in Messages</button>':'')+
+        (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+escHtml(c.name.split(' ')[0])+', here\\\'s your payment link for '+fmt(balance)+' owed to '+(S.bname||'us')+': '+url+', Thank you!\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Open in Messages</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
       ov.appendChild(box);document.body.appendChild(ov);
       ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -262,11 +262,11 @@ async function loadAccountData(){
   try{
     const{data:u}=await _supa.from('users').select('*').eq('id',_supaUser.id).maybeSingle();
     if(u&&u.account_id){
-      // This account has its own accounts row — it's a real owner/co-owner account, never
+      // This account has its own accounts row, it's a real owner/co-owner account, never
       // a linked crew member. Reset explicitly: _isEmployee/_employeeRecord/_contractorUserId
       // are shared globals that stay true/set from a PREVIOUS account's sign-in earlier in
       // this tab (switching accounts doesn't reload the page), so without this an owner
-      // signing in right after an employee session inherits the employee's nav gating —
+      // signing in right after an employee session inherits the employee's nav gating,
       // Settings, Team, Tracker, etc. all vanish even though this account is a full owner.
       _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
       _user=u;
@@ -276,7 +276,7 @@ async function loadAccountData(){
       _config=cfg;
       const{data:vehs}=await _supa.from('vehicles').select('*').eq('account_id',u.account_id);
       _vehicles=vehs||[];
-      // Seed from accounts only when S is empty — S (zj_data.settings + localStorage)
+      // Seed from accounts only when S is empty, S (zj_data.settings + localStorage)
       // is the source of truth once the user has saved Settings. Overwriting here
       // reverted every Settings save back to the onboarding values on reload.
       const _seeded=[];
@@ -302,7 +302,7 @@ async function loadAccountData(){
       return true;
     };
     const _pend=(()=>{try{return JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');}catch(_e){return null;}})();
-    // (0) SERVER-VERIFIED TOKEN — the forge-proof path. Links regardless of which
+    // (0) SERVER-VERIFIED TOKEN, the forge-proof path. Links regardless of which
     // email the crew member signed up with (the old flows silently dead-ended on a
     // mismatch); single-use and expiring, validated entirely server-side.
     if(_pend?.tok){
@@ -315,7 +315,7 @@ async function loadAccountData(){
         // invalid / used / expired → fall through; the mismatch alert below explains.
       }catch(_e){} // RPC not deployed yet → legacy paths below, unchanged
     }
-    // (1) Already-linked crew member. LIST, not maybeSingle — an employee active on
+    // (1) Already-linked crew member. LIST, not maybeSingle, an employee active on
     // two crews (subs work for multiple GCs) used to ERROR the lookup and fall
     // through to "not nested". Deterministic pick: remembered choice, else the most
     // recently joined; window.switchCrew(cid) re-targets and reloads.
@@ -330,10 +330,10 @@ async function loadAccountData(){
       }
       return _linkAsCrew(empRow,false);
     }
-    // (2) Pending invite by EMAIL MATCH — server-side (SECURITY DEFINER). Under strict
+    // (2) Pending invite by EMAIL MATCH, server-side (SECURITY DEFINER). Under strict
     // RLS the employee can't even SEE their unlinked roster row (employee_user_id null
     // → no policy grants it), so the legacy client-side select+update silently linked
-    // NOTHING on a from-migrations stack — hosted only worked via dashboard-era
+    // NOTHING on a from-migrations stack, hosted only worked via dashboard-era
     // permissive policies (same drift family as the missing columns, caught live by
     // the crew certification). The RPC links the most recent unlinked row for this
     // login's email atomically; the email comes from auth.users, never the client.
@@ -368,14 +368,14 @@ async function loadAccountData(){
     }
     // (4) A crew invite is pending but NOTHING linked: the crew member almost
     // certainly signed up with a different email than the boss put on the roster.
-    // This used to dead-end SILENTLY into a brand-new empty owner account — the
+    // This used to dead-end SILENTLY into a brand-new empty owner account, the
     // worst possible first impression. Say it out loud, then continue (they may
     // legitimately also be an owner).
     if(_pend&&(_pend.cid||_pend.tok)){
       localStorage.removeItem('_pendingEmpInvite');
       try{zAlert('Your crew invite from '+escHtml(_pend.bname||'your contractor')+' couldn’t be linked to this login ('+escHtml(_supaUser.email||'')+').\n\nIf you signed up with a different email than the invite was sent to, ask '+escHtml(_pend.bname||'them')+' to re-send the invite to this address. Continuing as a new business account for now.',{title:'Invite not linked'});}catch(_e){}
     }
-    // No users row — check for pre-schema user via zj_data
+    // No users row, check for pre-schema user via zj_data
     const{data:zd}=await _supa.from('zj_data').select('user_id').eq('user_id',_supaUser.id).maybeSingle();
     if(zd){
       _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
@@ -387,12 +387,12 @@ async function loadAccountData(){
     return false;
   }catch(e){
     console.warn('loadAccountData failed:',e);
-    // Network failure — restore from cache so offline sign-in still reaches supaLoadFromCloud()
+    // Network failure, restore from cache so offline sign-in still reaches supaLoadFromCloud()
     try{
       const _ac=JSON.parse(localStorage.getItem('zp3_acct_'+_supaUser.id)||'null');
       if(_ac){
         _user=_ac.user||{id:_supaUser.id,email:_supaUser.email,name:getOwnerName()||'',role:'owner',account_id:null};
-        // Explicit both ways — _isEmployee is a shared global that may already be true
+        // Explicit both ways, _isEmployee is a shared global that may already be true
         // from a different account earlier in this tab (see _applyEmployeeNavGating).
         if(_ac.isEmployee){_isEmployee=true;_contractorUserId=_ac.contractorUserId;}
         else{_isEmployee=false;_contractorUserId=null;_employeeRecord=null;}
@@ -426,7 +426,7 @@ async function _devLoadUserAccount(key){
     Promise.all(_TD_TABLES.map(({t})=>_supa.from(t).select('id,data').eq('user_id',u.userId).is('deleted_at',null))),
     _supa.from('zj_data').select('settings,checks_state').eq('user_id',u.userId).maybeSingle()
   ]);
-  if(tableResults.some(r=>r.error)){showToast('Load failed — run dev_support SQL policy in Supabase','❌');return;}
+  if(tableResults.some(r=>r.error)){showToast('Load failed, run dev_support SQL policy in Supabase','❌');return;}
   // Snapshot dev's own state (all arrays + _lastKnownIds) so exit restores cleanly
   _devSavedState={
     clients:[...clients],bids:[...bids],jobs:[...jobs],payments:[...payments],liens:[...liens],
@@ -510,14 +510,14 @@ async function _devRestoreSnapshot(key,idx){
   },{title:'Restore backup',yes:'Restore',danger:true});
 }
 // ── Toast notifications ────────────────────────────────────────────────
-// Supabase endpoint. DEFAULT = DIRECT to Supabase — validated on AT&T Fiber (the exact
+// Supabase endpoint. DEFAULT = DIRECT to Supabase, validated on AT&T Fiber (the exact
 // network §15.2's /api proxy was built for), which now resolves *.supabase.co fine.
 // Direct pays ZERO Cloudflare /api cost. The /api Pages-Function proxy is RETAINED as
 // the safety net, reached two ways:
 //   (a) explicit override: ?supadirect=0 (persists) forces the proxy; ?supadirect=1 forces direct.
 //   (b) AUTO-FALLBACK (supaInit): if direct is unreachable on a network (can't DNS-resolve
 //       / blocked), the boot probe silently switches THIS session to the proxy so the app
-//       still loads. So even an untested carrier self-heals — direct where it works, proxy
+//       still loads. So even an untested carrier self-heals, direct where it works, proxy
 //       where it must, never an outage.
 const _SUPA_DIRECT_URL = 'https://mwtsmctajhrrybblgorf.supabase.co';
 const _SUPA_PROXY_URL = location.origin + '/api';
@@ -529,29 +529,29 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.14.26.30';
+const APP_VERSION='07.17.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
 // flips true only when the td-sync channel confirms SUBSCRIBED (delivery is live).
 // Anything that depends on actually RECEIVING peer changes should gate on this, not
-// on the initiation flag — waiting on the initiation flag races ahead of delivery.
+// on the initiation flag, waiting on the initiation flag races ahead of delivery.
 let _tdRealtimeReady=false;
 try{Object.defineProperty(window,'_tdRealtimeReady',{get:()=>_tdRealtimeReady,set:v=>{_tdRealtimeReady=v;},configurable:true});}catch(_e){}
 const _deviceId=Math.random().toString(36).slice(2,10);
-// COALESCED RECONCILE — every cross-device "something changed, re-read the cloud" trigger
+// COALESCED RECONCILE, every cross-device "something changed, re-read the cloud" trigger
 // (the zj_data postgres_changes handler, the data_saved broadcast, and the reconcile
 // heartbeat) funnels through here instead of each calling supaLoadFromCloud itself. A single
-// debounced timer means a peer's ONE save — which fans out into a per-record patch, a settings
-// write, a marker write, and a broadcast — collapses to ONE trailing reload, not four (the
+// debounced timer means a peer's ONE save, which fans out into a per-record patch, a settings
+// write, a marker write, and a broadcast, collapses to ONE trailing reload, not four (the
 // "render storm" the ratchet caught). The per-record patch path is untouched: it still applies
 // + renders the row immediately; this only coalesces the heavier full-reload backstops. Because
 // EVERY trigger (heartbeat included) schedules the same reconcile, a dropped realtime event is
-// still caught — the backstop is preserved, unlike a "suppress while the socket was recently
+// still caught, the backstop is preserved, unlike a "suppress while the socket was recently
 // active" gate, which wrongly swallowed a dropped event that followed a delivered one.
 function _scheduleReconcile(delay){
-  if(_loadInProgress){_broadcastPending=true;return;} // a load is running — its finally re-fires
-  if(_reconcileTimer)return;                          // one already queued — coalesce into it
+  if(_loadInProgress){_broadcastPending=true;return;} // a load is running, its finally re-fires
+  if(_reconcileTimer)return;                          // one already queued, coalesce into it
   _reconcileTimer=setTimeout(()=>{
     _reconcileTimer=null;
     if(_loadInProgress){_broadcastPending=true;return;}
@@ -581,7 +581,7 @@ let _lastKnownIds={
 // → uploaded, so any path that doesn't warm the map degrades to today's full-upload.
 //
 // THE ONE DISCIPLINE: the hash input is ALWAYS the object that is/was the DB `data`
-// column — txFn(arr) on save, the loaded `r.data` on load — via _hashPayload(). And
+// column: txFn(arr) on save, the loaded `r.data` on load, via _hashPayload(). And
 // _syncedHash[id] is written ONLY AFTER that id's upsert batch resolves with no error,
 // never optimistically. NOT persisted: rebuilt from cloud on every load (the only
 // authoritative source of "what the server has"); an offline/cache boot leaves it empty
@@ -590,41 +590,41 @@ let _syncedHash={};
 // PENDING-EDIT GATE for the Phase-3 per-field merge: _rowSyncedAt[tbl] = Map(id → client-ms
 // of the last moment this row was KNOWN IN SYNC with the cloud (uploaded by us, loaded from
 // the cloud, or taken whole from a realtime event). _opApplyIncoming only protects a local
-// field whose clock is NEWER than this — i.e. a genuinely PENDING (not-yet-uploaded) edit.
+// field whose clock is NEWER than this, i.e. a genuinely PENDING (not-yet-uploaded) edit.
 // Without the gate, a device with a fast wall clock keeps "protecting" fields it already
 // uploaded long ago, silently rejecting every genuine peer update for the skew duration.
 // Client-clock domain on BOTH sides of the gate comparison, so skew cannot break it.
-// NOT persisted — resets like _syncedHash (a fresh boot treats nothing as pending).
+// NOT persisted, resets like _syncedHash (a fresh boot treats nothing as pending).
 let _rowSyncedAt={};
 // _rowServerTs[tbl] = Map(id → SERVER updated_at ms of the newest cloud copy of this row
 // this device has taken (load / delta merge / realtime). The peer-op applier uses it to
-// skip STALE ops — an op minted before the row snapshot we hold is already embodied in
+// skip STALE ops, an op minted before the row snapshot we hold is already embodied in
 // that snapshot (the server trigger stamps updated_at at commit, i.e. after the op's
 // mint time), so applying it would regress the row. 10s of slack absorbs author-clock
-// skew. NOT persisted — rebuilt by the same paths that rebuild _syncedHash.
+// skew. NOT persisted, rebuilt by the same paths that rebuild _syncedHash.
 let _rowServerTs={};
-// Ids the MOST RECENT load explicitly soft-deleted (deleted_at rode the delta) —
+// Ids the MOST RECENT load explicitly soft-deleted (deleted_at rode the delta),
 // {tbl: Set(id)}, reset at each load's start. The reconnect merge-back consults this
 // so it never resurrects a row a peer deliberately deleted during our outage.
 let _lastLoadDeletes={};
 // Fast deterministic 32-bit string hash (FNV-1a) over the JSON of a row payload.
-// CANONICAL serialization for hashing — key-order-independent, matching
+// CANONICAL serialization for hashing, key-order-independent, matching
 // JSON.stringify's semantics for undefined/function values. THE BUG THIS FIXES
 // (diagnosed 2026-07-03 via _deltaStats.rows + field-diff instrumentation):
 // JSON.stringify is key-order-sensitive, but Postgres jsonb RE-SORTS object
-// keys — so the save-side hash (in-memory insertion order) never matched the
+// keys: so the save-side hash (in-memory insertion order) never matched the
 // load/reconcile-side hash (jsonb order) for any row whose key order differed.
 // Every reconcile rebaselined those rows to the jsonb hash, the next save saw a
 // "change" and re-uploaded them, and reconcile flipped the baseline right back:
 // perpetual phantom re-uploads (42 byte-identical clients per save on the cert
-// account — silent write amplification on ANY real account). Sorting keys makes
+// account: silent write amplification on ANY real account). Sorting keys makes
 // the fingerprint identical for identical DATA regardless of ordering.
 function _canonicalJson(v){
   if(v===null)return 'null';
   const t=typeof v;
   if(t==='undefined'||t==='function')return undefined;   // caller decides (object: omit; array: null)
   if(t!=='object')return JSON.stringify(v);
-  // Honor toJSON() like JSON.stringify does — else a Date (or any toJSON object)
+  // Honor toJSON() like JSON.stringify does, else a Date (or any toJSON object)
   // would serialize as {} on the save side but as its string form after the jsonb
   // round-trip → a phantom hash mismatch. No synced field holds a Date today; this
   // is a guard so a future one can't silently reintroduce the re-upload loop.
@@ -649,7 +649,7 @@ window._deltaStats={upserts:0,skips:0,rows:[]};
 // Test hook: does the synced-hash map currently hold an entry for this id?
 window.__hashHas=(tbl,id)=>!!(_syncedHash[tbl]&&_syncedHash[tbl].has(String(id)));
 
-// ── OPLOG PHASE 0 — Hybrid Logical Clock + SHADOW op-derivation ────────────────
+// ── OPLOG PHASE 0, Hybrid Logical Clock + SHADOW op-derivation ────────────────
 // Groundwork for offline-first field-level sync (plan: custom oplog). PHASE 0 IS
 // PURELY OBSERVATIONAL: it derives the per-field ops a save WOULD emit and counts
 // them into window._opStats, but writes nothing authoritative and changes no merge
@@ -687,19 +687,19 @@ function _hlcObserve(ms,c){
 }
 
 // Canonical payload for a table = the txFn output (exactly what _syncedHash hashes and
-// what td_* stores) — so shadow ops diff the SAME bytes the cloud round-trips.
+// what td_* stores), so shadow ops diff the SAME bytes the cloud round-trips.
 function _opCanonicalRows(tdef){const arr=tdef.get()||[];return tdef.tx?tdef.tx(arr):arr;}
 // Tables whose canonical payload is a capped suffix (.slice). A row falling out of the
-// cap window is an EVICTION, never a user delete — so these are exempt from any
+// cap window is an EVICTION, never a user delete, so these are exempt from any
 // delete-by-absence accounting (FM-3).
 const _OP_CAPPED=new Set(['td_events','td_time_entries']);
-let _opPrevPayload={};   // {tbl: Map(id -> canonical payload)} — diff baseline
+let _opPrevPayload={};   // {tbl: Map(id -> canonical payload)}, diff baseline
 let _opPrevOwner=null;   // owner the baseline belongs to (cross-account guard)
 let _opRing=[];          // last N derived ops, for inspection (capped)
 window._opStats={emitted:0,creates:0,updates:0,phantomDeleteCandidates:0};
 // Master gate for ALL oplog work (Phase 0 derive/observe, Phase 1 durable log + field
 // clocks, Phase 2 td_ops sync, Phase 3 AUTHORITATIVE per-field merge). PHASE 3 FLIPS THIS
-// ON BY DEFAULT — the field-clock-protected merge is now live. KILL-SWITCH: set
+// ON BY DEFAULT, the field-clock-protected merge is now live. KILL-SWITCH: set
 // localStorage 'zp3_oplog_off'='1' to instantly fall back to whole-row sync with no deploy.
 // An explicit pre-set value (e.g. a test's addInitScript) always wins.
 window._opLogShadow=(window._opLogShadow!==undefined&&window._opLogShadow!==null)
@@ -717,13 +717,13 @@ window.__opLast=(tbl,id)=>{for(let i=_opRing.length-1;i>=0;i--){const o=_opRing[
 function _opClone(r){try{return JSON.parse(JSON.stringify(r));}catch(_e){return r;}}
 // Rebuild the diff baseline from the authoritative rows (mirrors the _syncedHash rebuild).
 // MUST run AFTER all post-load array mutation (dedupe, draft-bid filter) so the baseline
-// equals the settled state — else those filtered rows look like deletes on the next diff.
+// equals the settled state, else those filtered rows look like deletes on the next diff.
 function _opRebaseline(){
   if(!window._opLogShadow)return;
   try{
     const owner=_hlcOwner();
     // Reset field clocks ONLY on a genuine account switch (A→B), NEVER on a fresh boot
-    // (_opPrevOwner null) — else we'd wipe the clocks _opDbLoad just rehydrated from the
+    // (_opPrevOwner null), else we'd wipe the clocks _opDbLoad just rehydrated from the
     // durable IndexedDB log, breaking cross-reload field-clock durability (Phase 1 invariant).
     if(_opPrevOwner && owner!==_opPrevOwner)_fieldClocks={};
     _opPrevOwner=owner;
@@ -735,26 +735,26 @@ function _opRebaseline(){
     }
   }catch(_e){}
 }
-// SHADOW derive — called at the save choke-point. Emits the create/update ops the diff
+// SHADOW derive, called at the save choke-point. Emits the create/update ops the diff
 // implies (vs the baseline) and COUNTS would-be absence-deletes without acting on them.
-// Deletes are intentionally NOT derived here — in the real design they come only via the
+// Deletes are intentionally NOT derived here, in the real design they come only via the
 // _userDelete channel (FM-2); counting absence here just proves the diff stays clean.
 function _opShadowDerive(onlyTbl){
   if(!window._opLogShadow)return;
   try{
     const owner=_hlcOwner();
     if(owner!==_opPrevOwner){_opRebaseline();} // account switched → fresh baseline, no bleed
-    // An employee's redacted in-memory view (zeroed amounts etc.) is never real data — it
+    // An employee's redacted in-memory view (zeroed amounts etc.) is never real data, it
     // must never advance a FIELD CLOCK (the local merge-priority signal _opApplyIncoming
     // uses). supaSaveToCloud's _saveSkip correctly stops the redacted zero from reaching
     // the SERVER (cloud.js ~3862), but this derive runs BEFORE that skip-set is computed,
     // so without this guard it stamped a fresh, newer field clock from the zeroed value
     // anyway. That phantom "locally edited, newer than the server" clock then outranked
-    // the contractor's real server row on the next reload's merge — a redacted employee
+    // the contractor's real server row on the next reload's merge, a redacted employee
     // save silently zeroed the contractor's real bid amount in MEMORY, even though the
     // network was never touched. The op itself (ring + durable log) still gets created
-    // as before — the crew op-SYNC channel deliberately keeps redacted ops local and
-    // filters them only at push time (see the "redacted-table ops never push" test) —
+    // as before, the crew op-SYNC channel deliberately keeps redacted ops local and
+    // filters them only at push time (see the "redacted-table ops never push" test):
     // only the field-clock stamp is skipped, since that's the piece that poisons merges.
     const _redact=(typeof _employeeRedactedTables==='function')?_employeeRedactedTables():new Set();
     for(const tdef of _TD_TABLES){
@@ -767,9 +767,9 @@ function _opShadowDerive(onlyTbl){
         const p=prev.get(id);
         if(p&&_hashPayload(p)===_hashPayload(r))continue; // unchanged (canonical, key-order-safe)
         const fields={};
-        if(!p){Object.assign(fields,r);}                  // create — all fields
+        if(!p){Object.assign(fields,r);}                  // create: all fields
         // Per-field diff must use the SAME canonical comparison as the row-level gate above
-        // — raw JSON.stringify is key-order-sensitive, so a field whose nested object merely
+        //, raw JSON.stringify is key-order-sensitive, so a field whose nested object merely
         // round-tripped through Postgres jsonb with its keys re-sorted (no data change) could
         // mis-flag as "changed" here even though the row-level gate correctly saw no change
         // overall, stamping a fresh field clock from a phantom edit (feeds the same
@@ -782,7 +782,7 @@ function _opShadowDerive(onlyTbl){
         _opRing.push(_op);
         if(_opRing.length>2000)_opRing.shift();
         // Redacted table: keep the op itself (ring + durable log) so the crew push-time
-        // filter still has something to filter — but never let a zeroed/redacted value
+        // filter still has something to filter, but never let a zeroed/redacted value
         // stamp a field clock; that's the local merge-priority signal, and a phantom
         // "newer" clock from a redacted view must never outrank the real server value.
         if(!_redact.has(tbl))_opStampFields(tbl,id,fields,_ohlc); // PHASE 1: per-field HLC field clocks
@@ -797,12 +797,12 @@ function _opShadowDerive(onlyTbl){
   }catch(_e){}
 }
 
-// ── OPLOG PHASE 1 — durable IndexedDB op log + per-field HLC field clocks ──────
+// ── OPLOG PHASE 1, durable IndexedDB op log + per-field HLC field clocks ──────
 // Phase 0 kept derived ops only in an in-memory ring (lost on reload). Phase 1 makes the
 // log DURABLE (IndexedDB store 'ops') so a mid-edit crash/reload doesn't lose the intent,
-// and records a per-field HLC "field clock" — WHEN each field of each row was last set —
+// and records a per-field HLC "field clock", WHEN each field of each row was last set,
 // the substrate Phase 2's per-field merge resolves conflicts with. Still gated behind
-// window._opLogShadow and still observe-only (nothing authoritative reads it yet — Phase 3).
+// window._opLogShadow and still observe-only (nothing authoritative reads it yet, Phase 3).
 function _hlcParse(str){try{const p=String(str).split('.');const ms=parseInt(p[0],36);const c=parseInt(p[1],36);if(isNaN(ms))return null;return{ms,c:c||0,dev:p[2]||''};}catch(_e){return null;}}
 
 const _OP_DB_NAME='zp3_oplog',_OP_DB_VER=1,_OP_STORE='ops';
@@ -827,23 +827,23 @@ function _opPersist(op){
 }
 function _opDbAll(){return _opStore('readonly').then(st=>st?new Promise(res=>{try{const r=st.getAll();r.onsuccess=()=>res(r.result||[]);r.onerror=()=>res([]);}catch(_e){res([]);}}):[]);}
 function _opDbCount(){return _opDbAll().then(a=>a.length);}
-// Unsynced (pending) ops via the 'synced' INDEX — O(pending), never a full-store scan.
+// Unsynced (pending) ops via the 'synced' INDEX: O(pending), never a full-store scan.
 // At many-writer scale the hot path (every save, every reconnect rebase) reads this;
 // the prune-on-ack below keeps the pending set tiny, so this stays effectively free.
 function _opDbUnsynced(){return _opStore('readonly').then(st=>st?new Promise(res=>{try{const r=st.index('synced').getAll(0);r.onsuccess=()=>res(r.result||[]);r.onerror=()=>res([]);}catch(_e){res([]);}}):[]);}
-// PRUNE ops by seq — used after a successful push/ack. Ops are DELETED, not flagged:
+// PRUNE ops by seq, used after a successful push/ack. Ops are DELETED, not flagged:
 // the durable log holds only un-acked intent, so it stays O(pending edits) instead of
 // growing without bound (the review's unbounded-oplog-cost finding, now closed).
 function _opDbPrune(seqs){if(!seqs||!seqs.length)return Promise.resolve();return _opStore('readwrite').then(st=>{if(!st)return;for(const seq of seqs){try{st.delete(seq);}catch(_e){}}});}
 // ACK: a successful cloud save proves every op at-or-below `ceiling` is embodied in the
-// state that save just uploaded — prune them. Ops stamped DURING the in-flight save
+// state that save just uploaded, prune them. Ops stamped DURING the in-flight save
 // (user kept editing) carry a later HLC and survive to the next save. Field clocks are
-// deliberately NOT pruned — the per-field merge still needs them after the ack.
+// deliberately NOT pruned, the per-field merge still needs them after the ack.
 function _opDbPruneAcked(ceiling){
   if(!ceiling)return Promise.resolve();
   return _opDbUnsynced().then(ops=>_opDbPrune((ops||[]).filter(o=>_hlcCmp(o.hlc,ceiling)<=0).map(o=>o.seq))).catch(()=>{});
 }
-// Hard-clear the entire op store — account switch only (bug #39 posture: nothing of the
+// Hard-clear the entire op store, account switch only (bug #39 posture: nothing of the
 // outgoing account's footprint may survive on this device).
 function _opDbClear(){return _opStore('readwrite').then(st=>{if(st)try{st.clear();}catch(_e){}}).catch(()=>{});}
 
@@ -867,9 +867,9 @@ window.__opDbUnsynced=()=>_opDbUnsynced();
 window.__opPruneAcked=(c)=>_opDbPruneAcked(c);
 window.__fieldClock=(tbl,id,field)=>_opFieldClock(tbl,id,field);
 
-// ── OPLOG PHASE 2 — td_ops table + per-field HLC merge ────────────────────────
+// ── OPLOG PHASE 2, td_ops table + per-field HLC merge ────────────────────────
 // Per-field last-writer-wins by HLC: given local + incoming rows and their field clocks,
-// the merge keeps, FOR EACH FIELD, the value whose HLC is higher — so concurrent edits to
+// the merge keeps, FOR EACH FIELD, the value whose HLC is higher, so concurrent edits to
 // DIFFERENT fields of the same row BOTH survive (whole-row LWW drops one side). Computed
 // and validated in shadow mode here; Phase 3 makes it the authoritative merge.
 function _hlcCmp(a,b){if(a===b)return 0;if(!a)return -1;if(!b)return 1;return a>b?1:-1;}
@@ -887,10 +887,10 @@ function _opMergeRows(tbl,localRow,localClocks,incomingRow,incomingClocks){
 }
 window.__opMerge=(tbl,lr,lc,ir,ic)=>{try{return _opMergeRows(tbl,lr,lc,ir,ic);}catch(_e){return null;}};
 
-// ── OPLOG PHASE 3 — AUTHORITATIVE per-field merge on incoming records ──────────
+// ── OPLOG PHASE 3, AUTHORITATIVE per-field merge on incoming records ──────────
 // When a peer's row arrives (realtime / load), instead of clobbering the whole local row
 // we keep, FOR EACH FIELD, our local value IFF this device edited that field MORE RECENTLY
-// than the incoming version (local field-clock ms > the incoming row's updated_at ms) —
+// than the incoming version (local field-clock ms > the incoming row's updated_at ms),
 // otherwise we take the incoming value. So a concurrent edit to a DIFFERENT field survives
 // a peer's save, and a field nobody locally touched still syncs in. STRICTLY SAFER than the
 // old whole-row replace: it only ever protects a provably-newer local field, and falls back
@@ -900,18 +900,18 @@ function _opApplyIncoming(tbl,localRow,incomingRow,incomingUpdatedAt,_src){
     if(!window._opLogShadow||!localRow||!incomingRow||typeof incomingRow!=='object')return incomingRow;
     // Missing incoming clock → incMs=0. This is a REAL path, not an edge case: crew FULL
     // loads ride the load_account_data RPC whose redacted rows carry NO updated_at. The
-    // old `return incomingRow` bail whole-row-replaced on exactly those loads — erasing a
+    // old `return incomingRow` bail whole-row-replaced on exactly those loads, erasing a
     // crew device's own clocked fields (the 5-writer marker loss: the server row is the
     // concurrent-upsert LWW winner, so taking it whole drops every other writer's field
     // locally, and the restamped bookkeeping made the loss look "in sync"). With incMs=0
     // the same merge below runs: pending local fields (clock newer than the row's last
     // in-sync moment) win, local-only clocked fields survive, everything else takes the
-    // incoming value — identical rules to a timestamped row.
+    // incoming value, identical rules to a timestamped row.
     const incMs=(incomingUpdatedAt?new Date(incomingUpdatedAt).getTime():0)||0;
     const id=String(incomingRow.id!=null?incomingRow.id:localRow.id);
     const clocks=_opFieldClocks(tbl,id);
     // PENDING GATE: only protect fields edited AFTER this row was last known in sync with
-    // the cloud (uploaded/loaded/taken from realtime — see _rowSyncedAt). An edit that
+    // the cloud (uploaded/loaded/taken from realtime, see _rowSyncedAt). An edit that
     // already reached the cloud needs no protection (the incoming row reflects or
     // deliberately supersedes it), and gating on it kills the clock-skew failure where a
     // fast local clock rejected genuine peer updates for the whole skew duration. Both
@@ -934,24 +934,24 @@ function _opApplyIncoming(tbl,localRow,incomingRow,incomingUpdatedAt,_src){
       // whole-row-take semantics, so a field a peer deliberately dropped still drops.
       //   TRIED gating this on fcMs>syncedAt (only protect if still "pending") to fix a
       // separate over-upload bug (a field cleared long ago kept permanently poisoning the
-      // hash baseline) — reverted. Local field clocks are a client-side HLC timestamp
+      // hash baseline), reverted. Local field clocks are a client-side HLC timestamp
       // stamped the instant an edit happens; incMs/syncedAt are SERVER commit timestamps
       // that lag behind by real network latency. Under genuine concurrent multi-writer
       // load a device's own just-landed edit can easily have fcMs <= syncedAt (its own
       // save's ack arrives, bumping syncedAt, before a racing peer's stale-base push is
-      // even processed) — the gate then dropped that device's OWN field the instant a
+      // even processed), the gate then dropped that device's OWN field the instant a
       // concurrent peer's push arrived, confirmed by the swarm-convergence flow test
       // (12 concurrent writers, only 5/12 kept their own marker). Never losing a real
       // edit under concurrency is a stronger guarantee than avoiding an occasional
-      // harmless re-upload — the over-upload bug needs a different fix (e.g. pruning
+      // harmless re-upload, the over-upload bug needs a different fix (e.g. pruning
       // truly stale field clocks after a safe time window), not a recency gate here.
       else{out[k]=localRow[k];if(fc)keptLocal=true;}
     }
     const res=keptLocal?out:incomingRow; // nothing protected → byte-identical to the old whole-row replace
-    // SYNC TRACE (window._syncTrace, default off — certification diagnostics): record any
+    // SYNC TRACE (window._syncTrace, default off, certification diagnostics): record any
     // merge whose OUTPUT lost a field the local row held, tagged with the calling path.
     // A union merge (keptLocal) copies every local key into `out`, so a non-empty `lost`
-    // means a whole-row take — the exact event the crew marker-loss hunt needs named.
+    // means a whole-row take, the exact event the crew marker-loss hunt needs named.
     try{
       if(window._syncTrace){
         const lost=[];for(const k in localRow){if(!(k in res))lost.push(k);}
@@ -963,13 +963,13 @@ function _opApplyIncoming(tbl,localRow,incomingRow,incomingUpdatedAt,_src){
 }
 window.__opApplyIncoming=(tbl,lr,ir,ts)=>{try{return _opApplyIncoming(tbl,lr,ir,ts);}catch(_e){return ir;}};
 
-// ── OPLOG — LOAD-BEARING op channel (the 100-writer capability) ────────────────
+// ── OPLOG, LOAD-BEARING op channel (the 100-writer capability) ────────────────
 // The td_* row upserts carry WHOLE rows, so two devices saving different fields of the
-// SAME row inside the propagation window overwrite each other server-side — the one
+// SAME row inside the propagation window overwrite each other server-side, the one
 // concurrency class the Phase-3 pending-field merge cannot save (an edit that already
 // UPLOADED isn't "pending", so the peer's whole-row upsert clobbers it everywhere).
 // td_ops closes it: every save also publishes its per-field ops (field + value + HLC);
-// peers apply ops FIELD-BY-FIELD, guarded by their own field clocks — concurrent edits
+// peers apply ops FIELD-BY-FIELD, guarded by their own field clocks, concurrent edits
 // to different fields of one row all survive on every device, and each device's next
 // organic save uploads its merged row, converging the server's whole-row copy to the
 // union. Ops disseminate three ways: realtime td_ops INSERTs (instant), the pull below
@@ -981,14 +981,14 @@ window.__opApplyIncoming=(tbl,lr,ir,ts)=>{try{return _opApplyIncoming(tbl,lr,ir,
 // are harmless. Guards, in order:
 //   • own-device echo dropped by the callers (device_id);
 //   • STALE op (older than the row snapshot we hold, per _rowServerTs, −10s skew slack)
-//     skipped — its effect is already embodied in that snapshot;
+//     skipped: its effect is already embodied in that snapshot;
 //   • local pending intent flushed FIRST (targeted derive) so our un-derived edits get
-//     their own (later) clocks before the comparison — never silently absorbed;
+//     their own (later) clocks before the comparison, never silently absorbed;
 //   • unknown row: a CREATE op (fields carry `id`) materializes it unless this device
 //     deliberately deleted that id (same resurrection rule as _applyRealtimeRecord);
 //     a partial op for an unknown row is skipped (the row snapshot delivers it whole).
 // _syncedHash is deliberately NOT stamped: the merged local row now differs from the
-// server row, so the next organic save re-uploads the union — that, not an op-triggered
+// server row, so the next organic save re-uploads the union, that, not an op-triggered
 // save (which would storm at N devices), is how the server's row copy converges.
 function _opApplyPeerOps(ops){
   if(!window._opLogShadow||!ops||!ops.length)return;
@@ -1003,22 +1003,22 @@ function _opApplyPeerOps(ops){
       const id=String(op.row_id);
       const om=(_hlcParse(op.hlc)||{}).ms||0;
       const rts=(_rowServerTs[tbl]&&_rowServerTs[tbl].get(id))||0;
-      if(rts&&om&&om<rts-10000)continue; // stale — predates the row copy we already hold
+      if(rts&&om&&om<rts-10000)continue; // stale: predates the row copy we already hold
       const arr=tdef.get()||[];
       let idx=arr.findIndex(r=>String(r.id)===id);
       let createdHere=false;
       if(idx===-1){
-        if(op.fields.id===undefined)continue;                                  // partial op, row unknown — row snapshot will bring it
+        if(op.fields.id===undefined)continue;                                  // partial op, row unknown, row snapshot will bring it
         // TOMBSTONE-ECHO GUARD: ops publish only AFTER their row commits, so a CREATE op
-        // OLDER than our row snapshot describes a row the snapshot already accounted for —
+        // OLDER than our row snapshot describes a row the snapshot already accounted for,
         // and since it's not in our arrays, the snapshot saw its soft-DELETE. Materializing
         // it would resurrect a freshly-deleted row in memory (seen live: swarm devices that
         // booted inside the ops-pull overlap window held a ghost bid an earlier spec had
-        // just deleted; later-booting devices didn't — 8-vs-4 byte-equal split). A genuinely
+        // just deleted; later-booting devices didn't: 8-vs-4 byte-equal split). A genuinely
         // NEW row always carries an op newer than any snapshot we hold; if clock skew makes
-        // us skip one, its own row INSERT event / next delta delivers it — rows are the backstop.
+        // us skip one, its own row INSERT event / next delta delivers it, rows are the backstop.
         try{if(om&&_deltaCursor&&om<=new Date(_deltaCursor).getTime())continue;}catch(_e){}
-        if(_lastKnownIds[tbl]&&_lastKnownIds[tbl].has(id))continue;            // we deleted it locally — never resurrect
+        if(_lastKnownIds[tbl]&&_lastKnownIds[tbl].has(id))continue;            // we deleted it locally, never resurrect
         if(_locallyDeletedIds[tbl]&&_locallyDeletedIds[tbl].has(id))continue;
         arr.push({});idx=arr.length-1;createdHere=true;
       }
@@ -1034,11 +1034,11 @@ function _opApplyPeerOps(ops){
       if(applied){
         touched=true;
         if(createdHere){
-          // INVARIANT: ops are published only AFTER the author's row upserts commit — so a
+          // INVARIANT: ops are published only AFTER the author's row upserts commit, so a
           // CREATE op guarantees this exact row content is already IN the cloud. Stamp the
           // synced hash (op fields ARE the author's canonical payload, same key order) and
           // the sync bookkeeping so this device treats the row as in-sync and its next save
-          // no-ops. Without this, the receiver re-UPSERTED a row it merely learned about —
+          // no-ops. Without this, the receiver re-UPSERTED a row it merely learned about,
           // racing a concurrent delete and resurrecting it (seen live: B's delete undone
           // by A's echo of its own pointless upsert).
           (_lastKnownIds[tbl]||(_lastKnownIds[tbl]=new Set())).add(id);
@@ -1049,7 +1049,7 @@ function _opApplyPeerOps(ops){
         // Baseline the settled row so the NEXT derive doesn't re-emit the peer's fields
         // as ops from THIS device (op echo loop).
         try{(_opPrevPayload[tbl]||(_opPrevPayload[tbl]=new Map())).set(id,_opClone(row));}catch(_e){}
-      }else if(createdHere){arr.pop();} // every field lost to newer local clocks — drop the empty shell
+      }else if(createdHere){arr.pop();} // every field lost to newer local clocks, drop the empty shell
     }
   }catch(_e){}
   if(touched){
@@ -1058,7 +1058,7 @@ function _opApplyPeerOps(ops){
     // always precedes the row event for the SAME save (which renders via
     // _applyRealtimeRecord); doubling the pass broke the glitch-free render budget (9>8,
     // live). Save: ops are published only AFTER the author's rows committed, so applied
-    // op values are ALREADY in the cloud — a receiver-side save uploads nothing new, but
+    // op values are ALREADY in the cloud, a receiver-side save uploads nothing new, but
     // its cursor bump caused reconcile churn on every peer and its blind upsert raced
     // concurrent deletes (both seen live). The one thing that ever needs a receiver-side
     // upload is a UNION (a kept local field), and the row-merge paths that produce unions
@@ -1071,7 +1071,7 @@ window.__opApplyPeerOps=(ops)=>{try{_opApplyPeerOps(ops);return true;}catch(_e){
 function _opsSinceKey(){return 'zp3_ops_since_'+((_supaUser&&_supaUser.id)||'anon');}
 // Where to pull ops FROM: our stored position, floored at (row cursor − 10s). Ops older
 // than the row snapshot are embodied in it (and the _rowServerTs guard would skip them
-// anyway) — a fresh device must not replay the account's whole op history over the rows
+// anyway): a fresh device must not replay the account's whole op history over the rows
 // it just loaded. Returns '' when neither exists (caller then skips the ops leg).
 function _opsPullSince(baseCursor){
   let since=localStorage.getItem(_opsSinceKey())||'';
@@ -1094,7 +1094,7 @@ function _opIngestPulled(ops){
 }
 // Ops sync: PUSH this device's un-acked ops to td_ops (chunked), prune them on success,
 // then PULL peers' ops since our cursor and apply them. Best-effort: a missing td_ops
-// table or any error is swallowed — rows remain the correctness backstop. CREW logins
+// table or any error is swallowed, rows remain the correctness backstop. CREW logins
 // participate fully: their ops carry the CONTRACTOR's user_id (the td_ops_crew RLS
 // policy authorizes exactly that for actively-linked members, permission-filtered per
 // op_table), so the per-field concurrency protection covers crew writers too. Only
@@ -1108,7 +1108,7 @@ async function _opSyncOps(){
   _opSyncRunning=true;
   try{
     // Never push another login's ops, and never push ops for tables this crew
-    // member's permissions redact — the server would reject the whole batch (the
+    // member's permissions redact, the server would reject the whole batch (the
     // td_ops_crew policy is the enforced twin of this filter).
     const _redact=_employeeRedactedTables();
     const unsynced=(await _opDbUnsynced()).filter(op=>op.owner===_supaUser.id&&!_redact.has(op.table));
@@ -1137,15 +1137,15 @@ window.__opSync=()=>{try{return _opSyncOps()||Promise.resolve();}catch(_e){retur
 // THIS device, recorded here at each delete site via _recordLocalDelete(). A row
 // merely absent (a peer's, not-yet-synced) is never swept. Even bulk wipes
 // (clearAllData / clear*Only) just go through _userDelete, which records every id
-// that vanished — no special flag needed, and it survives the deferred async save.
+// that vanished, no special flag needed, and it survives the deferred async save.
 // _locallyDeletedIds itself is initialized further down, right after _TD_TABLES
-// (this object is BUILT FROM that list — see the note there) — _TD_TABLES is a
+// (this object is BUILT FROM that list, see the note there), _TD_TABLES is a
 // const declared later in this file, so referencing it here would throw before
 // the page even loads. The function declarations below are hoisted and safe to
 // keep here; only the data they touch needs to come after _TD_TABLES exists.
 let _locallyDeletedIds;
 // Record an explicit local delete so the next save propagates it (and ONLY it).
-// Call with the synced table name + the id(s) removed from that table's array —
+// Call with the synced table name + the id(s) removed from that table's array,
 // INCLUDING cascade removals (deleting a client also removes its bids/jobs/… → record
 // each under its own table). Safe no-op for unknown tables / empty ids.
 function _recordLocalDelete(tbl,...ids){
@@ -1157,7 +1157,7 @@ function _recordLocalDelete(tbl,...ids){
 // delete (its synchronous array mutations + any cascade), then record EVERY id that
 // disappeared as an explicit delete. Because the mutations are synchronous, nothing
 // else can change the arrays between snapshot and diff, so this captures exactly what
-// the user deleted — cascades included — and nothing a concurrent peer touched.
+// the user deleted, cascades included, and nothing a concurrent peer touched.
 // Usage: wrap the function body's mutation+save, e.g.
 //   function deleteBid(id){ if(!confirm)return; _userDelete(()=>{ bids=bids.filter(b=>b.id!==id); saveAll(); }); }
 function _userDelete(fn){
@@ -1171,14 +1171,14 @@ function _userDelete(fn){
   return ret;
 }
 
-// DEV-ONLY DELETE GATE (owner directive): nobody deletes in normal use — they edit,
+// DEV-ONLY DELETE GATE (owner directive): nobody deletes in normal use, they edit,
 // and old records auto-archive (kept forever). The ONE exception is the dev/owner
 // purging a rare duplicate via the hidden 3s long-press (below). is_dev comes from
 // the account config; dev-support mode counts too (only is_dev accounts can enter it).
 function _canDelete(){try{if(window._e2eAllowDelete)return true;return !!((typeof _config!=='undefined'&&_config&&_config.is_dev)||(typeof _devSupportMode!=='undefined'&&_devSupportMode));}catch(_e){return false;}}
 window._canDelete=_canDelete;
 
-// A dev deletion HARD-removes the actual DB row (for dupe cleanup — "delete the
+// A dev deletion HARD-removes the actual DB row (for dupe cleanup, "delete the
 // actual row too"), not a soft-delete: Supabase realtime emits a DELETE event so
 // online peers drop it live via _applyRealtimeRecord. Removes from memory + records
 // the intent so nothing local resurrects it. Best-effort, fire-and-forget.
@@ -1191,7 +1191,7 @@ function _devHardPurge(tbl,id){
   try{const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(_supaUser&&_supaUser.id);if(_supa&&uid)_supa.from(tbl).delete().eq('id',String(id)).eq('user_id',uid).then(()=>{},()=>{});}catch(_e){}
 }
 
-// Per-record table definitions — one entry per data type.
+// Per-record table definitions, one entry per data type.
 // arr: getter for the live in-memory array
 // set: setter (replaces array contents in-place; keeps same reference for other code)
 // transform: strip fields that shouldn't go to Supabase (e.g. inline base64)
@@ -1214,7 +1214,7 @@ const _TD_TABLES=[
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
 // Root cause (found 2026-07-10): this used to be a hand-listed object literal
-// that fell out of sync with _TD_TABLES above — td_maintenance was missing.
+// that fell out of sync with _TD_TABLES above, td_maintenance was missing.
 // _recordLocalDelete no-ops silently for any table absent here
 // (`if(!_locallyDeletedIds[tbl])return;`), so deleteMaintenanceRecord's
 // _userDelete call recorded nothing: the cloud sweep never saw the id as
@@ -1223,20 +1223,20 @@ const _TD_TABLES=[
 // FROM _TD_TABLES now so a future table can never repeat this class of bug.
 _locallyDeletedIds=Object.fromEntries(_TD_TABLES.map(({t})=>[t,new Set()]));
 // Dev-time guard: reports if _TD_TABLES ever gains a table this object
-// doesn't cover (the exact defect above) — a silent multi-week data-loss bug
+// doesn't cover (the exact defect above), a silent multi-week data-loss bug
 // turned into an immediate, loud console error instead. Self-checking since
 // the object is now derived, but stays as a permanent regression tripwire in
 // case anything ever re-hardcodes it.
 function _assertLocallyDeletedIdsComplete(){
   const missing=_TD_TABLES.map(({t})=>t).filter(t=>!_locallyDeletedIds[t]);
-  if(missing.length)console.error('[_locallyDeletedIds] missing table(s) — deletes on '+missing.join(', ')+' will never sweep from the cloud:',missing);
+  if(missing.length)console.error('[_locallyDeletedIds] missing table(s): deletes on '+missing.join(', ')+' will never sweep from the cloud:',missing);
   return missing;
 }
 _assertLocallyDeletedIdsComplete();
-// True when a Supabase error means "this table doesn't exist in the DB yet" — e.g. a
+// True when a Supabase error means "this table doesn't exist in the DB yet", e.g. a
 // new feature table on a deploy that runs ahead of its migration. Both preview and
 // production proxy to the SAME Supabase project, so an unmerged migration means the
-// table is absent for everyone. Such an error must never abort load/save — that would
+// table is absent for everyone. Such an error must never abort load/save: that would
 // trap every device in an offline loop. Real errors (auth, network) are not matched.
 function _isMissingTableErr(err){
   return !!err&&(err.code==='42P01'||err.code==='PGRST205'||/does not exist|could not find the table|schema cache/i.test(err.message||''));
@@ -1246,7 +1246,7 @@ function _isMissingTableErr(err){
 // from their team permissions (the SAME matrix the server RPC load_account_data
 // enforces). Used in TWO places that MUST agree:
 //   1. The server zeroes these tables' money keys on load.
-//   2. supaSaveToCloud SKIPS writing these tables back — so a redacted (zeroed)
+//   2. supaSaveToCloud SKIPS writing these tables back, so a redacted (zeroed)
 //      array can NEVER overwrite the contractor's real amounts. This guard is
 //      permission-derived, not RPC-derived, so corruption is impossible even
 //      before the RPC migration reaches production (where load falls back to the
@@ -1259,7 +1259,7 @@ window.switchCrew=function(cid){
 };
 
 // KEEP IN LOCKSTEP with crew_perm() in supabase/migrations/20260715_crew_rls_and_invites.sql
-// — that policy function is the SERVER-enforced twin of this map (crew writes/reads/ops
+//, that policy function is the SERVER-enforced twin of this map (crew writes/reads/ops
 // are permission-gated per table by the database, not just by this client-side skip).
 function _employeeRedactedTables(){
   if(!_isEmployee)return new Set();
@@ -1285,7 +1285,7 @@ let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
     const row=e.target.closest('[data-lp-id]');
     if(!row)return;
     // Every other [data-lp-id] row is a DEV-ONLY hard-purge gesture, inert for
-    // real users. Time Log rows are the one exception — the gesture there
+    // real users. Time Log rows are the one exception, the gesture there
     // calls deleteTimeEntry(), a real soft-delete that already re-checks
     // ownership/permission itself (js/jobs.js) and is only rendered onto rows
     // _tlCanEdit() already approved (js/timelog.js _tlRow), so it's safe to
@@ -1315,7 +1315,7 @@ let _lpTimer=null,_lpFired=false,_lpStartX=0,_lpStartY=0;
   document.addEventListener('contextmenu',e=>{if(e.target.closest('[data-lp-id]'))e.preventDefault();});
 })();
 function _showLpDeletePopup(row){
-  _lpFired=false; // reset immediately — popup buttons must not be swallowed by capture handler
+  _lpFired=false; // reset immediately, popup buttons must not be swallowed by capture handler
   document.getElementById('_lp-del-popup')?.remove();
   const id=row.dataset.lpId,type=row.dataset.lpType,label=row.dataset.lpLabel||'this record';
   const isClient=(type==='lead'||type==='client');
@@ -1337,14 +1337,14 @@ function _showLpDeletePopup(row){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _lpDoDelete(id,type){
-  // timelog is the one non-dev-gated type (see _lpStart) — deleteTimeEntry()
+  // timelog is the one non-dev-gated type (see _lpStart), deleteTimeEntry()
   // is a real soft-delete that re-checks ownership/permission itself, unlike
   // every other branch below which is a dev-only hard purge.
   if(type==='timelog'){if(typeof deleteTimeEntry==='function')deleteTimeEntry(parseInt(id,10));return;}
   if(typeof _canDelete==='function'&&!_canDelete())return; // DEV-ONLY (defense in depth)
   const nid=parseInt(id,10);
   // DEV HARD DELETE (owner directive): the long-press purges the ACTUAL row(s) via
-  // _devHardPurge, not a soft-delete — for rare dupe cleanup. Realtime DELETE events
+  // _devHardPurge, not a soft-delete, for rare dupe cleanup. Realtime DELETE events
   // propagate to online peers. Cascades mirror the old soft-delete cascade shapes.
   if(type==='income'){_devHardPurge('td_income',nid);if(typeof renderIncome==='function')renderIncome();}
   else if(type==='payment'){_devHardPurge('td_payments',nid);if(typeof renderIncome==='function')renderIncome();if(typeof renderClientDetail==='function')renderClientDetail();}
@@ -1387,14 +1387,14 @@ function _lpDeleteClientById(id,fromType){
 
 let _proposalViews={};
 let _proposalViewsByBid={};
-// Three separate timestamp maps per bid_id — each tracks a distinct open event:
+// Three separate timestamp maps per bid_id, each tracks a distinct open event:
 let _proposalViewsByBidHubClient={};   // client opened the shared hub link (client.html)
 let _proposalViewsByBidClient={};      // client opened a specific proposal (sign.html)
 let _proposalViewsByBidContractor={};  // contractor previewed the proposal
-// View count maps — how many times each event type has occurred per bid
+// View count maps, how many times each event type has occurred per bid
 let _proposalViewsByBidHubCount={};    // number of hub opens
 let _proposalViewsByBidClientCount={}; // number of proposal opens
-// Sign-flow funnel — furthest step the client reached inside sign.html
+// Sign-flow funnel, furthest step the client reached inside sign.html
 let _proposalViewsByBidStep={};        // bid_id → 'approved'|'signature_ready'|'payment_viewed'|'method_selected'|'signed'
 let _proposalViewsByBidStepAt={};      // bid_id → timestamp that step was first reached
 // Expose on window so Playwright E2E tests can inject test data via page.evaluate()
@@ -1412,12 +1412,12 @@ Object.defineProperty(window,'_proposalViewsByBidStepAt',{get:()=>_proposalViews
 let _loadedFromCacheOnly=false;
 // True once this session has either (a) authoritatively loaded the cloud settings, or
 // (b) confirmed this is a brand-new account with nothing in the cloud to clobber. Until
-// then, supaSaveToCloud must NOT push the settings blob — a fresh/cache-wiped boot starts
+// then, supaSaveToCloud must NOT push the settings blob, a fresh/cache-wiped boot starts
 // with DEFAULT settings (goal 0, location off), and pushing those before the real values
 // load overwrites the saved cloud settings (the "settings/location don't stick" bug).
 let _authSettingsLoaded=false;
 // Deliberate, user-initiated "Clear all data" wipe. When true, supaSaveToCloud's
-// accidental-wipe sanity guard is bypassed — emptying every array IS the intent, so the
+// accidental-wipe sanity guard is bypassed, emptying every array IS the intent, so the
 // soft-delete sweep MUST reach the cloud (else the cleared rows resurrect on reload).
 let _deliberateWipe=false;
 function _setDeliberateWipe(v){_deliberateWipe=!!v;}
@@ -1435,11 +1435,11 @@ function supaEnabled(){return !!(SUPA_URL&&SUPA_KEY);}
 function _armBootCascade(){
   const d=document.getElementById('pg-dash');
   if(!d||!d.classList.contains('active'))return;
-  // Cascade plays RIGHT AWAY as the boot overlay lifts — including BEHIND a boot
+  // Cascade plays RIGHT AWAY as the boot overlay lifts, including BEHIND a boot
   // popup (owner: blank white behind a popup looks odd; the dashboard should be
   // filling in under the popup's scrim). Delays are assigned over VISIBLE cards
   // ONLY, so hidden/empty widgets (crew/alerts/contracts with no data) leave no
-  // gaps — the ripple flows smoothly top→bottom over exactly what's on screen.
+  // gaps: the ripple flows smoothly top→bottom over exactly what's on screen.
   // Backwards `both` fill keeps each card invisible until its own delay elapses,
   // so no boot-hold class (and no blank-hold) is needed.
   let count=0;
@@ -1466,28 +1466,34 @@ function _armBootCascade(){
     d.querySelectorAll('.tbar,#dash-widget-root>.td-dw').forEach(el=>{el.style.animationDelay='';});
   }catch(_e){}},total);
 }
-function _removeBootOverlay(){
+function _removeBootOverlay(immediate){
   const o=document.getElementById('supa-boot-overlay');if(!o)return;
   // A version/SW update arrived during this boot and a reload is queued (new
-  // preview/production build). Keep the loading screen UP and reload beneath it —
+  // preview/production build). Keep the loading screen UP and reload beneath it,
   // fading out, flashing the dash, then re-showing a second loading screen is the
   // "boot screen shows twice" bug. One continuous load, slightly longer.
   if(typeof _deferredReload!=='undefined'&&(_deferredReload||_reloadPending))return;
-  // MIN STAGE TIME (owner: "is our boot screen too short?" — yes, on fast loads
-  // the intro was cut off mid-breath). Hold the overlay until it has been on
-  // screen ≥2s: one halo pulse + a wordmark sheen play before the lift-away.
-  // Slow loads are unaffected — real loading always governs.
-  try{
-    const _t0=window._sboT0||0;
-    if(_t0&&!o._minWaited){
-      const _left=4000-(Date.now()-_t0);   // ≥4s on screen (owner: 2.8s felt too short) — the intro gets room to breathe
-      if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
-    }
-  }catch(_e){}
-  // Boot waterfall — popup-gated (owner rule: "waterfall builds after popups;
-  // no popups → after boot load"). _armBootCascade holds the cards invisible,
-  // waits out any boot popup (collect alert, verdicts), then pours them in.
-  try{_armBootCascade();}catch(_e){}
+  // Signed-out boot goes straight to the login screen (immediate=true): there's no
+  // dashboard to reveal, so the "let the intro breathe" min-hold and the card
+  // cascade below are pure dead time, the owner sits watching a spinner before a
+  // login they could already be typing into. Skip both and let the login fade in.
+  if(!immediate){
+    // MIN STAGE TIME (owner: "is our boot screen too short?", yes, on fast loads
+    // the intro was cut off mid-breath). Hold the overlay until it has been on
+    // screen ≥2s: one halo pulse + a wordmark sheen play before the lift-away.
+    // Slow loads are unaffected, real loading always governs.
+    try{
+      const _t0=window._sboT0||0;
+      if(_t0&&!o._minWaited){
+        const _left=4000-(Date.now()-_t0);   // ≥4s on screen (owner: 2.8s felt too short), the intro gets room to breathe
+        if(_left>60){o._minWaited=true;setTimeout(_removeBootOverlay,_left);return;}
+      }
+    }catch(_e){}
+    // Boot waterfall, popup-gated (owner rule: "waterfall builds after popups;
+    // no popups → after boot load"). _armBootCascade holds the cards invisible,
+    // waits out any boot popup (collect alert, verdicts), then pours them in.
+    try{_armBootCascade();}catch(_e){}
+  }
   o.classList.add('td-fadeout');
   setTimeout(()=>{
     o.remove();
@@ -1504,13 +1510,13 @@ function _removeBootOverlay(){
     }
     else{
       // Auto-resume: if the contractor was mid-estimate when the app closed or
-      // the phone switched tabs, jump straight back into it — that unfinished
+      // the phone switched tabs, jump straight back into it, that unfinished
       // estimate is what they're most likely coming back for. All the guards
       // (same account, fresh, bid still unsent) live in the function.
       setTimeout(()=>{if(typeof _maybeResumeActiveEstimate==='function')_maybeResumeActiveEstimate();},120);
     }
     // The pipe inbox: payments/job addresses from linked GCs land
-    // automatically — kicked shortly after boot so it never competes with
+    // automatically: kicked shortly after boot so it never competes with
     // the boot render. No-op for accounts with no links.
     setTimeout(()=>{if(typeof _ingestPipeInbox==='function')_ingestPipeInbox(true);},1800);
     // Restore any unsaved form fields that were open when auto-update fired
@@ -1531,7 +1537,7 @@ function _removeBootOverlay(){
                   const el=document.getElementById(id);
                   if(el&&val!==undefined)el.value=val;
                 });
-                showToast('New lead form restored — review and save','📋');
+                showToast('New lead form restored, review and save','📋');
               },80);
             }
           },200);
@@ -1547,7 +1553,7 @@ function _removeBootOverlay(){
             const el=document.getElementById(id);
             if(el&&val!==undefined){el.value=val;restored++;}
           });
-          if(restored>0)showToast('Form data restored — review and save','📋');
+          if(restored>0)showToast('Form data restored, review and save','📋');
         },150);
       }
     }catch(e){}
@@ -1558,22 +1564,22 @@ function _removeBootOverlay(){
     // Employee vehicle picker (after boot, if not already selected today)
     setTimeout(()=>{
       if(typeof _checkEmployeeVehiclePicker==='function')_checkEmployeeVehiclePicker();
-      // Crew location tracking — inits if the contractor enabled it and the person
+      // Crew location tracking, inits if the contractor enabled it and the person
       // (employee or the owner tracking their own time) consents; shown after the
       // vehicle picker so they don't stack. Business-hours gating is in _geoTrackInit().
       if(typeof _geoTrackInit==='function')setTimeout(_geoTrackInit,1400);
     },700);
   },320);
 }
-// Count of distinct rooms/surfaces on a bid — used by the sync merge to decide
+// Count of distinct rooms/surfaces on a bid, used by the sync merge to decide
 // which copy of a bid is "richer" so a merge never replaces a fuller record with
-// a sparser one. (surfaces/roomScopeMap are legacy paint-era fields — still
+// a sparser one. (surfaces/roomScopeMap are legacy paint-era fields, still
 // meaningful as a tiebreaker for old records; `updated` stamp decides first.)
 function _bidRichness(b){
   if(!b)return -1;
   const surf=Array.isArray(b.surfaces)?b.surfaces.length:0;
   const rooms=(b.roomScopeMap&&typeof b.roomScopeMap==='object')?Object.keys(b.roomScopeMap).length:0;
-  return surf*100+rooms; // surfaces weighted heavier — they are the measurements that get lost
+  return surf*100+rooms; // surfaces weighted heavier, they are the measurements that get lost
 }
 // Pick the authoritative copy when the same bid id exists in two places: newest
 // `updated` stamp wins; if stamps tie or are missing, the richer copy wins.
@@ -1585,8 +1591,31 @@ function _pickBid(a,b){
 }
 async function supaInit(){
   if(!supaEnabled())return;
+  // OAuth return: capture the session params from the URL and SCRUB them from the
+  // address bar IMMEDIATELY, on the first tick of boot, before the health probe or
+  // any analytics beacon can read the current URL. The tokens ride back in the URL
+  // (hash for Apple's implicit return, ?code= for PKCE); leaving them there even for
+  // a moment lets a beacon / browser history / a screenshot capture a live token.
+  // Stash them in memory and finish the handshake once the client is built below.
+  let _oauthRet=null;
+  try{
+    const _oauthProv=localStorage.getItem('_oauthPending');
+    if(_oauthProv){
+      const _u=new URL(window.location.href);
+      const _hp=new URLSearchParams((window.location.hash||'').replace(/^#/,''));
+      _oauthRet={
+        prov:_oauthProv,
+        code:_u.searchParams.get('code'),
+        htok:_hp.get('access_token'),
+        hrefresh:_hp.get('refresh_token'),
+        err:_u.searchParams.get('error_description')||_u.searchParams.get('error')||_hp.get('error_description')||_hp.get('error')
+      };
+      // Wipe tokens/code out of the URL right now (kept the origin+path only).
+      try{history.replaceState(null,'',_u.origin+_u.pathname);}catch(_e){}
+    }
+  }catch(_e){}
   // AUTO-FALLBACK: if we're set to talk DIRECT to Supabase, confirm this network can
-  // actually reach it before building the client. A 2.5s health probe — any HTTP
+  // actually reach it before building the client. A 2.5s health probe, any HTTP
   // response (even 401) means reachable → stay direct; a DNS/network/timeout error
   // means this carrier can't resolve *.supabase.co → silently switch to the /api proxy
   // for this session so the app still loads. The probe runs only in direct mode, so
@@ -1595,7 +1624,10 @@ async function supaInit(){
     let _directOk=false;
     try{
       const _c=new AbortController();const _t=setTimeout(()=>_c.abort(),900);
-      await fetch(_SUPA_DIRECT_URL+'/auth/v1/health',{signal:_c.signal});
+      // Send the anon apikey so the health endpoint answers 200 instead of 401.
+      // We only care that SOMETHING answered (reachability), but a bare 401 prints
+      // a red error line in the console on every boot; the key makes it clean.
+      await fetch(_SUPA_DIRECT_URL+'/auth/v1/health',{signal:_c.signal,headers:{apikey:SUPA_KEY}});
       clearTimeout(_t);_directOk=true;
     }catch(_e){_directOk=false;}
     if(!_directOk){SUPA_URL=_SUPA_PROXY_URL;try{localStorage.setItem('zp3_supa_fellback','1');}catch(_e2){}}
@@ -1604,7 +1636,7 @@ async function supaInit(){
     _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{
       auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storage:window.localStorage},
       // HARD FETCH TIMEOUT (30s): supabase-js has none, so a single stalled request left a
-      // save pending FOREVER — _pendingSavePromise never settled, every reconcile reload
+      // save pending FOREVER, _pendingSavePromise never settled, every reconcile reload
       // deferred behind it, and the device stopped converging until a page reload (observed
       // live: the wedged A→B delete + the sibling sign-in hang). An aborted request rejects
       // → the save's finally clears the pending promise → the retry path takes over.
@@ -1616,16 +1648,16 @@ async function supaInit(){
         return fetch(url,{...opts,signal:_ac.signal}).finally(()=>clearTimeout(_tt));
       }}
     });
-    // Realtime connects straight to Supabase — WebSocket proxying through
+    // Realtime connects straight to Supabase, WebSocket proxying through
     // Cloudflare Pages is unreliable, and a dead socket silently kills
     // cross-device live sync. REST now ALSO defaults to direct (see SUPA_URL);
     // the /api proxy is the auto-fallback when direct can't be reached. If the
     // direct socket fails, the reconcile heartbeat covers it.
     // GATED on non-localhost: forcing the HOSTED socket unconditionally created a
-    // ZOMBIE subscription on any non-hosted backend — the socket connects to the
+    // ZOMBIE subscription on any non-hosted backend, the socket connects to the
     // cloud project (valid key), reports SUBSCRIBED, and never delivers an event,
     // because the data lives elsewhere (the local test stack today; the self-hosted
-    // Proxmox Supabase after the migration — this line would have silently killed
+    // Proxmox Supabase after the migration, this line would have silently killed
     // realtime for the entire production app there). On localhost the endpoint
     // derives from SUPA_URL, and the local /api proxy carries the WS upgrade.
     // Derived from _SUPA_DIRECT_URL (one source of truth for the migration).
@@ -1634,6 +1666,45 @@ async function supaInit(){
         _supa.realtime.endPoint=_SUPA_DIRECT_URL.replace(/^https/,'wss')+'/realtime/v1/websocket';
       }
     }catch(_e){}
+    // OAuth return handshake. signInWithOAuth (Google/Apple) redirects the browser
+    // to the provider and back here with the session in the URL (?code= for PKCE,
+    // or #access_token= for implicit). The client is built detectSessionInUrl:false
+    // so recovery / magic links aren't silently consumed, which means an OAuth
+    // return would otherwise be ignored and the user never actually signs in. We
+    // complete it by hand, but ONLY when _oauthPending was set by _obOAuth right
+    // before the redirect, so a stray recovery ?code= is never touched. Then scrub
+    // the params so a refresh or Back can't re-run the exchange or leave the token
+    // sitting in the address bar / history.
+    try{
+      if(_oauthRet){
+        // The provider / Supabase can hand back an explicit error instead of a code
+        // (denied consent, provider not configured, redirect-url mismatch). Surface it
+        // rather than silently landing in local mode looking "not synced". The tokens
+        // were already scrubbed from the URL at the top of boot; we finish with the
+        // in-memory copy here now that _supa exists.
+        let _oaFail=_oauthRet.err||null;
+        if(_oauthRet.code&&_supa.auth.exchangeCodeForSession){
+          try{const{error:_ee}=await _supa.auth.exchangeCodeForSession(_oauthRet.code);if(_ee)_oaFail=_ee.message||String(_ee);}
+          catch(_e){_oaFail=(_e&&_e.message)||String(_e);}
+        } else if(_oauthRet.htok&&_supa.auth.setSession){
+          try{const{error:_se}=await _supa.auth.setSession({access_token:_oauthRet.htok,refresh_token:_oauthRet.hrefresh});if(_se)_oaFail=_se.message||String(_se);}
+          catch(_e){_oaFail=(_e&&_e.message)||String(_e);}
+        } else if(!_oauthRet.err){
+          // Marked pending but came back with neither a code nor a token: the redirect
+          // likely landed on a different origin than the one that started the flow (so
+          // the PKCE verifier isn't in this localStorage), or the params were stripped.
+          _oaFail='no auth code returned (redirect landed without ?code=)';
+        }
+        localStorage.removeItem('_oauthPending');
+        if(_oaFail){
+          console.warn('[oauth] '+_oauthRet.prov+' sign-in did not complete:',_oaFail);
+          window._oauthFailMsg=_oauthRet.prov+' sign-in did not finish: '+_oaFail;
+        }
+      }
+    }catch(_e){console.warn('[oauth] handshake error:',_e);}
+    // Surface an OAuth failure to the user once boot settles (after the overlay lifts),
+    // so a failed social sign-in reads as an error, not a mysterious not-synced screen.
+    if(window._oauthFailMsg){setTimeout(()=>{try{if(typeof showToast==='function')showToast(window._oauthFailMsg,'⚠️',7000);}catch(_e){}window._oauthFailMsg=null;},1200);}
     const{data:{session}}=await _supa.auth.getSession();
     if(session){
       _supaUser=session.user;
@@ -1645,16 +1716,25 @@ async function supaInit(){
         await supaLoadFromCloud();
         _supaCloudLoaded=true;
       } else {
-        // Signed in but no data at all — go to app, let them use it. A brand-new account has
-        // NOTHING in the cloud to clobber, so settings saves are safe (onboarding's first save).
+        // Signed in but no data at all. Route them INTO onboarding ONLY when THIS boot
+        // actually came back from a Google/Apple redirect (_oauthRet is set by the
+        // handshake above). That's the real "first-time social signup" case, and it's
+        // the ONLY time we want the full-screen onboarding overlay to auto-open. Any
+        // other accountless boot (an abandoned/empty account, and every test-harness
+        // boot, which never carries OAuth params) gets the plain empty dashboard, not
+        // an overlay that would block the whole UI.
         _authSettingsLoaded=true;
-        _removeBootOverlay();
-        renderDash();
-        if(typeof _fetchScopeRates==='function')_fetchScopeRates();
         supaSetStatus('cloud');
+        if(_oauthRet&&!window._obInProgress&&typeof _beginOAuthOnboarding==='function'){
+          _beginOAuthOnboarding();
+        } else {
+          _removeBootOverlay();
+          renderDash();
+          if(typeof _fetchScopeRates==='function')_fetchScopeRates();
+        }
       }
     } else {
-      // No valid session — load from cache if available, regardless of navigator.onLine
+      // No valid session, load from cache if available, regardless of navigator.onLine
       // (iOS reports onLine:true even on airplane mode, so the flag is not reliable).
       // onAuthStateChange + _startOfflineWatcher must always be reached below, so no early return.
       let _cacheLoaded=false;
@@ -1683,8 +1763,10 @@ async function supaInit(){
         }catch(_ce){}
       }
       if(!_cacheLoaded){
-        // Online or cache parse failed — show login screen
-        _removeBootOverlay();
+        // Online or cache parse failed, show login screen. immediate=true: no
+        // session means we're going to login, not a dashboard, so fade the boot
+        // overlay out now instead of holding the spinner for the 4s intro.
+        _removeBootOverlay(true);
         renderDash();
         supaSetStatus('local');
         supaShowLogin();
@@ -1692,18 +1774,19 @@ async function supaInit(){
     }
     _supa.auth.onAuthStateChange(async(event,session)=>{
       if(event==='SIGNED_IN'){
-        // Suppress during onboarding — obSubmit handles its own flow
+        // Suppress during onboarding, obSubmit handles its own flow
         if(window._obInProgress){return;}
-        // TOKEN_REFRESHED in Supabase v2 can fire as SIGNED_IN — never reload cloud data
+        // TOKEN_REFRESHED in Supabase v2 can fire as SIGNED_IN, never reload cloud data
         // on a background token refresh; only load once per page session on explicit sign-in
         if(_supaCloudLoaded && _supaUser && session.user.id===_supaUser.id){return;}
-        // Different account than the data currently in memory — full reset before loading.
+        // Different account than the data currently in memory, full reset before loading.
         // Compare against _loadedDataOwner (not _supaUser): after an involuntary SIGNED_OUT
         // (token expiry) _supaUser is null yet the previous account's records are still in
         // memory, so checking _supaUser alone would miss the swap and bleed data across.
         const _incomingId=session.user.id;
         if((_loadedDataOwner&&_incomingId!==_loadedDataOwner)||(_supaCloudLoaded&&_supaUser&&_incomingId!==_supaUser.id)){
           _supaCloudLoaded=false;_mergeOnSignIn=false;_realtimeSubscribed=false;_tdRealtimeReady=false;_loadInProgress=false;
+          _authSettingsLoaded=false; // hide the setup checklist until the incoming account's settings load (no flash)
           clearTimeout(_syncTimer);_syncTimer=null;
           // Close the OUTGOING account's still-live realtime channels (bug #39): an involuntary
           // SIGNED_OUT (token expiry) never ran _wipeLocalAccountData, so the prior account's
@@ -1711,7 +1794,7 @@ async function supaInit(){
           // re-push into the incoming account's arrays right after this reset clears them.
           _teardownRealtimeChannels();
           _devSupportMode=false;_devSupportName='';_devSavedState=null;
-          // Outgoing account's employee identity must never leak into the incoming account —
+          // Outgoing account's employee identity must never leak into the incoming account,
           // loadAccountData() re-derives this from the incoming account's own row, but reset
           // it here too as the single foundational cross-account boundary (belt-and-suspenders
           // with the per-branch resets in loadAccountData).
@@ -1719,9 +1802,9 @@ async function supaInit(){
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           // Inbound-lead review queue lives OUTSIDE these arrays and was never cleared
-          // here — the incoming account's Leads page kept rendering the outgoing
+          // here: the incoming account's Leads page kept rendering the outgoing
           // account's unreviewed QR/intake leads until its own poll happened to
-          // overwrite it (not guaranteed — see _loadPendingInbound's early-returns).
+          // overwrite it (not guaranteed, see _loadPendingInbound's early-returns).
           _pendingInbound=[];_processedInboundIds.clear();
           _updateInboundBadge();
           localStorage.removeItem('zp3_offline_pending');
@@ -1730,7 +1813,7 @@ async function supaInit(){
           // written into the incoming account's delta_meta (owner guards the read, but
           // the in-memory cursor is global). Next load rebuilds it for this account.
           _deltaCursor=null;
-          // Pipe/bid caches are keyed to the outgoing account — drop them so the
+          // Pipe/bid caches are keyed to the outgoing account, drop them so the
           // incoming account re-loads its OWN links + incoming bids (no cross-bleed).
           _subBids=null;window._subBidsKicked=false;
           // Previous user's settings timestamp must never beat this user's cloud copy
@@ -1742,7 +1825,7 @@ async function supaInit(){
         document.getElementById('welcome-overlay')?.remove();
         // Navigate to the dashboard NOW, before awaiting the account load below.
         // loadAccountData() runs several sequential Supabase queries (users, accounts,
-        // account_config, vehicles) — without this, removing the login overlay exposes
+        // account_config, vehicles), without this, removing the login overlay exposes
         // whatever page was active underneath for that entire duration. Signing out is
         // only reachable from Settings, so every account switch on the same device
         // landed the incoming account back on Settings until the load finally finished
@@ -1751,7 +1834,7 @@ async function supaInit(){
         const hasAccount=await loadAccountData();
         if(hasAccount){
           // Trigger merge path if _mergeOnSignIn is set OR if zp3_offline_pending exists.
-          // The flag may be false after a force-quit restart even if there is pending data —
+          // The flag may be false after a force-quit restart even if there is pending data,
           // checking the key directly means no offline record is ever silently dropped.
           // _readOwnedOfflinePending() discards (and clears) any blob owned by a different
           // account, so foreign offline data can never be folded into this account.
@@ -1759,7 +1842,7 @@ async function supaInit(){
           const _hasPendingData=!!_op;
           if(_mergeOnSignIn||_hasPendingData){
             _mergeOnSignIn=false;
-            // Deduplicate by ID across in-memory + pending — saveAll() writes all current
+            // Deduplicate by ID across in-memory + pending, saveAll() writes all current
             // clients to pending, so without dedup the same record appears in both arrays
             // and gets pushed twice when neither ID is yet in the cloud.
             const _oClients=[...new Map([...(_op?.clients||[]),...clients].map(c=>[c.id,c])).values()];
@@ -1774,7 +1857,7 @@ async function supaInit(){
             _oClients.filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
             _oJobs.filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
             // BIDS: non-destructive merge. The cloud copy must NEVER blindly replace a
-            // local copy of the same id — a stale cloud draft (e.g. saved before its room
+            // local copy of the same id, a stale cloud draft (e.g. saved before its room
             // measurements existed) would otherwise erase the complete local record.
             // For each id, keep whichever copy is newer (updated stamp) or richer (more
             // surfaces/rooms). This is the fix for the Adam-Ryder room-data loss.
@@ -1800,7 +1883,12 @@ async function supaInit(){
             goPg('pg-dash');
           }
         } else {
-          // Brand-new account (no cloud data) — settings saves are safe (nothing to clobber).
+          // Brand-new account (no cloud data), settings saves are safe (nothing to clobber).
+          // NOTE: onboarding routing for first-time social sign-ins lives in the BOOT
+          // path only (see the boot brand-new branch). A real Google/Apple signup always
+          // redirects away and reloads, so it lands on boot, never here. This in-tab
+          // SIGNED_IN branch is reached by same-device account switches, which must land
+          // on the dashboard, not onboarding.
           _authSettingsLoaded=true;
           _removeBootOverlay();
           renderDash();
@@ -1808,7 +1896,7 @@ async function supaInit(){
           goPg('pg-dash');
         }
         // Existing-account sub-invite: a contractor who already runs TradeDesk
-        // arrived via a referral link and SIGNED IN (not onboarded — new
+        // arrived via a referral link and SIGNED IN (not onboarded, new
         // accounts are suppressed by the _obInProgress return at the top, and
         // obSubmit redeems their grant itself). Forge the link + accrue the
         // referrer's reward now, and OFFER their payment history. Runs after the
@@ -1817,7 +1905,7 @@ async function supaInit(){
           try{await _redeemSubInviteGrantForExisting();}catch(_e){}
         }
       } else if(event==='TOKEN_REFRESHED'){
-        // Token silently refreshed — update user ref. If we were in offline/cache mode,
+        // Token silently refreshed, update user ref. If we were in offline/cache mode,
         // this is the signal that we're back online with a valid session; sync now.
         if(session){
           _supaUser=session.user;
@@ -1834,10 +1922,10 @@ async function supaInit(){
         _supaUser=null;_user=null;_account=null;_config=null;
         // Only wipe local data when the user explicitly clicked sign out.
         // Supabase fires SIGNED_OUT on token refresh failures too (e.g. offline, network blip).
-        // navigator.onLine is unreliable on iOS — don't use it. Always prefer cache.
+        // navigator.onLine is unreliable on iOS, don't use it. Always prefer cache.
         if(_deliberateSignOut){
           // Full hard-wipe of this account's footprint (arrays, cloud cache, offline blob,
-          // cross-account merge state, delta-sync baselines, settings) — see
+          // cross-account merge state, delta-sync baselines, settings), see
           // _wipeLocalAccountData. Shared with supaSignOut so the wipe still happens if this
           // event fires late, and so a future sign-out path can't miss part of the cleanup.
           _wipeLocalAccountData();
@@ -1845,7 +1933,7 @@ async function supaInit(){
           supaSetStatus('local');
           supaShowLogin({force:true});
         } else if(localStorage.getItem('zp3_cloud_cache')){
-          // Non-deliberate sign-out (token refresh failure or rotation) — keep data in memory.
+          // Non-deliberate sign-out (token refresh failure or rotation), keep data in memory.
           // Stop autoRefresh immediately so Supabase doesn't keep retrying offline and
           // firing SIGNED_OUT in a loop. _startOfflineWatcher's online handler restarts it.
           if(_supa)_supa.auth.stopAutoRefresh();
@@ -1925,11 +2013,11 @@ function registerDevice(updateLocation){
   const idx=S.devices.findIndex(d=>d.id===id);
   if(idx>-1){S.devices[idx].lastSeen=now;S.devices[idx].label=label;}
   else S.devices.push({id,label,lastSeen:now,addedAt:now});
-  // saveAll, NOT saveSettings — this runs at every boot, before the settings
+  // saveAll, NOT saveSettings, this runs at every boot, before the settings
   // form is ever filled. saveSettings() here harvested the EMPTY form and wiped
   // every saved setting on each app open (then pushed the wiped copy to cloud
   // with a fresh settingsTs, beating the user's real saves on every device).
-  // No settingsTs bump either: at boot the local copy may be stale — claiming
+  // No settingsTs bump either: at boot the local copy may be stale, claiming
   // "newest" here would make stale data beat the cloud copy in the merge.
   saveAll();
   // Capture GPS if explicitly requested or first time registering
@@ -1940,7 +2028,7 @@ function registerDevice(updateLocation){
         S.devices[devIdx].lat=pos.coords.latitude;
         S.devices[devIdx].lon=pos.coords.longitude;
         S.devices[devIdx].locAt=now;
-        saveAll(); // direct S mutation — never harvest the form outside the Settings UI
+        saveAll(); // direct S mutation, never harvest the form outside the Settings UI
         const tpl=document.getElementById('team-page-devices');
         const tsl=document.getElementById('device-list');
         if(tpl||tsl)renderTeam();
@@ -1961,11 +2049,11 @@ const _EMP_PERM_INFO={
   schedule:'Updates job dates on the calendar and changes job status (scheduled → active → complete).',
   collect:'Records cash or check payments and sends pay links to clients for an outstanding balance.',
   clients:'Adds new clients and edits contact info, addresses, and notes. Cannot delete clients.',
-  expenses:'Adds expense receipts — for field workers buying materials or supplies on the job.',
+  expenses:'Adds expense receipts, for field workers buying materials or supplies on the job.',
   mileage:'Logs drive trips for IRS deduction tracking and reimbursement.',
   financials:'Sees the Books page, income/expense totals, P&L, and tax estimates. Off by default for most field workers.',
   team:'Adds and invites team members and manages company vehicles. Usually managers only.',
-  payroll:'Sees and edits employee pay rates and the crew location map, and views the Job Profit report. Highly sensitive — managers only. Pay rates are never visible to employees without this.'
+  payroll:'Sees and edits employee pay rates and the crew location map, and views the Job Profit report. Highly sensitive, managers only. Pay rates are never visible to employees without this.'
 };
 const _EMP_PERM_LABELS={
   leads:'Work leads',estimate:'Estimate jobs',schedule:'Schedule jobs',collect:'Collect payments',
@@ -2019,7 +2107,7 @@ function openInviteEmployeeModal(){
     '</div>'+
     '<div class="f" style="margin-bottom:4px"><label>Email <span style="font-size:10px;font-weight:400;color:var(--text3)">(for app access)</span></label>'+
       '<input id="_inv-email" placeholder="blake@email.com" type="email" style="font-size:14px;padding:10px" autocomplete="off"></div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.4">Enter their email then tap "Add &amp; Invite" — they\'ll get a sign-in link and see your jobs, clients, and estimates.</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-bottom:14px;line-height:1.4">Enter their email then tap "Add &amp; Invite", they\'ll get a sign-in link and see your jobs, clients, and estimates.</div>'+
     '<div class="f" style="margin-bottom:10px"><label>Access role</label>'+
       '<select id="_inv-role" onchange="_setEmpRolePreset(this.value)" style="font-size:14px;padding:10px">'+
         '<option value="tech">Field Tech</option>'+
@@ -2029,7 +2117,7 @@ function openInviteEmployeeModal(){
       '</select></div>'+
     '<div class="f" style="margin-bottom:14px"><label>Classification <span style="font-size:10px;font-weight:400;color:var(--text3)">(optional)</span></label>'+
       '<select id="_inv-class" style="font-size:14px;padding:10px">'+
-        _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'">'+escHtml(c||'— None —')+'</option>').join('')+
+        _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'">'+escHtml(c||'- None -')+'</option>').join('')+
       '</select></div>'+
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:2px">Permissions</div>'+
     permRows+
@@ -2044,7 +2132,7 @@ function openInviteEmployeeModal(){
 // entry. The legacy ?emp_invite= payload is forgeable base64 that only ever linked
 // via email-match; the token links regardless of sign-up email and can't be forged
 // (it exists only as a row the contractor created; claim_crew_invite burns it).
-// Returns the token or null (migration not deployed / offline / no roster row) —
+// Returns the token or null (migration not deployed / offline / no roster row),
 // callers fall back to the legacy email-match-only link, so deploys stay safe.
 async function _mintCrewInviteToken(cid,email){
   try{
@@ -2070,7 +2158,7 @@ async function _submitInviteEmployee(){
   S.employees.push(newEmp);
   _settingsChanged();saveAll();
   // Build invite link. Sync team_members FIRST (awaited) so the server-minted token
-  // can reference the roster row; the link then carries `tok` — the forge-proof,
+  // can reference the roster row; the link then carries `tok`, the forge-proof,
   // single-use claim path that links even if the crew member signs up with a
   // different email. Email-match remains the fallback when minting is unavailable.
   const cid=_contractorUserId||_supaUser?.id||'';
@@ -2199,11 +2287,11 @@ function _dispatchAssign(jobId){
 function _dispatchDoAssign(jobId,empId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   j.assignedTo=empId;j.assignedDate=todayKey();
-  // Durable record of everyone ever assigned — powers the crew trust ranking on estimates.
+  // Durable record of everyone ever assigned, powers the crew trust ranking on estimates.
   if(!Array.isArray(j.crewHistory))j.crewHistory=[];
   if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
   // Geocode the job address NOW, on the owner's device, and stamp lat/lon on the
-  // row — the employee's GPS ping handler then fences against stored coordinates
+  // row: the employee's GPS ping handler then fences against stored coordinates
   // instead of doing network geocodes mid-ping (the interleaving that scrambled
   // arrive/depart transitions on slow connections).
   if(!(j.lat&&j.lon)){
@@ -2229,7 +2317,7 @@ function _dispatchMoveUp(jobId,empId){
   const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
   const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<=0)return;
   // Normalize to 0..n-1 in current sorted order BEFORE swapping (mirrors _dispatchMoveDown).
-  // Doing the forEach reindex AFTER the swap clobbered it — it overwrote dispatchOrder from
+  // Doing the forEach reindex AFTER the swap clobbered it, it overwrote dispatchOrder from
   // the pre-swap array positions, so the up-arrow never actually moved the job up.
   empJobs.forEach((j,i)=>{j.dispatchOrder=i;});
   const temp=empJobs[idx-1].dispatchOrder;
@@ -2266,7 +2354,7 @@ async function _dispatchOptimizeRoute(empId){
   if(empJobs.length<2){showToast('Need at least 2 jobs to optimize','📋');return;}
   showToast('Optimizing route…','⏳');
   const office=await _geoOfficeCoords();
-  if(!office){zAlert('Add your business address in Settings first — it\'s the starting point for route optimization.');return;}
+  if(!office){zAlert('Add your business address in Settings first, it\'s the starting point for route optimization.');return;}
   // Geocode each job (reuse the geo-track cache helper if present)
   const pts=[];
   for(const j of empJobs){
@@ -2352,9 +2440,9 @@ function _checkEmployeeVehiclePicker(){
   }).join('');
   sheet.innerHTML=
     '<div style="font-size:15px;font-weight:800;margin-bottom:4px">Which vehicle are you in today?</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Drive time is only logged for company vehicles — personal vehicle trips stay private.</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Drive time is only logged for company vehicles, personal vehicle trips stay private.</div>'+
     vehList+
-    '<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle — no mileage logged</button>'+
+    '<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle, no mileage logged</button>'+
     '<button onclick="_pickVehicle(\'none\',\'On foot\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚶')+' On foot / no vehicle</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2457,7 +2545,7 @@ function renderTeam(){
   }
   const emps=S.employees||[];
   const empHtml=!emps.length
-    ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet — just you. Add someone when you hire.</div>'
+    ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet, just you. Add someone when you hire.</div>'
     :emps.map((e,i)=>{
       const rc=ROLE_COLORS[e.role]||'var(--text2)';const rb=ROLE_BG[e.role]||'var(--bg2)';
       const perms=Object.entries(e.permissions||{}).filter(([,v])=>v).map(([k])=>_EMP_PERM_LABELS[k]||PERM_LABELS[k]||k).join(', ')||'No permissions';
@@ -2539,7 +2627,7 @@ function renderTeam(){
     const _refCard=_referralRewardCardHTML(_referralRewards||[]);
     subEl.innerHTML=_refCard+(!subs.length
       ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No subs yet. Add a subcontractor to assign them to jobs and track what you owe.</div>'
-      :('<button onclick="open1099Report()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt,rgba(45,93,168,.06));color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📋')+' 1099 payments report — who you paid, per job</button>')+
+      :('<button onclick="open1099Report()" style="width:100%;margin-bottom:10px;padding:9px;border-radius:var(--r);border:1.5px solid var(--blue);background:var(--blue-lt,rgba(45,93,168,.06));color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📋')+' 1099 payments report, who you paid, per job</button>')+
        subs.map((s,i)=>
           '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
             '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
@@ -2577,7 +2665,7 @@ function removeDevice(id){
 function renameDevice(id){
   const dev=(S.devices||[]).find(d=>d.id===id);
   if(!dev)return;
-  zPrompt('Name this device so you can tell your iPads apart — e.g. "Front Office", "Truck 2 iPad".',name=>{
+  zPrompt('Name this device so you can tell your iPads apart, e.g. "Front Office", "Truck 2 iPad".',name=>{
     name=(name||'').trim().slice(0,40);
     const d=(S.devices||[]).find(x=>x.id===id);
     if(!d)return;
@@ -2633,14 +2721,14 @@ function _employeeModalHTML(emp,idx){
   const _eClass=e.classification||'';
   const _eComp=_teamComp[(e.email||'').toLowerCase()]||{pay_type:'hourly',pay_rate:0};
   return '<div style="font-size:17px;font-weight:800;margin-bottom:'+(isNew?'4px':'14px')+'">'+(isNew?'Add W-2 Employee':'Edit '+escHtml(e.name||''))+'</div>'+
-    (isNew?'<div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.4">You control how, when, and where they work — you set the hours, direct the job, provide the tools. That\'s an employee.</div>':'')+
+    (isNew?'<div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.4">You control how, when, and where they work, you set the hours, direct the job, provide the tools. That\'s an employee.</div>':'')+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Full name</label><input id="emp-name" value="'+escHtml(e.name||'')+'" placeholder="John Smith" style="font-size:15px;padding:10px"></div>'+
       '<div class="f"><label>Phone</label><input id="emp-phone" type="tel" value="'+escHtml(e.phone||'')+'" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this)" style="font-size:15px;padding:10px"></div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Email (for app access)</label>'+
       '<input id="emp-email" type="email" value="'+escHtml(e.email||'')+'" placeholder="employee@email.com" style="font-size:14px;padding:10px">'+
-      '<div style="font-size:10px;color:var(--text3);margin-top:4px">They\'ll receive an employment agreement to sign — then get their account setup link.</div>'+
+      '<div style="font-size:10px;color:var(--text3);margin-top:4px">They\'ll receive an employment agreement to sign, then get their account setup link.</div>'+
     '</div>'+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f" style="margin:0"><label>Access role</label>'+
@@ -2652,7 +2740,7 @@ function _employeeModalHTML(emp,idx){
         '</select></div>'+
       '<div class="f" style="margin:0"><label>Classification</label>'+
         '<select id="emp-classification" style="font-size:14px;padding:10px">'+
-          _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'"'+(c===_eClass?' selected':'')+'>'+escHtml(c||'— None —')+'</option>').join('')+
+          _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'"'+(c===_eClass?' selected':'')+'>'+escHtml(c||'- None -')+'</option>').join('')+
         '</select></div>'+
     '</div>'+
     (_canViewComp()?
@@ -2661,7 +2749,7 @@ function _employeeModalHTML(emp,idx){
         '<button type="button" onclick="var d=document.getElementById(\'_pay-info-tip\');d.style.display=d.style.display===\'none\'?\'block\':\'none\'" style="width:16px;height:16px;border-radius:50%;border:1px solid var(--text3);background:none;color:var(--text3);font-size:10px;font-weight:700;cursor:pointer;padding:0;font-family:inherit;line-height:16px;text-align:center;flex-shrink:0">?</button>'+
       '</div>'+
       '<div id="_pay-info-tip" style="display:none;font-size:12px;color:var(--text2);background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin-bottom:10px;line-height:1.55">'+
-        'Pay rates are stored securely and only visible to people with the <strong>Pay &amp; profit</strong> permission. Employees <em>never</em> see this — not in their daily view or anywhere else in the app. It\'s used to calculate loaded labor cost and profit margin on each job in the Job Profit report.'+
+        'Pay rates are stored securely and only visible to people with the <strong>Pay &amp; profit</strong> permission. Employees <em>never</em> see this, not in their daily view or anywhere else in the app. It\'s used to calculate loaded labor cost and profit margin on each job in the Job Profit report.'+
       '</div>'+
       '<div style="display:grid;grid-template-columns:140px 1fr;gap:10px;margin-bottom:14px">'+
         '<div class="f" style="margin:0"><label>Pay type</label>'+
@@ -2739,7 +2827,7 @@ async function _saveEmployee(idx){
   const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
   const emp={id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms};
   if(!S.employees)S.employees=[];
-  // Captured before the push so it reflects the roster as it was walking in —
+  // Captured before the push so it reflects the roster as it was walking in,
   // picks the prompt's framing: first-ever hire gets full business setup,
   // every later hire leads with that person's own W-4/I-9/new-hire paperwork.
   const _priorNonOwnerCount=S.employees.filter(e=>e.role!=='owner').length;
@@ -2750,11 +2838,11 @@ async function _saveEmployee(idx){
   if(email&&_supa&&_supaUser){
     // permissions MUST ride along: has_team_perm() and the load_account_data RPC
     // read team_members.permissions server-side. Without this the column stays
-    // '{}' forever, so every employee perm reads false — locking employees out of
+    // '{}' forever, so every employee perm reads false, locking employees out of
     // everything (a collect tech wouldn't even see payment amounts). This is the
     // authoritative write the owner's permission checkboxes depend on.
     const tmRow={contractor_user_id:_supaUser.id,email,name,role:emp.role,permissions:emp.permissions||{},active:false,invited_at:new Date().toISOString()};
-    // Pay is written ONLY when the editor can view comp — otherwise the columns are
+    // Pay is written ONLY when the editor can view comp, otherwise the columns are
     // omitted from the upsert so existing pay_rate is preserved, never clobbered to 0.
     if(_canComp){tmRow.pay_type=_payType;tmRow.pay_rate=_payRate;_teamComp[email]={pay_type:_payType,pay_rate:_payRate};}
     const{error}=await _supa.from('team_members').upsert(tmRow,{onConflict:'contractor_user_id,email'});
@@ -2766,7 +2854,7 @@ async function _saveEmployee(idx){
       const inviteUrl=window.location.origin+window.location.pathname+'?emp_invite='+btoa(JSON.stringify({cid,eid:emp.id,email:emp.email||'',bname:S.bname||'',ename:emp.name||'',tok:_tok2||undefined}));
       const{data:{session:_saveSess}}=await _supa.auth.getSession();
       const _saveToken=_saveSess?.access_token;
-      // Build the signing link — embed inviteUrl in the contract snapshot so
+      // Build the signing link, embed inviteUrl in the contract snapshot so
       // contract-sign.html shows "Set up your account" after the employee signs.
       let signUrl=inviteUrl; // fallback: direct link if agreements feature unavailable
       if(typeof _agEmploymentBody==='function'){
@@ -2775,7 +2863,7 @@ async function _saveEmployee(idx){
           const agToken=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
           const agKey='agreements/'+cid+'/'+agId+'_'+agToken+'.json';
           const agRecord={id:agId,type:'employment',party:emp.name,
-            title:'Employment Agreement — '+emp.name,body:_agEmploymentBody(emp.name),
+            title:'Employment Agreement, '+emp.name,body:_agEmploymentBody(emp.name),
             profitPct:null,cadence:'',partyEmployeeId:emp.id,
             effectiveDate:todayKey(),status:'sent',
             createdAt:new Date().toISOString(),
@@ -2803,8 +2891,8 @@ async function _saveEmployee(idx){
             body:JSON.stringify({to:email,empName:emp.name,businessName:S.bname||'Your Contractor',inviteUrl:signUrl,replyTo:_supaUser.email||''})
           });
           if(_invRes.ok)showToast('Agreement sent to '+email,'📝');
-          else showToast('Saved — email failed','⚠️');
-        }catch(_e){showToast('Saved — email failed','⚠️');}
+          else showToast('Saved: email failed','⚠️');
+        }catch(_e){showToast('Saved: email failed','⚠️');}
       }
     }
   }
@@ -2820,9 +2908,9 @@ function _subModalHTML(sub,idx){
   const isNew=idx==null;
   const s=sub||{name:'',trade:'',phone:'',email:'',rate:'',ein:'',addr:'',w9:false};
   return '<div style="font-size:17px;font-weight:800;margin-bottom:'+(isNew?'4px':'14px')+'">'+(isNew?'Add 1099 Sub Contractor':'Edit '+escHtml(s.name||'Sub'))+'</div>'+
-    (isNew?'<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.4">They run their own business — their own schedule, their own tools, their own insurance. You\'re paying a business, not directing an employee.</div>'+
+    (isNew?'<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.4">They run their own business, their own schedule, their own tools, their own insurance. You\'re paying a business, not directing an employee.</div>'+
     '<div style="background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--r);padding:10px 12px;margin-bottom:14px;font-size:12px;color:#7A4A00;line-height:1.5">'+
-      '<strong>Misclassifying an employee as a 1099 is one of the most audited issues at the IRS and state labor boards</strong> — back taxes, penalties up to 100% of what you owed, and the owner held personally liable. The test: do you control how/when/where they work? Do they carry their own insurance and business risk? If you\'re supervising them like staff, they\'re staff — not a 1099. Not sure? Ask your accountant before you guess wrong.'+
+      '<strong>Misclassifying an employee as a 1099 is one of the most audited issues at the IRS and state labor boards</strong>, back taxes, penalties up to 100% of what you owed, and the owner held personally liable. The test: do you control how/when/where they work? Do they carry their own insurance and business risk? If you\'re supervising them like staff, they\'re staff, not a 1099. Not sure? Ask your accountant before you guess wrong.'+
     '</div>':'')+
     '<div class="fg fg2" style="margin-bottom:12px">'+
       '<div class="f"><label>Full name</label><input id="sub-name" value="'+escHtml(s.name||'')+'" placeholder="Mike Garcia" style="font-size:15px;padding:10px"></div>'+
@@ -2882,12 +2970,12 @@ function _saveSub(idx){
   _settingsChanged();document.getElementById('_sub-modal-ov')?.remove();renderTeam();
   showToast(idx==null?'Subcontractor added':'Saved','✓');
   // The invite moment: a brand-new sub with a phone or email is a warm
-  // referral — they run a trade business too. One tap sends it: email goes
+  // referral: they run a trade business too. One tap sends it: email goes
   // out behind the scenes (CAN-SPAM-guarded server-side); phone opens their
   // own texting app (TCPA: the contractor must be the one who hits send).
   if(idx==null&&(sub.phone||sub.email)&&typeof zConfirm==='function'){
     const _first=(sub.name||'').split(/\s+/)[0]||'They';
-    zConfirm('You already trust '+_first+' on your jobs — set them up with the same tools you run on, free for them. They start with a head start: everything you\'ve paid them is already on their books, so it feels like home from day one. And it stays your world — your clients and numbers never cross over.\n\nRefer businesses that stick with TradeDesk and earn free months.',
+    zConfirm('You already trust '+_first+' on your jobs, set them up with the same tools you run on, free for them. They start with a head start: everything you\'ve paid them is already on their books, so it feels like home from day one. And it stays your world, your clients and numbers never cross over.\n\nRefer businesses that stick with TradeDesk and earn free months.',
       ()=>_inviteSubToTradeDesk(S.subcontractors.length-1),
       {title:'Set '+_first+' up on TradeDesk?',yes:(sub.email?'Email':'Text')+' '+_first+' the invite',no:'Maybe later',danger:false});
   }
@@ -2899,7 +2987,7 @@ function _removeSub(idx){
 }
 
 // ── Invite a sub to get their OWN TradeDesk account ──────────────────────────
-// The growth loop: every 1099 sub is itself a trade business — the exact
+// The growth loop: every 1099 sub is itself a trade business, the exact
 // customer TradeDesk is for. This is NOT the employee invite (?emp_invite=,
 // which links a crew login into THIS account); the sub gets a referral link
 // to create a completely separate account of their own.
@@ -2911,12 +2999,12 @@ function _subInviteLink(sub,grantToken){
 function _subInviteNavigate(href){window.location.href=href;}
 function _subInviteMsg(sub,link){
   const first=(sub&&sub.name?sub.name:'').split(/\s+/)[0];
-  return 'Hey'+(first?' '+first:'')+' — I run my business on TradeDesk (estimates, invoices, getting paid, all of it). Figured you\'d want it for yours too. Free to set up: '+(link||_subInviteLink(sub));
+  return 'Hey'+(first?' '+first:'')+', I run my business on TradeDesk (estimates, invoices, getting paid, all of it). Figured you\'d want it for yours too. Free to set up: '+(link||_subInviteLink(sub));
 }
 function _subInviteSms(sub,link){
   _subInviteNavigate('sms:'+String(sub.phone||'').replace(/\D/g,'')+'&body='+encodeURIComponent(_subInviteMsg(sub,link)));
 }
-// Everything this contractor has logged as paid to ONE sub, across all years —
+// Everything this contractor has logged as paid to ONE sub, across all years,
 // the same two sources as _sub1099Report (sub-category expenses + legacy
 // job.subs[] paid rows, deduped by subPayKey), matched by subId or vendor name.
 function _subPaymentHistory(sub){
@@ -2931,7 +3019,7 @@ function _subPaymentHistory(sub){
   const nameMatch=v=>!!(v&&sub.name&&String(v).toLowerCase()===String(sub.name).toLowerCase());
   // What crosses to the sub is deliberately tight: date + amount + job
   // ADDRESS only (the address keeps their mileage records accurate). Never
-  // job names/descriptions — those can carry the GC's client details.
+  // job names/descriptions: those can carry the GC's client details.
   expenses.filter(e=>_isSubExpense(e)&&((sub.id&&e.subId===sub.id)||(!e.subId&&nameMatch(e.vendor)))).forEach(e=>{
     rows.push({date:e.date||'',amount:e.amount||0,addr:_addr(e.job_id,e.client_id)});
   });
@@ -2948,8 +3036,8 @@ function _subPaymentHistory(sub){
 }
 // Server-side snapshot for the invite: the inviter's business card + payment
 // history with this sub, stored under a random single-use token (the LINK
-// carries only the token — see sub_invite_grants migration). Returns the
-// token, or null offline/on failure — the invite still goes out either way,
+// carries only the token, see sub_invite_grants migration). Returns the
+// token, or null offline/on failure, the invite still goes out either way,
 // just without the pre-loaded books.
 async function _createSubInviteGrant(sub){
   if(!sub||typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return null;
@@ -2967,7 +3055,7 @@ async function _createSubInviteGrant(sub){
   }catch(_e){return null;}
 }
 // Post-signup redemption (called from obSubmit): single-use RPC returns the
-// snapshot, which seeds the brand-new account — inviter as first client/lead,
+// snapshot, which seeds the brand-new account, inviter as first client/lead,
 // payments as the opening income ledger.
 async function _redeemSubInviteGrant(){
   const token=localStorage.getItem('_pendingSubInviteGrant');
@@ -2975,7 +3063,7 @@ async function _redeemSubInviteGrant(){
   localStorage.removeItem('_pendingSubInviteGrant'); // one attempt, never re-fires
   if(typeof supaEnabled!=='function'||!supaEnabled()||!_supaUser)return false;
   try{
-    // p_sub_business: the sub's just-entered business name — stored on the
+    // p_sub_business: the sub's just-entered business name, stored on the
     // standing business_links row the RPC forges alongside the redemption.
     const{data,error}=await _supa.rpc('redeem_sub_invite_grant',{p_token:token,p_sub_business:S.bname||''});
     if(error||!data)return false;
@@ -2986,30 +3074,30 @@ function _seedFromSubInviteGrant(g){
   if(!g||!g.business||!g.business.name)return false;
   const cid=Date.now();
   // gcLinkId: the redemption RPC stamps the inviter's account id into the
-  // payload — the live pipe uses it as the payer card's stable identity
+  // payload: the live pipe uses it as the payer card's stable identity
   // (survives renames, never merges two same-name GCs).
   clients.push({id:cid,name:g.business.name,phone:g.business.phone||'',email:g.business.email||'',
     addr:g.business.addr||'',created:new Date().toISOString(),
-    notes:'Invited you to TradeDesk — imported automatically',
+    notes:'Invited you to TradeDesk, imported automatically',
     extraAddresses:[],clientToken:'',clientHubKey:'',gcLinkId:String(g.gcUserId||'')});
-  // .slice defends the RECEIVING account too — a tampered payload can't dump
+  // .slice defends the RECEIVING account too, a tampered payload can't dump
   // thousands of rows into a brand-new sub's books (creation caps at 500).
   (Array.isArray(g.payments)?g.payments.slice(0,500):[]).forEach((p,i)=>{
     if(!p||!(Number(p.amount)>0))return;
     income.push({id:cid+i+1,bid_id:null,client_id:cid,client_name:g.business.name,
       date:String(p.date||'').replace(/-/g,'').slice(0,8),type:'Job payment',amount:Number(p.amount),
-      method:'',notes:('Imported from '+g.business.name+(p.addr?' — job @ '+p.addr:'')).slice(0,200),
+      method:'',notes:('Imported from '+g.business.name+(p.addr?', job @ '+p.addr:'')).slice(0,200),
       created_at:new Date().toISOString()});
   });
   return true;
 }
 // Existing-account redemption: a contractor who ALREADY runs TradeDesk arrived
-// via a sub-invite link and signed in (the "I already use TradeDesk" path) —
+// via a sub-invite link and signed in (the "I already use TradeDesk" path):
 // never onboarded, so obSubmit's _redeemSubInviteGrant never fired. We still
 // want the standing link forged and the inviter's reward accrued (both happen
 // server-side in the RPC), and the payer card created so live-pipe payments
 // have a home. The one difference from a brand-new account: we OFFER the
-// payment-history import instead of force-seeding it — this account already has
+// payment-history import instead of force-seeding it, this account already has
 // its own books, and silently dumping months of income into them would be
 // alarming, not warm. Called from the SIGNED_IN handler after the account load.
 async function _redeemSubInviteGrantForExisting(){
@@ -3037,12 +3125,12 @@ async function _redeemSubInviteGrantForExisting(){
     if(pays.length&&c&&typeof zConfirm==='function'){
       const tot=pays.reduce((s,p)=>s+Number(p.amount),0);
       const totStr=(typeof fmt==='function')?fmt(tot):('$'+tot);
-      // OFFER — never force. escHtml the business name: zConfirm renders via innerHTML.
-      zConfirm('You\'re linked with '+escHtml(bn)+' — anything they pay you now lands here on its own.\n\nThey\'ve already paid you '+totStr+' across '+pays.length+' job'+(pays.length!==1?'s':'')+'. Want that added to your income too? Skip it if it\'s already on your books.',
+      // OFFER: never force. escHtml the business name: zConfirm renders via innerHTML.
+      zConfirm('You\'re linked with '+escHtml(bn)+', anything they pay you now lands here on its own.\n\nThey\'ve already paid you '+totStr+' across '+pays.length+' job'+(pays.length!==1?'s':'')+'. Want that added to your income too? Skip it if it\'s already on your books.',
         ()=>_importPipeHistory(bn,c.id,pays),
         {title:'Add your history with '+bn+'?',yes:'Add '+totStr+' to my books',no:'No, just link us',danger:false});
     }else{
-      showToast('Linked with '+escHtml(bn)+' — their payments now land here automatically','🔗');
+      showToast('Linked with '+escHtml(bn)+', their payments now land here automatically','🔗');
     }
     return true;
   }catch(_e){return false;}
@@ -3058,7 +3146,7 @@ function _importPipeHistory(bizName,clientId,pays){
     let id=base++;while(income.some(x=>x&&x.id===id))id++;
     income.push({id,bid_id:null,client_id:clientId,client_name:bizName,
       date:String(p.date||'').replace(/-/g,'').slice(0,8),type:'Job payment',amount:Number(p.amount),
-      method:'',notes:('Imported from '+bizName+(p.addr?' — job @ '+p.addr:'')).slice(0,200),
+      method:'',notes:('Imported from '+bizName+(p.addr?', job @ '+p.addr:'')).slice(0,200),
       created_at:new Date().toISOString()});
   });
   saveAll();
@@ -3097,7 +3185,7 @@ async function _inviteSubToTradeDesk(idx){
   const first=(sub.name||'').split(/\s+/)[0]||'them';
   // Snapshot grant first: the link then carries a token that pre-loads the
   // sub's new account (this business as their first lead + payment history).
-  // Offline or on failure the invite still goes out — just without the seed.
+  // Offline or on failure the invite still goes out, just without the seed.
   let _grantTok=null;
   try{_grantTok=await _createSubInviteGrant(sub);}catch(_e){}
   const link=_subInviteLink(sub,_grantTok);
@@ -3111,18 +3199,18 @@ async function _inviteSubToTradeDesk(idx){
     showToast('Emailing '+first+' their invite…','📧');
     const r=await _sendSubInviteEmail(sub,link);
     if(r.ok)showToast('Invite emailed to '+first+' ✓','📧');
-    else if(r.reason==='suppressed')showToast(first+' has unsubscribed from TradeDesk invites'+(sub.phone?' — text them instead':''),'⚠️');
-    else if(r.reason==='recently-invited'||r.reason==='send-limit-reached')showToast('Already invited recently — give it a few days','📧');
+    else if(r.reason==='suppressed')showToast(first+' has unsubscribed from TradeDesk invites'+(sub.phone?', text them instead':''),'⚠️');
+    else if(r.reason==='recently-invited'||r.reason==='send-limit-reached')showToast('Already invited recently, give it a few days','📧');
     else if(sub.phone)_subInviteSms(sub,link); // email failed → fall back to a person-to-person text
-    else showToast('Email didn\'t go through — try again in a bit','⚠️');
+    else showToast('Email didn\'t go through, try again in a bit','⚠️');
     return;
   }
   if(sub.phone){_subInviteSms(sub,link);return;}
   if(navigator.clipboard&&navigator.clipboard.writeText){
-    navigator.clipboard.writeText(_subInviteMsg(sub,link)).then(()=>showToast('Invite copied — paste it anywhere','🔗')).catch(()=>showToast('Couldn\'t copy the invite','⚠️'));
+    navigator.clipboard.writeText(_subInviteMsg(sub,link)).then(()=>showToast('Invite copied, paste it anywhere','🔗')).catch(()=>showToast('Couldn\'t copy the invite','⚠️'));
   }else showToast('Add a phone or email to send the invite','⚠️');
 }
-// Referral attribution — called by obSubmit (settings.js) right after account
+// Referral attribution, called by obSubmit (settings.js) right after account
 // creation: records who brought this signup in, then clears the stash so a
 // later re-signup on the same device can't double-claim it.
 function _claimSubReferralAttribution(){
@@ -3137,15 +3225,15 @@ function _claimSubReferralAttribution(){
 
 // ── The live pipe: business links + accept-model payment offers ──────────────
 // A standing link between a GC account and a sub account (forged server-side
-// at grant redemption — see redeem_sub_invite_grant). Payments the GC logs to
+// at grant redemption, see redeem_sub_invite_grant). Payments the GC logs to
 // a linked sub become OFFERS: a card the sub explicitly accepts into their
-// own books. The GC never writes into the sub's ledger — ownership stays
+// own books. The GC never writes into the sub's ledger, ownership stays
 // clean, same one-way principle as mailing a check.
 // Referral rewards (the referrer's side of the growth loop): every sub who
 // signs up through your invite earns YOU a reward, accrued server-side at the
-// verified conversion (grant redemption — see redeem_sub_invite_grant). Default
+// verified conversion (grant redemption, see redeem_sub_invite_grant). Default
 // today is one free month, applied when subscription billing launches. This is
-// read-only on the client — the app never writes rewards, only shows them.
+// read-only on the client, the app never writes rewards, only shows them.
 let _referralRewards=null; // null = not loaded; [] = loaded, none
 async function _loadReferralRewards(force){
   if(_referralRewards!==null&&!force)return _referralRewards;
@@ -3158,7 +3246,7 @@ async function _loadReferralRewards(force){
   return _referralRewards;
 }
 // Loyalty ratio: how many referred contractors who go paid earn one free month.
-// Owner decision 2026-07-13: 2-for-1 (a signup alone isn't a free month — it's a
+// Owner decision 2026-07-13: 2-for-1 (a signup alone isn't a free month, it's a
 // free month once two of them actually stick and start paying). Change here only;
 // the DB just records one row per verified signup, the math lives in the app.
 const REFERRALS_PER_FREE_MONTH=2;
@@ -3181,7 +3269,7 @@ function _referralRewardCardHTML(rewards){
   const more=total>3?' +'+(total-3)+' more':'';
   const headline=months>0
     ?months+' free month'+(months!==1?'s':'')+' earned'
-    :total+' referral'+(total!==1?'s':'')+' — '+need+' more to a free month';
+    :total+' referral'+(total!==1?'s':'')+', '+need+' more to a free month';
   const progress=toward>0
     ?need+' more paid referral'+(need!==1?'s':'')+' earns '+(months>0?'another':'your first')+' free month.'
     :'Every '+per+' contractors you refer who go paid = 1 free month.';
@@ -3204,7 +3292,7 @@ async function _loadBizLinks(force){
   }catch(_e){_bizLinks=[];}
   return _bizLinks;
 }
-// The link (if any) for a sub ROSTER row in this GC's account — matched by
+// The link (if any) for a sub ROSTER row in this GC's account, matched by
 // roster id, never by name, so renames can't cross-wire two subs.
 function _bizLinkForRosterId(rosterId){
   if(!Array.isArray(_bizLinks)||rosterId==null)return null;
@@ -3229,13 +3317,13 @@ async function _offerPaymentToLinkedSub(rosterId,pay){
       gc_business_name:String(S.bname||link.gc_business_name||'').slice(0,120)
     });
     // escHtml: showToast renders via innerHTML and the sub controls their
-    // business name — cross-ACCOUNT strings never enter the DOM raw.
+    // business name, cross-ACCOUNT strings never enter the DOM raw.
     if(!error)showToast('Payment lands in '+escHtml(link.sub_business_name||'their')+' TradeDesk books automatically','🔗');
     return !error;
   }catch(_e){return false;}
 }
 // GC side: assigning a linked sub to a job shares the job ADDRESS + start
-// date — the moment the sub actually needs it (mileage, routing). Same tight
+// date: the moment the sub actually needs it (mileage, routing). Same tight
 // scope as payments: no job names, no descriptions, no client details.
 async function _offerJobToLinkedSub(rosterId,info){
   try{
@@ -3257,12 +3345,12 @@ async function _offerJobToLinkedSub(rosterId,info){
 // ── The REVERSE pipe: the sub bids their piece back to the GC ─────────────────
 // GC→sub hands over an address (job_assignments). This is the sub pricing that
 // work as an independent business and sending the number back for the GC to
-// approve — the round-trip that makes the relationship a vendor relationship,
+// approve: the round-trip that makes the relationship a vendor relationship,
 // not a disguised-employee one. Scope that crosses: amount + scope + address.
 // The sub's line-item costs, margins, other clients never leave their account.
 
 // The sub's standing link to a specific GC, matched by the GC's ACCOUNT id
-// (the payer card's gcLinkId) — never by name, so two same-name GCs can't cross.
+// (the payer card's gcLinkId), never by name, so two same-name GCs can't cross.
 function _linkForGcUid(gcUid){
   if(!Array.isArray(_bizLinks)||!gcUid)return null;
   const me=_supaUser?String(_supaUser.id):'';
@@ -3320,7 +3408,7 @@ async function _declineSubBid(id){
     return true;
   }catch(_e){return false;}
 }
-// GC side: SIGN an open bid — the GC e-signs the sub's full scope + price. This
+// GC side: SIGN an open bid, the GC e-signs the sub's full scope + price. This
 // is the protective artifact: signed_name + signed_at recorded on an immutable
 // amount/scope, so the sub holds documented proof the GC agreed to pay it. On
 // signing, the agreed price is stamped onto the GC's matching job (by address)
@@ -3341,12 +3429,12 @@ async function _signSubBid(id,signerName){
       if(job){job.subBidAmount=Number(b.amount)||0;job.subBidBy=String(b.sub_business_name||'');job.subBidSignedBy=name;saveAll();}
     }
     if(typeof renderDash==='function')renderDash();
-    showToast('Signed — '+escHtml((b&&b.sub_business_name)||'the sub')+' is cleared to start','✍️');
+    showToast('Signed: '+escHtml((b&&b.sub_business_name)||'the sub')+' is cleared to start','✍️');
     return true;
   }catch(_e){return false;}
 }
 // GC side: the review-and-sign sheet. Shows the FULL scope + price + address,
-// then captures the GC's typed signature. Not a one-tap approve — the signature
+// then captures the GC's typed signature. Not a one-tap approve, the signature
 // on the full scope is what protects the sub.
 function _openBidReview(id){
   const b=(_subBids||[]).find(x=>String(x.id)===String(id));
@@ -3366,7 +3454,7 @@ function _openBidReview(id){
       '<div style="font-size:13px;color:var(--text);line-height:1.5">'+(scope||'<span style="color:var(--text3)">No scope note provided</span>')+'</div>'+
       '<div style="border-top:1px solid var(--border2);margin-top:10px;padding-top:8px;display:flex;justify-content:space-between;align-items:center"><span style="font-size:12px;color:var(--text3)">Their price</span><span style="font-size:20px;font-weight:800">'+amt+'</span></div>'+
     '</div>'+
-    '<div style="font-size:11px;color:var(--text3);line-height:1.4;margin-bottom:8px">Signing records your name + the date against this scope and price — your written OK that '+who+' can start and be paid '+amt+' for it.</div>'+
+    '<div style="font-size:11px;color:var(--text3);line-height:1.4;margin-bottom:8px">Signing records your name + the date against this scope and price, your written OK that '+who+' can start and be paid '+amt+' for it.</div>'+
     '<div class="f" style="margin-bottom:14px"><label style="font-size:11px;font-weight:700;color:var(--text3)">Type your name to sign</label>'+
       '<input type="text" id="bid-sign-name" placeholder="Your full name" autocomplete="name" style="font-size:15px;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;box-sizing:border-box;color:var(--text);font-family:inherit"></div>'+
     '<div id="bid-sign-err" style="display:none;font-size:11px;color:#A32D2D;margin-bottom:8px"></div>'+
@@ -3407,7 +3495,7 @@ function _subBidInboxHTML(bids){
   }).join('');
 }
 // Sub side: bidding a pipe job opens the REAL estimate builder (owner decision
-// 2026-07-13 — every bid is an itemized, signable document, never a lump-sum
+// 2026-07-13: every bid is an itemized, signable document, never a lump-sum
 // quick charge). The job address arrived via the assignment, so we open the
 // estimator prefilled with it (no searching) and stamp a GC-bid context; the
 // estimator's Send then routes to the linked GC as a signable bid instead of a
@@ -3446,14 +3534,14 @@ async function _maybeRouteGcBid(total,scope,lineCount){
 }
 // The multi-property answer: ONE client record per linked GC, no matter how
 // many properties they send work at. Addresses live on each job/income row,
-// never stacked onto the client — a builder with 300 lots is still one clean
+// never stacked onto the client, a builder with 300 lots is still one clean
 // card. Created as a bare lead (name only) when missing.
 //
 // Identity is the GC's ACCOUNT id (gcLinkId), not their display name: a GC
 // who renames their business keeps the same card, and two different GCs who
 // happen to share a name never get merged into one card. Name matching is
 // only the adoption path for the referral-seeded lead (created before this
-// stamping existed) — and it refuses to adopt a card already stamped for a
+// stamping existed), and it refuses to adopt a card already stamped for a
 // DIFFERENT GC.
 function _pipePayerClient(name,gcUid){
   const n=String(name||'').trim();
@@ -3470,7 +3558,7 @@ function _pipePayerClient(name,gcUid){
   // (two new GCs in one ingest) must never share an id.
   let id=Date.now();while(clients.some(x=>x&&x.id===id))id++;
   const fresh={id,name:n,phone:'',email:'',addr:'',created:new Date().toISOString(),
-    notes:'Linked contractor on TradeDesk — added automatically',
+    notes:'Linked contractor on TradeDesk, added automatically',
     extraAddresses:[],clientToken:'',clientHubKey:'',gcLinkId:uid};
   clients.push(fresh);
   return fresh;
@@ -3480,18 +3568,18 @@ function _pipePayerClient(name,gcUid){
 // until real money flows through the payment side of the pipe.
 function _assignmentToJob(a,clientId){
   if(!a||!String(a.job_addr||'').trim())return null;
-  // Strict YYYY-MM-DD or fall back to today — a malformed date would put an
+  // Strict YYYY-MM-DD or fall back to today, a malformed date would put an
   // Invalid Date into every calendar/pipeline loop that parses job.start.
   const raw=String(a.start_date||'');
   const start=/^\d{4}-\d{2}-\d{2}$/.test(raw)?raw:(typeof todayKey==='function'?todayKey():'');
   return{id:Date.now(),bid_id:null,client_id:clientId||null,
-    name:'Job — '+(a.gc_business_name||'linked contractor'),
+    name:'Job: '+(a.gc_business_name||'linked contractor'),
     addr:String(a.job_addr),start,days:1,buffer:0,value:0,color:'#185FA5',
     eventType:'job',time:'',hours:null,
     notes:'Assigned by '+(a.gc_business_name||'a linked contractor')+' on TradeDesk',
     status:'upcoming',
     // Flags this as pipe-sourced so the Today widget can offer a one-tap
-    // "Log mileage" shortcut — the whole reason the address crosses the
+    // "Log mileage" shortcut: the whole reason the address crosses the
     // pipe in the first place is so the sub's drive gets tracked.
     pipeSourced:true};
 }
@@ -3505,11 +3593,11 @@ function _paymentOfferToIncome(offer,forceClientId){
   const c=(forceClientId==null&&payer)?clients.find(x=>x.name&&x.name.toLowerCase()===payer.toLowerCase()):null;
   return{id:Date.now(),bid_id:null,client_id:forceClientId!=null?forceClientId:(c?c.id:null),client_name:payer||'Contractor',
     date:String(offer.paid_date||'').replace(/-/g,'').slice(0,8),type:'Job payment',amount:Number(offer.amount),
-    method:'',notes:('From '+(payer||'a linked contractor')+(offer.job_addr?' — job @ '+offer.job_addr:'')).slice(0,200),
+    method:'',notes:('From '+(payer||'a linked contractor')+(offer.job_addr?', job @ '+offer.job_addr:'')).slice(0,200),
     created_at:new Date().toISOString()};
 }
 // Sub side: the pipe INBOX. Payments and job assignments from linked GCs
-// land AUTOMATICALLY (owner decision — no accept tap). The claim is atomic:
+// land AUTOMATICALLY (owner decision, no accept tap). The claim is atomic:
 // `update … eq status pending → select` returns ONLY the rows THIS call
 // flipped, so two of the sub's devices can never double-add the same row.
 // The ledger stays the sub's own: landed rows are plain local records they
@@ -3529,7 +3617,7 @@ async function _ingestPipeInbox(force){
         .eq('sub_user_id',_supaUser.id).eq('status','pending').select();
       const rows=(offs||[]).map(o=>{
         // Resolve the payer card by GC ACCOUNT id (stable across renames,
-        // never merges two same-name GCs) — creates the lead if missing,
+        // never merges two same-name GCs), creates the lead if missing,
         // exactly like the assignment path.
         const pc=_pipePayerClient(o.gc_business_name,o.gc_user_id);
         return _paymentOfferToIncome(o,pc?pc.id:null);
@@ -3541,14 +3629,14 @@ async function _ingestPipeInbox(force){
       if(rows.length){
         touched=true;
         // saveAll NOW, before the next network await: these offers are already
-        // claimed server-side — a tab killed mid-ingest must not lose them.
+        // claimed server-side, a tab killed mid-ingest must not lose them.
         saveAll();
         const total=rows.reduce((s,r)=>s+r.amount,0);
         const amt=typeof fmt==='function'?fmt(total):'$'+total;
         // escHtml: showToast renders via innerHTML; payer name is GC-controlled.
         showToast(rows.length===1
-          ?amt+' from '+escHtml(rows[0].client_name||'a linked contractor')+' — added to your books'
-          :rows.length+' payments ('+amt+') from linked contractors — added to your books','💵');
+          ?amt+' from '+escHtml(rows[0].client_name||'a linked contractor')+', added to your books'
+          :rows.length+' payments ('+amt+') from linked contractors, added to your books','💵');
       }
     }catch(_e){}
     try{ // job assignments → scheduled jobs with the address
@@ -3569,18 +3657,18 @@ async function _ingestPipeInbox(force){
         saveAll(); // same crash-window rule as the payment block
         // escHtml: the address is GC-controlled and showToast uses innerHTML.
         showToast(added===1
-          ?'New job @ '+escHtml(firstAddr)+' — on your calendar'
-          :added+' new job addresses — on your calendar','📅');
+          ?'New job @ '+escHtml(firstAddr)+', on your calendar'
+          :added+' new job addresses, on your calendar','📅');
       }
     }catch(_e){}
     if(touched){
-      // (saveAll already ran inside each landing block — see crash-window note)
+      // (saveAll already ran inside each landing block, see crash-window note)
       if(typeof supaSaveToCloud==='function')supaSaveToCloud();
       try{
         const pg=document.querySelector('.pg.active')?.id;
         // pg-dash is the common case: it's the FIRST page shown at boot, and
         // this ingest runs 1.8s after boot on purpose (never compete with the
-        // boot render) — so Today already painted before a job/payment landed.
+        // boot render), so Today already painted before a job/payment landed.
         // Without this, a job assigned this morning shows the toast but never
         // shows up on Today until the sub navigates away and back.
         if(pg==='pg-dash'&&typeof renderDash==='function')renderDash();
@@ -3595,10 +3683,10 @@ async function _ingestPipeInbox(force){
 // ── 1099 contractor payment tracking ─────────────────────────────────────────
 // One yearly ledger per payee across BOTH payment sources:
 //  1. expenses with the contract-labor category ('subs' from the full modal,
-//     'Subcontractors' from the quick modal) — including the rows markSubPaid
+//     'Subcontractors' from the quick modal), including the rows markSubPaid
 //     now auto-writes.
 //  2. legacy job.subs[] entries marked paid BEFORE auto-expensing existed
-//     (no matching subPayKey expense) — so old data still counts.
+//     (no matching subPayKey expense), so old data still counts.
 // Every row resolves its job address (bid.addr → client.addr) because the
 // 1099 story is "which job, where, how much."
 function _isSubExpense(e){return !!e&&(e.cat==='subs'||e.cat==='Subcontractors');}
@@ -3655,7 +3743,7 @@ function open1099Report(yr){
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='560px';
   box.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
-      '<div style="font-size:17px;font-weight:800">1099 contractor payments — '+rep.yr+'</div>'+
+      '<div style="font-size:17px;font-weight:800">1099 contractor payments, '+rep.yr+'</div>'+
       '<button onclick="document.getElementById(\'_1099-ov\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">×</button>'+
     '</div>'+
     '<div style="font-size:11px;color:var(--text3);margin-bottom:12px">'+fmt(rep.total)+' paid to '+rep.payees.length+' contractor'+(rep.payees.length!==1?'s':'')+' · '+rep.flagged+' at the $600 1099-NEC threshold'+(rep.missingW9?' · <span style="color:var(--amber);font-weight:700">'+rep.missingW9+' missing W-9/EIN</span>':'')+'</div>'+
@@ -3667,17 +3755,17 @@ function open1099Report(yr){
             '<div style="font-size:15px;font-weight:800">'+fmt(p.total)+'</div>'+
           '</div>'+
           '<div style="font-size:10px;margin:3px 0 7px">'+
-            (p.needs1099?'<span style="background:#FFF3CD;border:1px solid #D4A017;color:#6B4C00;font-weight:700;padding:1px 7px;border-radius:8px">1099-NEC required — file by Jan 31</span> ':'')+
-            (p.needs1099?(p.w9&&p.ein?'<span style="color:var(--green-mid);font-weight:700">'+svgIcon('✓')+' W-9 + EIN on file</span>':'<span style="color:var(--amber);font-weight:700">'+svgIcon('⚠')+' get W-9'+(p.ein?'':' + EIN')+(p.subId?' — edit the sub in Team':' — add them to your sub roster (Team) so filing info attaches')+'</span>'):'')+
+            (p.needs1099?'<span style="background:#FFF3CD;border:1px solid #D4A017;color:#6B4C00;font-weight:700;padding:1px 7px;border-radius:8px">1099-NEC required, file by Jan 31</span> ':'')+
+            (p.needs1099?(p.w9&&p.ein?'<span style="color:var(--green-mid);font-weight:700">'+svgIcon('✓')+' W-9 + EIN on file</span>':'<span style="color:var(--amber);font-weight:700">'+svgIcon('⚠')+' get W-9'+(p.ein?'':' + EIN')+(p.subId?', edit the sub in Team':', add them to your sub roster (Team) so filing info attaches')+'</span>'):'')+
           '</div>'+
           p.rows.map(r=>
             '<div style="display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:3px 0;border-top:1px solid var(--border)">'+
               '<span style="color:var(--text3);flex-shrink:0">'+r.date+'</span>'+
-              '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.job||'—')+(r.addr?' · '+escHtml(r.addr):'')+'</span>'+
+              '<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.job||'-')+(r.addr?' · '+escHtml(r.addr):'')+'</span>'+
               '<span style="font-weight:700;flex-shrink:0">'+fmt(r.amount)+'</span>'+
             '</div>').join('')+
         '</div>').join(''))+
-    '<div style="font-size:9px;color:var(--text3);margin-top:4px">Payments from job-sheet sub payouts and Subcontractor expenses. Not tax advice — confirm filing requirements with your tax professional.</div>';
+    '<div style="font-size:9px;color:var(--text3);margin-top:4px">Payments from job-sheet sub payouts and Subcontractor expenses. Not tax advice, confirm filing requirements with your tax professional.</div>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
@@ -3696,7 +3784,7 @@ function renderHiringCalc(){
   const monthlyProfit=Math.round(profit90/3);
   const monthlyRev=Math.round(rev90/3);
 
-  // W-2 cost model — painter wages $18-30/hr typical in KS
+  // W-2 cost model, painter wages $18-30/hr typical in KS
   const targetHr=parseInt(el.dataset.hr||22);
   const annualGross=targetHr*2080;
   const empFICA=Math.round(annualGross*0.0765);
@@ -3732,7 +3820,7 @@ function renderHiringCalc(){
   el.innerHTML=
     '<div class="card">'+
       '<div style="font-size:17px;font-weight:800;margin-bottom:2px">Hiring readiness</div>'+
-      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Based on your last 90 days — W-2 employee full cost model</div>'+
+      '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Based on your last 90 days, W-2 employee full cost model</div>'+
 
       // Status banner
       '<div style="background:'+sigBg+';border-radius:var(--r);padding:14px;margin-bottom:14px">'+
@@ -3786,7 +3874,7 @@ function renderHiringCalc(){
 
       // W-2 vs 1099
       '<div style="background:var(--bg2);border-radius:var(--r);border:1px solid var(--border);padding:12px">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">W-2 vs 1099 — the real talk</div>'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">W-2 vs 1099, the real talk</div>'+
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
           '<div style="padding:10px;background:#EAF3DE;border-radius:var(--r)">'+
             '<div style="font-size:11px;font-weight:800;color:var(--green-mid);margin-bottom:6px">'+svgIcon('✅')+' W-2 Employee</div>'+
@@ -3812,7 +3900,7 @@ function _hiringRow(label,amount,isGross){
 
 // Merge any records written to zp3_offline_pending into the current in-memory arrays.
 // Called after every cache load so a force-quit mid-session never hides data from the user.
-// Does NOT remove the key — it stays until a successful cloud push clears it (line ~1411).
+// Does NOT remove the key, it stays until a successful cloud push clears it (line ~1411).
 function _mergeOfflinePendingToMemory(){
   try{
     const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
@@ -3873,7 +3961,7 @@ function supaShowLogin(opts={}){
   const _pendingInvite=JSON.parse(localStorage.getItem('_pendingEmpInvite')||'null');
   // Sub referral (?sub_invite=): pitch-first signup screen. Employee invites
   // win if both are somehow present; opts.plain skips the pitch (the "I
-  // already have an account" path) without clearing the stash — attribution
+  // already have an account" path) without clearing the stash, attribution
   // stays claimable until an account is actually created (obSubmit).
   const _pendingSubInv=(!_pendingInvite&&!opts.plain)?(function(){try{return JSON.parse(localStorage.getItem('_pendingSubInvite')||'null');}catch(_e){return null;}})():null;
   const _inviteBanner=_pendingInvite
@@ -3884,7 +3972,12 @@ function supaShowLogin(opts={}){
     :'';
   const overlay=document.createElement('div');
   overlay.id='supa-login-overlay';
-  overlay.style.cssText='position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
+  // Normal sign-in gets the full-bleed two-panel treatment that matches the
+  // onboarding wizard; the invite/sub-referral pitches keep their centered card.
+  const _normalLogin=!_pendingInvite&&!_pendingSubInv;
+  overlay.style.cssText=_normalLogin
+    ?'position:fixed;inset:0;z-index:9999;background:var(--bg);overflow-y:auto;padding:0'
+    :'position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
   const _inputStyle='font-size:16px;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box';
   overlay.innerHTML= _pendingInvite
     ? (function(){
@@ -3918,39 +4011,125 @@ function supaShowLogin(opts={}){
         return '<div style="max-width:360px;width:100%">'+
           '<div style="text-align:center;margin-bottom:24px">'+
             '<div style="font-size:36px;margin-bottom:10px">'+svgIcon('🔧',{size:36})+'</div>'+
-            '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">'+(_sbFirst?'Hey '+_sbFirst+' — this one\'s for your business':'Built for your business too')+'</div>'+
-            '<div style="font-size:13.5px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">'+_sbBname+'</strong> set you up with your own free TradeDesk account — your own business, not a login into theirs.</div>'+
+            '<div style="font-size:22px;font-weight:800;letter-spacing:-.02em;margin-bottom:6px">'+(_sbFirst?'Hey '+_sbFirst+', this one\'s for your business':'Built for your business too')+'</div>'+
+            '<div style="font-size:13.5px;color:var(--text3);line-height:1.5"><strong style="color:var(--text2)">'+_sbBname+'</strong> set you up with your own TradeDesk account: your own business, not a login into theirs.</div>'+
           '</div>'+
-          // What you actually get — left-aligned + scannable so the value reads at a glance.
+          // What you actually get, left-aligned + scannable so the value reads at a glance.
           '<div style="border:1px solid var(--border2);border-radius:var(--r);overflow:hidden;margin-bottom:16px">'+
             (localStorage.getItem('_pendingSubInviteGrant')
-              ?'<div style="display:flex;gap:10px;padding:12px;background:var(--green-lt,#ECFDF5);border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('💵',{size:18})+'</div><div style="font-size:12.5px;color:var(--green-mid,#0E6B39);line-height:1.45;font-weight:600">Every dollar '+_sbBname+' has paid you is <strong>already on your books</strong> — nothing to type in. You start where you are, not from zero.</div></div>'
+              ?'<div style="display:flex;gap:10px;padding:12px;background:var(--green-lt,#ECFDF5);border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('💵',{size:18})+'</div><div style="font-size:12.5px;color:var(--green-mid,#0E6B39);line-height:1.45;font-weight:600">Every dollar '+_sbBname+' has paid you is <strong>already on your books</strong>. Nothing to type in. You start where you are, not from zero.</div></div>'
               :'')+
-            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('📍',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">They send you a job, the <strong>address drops onto your calendar</strong> — just drive out and work.</div></div>'+
-            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('🧾',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Estimate, invoice, e-sign, get paid — the <strong>same tools '+_sbBname+' runs</strong>, now yours'+(_sbTrade?', built for '+_sbTrade+' pros':'')+'.</div></div>'+
-            '<div style="display:flex;gap:10px;padding:12px"><div style="flex:none">'+svgIcon('🔒',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Your clients, your numbers, your money stay <strong>private to you</strong> — they never see your side.</div></div>'+
+            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('📍',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">They send you a job, the <strong>address drops onto your calendar</strong>. Just drive out and work.</div></div>'+
+            '<div style="display:flex;gap:10px;padding:12px;border-bottom:1px solid var(--border2)"><div style="flex:none">'+svgIcon('🧾',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Estimate, invoice, e-sign, get paid: the <strong>same tools '+_sbBname+' runs</strong>, now yours'+(_sbTrade?', built for '+_sbTrade+' pros':'')+'.</div></div>'+
+            '<div style="display:flex;gap:10px;padding:12px"><div style="flex:none">'+svgIcon('🔒',{size:18})+'</div><div style="font-size:12.5px;color:var(--text2);line-height:1.45">Your clients, your numbers, your money stay <strong>private to you</strong>. They never see your side.</div></div>'+
           '</div>'+
-          '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Claim my free account →</button>'+
+          '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:15px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Claim my account →</button>'+
           '<button onclick="document.getElementById(\'supa-login-overlay\').remove();supaShowLogin({force:true,plain:true})" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit">I already use TradeDesk</button>'+
           '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
           '</div>';
       })()
-    : // ── Normal login ──────────────────────────────────────────────────────
-      '<div style="max-width:360px;width:100%">'+
-      '<div style="font-size:24px;font-weight:800;margin-bottom:4px">TradeDesk</div>'+
-      '<div style="font-size:13px;color:var(--text3);margin-bottom:28px">Sign in to sync your data across devices</div>'+
-      '<div class="f" style="margin-bottom:12px"><label>Email</label>'+
-        '<input type="email" id="supa-email" placeholder="your@email.com" style="'+_inputStyle+'"></div>'+
-      '<div class="f" style="margin-bottom:20px"><label>Password</label>'+
-        '<input type="password" id="supa-pass" placeholder="Password" style="'+_inputStyle+'"></div>'+
-      '<button onclick="supaSignIn()" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:10px">Sign in</button>'+
-      '<div style="text-align:right;margin-bottom:10px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:13px;cursor:pointer;font-family:inherit;padding:0;text-decoration:underline">Forgot password?</button></div>'+
-      '<button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:16px">Create account</button>'+
-      '<button onclick="_enterOfflineMode()" style="width:100%;padding:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Use offline (data stays on this device only)</button>'+
-      '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:10px;text-align:center;min-height:16px"></div>'+
-      '</div>';
+    : // ── Normal login, branded two-panel, matches the onboarding wizard ─────
+      (function(){
+        const _wrench=(sz,st)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+st+'" stroke-width="2.5"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>';
+        // Real vendor marks, what every premium app ships, reads as legitimate.
+        const _gLogo='<svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 01-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.81.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.71H.96v2.33A9 9 0 009 18z"/><path fill="#FBBC05" d="M3.97 10.71a5.4 5.4 0 010-3.42V4.96H.96a9 9 0 000 8.08l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59C13.46.89 11.43 0 9 0A9 9 0 00.96 4.96L3.97 7.3C4.68 5.17 6.66 3.58 9 3.58z"/></svg>';
+        const _aLogo='<svg width="16" height="16" viewBox="0 0 384 512" fill="#fff"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141.2 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>';
+        const _fldFocus='onfocus="this.style.borderColor=\'var(--blue)\';this.style.background=\'#fff\';this.style.boxShadow=\'0 0 0 3px rgba(37,99,235,.13)\'" onblur="this.style.borderColor=\'#e3e6eb\';this.style.background=\'#f7f8fa\';this.style.boxShadow=\'none\'"';
+        const _fld='font-size:15px;padding:12px 14px;border-radius:10px;border:1.5px solid #e3e6eb;background:#f7f8fa;color:var(--text);width:100%;box-sizing:border-box;outline:none;font-family:inherit;transition:border-color .15s,box-shadow .15s,background .15s';
+        const _social=(prov,label,bg,fg,bd,icon)=>'<button onclick="_obOAuth(\''+prov+'\')" onmouseover="this.style.filter=\'brightness(.97)\'" onmouseout="this.style.filter=\'none\'" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;transition:filter .15s">'+icon+'<span>'+label+'</span></button>';
+        const _bullets=[[svgIcon('📋',{size:15,color:'#fff'}),'Estimates & proposals in minutes'],[svgIcon('💰',{size:15,color:'#fff'}),'Get paid on the spot'],[svgIcon('📍',{size:15,color:'#fff'}),'Mileage, crew & taxes tracked'],[svgIcon('📊',{size:15,color:'#fff'}),'Your whole business, one place']];
+        return '<div style="display:flex;min-height:100vh;min-height:100dvh">'+
+          // Left brand panel (desktop only), gradient + soft glow for depth
+          '<div id="login-left" style="position:relative;overflow:hidden;width:360px;flex-shrink:0;background:linear-gradient(160deg,#111826 0%,#0D1117 60%,#080a0f 100%);padding:48px 38px;flex-direction:column;justify-content:space-between">'+
+            '<div style="position:absolute;top:-120px;right:-120px;width:340px;height:340px;background:radial-gradient(circle,rgba(37,99,235,.28),transparent 70%);pointer-events:none"></div>'+
+            '<div style="position:relative;z-index:1">'+
+              '<div style="display:flex;align-items:center;gap:11px;margin-bottom:48px">'+
+                '<div style="width:40px;height:40px;background:linear-gradient(135deg,#2563eb,#1e40af);border-radius:11px;display:flex;align-items:center;justify-content:center;box-shadow:0 6px 18px rgba(37,99,235,.4)">'+_wrench(21,'#fff')+'</div>'+
+                '<span class="brand-logo-slot" style="font-size:19px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
+              '</div>'+
+              '<div style="font-size:29px;font-weight:800;color:#fff;line-height:1.22;letter-spacing:-.025em;margin-bottom:16px">Welcome back.<br>Let\'s get to work.</div>'+
+              '<div style="font-size:14px;color:rgba(255,255,255,.55);line-height:1.5;margin-bottom:30px;max-width:250px">Built for the trades. Everything from lead to paid, in your pocket.</div>'+
+              '<div style="display:grid;gap:14px">'+
+                _bullets.map(f=>
+                  '<div style="display:flex;align-items:center;gap:12px;font-size:13.5px;color:rgba(255,255,255,.85)"><span style="width:26px;height:26px;flex:none;border-radius:7px;background:rgba(255,255,255,.09);display:flex;align-items:center;justify-content:center">'+f[0]+'</span><span>'+f[1]+'</span></div>'
+                ).join('')+
+              '</div>'+
+            '</div>'+
+            '<div style="position:relative;z-index:1;font-size:11px;color:rgba(255,255,255,.38)">© 2025 TradeDesk</div>'+
+          '</div>'+
+          // Right form panel (desktop keeps the light gradient; mobile flips to the dark brand backdrop in JS below)
+          '<div id="login-form-panel" style="flex:1;display:flex;flex-direction:column;background:radial-gradient(115% 52% at 50% -8%,rgba(45,93,168,.09),transparent 60%),linear-gradient(180deg,#FCFDFF 0%,#F2F5FB 100%);min-height:100%">'+
+            // Mobile header, logo lockup on the dark brand backdrop (phones only)
+            '<div id="login-mobile-hero" style="display:none;flex-direction:column;align-items:center;justify-content:center;gap:11px;padding:0 20px 24px;text-align:center">'+
+              '<div style="display:flex;align-items:center;gap:11px">'+
+                '<div style="width:46px;height:46px;background:linear-gradient(135deg,#2D5DA8,#1B3F7A);border-radius:13px;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 26px rgba(45,93,168,.55)">'+_wrench(25,'#fff')+'</div>'+
+                '<span style="font-size:23px;font-weight:800;color:#fff;letter-spacing:-.02em">TradeDesk</span>'+
+              '</div>'+
+              '<div style="font-size:14px;color:rgba(245,239,226,.62);font-weight:500">Welcome back. Let\'s get to work.</div>'+
+            '</div>'+
+            '<div id="login-form-inner" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:34px 28px;max-width:404px;width:100%;margin:0 auto;box-sizing:border-box">'+
+              _inviteBanner+
+              '<div style="margin-bottom:22px"><div style="font-size:25px;font-weight:800;letter-spacing:-.025em;color:var(--text);margin-bottom:4px">Sign in</div><div style="font-size:14px;color:var(--text3)">Pick up right where you left off.</div></div>'+
+              _social('google','Continue with Google','#fff','#1f2328','1.5px solid #dadce0',_gLogo)+
+              _social('apple','Continue with Apple','#000','#fff','1.5px solid #000',_aLogo)+
+              // Email is tucked behind a button so Google/Apple lead; tapping it pops the fields out.
+              '<div id="login-email-divider" style="display:flex;align-items:center;gap:10px;margin:16px 0 14px"><div style="flex:1;height:1px;background:var(--border)"></div><span style="font-size:11px;color:var(--text3);font-weight:600;text-transform:uppercase;letter-spacing:.05em">or</span><div style="flex:1;height:1px;background:var(--border)"></div></div>'+
+              '<button id="login-email-toggle" onclick="_loginShowEmail()" onmouseover="this.style.filter=\'brightness(.97)\'" onmouseout="this.style.filter=\'none\'" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:1.5px solid #dadce0;background:#fff;color:#1f2328;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;transition:filter .15s"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#1f2328" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"></rect><path d="m3 6.5 9 6 9-6"></path></svg><span>Continue with email</span></button>'+
+              '<div id="login-email-block" style="display:none">'+
+                '<div class="f" style="margin:2px 0 12px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Email</label>'+
+                  '<input type="email" id="supa-email" placeholder="you@yourbusiness.com" '+_fldFocus+' style="'+_fld+'"></div>'+
+                '<div class="f" style="margin-bottom:8px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Password</label>'+
+                  '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" '+_fldFocus+' style="'+_fld+'"></div>'+
+                '<div style="text-align:right;margin-bottom:18px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
+                '<button onclick="supaSignIn()" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 6px 20px rgba(13,17,23,.28)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 3px 12px rgba(13,17,23,.18)\'" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(13,17,23,.18);letter-spacing:-.01em;transition:transform .15s,box-shadow .15s">Sign in</button>'+
+              '</div>'+
+              '<div id="supa-login-err" style="font-size:12px;color:#A32D2D;margin-top:12px;text-align:center;min-height:16px"></div>'+
+              '<div style="text-align:center;font-size:13.5px;color:var(--text3);margin-top:20px">New to TradeDesk? <button onclick="document.getElementById(\'supa-login-overlay\').remove();showOnboarding()" style="border:none;background:none;color:var(--blue);font-weight:700;cursor:pointer;font-family:inherit;padding:0;font-size:13.5px">Create your account</button></div>'+
+              // Deliberate offline-only entry removed: a crash / cleared cache / new device would
+              // wipe an offline-only account with no cloud backup. _enterOfflineMode is kept ONLY
+              // as the auth-hiccup fallback (below) for users who already have a synced cloud cache.
+            '</div>'+
+          '</div>'+
+        '</div>';
+      })();
   document.body.appendChild(overlay);
-  setTimeout(()=>document.getElementById('supa-email')?.focus(),100);
+  // Responsive: dark brand rail on wide screens, branded hero band on phones (matches onboarding).
+  const _wide=window.innerWidth>=760;
+  const _ll=document.getElementById('login-left');
+  if(_ll)_ll.style.display=_wide?'flex':'none';
+  const _lm=document.getElementById('login-mobile-hero');
+  if(_lm)_lm.style.display=_wide?'none':'flex';
+  // On phones: bring the desktop's dark brand backdrop to the whole screen and
+  // float the form in a clean white card (kills the flat-white mobile look).
+  const _fp=document.getElementById('login-form-panel');
+  const _fi=document.getElementById('login-form-inner');
+  if(!_wide){
+    if(_fp){
+      _fp.style.background='radial-gradient(90% 48% at 50% 2%,rgba(45,93,168,.28),transparent 60%),linear-gradient(165deg,#1B1612 0%,#1E2231 100%)';
+      _fp.style.justifyContent='center';
+      _fp.style.padding='24px 16px';
+    }
+    if(_fi){
+      _fi.style.flex='0 0 auto';
+      _fi.style.background='#fff';
+      _fi.style.borderRadius='24px';
+      _fi.style.padding='28px 24px';
+      _fi.style.boxShadow='0 24px 60px rgba(0,0,0,.5)';
+      _fi.style.margin='0 auto';
+      _fi.style.maxWidth='430px';
+      _fi.style.justifyContent='flex-start';
+    }
+  }
+}
+// Reveal the email/password fields when the user chooses "Continue with email".
+function _loginShowEmail(){
+  const t=document.getElementById('login-email-toggle');
+  const d=document.getElementById('login-email-divider');
+  const b=document.getElementById('login-email-block');
+  if(t)t.style.display='none';
+  if(d)d.style.display='none';
+  if(b){b.style.display='block';b.style.animation='td-modal-enter .22s cubic-bezier(.22,1,.36,1) both';}
+  setTimeout(()=>document.getElementById('supa-email')?.focus(),60);
 }
 
 async function supaSignIn(){
@@ -3959,7 +4138,7 @@ async function supaSignIn(){
   const err=document.getElementById('supa-login-err');
   if(!email||!pass){if(err)err.textContent='Enter email and password.';return;}
   if(err)err.textContent='Signing in...';
-  // Attempt real auth — on network failure (no HTTP status, or thrown exception),
+  // Attempt real auth, on network failure (no HTTP status, or thrown exception),
   // enter offline mode automatically if we have cached data. This works on iOS where
   // navigator.onLine unreliably returns true even on airplane mode.
   let _authErr=null;
@@ -3977,7 +4156,7 @@ async function supaForgotPassword(){
   if(err){err.style.color='var(--text3)';err.textContent='Sending reset link...';}
   const{error}=await _supa.auth.resetPasswordForEmail(email,{redirectTo:window.location.href});
   if(error){if(err){err.style.color='#A32D2D';err.textContent=error.message;}}
-  else{if(err){err.style.color='#1a7340';err.textContent='Reset link sent — check your email.';}}
+  else{if(err){err.style.color='#1a7340';err.textContent='Reset link sent, check your email.';}}
 }
 async function _supaEmpSignUp(){
   const email=document.getElementById('supa-email')?.value?.trim();
@@ -3989,7 +4168,7 @@ async function _supaEmpSignUp(){
   const{error}=await _supa.auth.signUp({email,password:pass});
   if(error){
     if(error.message?.toLowerCase().includes('already registered')){
-      if(err){err.style.color='var(--text3)';err.textContent='Account exists — signing you in...';}
+      if(err){err.style.color='var(--text3)';err.textContent='Account exists, signing you in...';}
       const{error:siErr}=await _supa.auth.signInWithPassword({email,password:pass});
       if(siErr&&err){err.style.color='#A32D2D';err.textContent=siErr.message;}
     } else {
@@ -3997,7 +4176,7 @@ async function _supaEmpSignUp(){
     }
     return;
   }
-  if(err){err.style.color='var(--text3)';err.textContent='Account created — signing you in...';}
+  if(err){err.style.color='var(--text3)';err.textContent='Account created, signing you in...';}
   await _supa.auth.signInWithPassword({email,password:pass});
 }
 let _deliberateSignOut=false;
@@ -4012,7 +4191,7 @@ function _saveSessionBackup(session){
 // _initRealtimeSubscriptions subscribes td-sync-<uid>, user-data-<uid>, and sig-feed-<uid>
 // filtered on the signed-in user's id. These channels are NOT closed on sign-out, so after
 // account A signs out and B signs in on the SAME page, A's still-live postgres_changes
-// subscription keeps delivering A's rows to _applyRealtimeRecord — which (with _lastKnownIds
+// subscription keeps delivering A's rows to _applyRealtimeRecord, which (with _lastKnownIds
 // cleared by the wipe) re-pushes A's bid into the now-B bids[], re-stamps _syncedHash, and
 // rewrites zp3_cloud_cache via _writeLocalCache(). Removing every channel here is what makes
 // the wipe actually stick. Must run on any account exit (deliberate sign-out AND the
@@ -4021,32 +4200,37 @@ function _teardownRealtimeChannels(){
   try{if(_supa&&typeof _supa.removeAllChannels==='function')_supa.removeAllChannels();}catch(_e){}
   _syncBroadcastChannel=null;
   _realtimeSubscribed=false; // force the next account's load to re-subscribe under ITS uid
-  _tdRealtimeReady=false;    // channels are gone — delivery is no longer live
+  _tdRealtimeReady=false;    // channels are gone, delivery is no longer live
   clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;_broadcastPending=false;
   clearTimeout(_reconcileTimer);_reconcileTimer=null;
   clearTimeout(_writeCacheTimer);_writeCacheTimer=null; // a pending debounced cache write would snapshot the OUTGOING account after the wipe
   clearTimeout(_rtRenderTimer);_rtRenderTimer=null;     // a pending coalesced render would paint the outgoing account's rows
 }
 // Hard-wipe THIS account's entire local footprint so nothing can bleed into the next
-// account signed in on the same device (bug #39). Idempotent — safe to call from both
+// account signed in on the same device (bug #39). Idempotent: safe to call from both
 // the SIGNED_OUT handler AND supaSignOut; whichever runs first wins, the other no-ops.
 function _wipeLocalAccountData(){
   clearTimeout(_syncTimer);_syncTimer=null; // prevent a live timer from flushing emptied arrays
   _teardownRealtimeChannels(); // CRITICAL: close A's live channels so they can't re-deliver A's rows into B
   _supaCloudLoaded=false;_realtimeSubscribed=false;_loadInProgress=false;clearTimeout(_broadcastReloadTimer);_broadcastReloadTimer=null;clearTimeout(_reconcileTimer);_reconcileTimer=null;clearTimeout(_writeCacheTimer);_writeCacheTimer=null;
+  // Reset the "settings are authoritative" gate too. It guards the dashboard setup
+  // checklist (dashboard.js): if it survives a sign-out, the next sign-in renders the
+  // checklist for one frame against the OLD/empty state before the new load corrects
+  // it, the brief onboarding flash on re-sign-in. Keep it hidden until the new load lands.
+  _authSettingsLoaded=false;
   // Cross-account merge state: _mergeOnSignIn + the offline blob hold THIS account's data;
   // if either survives, the next account's SIGNED_IN merge pushes this account's records
   // into theirs. Hard-clear them plus the cloud cache so nothing leaks forward.
   _mergeOnSignIn=false;_loadedFromCacheOnly=false;_loadedDataOwner=null;
   localStorage.removeItem('zp3_offline_pending');
   localStorage.removeItem('zp3_cloud_cache');
-  // Delta cursor + its sidecar are per-account too — drop both so the next account
+  // Delta cursor + its sidecar are per-account too, drop both so the next account
   // rebuilds from a full load rather than delta-ing against this account's cursor.
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
   _subBids=null;window._subBidsKicked=false; // incoming-bid cache is per-account
   clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
-  // the arrays above — the next account's Leads page would keep rendering this
+  // the arrays above, the next account's Leads page would keep rendering this
   // account's unreviewed QR/intake leads (and could even promote one into the
   // next account's clients) until its own poll happened to overwrite it, which
   // isn't guaranteed (see _loadPendingInbound's early-returns). Clear both here.
@@ -4055,15 +4239,15 @@ function _wipeLocalAccountData(){
   // Delta-sync baselines are per-account: a stale _syncedHash entry under the next account
   // would suppress re-upload of its own same-id row, and a stale _lastKnownIds set would
   // mis-target the soft-delete sweep. Both rebuild from the next account's cloud load.
-  // _rowSyncedAt/_rowServerTs mirror _syncedHash (per-account merge gates) — same lifecycle.
+  // _rowSyncedAt/_rowServerTs mirror _syncedHash (per-account merge gates), same lifecycle.
   _syncedHash={};_rowSyncedAt={};_rowServerTs={};
   // The durable op log + field clocks + ops-pull cursor are the OUTGOING account's
-  // pending intent — surviving the switch would rebase A's edits onto B's data.
+  // pending intent, surviving the switch would rebase A's edits onto B's data.
   try{_opDbClear();}catch(_e){}
   _fieldClocks={};
   try{if(_supaUser&&_supaUser.id)localStorage.removeItem('zp3_ops_since_'+_supaUser.id);}catch(_e){}
   Object.values(_lastKnownIds).forEach(s=>{if(s&&typeof s.clear==='function')s.clear();});
-  // settingsTs:0 — zp3_S is shared across accounts on this device. Without zeroing the
+  // settingsTs:0: zp3_S is shared across accounts on this device. Without zeroing the
   // timestamp these blanked settings beat the next account's cloud copy and overwrite it.
   // vehiclesTs:0 for the same reason: the blanked vehicles:[] must never win the
   // per-field keep-local rule over the next login's real cloud fleet.
@@ -4072,14 +4256,14 @@ function _wipeLocalAccountData(){
 }
 async function supaSignOut(){
   _deliberateSignOut=true;
-  // scope:'local' clears this device only — refresh token stays valid server-side.
+  // scope:'local' clears this device only, refresh token stays valid server-side.
   // scope:'global' (the default) revokes the token on the server, so the backup key
   // can't be used to silently re-auth when the user comes back online.
   if(_supa)await _supa.auth.signOut({scope:'local'});
   // GoTrue dispatches SIGNED_OUT asynchronously, and its handler is what wipes the
   // outgoing account's in-memory arrays and sets _supaUser=null. If the user signs
   // straight into a DIFFERENT account on the same page (no reload), that wipe can
-  // land AFTER the new account's SIGNED_IN already set _supaUser — nulling it back
+  // land AFTER the new account's SIGNED_IN already set _supaUser, nulling it back
   // out and bleeding/blanking state. Drain deterministically: the SIGNED_OUT handler
   // clears _deliberateSignOut at the end of its wipe, so wait (bounded) for that flag
   // to drop before returning. Now any subsequent sign-in is a clean SIGNED_IN.
@@ -4131,7 +4315,7 @@ async function _deleteReceiptFromStorage(receiptKey){
   if(error)throw error;
 }
 // Merge an incoming settings object (cloud row or local cache snapshot) into S.
-// If local S carries a newer settingsTs, the incoming copy is stale — e.g. the
+// If local S carries a newer settingsTs, the incoming copy is stale, e.g. the
 // user hit Save then refreshed before the cloud flush finished (settings are
 // written LAST in supaSaveToCloud, after all table upserts). Local wins and we
 // flag a pending sync so the newer local settings get pushed up.
@@ -4140,11 +4324,11 @@ function _mergeIncomingSettings(ss,src){
   // TEMP DIAGNOSTIC (automation only): trace every settings merge to find the reboot clobber.
   if(navigator.webdriver){try{(window._mergeLog=window._mergeLog||[]).push({src:String(src).slice(0,40),ig:ss&&ss.goalMonthly,it:ss&&ss.settingsTs,lt:S.settingsTs,localNewer:(S.settingsTs||0)>(ss.settingsTs||0)});}catch(_e){}}
   // CROSS-ACCOUNT GUARD (production bug: an E2E/dev vehicle bled into another account on
-  // a REAL password login). zp3_S — the settings cache S is painted from on boot — is
+  // a REAL password login). zp3_S: the settings cache S is painted from on boot, is
   // shared across accounts on one device, so S may still hold the PREVIOUS account's
   // settings. If the settings now arriving belong to a DIFFERENT account, nothing of the
   // old one may survive: take the incoming account's settings wholesale and BYPASS both
-  // same-account guards below — the newer-settingsTs bail (which would keep the old
+  // same-account guards below, the newer-settingsTs bail (which would keep the old
   // account's whole S) and the newer-vehiclesTs keep-local rule (which actively carried
   // the old account's vehicles across). S._sOwner stamps which account S belongs to.
   const _incomingOwner=((typeof _isEmployee!=='undefined'&&_isEmployee)?_contractorUserId:(_supaUser&&_supaUser.id))||null;
@@ -4167,14 +4351,14 @@ function _mergeIncomingSettings(ss,src){
   if(_localVehsTs>(ss.vehiclesTs||0)){S.vehicles=_localVehs;S.vehiclesTs=_localVehsTs;}
   // One-time migration: supplies rate default lowered from $0.40 to $0.25/sqft (2026-06)
   if(S.suppliesRate===0.40){S.suppliesRate=0.25;}
-  // Persist the winning copy immediately — without this, a force-close right after
+  // Persist the winning copy immediately, without this, a force-close right after
   // the merge boots from a stale zp3_S (cleared values resurrect as their old rate
   // until the next cloud merge; permanently if that boot happens offline).
   try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(_e){}
   return true;
 }
 // ── Per-individual-user UI layout (dashboard widget order + nav tab order) ──
-// Stored in the user_prefs table keyed by auth.uid() — NOT in zj_data/S, which
+// Stored in the user_prefs table keyed by auth.uid(): NOT in zj_data/S, which
 // employees share with their contractor. This keeps each person's layout
 // isolated (iOS-home-screen model: layout follows the identity, never bleeds).
 function _userLayoutCacheKey(){return _supaUser?('td_layout_'+_supaUser.id):null;}
@@ -4189,7 +4373,7 @@ async function _loadUserPrefs(){
   if(k){try{const c=JSON.parse(localStorage.getItem(k)||'null');if(c){if(Array.isArray(c.d))S.dashWidgetOrder=c.d;if(Array.isArray(c.n))S.navTabOrder=c.n;if(Array.isArray(c.k))S.dashKpiOrder=c.k;}}catch(_e){}}
   if(!_supa||!_supaUser)return;
   // OFFLINE-REORDER FIX: a dirty flag means the LOCAL layout is newer than the
-  // cloud row (the reorder's upsert never landed — offline/failed). Push local
+  // cloud row (the reorder's upsert never landed, offline/failed). Push local
   // up instead of applying the stale cloud copy over it.
   if(k&&localStorage.getItem(k+'_dirty')){_saveUserPrefs();return;}
   try{
@@ -4206,7 +4390,7 @@ function _saveUserPrefs(){
   // Local cache is synchronous so a force-quit right after a reorder never loses it.
   _cacheUserLayoutLocal();
   const k=_userLayoutCacheKey();
-  // Dirty until the cloud upsert CONFIRMS — cleared in the success handler only.
+  // Dirty until the cloud upsert CONFIRMS, cleared in the success handler only.
   // Offline (or a failed write) leaves the flag, and reconnect/next boot re-pushes.
   if(k){try{localStorage.setItem(k+'_dirty','1');}catch(_e){}}
   if(!_supa||!_supaUser)return;
@@ -4217,7 +4401,7 @@ function _saveUserPrefs(){
     ).then(()=>{try{if(k)localStorage.removeItem(k+'_dirty');}catch(_e){}},()=>{});
   }catch(_e){}
 }
-// Reconnect: if a reorder happened offline, its dirty flag is still set — push
+// Reconnect: if a reorder happened offline, its dirty flag is still set, push
 // the local layout the moment the network returns (not just on the next reorder).
 window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&localStorage.getItem(k+'_dirty'))_saveUserPrefs();}catch(_e){}});
 // Build the offline-pending snapshot, stamped with the owning account's user id.
@@ -4226,7 +4410,7 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 // only for purely-local data entered before any sign-in (safe to adopt on first login).
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
-  // is still tagged with the account it came from — the next sign-in checks this.
+  // is still tagged with the account it came from, the next sign-in checks this.
   return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
@@ -4236,22 +4420,22 @@ function _readOwnedOfflinePending(){
   if(!op)return null;
   if(op._owner&&_supaUser&&op._owner!==_supaUser.id){
     localStorage.removeItem('zp3_offline_pending');
-    return null; // belongs to a previous account — never merge it in
+    return null; // belongs to a previous account, never merge it in
   }
   return op;
 }
 function supaSaveDebounced(){
-  // A deliberate sign-out is in progress — never persist or queue the outgoing
+  // A deliberate sign-out is in progress, never persist or queue the outgoing
   // account's data. This is the last line of defense against cross-account bleed:
   // even if a debounced save was scheduled milliseconds before sign-out, it stops here.
   if(_deliberateSignOut)return;
   if(!supaEnabled())return;
   if(!_supaUser&&!_mergeOnSignIn)return;
   // Oplog derive at the edit-time choke-point: ops (and their HLC field clocks) are
-  // stamped when the user acted, not 2s later — and persisted to IndexedDB immediately,
+  // stamped when the user acted, not 2s later, and persisted to IndexedDB immediately,
   // so a force-quit inside the debounce window still keeps the intent. The NETWORK ops
   // sync (td_ops push/pull) runs in supaSaveToCloud's success epilogue, once per real
-  // save — not here, where it fired per keystroke-debounce call.
+  // save: not here, where it fired per keystroke-debounce call.
   _opShadowDerive();
   clearTimeout(_syncTimer);
   // Write the snapshot SYNCHRONOUSLY before starting the 2s timer.
@@ -4262,7 +4446,7 @@ function supaSaveDebounced(){
   if(_supaCloudLoaded||_mergeOnSignIn){
     try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
   }
-  // The fired save MUST be tracked in _pendingSavePromise (via _flushSaveNow) — a bare
+  // The fired save MUST be tracked in _pendingSavePromise (via _flushSaveNow), a bare
   // supaSaveToCloud() here is invisible to the silent-load guard in supaLoadFromCloud,
   // so a reconcile-heartbeat reload racing this in-flight save could replace the arrays
   // + rebuild _syncedHash mid-save and permanently drop the edit being saved (the
@@ -4285,7 +4469,7 @@ function _flushSaveNow(){
 function _showOfflineBanner(syncing){
   const b=document.getElementById('offline-banner');if(!b)return;
   if(syncing){b.textContent='Syncing...';b.style.background='#2563eb';b.style.color='#fff';}
-  else{b.textContent='Offline — changes saved locally';b.style.background='#D97706';b.style.color='#1a1a1a';}
+  else{b.textContent='Offline: changes saved locally';b.style.background='#D97706';b.style.color='#1a1a1a';}
   b.style.opacity='1';b.style.transform='translateY(0)';b.style.pointerEvents='auto';
 }
 function _hideOfflineBanner(){
@@ -4311,7 +4495,7 @@ async function _onReconnect(){
       let _merged=false;
       _oClients.filter(c=>!_cSet.has(c.id)).forEach(c=>{clients.push(c);_merged=true;});
       _oJobs.filter(j=>!_jSet.has(j.id)).forEach(j=>{jobs.push(j);_merged=true;});
-      // BIDS: non-destructive — newer/richer copy wins per id (see SIGNED_IN merge).
+      // BIDS: non-destructive: newer/richer copy wins per id (see SIGNED_IN merge).
       // A silent cloud reload must never drop offline-edited room measurements.
       const _cloudBidById=new Map(bids.map(b=>[String(b.id),b]));
       _oBids.forEach(ob=>{
@@ -4329,7 +4513,7 @@ async function _onReconnect(){
     return;
   }
 
-  // Case 2: Loaded from cache, no user writes — just refresh from cloud silently.
+  // Case 2: Loaded from cache, no user writes, just refresh from cloud silently.
   if(_loadedFromCacheOnly&&!hasPending){
     _showOfflineBanner(true);
     try{
@@ -4343,34 +4527,34 @@ async function _onReconnect(){
   // Case 3: Network blip mid-session (or cache load + user made offline writes).
   // Sanity guard inside supaSaveToCloud() prevents pushing incomplete data.
   if(!hasPending){
-    // Nothing to sync and cloud is fully loaded — routine token rotation triggered
+    // Nothing to sync and cloud is fully loaded, routine token rotation triggered
     // _mergeOnSignIn via SIGNED_OUT but TOKEN_REFRESHED confirms we're still online.
     // Clear the flag and cancel/hide the banner so it doesn't linger.
     _mergeOnSignIn=false;clearTimeout(window._offlineBannerTimer);_hideOfflineBanner();
-    // Pull latest state immediately — realtime sockets don't replay missed events,
+    // Pull latest state immediately, realtime sockets don't replay missed events,
     // so any changes from other devices during the outage need an explicit pull.
     if(_supaUser&&!_loadInProgress)supaLoadFromCloud({silent:true});
     return;
   }
   _showOfflineBanner(true);
   try{
-    // Case 4: offline writes pending. PULL-FIRST REBASE — the old push-first order
+    // Case 4: offline writes pending. PULL-FIRST REBASE, the old push-first order
     // upserted this device's WHOLE stale rows over everything peers committed during
     // the outage (the offline-return clobber: our copy of a shared row still carries
     // the pre-outage values of every field a peer edited meanwhile, and peers' own
     // copies aren't "pending" so nothing protects them from our upsert). Instead:
-    //   1. cancel the queued debounce push — its edits are already op-logged (durable
+    //   1. cancel the queued debounce push, its edits are already op-logged (durable
     //      IndexedDB, stamped at edit time) and still in memory, nothing is lost;
     //   2. PULL: the load's per-field rebase overlays our pending offline edits onto
     //      the fresh server state (field clocks protect exactly what we changed);
-    //   3. PUSH the merged result + our ops — peers converge field-by-field.
+    //   3. PUSH the merged result + our ops, peers converge field-by-field.
     if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
     if(_pendingSavePromise){try{await _pendingSavePromise;}catch(_e){}}
     // Snapshot BEFORE the pull: a reconnect must NEVER lose in-memory work. The delta
     // path merges (nothing to lose), but the cursorless FULL fallback replaces the
     // arrays, and the op-log re-append can't rescue rows when IndexedDB is unavailable
-    // (private browsing / blocked storage). Merge back whatever the pull dropped —
-    // except ids this device deliberately deleted — and the push below re-uploads any
+    // (private browsing / blocked storage). Merge back whatever the pull dropped,
+    // except ids this device deliberately deleted, and the push below re-uploads any
     // row the cloud genuinely lacks (no synced hash → treated as changed).
     const _preSnap=_TD_TABLES.map(({t,get})=>({t,rows:(get()||[]).slice()}));
     await supaLoadFromCloud({silent:true});
@@ -4396,8 +4580,8 @@ async function _onReconnect(){
 async function _probeAndSync(){
   try{
     await fetch('/version.json?_='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(5000)});
-    _hideOfflineBanner(); // connection confirmed — hide immediately, sync in background
-    // No active user — try silent session restore regardless of _mergeOnSignIn.
+    _hideOfflineBanner(); // connection confirmed, hide immediately, sync in background
+    // No active user, try silent session restore regardless of _mergeOnSignIn.
     // _mergeOnSignIn is only true after involuntary SIGNED_OUT; after deliberate sign-out
     // the flag stays false, but we still want to re-auth when the backup token is present.
     if(_supa&&!_supaUser&&!_sessionRestoreInProgress){
@@ -4407,14 +4591,14 @@ async function _probeAndSync(){
         _supa.auth.setSession(_bk).then(({data:{session}})=>{
           _sessionRestoreInProgress=false;
           if(!session){
-            // Refresh token confirmed expired (not a network error — Supabase returned null).
+            // Refresh token confirmed expired (not a network error, Supabase returned null).
             // Clear the stale backup so future probes don't keep trying it.
             localStorage.removeItem('zp3_session_backup');
             supaShowLogin({force:true});
             return;
           }
           if(!_supaUser){
-            // Auth event hasn't fired yet — drive reconnect ourselves
+            // Auth event hasn't fired yet, drive reconnect ourselves
             _supaUser=session.user;
             _saveSessionBackup(session);
             _mergeOnSignIn=false;
@@ -4422,11 +4606,11 @@ async function _probeAndSync(){
           }
           // If auth event already set _supaUser, reconnect was handled there
         }).catch(()=>{
-          // Network error during token exchange — don't show login, retry on next probe
+          // Network error during token exchange, don't show login, retry on next probe
           _sessionRestoreInProgress=false;
         });
       }
-      // No backup — stay on current screen; don't call supaShowLogin() repeatedly from tick
+      // No backup, stay on current screen; don't call supaShowLogin() repeatedly from tick
       return;
     }
     _onReconnect();
@@ -4442,7 +4626,7 @@ function _startOfflineWatcher(){
   // SIGNED_OUT repeatedly from failed refresh attempts while disconnected.
   window.addEventListener('offline',()=>{if(_supa)_supa.auth.stopAutoRefresh();});
   document.addEventListener('visibilitychange',()=>{
-    // Flush offline-pending to localStorage the moment the app is backgrounded —
+    // Flush offline-pending to localStorage the moment the app is backgrounded,
     // last chance to persist before iOS suspends or kills the process. Fire whenever
     // there's any unsaved data: pending debounced save, offline mode, or a failed
     // push that hasn't drained yet. (Before v05.19.26.129 this only fired when
@@ -4478,7 +4662,7 @@ function _logSave(stage,info){
 // ANY doubt (no cache, account mismatch, missing cursor, query error) falls back
 // to the full load; and _syncedHash reflects cloud (written only after a save
 // confirms), so a locally-edited-unsaved row keeps its OLD hash and still
-// re-uploads on the next save — the delta merge never marks local edits synced.
+// re-uploads on the next save, the delta merge never marks local edits synced.
 let _deltaCursor=null;
 function _readDeltaMeta(uid){
   try{
@@ -4507,7 +4691,7 @@ function _paintCacheForDelta(uid){
       // Painted rows came from the cloud-derived cache → in sync as of NOW for the merge's
       // pending-gate. Conservative on purpose: field clocks rehydrated from the op log are
       // all OLDER than this boot, so none can wrongly "protect" a stale value against a
-      // peer's update. Genuinely-unsaved offline edits don't rely on the merge — they ride
+      // peer's update. Genuinely-unsaved offline edits don't rely on the merge, they ride
       // the zp3_offline_pending merge + reconnect flush, which re-uploads them wholesale.
       _rowSyncedAt[t]=new Map(rows.map(r=>[String(r.id),_ptTs]));
     }
@@ -4541,7 +4725,7 @@ async function supaSaveToCloud(){
   }
   if(!_supaCloudLoaded){_logSave('skip','_supaCloudLoaded=false');return;}
 
-  // Sanity guard — refuse to push if critical arrays unexpectedly empty vs cache.
+  // Sanity guard, refuse to push if critical arrays unexpectedly empty vs cache.
   // A deliberate "Clear all data" wipe (_deliberateWipe) is the one legitimate way the
   // arrays empty out, so it bypasses the guard and the sweep soft-deletes for real.
   if(_loadedFromCacheOnly&&!_deliberateWipe){
@@ -4557,7 +4741,7 @@ async function supaSaveToCloud(){
   }
 
   // Derive ops for anything not yet captured (direct supaSaveToCloud callers bypass the
-  // debounce) — idempotent: the incremental baseline makes a second derive a no-op.
+  // debounce): idempotent: the incremental baseline makes a second derive a no-op.
   // Runs BEFORE any network so even a save that throws (offline) has persisted its intent;
   // that durable intent is what the reconnect rebase replays over the server state.
   _opShadowDerive();
@@ -4571,7 +4755,7 @@ async function supaSaveToCloud(){
   _lastLocalSaveAt=Date.now();
   _logSave('start',{id:_attemptId,mileage:_mileCount,page:document.querySelector('.pg.active')?.id});
 
-  // Force-quit safety net — written before any async work
+  // Force-quit safety net, written before any async work
   try{localStorage.setItem('zp3_offline_pending',_offlinePendingBlob());}catch(_e){}
   _writeLocalCache();
 
@@ -4605,13 +4789,13 @@ async function supaSaveToCloud(){
 
     // NOTE: settings + the zj_data sync cursor are written LAST, AFTER the table loop below
     // (see the "SETTINGS + SYNC CURSOR" block). Writing zj_data.updated_at after every td_* row
-    // has committed is what fixes the cross-device read-skew — a peer can never read a fresh
+    // has committed is what fixes the cross-device read-skew, a peer can never read a fresh
     // cursor over stale table data. It also means ONE zj_data write per save (not a settings-first
     // write + a separate marker), so a peer's reload path has a single event to coalesce.
 
     // Count of rows this save actually wrote (upserts + soft-deletes) across ALL tables.
     // Drives the LAST-WRITTEN sync marker below: the cross-device cursor (zj_data.updated_at)
-    // may only advance once every td_* row is committed — see the marker note after the loop.
+    // may only advance once every td_* row is committed, see the marker note after the loop.
     let _tableWrites=0;
     // Batch upsert helper: upserts all live records, soft-deletes any that vanished
     const _upsertTable=async(tbl,arr,txFn)=>{
@@ -4620,24 +4804,24 @@ async function supaSaveToCloud(){
       _syncedHash[tbl]||=new Map();
       const hashes=_syncedHash[tbl];
       // DELTA: upload ONLY rows whose content hash changed since the last sync (or is
-      // unknown). The hash is computed over `r` here — the exact post-txFn payload that
-      // becomes the DB `data` column — so it round-trips against the load-side rebuild.
+      // unknown). The hash is computed over `r` here: the exact post-txFn payload that
+      // becomes the DB `data` column: so it round-trips against the load-side rebuild.
       // Computed BEFORE any network so an unchanged table can short-circuit entirely.
       let changed=[];
       for(const r of rows){
         const id=String(r.id);
         const h=_hashPayload(r);
         if(hashes.get(id)===h){ window._deltaStats.skips++; continue; }
-        // archived_at:null mirrors deleted_at:null — a LIVE row in memory is by
+        // archived_at:null mirrors deleted_at:null: a LIVE row in memory is by
         // definition not archived, so a re-created/edited id resurfaces on every
         // device (without this, a swept-then-recreated id stayed archived and
-        // invisible — the offline-reconnect race caught it live).
+        // invisible: the offline-reconnect race caught it live).
         changed.push({id,h,row:{id,user_id:uid,data:r,updated_at:ts,deleted_at:null,archived_at:null}});
       }
       const _pendingDeletes=(_locallyDeletedIds[tbl]&&[..._locallyDeletedIds[tbl]].some(id=>(_lastKnownIds[tbl]||new Set()).has(id)&&!currentIds.has(id)))||false;
-      // NO-OP FAST PATH — nothing changed and nothing pending deletion: ZERO round-trips.
+      // NO-OP FAST PATH, nothing changed and nothing pending deletion: ZERO round-trips.
       // Before this, a completely idle save still paid one lockedRows SELECT per table
-      // (14 sequential reads) every ~2s during editing — the per-save cost that made the
+      // (14 sequential reads) every ~2s during editing, the per-save cost that made the
       // bloated-account saves crawl and (at scale) would do the same to any heavy customer.
       // The lockedRows read only matters when we're about to WRITE this table, so it moves
       // below the short-circuit. _lastKnownIds still refreshes so the sweep stays correct.
@@ -4655,7 +4839,7 @@ async function supaSaveToCloud(){
       }
       if(changed.length){
         // Upsert in batches of 50. Write the synced hash ONLY AFTER each batch resolves
-        // with no error — never optimistically, so a thrown batch (→ pending_sync retry)
+        // with no error, never optimistically, so a thrown batch (→ pending_sync retry)
         // never marks un-sent rows as "synced" and silently drops them next save.
         for(let i=0;i<changed.length;i+=50){
           const slice=changed.slice(i,i+50);
@@ -4669,21 +4853,21 @@ async function supaSaveToCloud(){
           slice.forEach(c=>{hashes.set(c.id,c.h);(_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(c.id,_upTs);}); // uploaded → in sync as of now (ends the merge's pending window)
           window._deltaStats.upserts+=slice.length;_tableWrites+=slice.length;
           // Diagnostic: NAME each uploaded row (tbl:id) so a delta-count assertion
-          // failure reports WHICH rows uploaded, not just how many (§11.1 —
+          // failure reports WHICH rows uploaded, not just how many (§11.1:
           // instrument, don't guess). Capped so a full-account first save can't bloat.
           try{const _dr=(window._deltaStats.rows||(window._deltaStats.rows=[]));if(_dr.length<200)slice.forEach(c=>_dr.push(tbl+':'+c.id));}catch(_e){}
         }
       }
       // Remove ONLY ids the user EXPLICITLY removed on this device (recorded in
-      // _locallyDeletedIds) — or everything vanished, during a deliberate bulk wipe.
+      // _locallyDeletedIds): or everything vanished, during a deliberate bulk wipe.
       // A row merely absent from this snapshot (e.g. a peer's row not yet merged here)
       // is NEVER swept, so concurrent devices can't clobber each other's new rows.
       //
       // DELETE vs ARCHIVE are SEPARATE (owner directive):
-      //   • ARCHIVE = automatic, time-based (7-year rule, archive_old_records) — keeps
+      //   • ARCHIVE = automatic, time-based (7-year rule, archive_old_records), keeps
       //     everything, just moves old rows out of the hot set.
       //   • DELETE = a rare, DELIBERATE removal via the hidden press-and-hold-the-record
-      //     gesture (no delete buttons anywhere). It soft-deletes (deleted_at) — the row
+      //     gesture (no delete buttons anywhere). It soft-deletes (deleted_at): the row
       //     leaves every device's view but STAYS in the table forever ("keep everything
       //     in"), never a hard delete. Still swept ONLY for ids the user explicitly
       //     removed on THIS device (_locallyDeletedIds), never a merely-absent peer row.
@@ -4701,12 +4885,12 @@ async function supaSaveToCloud(){
       _lastKnownIds[tbl]=currentIds;
     };
 
-    // Never write back a table the server redacted for this employee — its
+    // Never write back a table the server redacted for this employee, its
     // in-memory money fields are zeroed, and upserting them would overwrite the
     // contractor's real amounts. Permission-derived so it holds even if the RPC
     // fell back to a raw load. Contractors skip nothing.
     const _saveSkip=_employeeRedactedTables();
-    // PARALLEL: the 14 tables are disjoint, so their upserts/sweeps run concurrently —
+    // PARALLEL: the 14 tables are disjoint, so their upserts/sweeps run concurrently,
     // wall time collapses from 14 sequential round-trips to ~1 (the slowest table). The
     // read-skew invariant is untouched: the SETTINGS + SYNC CURSOR block below runs only
     // after this Promise.all resolves, i.e. after EVERY table's writes have committed.
@@ -4716,19 +4900,19 @@ async function supaSaveToCloud(){
       try{
         await _upsertTable(t,arr,tx);
       }catch(_te){
-        // Unprovisioned table (migration not yet applied) — skip it, keep syncing the
+        // Unprovisioned table (migration not yet applied), skip it, keep syncing the
         // rest. Without this, one missing table flips the whole app to offline/error.
         if(_isMissingTableErr(_te)){console.warn('[cloud] skipping save to unprovisioned table',t);return;}
         throw _te;
       }
     }));
 
-    // ── SETTINGS + SYNC CURSOR — written LAST (fixes the cross-device read-skew) ──
+    // ── SETTINGS + SYNC CURSOR, written LAST (fixes the cross-device read-skew) ──
     // zj_data.updated_at is the cursor every peer polls ("changed → reload"). Writing it AFTER
     // the whole table loop has awaited (⇒ committed) every upsert/soft-delete guarantees the
     // invariant peers rely on: "cursor moved ⇒ ALL table data is already committed", so a peer
     // can never read a fresh cursor over stale data (the read-skew that stuck B one edit behind).
-    // Settings ride the SAME write — ONE zj_data event per save, not a settings-first write plus
+    // Settings ride the SAME write, ONE zj_data event per save, not a settings-first write plus
     // a separate marker, so a peer's reload path has a single event to coalesce (no render storm).
     // Trade-off vs the old settings-first: a force-quit AFTER the tables but BEFORE this write
     // loses only the (tiny) settings delta; the bigger table data has already committed.
@@ -4737,7 +4921,7 @@ async function supaSaveToCloud(){
       // locationGranted/locationDenied DO persist so the location permission survives a reload.
       const{stateRates:_sr0,...sForCloud}=S;
       // LAST-WRITER-WINS by settingsTs: never overwrite a NEWER cloud settings blob with our
-      // (possibly stale) copy — but if that happens we STILL bump the cursor when our table rows
+      // (possibly stale) copy, but if that happens we STILL bump the cursor when our table rows
       // changed, else the peer that owns the newer settings would never learn of our records.
       let _skipSettings=false,_peerMovedCursor=false;
       try{
@@ -4746,7 +4930,7 @@ async function supaSaveToCloud(){
           const _curTs=(()=>{try{return (JSON.parse(_curS.settings).settingsTs)||0;}catch(_e){return 0;}})();
           if(_curTs>(S.settingsTs||0))_skipSettings=true;
         }
-        // ANTI-BLINDING: our write below overwrites the cursor — and with it, the heartbeat's
+        // ANTI-BLINDING: our write below overwrites the cursor, and with it, the heartbeat's
         // memory of any PEER save we haven't loaded yet. If the server cursor already moved
         // past what this device last saw, a peer changed something between our last load and
         // this save; queue a reconcile NOW (it runs after this save completes) or the change
@@ -4756,7 +4940,7 @@ async function supaSaveToCloud(){
       }catch(_e){}
       if(navigator.webdriver){try{(window._zjWrites=window._zjWrites||[]).push({g:sForCloud.goalMonthly,ts:sForCloud.settingsTs,skip:_skipSettings,cl:_supaCloudLoaded,foc:_loadedFromCacheOnly,page:document.querySelector('.pg.active')?.id||null});}catch(_e){}}
       if(_skipSettings){
-        _logSave('skip-settings','cloud settingsTs is newer — not clobbering with a stale local copy');
+        _logSave('skip-settings','cloud settingsTs is newer, not clobbering with a stale local copy');
         // Cursor-only bump so our table changes still propagate to the peer with newer settings.
         if(_tableWrites>0){
           try{const _cTs=new Date().toISOString();const{data:_ck}=await _supa.from('zj_data').update({updated_at:_cTs}).eq('user_id',uid).select('updated_at').single();if(_ck?.updated_at)window._lastZjUpdatedAt=_ck.updated_at;}catch(_e){}
@@ -4774,12 +4958,12 @@ async function supaSaveToCloud(){
       if(_peerMovedCursor)_scheduleReconcile(800);
     } else if(!_isEmployee && !_authSettingsLoaded){
       // Cloud settings haven't hydrated yet (fresh/cache-wiped boot). Do NOT push the default
-      // blob over the cloud (the boot clobber) — defer to the post-load flush.
-      _logSave('skip-settings','settings not hydrated — deferring to post-load flush');
+      // blob over the cloud (the boot clobber), defer to the post-load flush.
+      _logSave('skip-settings','settings not hydrated, deferring to post-load flush');
       try{localStorage.setItem('zp3_pending_sync','1');}catch(_e){}
     } else if(_isEmployee && !_devSupportMode && _tableWrites>0){
       // CREW SAVE CURSOR BUMP: crew can't write zj_data (settings stay owner-private),
-      // but "cursor moved ⇒ all data committed" must hold for crew writes too — else
+      // but "cursor moved ⇒ all data committed" must hold for crew writes too, else
       // every peer's heartbeat/delta goes blind to crew edits and only best-effort
       // realtime carries them. The SECURITY DEFINER RPC bumps ONLY updated_at, and
       // runs AFTER the table loop above committed, preserving the read-skew invariant.
@@ -4793,11 +4977,11 @@ async function supaSaveToCloud(){
     _logSave('ok',{id:_attemptId,mileage:_mileCount});
     // Ops epilogue (fire-and-forget, never blocks the save). ORDER MATTERS:
     // 1. _opSyncOps PUBLISHES this device's pending ops to td_ops (pruning each pushed
-    //    batch) and pulls+applies peers' — the per-field channel that lets N writers
+    //    batch) and pulls+applies peers', the per-field channel that lets N writers
     //    hit the SAME row. Publish must come first or the ack-prune below would silently
     //    eat the per-field intent peers need.
     // 2. _opDbPruneAcked then bounds the log: anything ≤ the ceiling that FAILED to
-    //    publish (td_ops missing/unreachable) is dropped anyway — this save's rows
+    //    publish (td_ops missing/unreachable) is dropped anyway, this save's rows
     //    already embody it in the cloud, so nothing is pending; peers degrade to
     //    row-level sync for exactly those edits instead of the log growing forever.
     if(window._opLogShadow){try{_opSyncOps().then(()=>_opDbPruneAcked(_opAckCeiling)).catch(()=>{});}catch(_e){}}
@@ -4806,7 +4990,7 @@ async function supaSaveToCloud(){
     _writeLocalCache();
     _hideOfflineBanner();
     supaSetStatus('synced');
-    // Signal other open devices to reload (send() is async — catch the rejection so it never bubbles)
+    // Signal other open devices to reload (send() is async, catch the rejection so it never bubbles)
     if(_syncBroadcastChannel){try{const _bc=_syncBroadcastChannel.send({type:'broadcast',event:'data_saved',payload:{deviceId:_deviceId}});if(_bc&&typeof _bc.catch==='function')_bc.catch(()=>{});}catch(_e){}}
   }catch(e){
     _logSave('throw',{id:_attemptId,name:e?.name,code:e?.code,msg:e?.message||String(e)});
@@ -4819,7 +5003,7 @@ async function supaSaveToCloud(){
 }
 
 // Egress guard: after the first full poll of a session, only rows whose
-// updated_at moved past this watermark are fetched — a steady-state 30s tick
+// updated_at moved past this watermark are fetched, a steady-state 30s tick
 // returns ZERO rows instead of re-downloading 100 rows of base64 signature
 // images (the standing multi-GB/day leak that blew the Supabase egress cap).
 // In-memory on purpose: every fresh page load does one full pass (which also
@@ -4827,7 +5011,7 @@ async function supaSaveToCloud(){
 let _sigPollWatermark=null;
 // sig-feed channel health. _sigFeedReady mirrors _tdRealtimeReady's contract; the
 // down-flag makes recovery observable: SUBSCRIBED after a failure → one immediate
-// catch-up sweep (realtime is at-most-once — pushes during the outage are gone).
+// catch-up sweep (realtime is at-most-once, pushes during the outage are gone).
 let _sigFeedReady=false,_sigFeedDown=false;
 function _sigFeedStatus(status){
   if(status==='SUBSCRIBED'){
@@ -4842,19 +5026,19 @@ function _sigFeedStatus(status){
 let _checkSigsPending=false;
 async function checkNewSignatures(_src){
   // Coalescing guard: a call landing while another run is in flight must NOT be
-  // dropped — with the sig-feed push handler firing on every account-wide insert,
+  // dropped: with the sig-feed push handler firing on every account-wide insert,
   // a push-triggered run can hold the busy flag at the exact moment the 30s tick
   // (or a second push) arrives. Dropping that call meant a real signature waited
   // for the next poll tick. Instead: remember it, and rerun ONCE after the
-  // in-flight run finishes — every caller is now guaranteed a poll that STARTED
+  // in-flight run finishes, every caller is now guaranteed a poll that STARTED
   // after their call.
   if(_checkSigsBusy){_checkSigsPending=true;return;}
   if(!_supa||!_supaUser)return;
   _checkSigsBusy=true;
   try{
-    // Use localStorage as the seen-list — no DB column dependency
+    // Use localStorage as the seen-list, no DB column dependency
     const seenCache=new Set(JSON.parse(localStorage.getItem('zp3_seen_sigs')||'[]'));
-    // select('*') — optional columns (epa_*, cancelled_*) may not exist in every
+    // select('*'): optional columns (epa_*, cancelled_*) may not exist in every
     // environment; an explicit column list would fail the whole query on drift.
     const _fullPoll=()=>_supa.from('signed_proposals')
       .select('*')
@@ -4873,7 +5057,7 @@ async function checkNewSignatures(_src){
         .order('updated_at',{ascending:false})
         .limit(100));
       // Drift-safe: an environment without the updated_at column (migration not
-      // applied) errors here — fall back to the full poll, the pre-fix behavior.
+      // applied) errors here, fall back to the full poll, the pre-fix behavior.
       if(error)({data,error}=await _fullPoll());
     }else{
       ({data,error}=await _fullPoll());
@@ -4881,7 +5065,7 @@ async function checkNewSignatures(_src){
     if(error)throw error;
     // Advance the watermark from whatever came back. ISO timestamps in one fixed
     // format compare correctly as strings. Rows without updated_at (un-migrated
-    // database) leave the watermark null — every poll stays full, exactly as today.
+    // database) leave the watermark null, every poll stays full, exactly as today.
     (data||[]).forEach(s=>{if(s.updated_at&&(!_sigPollWatermark||s.updated_at>_sigPollWatermark))_sigPollWatermark=s.updated_at;});
     if(data&&data.length){
       let changed=false;const alerts=[];const newSeen=[];const coSignedAlerts=[];
@@ -4891,7 +5075,7 @@ async function checkNewSignatures(_src){
         const bid=bids.find(b=>String(b.id)===key);
         if(!bid){if(!alreadySeen)newSeen.push(key);continue;} // deleted/orphaned
         // Client cancelled within the rescission window (e-signed Notice of Cancellation).
-        // Runs before the signed/declined branches and regardless of seenCache — the
+        // Runs before the signed/declined branches and regardless of seenCache, the
         // cancellation always arrives after the signature row was already seen.
         if(s.cancelled_at){
           if(!bid.clientCancelled){
@@ -4899,7 +5083,7 @@ async function checkNewSignatures(_src){
             bid.cancelledAt=s.cancelled_at;
             bid.cancelledName=s.cancelled_signed_name||'';
             bid.status='Closed Lost';bid.draft=false;
-            // Cancel the linked job too — 'canceled' removes it from every active-job
+            // Cancel the linked job too, 'canceled' removes it from every active-job
             // query (today feed, schedule, collect) while keeping the record.
             const _cj=(typeof jobs!=='undefined'?jobs:[]).find(j=>j.bid_id===bid.id);
             if(_cj){_cj.clientCancelled=true;_cj.status='canceled';}
@@ -4909,12 +5093,12 @@ async function checkNewSignatures(_src){
             const _ctotal=_cpaid.reduce((t,p)=>t+p.amount,0);
             const _hasRefund=(typeof payments!=='undefined'?payments:[]).some(p=>p.bid_id===bid.id&&p._cancelRefund);
             if(_ctotal>0&&!_hasRefund){
-              payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund — client cancelled within rescission window'});
+              payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund: client cancelled within rescission window'});
             }
             changed=true;
             const _isStripe=s.payment_method&&s.payment_method!=='cash'&&s.payment_method!=='check';
             const _refundDays=_isStripe?'5–7':'10';
-            if(typeof showToast==='function')showToast('🚫 '+(s.client_name||'Client')+' cancelled — refund'+(_ctotal>0?' '+fmt(_ctotal):'')+' within '+_refundDays+' business days','⚠️');
+            if(typeof showToast==='function')showToast('🚫 '+(s.client_name||'Client')+' cancelled: refund'+(_ctotal>0?' '+fmt(_ctotal):'')+' within '+_refundDays+' business days','⚠️');
           }else if(bid.status!=='Closed Lost'){
             // Re-assert the terminal state if a later sync path flipped it back
             bid.status='Closed Lost';changed=true;
@@ -4924,10 +5108,10 @@ async function checkNewSignatures(_src){
           if(!alreadySeen)newSeen.push(key);
           continue;
         }
-        // Change orders signed remotely in the client hub — apply to the local bid.
+        // Change orders signed remotely in the client hub, apply to the local bid.
         // Mirrors _submitCOSign bookkeeping: mark the CO signed and roll bid.amount
         // to the new contract total (balance derives from payments via getBidBalance).
-        // Runs regardless of seenCache — the signature lands after the row was seen.
+        // Runs regardless of seenCache, the signature lands after the row was seen.
         if(Array.isArray(s.change_orders)&&s.change_orders.length&&bid.changeOrders&&bid.changeOrders.length){
           for(const rc of s.change_orders){
             if(!rc||!rc.signedAt)continue;
@@ -4942,13 +5126,13 @@ async function checkNewSignatures(_src){
           }
         }
         if(s.payment_status==='declined'){
-          // Client declined — mark as Closed Lost, not Closed Won
+          // Client declined, mark as Closed Lost, not Closed Won
           if(bid.status!=='Closed Lost'){
             bid.status='Closed Lost';bid.draft=false;
             bid.declinedAt=s.signed_at;
             changed=true;
           }
-          // Client-picked reason (sign.html's decline modal) — same field a
+          // Client-picked reason (sign.html's decline modal), same field a
           // contractor's own manual "Mark Lost" action populates, so it shows
           // up in the Declined tab / dashboard with no new UI needed.
           if(s.decline_reason&&bid.lostReason!==s.decline_reason){
@@ -4957,7 +5141,7 @@ async function checkNewSignatures(_src){
           }
         } else {
           if(bid.status!=='Closed Won'){
-            // Always fix the status regardless of seenCache — data may have been reset
+            // Always fix the status regardless of seenCache, data may have been reset
             bid.status='Closed Won';bid.draft=false;
             bid.signedAt=s.signed_at;
             bid.signedName=s.client_signed_name||s.client_name;
@@ -4967,7 +5151,7 @@ async function checkNewSignatures(_src){
               alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
             }
           }
-          // Refresh signature metadata even when already won — the signature image and
+          // Refresh signature metadata even when already won, the signature image and
           // EPA ack can land after the status flip (or the DB columns were added later).
           if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
           if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
@@ -4984,11 +5168,11 @@ async function checkNewSignatures(_src){
         // Delivery-source telemetry: was this signature caught by the realtime push
         // ('push'), the recovery sweep ('rejoin'), or the fallback poll (default)?
         // One counter per path answers "is realtime actually doing the work?" in
-        // the analytics table — the number that proves push reliability in prod.
+        // the analytics table, the number that proves push reliability in prod.
         if(alerts.length){try{if(window._obs)_obs.track('sig_delivered_'+(_src||'poll'));}catch(_e){}}
         saveAll();
         [...new Set([...alerts.map(a=>a.clientId),...coSignedAlerts.map(a=>a.clientId)])].forEach(cid=>_refreshClientHub(cid));
-        coSignedAlerts.forEach(a=>{if(typeof showToast==='function')showToast('✍️ '+a.client+' signed Change Order #'+a.coNum+' — contract now '+fmt(a.newTotal),'📋');});
+        coSignedAlerts.forEach(a=>{if(typeof showToast==='function')showToast('✍️ '+a.client+' signed Change Order #'+a.coNum+', contract now '+fmt(a.newTotal),'📋');});
         const existing=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
         localStorage.setItem('zp3_schedule_alerts',JSON.stringify([...existing,...alerts]));
         renderDash();
@@ -5002,7 +5186,7 @@ async function checkNewSignatures(_src){
     if(_checkSigsPending){_checkSigsPending=false;checkNewSignatures(_src);}
   }
 }
-// The 30s fallback tick. Skips hidden tabs entirely — a backgrounded tab can't
+// The 30s fallback tick. Skips hidden tabs entirely, a backgrounded tab can't
 // show the signature alert anyway, and the existing visibilitychange handler
 // re-runs both checks the instant the tab is foregrounded, so nothing is lost.
 // Realtime (sig-feed channel) remains the primary, instant delivery path.
@@ -5015,7 +5199,7 @@ async function _fetchProposalViews(){
   if(!_supa||!_supaUser)return;
   try{
     // Watermark probe (egress): steady state asks "is anything newer than what
-    // I've seen?" — at most ONE tiny row — instead of re-downloading 500 full
+    // I've seen?", at most ONE tiny row, instead of re-downloading 500 full
     // rows every 30s. Any change → the full rebuild below runs unchanged, so
     // the dict semantics (newest-first, atomic swap) never differ from today.
     // Drift-safe: no updated_at column (un-migrated env) → the probe errors →
@@ -5028,15 +5212,15 @@ async function _fetchProposalViews(){
         .gt('updated_at',_pvPollWatermark)
         .order('updated_at',{ascending:false})
         .limit(1);
-      if(!_pErr&&_probe&&!_probe.length)return; // nothing changed — zero-row tick
-      // The probe row is the global max updated_at (desc, limit 1) — advance from
+      if(!_pErr&&_probe&&!_probe.length)return; // nothing changed, zero-row tick
+      // The probe row is the global max updated_at (desc, limit 1), advance from
       // it so an old row's update (outside the top-500 by opened_at below) can't
       // wedge the watermark into probing positive on every tick.
       if(!_pErr&&_probe)_probe.forEach(v=>{if(v.updated_at&&v.updated_at>_pvPollWatermark)_pvPollWatermark=v.updated_at;});
     }
     // Edge Function log-proposal-view writes to proposal_views using service key (bypasses RLS).
-    // Contractor reads back with their authenticated session — RLS allows SELECT on own rows.
-    // select('*') not an explicit list — furthest_step/_at may not exist yet in
+    // Contractor reads back with their authenticated session, RLS allows SELECT on own rows.
+    // select('*') not an explicit list, furthest_step/_at may not exist yet in
     // every environment (migration drift), and an explicit list would fail the
     // whole query; same defensive pattern as checkNewSignatures above.
     // limit(500): this table grows forever and was fetched UNBOUNDED every 30s.
@@ -5050,7 +5234,7 @@ async function _fetchProposalViews(){
       .limit(500);
     if(data&&!error){
       data.forEach(v=>{if(v.updated_at&&(!_pvPollWatermark||v.updated_at>_pvPollWatermark))_pvPollWatermark=v.updated_at;});
-      // Build into temporaries first, then swap atomically — prevents a renderDash()
+      // Build into temporaries first, then swap atomically, prevents a renderDash()
       // mid-flight from seeing an empty dict during the rebuild window (flicker race).
       const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={};
       data.forEach(v=>{
@@ -5064,7 +5248,7 @@ async function _fetchProposalViews(){
         if(v.furthest_step&&!_pvStep[v.bid_id]){_pvStep[v.bid_id]=v.furthest_step;_pvStepAt[v.bid_id]=v.furthest_step_at||null;}
       });
       // Render ONLY when the view data actually changed. This fetch runs after every
-      // load (setTimeout 1500) and on a 30s interval — an unconditional renderDash()
+      // load (setTimeout 1500) and on a 30s interval, an unconditional renderDash()
       // here rebuilt the whole dashboard for byte-identical data on every tick, and
       // stacked 2-3 redundant render passes into every reconcile window (named live
       // by the glitch-free budget's caller trace). The maps still swap every time.
@@ -5083,18 +5267,18 @@ async function _fetchProposalViews(){
     }
   }catch(e){}
 }
-// Sign-flow warmth badge — one line telling the contractor how far the client
+// Sign-flow warmth badge, one line telling the contractor how far the client
 // actually got inside the proposal, rendered wherever a pending bid card shows
 // its viewed state. 'opened' adds nothing beyond the existing viewed badge;
-// 'signed' is redundant with the bid flipping Closed Won — both skipped.
+// 'signed' is redundant with the bid flipping Closed Won, both skipped.
 function _signStepBadge(bidId){
   const step=(typeof _proposalViewsByBidStep!=='undefined'&&_proposalViewsByBidStep)?_proposalViewsByBidStep[String(bidId)]:null;
   if(!step)return'';
   const meta={
-    approved:{label:'Reviewing — tapped Approve & Sign',color:'#0e7490'},
-    signature_ready:{label:'Signature entered — almost there',color:'#7c3aed'},
-    payment_viewed:{label:'Reached payment — hot lead',color:'#b45309'},
-    method_selected:{label:'Chose how to pay — call them now',color:'#A32D2D'},
+    approved:{label:'Reviewing: tapped Approve & Sign',color:'#0e7490'},
+    signature_ready:{label:'Signature entered, almost there',color:'#7c3aed'},
+    payment_viewed:{label:'Reached payment, hot lead',color:'#b45309'},
+    method_selected:{label:'Chose how to pay, call them now',color:'#A32D2D'},
   }[step];
   if(!meta)return'';
   return'<div style="font-size:11px;font-weight:800;color:'+meta.color+';margin-top:2px">'+svgIcon('⚡',{size:11})+' '+meta.label+'</div>';
@@ -5102,17 +5286,17 @@ function _signStepBadge(bidId){
 function showScheduleAlerts(){
   // Never pop over the boot spinner (owner report 2026-07-14: "popup scheduler
   // is coming in way before the spinner completely boots"). The boot poll can
-  // find signatures within the first second — wait for the overlay to finish
+  // find signatures within the first second, wait for the overlay to finish
   // its fade before surfacing the modal, retrying on a short timer.
   const _bootOv=document.getElementById('supa-boot-overlay');
   if(_bootOv&&_bootOv.isConnected&&getComputedStyle(_bootOv).display!=='none'&&parseFloat(getComputedStyle(_bootOv).opacity)>0.05){
-    if(window._schedAlertWaiting)return; // one retry chain only — boot poll + 30s tick can both land here
+    if(window._schedAlertWaiting)return; // one retry chain only, boot poll + 30s tick can both land here
     window._schedAlertWaiting=true;
     setTimeout(()=>{window._schedAlertWaiting=false;showScheduleAlerts();},700);
     return;
   }
   let alerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
-  // Discard any alerts whose bid no longer exists locally — they can't be scheduled
+  // Discard any alerts whose bid no longer exists locally, they can't be scheduled
   alerts=alerts.filter(a=>bids.find(b=>String(b.id)===String(a.bidId)));
   localStorage.setItem('zp3_schedule_alerts',JSON.stringify(alerts));
   if(!alerts.length){window._showingScheduleAlert=false;return;}
@@ -5167,18 +5351,18 @@ function showScheduleAlerts(){
   document.getElementById('_sched-alert-later').addEventListener('click',()=>{
     ov.remove();
     const q=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
-    // Only re-queue if bid still exists — orphaned alerts die here
+    // Only re-queue if bid still exists, orphaned alerts die here
     const bidStillExists=window._currentScheduleAlert&&bids.find(b=>String(b.id)===String(window._currentScheduleAlert.bidId));
     if(bidStillExists)q.push(window._currentScheduleAlert);
     window._currentScheduleAlert=null;
     localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
     window._showingScheduleAlert=false;
-    // "Later" means LATER — silence the whole stack (owner directive 2026-07-14).
+    // "Later" means LATER, silence the whole stack (owner directive 2026-07-14).
     // Chaining straight into showScheduleAlerts() here made N stacked alerts an
     // endless carousel: each Later re-queued the current one and popped the next.
     // The queue survives in localStorage; the next real trigger (new signature
     // event or app boot) re-surfaces it.
-    if(q.length)showToast(q.length+' client'+(q.length>1?'s':'')+' waiting to schedule — find them under Jobs','📋');
+    if(q.length)showToast(q.length+' client'+(q.length>1?'s':'')+' waiting to schedule, find them under Jobs','📋');
   });
 }
 function deferScheduleAlert(){
@@ -5189,7 +5373,7 @@ function deferScheduleAlert(){
     localStorage.setItem('zp3_schedule_alerts',JSON.stringify(q));
     window._currentScheduleAlert=null;
     window._showingScheduleAlert=false;
-    // Same "Later means later" rule as the alert modal — never chain into the
+    // Same "Later means later" rule as the alert modal, never chain into the
     // next alert here (the old setTimeout(showScheduleAlerts) loop).
     if(q.length)showToast(q.length+' client'+(q.length>1?'s':'')+' waiting to schedule','📋');
   }
@@ -5211,7 +5395,7 @@ function showScheduleSuggestion(clientId,bidId,clientNameFallback){
   const endLabel=startKey===endKey?'':' – '+fmtD(endKey);
   const rangeLabel=startLabel+endLabel+(days>1?' ('+days+' days)':'');
 
-  const smsMsg='Hey '+firstName+'! It\'s '+bname+'. Great news — you\'re all set. 🎨\n\nOur next available start date is '+startLabel+'. Does that work for you?\n\nJust reply YES and we\'ll lock you in!';
+  const smsMsg='Hey '+firstName+'! It\'s '+bname+'. Great news, you\'re all set. 🎨\n\nOur next available start date is '+startLabel+'. Does that work for you?\n\nJust reply YES and we\'ll lock you in!';
   const smsHref='sms:'+(phone||'')+'&body='+encodeURIComponent(smsMsg);
   const callHref=phone?'tel:'+phone:'';
 
@@ -5230,7 +5414,7 @@ function showScheduleSuggestion(clientId,bidId,clientNameFallback){
       (phone?'<a href="'+smsHref+'" style="display:block;padding:13px;border-radius:var(--r);border:none;background:#27AE60;color:#fff;font-size:15px;font-weight:700;text-align:center;text-decoration:none">'+svgIcon('📱')+' Text '+escHtml(firstName||'')+' to confirm</a>':'')+
       (callHref?'<a href="'+callHref+'" style="display:block;padding:11px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;text-align:center;text-decoration:none">'+svgIcon('📞')+' Call '+escHtml(firstName||'')+'</a>':'')+
     '</div>'+
-    '<button id="sched-lock-btn" onclick="quickScheduleJob('+bidId+',\''+startKey+'\','+clientId+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">✓ Lock it in — '+startLabel+'</button>'+
+    '<button id="sched-lock-btn" onclick="quickScheduleJob('+bidId+',\''+startKey+'\','+clientId+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">✓ Lock it in, '+startLabel+'</button>'+
     '<button onclick="document.getElementById(\'sched-suggest-overlay\').remove();'+(bidId?'schedFromBid('+bidId+')':'goPg(\'pg-schedule\')')+'" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-bottom:6px">Pick a different date</button>'+
     '<button onclick="deferScheduleAlert()" style="width:100%;padding:8px;border:none;background:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:inherit">Later</button>';
   ov.appendChild(box);document.body.appendChild(ov);
@@ -5245,7 +5429,7 @@ function quickScheduleJob(bidId,startKey,clientId){
     document.getElementById('sched-suggest-overlay')?.remove();return;
   }
   const days=bid.days||2;
-  const name=(bid.client_name||bid.name||'Job')+(bid.type?' — '+bid.type:'');
+  const name=(bid.client_name||bid.name||'Job')+(bid.type?', '+bid.type:'');
   jobs.push({
     id:Date.now(),bid_id:bidId,client_id:clientId||bid.client_id,
     name,addr:bid.addr||'',start:startKey,days,buffer:1,
@@ -5268,7 +5452,7 @@ function discardInProgressBid(bidId){
   // String-cast compare: a realtime-delivered bid can land with a string id (Postgres
   // bigint columns serialize as strings) while this button's onclick always embeds a bare
   // numeric literal (string-concatenated into the HTML attribute loses any quotes). A strict
-  // === here silently no-ops the whole delete — confirmed via regression test below.
+  // === here silently no-ops the whole delete, confirmed via regression test below.
   const _db=bids.find(b=>String(b.id)===String(bidId));
   const _cid=_db?.client_id;
   zConfirm('Delete this pending bid? The client\'s signing link will stop working.',()=>{
@@ -5319,22 +5503,22 @@ function resendProposalLink(bidId){
 }
 async function supaLoadFromCloud({silent=false}={}){
   if(!_supa||!_supaUser)return;
-  if(_loadInProgress)return _activeLoadPromise; // AWAIT the in-flight load — a silent no-op here lets _supaCloudLoaded flip true before the merge lands (settings-reboot race)
+  if(_loadInProgress)return _activeLoadPromise; // AWAIT the in-flight load, a silent no-op here lets _supaCloudLoaded flip true before the merge lands (settings-reboot race)
   _loadInProgress=true;
   let _resolveActiveLoad;_activeLoadPromise=new Promise(r=>{_resolveActiveLoad=r;});
   window._lastCloudLoadAt=Date.now();
   if(silent){
-    // Server state wins — cancel any pending debounce without flushing it.
+    // Server state wins, cancel any pending debounce without flushing it.
     // Flushing stale local data before loading would re-insert records deleted on another device.
     if(_syncTimer){clearTimeout(_syncTimer);_syncTimer=null;}
     // But DO wait for an already in-flight save (e.g. an offline worker's reconnect flush) to
-    // commit first — else this load reads a cloud snapshot taken BEFORE that save landed and
+    // commit first, else this load reads a cloud snapshot taken BEFORE that save landed and
     // set(rows) drops the just-saved row out of memory (the offline/reconnect race).
-    // BOUNDED: wait at most 4s. An unbounded await here WEDGED the whole reconcile backstop —
+    // BOUNDED: wait at most 4s. An unbounded await here WEDGED the whole reconcile backstop,
     // this load holds _loadInProgress while waiting, every heartbeat tick skips on it, and a
     // slow/hung background save (bloated account, stalled fetch) starved convergence past the
     // test window (the live A→B delete failure). If the save is still in flight after 4s we
-    // DEFER — never load concurrently with a save (that reopens the lost-edit race); release
+    // DEFER: never load concurrently with a save (that reopens the lost-edit race); release
     // _loadInProgress and retry shortly. Each retry re-waits, so convergence resumes the
     // moment the save resolves (and the fetch timeout guarantees it eventually does).
     if(_pendingSavePromise){
@@ -5358,13 +5542,13 @@ async function supaLoadFromCloud({silent=false}={}){
       ?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id)
       :(_isEmployee?_contractorUserId:_supaUser.id);
 
-    // ── CURSOR READ-FIRST — the other half of the read-skew fix ──
+    // ── CURSOR READ-FIRST, the other half of the read-skew fix ──
     // The save writes tables FIRST, cursor LAST ("cursor moved ⇒ all data committed").
     // The load must therefore sample the cursor BEFORE the table snapshot: a stored
     // cursor can then never be NEWER than the data it vouches for. The old code read
-    // them the other way around (the "parallel" settings builder is lazy — it actually
+    // them the other way around (the "parallel" settings builder is lazy, it actually
     // fired one round-trip AFTER the tables), so a load racing a peer's save could
-    // store a fresh cursor over stale data — the heartbeat then compared equal and the
+    // store a fresh cursor over stale data, the heartbeat then compared equal and the
     // device went permanently blind to that peer change (the local-stack B→A failures).
     // Any peer write landing after this sample leaves the server cursor ahead of
     // _lastZjUpdatedAt, so the heartbeat MUST fire within one interval. Zero added
@@ -5373,7 +5557,7 @@ async function supaLoadFromCloud({silent=false}={}){
     const settingsResult=await _supa.from('zj_data').select('settings,checks_state,receipt_images,updated_at').eq('user_id',uid).maybeSingle();
     // CREW CURSOR READ-FIRST: crew logins can't read zj_data (settings stay owner-
     // private), so the read above returns null for them. Sample the account cursor
-    // via the SECURITY DEFINER RPC — BEFORE the table snapshot, same read-skew
+    // via the SECURITY DEFINER RPC, BEFORE the table snapshot, same read-skew
     // discipline as the owner path ("stored cursor never newer than data"). Missing
     // RPC (old server) → null → crew keeps today's full-RPC-reload behavior.
     let _crewCursor=null;
@@ -5382,13 +5566,13 @@ async function supaLoadFromCloud({silent=false}={}){
     }
 
     // EMPLOYEE sessions load through the SECURITY DEFINER RPC load_account_data,
-    // which redacts money fields the employee's permissions don't grant — so the
+    // which redacts money fields the employee's permissions don't grant, so the
     // contractor's bid amounts / income never reach an employee's browser memory.
     // Contractors (and dev-support) keep the raw per-table select. If the RPC is
     // not yet deployed (migration not merged to prod), fall back to the raw load:
     // visibility is unchanged until the migration lands, but the SAVE guard
     // (_employeeRedactedTables) still prevents any corruption in the meantime.
-    // ARCHIVAL: full loads pull the HOT set only (archived_at null) — a decade-old
+    // ARCHIVAL: full loads pull the HOT set only (archived_at null), a decade-old
     // account boots like a young one. Falls back to the unfiltered read on a DB
     // that predates the archival migration (unknown column), so deploy order is safe.
     const _rawLoad=async()=>{
@@ -5404,29 +5588,29 @@ async function supaLoadFromCloud({silent=false}={}){
     let tableResults, _isDelta=false, _deltaMeta=null, _deltaBase=null;
     // 2s OVERLAP MARGIN on every delta query: a save's per-table writes commit over a short
     // window, so a reader can observe a later-timestamped row while an earlier one from the
-    // same save isn't visible yet — advancing the cursor past a row it never loaded. Querying
+    // same save isn't visible yet, advancing the cursor past a row it never loaded. Querying
     // from cursor-2s re-reads that sliver; the id-keyed merge below is idempotent, so the
     // overlap costs a few duplicate rows and can never lose one.
     const _deltaSince=(cur)=>{try{return new Date(new Date(cur).getTime()-2000).toISOString();}catch(_e){return cur;}};
-    // archived_at rides the delta select — archiving bumps updated_at, so the
+    // archived_at rides the delta select, archiving bumps updated_at, so the
     // transition reaches every device as an ordinary changed row. On a DB without
     // the column the select errors → the caller falls back to the full load.
     const _deltaQuery=(since)=>Promise.all(_TD_TABLES.map(({t})=>
       _supa.from(t).select('id,data,updated_at,deleted_at,archived_at').eq('user_id',uid).gt('updated_at',_deltaSince(since))
     )).catch(()=>null);
-    // ONE-SHOT ATOMIC DELTA — the get_account_delta RPC returns all 14 tables' changed
+    // ONE-SHOT ATOMIC DELTA, the get_account_delta RPC returns all 14 tables' changed
     // rows in ONE round-trip from ONE Postgres snapshot (a single SELECT = one MVCC
     // snapshot). At N devices the reconcile fan-out is the account's dominant load;
     // this collapses 14 reads to 1 AND removes the residual cross-table skew a
     // multi-statement read leaves open (the 2s overlap margin stays as belt-and-
     // suspenders). SECURITY INVOKER: rows are RLS-scoped to auth.uid(), which equals
     // `uid` on every delta path (employee/dev-support sessions never take one).
-    // Returns null when the function isn't deployed (PGRST202) or anything is off —
+    // Returns null when the function isn't deployed (PGRST202) or anything is off,
     // callers fall back to the per-table reads, so deploys in any order stay safe.
-    let _rpcOps=null; // ops returned atomically WITH the rows — applied after the row merge
+    let _rpcOps=null; // ops returned atomically WITH the rows, applied after the row merge
     const _rpcDelta=async(since)=>{
       try{
-        // Ops ride the same snapshot when this session runs the op channel — one read
+        // Ops ride the same snapshot when this session runs the op channel, one read
         // per reconcile instead of rows+ops separately (the O(N) cut that matters most
         // when N devices reconcile against one account).
         const _oSince=(window._opLogShadow&&!_isEmployee&&!_devSupportMode)?(_opsPullSince(since)||null):null;
@@ -5437,16 +5621,16 @@ async function supaLoadFromCloud({silent=false}={}){
       }catch(_e){return null;}
     };
     const _deltaFetch=async(since)=>{
-      // get_account_delta is auth.uid()-scoped — a crew login calling it would read
+      // get_account_delta is auth.uid()-scoped: a crew login calling it would read
       // its OWN (empty) account. Crew deltas ride the per-table reads, which the
       // crew RLS policies scope to the boss's rows with per-table permissions.
       if(_isEmployee)return _deltaQuery(since);
       return (await _rpcDelta(since))||_deltaQuery(since);
     };
-    // DELTA FIRST — a normal contractor cold load pulls only rows changed since this
+    // DELTA FIRST, a normal contractor cold load pulls only rows changed since this
     // device's last visit (updated_at > cursor; soft-deletes ride via deleted_at),
     // merged onto the cache-painted snapshot. Skips employees and dev-support
-    // (redaction/impersonation), and falls back to the full load on any error — so it
+    // (redaction/impersonation), and falls back to the full load on any error, so it
     // can only ever make loads faster, never change what data lands.
     if(!silent&&!_isEmployee&&!_devSupportMode){
       _deltaMeta=_readDeltaMeta(uid);
@@ -5461,15 +5645,15 @@ async function supaLoadFromCloud({silent=false}={}){
         }
       }
     }else if(silent&&!_devSupportMode&&_supaCloudLoaded&&_deltaCursor&&_deltaCursor<new Date(Date.now()+60000).toISOString()&&_loadedDataOwner===uid){
-      // (Crew included: their delta rides the per-table reads under the crew RLS —
+      // (Crew included: their delta rides the per-table reads under the crew RLS,
       // permitted tables return changed rows, redacted tables return EMPTY, and the
       // id-keyed merge leaves untouched tables exactly as the redacting RPC left them.)
-      // SILENT DELTA — the scale fix for reconciles. Every heartbeat / realtime catch-up /
+      // SILENT DELTA, the scale fix for reconciles. Every heartbeat / realtime catch-up /
       // trailing reload used to re-read the ENTIRE account (14 full-table selects); on a
       // heavy account that made the very mechanism that keeps devices converged the most
       // expensive thing the app does. The in-memory arrays are already authoritative
       // (_supaCloudLoaded, same owner), so pull only rows changed since the in-memory
-      // cursor and merge by id — soft-deletes ride along via deleted_at. Any error falls
+      // cursor and merge by id, soft-deletes ride along via deleted_at. Any error falls
       // back to the full read below, so correctness never depends on the delta.
       const _dres=await _deltaFetch(_deltaCursor);
       if(_dres&&!_dres.some(r=>r&&r.error&&!_isMissingTableErr(r.error))){
@@ -5480,7 +5664,7 @@ async function supaLoadFromCloud({silent=false}={}){
       if(_isEmployee&&!_devSupportMode){
         const{data:_red,error:_rpcErr}=await _supa.rpc('load_account_data',{target_uid:uid});
         if(_rpcErr&&(_isMissingTableErr(_rpcErr)||_rpcErr.code==='PGRST202'||/function|does not exist/i.test(_rpcErr.message||''))){
-          console.warn('[cloud] load_account_data RPC unavailable — falling back to raw load (save guard still active)');
+          console.warn('[cloud] load_account_data RPC unavailable, falling back to raw load (save guard still active)');
           tableResults=await _rawLoad();
         }else if(_rpcErr){
           throw _rpcErr;
@@ -5495,38 +5679,38 @@ async function supaLoadFromCloud({silent=false}={}){
     }
 
     // A table whose migration hasn't reached the live DB yet must NOT abort the entire
-    // sync — that would take down ALL cloud loading and trap the app in an offline loop.
+    // sync: that would take down ALL cloud loading and trap the app in an offline loop.
     // Skip only "table does not exist" errors; real failures (auth, network) still throw.
     for(let i=0;i<_TD_TABLES.length;i++){
       const err=tableResults[i].error;
       if(err&&!_isMissingTableErr(err))throw err;
     }
 
-    // Advance the delta cursor to the newest server updated_at we observed — the next
+    // Advance the delta cursor to the newest server updated_at we observed, the next
     // cold load only pulls rows newer than this. Tracked for BOTH paths so the first
     // full load establishes the cursor that subsequent delta loads read from.
     let _newCursor=_isDelta?_deltaBase:null;
-    // CURSOR CLAMP — never advance the delta cursor past sane wall time. Legacy
+    // CURSOR CLAMP, never advance the delta cursor past sane wall time. Legacy
     // admin-locked rows are stamped updated_at ≈ now()+1 YEAR (the lock convention),
     // and any such row poisons the cursor: every later delta asks "changed since
     // next year?" → 0 rows forever, and the device silently stops converging while
     // believing it's current (the cloud full-suite B→A + redundant-upload failures
-    // on the legacy dev account). Far-future rows still MERGE normally below — they
+    // on the legacy dev account). Far-future rows still MERGE normally below, they
     // just can't drag the cursor with them. 60s of slack absorbs proxy clock jitter.
     const _cursorCeiling=new Date(Date.now()+60000).toISOString();
-    // REBASE input — pending CREATE intent per table: ids whose create op is still
+    // REBASE input, pending CREATE intent per table: ids whose create op is still
     // un-acked in the durable op log. The full-load branch below re-appends those rows
-    // (created offline, never uploaded — the array replace would silently drop them).
+    // (created offline, never uploaded, the array replace would silently drop them).
     // An op is a CREATE iff its fields carry the row's id (derive emits ALL fields on
-    // create, only changed fields on update) — so a pending EDIT to a row a peer
+    // create, only changed fields on update), so a pending EDIT to a row a peer
     // deleted does NOT resurrect it (delete wins, same rule as the delta branch).
-    // Set when any row merge kept a local field (or re-appended a pending create) — the
+    // Set when any row merge kept a local field (or re-appended a pending create), the
     // union/orphan then needs a real upload, scheduled once after the whole merge below.
     let _keptLocalInLoad=false;
     let _pendingCreateIds={};
     // Crew included: a crew device's own pending creates are owned by the EMPLOYEE's uid
     // (ops stamp _hlcOwner() = _supaUser.id), while `uid` here is the BOSS account being
-    // loaded — matching on `uid` alone silently excluded every crew create, so a full
+    // loaded: matching on `uid` alone silently excluded every crew create, so a full
     // load racing a crew's first save of its own bid dropped the local copy.
     if(window._opLogShadow&&!_devSupportMode){
       try{
@@ -5536,19 +5720,19 @@ async function supaLoadFromCloud({silent=false}={}){
         }
       }catch(_e){}
     }
-    // SYNC TRACE (certification diagnostics): name each load's kind — a 'FULL' entry in a
+    // SYNC TRACE (certification diagnostics): name each load's kind, a 'FULL' entry in a
     // window where only silent deltas should run is the marker-loss smoking gun.
     try{if(window._syncTrace)(window._syncTraceLog||(window._syncTraceLog=[])).push({t:Date.now(),src:'load',delta:_isDelta,silent:!!silent});}catch(_e){}
     for(let i=0;i<_TD_TABLES.length;i++){
       const{t,set,get}=_TD_TABLES[i];
-      if(tableResults[i].error){console.warn('[cloud] skipping unprovisioned table',t);continue;} // missing table — leave in-memory data untouched
+      if(tableResults[i].error){console.warn('[cloud] skipping unprovisioned table',t);continue;} // missing table, leave in-memory data untouched
       const data=tableResults[i].data||[];
       for(const r of data){if(r.updated_at&&r.updated_at<_cursorCeiling&&(!_newCursor||r.updated_at>_newCursor))_newCursor=r.updated_at;}
       if(_isDelta){
         // Merge the changed rows onto the cache-painted array by id: a soft-deleted
         // row (deleted_at set) is removed; any other changed row replaces/adds. A row
         // NOT in this delta is untouched (it hasn't changed since the cursor).
-        // REBASE: an incoming row never whole-row-clobbers a PENDING local edit — the
+        // REBASE: an incoming row never whole-row-clobbers a PENDING local edit, the
         // same per-field _opApplyIncoming the realtime path uses protects any field this
         // device set more recently (offline-return case). The synced hash is stamped
         // from the INCOMING row, so a merge that kept a local field hashes differently
@@ -5557,7 +5741,7 @@ async function supaLoadFromCloud({silent=false}={}){
         const _ldTs=Date.now();
         for(const r of data){
           const id=String(r.id);
-          // deleted OR archived — either way the row leaves the hot set on every
+          // deleted OR archived, either way the row leaves the hot set on every
           // device through this same path. _lastLoadDeletes records both so the
           // reconnect merge-back never resurrects a row a peer deliberately
           // removed/archived during our outage (restore rides back as an ordinary
@@ -5566,7 +5750,7 @@ async function supaLoadFromCloud({silent=false}={}){
           else{
             const _lr=byId.get(id);
             const _mg=_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at,'delta'):r.data;
-            if(_mg!==r.data)_keptLocalInLoad=true; // union kept — schedule the upload after the merge
+            if(_mg!==r.data)_keptLocalInLoad=true; // union kept, schedule the upload after the merge
             byId.set(id,_mg);
             (_syncedHash[t]||(_syncedHash[t]=new Map())).set(id,_hashPayload(r.data));
             (_lastKnownIds[t]||(_lastKnownIds[t]=new Set())).add(id);
@@ -5576,7 +5760,7 @@ async function supaLoadFromCloud({silent=false}={}){
         }
         set([...byId.values()]);
       }else{
-        // Full load — replace the array with the cloud rows, and rebuild the synced-hash
+        // Full load, replace the array with the cloud rows, and rebuild the synced-hash
         // map from the rows AS LOADED (hash each `r.data` exactly as stored, BEFORE the
         // receipt re-injection / expenses sort below, so it matches the next save's txFn
         // payload). Two REBASE guarantees ride the replace (offline-return safety):
@@ -5590,7 +5774,7 @@ async function supaLoadFromCloud({silent=false}={}){
         const _merged=data.map(r=>{
           const _lr=_localById.get(String(r.id));
           const _mg=_lr?_opApplyIncoming(t,_lr,r.data,r.updated_at,'full'):r.data;
-          if(_mg!==r.data)_keptLocalInLoad=true; // union kept — schedule the upload after the merge
+          if(_mg!==r.data)_keptLocalInLoad=true; // union kept, schedule the upload after the merge
           return _mg;
         });
         const _pendC=_pendingCreateIds[t];
@@ -5608,7 +5792,7 @@ async function supaLoadFromCloud({silent=false}={}){
     }
     if(_newCursor)_deltaCursor=_newCursor;
     // CREW: the redacted RPC's rows carry no updated_at, so a crew FULL load never
-    // establishes a delta cursor from rows. Seed it from the pre-table cursor sample —
+    // establishes a delta cursor from rows. Seed it from the pre-table cursor sample,
     // the cursor is bumped LAST on every save, so "rows newer than it" is the exact
     // delta contract owner devices use. This is what graduates crew from full-RPC
     // reloads to cheap silent deltas.
@@ -5623,14 +5807,14 @@ async function supaLoadFromCloud({silent=false}={}){
 
     const sd=settingsResult.data;
     if(sd?.updated_at)window._lastZjUpdatedAt=sd.updated_at;
-    // Crew can't read zj_data — their "last applied cursor" is the RPC sample taken
+    // Crew can't read zj_data, their "last applied cursor" is the RPC sample taken
     // BEFORE the table reads (never newer than the data it vouches for; a save that
     // landed mid-load leaves the server cursor ahead → the heartbeat fires next tick).
     else if(_isEmployee&&_crewCursor)window._lastZjUpdatedAt=_crewCursor;
     if(sd){
       if(sd.checks_state){const cc=(()=>{try{return JSON.parse(sd.checks_state);}catch{return null;}})();if(cc&&Object.keys(cc).length)checksState=cc;}
       if(sd.settings){const ss=(()=>{try{return JSON.parse(sd.settings);}catch{return null;}})();
-        if(ss){_mergeIncomingSettings(ss,'cloud zj_data (Supabase)'+(silent?' — BACKGROUND refresh (realtime/broadcast/PTR)':' — BOOT 3/4'));
+        if(ss){_mergeIncomingSettings(ss,'cloud zj_data (Supabase)'+(silent?', BACKGROUND refresh (realtime/broadcast/PTR)':', BOOT 3/4'));
           if(S.fedMFS===14600)S.fedMFS=15000;if(S.fedSingle===14600)S.fedSingle=15000;
           if(S.fedMFJ===29200)S.fedMFJ=30000;if(S.fedHOH===21900)S.fedHOH=22500;
           if(S.b10===11600)S.b10=11925;if(S.b12===47150)S.b12=48475;
@@ -5655,7 +5839,7 @@ async function supaLoadFromCloud({silent=false}={}){
     if(typeof _applyTabOrder==='function'&&typeof _getTabOrder==='function')_applyTabOrder(_getTabOrder());
 
     _supaCloudLoaded=true;_loadedFromCacheOnly=false;_mergeOnSignIn=false;
-    _authSettingsLoaded=true; // authoritative cloud settings are now in S — settings saves are safe
+    _authSettingsLoaded=true; // authoritative cloud settings are now in S, settings saves are safe
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
 
@@ -5668,33 +5852,36 @@ async function supaLoadFromCloud({silent=false}={}){
     }
 
     if(!silent){
-      setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});},500);
+      // Re-render the setup checklist once the Stripe status resolves: the card
+      // treats unknown-Stripe as handled (no flash), so a contractor who actually
+      // needs to connect only sees "Turn on card payments" appear here, cleanly.
+      setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().then(()=>{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}).catch(()=>{});},500);
       _removeBootOverlay();goPg('pg-dash');
     }
 
-    // De-duplicate BEFORE rendering — prevents flash of duplicate bids on PTR
+    // De-duplicate BEFORE rendering, prevents flash of duplicate bids on PTR
     const _dedupById=(arr)=>{const seen=new Set();return arr.filter(x=>{if(seen.has(x.id))return false;seen.add(x.id);return true;});};
     const _preLen=clients.length+bids.length+jobs.length;
     clients=_dedupById(clients);bids=_dedupById(bids);jobs=_dedupById(jobs);
     if(clients.length+bids.length+jobs.length<_preLen)setTimeout(()=>_flushSaveNow(),1200);
     // NOTE: empty-shell draft bids are DELIBERATELY NOT filtered here. The Make Money
-    // Today build feed renders them ("In progress — finish & send") with an explicit
-    // Discard control — hiding them on load made in-progress estimates vanish on every
+    // Today build feed renders them ("In progress, finish & send") with an explicit
+    // Discard control, hiding them on load made in-progress estimates vanish on every
     // reload while un-reloaded devices still showed them (owner-reported 53-vs-43
     // device disagreement). Junk drafts are removed by the USER via discardInProgressBid,
-    // and duplicate empty GEI drafts by openGenericEstimate's purge — both record real
+    // and duplicate empty GEI drafts by openGenericEstimate's purge, both record real
     // delete intent so the sweep removes them server-side. Never a silent load-side
     // filter (§7): a row either exists everywhere or is deleted everywhere.
     // PHASE 0 oplog: baseline the shadow diff AFTER the dedupe + draft-bid filters above,
     // so filtered rows aren't seen as deletes on the next save (no-op unless _opLogShadow).
     _opRebaseline();
-    // A union was kept (or a pending create re-appended) during the merge — the local
+    // A union was kept (or a pending create re-appended) during the merge, the local
     // state now holds something the cloud's rows don't. One debounced save uploads it:
     // kept rows' hashes were stamped from the INCOMING rows (already marked changed) and
     // re-appended rows have no hash at all. Scheduled AFTER the rebaseline above so the
     // debounce's synchronous derive sees baseline==arrays and emits zero phantom ops.
     if(_keptLocalInLoad){try{supaSaveDebounced();}catch(_e){}}
-    // Ops catch-up rides every load — the reconcile-side leg of the op channel
+    // Ops catch-up rides every load, the reconcile-side leg of the op channel
     // (realtime is the instant leg, the save epilogue the publish leg). When the RPC
     // carried the ops atomically with the rows, ingest those (zero extra reads) and
     // let _opSyncOps handle only the push leg; otherwise it pulls too (fire-and-forget).
@@ -5721,7 +5908,7 @@ async function supaLoadFromCloud({silent=false}={}){
     clients.forEach(c=>{if(!c.clientToken)_ensureClientToken(c.id);});
 
     // Remove any duplicate clawback payments created by the concurrent-run race fixed in
-    // this commit (two _cancelRefund entries per bid_id — keep the first, drop extras).
+    // this commit (two _cancelRefund entries per bid_id, keep the first, drop extras).
     (function _dedupeClawbacks(){
       const seen=new Set();let dirty=false;
       for(let i=payments.length-1;i>=0;i--){
@@ -5729,7 +5916,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(!p||!p._cancelRefund)continue;
         if(seen.has(p.bid_id)){
           // Record the delete intent so the next save's sweep soft-deletes the dupe on the
-          // SERVER too. Splicing alone removed it only from memory — every load re-downloaded
+          // SERVER too. Splicing alone removed it only from memory, every load re-downloaded
           // the dupes and re-ran saveAll(), turning this cleanup into a permanent ambient-save
           // generator on any device (the background saves that starved the reconcile backstop).
           if(typeof _recordLocalDelete==='function')_recordLocalDelete('td_payments',p.id);
@@ -5753,7 +5940,7 @@ async function supaLoadFromCloud({silent=false}={}){
       }
       // SEVEN-YEAR AUTO-ARCHIVE (IRS-aligned, owner directive): once a month the
       // owner's first boot flags records older than the current year minus 7 full
-      // years — they leave every device's hot set via ordinary deltas but stay in
+      // years: they leave every device's hot set via ordinary deltas but stay in
       // the DB, restorable from the Archive view. Missing RPC (migration not yet
       // deployed) = silent no-op. S.autoArchive===false opts out.
       if(!_isEmployee&&!_devSupportMode&&S.autoArchive!==false){
@@ -5773,7 +5960,7 @@ async function supaLoadFromCloud({silent=false}={}){
         }catch(_e){}},15000);
       }
       setTimeout(()=>{
-        // PACED hub sweep — the old forEach fired every tokened client's hub
+        // PACED hub sweep, the old forEach fired every tokened client's hub
         // upload at once (O(clients) boot burst; see _startHubSweep).
         if(typeof _startHubSweep==='function')_startHubSweep();
         autoRefreshRates();autoRefreshTaxBrackets();autoRefreshLienRules();
@@ -5781,21 +5968,21 @@ async function supaLoadFromCloud({silent=false}={}){
       },4000);
       setTimeout(()=>_checkOdometerPrompt(),3500);
       setInterval(_sigPollTick,30000);
-      // Cross-device RECONCILE HEARTBEAT — poll zj_data.updated_at on a short timer,
+      // Cross-device RECONCILE HEARTBEAT, poll zj_data.updated_at on a short timer,
       // ALWAYS, not gated on a realtime event arriving. Supabase Realtime is best-effort
       // (at-most-once): a single postgres_changes / broadcast CAN be dropped. The old design
       // only fast-polled AFTER an event landed (_kickFastReconcile), so a FULLY-dropped event
-      // fell through to a slow 30s backstop — a peer's create/delete could stay invisible for
+      // fell through to a slow 30s backstop, a peer's create/delete could stay invisible for
       // up to 30s (the realtime-delete-sync B→A failure). An always-on heartbeat makes the
       // socket a mere accelerator: even with ZERO realtime delivery, a peer change self-heals
       // within one interval. The cursor is safe to trust because the sync marker is bumped
-      // LAST on every save (see the marker note) — it advances only once all td_* rows commit.
+      // LAST on every save (see the marker note), it advances only once all td_* rows commit.
       // Cost: one tiny row read per interval per open tab. The direct-Supabase default (§15.3)
-      // keeps it off the /api budget on hosted, and on self-hosted Supabase it's a non-issue —
+      // keeps it off the /api budget on hosted, and on self-hosted Supabase it's a non-issue,
       // so the interval is tuned for convergence latency, not cost. Skipped within 3s of a
       // local save (our own echo) and while the tab is hidden or a load is already running.
       const _RECONCILE_HEARTBEAT_MS=5000;
-      // One tiny cursor read; reload ONLY when it's ahead of what we've applied — the
+      // One tiny cursor read; reload ONLY when it's ahead of what we've applied, the
       // free no-op on the caught-up path. Shared by the heartbeat tick and the
       // return-to-foreground pull so both converge by the same rule.
       window._cursorCheckReconcile=async()=>{
@@ -5804,7 +5991,7 @@ async function supaLoadFromCloud({silent=false}={}){
         try{
           const _puid=_devSupportMode?(Object.values(_DEV_SUPPORT_USERS).find(u=>u.name===_devSupportName)?.userId||_supaUser.id):(_isEmployee?_contractorUserId:_supaUser.id);
           if(_isEmployee&&!_devSupportMode){
-            // Crew can't SELECT zj_data — the cursor RPC is their heartbeat probe.
+            // Crew can't SELECT zj_data, the cursor RPC is their heartbeat probe.
             const{data:_ec}=await _supa.rpc('get_account_cursor',{target:_puid});
             if(_ec&&window._lastZjUpdatedAt&&_ec!==window._lastZjUpdatedAt)_scheduleReconcile(0);
             return;
@@ -5816,10 +6003,10 @@ async function supaLoadFromCloud({silent=false}={}){
       // Self-rescheduling with ±20% JITTER, not a fixed setInterval: N devices booted by
       // the same crew (or the same test runner) would otherwise poll in lock-step and
       // hit the cursor row as a thundering herd every 5s. Jitter de-correlates them at
-      // zero cost to convergence — the mean cadence is unchanged.
+      // zero cost to convergence, the mean cadence is unchanged.
       const _heartbeatTick=()=>{
         // HIDDEN ≠ DEAD: a backgrounded tab used to skip every tick, which left it with
-        // ZERO convergence channels whenever realtime was also down/dropping — modern
+        // ZERO convergence channels whenever realtime was also down/dropping: modern
         // headless (and real phones switching apps) mark background tabs hidden, and a
         // device that can't converge while hidden resurfaces stale. Throttle instead:
         // hidden tabs check at most once per 60s (browsers clamp background timers
@@ -5832,7 +6019,7 @@ async function supaLoadFromCloud({silent=false}={}){
       };
       setTimeout(_heartbeatTick,_RECONCILE_HEARTBEAT_MS);
       // NOTE: the sig-feed-<uid> realtime channel is subscribed in _initRealtimeSubscriptions
-      // (gated on _realtimeSubscribed, which resets on account switch) — NOT here. _cloudTimersStarted
+      // (gated on _realtimeSubscribed, which resets on account switch), NOT here. _cloudTimersStarted
       // is a one-time guard that never resets, so subscribing sig-feed here meant that after a
       // same-page account switch (bug #39 teardown removes all channels) the next account never
       // got a fresh sig-feed. Co-locating it with the td-sync/user-data channels re-subscribes it
@@ -5843,23 +6030,23 @@ async function supaLoadFromCloud({silent=false}={}){
       document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){
         checkNewSignatures();_fetchProposalViews();if(_supaUser)_loadPendingInbound();checkNearbyJob();
         // FOREGROUND = the moment the user looks. The worker pulls the phone out of a
-        // pocket — the app must be current NOW, not "within 60s". One tiny cursor read;
+        // pocket: the app must be current NOW, not "within 60s". One tiny cursor read;
         // a reload only happens when a peer actually changed something we haven't seen
         // (the old 60s-gated full reload missed anything a teammate did in the last
-        // minute — exactly the crew scenario). Delta-sized when it does fire.
+        // minute: exactly the crew scenario). Delta-sized when it does fire.
         window._cursorCheckReconcile&&window._cursorCheckReconcile();
       }});
       // Cross-tab signal: sign.html writes zp3_sig_notify after a successful cash/check save.
-      // This fires immediately in the contractor's open TradeDesk tab — no polling delay.
+      // This fires immediately in the contractor's open TradeDesk tab, no polling delay.
       window.addEventListener('storage',e=>{if(e.key==='zp3_sig_notify'&&e.newValue)checkNewSignatures();});
       setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
-      // Was 4000ms — checkNearbyJob's cache-first rewrite (js/jobs.js) makes the
+      // Was 4000ms, checkNearbyJob's cache-first rewrite (js/jobs.js) makes the
       // common case (client book already geocoded from a prior day) resolve
       // near-instantly, so this only needs to trail the location-permission
       // request above, not pad extra wait time on top of it.
       setTimeout(()=>checkNearbyJob(),1500);
       // Reconnects the clock banner/interval to an open (still-clocked-in) entry
-      // this person owns, if this device reloaded mid-timer — see
+      // this person owns, if this device reloaded mid-timer, see
       // _rehydrateActiveTimer (js/jobs.js) for why this is safe/necessary now
       // that clock-in persists immediately instead of only at clock-out.
       typeof _rehydrateActiveTimer==='function'&&_rehydrateActiveTimer();
@@ -5900,7 +6087,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
-        if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED — fallback)');applySettings();_refillSettingsFormUnlessEditing();}
+        if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED, fallback)');applySettings();_refillSettingsFormUnlessEditing();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;
         try{
           const _op=JSON.parse(localStorage.getItem('zp3_offline_pending')||'null');
@@ -5928,7 +6115,7 @@ async function supaLoadFromCloud({silent=false}={}){
     // first; _loadInProgress is false now, so the guard there won't re-defer.
     if(_deferredReload){_deferredReload=false;setTimeout(()=>_autoSaveAndReload(),0);}
     if(_resolveActiveLoad)_resolveActiveLoad();_activeLoadPromise=null; // release any caller awaiting this in-flight load
-    // A peer change arrived while this load was in flight — run ONE trailing load so
+    // A peer change arrived while this load was in flight, run ONE trailing load so
     // this device doesn't stay on a stale value. CRITICAL: if another load is still
     // running when the timer fires, RETRY (don't drop it). The old code dropped the
     // trailing load whenever _loadInProgress was true at the 300ms mark; under a burst
@@ -5954,7 +6141,7 @@ function _initRealtimeSubscriptions(uid){
         _applyRealtimeRecord(t,payload,true);
       });
     }
-    // td_ops — the INSTANT leg of the per-field op channel. A peer's save publishes its
+    // td_ops: the INSTANT leg of the per-field op channel. A peer's save publishes its
     // ops here; applying them field-by-field (HLC-guarded) is what lets N devices edit
     // the SAME row concurrently without whole-row clobber. Own-device echoes dropped by
     // device_id; the pull in _opSyncOps is the catch-up leg for anything realtime drops.
@@ -5970,9 +6157,9 @@ function _initRealtimeSubscriptions(uid){
     // fires on all other subscribed clients the moment the row is written.
     ch.on('postgres_changes',{event:'UPDATE',schema:'public',table:'zj_data',filter:'user_id=eq.'+uid},(payload)=>{
       // Echo detection by CURSOR VALUE, not by time window. The old guard skipped every
-      // zj event within 5s of a local save — which also ate PEER saves in that window
+      // zj event within 5s of a local save, which also ate PEER saves in that window
       // (a co-factor in the local-stack B→A blindness). Our own save's echo carries the
-      // exact updated_at we just stored in _lastZjUpdatedAt — skip that one; anything
+      // exact updated_at we just stored in _lastZjUpdatedAt, skip that one; anything
       // else is a cursor state this device hasn't loaded → reconcile (cheap delta now).
       const _evTs=payload?.new?.updated_at;
       if(_evTs&&window._lastZjUpdatedAt&&_evTs===window._lastZjUpdatedAt)return; // own echo / already applied
@@ -5991,9 +6178,9 @@ function _initRealtimeSubscriptions(uid){
   try{
     // sig-feed: signature + proposal-view notifications for the signed-in contractor.
     // Subscribed here (per account, gated by _realtimeSubscribed) so a same-page account
-    // switch re-establishes it under the new uid — see _teardownRealtimeChannels (bug #39).
+    // switch re-establishes it under the new uid, see _teardownRealtimeChannels (bug #39).
     // Health-tracked like td-sync above: realtime is at-most-once, so any outage
-    // window can silently drop a push — _sigFeedStatus runs one catch-up sweep the
+    // window can silently drop a push, _sigFeedStatus runs one catch-up sweep the
     // moment the channel recovers, instead of leaving it to the next poll tick.
     _supa.channel('sig-feed-'+_supaUser.id)
       .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures('push');})
@@ -6019,7 +6206,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   // OWNER GUARD (bug #39 defense-in-depth): only apply rows that belong to the account
   // currently signed in. removeAllChannels() on sign-out closes the prior account's
   // subscription, but an event already queued before teardown could still land here after
-  // the account switch — dropping foreign-owner rows ensures A's record can never be folded
+  // the account switch, dropping foreign-owner rows ensures A's record can never be folded
   // into B's arrays even in that race. The expected owner is B's uid (contractor's uid for
   // an employee, the dev-support target while in support mode).
   if(fromRealtime){
@@ -6035,7 +6222,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   }
   // CONVERGENCE: if a peer change lands WHILE a (silent) load is in flight, that
   // load's set(rows) can overwrite the patch we're about to apply with the pre-change
-  // snapshot it already read — the "last update lost" / fresh-create-dropped race that
+  // snapshot it already read, the "last update lost" / fresh-create-dropped race that
   // left B on 5004 instead of 5005 and dropped a peer's new bid. Flag a trailing reload
   // (same machinery as the broadcast path); supaLoadFromCloud's finally re-reads the
   // now-committed state so this device converges to the newest value instead of a stale one.
@@ -6044,7 +6231,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   const ev=payload.eventType;
   const rec=payload.new;
   // DELTA: mirror _lastKnownIds discipline exactly. Wherever we actually patch/push/
-  // splice arr, update _syncedHash the SAME way — so a peer's value isn't echoed back as
+  // splice arr, update _syncedHash the SAME way, so a peer's value isn't echoed back as
   // a redundant upload, and a deleted row's stale hash can't suppress a future re-create.
   // In the resurrection-ignore branch we touch neither map (we're keeping it deleted).
   if((ev==='INSERT'||ev==='UPDATE')&&rec){
@@ -6057,36 +6244,36 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
       const idx=arr.findIndex(r=>String(r.id)===recId);
       if(idx!==-1){
         // PHASE 3 (authoritative, gated): per-field merge so a peer's save can't clobber a
-        // field this device edited more recently. Fail-safe — returns `data` unless gated AND
+        // field this device edited more recently. Fail-safe: returns `data` unless gated AND
         // a provably-newer PENDING local field exists (see the _rowSyncedAt gate), so the
         // default path is byte-for-byte unchanged.
         const merged=_opApplyIncoming(tbl,arr[idx],data,rec.updated_at,'rt');
         arr[idx]=merged;
         if(rec.updated_at){try{(_rowServerTs[tbl]||(_rowServerTs[tbl]=new Map())).set(recId,new Date(rec.updated_at).getTime());}catch(_e){}}
         // Baseline the applied row so the next derive doesn't re-emit the PEER's fields
-        // as ops from THIS device (op echo — at N devices that's N² op traffic per edit).
+        // as ops from THIS device (op echo, at N devices that's N² op traffic per edit).
         try{if(window._opLogShadow)(_opPrevPayload[tbl]||(_opPrevPayload[tbl]=new Map())).set(recId,_opClone(merged));}catch(_e){}
-        // CRITICAL: stamp the hash of the INCOMING CLOUD row — never of `merged`. The hash
+        // CRITICAL: stamp the hash of the INCOMING CLOUD row, never of `merged`. The hash
         // map means "what the server has". When the merge protected a pending local field,
         // merged ≠ data, so hashing `merged` would make the next save see hash-match and
-        // SKIP the row — the protected edit would never upload (permanent divergence, the
+        // SKIP the row, the protected edit would never upload (permanent divergence, the
         // exact bug the review confirmed). Hashing `data` guarantees the mismatch → the
         // merged row re-uploads on the next save and the protected edit reaches every peer.
         _syncedHash[tbl]?.set(recId,_hashPayload(data));
         if(merged===data)(_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(recId,Date.now()); // took cloud row whole → in sync; a kept-pending field stays pending
         // UNION → upload: the merge kept a local field the incoming row lacks/loses, so the
         // server's whole-row copy is now missing something only this device holds. The hash
-        // above is the INCOMING row's (mismatch armed) — this debounced save is what makes
+        // above is the INCOMING row's (mismatch armed), this debounced save is what makes
         // the union actually reach the cloud instead of waiting for the user's next edit.
         else{try{supaSaveDebounced();}catch(_e){}}
       }else if(!_lastKnownIds[tbl]?.has(recId)){
-        // Only add if this ID was never known to us — if it was known but
+        // Only add if this ID was never known to us, if it was known but
         // isn't in arr, we deleted it locally and another device's stale
         // save is trying to resurrect it. Ignore it.
         arr.push(data);_lastKnownIds[tbl]?.add(recId);_syncedHash[tbl]?.set(recId,_hashPayload(data));
         (_rowSyncedAt[tbl]||(_rowSyncedAt[tbl]=new Map())).set(recId,Date.now());
         if(rec.updated_at){try{(_rowServerTs[tbl]||(_rowServerTs[tbl]=new Map())).set(recId,new Date(rec.updated_at).getTime());}catch(_e){}}
-        // Baseline the peer's new row too — else the next derive emits a CREATE op echo.
+        // Baseline the peer's new row too, else the next derive emits a CREATE op echo.
         try{if(window._opLogShadow)(_opPrevPayload[tbl]||(_opPrevPayload[tbl]=new Map())).set(recId,_opClone(data));}catch(_e){}
       }
     }
@@ -6095,7 +6282,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
     if(idx!==-1){arr.splice(idx,1);_lastKnownIds[tbl]?.delete(String(payload.old.id));_syncedHash[tbl]?.delete(String(payload.old.id));_rowSyncedAt[tbl]?.delete(String(payload.old.id));_rowServerTs[tbl]?.delete(String(payload.old.id));try{_opPrevPayload[tbl]&&_opPrevPayload[tbl].delete(String(payload.old.id));}catch(_e){}}
   }
   // DEBOUNCED cache write: _writeLocalCache serializes the ENTIRE account (+ the delta
-  // sidecar) to localStorage on the main thread — a 20-row realtime burst used to do that
+  // sidecar) to localStorage on the main thread, a 20-row realtime burst used to do that
   // 20 times back-to-back, janking whatever the user was touching. One trailing write
   // 250ms after the last patch captures the same end state (crash-safety is unaffected:
   // the authoritative copy is the cloud, and saves/loads still write synchronously).
@@ -6121,7 +6308,7 @@ function _applyRealtimeRecord(tbl,payload,fromRealtime){
   }
   _renderAllPages();
 }
-// The full post-change render chain — every container a synced record can appear in.
+// The full post-change render chain, every container a synced record can appear in.
 function _renderAllPages(){
   renderDash&&renderDash();
   renderClientList&&renderClientList();renderLeadsPage&&renderLeadsPage();
@@ -6142,13 +6329,13 @@ let _pendingInbound=[];
 const _processedInboundIds=new Set();
 async function _loadPendingInbound(){
   if(!_supa||!_supaUser)return;
-  // Snapshot which account this call belongs to — if a sign-out/sign-in happens
+  // Snapshot which account this call belongs to, if a sign-out/sign-in happens
   // while the request is in flight, _supaUser changes out from under this await,
   // and the response (or its absence) must never be applied against the wrong account.
   const _forUser=_supaUser.id;
   try{
     const{data}=await _supa.from('inbound_leads').select('*').eq('account_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:false});
-    if(_supaUser?.id!==_forUser)return; // account switched mid-request — drop this response entirely
+    if(_supaUser?.id!==_forUser)return; // account switched mid-request, drop this response entirely
     if(!data){_pendingInbound=[];_updateInboundBadge();return;}
     // Split: onboard_link rows (have client_id) auto-merge; QR rows go to review queue
     const toMerge=data.filter(r=>!!r.client_id);
@@ -6182,16 +6369,16 @@ function _onNewInboundLead(row){
       _uploadClientHub(Number(row.client_id)).catch(()=>{});
       // Trigger property lookup now that we have the address
       if(row.street&&row.city)_lookupPropertyData(Number(row.client_id),{street:row.street,city:row.city,state:row.state||'',zip:row.zip||''});
-      showToast((c.name||'Lead')+' completed their onboarding — tap to view','📋');
+      showToast((c.name||'Lead')+' completed their onboarding, tap to view','📋');
       // Navigate directly to the client: avoids lead "disappearing" from whatever filter tab is active
       openClientDetail(Number(row.client_id),'leads');
       return;
     }
   }
-  // Unknown lead (QR form) — queue for review
+  // Unknown lead (QR form), queue for review
   _pendingInbound.unshift(row);
   _updateInboundBadge();
-  showToast('New lead from '+(row.source==='qr_form'?'QR form':'intake form')+' — tap to review','🆕');
+  showToast('New lead from '+(row.source==='qr_form'?'QR form':'intake form')+', tap to review','🆕');
   if(document.querySelector('.pg.active')?.id==='pg-leads')renderLeadsPage();
 }
 function _updateInboundBadge(){
@@ -6246,9 +6433,9 @@ function supaSetStatus(s){
   _syncStatus=s;
   const el=document.getElementById('supa-status');
   if(!el)return;
-  // Only show errors — syncing/synced are silent
+  // Only show errors, syncing/synced are silent
   if(s==='error'){
-    el.textContent='⚠️ Sync error — check connection';
+    el.textContent='⚠️ Sync error, check connection';
     el.style.color='#A32D2D';
     el.style.opacity='1';
   } else {
@@ -6303,7 +6490,7 @@ function getSeasonalOutreachClients(){
 
 // ── Automation: weekly Friday summary ────────────────────────────────────────
 function checkFridaySummary(){
-  if(navigator.webdriver)return; // never auto-pop the weekly summary modal under automation — it covers the page and blocks clicks (mirrors requestLocationPermission / geo-consent). Real users unaffected.
+  if(navigator.webdriver)return; // never auto-pop the weekly summary modal under automation, it covers the page and blocks clicks (mirrors requestLocationPermission / geo-consent). Real users unaffected.
   if(!_supaUser)return; // don't show before login
   const now=new Date();
   if(now.getDay()!==5)return; // only on Fridays
@@ -6361,7 +6548,7 @@ function checkFridaySummary(){
 
 // ── Automation: daily morning briefing ───────────────────────────────────────
 function showDailyBriefing(){
-  if(navigator.webdriver)return; // never auto-pop the boot briefing modal under automation — it covers the page and blocks every click (mirrors requestLocationPermission / geo-consent). Real users unaffected.
+  if(navigator.webdriver)return; // never auto-pop the boot briefing modal under automation, it covers the page and blocks every click (mirrors requestLocationPermission / geo-consent). Real users unaffected.
   if(!_supaUser)return; // don't show before login
   // Owner: boot popups were appearing DURING the boot screen. Hold until the boot
   // overlay has fully lifted AND the card waterfall has settled, so the briefing/
@@ -6394,7 +6581,7 @@ function showDailyBriefing(){
   });
   // Today's estimates
   const todayEsts=jobs.filter(j=>j.eventType==='estimate'&&addDays(j.start,0)===tk&&j.status!=='canceled');
-  // Supply reminder — jobs tomorrow
+  // Supply reminder, jobs tomorrow
   const tmr=addDays(tk,1);
   const tmrJobs=jobs.filter(j=>{
     if(j.eventType==='estimate'||j.status==='canceled')return false;
@@ -6428,7 +6615,7 @@ function showDailyBriefing(){
         const nm=c?c.name:'Unknown';
         const icon=j.eventType==='estimate'?svgIcon('📋'):svgIcon('🔨');
         // A job record can lack eventType (it's implicitly a job); the icon already
-        // defaults to 🔨 in that case, so default the label to 'job' too — calling
+        // defaults to 🔨 in that case, so default the label to 'job' too: calling
         // .charAt on an undefined eventType throws (cloud.js:3708 console error).
         const et=j.eventType||'job';
         return '<div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">'+
@@ -6479,7 +6666,7 @@ function showDailyBriefing(){
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">'+
           '<div style="font-size:13px;font-weight:600">'+escHtml(c?c.name:b.client_name||'Client')+'</div>'+
           '<div style="display:flex;gap:6px">'+
-            (c&&c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent('Hi '+( c.name.split(' ')[0])+', just following up on your estimate — any questions?')+'" onclick="markFollowupSent('+b.id+');autoLogContact('+c.id+',\'followup_sent\')" style="padding:5px 10px;border-radius:20px;background:var(--blue-lt);color:var(--blue);font-size:11px;font-weight:700;text-decoration:none">Text</a>':'')+
+            (c&&c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent('Hi '+( c.name.split(' ')[0])+', just following up on your estimate, any questions?')+'" onclick="markFollowupSent('+b.id+');autoLogContact('+c.id+',\'followup_sent\')" style="padding:5px 10px;border-radius:20px;background:var(--blue-lt);color:var(--blue);font-size:11px;font-weight:700;text-decoration:none">Text</a>':'')+
           '</div>'+
         '</div>';
       }).join('')+
@@ -6528,12 +6715,12 @@ function showDailyBriefing(){
     const season=mo>=3&&mo<=5?'Spring painting season':'Fall season';
     sections+=
       '<div style="margin-bottom:14px">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px">'+season+' — Past Clients to Reach</div>'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text3);margin-bottom:8px">'+season+', Past Clients to Reach</div>'+
       seasonal.map(c=>{
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border)">'+
           '<div style="font-size:13px;font-weight:600">'+escHtml(c.name)+'</div>'+
           '<div style="display:flex;gap:6px">'+
-            (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent('Hi '+c.name.split(' ')[0]+', it\'s '+( S.bname||'ZJ\'s Painting')+'. '+season+' is a great time for exterior or interior work — want a quick quote?')+'" onclick="autoLogContact('+c.id+',\'seasonal_outreach\')" style="padding:5px 10px;border-radius:20px;background:var(--green-lt);color:var(--green-mid);font-size:11px;font-weight:700;text-decoration:none">Text</a>':'')+
+            (c.phone?'<a href="sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent('Hi '+c.name.split(' ')[0]+', it\'s '+( S.bname||'ZJ\'s Painting')+'. '+season+' is a great time for exterior or interior work, want a quick quote?')+'" onclick="autoLogContact('+c.id+',\'seasonal_outreach\')" style="padding:5px 10px;border-radius:20px;background:var(--green-lt);color:var(--green-mid);font-size:11px;font-weight:700;text-decoration:none">Text</a>':'')+
           '</div>'+
         '</div>';
       }).join('')+
@@ -6574,7 +6761,7 @@ function showDailyBriefing(){
 
 // ── Auto-update: SW signals reload; auto-save draft first ────────────────────
 function _showUpdateOverlay(){
-  // Reload bridge — painted SYNCHRONOUSLY before the save/reload so a version
+  // Reload bridge, painted SYNCHRONOUSLY before the save/reload so a version
   // update NEVER shows the dashboard flashing between the old and new build. Uses
   // the SAME markup/classes as the redesigned boot overlay (glow, mark, monogram,
   // gradient glowing bar) so old-build → reload → new-build reads as ONE
@@ -6611,7 +6798,7 @@ function _showUpdateOverlay(){
   document.body.appendChild(ov);
 }
 let _reloadPending=false;
-let _deferredReload=false; // a version/SW reload asked to fire mid cold-load — held until the load settles
+let _deferredReload=false; // a version/SW reload asked to fire mid cold-load, held until the load settles
 function _snapshotForms(){
   // Capture all visible form inputs so unsaved data (client form, expense
   // modal, log-trip modal, etc.) survives the auto-update reload.
@@ -6638,16 +6825,16 @@ function _snapshotForms(){
   return snap;
 }
 async function _autoSaveAndReload(){
-  if(_reloadPending)return; // SW_UPDATED + version.json poll can both fire — only the first wins
+  if(_reloadPending)return; // SW_UPDATED + version.json poll can both fire, only the first wins
   // NEVER reload DURING an in-flight cold load. On a heavy account the initial
   // supaLoadFromCloud can take several seconds; a mid-load reload (below: hide
   // body → wipe SW caches → location.replace) collides with it and strands the
-  // app on a hidden/blank page — the "loading then crashed" report. Defer here
+  // app on a hidden/blank page, the "loading then crashed" report. Defer here
   // and let supaLoadFromCloud's finally re-fire once the load settles. Must
   // return BEFORE hiding the body, or the page stays invisible.
   if(_loadInProgress){_deferredReload=true;return;}
   _reloadPending=true;
-  if(_devSupportMode){location.reload();return;} // dev's own data already saved on support entry — never push support user data to cloud
+  if(_devSupportMode){location.reload();return;} // dev's own data already saved on support entry, never push support user data to cloud
   _showUpdateOverlay(); // bridge the reload with a boot-matching loading screen (no dashboard flash, no double-boot look)
   // Snapshot any open forms before saving/reloading
   try{
@@ -6662,7 +6849,7 @@ async function _autoSaveAndReload(){
   if(activePg==='pg-est-generic'&&_geiEditBidId){
     localStorage.setItem('_sw_resume_bid',String(_geiEditBidId));
   }
-  // ALWAYS flush — even when _syncTimer is null, in-memory state may have
+  // ALWAYS flush, even when _syncTimer is null, in-memory state may have
   // changes from a fire-and-forget save (saveLoggedTrip / saveEndDriveModal)
   // that hasn't completed yet. Awaiting an idempotent full-state push
   // guarantees the latest data is in the cloud before reload.
@@ -6670,7 +6857,7 @@ async function _autoSaveAndReload(){
   try{await _flushSaveNow();}catch(e){}
   // Clear ALL service-worker caches before reloading. The SW serves JS/CSS
   // subresources cache-first (cached||net), so a plain reload of fresh HTML
-  // still pulls js/cloud.js — and therefore APP_VERSION — from the stale cache,
+  // still pulls js/cloud.js: and therefore APP_VERSION, from the stale cache,
   // leaving the app pinned to the old version forever. Deleting the caches here
   // forces every subresource on the next load to miss and fetch fresh from the
   // network, so the new code actually takes effect.
@@ -6685,14 +6872,14 @@ async function _autoSaveAndReload(){
   window.location.replace('/?_v='+Date.now());
 }
 
-// Catches pull-to-refresh, app close, app switch — fires synchronously when
+// Catches pull-to-refresh, app close, app switch, fires synchronously when
 // the page is about to be hidden/unloaded. Browser navigation kills the 2s
 // debounce timer; this is the only reliable way to flush pending changes.
 // ── Dev tools: receipt storage migration & recovery ───────────────────
 window._migrateReceiptsToStorage=async function(){
   if(!_supa||!_supaUser){console.warn('Not signed in');return;}
   const pending=expenses.filter(e=>e.receipt_img&&!e.receipt_key);
-  if(!pending.length){console.log('Nothing to migrate — all receipts already in bucket');return;}
+  if(!pending.length){console.log('Nothing to migrate, all receipts already in bucket');return;}
   console.log('Migrating',pending.length,'receipts to storage...');
   let ok=0,fail=0;
   for(const e of pending){
@@ -6722,16 +6909,16 @@ window._restoreReceiptsFromStorage=async function(){
   if(restored>0){_flushSaveNow();console.log('Saved.');}
 };
 window.addEventListener('pagehide',()=>{
-  if(_syncTimer)_flushSaveNow(); // tracked — a racing silent load must await it
+  if(_syncTimer)_flushSaveNow(); // tracked: a racing silent load must await it
 });
 document.addEventListener('visibilitychange',()=>{
-  if(document.hidden&&_syncTimer)_flushSaveNow(); // tracked — a racing silent load must await it
+  if(document.hidden&&_syncTimer)_flushSaveNow(); // tracked: a racing silent load must await it
 });
 
 // ── Persistent version check: fires every time app comes to foreground ────────
 // Fetches version.json (never cached by the SW, and with no-store to bypass the
 // browser HTTP cache) and compares the live server version to the running
-// APP_VERSION. version.json is the single source of truth — APP_VERSION lives in
+// APP_VERSION. version.json is the single source of truth, APP_VERSION lives in
 // js/cloud.js, not in index.html, so grepping the HTML never worked.
 async function _checkVersionOnResume(){
   try{
@@ -6741,6 +6928,6 @@ async function _checkVersionOnResume(){
     if(d&&d.version&&d.version!==APP_VERSION)await _autoSaveAndReload();
   }catch(e){}
 }
-// Fires on foreground resume — SW navigate handler covers fresh opens
+// Fires on foreground resume, SW navigate handler covers fresh opens
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)_checkVersionOnResume();});
 

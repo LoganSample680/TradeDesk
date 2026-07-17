@@ -1,23 +1,23 @@
-// REAL flow — CROSS-ACCOUNT BLEED on same-device account switch (bug #39).
+// REAL flow, CROSS-ACCOUNT BLEED on same-device account switch (bug #39).
 // Reproduces the exact production leak: signed in as account A, write a bid, then
-// "sign out of cloud sync" and sign into a NEW user B on the SAME DEVICE — and
+// "sign out of cloud sync" and sign into a NEW user B on the SAME DEVICE, and
 // account A's bid (the "Adam Ryder" leak) must NOT carry into B.
 //
 // Why this flow is faithful (the prior version was not): supaSignOut() only calls
-// _supa.auth.signOut({scope:'local'}) — it does NOT wipe the in-memory bids[]/
+// _supa.auth.signOut({scope:'local'}): it does NOT wipe the in-memory bids[]/
 // clients[] arrays and does NOT reload. So A's records survive across the sign-out,
 // and signing into B WITHOUT a page reload is the precise window the bleed happened.
 //
-// IMPORTANT — this test does NOT assume the source. The bleed could live in memory,
+// IMPORTANT: this test does NOT assume the source. The bleed could live in memory,
 // localStorage (any key), the offline-pending blob, the cloud cache, or B's cloud.
 // So on failure it captures a SNAPSHOT of exactly where account A's unique marker
-// appears, and surfaces that in the assertion message — the test diagnoses the
+// appears, and surfaces that in the assertion message, the test diagnoses the
 // source instead of us guessing it.
 //
 //   EXPECTED: PASSES when the bleed is fixed; FAILS (red) while it can still happen,
 //   and names where A's data leaked from. Permanent guard so it can't return.
 //
-// REQUIRES A SECOND DEV ACCOUNT — set these GitHub Actions secrets to a second,
+// REQUIRES A SECOND DEV ACCOUNT, set these GitHub Actions secrets to a second,
 // real Supabase auth user (a different contractor login):
 //   E2E_DEV2_EMAIL, E2E_DEV2_PASSWORD, E2E_DEV2_USER_ID
 // Soft-skips cleanly until they're configured.
@@ -39,9 +39,9 @@ const B = _useLocal
 const haveTwoAccounts = (_useLocal && A && B && A.uid !== B.uid)
   || !!(A.email && A.password && A.uid && B.email && B.password && B.uid);
 
-// Open the app fresh and sign in as a SPECIFIC account — like launching the app.
+// Open the app fresh and sign in as a SPECIFIC account, like launching the app.
 // Diagnostic sign-in: signs in, then polls for _supaUser.id===uid IN-PAGE, and on
-// failure reports the ACTUAL _supaUser.id (vs expected) + the auth-call result — so a
+// failure reports the ACTUAL _supaUser.id (vs expected) + the auth-call result, so a
 // failure is a one-line cause, never a black-box 150s waitForFunction timeout.
 async function _signInDiag(page, acct, label) {
   return await page.evaluate(async ({ email, password, uid }) => {
@@ -64,22 +64,22 @@ async function _signInDiag(page, acct, label) {
       await new Promise(r => setTimeout(r, 200));
     }
     const actual = (typeof _supaUser !== 'undefined' && _supaUser) ? _supaUser.id : '(none)';
-    return { ok: false, why: `auth OK but _supaUser.id never became ${uid} — actual=${actual}, _supaCloudLoaded=${typeof _supaCloudLoaded !== 'undefined' ? _supaCloudLoaded : '?'}` };
+    return { ok: false, why: `auth OK but _supaUser.id never became ${uid}, actual=${actual}, _supaCloudLoaded=${typeof _supaCloudLoaded !== 'undefined' ? _supaCloudLoaded : '?'}` };
   }, { email: acct.email, password: acct.password, uid: acct.uid });
 }
 
 async function openAndSignIn(page, acct) {
   await page.goto('/');
-  await page.waitForSelector('#supa-email', { timeout: 30000 });
+  await page.waitForSelector('#supa-email', { state: 'attached', timeout: 30000 });
   const res = await _signInDiag(page, acct, 'A');
   if (!res.ok) throw new Error(`openAndSignIn(${acct.email}): ${res.why}`);
   await page.waitForFunction(() => typeof _supaCloudLoaded === 'undefined' || _supaCloudLoaded === true, { timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(800);
 }
 
-test.describe('cross-account bleed — same-device sign-out → sign-in (bug #39)', () => {
+test.describe('cross-account bleed, same-device sign-out → sign-in (bug #39)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
-  test.skip(!haveTwoAccounts, 'needs a SECOND dev account — set E2E_DEV2_EMAIL / E2E_DEV2_PASSWORD / E2E_DEV2_USER_ID');
+  test.skip(!haveTwoAccounts, 'needs a SECOND dev account, set E2E_DEV2_EMAIL / E2E_DEV2_PASSWORD / E2E_DEV2_USER_ID');
 
   test("A's bid never carries into B when you sign out of cloud sync and into a new user on the same device", async ({ page }) => {
     test.setTimeout(150000);
@@ -94,9 +94,9 @@ test.describe('cross-account bleed — same-device sign-out → sign-in (bug #39
     // (tests/flow/global-setup.js) links pool accounts as employer→employee
     // (account[i] employs account[i+1]); A and B are consecutive pool accounts, so B is
     // seeded as A's ACTIVE employee. Left in place, B's sign-in legitimately LOADS A's
-    // account (the employee-view path, js/cloud.js:226) — which looks like a leak but is
+    // account (the employee-view path, js/cloud.js:226): which looks like a leak but is
     // NOT bug #39. A is B's contractor here, so RLS lets A delete the link; removing it
-    // makes B sign in as its OWN independent contractor — the real same-device scenario.
+    // makes B sign in as its OWN independent contractor, the real same-device scenario.
     await page.evaluate(async ({ Buid }) => {
       try { await _supa.from('team_members').delete().eq('contractor_user_id', _supaUser.id).eq('employee_user_id', Buid); } catch (e) {}
     }, { Buid: B.uid });
@@ -107,10 +107,10 @@ test.describe('cross-account bleed — same-device sign-out → sign-in (bug #39
     }, { bidId, clientId, MARK });
     expect(await page.evaluate(({ bidId }) => bids.some(b => b.id === bidId), { bidId }), "A's bid is in memory before sign-out").toBe(true);
 
-    // ── 2. REAL account switch — NO reload. This is exactly what a user does: tap
+    // ── 2. REAL account switch, NO reload. This is exactly what a user does: tap
     // "sign out of cloud sync", then sign into a different account on the SAME page
     // session. supaSignOut() only clears the local session; it does NOT wipe bids[]/
-    // clients[] or reload. So A's data is still in memory when B signs in — the precise
+    // clients[] or reload. So A's data is still in memory when B signs in, the precise
     // window bug #39 lived in. This tests the APP's real behavior, not a reload-around. ──
     await page.evaluate(async () => { if (typeof supaSignOut === 'function') await supaSignOut(); });
     await page.waitForTimeout(600);
@@ -120,7 +120,7 @@ test.describe('cross-account bleed — same-device sign-out → sign-in (bug #39
     expect(bIn.ok, `B sign-in (no-reload account switch): ${bIn.why}`).toBe(true);
     await page.waitForTimeout(1800); // let B's cloud load + any merge settle
 
-    // ── 4. SNAPSHOT where A's marker appears — let the test find the source. ──
+    // ── 4. SNAPSHOT where A's marker appears, let the test find the source. ──
     const snap = await page.evaluate(({ bidId, clientId, MARK }) => {
       const lsHits = [];
       try {
@@ -139,7 +139,7 @@ test.describe('cross-account bleed — same-device sign-out → sign-in (bug #39
         inOfflineBlob: blobRaw.includes(MARK) || blobRaw.includes(String(bidId)),
         inCloudCache: cacheRaw.includes(MARK) || cacheRaw.includes(String(bidId)),
         // DELTA bleed surface: the synced-hash map must not carry A's bid/client ids into
-        // B's session — a stale "already synced" hash under B could suppress uploading B's
+        // B's session, a stale "already synced" hash under B could suppress uploading B's
         // own same-id row. The load-side rebuild + dev-switch reset must clear them.
         inSyncedHash: (typeof window.__hashHas === 'function') && (window.__hashHas('td_bids', bidId) || window.__hashHas('td_clients', clientId)),
         localStorageKeysWithA: lsHits,

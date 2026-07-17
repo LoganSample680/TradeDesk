@@ -14,14 +14,14 @@
  *   setProposalFilter
  *
  * Requirements per function:
- *   1. null/undefined input — must not throw
- *   2. empty input ([], '', 0) — graceful handling
+ *   1. null/undefined input, must not throw
+ *   2. empty input ([], '', 0), graceful handling
  *   3. boundary values (-1, 0, 1, very large)
- *   4. type mismatch — graceful
- *   5. missing DOM — no crash
- *   6. valid golden-path — correct output
- *   7. concurrent calls (5 sync, no await) — no stack corruption
- *   8. corrupted localStorage — graceful
+ *   4. type mismatch, graceful
+ *   5. missing DOM, no crash
+ *   6. valid golden-path, correct output
+ *   7. concurrent calls (5 sync, no await), no stack corruption
+ *   8. corrupted localStorage, graceful
  *   9. render functions: no duplicate entries after 3 calls
  *  10. guard variables: released even after throw
  */
@@ -29,7 +29,7 @@
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors,
   FAKE_BID_ID_1, FAKE_USER_ID, FAKE_TOKEN } = require('./helpers');
 
-test.describe('dashboard.js — exhaustive coverage', () => {
+test.describe('dashboard.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -88,7 +88,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toContain('vs LY');
   });
 
-  test('_trendHtml: positive trend, normal color — contains green and up arrow', async () => {
+  test('_trendHtml: positive trend, normal color, contains green and up arrow', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _trendHtml(200, 100, false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -99,7 +99,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toContain('100%');
   });
 
-  test('_trendHtml: negative trend, normal color — contains red and down arrow', async () => {
+  test('_trendHtml: negative trend, normal color, contains red and down arrow', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _trendHtml(50, 100, false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -124,7 +124,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.dnGreen).toBe(true);
   });
 
-  test('_trendHtml: boundary — very large numbers do not throw', async () => {
+  test('_trendHtml: boundary: very large numbers do not throw', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: typeof _trendHtml(1e15, 1e14, false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -133,7 +133,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('string');
   });
 
-  test('_trendHtml: boundary — negative curr with positive prev', async () => {
+  test('_trendHtml: boundary: negative curr with positive prev', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _trendHtml(-100, 100, false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -142,7 +142,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(typeof r.result).toBe('string');
   });
 
-  test('_trendHtml: type mismatch — string inputs do not throw', async () => {
+  test('_trendHtml: type mismatch, string inputs do not throw', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: typeof _trendHtml('abc', 'xyz', false) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -173,7 +173,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderDash
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderDash: golden path — runs without throwing', async () => {
+  test('renderDash: golden path, runs without throwing', async () => {
     const r = await page.evaluate(() => {
       try { renderDash(); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -193,7 +193,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.running).toBe(false);
   });
 
-  test('renderDash: concurrent calls — second call returns early (cascade guard)', async () => {
+  test('renderDash: concurrent calls, second call returns early (cascade guard)', async () => {
     const r = await page.evaluate(() => {
       try {
         // Manually set guard to simulate an in-progress render
@@ -250,7 +250,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _empSetStatus
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_empSetStatus: missing job ID — returns without throwing', async () => {
+  test('_empSetStatus: missing job ID, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _empSetStatus(999999999, 'enroute'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -258,7 +258,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empSetStatus: null jobId — graceful', async () => {
+  test('_empSetStatus: null jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _empSetStatus(null, 'enroute'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -266,7 +266,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empSetStatus: undefined jobId — graceful', async () => {
+  test('_empSetStatus: undefined jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _empSetStatus(undefined, 'arrived'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -274,7 +274,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empSetStatus: valid job, no employee record — returns without crashing', async () => {
+  test('_empSetStatus: valid job, no employee record, returns without crashing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88881, name: 'Test Job', client_id: 9999, empStatus: {} };
       jobs.unshift(fakeJob);
@@ -287,7 +287,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empSetStatus: done state — opens confirmation sheet without crashing', async () => {
+  test('_empSetStatus: done state, opens confirmation sheet without crashing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88882, name: 'Test Job', client_id: 9999, empStatus: {} };
       jobs.unshift(fakeJob);
@@ -307,7 +307,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.sheetExists).toBe(true);
   });
 
-  test('_empSetStatus: 5 concurrent calls with missing job — no stack corruption', async () => {
+  test('_empSetStatus: 5 concurrent calls with missing job, no stack corruption', async () => {
     const r = await page.evaluate(() => {
       try {
         _empSetStatus(0, 'enroute');
@@ -326,7 +326,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _empConfirmDone
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_empConfirmDone: missing job — returns without throwing', async () => {
+  test('_empConfirmDone: missing job, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _empConfirmDone(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -334,7 +334,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empConfirmDone: null jobId — graceful', async () => {
+  test('_empConfirmDone: null jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _empConfirmDone(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -342,7 +342,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empConfirmDone: valid job, no employee record — returns gracefully', async () => {
+  test('_empConfirmDone: valid job, no employee record, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88883, name: 'Test Job', empStatus: {} };
       jobs.unshift(fakeJob);
@@ -355,7 +355,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empConfirmDone: golden path — marks job done, removes overlay', async () => {
+  test('_empConfirmDone: golden path, marks job done, removes overlay', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88884, name: 'Test Job', empStatus: {} };
       jobs.unshift(fakeJob);
@@ -391,7 +391,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _fmtEmpTaskTime
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_fmtEmpTaskTime: null input — returns empty string', async () => {
+  test('_fmtEmpTaskTime: null input, returns empty string', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _fmtEmpTaskTime(null) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -400,7 +400,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('');
   });
 
-  test('_fmtEmpTaskTime: undefined input — returns empty string', async () => {
+  test('_fmtEmpTaskTime: undefined input, returns empty string', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _fmtEmpTaskTime(undefined) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -409,7 +409,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('');
   });
 
-  test('_fmtEmpTaskTime: invalid date string — returns empty string', async () => {
+  test('_fmtEmpTaskTime: invalid date string, returns empty string', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _fmtEmpTaskTime('not-a-date') }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -418,7 +418,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(typeof r.result).toBe('string');
   });
 
-  test('_fmtEmpTaskTime: empty string — returns empty string', async () => {
+  test('_fmtEmpTaskTime: empty string, returns empty string', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: _fmtEmpTaskTime('') }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -427,7 +427,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('');
   });
 
-  test('_fmtEmpTaskTime: valid ISO string — returns time string', async () => {
+  test('_fmtEmpTaskTime: valid ISO string, returns time string', async () => {
     const r = await page.evaluate(() => {
       try {
         const iso = new Date('2025-06-15T14:30:00').toISOString();
@@ -441,7 +441,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toMatch(/\d/);
   });
 
-  test('_fmtEmpTaskTime: numeric timestamp — graceful', async () => {
+  test('_fmtEmpTaskTime: numeric timestamp, graceful', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: typeof _fmtEmpTaskTime(1234567890) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -450,7 +450,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result).toBe('string');
   });
 
-  test('_fmtEmpTaskTime: 5 concurrent calls — all return strings', async () => {
+  test('_fmtEmpTaskTime: 5 concurrent calls, all return strings', async () => {
     const r = await page.evaluate(() => {
       try {
         const iso = new Date().toISOString();
@@ -473,7 +473,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _empToggleTask
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_empToggleTask: missing job — returns without throwing', async () => {
+  test('_empToggleTask: missing job, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _empToggleTask(999999999, 1); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -481,7 +481,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empToggleTask: null jobId — graceful', async () => {
+  test('_empToggleTask: null jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _empToggleTask(null, 1); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -489,7 +489,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empToggleTask: job exists but no tasks array — returns without throwing', async () => {
+  test('_empToggleTask: job exists but no tasks array, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88885, name: 'Test' };
       jobs.unshift(fakeJob);
@@ -500,7 +500,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empToggleTask: task not found in array — returns without throwing', async () => {
+  test('_empToggleTask: task not found in array, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 88886, name: 'Test', tasks: [{ id: 1, text: 'Task 1', done: false }] };
       jobs.unshift(fakeJob);
@@ -511,7 +511,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_empToggleTask: golden path — toggles task done state', async () => {
+  test('_empToggleTask: golden path, toggles task done state', async () => {
     const r = await page.evaluate(() => {
       const fakeTask = { id: 42, text: 'Paint walls', done: false };
       const fakeJob = { id: 88887, name: 'Test Job', tasks: [fakeTask], empStatus: {} };
@@ -554,7 +554,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderDashToday
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderDashToday: no DOM element — returns gracefully', async () => {
+  test('renderDashToday: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-today');
       if (el) el.id = 'dash-today-hidden';
@@ -565,7 +565,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderDashToday: empty jobs array — renders no-job placeholder', async () => {
+  test('renderDashToday: empty jobs array, renders no-job placeholder', async () => {
     const r = await page.evaluate(() => {
       const origJobs = [...jobs];
       jobs.length = 0;
@@ -581,7 +581,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasContent).toBe(true);
   });
 
-  test('renderDashToday: corrupted localStorage — graceful', async () => {
+  test('renderDashToday: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_jobs', '{INVALID{{');
       try { renderDashToday(); return { ok: true }; }
@@ -613,7 +613,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderDashToday: 5 concurrent calls — no crash', async () => {
+  test('renderDashToday: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       try {
         renderDashToday(); renderDashToday(); renderDashToday(); renderDashToday(); renderDashToday();
@@ -628,7 +628,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _openCrewAssignSheet
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_openCrewAssignSheet: missing job — returns without throwing', async () => {
+  test('_openCrewAssignSheet: missing job, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _openCrewAssignSheet(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -636,7 +636,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_openCrewAssignSheet: null jobId — graceful', async () => {
+  test('_openCrewAssignSheet: null jobId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _openCrewAssignSheet(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -644,7 +644,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_openCrewAssignSheet: no employees — shows toast without crashing', async () => {
+  test('_openCrewAssignSheet: no employees, shows toast without crashing', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 77701, name: 'Crew Test', client_id: null };
       jobs.unshift(fakeJob);
@@ -657,7 +657,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_openCrewAssignSheet: with employees — opens sheet', async () => {
+  test('_openCrewAssignSheet: with employees, opens sheet', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 77702, name: 'Crew Test 2', client_id: null };
       jobs.unshift(fakeJob);
@@ -678,7 +678,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.sheetExists).toBe(true);
   });
 
-  test('_openCrewAssignSheet: 5 concurrent calls — only one sheet in DOM', async () => {
+  test('_openCrewAssignSheet: 5 concurrent calls, only one sheet in DOM', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 77703, name: 'Crew Multi', client_id: null };
       jobs.unshift(fakeJob);
@@ -705,7 +705,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _assignCrewToJob
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_assignCrewToJob: missing job — returns without throwing', async () => {
+  test('_assignCrewToJob: missing job, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _assignCrewToJob(999999999, 'emp-1'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -713,7 +713,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_assignCrewToJob: null empId — removes assignment', async () => {
+  test('_assignCrewToJob: null empId, removes assignment', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 66601, name: 'Assign Test', assignedTo: 'emp-1', assignedDate: todayKey() };
       jobs.unshift(fakeJob);
@@ -729,7 +729,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.assignedDate).toBeNull();
   });
 
-  test('_assignCrewToJob: golden path — assigns employee and builds crewHistory', async () => {
+  test('_assignCrewToJob: golden path, assigns employee and builds crewHistory', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 66602, name: 'Golden Assign', crewHistory: [] };
       jobs.unshift(fakeJob);
@@ -769,7 +769,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // getNextCollAction
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('getNextCollAction: null stage — returns none default', async () => {
+  test('getNextCollAction: null stage, returns none default', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: getNextCollAction(null) }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -779,7 +779,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result.label).toContain('Send Reminder');
   });
 
-  test('getNextCollAction: unknown stage — falls back to none', async () => {
+  test('getNextCollAction: unknown stage, falls back to none', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: getNextCollAction('nonexistent_stage') }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -788,7 +788,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.result.label).toContain('Send Reminder');
   });
 
-  test('getNextCollAction: empty string stage — graceful', async () => {
+  test('getNextCollAction: empty string stage, graceful', async () => {
     const r = await page.evaluate(() => {
       try { return { ok: true, result: getNextCollAction('') }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -815,7 +815,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.results[5].action.next).toBe('resolved');
   });
 
-  test('getNextCollAction: 5 concurrent calls — consistent results', async () => {
+  test('getNextCollAction: 5 concurrent calls, consistent results', async () => {
     const r = await page.evaluate(() => {
       try {
         const r1 = getNextCollAction('none');
@@ -839,7 +839,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // emitEvent
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('emitEvent: null type and clientId — does not throw', async () => {
+  test('emitEvent: null type and clientId, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { emitEvent(null, null, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -847,7 +847,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('emitEvent: undefined extra — does not throw', async () => {
+  test('emitEvent: undefined extra, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { emitEvent('contact', 123, undefined); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -855,7 +855,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('emitEvent: golden path — pushes event to events array', async () => {
+  test('emitEvent: golden path, pushes event to events array', async () => {
     const r = await page.evaluate(() => {
       const before = (events || []).length;
       try {
@@ -884,14 +884,14 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.len).toBeLessThanOrEqual(600);
   });
 
-  test('emitEvent: 5 concurrent calls — all events recorded', async () => {
+  test('emitEvent: 5 concurrent calls, all events recorded', async () => {
     const r = await page.evaluate(() => {
       // Pre-trim: the prior bulk test fills the array to 600; drain it so 5 additions register.
       if (typeof _tdGetEvents === 'function') {
         const arr = _tdGetEvents();
         if (arr.length > 594) arr.splice(0, arr.length - 500);
       }
-      // Use _tdGetEvents() — `events` is a module-scoped let, not directly on window.
+      // Use _tdGetEvents(): `events` is a module-scoped let, not directly on window.
       const before = (typeof _tdGetEvents === 'function' ? _tdGetEvents() : []).length;
       try {
         emitEvent('e1', 1, null);
@@ -912,7 +912,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // autoLogContact
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('autoLogContact: missing client — returns without throwing', async () => {
+  test('autoLogContact: missing client, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { autoLogContact(999999999, 'call'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -920,7 +920,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('autoLogContact: null clientId — graceful', async () => {
+  test('autoLogContact: null clientId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { autoLogContact(null, 'call'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -928,7 +928,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('autoLogContact: golden path — sets last_contact_date', async () => {
+  test('autoLogContact: golden path, sets last_contact_date', async () => {
     const r = await page.evaluate(() => {
       const fakeClient = { id: 55501, name: 'Contact Test', phone: '555-1234' };
       clients.unshift(fakeClient);
@@ -966,7 +966,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // markFollowupSent
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('markFollowupSent: missing bid — returns without throwing', async () => {
+  test('markFollowupSent: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { markFollowupSent(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -974,7 +974,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('markFollowupSent: null bidId — graceful', async () => {
+  test('markFollowupSent: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { markFollowupSent(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -982,7 +982,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('markFollowupSent: golden path — increments followupStage', async () => {
+  test('markFollowupSent: golden path, increments followupStage', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 44401, status: 'Pending', followupStage: 1, noResponseCount: 0, followup: null };
       bids.unshift(fakeBid);
@@ -1018,7 +1018,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _snoozeFollowup
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_snoozeFollowup: missing bid — returns without throwing', async () => {
+  test('_snoozeFollowup: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _snoozeFollowup(999999999, 2); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1026,7 +1026,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_snoozeFollowup: null bidId — graceful', async () => {
+  test('_snoozeFollowup: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _snoozeFollowup(null, 2); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1034,7 +1034,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_snoozeFollowup: golden path — sets followup to today + days', async () => {
+  test('_snoozeFollowup: golden path, sets followup to today + days', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 33301, status: 'Pending', followup: '2020-01-01' };
       bids.unshift(fakeBid);
@@ -1069,7 +1069,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // openExpenseForJob
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('openExpenseForJob: missing job — does not throw', async () => {
+  test('openExpenseForJob: missing job, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { openExpenseForJob(999999999, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1077,7 +1077,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('openExpenseForJob: null inputs — graceful', async () => {
+  test('openExpenseForJob: null inputs, graceful', async () => {
     const r = await page.evaluate(() => {
       try { openExpenseForJob(null, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1085,7 +1085,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('openExpenseForJob: golden path — navigates to tracker page', async () => {
+  test('openExpenseForJob: golden path, navigates to tracker page', async () => {
     const r = await page.evaluate(() => {
       const fakeJob = { id: 22201, name: 'Expense Job' };
       jobs.unshift(fakeJob);
@@ -1103,9 +1103,9 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderDashCollect
   // ─────────────────────────────────────────────────────────────────────────────
 
-  // ── Nearby banner (dash-nearby) — kind-driven action (owner decision 2026-07-10) ──
+  // ── Nearby banner (dash-nearby): kind-driven action (owner decision 2026-07-10) ──
   test.describe('renderDash: nearby banner', () => {
-    test('active job today — Clock in targets it directly, Collect is absent (no balance owed)', async () => {
+    test('active job today, Clock in targets it directly, Collect is absent (no balance owed)', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1122,15 +1122,18 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.html).toContain('_nearbyClockIn(555001,555011)');
       expect(r.html).toContain('Clock in');
       expect(r.html).toContain("_nearbyStartWork(555001)");
-      expect(r.html).toContain('Estimate/Invoice');
+      expect(r.html).toContain('Estimate');   // on-site card redesign: "Estimate" (was "Estimate/Invoice")
       // No dead controls: nothing owed means no Collect button at all, not a
-      // disabled ghost — a permanently-inert button reads as broken.
+      // disabled ghost, a permanently-inert button reads as broken.
       expect(r.html).not.toContain('Collect');
       expect(r.html).toContain('Banner Clockin');
       expect(r.html).toContain("You're here");
+      // Redesigned on-site card: live ON SITE badge + radar-ping geofence animation.
+      expect(r.html).toContain('ON SITE');
+      expect(r.html).toContain('tdGeoPing');
     });
 
-    test('no job scheduled today — Clock in falls back to the client\'s nearest open job', async () => {
+    test('no job scheduled today, Clock in falls back to the client\'s nearest open job', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1146,7 +1149,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.html).toContain('_nearbyClockIn(555002,555012)');
     });
 
-    test('no open job at all — Clock in still shows (being on site is reason enough), passes null target', async () => {
+    test('no open job at all, Clock in still shows (being on site is reason enough), passes null target', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1170,7 +1173,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.html).toContain('_nearbyStartWork(555003)');
     });
 
-    test('balance owed — Collect shows and opens the pay panel with autoType final', async () => {
+    test('balance owed, Collect shows and opens the pay panel with autoType final', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1185,11 +1188,11 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.html).toContain("openPayPanel(555002,'final')");
       expect(r.html).toContain('$450.00 owed');
-      expect(r.html).toContain('Collect →');
+      expect(r.html).toContain('Collect');   // on-site card redesign: "Collect" (was "Collect →")
       expect(r.html).not.toContain('disabled');
     });
 
-    test('cold walk-up, no job and no balance — Clock in + Estimate/Invoice show, Collect does not', async () => {
+    test('cold walk-up, no job and no balance, Clock in + Estimate/Invoice show, Collect does not', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
         _activeTimer = null;
@@ -1197,7 +1200,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
         try {
           renderDash();
           const el = document.getElementById('dash-nearby');
-          return { ok: true, html: el ? el.innerHTML : '', btnCount: el ? el.querySelectorAll('.tf-acts button').length : -1 };
+          return { ok: true, html: el ? el.innerHTML : '', btnCount: el ? el.querySelectorAll('button').length : -1 };
         } catch (e) { return { ok: false, err: e.message }; }
         finally { _nearbyJob = origNb; _activeTimer = origTimer; }
       });
@@ -1222,7 +1225,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.html).toContain('_nearbyStartWork(555005)');
-      expect(r.html).toContain('Estimate/Invoice');
+      expect(r.html).toContain('Estimate');   // on-site card redesign: "Estimate" (was "Estimate/Invoice")
     });
 
     test('the pulse/entrance keyframes are injected once, not duplicated across renders', async () => {
@@ -1240,24 +1243,32 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('an active timer suppresses the banner regardless of state', async () => {
+    test('active timer: the on-site card persists with live time-on-site + Arrived stamp + Clock out (owner: do 1 and 2)', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
-        _activeTimer = { jobId: 1, scopeId: 'x', start: Date.now() };
-        _nearbyJob = { clientId: 555004, jobId: null, fallbackJobId: null, bidId: 555002, balance: 450, clientName: 'Suppressed', addr: '2 Test St' };
+        _nearbyJob = null;
+        _activeTimer = { jobId: 555099, clientName: 'On Clock Co', scopeId: null, scopeLabel: null, startTime: Date.now() - 3600000 }; // clocked in 1h ago
         try {
           renderDash();
           const el = document.getElementById('dash-nearby');
-          return { ok: true, display: el ? el.style.display : '' };
+          return { ok: true, display: el ? el.style.display : '', html: el ? el.innerHTML : '' };
         } catch (e) { return { ok: false, err: e.message }; }
         finally { _nearbyJob = origNb; _activeTimer = origTimer; }
       });
-      expect(r.ok).toBe(true);
-      expect(r.display).toBe('none');
+      expect(r.ok, r.err).toBe(true);
+      // Behavior change (owner "do 1 and 2"): the card no longer vanishes on clock-in.
+      // It persists as the on-the-clock view with a live counter, arrival stamp, Clock out.
+      expect(r.display).toBe('block');
+      expect(r.html).toContain('clockOut()');
+      expect(r.html).toContain('dash-onsite-time');   // the live time-on-site counter element
+      expect(r.html).toContain('on site');
+      expect(r.html).toContain('Arrived');
+      expect(r.html).toContain('On Clock Co');
+      expect(r.html).not.toContain('Clock in');       // already on the clock, no clock-in action
     });
   });
 
-  test('renderDashCollect: no DOM element — returns gracefully', async () => {
+  test('renderDashCollect: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-collect');
       if (el) el.id = 'dash-collect-hidden';
@@ -1268,7 +1279,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderDashCollect: no collectible bids — renders empty state', async () => {
+  test('renderDashCollect: no collectible bids, renders empty state', async () => {
     const r = await page.evaluate(() => {
       const origBids = [...bids];
       bids.length = 0;
@@ -1284,7 +1295,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasEmpty).toBe(true);
   });
 
-  test('renderDashCollect: 3 calls — no duplicate entries', async () => {
+  test('renderDashCollect: 3 calls, no duplicate entries', async () => {
     const r = await page.evaluate(() => {
       const fakeClient = { id: 77001, name: 'Collect Dupe Test' };
       const fakeBid = { id: 77001, client_id: 77001, status: 'Closed Won', amount: 5000,
@@ -1310,7 +1321,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderDashCollect: corrupted localStorage — graceful', async () => {
+  test('renderDashCollect: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_bids', '{INVALID{{');
       try { renderDashCollect(); return { ok: true }; }
@@ -1324,7 +1335,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // checkUnpaidOnLoad
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('checkUnpaidOnLoad: guard prevents second modal — one-shot behavior', async () => {
+  test('checkUnpaidOnLoad: guard prevents second modal, one-shot behavior', async () => {
     const r = await page.evaluate(() => {
       window._collOnLoadShown = false;
       const origBids = [...bids];
@@ -1348,7 +1359,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.wasShown2).toBe(true); // guard still set
   });
 
-  test('checkUnpaidOnLoad: no unpaid bids — no modal created', async () => {
+  test('checkUnpaidOnLoad: no unpaid bids, no modal created', async () => {
     const r = await page.evaluate(() => {
       window._collOnLoadShown = false;
       const origBids = [...bids];
@@ -1369,7 +1380,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.added).toBe(0);
   });
 
-  test('checkUnpaidOnLoad: unpaid completed job — shows modal', async () => {
+  test('checkUnpaidOnLoad: unpaid completed job, shows modal', async () => {
     const r = await page.evaluate(() => {
       window._collOnLoadShown = false;
       const fakeClient = { id: 98001, name: 'Unpaid Alert Test', phone: '555-1212' };
@@ -1403,7 +1414,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // printKansasLien
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('printKansasLien: missing bid — returns without throwing', async () => {
+  test('printKansasLien: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { printKansasLien(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1411,7 +1422,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('printKansasLien: null bidId — graceful', async () => {
+  test('printKansasLien: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { printKansasLien(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1419,7 +1430,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('printKansasLien: bid exists but no lien record — returns gracefully', async () => {
+  test('printKansasLien: bid exists but no lien record, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 11101, status: 'Closed Won', client_id: 11101, amount: 5000, addr: '123 Main St' };
       bids.unshift(fakeBid);
@@ -1430,7 +1441,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('printKansasLien: bid and lien exist but no client — returns gracefully', async () => {
+  test('printKansasLien: bid and lien exist but no client, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 11102, status: 'Closed Won', client_id: 99999999, amount: 5000, addr: '456 Elm St',
         lien: { amount: 5000, county: 'Sedgwick', date: '2025-01-01' } };
@@ -1448,7 +1459,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _mmtToggle
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_mmtToggle: undefined id — does not throw', async () => {
+  test('_mmtToggle: undefined id, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _mmtToggle(undefined); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1456,7 +1467,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_mmtToggle: null id — does not throw', async () => {
+  test('_mmtToggle: null id, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _mmtToggle(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1464,7 +1475,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_mmtToggle: toggles boolean — false then true', async () => {
+  test('_mmtToggle: toggles boolean, false then true', async () => {
     const r = await page.evaluate(() => {
       window['_mmtCol_testId'] = false;
       try {
@@ -1479,7 +1490,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.val).toBe(true);
   });
 
-  test('_mmtToggle: toggles boolean — undefined becomes false', async () => {
+  test('_mmtToggle: toggles boolean, undefined becomes false', async () => {
     const r = await page.evaluate(() => {
       delete window['_mmtCol_newId'];
       try {
@@ -1493,7 +1504,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.val).toBe(false);
   });
 
-  test('_mmtToggle: 5 concurrent calls — state reflects parity', async () => {
+  test('_mmtToggle: 5 concurrent calls, state reflects parity', async () => {
     const r = await page.evaluate(() => {
       window['_mmtCol_parity'] = false;
       try {
@@ -1515,7 +1526,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _markDepositCash
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_markDepositCash: missing bid — returns without throwing', async () => {
+  test('_markDepositCash: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { _markDepositCash(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1523,7 +1534,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_markDepositCash: null bidId — graceful', async () => {
+  test('_markDepositCash: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { _markDepositCash(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -1531,7 +1542,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_markDepositCash: valid bid — shows zConfirm dialog', async () => {
+  test('_markDepositCash: valid bid, shows zConfirm dialog', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 55001, client_id: null, status: 'Closed Won', amount: 2500, deposit: 500 };
       bids.unshift(fakeBid);
@@ -1553,7 +1564,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderTodayFeed
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderTodayFeed: no DOM element — returns gracefully', async () => {
+  test('renderTodayFeed: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-money-feed');
       if (el) el.id = 'dash-money-feed-hidden';
@@ -1564,7 +1575,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderTodayFeed: empty data — renders without crashing', async () => {
+  test('renderTodayFeed: empty data, renders without crashing', async () => {
     const r = await page.evaluate(() => {
       const origBids = [...bids];
       bids.length = 0;
@@ -1578,7 +1589,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   test('renderTodayFeed: no duplicate cards after 3 calls', async () => {
     const r = await page.evaluate(() => {
       // The Collect section now DEFAULTS COLLAPSED (its card bodies aren't in the
-      // HTML until expanded — CLAUDE.md §11.6). Expand it so the completed-bid card
+      // HTML until expanded, CLAUDE.md §11.6). Expand it so the completed-bid card
       // renders and we can count occurrences. (Previously Collect auto-expanded.)
       window._mmtCol_collect = false;
       const fakeClient = { id: 76001, name: 'Feed No Dupe' };
@@ -1610,7 +1621,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
 
   test('renderTodayFeed: a bids[] draft renders exactly one card', async () => {
     // The old localStorage-backed "est_full_draft" dedup/heal mechanism was removed
-    // with the paint estimator — every draft now lives only in bids[], so there is
+    // with the paint estimator, every draft now lives only in bids[], so there is
     // no longer a separate localStorage-draft card to de-dup against.
     const r = await page.evaluate(() => {
       window._mmtCol_build = false; // expand BUILD so cards render into innerHTML
@@ -1651,7 +1662,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
       const card = i >= 0 ? html.slice(Math.max(0, i - 200), i + 1400) : '';
       const res = {
         err, hasCard: i >= 0,
-        // Same framework as the proposals section — opens the reason-picker modal.
+        // Same framework as the proposals section, opens the reason-picker modal.
         hasCloseOut: card.includes('openCloseOutEstimate(' + bidId + ')'),
         usesFramework: typeof openCloseOutEstimate === 'function',
       };
@@ -1769,7 +1780,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
 
   test('_showNewLeadsPicker shows a real date+time stamp for the lead (regression)', async () => {
     const r = await page.evaluate(() => {
-      // A real lead's id is Date.now() at creation — pin a known timestamp so the
+      // A real lead's id is Date.now() at creation, pin a known timestamp so the
       // rendered stamp is deterministic: Mar 15 2026, 2:30 PM local.
       const knownMs = new Date(2026, 2, 15, 14, 30, 0).getTime();
       clients.unshift({ id: knownMs, name: 'Timestamp Lead', addr: '1 Stamp St', created: '2026-03-15' });
@@ -1788,7 +1799,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
 
   test('_showNewLeadsPicker falls back to the relative label for non-timestamp ids (fixtures/legacy)', async () => {
     const r = await page.evaluate(() => {
-      const cid = 780460; // small id — not a real Date.now() timestamp
+      const cid = 780460; // small id, not a real Date.now() timestamp
       clients.unshift({ id: cid, name: 'Legacy Id Lead', addr: '1 Legacy St', created: todayKey() });
       let err = '';
       try { _showNewLeadsPicker(); } catch (e) { err = e.message; }
@@ -1828,7 +1839,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.overlayGoneAfterPick).toBe(true);
   });
 
-  test('_pickLeadForEstimate with unknown clientId — does not throw, does not open estimate', async () => {
+  test('_pickLeadForEstimate with unknown clientId, does not throw, does not open estimate', async () => {
     const r = await page.evaluate(() => {
       let called = false;
       const orig = window._doOpenEstimate;
@@ -1842,13 +1853,13 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.called).toBe(false);
   });
 
-  test('MMT awaiting-signature card has NO Delete button — deletion is the hidden 3s hold only', async () => {
+  test('MMT awaiting-signature card has NO Delete button, deletion is the hidden 3s hold only', async () => {
     const r = await page.evaluate(() => {
       window._mmtCol_pending = false; // expand the Pending section so cards render (§11.6)
       const cid = 779001, bidId = 779002;
       clients.unshift({ id: cid, name: 'AwaitingSig NoDelete', phone: '3165559002' });
       // Sent proposal awaiting signature (signingToken + Pending) → the "Awaiting
-      // signature" card. It is a real, sent record — no delete button may ship here.
+      // signature" card. It is a real, sent record, no delete button may ship here.
       bids.unshift({ id: bidId, client_id: cid, client_name: 'AwaitingSig NoDelete', name: 'AwaitingSig NoDelete', amount: 4200, status: 'Pending', draft: false, signingToken: 'tok-x', bid_date: todayKey() });
       let err = '';
       try { renderTodayFeed(); } catch (e) { err = e.message; }
@@ -1897,7 +1908,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     }
   });
 
-  test('renderTodayFeed: corrupted localStorage — graceful', async () => {
+  test('renderTodayFeed: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_payments', '{INVALID{{');
       try { renderTodayFeed(); return { ok: true }; }
@@ -1907,7 +1918,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderTodayFeed: 5 concurrent calls — no crash', async () => {
+  test('renderTodayFeed: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       try {
         renderTodayFeed(); renderTodayFeed(); renderTodayFeed(); renderTodayFeed(); renderTodayFeed();
@@ -1922,7 +1933,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // checkGoalPrompt
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('checkGoalPrompt: goal already set — returns without showing modal', async () => {
+  test('checkGoalPrompt: goal already set, returns without showing modal', async () => {
     const r = await page.evaluate(() => {
       const orig = S.goalMonthly;
       S.goalMonthly = 5000;
@@ -1940,7 +1951,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.added).toBe(0);
   });
 
-  test('checkGoalPrompt: fewer than 5 paid jobs — no prompt', async () => {
+  test('checkGoalPrompt: fewer than 5 paid jobs, no prompt', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 0;
@@ -1983,7 +1994,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.added).toBe(0);
   });
 
-  test('checkGoalPrompt: 5 concurrent calls — at most one prompt queued', async () => {
+  test('checkGoalPrompt: 5 concurrent calls, at most one prompt queued', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 0;
@@ -2008,7 +2019,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderGoal
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderGoal: no DOM element — returns gracefully', async () => {
+  test('renderGoal: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-goal');
       if (el) el.id = 'dash-goal-hidden';
@@ -2019,7 +2030,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderGoal: no goal set — renders empty', async () => {
+  test('renderGoal: no goal set, renders empty', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 0;
@@ -2035,7 +2046,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.empty).toBe(true);
   });
 
-  test('renderGoal: goal set, fewer than 5 paid jobs — renders empty', async () => {
+  test('renderGoal: goal set, fewer than 5 paid jobs, renders empty', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 5000;
@@ -2053,7 +2064,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.empty).toBe(true);
   });
 
-  test('renderGoal: golden path — renders goal bar with progress', async () => {
+  test('renderGoal: golden path, renders goal bar with progress', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       const origBids = [...bids];
@@ -2083,7 +2094,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasContent).toBe(true);
   });
 
-  test('renderGoal: 3 calls — no duplicate content', async () => {
+  test('renderGoal: 3 calls, no duplicate content', async () => {
     const r = await page.evaluate(() => {
       const origGoal = S.goalMonthly;
       S.goalMonthly = 8000;
@@ -2121,7 +2132,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderLeadSources
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderLeadSources: no DOM element — returns gracefully', async () => {
+  test('renderLeadSources: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-sources');
       if (el) el.id = 'dash-sources-hidden';
@@ -2132,7 +2143,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderLeadSources: no clients — renders empty state', async () => {
+  test('renderLeadSources: no clients, renders empty state', async () => {
     const r = await page.evaluate(() => {
       const origClients = [...clients];
       clients.length = 0;
@@ -2148,7 +2159,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasEmpty).toBe(true);
   });
 
-  test('renderLeadSources: clients with sources — renders table', async () => {
+  test('renderLeadSources: clients with sources, renders table', async () => {
     const r = await page.evaluate(() => {
       const fakeClients = [
         { id: 91001, name: 'Source A Client', source: 'Referral' },
@@ -2172,7 +2183,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasTable).toBe(true);
   });
 
-  test('renderLeadSources: 3 calls — no duplicate rows', async () => {
+  test('renderLeadSources: 3 calls, no duplicate rows', async () => {
     const r = await page.evaluate(() => {
       const fakeClient = { id: 91003, name: 'No Dupe Source', source: 'Word of mouth' };
       clients.unshift(fakeClient);
@@ -2193,7 +2204,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderLeadSources: corrupted localStorage — graceful', async () => {
+  test('renderLeadSources: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_clients', '{INVALID{{');
       try { renderLeadSources(); return { ok: true }; }
@@ -2207,7 +2218,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // closeSourceDetail / showSourceDetail
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('closeSourceDetail: no DOM element — graceful', async () => {
+  test('closeSourceDetail: no DOM element, graceful', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('source-detail');
       if (el) el.id = 'source-detail-hidden';
@@ -2241,7 +2252,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.display).toBe('none');
   });
 
-  test('showSourceDetail: no DOM element — returns gracefully', async () => {
+  test('showSourceDetail: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('source-detail');
       if (el) el.id = 'source-detail-hidden';
@@ -2252,7 +2263,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('showSourceDetail: null source — graceful', async () => {
+  test('showSourceDetail: null source, graceful', async () => {
     const r = await page.evaluate(() => {
       try { showSourceDetail(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2260,7 +2271,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('showSourceDetail: empty string — graceful', async () => {
+  test('showSourceDetail: empty string, graceful', async () => {
     const r = await page.evaluate(() => {
       try { showSourceDetail(''); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2268,7 +2279,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('showSourceDetail: valid source — makes element visible', async () => {
+  test('showSourceDetail: valid source, makes element visible', async () => {
     const r = await page.evaluate(() => {
       let el = document.getElementById('source-detail');
       const created = !el;
@@ -2299,7 +2310,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderPipeline
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderPipeline: no DOM element — returns gracefully', async () => {
+  test('renderPipeline: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-pipeline');
       if (el) el.id = 'dash-pipeline-hidden';
@@ -2310,7 +2321,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderPipeline: empty jobs — renders without crashing', async () => {
+  test('renderPipeline: empty jobs, renders without crashing', async () => {
     const r = await page.evaluate(() => {
       const origJobs = [...jobs];
       jobs.length = 0;
@@ -2326,13 +2337,13 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasContent).toBe(true);
   });
 
-  test('renderPipeline: 3 calls — no duplicate pipeline blocks', async () => {
+  test('renderPipeline: 3 calls, no duplicate pipeline blocks', async () => {
     const r = await page.evaluate(() => {
       try {
         renderPipeline(); renderPipeline(); renderPipeline();
         const el = document.getElementById('dash-pipeline');
         if (!el) return { ok: true, count: 0 };
-        // Count top-level children — "Pipeline" title + health message both appear in one
+        // Count top-level children, "Pipeline" title + health message both appear in one
         // render, so counting el.children (the one wrapper div) is the correct idempotency check.
         const count = el.children.length;
         return { ok: true, count };
@@ -2343,7 +2354,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderPipeline: corrupted localStorage — graceful', async () => {
+  test('renderPipeline: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_jobs', '{INVALID{{');
       try { renderPipeline(); return { ok: true }; }
@@ -2374,7 +2385,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasIntake).toBe(true);
   });
 
-  test('openIntakeFormModal: 5 concurrent calls — no crash', async () => {
+  test('openIntakeFormModal: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
       try {
@@ -2395,7 +2406,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _copyIntakeUrl
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_copyIntakeUrl: null url — does not throw', async () => {
+  test('_copyIntakeUrl: null url, does not throw', async () => {
     const r = await page.evaluate(async () => {
       try { await _copyIntakeUrl(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2403,7 +2414,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_copyIntakeUrl: empty string — does not crash', async () => {
+  test('_copyIntakeUrl: empty string, does not crash', async () => {
     const r = await page.evaluate(async () => {
       try { _copyIntakeUrl(''); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2411,13 +2422,13 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_copyIntakeUrl: valid URL, no copy button — still does not crash', async () => {
+  test('_copyIntakeUrl: valid URL, no copy button, still does not crash', async () => {
     const r = await page.evaluate(async () => {
       // Ensure copy button does not exist in DOM
       const existing = document.getElementById('_intake-copy-btn');
       if (existing) existing.id = '_intake-copy-btn-hidden';
       try {
-        // clipboard may not be available in test — function should catch the error
+        // clipboard may not be available in test, function should catch the error
         _copyIntakeUrl('https://example.com/intake.html');
         return { ok: true };
       }
@@ -2427,7 +2438,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_copyIntakeUrl: with copy button in DOM — updates button text on success', async () => {
+  test('_copyIntakeUrl: with copy button in DOM, updates button text on success', async () => {
     const r = await page.evaluate(async () => {
       const btn = document.createElement('button');
       btn.id = '_intake-copy-btn';
@@ -2461,7 +2472,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // renderLeadsPage
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('renderLeadsPage: no DOM element — returns gracefully', async () => {
+  test('renderLeadsPage: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('leads-list');
       if (el) el.id = 'leads-list-hidden';
@@ -2472,7 +2483,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('renderLeadsPage: no clients — renders empty state', async () => {
+  test('renderLeadsPage: no clients, renders empty state', async () => {
     const r = await page.evaluate(() => {
       const origClients = [...clients];
       clients.length = 0;
@@ -2488,7 +2499,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasEmpty).toBe(true);
   });
 
-  test('renderLeadsPage: 3 calls — no duplicate client cards', async () => {
+  test('renderLeadsPage: 3 calls, no duplicate client cards', async () => {
     const r = await page.evaluate(() => {
       const origClients = [...clients];
       clients.length = 0;
@@ -2498,7 +2509,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
         renderLeadsPage(); renderLeadsPage(); renderLeadsPage();
         const el = document.getElementById('leads-list');
         if (!el) return { ok: true, count: 0 };
-        // Count rendered client cards via data attribute — the client name also appears in
+        // Count rendered client cards via data attribute, the client name also appears in
         // data-lp-label attribute so a text match would give 2 per render, not 1.
         const count = el.querySelectorAll('[data-lp-id]').length;
         return { ok: true, count };
@@ -2513,7 +2524,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
-  test('renderLeadsPage: corrupted localStorage — graceful', async () => {
+  test('renderLeadsPage: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_clients', '{INVALID{{');
       try { renderLeadsPage(); return { ok: true }; }
@@ -2527,7 +2538,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _pfToggleYr
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_pfToggleYr: null year — does not throw', async () => {
+  test('_pfToggleYr: null year, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _pfToggleYr(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2535,7 +2546,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_pfToggleYr: string year — toggles window state', async () => {
+  test('_pfToggleYr: string year, toggles window state', async () => {
     const r = await page.evaluate(() => {
       window['_pfYr_2024'] = false;
       try {
@@ -2549,7 +2560,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.val).toBe(true);
   });
 
-  test('_pfToggleYr: 5 concurrent calls — state reflects parity', async () => {
+  test('_pfToggleYr: 5 concurrent calls, state reflects parity', async () => {
     const r = await page.evaluate(() => {
       window['_pfYr_2023'] = false;
       try {
@@ -2571,7 +2582,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _pfToggleMo
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_pfToggleMo: null params — does not throw', async () => {
+  test('_pfToggleMo: null params, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _pfToggleMo(null, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2597,7 +2608,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // openBidDetail
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('openBidDetail: missing bid — returns without throwing', async () => {
+  test('openBidDetail: missing bid, returns without throwing', async () => {
     const r = await page.evaluate(() => {
       try { openBidDetail(999999999); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2605,7 +2616,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('openBidDetail: null bidId — graceful', async () => {
+  test('openBidDetail: null bidId, graceful', async () => {
     const r = await page.evaluate(() => {
       try { openBidDetail(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2613,7 +2624,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('openBidDetail: valid bid — creates overlay', async () => {
+  test('openBidDetail: valid bid, creates overlay', async () => {
     const r = await page.evaluate(() => {
       document.querySelector('[data-bdov]')?.remove();
       const fakeBid = {
@@ -2690,7 +2701,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // _bddView
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('_bddView: missing panes — does not throw', async () => {
+  test('_bddView: missing panes, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _bddView('bid'); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2698,7 +2709,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_bddView: null view — does not throw', async () => {
+  test('_bddView: null view, does not throw', async () => {
     const r = await page.evaluate(() => {
       try { _bddView(null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2706,7 +2717,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('_bddView: with panes in DOM — switches active pane correctly', async () => {
+  test('_bddView: with panes in DOM, switches active pane correctly', async () => {
     const r = await page.evaluate(() => {
       const bidPane = document.createElement('div');
       bidPane.id = 'bdd-bid-pane';
@@ -2733,7 +2744,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.propDisplay).toBe(''); // active pane has no display:none
   });
 
-  test('_bddView: 5 concurrent calls — no crash', async () => {
+  test('_bddView: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       try {
         _bddView('bid');
@@ -2752,7 +2763,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // setProposalFilter
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('setProposalFilter: null filter — graceful', async () => {
+  test('setProposalFilter: null filter, graceful', async () => {
     const r = await page.evaluate(() => {
       try { setProposalFilter(null, null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2760,7 +2771,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('setProposalFilter: empty string — graceful', async () => {
+  test('setProposalFilter: empty string, graceful', async () => {
     const r = await page.evaluate(() => {
       try { setProposalFilter('', null); return { ok: true }; }
       catch (e) { return { ok: false, err: e.message }; }
@@ -2768,7 +2779,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('setProposalFilter: valid filter — updates _proposalFilter', async () => {
+  test('setProposalFilter: valid filter, updates _proposalFilter', async () => {
     const r = await page.evaluate(() => {
       try {
         setProposalFilter('signed', null);
@@ -2781,7 +2792,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.filter).toBe('signed');
   });
 
-  test('setProposalFilter: with button arg — adds active class', async () => {
+  test('setProposalFilter: with button arg, adds active class', async () => {
     const r = await page.evaluate(() => {
       const btn = document.createElement('button');
       btn.className = 'fb';
@@ -2797,7 +2808,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.hasActive).toBe(true);
   });
 
-  test('setProposalFilter: 5 concurrent calls — last one wins', async () => {
+  test('setProposalFilter: 5 concurrent calls, last one wins', async () => {
     const r = await page.evaluate(() => {
       try {
         setProposalFilter('draft', null);
@@ -2813,7 +2824,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.filter).toBe('all');
   });
 
-  test('setProposalFilter: corrupted localStorage — graceful', async () => {
+  test('setProposalFilter: corrupted localStorage, graceful', async () => {
     const r = await page.evaluate(() => {
       localStorage.setItem('td_bids', '{INVALID{{');
       try { setProposalFilter('all', null); return { ok: true }; }
@@ -2827,7 +2838,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // Cross-function integration
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('integration: emitEvent + autoLogContact together — no conflict', async () => {
+  test('integration: emitEvent + autoLogContact together, no conflict', async () => {
     const r = await page.evaluate(() => {
       const fakeClient = { id: 95001, name: 'Integration Test' };
       clients.unshift(fakeClient);
@@ -2847,7 +2858,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.lastContact).toBeTruthy();
   });
 
-  test('integration: openBidDetail + _bddView toggle — no crash', async () => {
+  test('integration: openBidDetail + _bddView toggle, no crash', async () => {
     const r = await page.evaluate(() => {
       const fakeBid = { id: 95002, status: 'Pending', client_id: null, amount: 500, proposalHtml: '<p>hi</p>' };
       bids.unshift(fakeBid);
@@ -2867,7 +2878,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
-  test('integration: renderDash after corrupted S object — guard released', async () => {
+  test('integration: renderDash after corrupted S object, guard released', async () => {
     const r = await page.evaluate(() => {
       const origS = Object.assign({}, S);
       S.employees = 'not-an-array';
@@ -2886,7 +2897,7 @@ test.describe('dashboard.js — exhaustive coverage', () => {
   // Final console-error check
   // ─────────────────────────────────────────────────────────────────────────────
 
-  test('no console errors — dashboard.js', () => {
+  test('no console errors, dashboard.js', () => {
     assertNoErrors(page, 'dashboard.js');
   });
 });

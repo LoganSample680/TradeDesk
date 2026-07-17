@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Realtime sync coverage — June 2026.
+ * Realtime sync coverage, June 2026.
  *
  * Verifies that all app features re-render when a record change arrives via
  * Supabase Realtime or when supaLoadFromCloud completes.  Specifically tests
@@ -14,7 +14,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
 
-test.describe('Realtime sync — render coverage', () => {
+test.describe('Realtime sync, render coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -162,11 +162,11 @@ test.describe('Realtime sync — render coverage', () => {
       return loadFromCloudCalled;
     });
     // The reconnect fired a REAL (mocked) silent load fire-and-forget. Let it fully
-    // settle before the next test — an in-flight load replacing the arrays mid-test
+    // settle before the next test, an in-flight load replacing the arrays mid-test
     // is cross-test contamination whose timing varies by browser (webkit flaked here).
     await page.waitForFunction(() => typeof _loadInProgress === 'undefined' || _loadInProgress === false, null, { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(600); // trailing-reload settle (300ms timer + retry margin)
-    // This test is informational — the function may not be accessible depending on scoping
+    // This test is informational, the function may not be accessible depending on scoping
     if (loadCalled !== null) {
       expect(loadCalled, '_onReconnect must trigger supaLoadFromCloud even with no pending saves').toBe(true);
     }
@@ -175,10 +175,10 @@ test.describe('Realtime sync — render coverage', () => {
 
   // ── 8. _writeLocalCache called by _applyRealtimeRecord ───────────────────
   // ASSERTION UPDATED (§11.4): the cache write is a 250ms TRAILING DEBOUNCE by design
-  // (one write per realtime burst instead of one per row — the render-jank scale fix),
+  // (one write per realtime burst instead of one per row, the render-jank scale fix),
   // so reading localStorage synchronously after the event never observes THIS event's
   // write. The old assertion (`cache exists at all`) passed only when unrelated earlier
-  // activity happened to have written the cache — a hidden order dependency that webkit
+  // activity happened to have written the cache, a hidden order dependency that webkit
   // timing exposed. Now: fire the event, wait out the debounce, and assert the cache
   // actually CONTAINS the applied record (strictly stronger than the old check).
   test('_applyRealtimeRecord writes the applied record to the local cache (debounced)', async () => {
@@ -206,7 +206,7 @@ test.describe('Realtime sync — render coverage', () => {
       };
     });
     if (r !== null) {
-      expect(r.ok, `debounced cache write must land with the applied record — ${JSON.stringify(r)}`).toBe(true);
+      expect(r.ok, `debounced cache write must land with the applied record, ${JSON.stringify(r)}`).toBe(true);
     }
     assertNoErrors(page, '_writeLocalCache on realtime');
   });

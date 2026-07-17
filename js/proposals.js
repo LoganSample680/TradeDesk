@@ -11,7 +11,7 @@ function setGalleryFilter(f,btn){
 }
 // Egress fix: route public gallery images through the Cloudflare edge cache
 // (/img/<path>, functions/img/[[path]].js) when the app is served from
-// Cloudflare — repeat views across every device hit Cloudflare, not Supabase.
+// Cloudflare: repeat views across every device hit Cloudflare, not Supabase.
 // Localhost/dev (no Pages Functions) and non-storage URLs pass through as-is.
 function _cdnPhoto(u){
   try{
@@ -22,7 +22,7 @@ function _cdnPhoto(u){
   }catch(_e){return u;}
 }
 // onerror handler for CDN-routed images: retry the direct URL once (covers an
-// undeployed /img route or edge miss failure), THEN hide — never a broken tile.
+// undeployed /img route or edge miss failure), THEN hide, never a broken tile.
 function _imgFallback(el){
   const d=el.dataset?el.dataset.dsrc:'';
   if(d&&el.src!==d){el.src=d;return;}
@@ -91,7 +91,7 @@ function openGalleryUpload(jobId,clientId){
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   const jobOptions=jobs.filter(j=>j.status==='done'||j.status==='active').slice(0,30)
-    .map(j=>'<option value="'+j.id+'"'+(jobId===j.id?' selected':'')+'>'+escHtml(j.name)+' — '+escHtml(clients.find(c=>c.id===j.client_id)?.name||'')+'</option>').join('');
+    .map(j=>'<option value="'+j.id+'"'+(jobId===j.id?' selected':'')+'>'+escHtml(j.name)+', '+escHtml(clients.find(c=>c.id===j.client_id)?.name||'')+'</option>').join('');
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📷')+' Add photo</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Upload a job photo to your gallery</div>'+
@@ -102,7 +102,7 @@ function openGalleryUpload(jobId,clientId){
           {before:svgIcon('📸')+' Before',after:svgIcon('✅')+' After',progress:svgIcon('🔨')+' Progress'}[t]+'</label>').join('')+
       '</div>'+
     '</div>'+
-    (jobOptions?'<div class="f" style="margin-bottom:12px"><label>Job <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select id="gup-job" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"><option value="">— No job selected —</option>'+jobOptions+'</select></div>':'')+
+    (jobOptions?'<div class="f" style="margin-bottom:12px"><label>Job <span style="font-weight:400;color:var(--text3)">(optional)</span></label><select id="gup-job" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"><option value="">- No job selected -</option>'+jobOptions+'</select></div>':'')+
     '<div class="f" style="margin-bottom:12px"><label>Caption <span style="font-weight:400;color:var(--text3)">(optional)</span></label><input id="gup-caption" placeholder="e.g. Living room accent wall" style="font-size:14px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text);font-family:inherit"></div>'+
     '<input type="file" id="gup-file" accept="image/*" multiple style="display:none" onchange="processGalleryUpload(this)">'+
     '<button onclick="document.getElementById(\'gup-file\').click()" style="width:100%;padding:14px;border-radius:var(--r);border:2px dashed var(--border2);background:var(--bg);color:var(--text2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📂')+' Choose photos</button>'+
@@ -191,7 +191,7 @@ function _buildClientHubSnapshot(clientId){
   });
   const snapshotPayments=cpayments.map(p=>({date:p.date||'',type:p.type||'',amount:p.amount||0,bid_id:p.bid_id||null,ref:p.ref||'',method:p.method||''}));
   const jobPhotos=clientPhotos.map(p=>({url:p.url,thumbUrl:p.thumbUrl||'',type:p.type,caption:p.caption||'',job_name:p.job_name||'',job_id:p.job_id||null,uploadedAt:p.uploadedAt||''}));
-  // Extract optional chaining BEFORE the return object — Safari crashes on ?. inside { }
+  // Extract optional chaining BEFORE the return object, Safari crashes on ?. inside { }
   const _snapUserId=_effectiveUid()||'';
   const _snapUserEmail=_supaUser?_supaUser.email||'':'';
   const _snapStripeOn=_stripeConnectStatus?(_stripeConnectStatus.charges_enabled?true:false):false;
@@ -206,14 +206,14 @@ function _buildClientHubSnapshot(clientId){
     brandColor:adaBrand(S.brandColor)||'',
     // logoUrl when the CURRENT logo is confirmed uploaded (hash match); base64
     // logoData only as the fallback so the snapshot stays small in the normal
-    // case. client.html renders logoUrl||logoData — old snapshots keep working.
+    // case. client.html renders logoUrl||logoData, old snapshots keep working.
     logoUrl:(S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?S.logoUrl:'',
     logoData:(S.logoUrl&&S.logoHash===String(_hubHash(S.logoData||'')))?'':(S.logoData||''),
     bwebsite:S.bwebsite||'',
     // Trust signals (research: the #1 close-rate lever is trust clustered near the
     // sign CTA). Contractor-global, surfaced from Settings. HONESTY GATE: the
     // "Licensed & Insured" claim only renders for what the contractor can actually
-    // back with a NUMBER on file — never the S.blic default string, never an
+    // back with a NUMBER on file, never the S.blic default string, never an
     // unbacked claim on a client-facing page:
     //   • Licensed  → S.blic is a real entry (not blank, not the default marker),
     //                 OR a non-insurance license record carries a license number.
@@ -231,7 +231,7 @@ function _buildClientHubSnapshot(clientId){
     })(),
     warrantyPeriod:S.warrantyPeriod||'',
     // Years in business computes LIVE from the "in business since" year so it
-    // bumps itself every Jan 1 — never a stale hand-entered number. Falls back to
+    // bumps itself every Jan 1, never a stale hand-entered number. Falls back to
     // the legacy manual byears for contractors who set that before this field.
     // A since-year in the current year → 0 → the hub hides the line (honest: a
     // <1-year business doesn't claim years).
@@ -264,10 +264,10 @@ function _ensureClientToken(clientId){
   if(!c||c.clientToken)return;
   c.clientToken=Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-// Cheap deterministic hash of the hub JSON — gates redundant re-uploads.
+// Cheap deterministic hash of the hub JSON, gates redundant re-uploads.
 function _hubHash(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0;}return h;}
 // Egress fix: the hub snapshot used to EMBED S.logoData (base64, "can be several
-// MB" per data.js) in every client hub JSON — re-downloaded on every hub open and
+// MB" per data.js) in every client hub JSON, re-downloaded on every hub open and
 // re-uploaded on every hub refresh, for every client. Upload the logo ONCE to
 // storage (immutable, hash-addressed, long cache) and put a URL in the snapshot
 // instead. Fallback chain keeps every failure mode on today's behavior: upload
@@ -296,11 +296,11 @@ async function _ensureLogoUrl(){
 }
 // ── Client-hub live push ──────────────────────────────────────────────────
 // client.html polls its storage snapshot every 30s (_refreshHub) as the
-// guaranteed path. This broadcast is purely an accelerator — a content-free
+// guaranteed path. This broadcast is purely an accelerator, a content-free
 // "something changed, go refetch" nudge on a per-client Realtime channel,
 // mirroring the sig-feed-<uid> pattern in cloud.js. No hub data rides on the
 // broadcast itself (the token still gates the actual storage fetch), so a
-// dropped or never-connected socket just falls back to the 30s poll — the
+// dropped or never-connected socket just falls back to the 30s poll, the
 // client never sees stale-forever data either way.
 const _hubBroadcastChans={};
 function _broadcastHubUpdate(clientId){
@@ -342,7 +342,7 @@ async function _uploadClientHub(clientId){
     const _json=JSON.stringify(snapshot);
     // Skip the storage write when the hub content is unchanged since the last upload.
     // Boot used to re-push EVERY tokened client's hub (hundreds of identical /api
-    // writes per load). A content hash gates it: only changed hubs upload — no data
+    // writes per load). A content hash gates it: only changed hubs upload, no data
     // loss, since any real change (incl. the daily finance-charge tick) hashes
     // differently and uploads.
     const _hash=_hubHash(_json);
@@ -352,7 +352,7 @@ async function _uploadClientHub(clientId){
     if(error)throw error;
     // Stamp the LIVE array object, not the reference captured before the await: a
     // delta/realtime merge during the upload replaces row objects in `clients`, so
-    // writing to `c` can land on a dead object — the token/key silently vanish and
+    // writing to `c` can land on a dead object, the token/key silently vanish and
     // the uploaded hub becomes unreachable (seen live in the crew money-routing cert).
     const live=clients.find(x=>x.id===clientId)||c;
     live.clientToken=c.clientToken;
@@ -369,15 +369,15 @@ async function _uploadClientHub(clientId){
   if(isNew){
     try{await doUpload();}catch(e){console.warn('hub upload:',e);_queueHub();}
   }else{
-    doUpload().catch(e=>{console.warn('hub refresh:',e);_queueHub();}); // file exists — return instantly, refresh in background
+    doUpload().catch(e=>{console.warn('hub refresh:',e);_queueHub();}); // file exists, return instantly, refresh in background
   }
   return url;
 }
-// ── Boot hub sweep — drift-repair backstop, PACED ─────────────────────────────
+// ── Boot hub sweep, drift-repair backstop, PACED ─────────────────────────────
 // Every real change already refreshes its own client's hub at the change site
 // (bids/payments/jobs/logPayment call _uploadClientHub/_refreshClientHub inline).
 // This sweep exists only to repair hubs that drifted while another device was
-// authoritative. It used to fire EVERY tokened client CONCURRENTLY at boot —
+// authoritative. It used to fire EVERY tokened client CONCURRENTLY at boot,
 // O(clients) simultaneous snapshot builds + storage writes, and the daily
 // finance-charge tick invalidates every content hash at once, so the first boot
 // of the day uploaded ALL of them in one burst (hundreds seen on the grown cert
@@ -423,18 +423,18 @@ function sendOnboardingLink(clientId){
   const firstName=c.name?.split(' ')[0]||'there';
   const rawBiz=getBusinessName();
   const biz=(rawBiz&&!rawBiz.includes('@')&&rawBiz!=='TradeDesk')?rawBiz:(getOwnerName()||'your contractor');
-  const msg='Hi '+firstName+'! This is '+biz+'. Tap this link to share your address and project details so I can prepare your free quote — takes about 2 minutes: '+url;
+  const msg='Hi '+firstName+'! This is '+biz+'. Tap this link to share your address and project details so I can prepare your free quote, takes about 2 minutes: '+url;
   // Save sent timestamp
   const idx=clients.findIndex(x=>x.id===clientId);
   if(idx>=0){clients[idx].onboardingSentAt=new Date().toISOString();saveAll();}
   if(c.phone){
     window.location.href='sms:'+c.phone.replace(/\D/g,'')+'?body='+encodeURIComponent(msg);
   }else{
-    // No phone — show the link to copy
+    // No phone, show the link to copy
     const ov=document.createElement('div');ov.className='zmodal-overlay';ov.style.cssText='align-items:center;padding:20px';
     const box=document.createElement('div');box.className='zmodal';
     box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">Onboarding link</div>'+
-      '<div style="font-size:13px;color:var(--text2);margin-bottom:12px">No phone on file — copy this link and send manually</div>'+
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:12px">No phone on file, copy this link and send manually</div>'+
       '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:12px;word-break:break-all;color:var(--text2);margin-bottom:12px">'+url+'</div>'+
       '<button onclick="navigator.clipboard.writeText(\''+url.replace(/'/g,"\\'")+'\')||true;showToast(\'Copied\',\'📋\')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Copy link</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
@@ -450,7 +450,7 @@ function sendClientHubLink(clientId){
   }
   const baseUrl=_clientBaseUrl();
   const url=baseUrl+'client.html?t='+c.clientToken+'&u='+_effectiveUid()+'&c='+clientId;
-  // Refresh hub content silently in background — never blocks the share sheet
+  // Refresh hub content silently in background, never blocks the share sheet
   _uploadClientHub(clientId).catch(()=>{});
   const firstName=c.name?.split(' ')[0]||'there';
   const biz=S.bname||'us';
@@ -461,13 +461,13 @@ function sendClientHubLink(clientId){
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'Client')+' · view proposals, pay balance, download invoices</div>'+
     '<div style="background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;font-size:11px;word-break:break-all;color:var(--text2);margin-bottom:14px;user-select:all">'+url+'</div>'+
     '<button id="_hub-copy-link-btn" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📋')+' Copy link</button>'+
-    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+' — view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Send via Messages</button>':'')+
+    (c.phone?'<button onclick="this.closest(\'.zmodal-overlay\').remove();window.location.href=\'sms:\'+\''+c.phone.replace(/\D/g,'')+'\'+\'?body=\'+encodeURIComponent(\'Hi '+firstName+', here\\\'s your project hub from '+biz+', view your proposals, pay your balance, and download invoices anytime: '+url+'\')" style="width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:8px">'+svgIcon('📱')+' Send via Messages</button>':'')+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   navigator.clipboard.writeText(url).catch(()=>{});
   // Wired via addEventListener (not an inline onclick string) since the success
-  // state swaps in an SVG icon — inline HTML attributes can't safely carry the
+  // state swaps in an SVG icon, inline HTML attributes can't safely carry the
   // quote characters an <svg ...> tag needs.
   box.querySelector('#_hub-copy-link-btn')?.addEventListener('click',function(){
     navigator.clipboard.writeText(url).then(()=>showToast('Copied!','📋'));
@@ -485,13 +485,13 @@ async function _refreshClientHub(clientId){
   try{
     const{error}=await _supa.storage.from('proposals').upload(key,JSON.stringify(snapshot),{contentType:'application/json',upsert:true,cacheControl:'0'});
     if(error)throw error;
-    // Same live-object rule as _uploadClientHub — never stamp a pre-await reference.
+    // Same live-object rule as _uploadClientHub, never stamp a pre-await reference.
     const live=clients.find(x=>x.id===clientId)||c;
     live.clientHubKey=key;saveAll();
     _broadcastHubUpdate(clientId);
   }catch(e){console.warn('hub refresh:',e);}
 }
-function copyHubLink(url){navigator.clipboard.writeText(url).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Could not copy — tap the URL above','⚠️'));}
+function copyHubLink(url){navigator.clipboard.writeText(url).then(()=>showToast('Hub link copied','📋')).catch(()=>showToast('Could not copy, tap the URL above','⚠️'));}
 function showHubMenu(clientId){
   const c=clients.find(x=>x.id===clientId);
   if(!c?.clientToken||!_supaUser){sendClientHubLink(clientId);return;}
@@ -534,7 +534,7 @@ function shareProposalLink(){
   _commitProposalSent();
   pwaShare({
     title:d.bname+' Proposal',
-    text:'Hi '+d.cname.split(' ')[0]+' — '+d.bname+' sent your estimate. Tap to review and approve.',
+    text:'Hi '+d.cname.split(' ')[0]+', '+d.bname+' sent your estimate. Tap to review and approve.',
     url:d.url
   });
 }
@@ -546,7 +546,7 @@ function _showGeiSendOverlay(){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   ov.innerHTML=
     '<div style="width:100%;max-width:420px;background:var(--bg);border-radius:var(--r);padding:22px 16px 24px;box-sizing:border-box">'+
-      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">'+svgIcon('✓')+' Link ready — send to client</div>'+
+      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">'+svgIcon('✓')+' Link ready, send to client</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
         '<button onclick="_doGeiSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('📱')+' Text</button>'+
         '<button onclick="_doGeiSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('✉')+' Email</button>'+
@@ -567,7 +567,7 @@ function _proposalShareData(){
   const d=_pendingShareData;
   return d?{url:d.url||'',cname:d.cname||'Client',bname:d.bname||defBname,cphone:d.cphone||'',cemail:d.cemail||''}:{url:'',cname:'Client',bname:defBname,cphone:'',cemail:''};
 }
-// Called when user actually taps SMS or Email — THIS is when the bid moves to "Sent proposals"
+// Called when user actually taps SMS or Email, THIS is when the bid moves to "Sent proposals"
 function _commitProposalSent(){
   if(!_pendingSignToken)return;
   const{bidId,token,proposalKey}=_pendingSignToken;
@@ -579,11 +579,11 @@ function _commitProposalSent(){
     bid.proposalSentDate=todayKey();
     if(!bid.followupStage)bid.followupStage=1;
     bid.followup=addDays(todayKey(),3);
-    // Snapshot the exact proposal HTML the client will sign — required for legal record
+    // Snapshot the exact proposal HTML the client will sign, required for legal record
     const proposalEl=document.getElementById('est-proposal');
     if(proposalEl&&proposalEl.innerHTML.trim())bid.proposalHtml=proposalEl.innerHTML;
     saveAll();
-    // Re-upload hub now that signingToken is committed — snapshot gets correct signHubUrl
+    // Re-upload hub now that signingToken is committed, snapshot gets correct signHubUrl
     if(bid.client_id)_uploadClientHub(bid.client_id).catch(()=>{});
   }
   _pendingSignToken=null;
@@ -599,8 +599,8 @@ function sendProposalViaSms(){
   const isPortfolioOn=document.getElementById('portfolio-toggle')?.checked||false;
   const ownerName=getOwnerName()||d.bname;
   const msg=isPortfolioOn
-    ?'Hey '+firstName+'!\n\nGreat talking with you — your proposal is ready. Quick heads up: '+ownerName+' is building our local portfolio and has a special offer inside the proposal for you. Worth a look before you decide.\n\n'+d.url+'\n\nQuestions? Just reply. Talk soon!\n\n— '+d.bname
-    :'Hey '+firstName+'!\n\nIt was great meeting with you today — really looking forward to the project.\n\nYour painting proposal is all ready to go. Tap the link below to view everything we went over and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text. Talk soon!\n\n— '+d.bname;
+    ?'Hey '+firstName+'!\n\nGreat talking with you, your proposal is ready. Quick heads up: '+ownerName+' is building our local portfolio and has a special offer inside the proposal for you. Worth a look before you decide.\n\n'+d.url+'\n\nQuestions? Just reply. Talk soon!\n\n- '+d.bname
+    :'Hey '+firstName+'!\n\nIt was great meeting with you today, really looking forward to the project.\n\nYour painting proposal is all ready to go. Tap the link below to view everything we went over and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text. Talk soon!\n\n- '+d.bname;
   const href='sms:'+(d.cphone||'')+'?body='+encodeURIComponent(msg);
   // Fire SMS FIRST while user gesture is fresh, then commit bid as sent
   window.location.href=href;
@@ -609,10 +609,10 @@ function sendProposalViaSms(){
 function sendProposalViaEmail(){
   const d=_proposalShareData();
   if(!d.url){zAlert('Generate the proposal link first.',{title:'No link yet'});return;}
-  // Open compose modal — lets user review/edit subject+body and add email if missing
+  // Open compose modal, lets user review/edit subject+body and add email if missing
   _showEmailComposeModal(d);
 }
-// Shared compose modal — proposals use the defaults; other senders (change
+// Shared compose modal, proposals use the defaults; other senders (change
 // orders) pass opts {title, subject, body, clientId, onSent} to reuse the
 // exact same send path (Resend edge function, same error/retry handling).
 let _ecContext=null;
@@ -623,7 +623,7 @@ function _showEmailComposeModal(d,opts){
   _ecContext=opts?{d,opts}:null;
   const firstName=d.cname.split(/[\s,&]+/)[0];
   const defSubject=(opts&&opts.subject)||('Your Proposal from '+d.bname+' is Ready!');
-  const defBody=(opts&&opts.body)||('Hey '+firstName+',\n\nIt was great meeting with you — I\'m looking forward to your project!\n\nYour proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+d.url+'\n\nOnce you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\nDon\'t hesitate to reach out with any questions — happy to go over anything!\n\nLooking forward to working with you,\n'+d.bname);
+  const defBody=(opts&&opts.body)||('Hey '+firstName+',\n\nIt was great meeting with you, I\'m looking forward to your project!\n\nYour proposal is ready to view. Everything we went over is laid out in full detail, and you can sign right from the page when you\'re ready to move forward:\n\n'+d.url+'\n\nOnce you sign, I\'ll get you locked in on the schedule and we\'ll take it from there.\n\nDon\'t hesitate to reach out with any questions, happy to go over anything!\n\nLooking forward to working with you,\n'+d.bname);
   const ov=document.createElement('div');
   ov.id='_email-compose-overlay';
   ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px';
@@ -678,7 +678,7 @@ async function _sendEmailFromCompose(){
   const bodyText=(bodyEl.value||'').trim();
   if(sendBtn){sendBtn.disabled=true;sendBtn.textContent='Sending…';}
   if(statusEl){statusEl.style.display='block';statusEl.textContent='Sending…';}
-  // Try server-sent email (Resend). No mailto fallback — avoids double-send confusion.
+  // Try server-sent email (Resend). No mailto fallback, avoids double-send confusion.
   if(supaEnabled()&&_supaUser){
     try{
       const{data:{session:_propSess}}=await _supa.auth.getSession();
@@ -697,20 +697,20 @@ async function _sendEmailFromCompose(){
         else{_commitProposalSent();showToast('Proposal emailed to '+d.cname+'!','✉️');}
         return;
       }
-      // Non-ok response — show error detail
-      let errMsg='Send failed — check your internet and try again.';
+      // Non-ok response, show error detail
+      let errMsg='Send failed, check your internet and try again.';
       try{const ej=await res.clone().json();errMsg=ej.error||errMsg;}catch(_){}
       if(statusEl){statusEl.style.color='#A32D2D';statusEl.textContent='⚠️ '+errMsg;}
       if(sendBtn){sendBtn.disabled=false;sendBtn.textContent='Retry →';}
       return;
     }catch(err){
       const isTimeout=err?.message==='timeout';
-      if(statusEl){statusEl.style.color='#A32D2D';statusEl.textContent=isTimeout?'⚠️ Request timed out — check your connection and retry.':'⚠️ Could not reach server. Check your internet connection.';}
+      if(statusEl){statusEl.style.color='#A32D2D';statusEl.textContent=isTimeout?'⚠️ Request timed out, check your connection and retry.':'⚠️ Could not reach server. Check your internet connection.';}
       if(sendBtn){sendBtn.disabled=false;sendBtn.textContent='Retry →';}
       return;
     }
   }
-  // No Supabase — open native mail with the composed text
+  // No Supabase, open native mail with the composed text
   const href='mailto:'+encodeURIComponent(toVal)+'?subject='+encodeURIComponent(subject)+'&body='+encodeURIComponent(bodyText);
   window.location.href=href;
   document.getElementById('_email-compose-overlay')?.remove();
@@ -739,11 +739,11 @@ function requestLocationPermission(onGranted, onDenied){
   // are never navigator.webdriver, so production behavior is unchanged.
   if(navigator.webdriver){if(onDenied)onDenied();return;}
   if(S.weatherLat&&S.weatherLon){if(onGranted)onGranted();return;}
-  // Previously granted on this device — skip modal entirely
+  // Previously granted on this device, skip modal entirely
   if(S.locationGranted){_grabLocCoords(onGranted,onDenied);return;}
   // Only block if denied and never previously granted
   if(S.locationDenied){if(onDenied)onDenied();return;}
-  // Check OS-level permission — avoids showing our modal to users who already said yes
+  // Check OS-level permission, avoids showing our modal to users who already said yes
   if(navigator.permissions&&navigator.permissions.query){
     navigator.permissions.query({name:'geolocation'}).then(p=>{
       if(p.status==='granted'){
@@ -780,22 +780,22 @@ function _showLocModal(onGranted,onDenied){
       '<div style="font-size:13px;color:var(--text2);line-height:1.6">TradeDesk uses your location for:<br>'+
       '<strong>'+svgIcon('🌤')+' Live weather</strong> on your calendar<br>'+
       '<strong>'+svgIcon('🚗')+' GPS tracking</strong> for mileage deductions<br><br>'+
-      'Your location is never shared or stored on our servers — it stays on your device only.</div>'+
+      'Your location is never shared or stored on our servers, it stays on your device only.</div>'+
     '</div>'+
     '<button id="loc-allow-btn" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Allow location access</button>'+
-    '<button id="loc-deny-btn" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-size:13px;color:var(--text3);cursor:pointer;font-family:inherit">Not now — skip weather &amp; GPS</button>';
+    '<button id="loc-deny-btn" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-size:13px;color:var(--text3);cursor:pointer;font-family:inherit">Not now, skip weather &amp; GPS</button>';
   overlay.appendChild(box);
   document.body.appendChild(overlay);
   box.querySelector('#loc-allow-btn').onclick=()=>{
     overlay.remove();
-    // Remember the explicit "Allow" IMMEDIATELY so the prompt is sticky — one tap, saved
+    // Remember the explicit "Allow" IMMEDIATELY so the prompt is sticky, one tap, saved
     // forever. Previously locationGranted was only written inside _grabLocCoords' success
     // callback, so if the first OS coordinate fix was slow, timed out, errored, or the app
     // closed before it resolved, nothing persisted and the modal returned on the next launch.
     // (Denial already persisted immediately via the deny handler; this fixes the asymmetry.)
     S.locationGranted=true;S.locationDenied=false;S.settingsTs=Date.now();saveAll();
     _grabLocCoords(onGranted,()=>{
-      // OS denied after user tapped allow — show gentle follow-up
+      // OS denied after user tapped allow, show gentle follow-up
       if(onDenied)onDenied();
     });
   };
@@ -819,7 +819,7 @@ async function renderCalGrid(){
   const daysInMonth=new Date(calYear,calMonth+1,0).getDate();
   const firstDow=new Date(calYear,calMonth,1).getDay(); // 0=Sun
 
-  // Build prev-month leading cells (never mutate — create fresh Date each time)
+  // Build prev-month leading cells (never mutate, create fresh Date each time)
   const cells=[];
   if(firstDow>0){
     const prevMonth=calMonth===0?11:calMonth-1;
@@ -834,7 +834,7 @@ async function renderCalGrid(){
   for(let day=1;day<=daysInMonth;day++){
     cells.push({d:new Date(calYear,calMonth,day),other:false});
   }
-  // Next-month trailing cells — fill to complete the last row
+  // Next-month trailing cells, fill to complete the last row
   {
     const nextMonth=calMonth===11?0:calMonth+1;
     const nextYear=calMonth===11?calYear+1:calYear;
@@ -846,7 +846,7 @@ async function renderCalGrid(){
   }
   // Validation: drop any cell whose year is outside plausible range
   const validCells=cells.filter(({d})=>d.getFullYear()>=2020&&d.getFullYear()<=2099);
-  // Fetch weather (cached — won't block render on repeat calls)
+  // Fetch weather (cached: won't block render on repeat calls)
   const weather=await fetchWeather()||{};
   validCells.forEach(({d,other})=>{
     const key=dateKey(d),isToday=key===tk,dj=getJobsOnDay(key);
@@ -959,7 +959,7 @@ function expandCalDay(key){
         }).join('')+
       '</div>'
     :'')+
-    // Hour-by-hour schedule — always shown so user can see open slots and book more
+    // Hour-by-hour schedule, always shown so user can see open slots and book more
     '<div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
         '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3)">Schedule</div>'+
@@ -1002,7 +1002,7 @@ function calTaskModal(dateKey){
   ov.className='zmodal-overlay';
   ov.innerHTML=
     '<div class="zmodal" style="max-width:340px">'+
-      '<div class="zmodal-title" style="color:#6366F1">Add task — '+label+'</div>'+
+      '<div class="zmodal-title" style="color:#6366F1">Add task, '+label+'</div>'+
       '<div style="margin:14px 0 8px">'+
         '<input id="_ctask-title" type="text" placeholder="Task title" autocomplete="off" '+
           'style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text1)">'+
@@ -1062,7 +1062,7 @@ function goToVehicleSettings(){
 
 function toggleRefField(sel){
   const wrap=document.getElementById('cf-ref-wrap');
-  if(wrap)wrap.style.display=(sel.value==='Referral'||sel.value==='Referral — someone sent them')?'block':'none';
+  if(wrap)wrap.style.display=(sel.value==='Referral'||sel.value==='Referral: someone sent them')?'block':'none';
 }
 function showKpiChart(type){
   const months=[];
@@ -1094,7 +1094,7 @@ function showKpiChart(type){
   const isNeg=type==='profit';
   const maxVal=Math.max(...months.map(m=>Math.abs(m.val)),1);
 
-  const fmtLabel=v=>type==='profit'?(v===0?'—':fmt(v)):type==='close'?(v===0?'—':v+'%'):(v===0?'—':String(v));
+  const fmtLabel=v=>type==='profit'?(v===0?'-':fmt(v)):type==='close'?(v===0?'-':v+'%'):(v===0?'-':String(v));
   const bars=months.map((m,i)=>{
     const pct=Math.round(Math.abs(m.val)/maxVal*100);
     const color=type==='close'?(m.val>=40?'var(--green-mid)':m.val>=25?'var(--amber)':'#A32D2D'):
@@ -1155,18 +1155,18 @@ function markFUWon(bidId,cid){
       window._fromDash=true;
       schedFromBid(bidId);
     }
-  },{title:'Won the job',yes:'Won — Schedule it'});
+  },{title:'Won the job',yes:'Won: Schedule it'});
 }
 function markBidHandshake(bidId){
   zConfirm(
-    'Handshake deals have no signed contract. If the client disputes payment or the scope, you have no legal protection.\n\nOnly use this as a last resort — you should always get a signature.',
+    'Handshake deals have no signed contract. If the client disputes payment or the scope, you have no legal protection.\n\nOnly use this as a last resort, you should always get a signature.',
     ()=>{
       const b=bids.find(x=>x.id===bidId);if(!b)return;
       b.status='Closed Won';b.handshake=true;b.handshake_date=todayKey();
       saveAll();renderCDBids();renderDash();
-      showToast('Marked as handshake — no signed contract on file','🤝');
+      showToast('Marked as handshake, no signed contract on file','🤝');
     },
-    {title:svgIcon('🤝')+' Handshake deal — are you sure?',yes:'Yes, proceed without signature',no:'Cancel',danger:true}
+    {title:svgIcon('🤝')+' Handshake deal, are you sure?',yes:'Yes, proceed without signature',no:'Cancel',danger:true}
   );
 }
 function markBidAbandoned(bidId,cid){markFUAbandoned(bidId,cid);}
@@ -1186,7 +1186,7 @@ function markFUAbandoned(bidId,cid){
     b.noResponseCount=1;
     b.followup=newFollowup;
     saveAll();renderDash();
-    zAlert('Got it. Follow-up reset — check back in 7 days.',{title:'Snoozed 7 days'});
+    zAlert('Got it. Follow-up reset, check back in 7 days.',{title:'Snoozed 7 days'});
   }
 }
 function tdPrint(){if(window._tdNativePrint){window._tdNativePrint();return;}window.print();}
@@ -1220,7 +1220,7 @@ function showChangeOrderModal(bidId,clientId){
   // Build original scope summary
   const surfLines=(b.surfaces||[]).filter(s=>s.qty>0).map(s=>{
     const t=SURF_TYPES.find(x=>x.v===s.type);
-    return t?t.label+(s.room?' ('+s.room.split(' — ')[0]+')':''):'';
+    return t?t.label+(s.room?' ('+s.room.split(', ')[0]+')':''):'';
   }).filter(Boolean);
   const scopeSummary=surfLines.length?surfLines.slice(0,4).join(', ')+(surfLines.length>4?' + '+(surfLines.length-4)+' more':''):'No surfaces recorded';
 
@@ -1317,7 +1317,7 @@ function _showCOSignDocument(b,c,coData,clientId){
   // Build scope summary from original bid
   const surfLines=(b.surfaces||[]).filter(s=>s.qty>0).map(s=>{
     const t=SURF_TYPES.find(x=>x.v===s.type);
-    return t?t.label+(s.room?' ('+s.room.split(' — ')[0]+')':''):'';
+    return t?t.label+(s.room?' ('+s.room.split(', ')[0]+')':''):'';
   }).filter(Boolean);
   const deltaLabel=type==='add'?'+'+fmt(amount):'-'+fmt(amount);
   const deltaColor=type==='add'?'var(--blue)':'#A32D2D';
@@ -1356,9 +1356,9 @@ function _showCOSignDocument(b,c,coData,clientId){
         '<div style="font-size:13px;font-weight:700;color:#166534">New Contract Total</div>'+
         '<div style="font-size:26px;font-weight:800;color:#166534">'+fmt(newAmount)+'</div>'+
       '</div>'+
-      // The ONE shared signing pad (esign.js) — name on top, canvas below.
+      // The ONE shared signing pad (esign.js): name on top, canvas below.
       esignPadHTML('co-sign')+
-      // The ONE shared consent block — same text as the job price-increase
+      // The ONE shared consent block, same text as the job price-increase
       // sign-off, which is the same kind of document.
       esignConsentHTML('co-sign',ESIGN_NOTE_CHANGE_ORDER)+
       // Action buttons
@@ -1366,15 +1366,15 @@ function _showCOSignDocument(b,c,coData,clientId){
         '<button onclick="this.closest(\'[style*=fixed]\').remove();showChangeOrderModal('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:1.5px solid #d1d5db;background:#f9fafb;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:#374151">← Back</button>'+
         '<button onclick="_submitCOSign('+b.id+','+clientId+')" style="padding:13px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓')+' Sign Change Order</button>'+
       '</div>'+
-      // Remote option — client reviews & signs from their hub instead of in person
-      '<button id="co-send-hub-btn" onclick="_sendCOToHub('+b.id+','+clientId+')" style="width:100%;margin-top:10px;padding:13px;border-radius:8px;border:1.5px solid #2563eb;background:#EFF6FF;color:#1d4ed8;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📤')+' Send to Client Hub — client signs remotely</button>'+
+      // Remote option, client reviews & signs from their hub instead of in person
+      '<button id="co-send-hub-btn" onclick="_sendCOToHub('+b.id+','+clientId+')" style="width:100%;margin-top:10px;padding:13px;border-radius:8px;border:1.5px solid #2563eb;background:#EFF6FF;color:#1d4ed8;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📤')+' Send to Client Hub, client signs remotely</button>'+
     '</div>';
   ov.appendChild(doc);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   // Store CO data on the element for retrieval
   ov.dataset.coData=JSON.stringify(coData);
   // Shared e-sign pad (esign.js): markup, listeners, typed-preview all live there.
-  // Wired synchronously — the canvas is already in the DOM by this point, and
+  // Wired synchronously, the canvas is already in the DOM by this point, and
   // deferring via setTimeout only opens a window where a fast submit finds no
   // registered pad yet (esignResult returns "no-pad").
   esignWire('co-sign');
@@ -1404,7 +1404,7 @@ function _submitCOSign(bidId,clientId){
   b.amount=newAmount;
   saveAll();renderDash();renderJobsPage();
   ov?.remove();
-  showToast('CO #'+coNum+' signed — new total '+fmt(newAmount),'📋');
+  showToast('CO #'+coNum+' signed: new total '+fmt(newAmount),'📋');
   setTimeout(()=>openJobSheet(clientId),300);
 }
 
@@ -1424,16 +1424,16 @@ async function _sendCOToHub(bidId,clientId){
   saveAll();renderDash();renderJobsPage();
   ov?.remove();
   if(!supaEnabled()||!_supaUser){
-    showToast('CO #'+coNum+' sent to client hub — awaiting signature','📤');
+    showToast('CO #'+coNum+' sent to client hub, awaiting signature','📤');
     setTimeout(()=>openJobSheet(clientId),300);
     return;
   }
   // Notify step: the client never sees the pending CO unless they open their
-  // hub — prompt the contractor to text them the link (after openJobSheet so
+  // hub: prompt the contractor to text them the link (after openJobSheet so
   // the notify modal stacks on top). Scheduled BEFORE the flush below so the UI
   // timing is unaffected by how long the cloud write takes.
   setTimeout(()=>{openJobSheet(clientId);_showCONotifyModal(clientId,coNum);},300);
-  // saveAll() above only SCHEDULES a debounced cloud write (2s timer) — it never
+  // saveAll() above only SCHEDULES a debounced cloud write (2s timer), it never
   // confirms the CO actually reached td_bids before this function returns. Worse,
   // _showCONotifyModal above can call saveAll() a second time (for a client with
   // no clientToken yet), which restarts that same 2s timer, pushing the real
@@ -1443,7 +1443,7 @@ async function _sendCOToHub(bidId,clientId){
   try{await _flushSaveNow();}catch(_e){}
   try{
     const entry={coNum,desc,type,amount,delta,originalAmount,newAmount,sentAt:co.sentAt,signedAt:null,signerName:null,signatureData:null};
-    // One signed_proposals row per bid — append to it, or create it for bids
+    // One signed_proposals row per bid, append to it, or create it for bids
     // signed before the table existed (in-person/cash signings).
     const{data:rows}=await _supa.from('signed_proposals').select('id,change_orders')
       .eq('bid_id',String(bidId)).eq('contractor_user_id',_supaUser.id).limit(1);
@@ -1466,7 +1466,7 @@ async function _sendCOToHub(bidId,clientId){
   _refreshClientHub(clientId).catch(()=>{});
 }
 
-// "Send to client" modal shown after a CO lands in the hub — the EXACT same
+// "Send to client" modal shown after a CO lands in the hub, the EXACT same
 // send path as proposals: Text / Email / Other-app, same overlay layout as
 // _showGeiSendOverlay, email goes through the shared compose modal + Resend.
 let _coShareData=null;
@@ -1486,7 +1486,7 @@ function _showCONotifyModal(clientId,coNum){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   ov.innerHTML=
     '<div style="width:100%;max-width:420px;background:var(--bg);border-radius:var(--r);padding:22px 16px 24px;box-sizing:border-box">'+
-      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">'+svgIcon('✓')+' CO #'+coNum+' ready — send to client</div>'+
+      '<div style="font-size:15px;font-weight:800;color:var(--blue-dk);margin-bottom:16px;text-align:center">'+svgIcon('✓')+' CO #'+coNum+' ready: send to client</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
         '<button onclick="_doCOSend(\'sms\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('📱')+' Text</button>'+
         '<button onclick="_doCOSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('✉')+' Email</button>'+
@@ -1506,7 +1506,7 @@ function _sendCOViaSms(){
   const d=_coShareData;if(!d)return;
   if(!d.cphone){zAlert('No phone number on file for this client. Add one in Clients first.',{title:'No client phone'});return;}
   const firstName=d.cname.split(/[\s,&]+/)[0];
-  const msg='Hey '+firstName+'!\n\nQuick update on your project — Change Order #'+d.coNum+' is ready for your review. Tap the link below to see the details and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text!\n\n— '+d.bname;
+  const msg='Hey '+firstName+'!\n\nQuick update on your project, Change Order #'+d.coNum+' is ready for your review. Tap the link below to see the details and sign when you\'re ready:\n\n'+d.url+'\n\nAny questions at all, just shoot me a text!\n\n- '+d.bname;
   // Fire SMS FIRST while the user gesture is fresh (same as sendProposalViaSms)
   window.location.href='sms:'+d.cphone+'?body='+encodeURIComponent(msg);
   setTimeout(()=>autoLogContact(d.clientId,'change_order_sent'),400);
@@ -1516,8 +1516,8 @@ function _sendCOViaEmail(){
   const firstName=d.cname.split(/[\s,&]+/)[0];
   _showEmailComposeModal(d,{
     title:svgIcon('✉')+' Email change order',
-    subject:'Change Order #'+d.coNum+' from '+d.bname+' — signature needed',
-    body:'Hey '+firstName+',\n\nQuick update on your project — Change Order #'+d.coNum+' is ready for your review. It lays out the change in scope and the updated contract total, and you can sign it right from your project hub:\n\n'+d.url+'\n\nDon\'t hesitate to reach out with any questions!\n\n'+d.bname,
+    subject:'Change Order #'+d.coNum+' from '+d.bname+', signature needed',
+    body:'Hey '+firstName+',\n\nQuick update on your project, Change Order #'+d.coNum+' is ready for your review. It lays out the change in scope and the updated contract total, and you can sign it right from your project hub:\n\n'+d.url+'\n\nDon\'t hesitate to reach out with any questions!\n\n'+d.bname,
     clientId:d.clientId,
     onSent:()=>{autoLogContact(d.clientId,'change_order_sent');showToast('Change order emailed to '+d.cname+'!','✉️');}
   });
@@ -1527,7 +1527,7 @@ function _shareCOLink(){
   autoLogContact(d.clientId,'change_order_sent');
   pwaShare({
     title:d.bname+' Change Order',
-    text:'Hi '+d.cname.split(' ')[0]+' — Change Order #'+d.coNum+' from '+d.bname+' needs your signature. Review and sign in your project hub.',
+    text:'Hi '+d.cname.split(' ')[0]+', Change Order #'+d.coNum+' from '+d.bname+' needs your signature. Review and sign in your project hub.',
     url:d.url
   });
 }

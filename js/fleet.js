@@ -1,4 +1,4 @@
-// js/fleet.js — Fleet management module
+// js/fleet.js: Fleet management module
 // Vehicles are stored in S.vehicles (settings, syncs to Supabase)
 // Maintenance records are stored in `maintenance` array (localStorage zp3_maint)
 
@@ -90,7 +90,7 @@ function renderFleetVehicles() {
     <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Fleet summary</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
       <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:var(--text)">${active.length}</div><div style="font-size:10px;color:var(--text3)">Active vehicles</div></div>
-      <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:var(--text)">${ytdMiles>0?Math.round(ytdMiles).toLocaleString():'—'}</div><div style="font-size:10px;color:var(--text3)">YTD miles</div></div>
+      <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:var(--text)">${ytdMiles>0?Math.round(ytdMiles).toLocaleString():'-'}</div><div style="font-size:10px;color:var(--text3)">YTD miles</div></div>
       <div style="text-align:center"><div style="font-size:18px;font-weight:800;color:var(--blue)">${maintYTD>0?'$'+maintYTD.toLocaleString():'$0'}</div><div style="font-size:10px;color:var(--text3)">Maint YTD</div></div>
     </div>
     ${totalCost>0?`<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--text3);text-align:center">Total cost basis: <strong style="color:var(--text)">$${totalCost.toLocaleString()}</strong></div>`:''}
@@ -126,7 +126,7 @@ function _fleetCard(v, idx) {
     ${due.length?`<div style="margin-top:8px">${due.map(d=>`<div style="font-size:11px;background:var(--amber-lt);color:#92400E;border-radius:4px;padding:3px 8px;margin-bottom:3px;display:inline-block;margin-right:4px">${svgIcon('⚠',{size:11})} ${d}</div>`).join('')}</div>`:''}
     <div style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
       <div style="background:var(--bg2);border-radius:var(--r);padding:6px 8px;text-align:center">
-        <div style="font-size:15px;font-weight:800;color:var(--text)">${ytdMi>0?ytdMi.toLocaleString():'—'}</div>
+        <div style="font-size:15px;font-weight:800;color:var(--text)">${ytdMi>0?ytdMi.toLocaleString():'-'}</div>
         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">YTD miles</div>
       </div>
       <div style="background:var(--bg2);border-radius:var(--r);padding:6px 8px;text-align:center">
@@ -134,7 +134,7 @@ function _fleetCard(v, idx) {
         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Maint YTD</div>
       </div>
       <div style="background:var(--bg2);border-radius:var(--r);padding:6px 8px;text-align:center">
-        <div style="font-size:15px;font-weight:800;color:${pnl.costPerMile>0?'var(--text)':'var(--text3)'}">${pnl.costPerMile>0?'$'+pnl.costPerMile.toFixed(2):'—'}</div>
+        <div style="font-size:15px;font-weight:800;color:${pnl.costPerMile>0?'var(--text)':'var(--text3)'}">${pnl.costPerMile>0?'$'+pnl.costPerMile.toFixed(2):'-'}</div>
         <div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Cost/mile</div>
       </div>
     </div>
@@ -220,7 +220,7 @@ function _fleetPnLCalc(v, maintRecords, trips, year) {
     const costPerMile = totalMiles > 0 ? +(totalDeduction / totalMiles).toFixed(2) : 0;
     return {method:'actual',totalMiles,irsDeduction:0,maintCostYTD,deductibleMaint,annualDeprec,totalDeduction,totalCost:totalDeduction,costPerMile,netPosition:totalDeduction};
   } else {
-    // Standard mileage method: business miles × IRS rate — bizPct is NOT re-applied.
+    // Standard mileage method: business miles × IRS rate, bizPct is NOT re-applied.
     // The tracked trips already ARE the business miles (bizUse% is derived FROM them
     // vs total odometer miles), so multiplying by bizPct again double-penalized the
     // personal share and understated the deduction vs the Schedule C engine
@@ -235,7 +235,7 @@ function _fleetPnLCalc(v, maintRecords, trips, year) {
 
 /* ── Schedule C vehicle deduction engine ─────────────────────────────────────────
    THE single source of truth for how vehicles hit the tax math. IRS says pick ONE
-   method per vehicle: standard mileage OR actual expenses — never both. Before this
+   method per vehicle: standard mileage OR actual expenses, never both. Before this
    engine, calcTax() deducted ALL trips (miles × rate) AND ALL vehicle expenses at
    the same time, silently stacking both deductions for any 'actual' vehicle.
 
@@ -292,7 +292,7 @@ function _vehSchedC(yr){
     const expTotal=b.exp.reduce((s,e)=>s+(e.amount||0),0);
     const mileDed=+(b.miles*rate).toFixed(2);
     const actualDed=+(expTotal*b.bizPct).toFixed(2);
-    // COMPARISON side ("which method wins"): full logged cost picture — attributed
+    // COMPARISON side ("which method wins"): full logged cost picture, attributed
     // expenses PLUS service-log records that never became expenses (mileage-method
     // maintenance is records-only). Contractors log BOTH all year; the verdict must
     // see everything. Schedule C (actualDed) stays expenses-only.
@@ -323,7 +323,7 @@ function _vehSchedC(yr){
 }
 
 // ── Year-end method verdict ──────────────────────────────────────────────────
-// Fired when the year-end odometer report saves — the moment business-use % is
+// Fired when the year-end odometer report saves, the moment business-use % is
 // final. Tells the contractor, per vehicle, WHICH METHOD WON and whether their
 // configured method matches. Needs both sides logged all year to be honest, so
 // it also calls out missing data instead of declaring a hollow winner.
@@ -333,13 +333,13 @@ function _vehWinnerAlert(yr){
     const vd=_vehSchedC(yr);
     if(!vd.hasVehicles)return;
     const parts=vd.perVehicle.filter(p=>p.miles>0||p.costTotal>0).map(p=>{
-      if(p.miles>0&&p.costTotal===0)return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+': mileage '+fmt(p.mileDed)+' — but NO vehicle costs logged this year. Log gas, parts, and service too so next year we can prove which method wins.';
-      if(p.costTotal>0&&p.miles===0)return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+': actual costs '+fmt(p.actualCmp)+' — but NO trips logged. Track your drives so the mileage side is real.';
+      if(p.miles>0&&p.costTotal===0)return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+': mileage '+fmt(p.mileDed)+', but NO vehicle costs logged this year. Log gas, parts, and service too so next year we can prove which method wins.';
+      if(p.costTotal>0&&p.miles===0)return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+': actual costs '+fmt(p.actualCmp)+', but NO trips logged. Track your drives so the mileage side is real.';
       const winLbl=p.winner==='mileage'?'Standard mileage':'Actual expenses';
-      return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+' ('+p.bizUse+'% business): mileage '+fmt(p.mileDed)+' vs actual '+fmt(p.actualCmp)+' → <strong>'+winLbl+' wins by '+fmt(p.delta)+'</strong>'+(p.winner===p.method?' — you\'re already on the winning method '+svgIcon('✓',{size:13}):' — you\'re set to '+p.method+'; switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply — confirm with your tax pro).');
+      return svgIcon('🚗',{size:14})+' '+escHtml(p.label)+' ('+p.bizUse+'% business): mileage '+fmt(p.mileDed)+' vs actual '+fmt(p.actualCmp)+' → <strong>'+winLbl+' wins by '+fmt(p.delta)+'</strong>'+(p.winner===p.method?', you\'re already on the winning method '+svgIcon('✓',{size:13}):', you\'re set to '+p.method+'; switching could save '+fmt(p.delta)+'/yr (IRS switching rules apply, confirm with your tax pro).');
     });
     if(!parts.length)return;
-    zAlert(parts.join('<br><br>')+'<br><br><span style="font-size:10px;color:var(--text3)">Not tax advice — verify with your tax professional.</span>',{title:(vd.yr)+' vehicle deduction — which method won'});
+    zAlert(parts.join('<br><br>')+'<br><br><span style="font-size:10px;color:var(--text3)">Not tax advice, verify with your tax professional.</span>',{title:(vd.yr)+' vehicle deduction, which method won'});
   }catch(_e){}
 }
 
@@ -433,11 +433,11 @@ function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
     ${due.length?`<div style="background:var(--amber-lt);border:1px solid #F59E0B;border-radius:var(--r);padding:10px 12px;margin-bottom:12px">${due.map(d=>`<div style="font-size:12px;color:#92400E;font-weight:600">${svgIcon('⚠',{size:12})} ${d}</div>`).join('')}</div>`:''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
       <div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:800">${pnl.totalMiles>0?Math.round(pnl.totalMiles).toLocaleString():'—'}</div>
+        <div style="font-size:20px;font-weight:800">${pnl.totalMiles>0?Math.round(pnl.totalMiles).toLocaleString():'-'}</div>
         <div style="font-size:10px;color:var(--text3)">Miles this year</div>
       </div>
       <div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:800;color:${pnl.costPerMile>0?'var(--text)':'var(--text3)'}">${pnl.costPerMile>0?'$'+pnl.costPerMile:'—'}</div>
+        <div style="font-size:20px;font-weight:800;color:${pnl.costPerMile>0?'var(--text)':'var(--text3)'}">${pnl.costPerMile>0?'$'+pnl.costPerMile:'-'}</div>
         <div style="font-size:10px;color:var(--text3)">Cost per mile</div>
       </div>
       <div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
@@ -445,7 +445,7 @@ function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
         <div style="font-size:10px;color:var(--text3)">Maintenance YTD</div>
       </div>
       <div style="background:var(--bg2);border-radius:var(--r);padding:10px;text-align:center">
-        <div style="font-size:20px;font-weight:800;color:${lifetimeMi>0?'var(--text)':'var(--text3)'}">${lifetimeMi>0?lifetimeMi.toLocaleString():'—'}</div>
+        <div style="font-size:20px;font-weight:800;color:${lifetimeMi>0?'var(--text)':'var(--text3)'}">${lifetimeMi>0?lifetimeMi.toLocaleString():'-'}</div>
         <div style="font-size:10px;color:var(--text3)">Lifetime miles logged</div>
       </div>
     </div>
@@ -526,7 +526,7 @@ function _fleetDetailServiceHtml(v, maint) {
       ${maint.map((m,i)=>{
         const parts=_svcParts(m);
         const icon=svgIcon(MAINT_TYPES[m.type]?MAINT_TYPES[m.type].icon:'🔧',{size:12});
-        const dateShort=m.date?new Date(m.date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—';
+        const dateShort=m.date?new Date(m.date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'-';
         const nextInfo=m.nextOilMiles?`<div style="font-size:10px;color:var(--text3);margin-top:1px">Next: ${m.nextOilMiles.toLocaleString()} mi</div>`:'';
         const notesInfo=m.notes?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:1px">${escHtml(m.notes)}</div>`:'';
         return `<div style="display:grid;grid-template-columns:72px 1fr 64px 44px;gap:0;padding:8px 10px;border-bottom:1px solid var(--border);align-items:start;${i%2===1?'background:var(--bg2)':''}">
@@ -540,8 +540,8 @@ function _fleetDetailServiceHtml(v, maint) {
               <span style="font-size:10px;color:var(--text3);cursor:pointer" onclick="openAddMaintenanceModal(${_fleetDetailIdx},${m.id})">Edit</span>
             </div>
           </div>
-          <div style="font-size:12px;color:var(--text3);text-align:right;padding-left:4px">${m.odo?m.odo.toLocaleString():'—'}</div>
-          <div style="font-size:12px;font-weight:700;color:${m.cost?'var(--blue)':'var(--text3)'};text-align:right">${m.cost?'$'+m.cost.toLocaleString():'—'}</div>
+          <div style="font-size:12px;color:var(--text3);text-align:right;padding-left:4px">${m.odo?m.odo.toLocaleString():'-'}</div>
+          <div style="font-size:12px;font-weight:700;color:${m.cost?'var(--blue)':'var(--text3)'};text-align:right">${m.cost?'$'+m.cost.toLocaleString():'-'}</div>
         </div>`;
       }).join('')}
     </div>
@@ -592,8 +592,8 @@ function _fleetDetailPnLHtml(v, pnl, maint, trips) {
           <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">IRS rate (${((S.irsRate||0.67)*100).toFixed(0)}¢/mi × ${v.bizUse||100}% biz)</span><span style="font-size:12px;font-weight:600;color:var(--green)">$${p.irsDeduction.toLocaleString()}</span></div>
           <div style="border-top:1px solid var(--border);margin:6px 0"></div>
           <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:8px">
-            <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:3px">${svgIcon('📋',{size:11})} Maintenance — records only</div>
-            <div style="font-size:11px;color:var(--text3)">Under the standard mileage method, maintenance costs are included in the IRS rate — they are not deducted separately.</div>
+            <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:3px">${svgIcon('📋',{size:11})} Maintenance, records only</div>
+            <div style="font-size:11px;color:var(--text3)">Under the standard mileage method, maintenance costs are included in the IRS rate, they are not deducted separately.</div>
             <div style="display:flex;justify-content:space-between;margin-top:6px"><span style="font-size:12px;color:var(--text3)">Actual maintenance spend</span><span style="font-size:12px;color:var(--text3)">$${p.maintCostYTD.toLocaleString()}</span></div>
           </div>
           <div style="border-top:1px solid var(--border);margin:6px 0"></div>
@@ -680,23 +680,23 @@ function _renderOdometerReport() {
           </div>
         </div>
         <div class="card" style="margin-bottom:16px;background:var(--bg2)">
-          <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Calculated business use — ${yr}</div>
+          <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Calculated business use, ${yr}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px">
             <div style="text-align:center">
-              <div style="font-size:18px;font-weight:800">${totalDriven>0?totalDriven.toLocaleString():'—'}</div>
+              <div style="font-size:18px;font-weight:800">${totalDriven>0?totalDriven.toLocaleString():'-'}</div>
               <div style="font-size:10px;color:var(--text3)">Total miles driven</div>
             </div>
             <div style="text-align:center">
-              <div style="font-size:18px;font-weight:800;color:var(--blue)">${loggedMiles>0?Math.round(loggedMiles).toLocaleString():'—'}</div>
+              <div style="font-size:18px;font-weight:800;color:var(--blue)">${loggedMiles>0?Math.round(loggedMiles).toLocaleString():'-'}</div>
               <div style="font-size:10px;color:var(--text3)">Business miles</div>
             </div>
             <div style="text-align:center">
-              <div style="font-size:18px;font-weight:800;color:${bizPct>0?'var(--green)':'var(--text3)'}">${bizPct>0?bizPct+'%':'—'}</div>
+              <div style="font-size:18px;font-weight:800;color:${bizPct>0?'var(--green)':'var(--text3)'}">${bizPct>0?bizPct+'%':'-'}</div>
               <div style="font-size:10px;color:var(--text3)">Business use</div>
             </div>
           </div>
           ${totalDriven===0?'<div style="font-size:11px;color:var(--text3)">Enter odometer readings above to calculate business use %.</div>':''}
-          ${totalDriven>0&&loggedMiles===0?'<div style="font-size:11px;color:var(--text3)">No trips logged yet for '+yr+' — log them in the mileage tab.</div>':''}
+          ${totalDriven>0&&loggedMiles===0?'<div style="font-size:11px;color:var(--text3)">No trips logged yet for '+yr+', log them in the mileage tab.</div>':''}
           ${bizPct>0?`<div style="font-size:11px;color:var(--text3);margin-top:4px">Saving will apply ${bizPct}% business use to this vehicle's deduction calculations.</div>`:''}
         </div>
         <button onclick="saveOdometerReport()" class="btn btn-p" style="width:100%;padding:14px;font-size:16px;font-weight:700">Save readings</button>
@@ -731,10 +731,10 @@ function saveOdometerReport() {
     vehs[_odoReportVehIdx] = v;
     _setVehicles(vehs);
   }
-  S.settingsTs=Date.now(); // odometer log is IRS data — must win the settings sync
+  S.settingsTs=Date.now(); // odometer log is IRS data, must win the settings sync
   saveAll();
   document.getElementById('odo-report-overlay')?.remove();
-  showToast('Mileage report saved'+(totalDriven>0&&loggedMiles>0?' — '+v.bizUse+'% business use':''),'📊');
+  showToast('Mileage report saved'+(totalDriven>0&&loggedMiles>0?', '+v.bizUse+'% business use':''),'📊');
   setTimeout(()=>_vehWinnerAlert(yr),600); // year-end verdict: which method won
   if(_fleetDetailIdx>=0) _renderFleetDetailModal();
 }
@@ -786,32 +786,32 @@ function openAddVehicleModal(idx) {
       </div>
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">IRS settings</div>
-        <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--text3)">${svgIcon('💡',{size:11})} Business use % is calculated automatically from your year-end odometer report — no manual entry needed.</div>
+        <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--text3)">${svgIcon('💡',{size:11})} Business use % is calculated automatically from your year-end odometer report, no manual entry needed.</div>
         <div class="f"><label>IRS weight class (GVWR)</label>
           <select id="fv-gvwr" onchange="_renderGvwrNote(this.value)">
-            <option value="">— Select —</option>
+            <option value="">- Select -</option>
             <option value="light" ${v.gvwr==='light'?'selected':''}>Under 6,000 lbs (car, crossover)</option>
-            <option value="heavy_truck" ${v.gvwr==='heavy_truck'?'selected':''}>Over 6k lbs — Truck/Van</option>
-            <option value="heavy_suv" ${v.gvwr==='heavy_suv'?'selected':''}>Over 6k lbs — Large SUV</option>
+            <option value="heavy_truck" ${v.gvwr==='heavy_truck'?'selected':''}>Over 6k lbs, Truck/Van</option>
+            <option value="heavy_suv" ${v.gvwr==='heavy_suv'?'selected':''}>Over 6k lbs, Large SUV</option>
             <option value="commercial" ${v.gvwr==='commercial'?'selected':''}>Over 14,000 lbs (box truck)</option>
           </select>
           <div id="fv-gvwr-note" style="margin-top:4px">${_gvwrNote(v.gvwr||'')}</div>
         </div>
         <div style="margin-top:12px">
-          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Tax deduction method <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0">(pick one — IRS doesn't allow both)</span></div>
+          <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3);margin-bottom:8px">Tax deduction method <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0">(pick one, IRS doesn't allow both)</span></div>
           <div>
             <div onclick="this.querySelector('input').click()" style="display:grid;grid-template-columns:18px 1fr;align-items:start;column-gap:10px;padding:10px 12px;border:1.5px solid ${(v.deductionMethod||'mileage')==='mileage'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${(v.deductionMethod||'mileage')==='mileage'?'rgba(45,93,168,.06)':'var(--bg2)'};margin-bottom:6px">
               <input type="radio" name="fv-deduct" value="mileage" style="margin-top:3px;accent-color:var(--blue);pointer-events:none;width:16px;height:16px" ${(v.deductionMethod||'mileage')==='mileage'?'checked':''}>
               <div>
                 <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;line-height:1.3">Standard mileage rate</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct ${((S.irsRate||0.67)*100).toFixed(0)}¢ per business mile. Simpler — no need to track every expense. Maintenance records are for your info only.</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct ${((S.irsRate||0.67)*100).toFixed(0)}¢ per business mile. Simpler: no need to track every expense. Maintenance records are for your info only.</div>
               </div>
             </div>
             <div onclick="this.querySelector('input').click()" style="display:grid;grid-template-columns:18px 1fr;align-items:start;column-gap:10px;padding:10px 12px;border:1.5px solid ${v.deductionMethod==='actual'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${v.deductionMethod==='actual'?'rgba(45,93,168,.06)':'var(--bg2)'}">
               <input type="radio" name="fv-deduct" value="actual" style="margin-top:3px;accent-color:var(--blue);pointer-events:none;width:16px;height:16px" ${v.deductionMethod==='actual'?'checked':''}>
               <div>
                 <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;line-height:1.3">Actual expenses</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct real costs — fuel, maintenance, depreciation at your business-use %. Requires keeping all receipts.</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct real costs, fuel, maintenance, depreciation at your business-use %. Requires keeping all receipts.</div>
               </div>
             </div>
           </div>
@@ -869,7 +869,7 @@ function saveFleetVehicle() {
     addedDate: oldV.addedDate||todayKey(),
   };
 
-  // Auto-create expense if purchase price is new or changed — only for actual expense method
+  // Auto-create expense if purchase price is new or changed, only for actual expense method
   const newPrice = newV.purchasePrice;
   const oldPrice = oldV.purchasePrice||0;
   if(newPrice > 0 && newPrice !== oldPrice && newV.deductionMethod === 'actual') {
@@ -898,6 +898,10 @@ function saveFleetVehicle() {
   saveAll();
   _closeFleetVehModal();
   renderFleetVehicles();
+  // Refresh the dashboard setup to-do so its "Add a vehicle" item dismisses and
+  // the Drive button ungrays the instant the first vehicle lands (the modal is
+  // often opened straight from that to-do).
+  if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();
   showToast(isEdit?'Vehicle updated':'Vehicle added','🚗');
   if(!isEdit) setTimeout(()=>{ if(typeof _checkOdometerPrompt==='function') _checkOdometerPrompt(); }, 500);
 }
@@ -907,7 +911,7 @@ function _gvwrNote(gvwr){
   if(gvwr==='heavy_truck')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;color:#166534">'+svgIcon('✓',{size:11})+' <strong>No 280F limits.</strong> Full Section 179 or bonus depreciation (up to $70,000). Keep mileage log proving &gt;50% business use every year.</div>';
   if(gvwr==='heavy_suv')return '<div style="font-size:11px;background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:6px 8px;color:#92400E">'+svgIcon('⚠',{size:11})+' <strong>Section 179 SUV cap:</strong> max $31,300 in 2025. A pickup truck with a bed doesn\'t have this cap.</div>';
   if(gvwr==='commercial')return '<div style="font-size:11px;background:#F0FDF4;border:1px solid #16A34A;border-radius:var(--r);padding:6px 8px;color:#166534">'+svgIcon('✓',{size:11})+' <strong>Commercial vehicle:</strong> no Section 280F limits. Full Section 179 deductible. Maintain &gt;50% business use documentation.</div>';
-  return '<div style="font-size:10px;color:var(--text3)">Set weight class above — determines how much depreciation you can deduct (IRS §280F).</div>';
+  return '<div style="font-size:10px;color:var(--text3)">Set weight class above, determines how much depreciation you can deduct (IRS §280F).</div>';
 }
 function _renderGvwrNote(val) {
   const el = document.getElementById('fv-gvwr-note');
@@ -943,7 +947,7 @@ function openFleetStatusModal(idx, toStatus) {
     showToast((v.nickname||v.name)+' back in service','✅');
     return;
   }
-  // toStatus === 'down' — ask for reason
+  // toStatus === 'down', ask for reason
   zPrompt('Reason for downtime (optional):', reason => {
     v.status = 'down';
     v.downtimeLog = v.downtimeLog||[];
@@ -979,7 +983,7 @@ function openFleetSaleModal(idx) {
         <div class="f"><label>Sale price ($)</label><input type="text" inputmode="numeric" id="fs-price" placeholder="0" oninput="_fmtMoneyInput(this)"></div>
       </div>
       <div class="f"><label>Odometer at sale (mi)</label><input type="number" id="fs-odo" min="0" step="100" placeholder="0"></div>
-      ${v.purchasePrice?`<div style="margin-top:8px;padding:8px 10px;background:var(--bg2);border-radius:var(--r);font-size:12px;color:var(--text3)">Purchase price: $${v.purchasePrice.toLocaleString()} — enter sale price to see gain/loss</div>`:''}
+      ${v.purchasePrice?`<div style="margin-top:8px;padding:8px 10px;background:var(--bg2);border-radius:var(--r);font-size:12px;color:var(--text3)">Purchase price: $${v.purchasePrice.toLocaleString()}: enter sale price to see gain/loss</div>`:''}
       <div style="display:grid;gap:8px;margin-top:16px">
         <button class="btn btn-p" onclick="saveFleetSale(${idx})" style="padding:14px;font-size:16px;font-weight:700">Record sale</button>
         <button class="btn" onclick="document.getElementById('fleet-sale-overlay').remove()" style="background:var(--bg2)">Cancel</button>
@@ -1094,7 +1098,7 @@ function _renderMaintModal(savedType) {
                Log cost as a deductible expense
              </label>`
           : `<div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-top:8px">
-               <div style="font-size:11px;font-weight:700;color:var(--text3)">${svgIcon('📋',{size:11})} Records only — standard mileage method</div>
+               <div style="font-size:11px;font-weight:700;color:var(--text3)">${svgIcon('📋',{size:11})} Records only, standard mileage method</div>
                <div style="font-size:11px;color:var(--text3);margin-top:2px">Maintenance costs are not deducted separately. The IRS mileage rate already covers them. Switch to actual expenses in vehicle settings to deduct real costs.</div>
              </div>`
         }
@@ -1189,7 +1193,7 @@ function _renderMaintTypeFields(type, rec) {
         <div class="fg fg2">
           <div class="f"><label>Oil type</label>
             <select id="m-oil-type">
-              <option value="">— Select —</option>
+              <option value="">- Select -</option>
               ${['0W-20 Full Synthetic','5W-20 Full Synthetic','5W-30 Full Synthetic','5W-30 Semi-Synthetic','5W-30 Conventional','5W-40 Full Synthetic','10W-30 Conventional','10W-40 Conventional','0W-16 Full Synthetic','Diesel 15W-40'].map(o=>`<option${rec&&rec.oilType===o?' selected':''}>${o}</option>`).join('')}
             </select>
           </div>
@@ -1209,7 +1213,7 @@ function _renderMaintTypeFields(type, rec) {
       <div class="fg fg2">
         <div class="f"><label>Axle</label>
           <select id="m-brake-axle">
-            <option value="">— Select —</option>
+            <option value="">- Select -</option>
             <option value="front" ${rec&&rec.brakeAxle==='front'?'selected':''}>Front</option>
             <option value="rear" ${rec&&rec.brakeAxle==='rear'?'selected':''}>Rear</option>
             <option value="both" ${rec&&rec.brakeAxle==='both'?'selected':''}>Both axles</option>
@@ -1326,7 +1330,7 @@ function saveMaintRecord() {
     rec.partNum = pnEl ? (pnEl.value||'').trim() : '';
   }
 
-  // Auto-create expense — only for actual expense method
+  // Auto-create expense, only for actual expense method
   const isActualMethod = v.deductionMethod === 'actual';
   const makeExpEl = document.getElementById('maint-make-expense');
   const makeExpense = isActualMethod && makeExpEl ? makeExpEl.checked : false;
@@ -1336,11 +1340,11 @@ function saveMaintRecord() {
       id: expId,
       date,
       cat: 'vehicle',
-      catLabel: 'Vehicle — maintenance',
+      catLabel: 'Vehicle: maintenance',
       vendor: vendor||(v.nickname||v.name),
       vehicleName: v.name,
       amount: cost,
-      notes: (MAINT_TYPES[type]?MAINT_TYPES[type].label:type)+(notes?' — '+notes:''),
+      notes: (MAINT_TYPES[type]?MAINT_TYPES[type].label:type)+(notes?', '+notes:''),
       deductible: true,
       created_at: new Date().toISOString(),
     });
@@ -1368,7 +1372,7 @@ function saveMaintRecord() {
 
 function deleteMaintenanceRecord(id) {
   zConfirm('Delete this service record?', () => {
-    // _userDelete records the id for the cloud sweep — without it the removed
+    // _userDelete records the id for the cloud sweep, without it the removed
     // row survives in td_maintenance and resurrects on the next load.
     _userDelete(() => {
       const idx = maintenance.findIndex(m=>m.id===id);

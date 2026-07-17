@@ -1,15 +1,15 @@
 // @ts-check
 /**
- * E2E tests — client hub Documents upgrades:
+ * E2E tests, client hub Documents upgrades:
  *
  * 1. Signed Agreement row shows signer name + date/time (from bid fields the
  *    sig-check populates out of signed_proposals).
  * 2. EPA Renovate Right Disclosure appears as its own document row with the
  *    acknowledgement signature metadata (doc 2 of the unified signing flow).
  * 3. Notice of Cancellation is a 3-step friction flow:
- *    Step 1 — reason picker (must select before continuing)
- *    Step 2 — "talk to contractor first" interstitial with call/text links
- *    Step 3 — timed signature form (5-second countdown before submit enables)
+ *    Step 1, reason picker (must select before continuing)
+ *    Step 2, "talk to contractor first" interstitial with call/text links
+ *    Step 3, timed signature form (5-second countdown before submit enables)
  *    Confirmed state once cancelled_at is set.
  */
 
@@ -68,8 +68,8 @@ async function skipToCancelForm(page) {
   }, FAKE_BID_ID_1);
 }
 
-test.describe('Hub Documents — signature metadata + EPA disclosure doc', () => {
-  test('client.html defines escHtml — signature block renders without ReferenceError', async ({ page }) => {
+test.describe('Hub Documents, signature metadata + EPA disclosure doc', () => {
+  test('client.html defines escHtml, signature block renders without ReferenceError', async ({ page }) => {
     await bootHub(page, hubWith());
     const fnType = await page.evaluate(() => typeof escHtml);
     expect(fnType, 'escHtml must be defined in client.html').toBe('function');
@@ -117,8 +117,8 @@ test.describe('Hub Documents — signature metadata + EPA disclosure doc', () =>
   });
 });
 
-test.describe('Notice of Cancellation — 3-step friction flow', () => {
-  test('step 1 shows reason picker — Continue disabled until a reason is selected', async ({ page }) => {
+test.describe('Notice of Cancellation, 3-step friction flow', () => {
+  test('step 1 shows reason picker, Continue disabled until a reason is selected', async ({ page }) => {
     await bootHub(page, hubWith());
     await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
     // Reason buttons present
@@ -132,7 +132,7 @@ test.describe('Notice of Cancellation — 3-step friction flow', () => {
   });
 
   test('regression: "Cancellation window open" banner renders an SVG icon, not a bare hourglass emoji', async ({ page }) => {
-    // This exact call site was missed by the codebase-wide emoji→SVG icon sweep —
+    // This exact call site was missed by the codebase-wide emoji→SVG icon sweep,
     // caught by manual audit after the fact. Locking it in so it can't regress.
     await bootHub(page, hubWith());
     await page.evaluate(id => _showCancelForm(id), FAKE_BID_ID_1);
@@ -238,13 +238,13 @@ test.describe('Notice of Cancellation — 3-step friction flow', () => {
 
 // ── Declined proposals must NEVER render as signed ────────────────────────────
 // Live bug (owner screenshot, 2026-07-07): a client declined a proposal and the
-// hub viewer showed a full "CLIENT SIGNATURE — Signed by <name>" block with a
+// hub viewer showed a full "CLIENT SIGNATURE, Signed by <name>" block with a
 // timestamp. Root cause: a decline writes a signed_proposals row too
-// (payment_status='declined', signed_at = decline time — that's how the
+// (payment_status='declined', signed_at = decline time, that's how the
 // contractor app learns of it), and _mergeSignedProposals treated EVERY row in
-// that table as a signature — promoting the declined bid to Closed Won and
+// that table as a signature, promoting the declined bid to Closed Won and
 // stamping signedAt/signerName from the decline record.
-test.describe('Declined proposal — never rendered as signed', () => {
+test.describe('Declined proposal, never rendered as signed', () => {
   const DECLINED_ROW = {
     bid_id: String(FAKE_BID_ID_1),
     client_name: 'Logan Sample',
@@ -266,7 +266,7 @@ test.describe('Declined proposal — never rendered as signed', () => {
     }, DECLINED_ROW);
   }
 
-  test('_mergeSignedProposals: a declined row marks the bid Closed Lost — no signedAt, no signer, no balance', async ({ page }) => {
+  test('_mergeSignedProposals: a declined row marks the bid Closed Lost, no signedAt, no signer, no balance', async ({ page }) => {
     await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
     await mergeDeclined(page);
     const bid = await page.evaluate(() => {
@@ -282,9 +282,9 @@ test.describe('Declined proposal — never rendered as signed', () => {
     assertNoErrors(page, 'declined merge');
   });
 
-  test('opening a declined proposal shows a Declined notice — never a CLIENT SIGNATURE block', async ({ page }) => {
+  test('opening a declined proposal shows a Declined notice, never a CLIENT SIGNATURE block', async ({ page }) => {
     // The stored proposal JSON (MOCK_PROPOSAL, status:'pending') deliberately does
-    // NOT say declined — the decline state arrives via the merged bid, exactly like
+    // NOT say declined, the decline state arrives via the merged bid, exactly like
     // the live bug, so this exercises the bid.declinedAt guard in openProposal.
     await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
     await mergeDeclined(page);
@@ -299,7 +299,7 @@ test.describe('Declined proposal — never rendered as signed', () => {
     assertNoErrors(page, 'declined proposal viewer');
   });
 
-  test('opening a proposal shows no loading spinner — content only (owner)', async ({ page }) => {
+  test('opening a proposal shows no loading spinner, content only (owner)', async ({ page }) => {
     await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
     await page.evaluate(id => openProposal(id), FAKE_BID_ID_1);
     const early = await page.locator('#prop-content').innerHTML();   // just after the tap
@@ -313,7 +313,7 @@ test.describe('Declined proposal — never rendered as signed', () => {
     assertNoErrors(page, 'proposal open no spinner');
   });
 
-  test('boot overlay holds for a minimum dwell on a real (non-test) load — never flashes past', async ({ page }) => {
+  test('boot overlay holds for a minimum dwell on a real (non-test) load, never flashes past', async ({ page }) => {
     // Owner: the hub boot screen was way too fast. It now holds ≥ MIN_BOOT_MS.
     // The dwell is skipped under the mock so the wider suite stays fast;
     // _forceBootDwell opts this one test back into the real timing path.
@@ -323,9 +323,9 @@ test.describe('Declined proposal — never rendered as signed', () => {
       window._forceBootDwell = true;
       window._bootStart = Date.now();                  // reset the clock to "now"
       ov.style.display = 'flex'; ov.style.opacity = '1';
-      _dismissBootOverlay(false);                      // request dismiss — should be held, not instant
+      _dismissBootOverlay(false);                      // request dismiss, should be held, not instant
     });
-    // Wait via Playwright's (Node-side) timer, NOT an in-page setTimeout —
+    // Wait via Playwright's (Node-side) timer, NOT an in-page setTimeout,
     // webkit throttles page timers on CI, which could fire a 700ms in-page wait
     // AFTER the 2.8s dwell elapsed and flake this "still held" check.
     await page.waitForTimeout(700);                    // 700ms « MIN_BOOT_MS
@@ -335,7 +335,7 @@ test.describe('Declined proposal — never rendered as signed', () => {
     });
     expect(stillUp).toBe(true);   // still visible well after the old ~220ms dismiss would have fired
     // And it must eventually dismiss (not stick forever). Poll rather than a fixed
-    // wait — the dwell (~2.8s) plus the premium blur+scale exit fade (~.75s) means
+    // wait: the dwell (~2.8s) plus the premium blur+scale exit fade (~.75s) means
     // display:none lands ~3.6s in, and webkit's throttled CI timers add jitter.
     await page.waitForFunction(
       () => { const ov = document.getElementById('boot-overlay'); return ov && getComputedStyle(ov).display === 'none'; },
@@ -362,7 +362,7 @@ test.describe('Declined proposal — never rendered as signed', () => {
     expect(1.05 / (lum(denim) + 0.05)).toBeGreaterThanOrEqual(4.5);
   });
 
-  test('a genuinely signed row still merges as signed — the decline guard is exact', async ({ page }) => {
+  test('a genuinely signed row still merges as signed, the decline guard is exact', async ({ page }) => {
     await bootHub(page, hubWith({ status: 'Pending', signedAt: undefined, signerName: undefined }));
     await page.evaluate(async () => {
       const row = { bid_id: String(_hub.bids[0].id), client_signed_name: 'Alice Smith', payment_method: 'cash', payment_status: 'pending', signed_at: '2026-07-06T12:00:00.000Z' };
@@ -380,14 +380,14 @@ test.describe('Declined proposal — never rendered as signed', () => {
   });
 });
 
-// ── Hub snapshot freshness — HTTP cache bypass (stale-balance fix) ────────────
+// ── Hub snapshot freshness, HTTP cache bypass (stale-balance fix) ────────────
 // The hub snapshot JSON is rewritten in storage whenever the contractor logs a
 // payment, but Supabase storage's default cache-control: max-age=3600 let the
 // browser serve a stale copy (old balance + "Pay" CTA) for up to an hour.
 // client.html now fetches the public object URL with cache:'no-store' plus a
 // cb= cache-buster. The Supabase shim's in-page fetch interceptor records every
-// such request in window.__storageFetches (WebKit-safe — no page.route needed).
-test.describe('Hub snapshot — HTTP cache bypass', () => {
+// such request in window.__storageFetches (WebKit-safe: no page.route needed).
+test.describe('Hub snapshot, HTTP cache bypass', () => {
   test('hub snapshot is fetched with cache:no-store and a cb= cache-buster', async ({ page }) => {
     await bootHub(page, hubWith());
     const calls = await page.evaluate(() => window.__storageFetches || []);
@@ -443,7 +443,7 @@ test.describe('Hub snapshot — HTTP cache bypass', () => {
   });
 
   test('hub still renders via storage.download() fallback when the fresh fetch fails', async ({ page }) => {
-    // Simulate a CDN/public-URL failure — the app must fall back to download()
+    // Simulate a CDN/public-URL failure, the app must fall back to download()
     // and render normally (identical to the pre-fix read path).
     await page.addInitScript(() => { window.__storageFetchFail = true; });
     await bootHub(page, hubWith());
@@ -456,8 +456,8 @@ test.describe('Hub snapshot — HTTP cache bypass', () => {
   });
 });
 
-// ── Hub hero — stat tiles removed ────────────────────────────────────────────
-test.describe('Client hub hero — stat tiles removed', () => {
+// ── Hub hero, stat tiles removed ────────────────────────────────────────────
+test.describe('Client hub hero, stat tiles removed', () => {
   test('hub-hero does NOT render Paid / Balance / Photos tiles', async ({ page }) => {
     await bootHub(page, hubWith());
     const count = await page.locator('.hub-mini').count();

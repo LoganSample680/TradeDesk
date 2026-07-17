@@ -1,5 +1,5 @@
 // @ts-check
-// The ONE e-sign module (js/esign.js) — owner directive 2026-07-13: estimates,
+// The ONE e-sign module (js/esign.js): owner directive 2026-07-13: estimates,
 // change orders, job sign-offs, diagnostic charges, and GC-bid approvals all
 // run the exact same capture code, and the signed-document display block is
 // one shared component (client hub + owner record). These tests prove the
@@ -96,7 +96,7 @@ test.describe('shared e-sign module', () => {
     expect(result.after).toBe(false); // no leaked pads, no leaked listeners
   });
 
-  test('esignSigBlockHTML: one display component — image + Signed By/Date grid, extra cells, XSS-escaped', async () => {
+  test('esignSigBlockHTML: one display component, image + Signed By/Date grid, extra cells, XSS-escaped', async () => {
     const result = await page.evaluate(() => ({
       empty: esignSigBlockHTML({}),
       full: esignSigBlockHTML({ signerName: '<img src=x onerror=alert(1)>', signedAt: '2026-07-13T18:00:00Z', sigData: 'data:image/png;base64,AAA', cells: [{ label: 'Amount', value: '$150.00' }] }),

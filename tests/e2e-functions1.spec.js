@@ -1,7 +1,7 @@
 // @ts-check
 const { test, expect, mockAllExternal, _supabaseShim, _supabaseShimIntake, waitForAppBoot, goPg, assertNoErrors, FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL } = require('./helpers');
 
-test.describe('Data utilities — getClientById / getClientBids / parseD / fmt', () => {
+test.describe('Data utilities, getClientById / getClientBids / parseD / fmt', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -12,7 +12,7 @@ test.describe('Data utilities — getClientById / getClientBids / parseD / fmt',
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('getClientById — returns client when id matches', async () => {
+  test('getClientById: returns client when id matches', async () => {
     const result = await page.evaluate(() => {
       if (typeof getClientById !== 'function') return { skip: true };
       // seed a client
@@ -27,7 +27,7 @@ test.describe('Data utilities — getClientById / getClientBids / parseD / fmt',
     }
   });
 
-  test('getClientById — returns undefined for missing id', async () => {
+  test('getClientById: returns undefined for missing id', async () => {
     const result = await page.evaluate(() => {
       if (typeof getClientById !== 'function') return { skip: true };
       const found = getClientById('nonexistent-xyz-999');
@@ -36,11 +36,11 @@ test.describe('Data utilities — getClientById / getClientBids / parseD / fmt',
     if (!result.skip) expect(result.isUndefined).toBe(true);
   });
 
-  test('getClientBids — returns bids array for a client', async () => {
+  test('getClientBids: returns bids array for a client', async () => {
     const result = await page.evaluate(() => {
       if (typeof getClientBids !== 'function') return { skip: true };
       if (!window.bids) window.bids = [];
-      // Push a Closed Won bid — getClientBids includes closed-won bids
+      // Push a Closed Won bid, getClientBids includes closed-won bids
       bids.push({ id: 9002, clientId: 'test-c-002', status: 'Closed Won', amount: 800 });
       bids.push({ id: 9003, clientId: 'test-c-003', status: 'Closed Won', amount: 300 });
       const r = getClientBids('test-c-002');
@@ -52,7 +52,7 @@ test.describe('Data utilities — getClientById / getClientBids / parseD / fmt',
     }
   });
 
-  test('parseD — parses YYYY-MM-DD into Date object', async () => {
+  test('parseD: parses YYYY-MM-DD into Date object', async () => {
     const result = await page.evaluate(() => {
       if (typeof parseD !== 'function') return { skip: true };
       const d = parseD('2026-01-15');
@@ -65,7 +65,7 @@ test.describe('Data utilities — getClientById / getClientBids / parseD / fmt',
     }
   });
 
-  test('todayKey — returns YYYY-MM-DD string', async () => {
+  test('todayKey: returns YYYY-MM-DD string', async () => {
     const result = await page.evaluate(() => {
       if (typeof todayKey !== 'function') return { skip: true };
       const k = todayKey();
@@ -74,7 +74,7 @@ test.describe('Data utilities — getClientById / getClientBids / parseD / fmt',
     if (!result.skip) expect(result.valid).toBe(true);
   });
 
-  test('fmt — formats number as USD currency', async () => {
+  test('fmt: formats number as USD currency', async () => {
     const result = await page.evaluate(() => {
       if (typeof fmt !== 'function') return { skip: true };
       const r1 = fmt(1234.5);
@@ -87,7 +87,7 @@ test.describe('Data utilities — getClientById / getClientBids / parseD / fmt',
     }
   });
 
-  test('fmtPhone — formats phone string to XXX-XXX-XXXX', async () => {
+  test('fmtPhone: formats phone string to XXX-XXX-XXXX', async () => {
     const result = await page.evaluate(() => {
       if (typeof fmtPhone !== 'function') {
         if (typeof formatPhoneDisplay !== 'function') return { skip: true };
@@ -109,7 +109,7 @@ test.describe('Data utilities — getClientById / getClientBids / parseD / fmt',
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH B: Dashboard — renderDashToday, renderPipeline, renderLeadSources, etc.
+// BATCH B: Dashboard: renderDashToday, renderPipeline, renderLeadSources, etc.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Dashboard render functions', () => {
@@ -126,7 +126,7 @@ test.describe('Dashboard render functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderDashToday — runs without throwing', async () => {
+  test('renderDashToday: runs without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderDashToday !== 'function') return { skip: true };
       try { renderDashToday(); return { ok: true }; }
@@ -135,7 +135,7 @@ test.describe('Dashboard render functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('renderPipeline — runs without throwing', async () => {
+  test('renderPipeline: runs without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderPipeline !== 'function') return { skip: true };
       try { renderPipeline(); return { ok: true }; }
@@ -144,7 +144,7 @@ test.describe('Dashboard render functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('renderLeadSources — runs without throwing', async () => {
+  test('renderLeadSources: runs without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderLeadSources !== 'function') return { skip: true };
       try { renderLeadSources(); return { ok: true }; }
@@ -153,7 +153,7 @@ test.describe('Dashboard render functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('renderDashCollect — runs without throwing', async () => {
+  test('renderDashCollect: runs without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderDashCollect !== 'function') return { skip: true };
       try { renderDashCollect(); return { ok: true }; }
@@ -162,7 +162,7 @@ test.describe('Dashboard render functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('setDashFilter — changes filter without throwing', async () => {
+  test('setDashFilter: changes filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setDashFilter !== 'function') return { skip: true };
       try {
@@ -175,7 +175,7 @@ test.describe('Dashboard render functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('getNextCollAction — returns action object for each stage', async () => {
+  test('getNextCollAction: returns action object for each stage', async () => {
     const result = await page.evaluate(() => {
       if (typeof getNextCollAction !== 'function') return { skip: true };
       try {
@@ -190,7 +190,7 @@ test.describe('Dashboard render functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('markFollowupSent — updates bid follow-up stage', async () => {
+  test('markFollowupSent: updates bid follow-up stage', async () => {
     const result = await page.evaluate(() => {
       if (typeof markFollowupSent !== 'function') return { skip: true };
       try {
@@ -211,7 +211,7 @@ test.describe('Dashboard render functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH C: Clients — deleteClient, openEditClient, checkYearBuilt, setCF, renderClientHubPage
+// BATCH C: Clients: deleteClient, openEditClient, checkYearBuilt, setCF, renderClientHubPage
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Client management functions', () => {
@@ -234,7 +234,7 @@ test.describe('Client management functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('setCF — updates client filter without throwing', async () => {
+  test('setCF: updates client filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setCF !== 'function') return { skip: true };
       try {
@@ -247,7 +247,7 @@ test.describe('Client management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openEditClient — opens edit form for existing client', async () => {
+  test('openEditClient: opens edit form for existing client', async () => {
     const result = await page.evaluate(() => {
       if (typeof openEditClient !== 'function') return { skip: true };
       try {
@@ -259,7 +259,7 @@ test.describe('Client management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('checkYearBuilt — shows warning for pre-1978 buildings', async () => {
+  test('checkYearBuilt: shows warning for pre-1978 buildings', async () => {
     const result = await page.evaluate(() => {
       if (typeof checkYearBuilt !== 'function') return { skip: true };
       try {
@@ -278,7 +278,7 @@ test.describe('Client management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('checkYearBuilt — no warning for post-1978 buildings', async () => {
+  test('checkYearBuilt: no warning for post-1978 buildings', async () => {
     const result = await page.evaluate(() => {
       if (typeof checkYearBuilt !== 'function') return { skip: true };
       try {
@@ -292,7 +292,7 @@ test.describe('Client management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('renderClientHubPage — renders without throwing', async () => {
+  test('renderClientHubPage: renders without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderClientHubPage !== 'function') return { skip: true };
       try {
@@ -303,7 +303,7 @@ test.describe('Client management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('deleteClient — removes client after confirmation (stub zConfirm)', async () => {
+  test('deleteClient: removes client after confirmation (stub zConfirm)', async () => {
     const result = await page.evaluate(() => {
       if (typeof deleteClient !== 'function') return { skip: true };
       try {
@@ -324,7 +324,7 @@ test.describe('Client management functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH D: Jobs — openJobSheet, markJobDone, reopenJob, deleteJob, toggleScope, etc.
+// BATCH D: Jobs: openJobSheet, markJobDone, reopenJob, deleteJob, toggleScope, etc.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Jobs management functions', () => {
@@ -350,7 +350,7 @@ test.describe('Jobs management functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('setJobFilter — changes job filter without throwing', async () => {
+  test('setJobFilter: changes job filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setJobFilter !== 'function') return { skip: true };
       try {
@@ -361,7 +361,7 @@ test.describe('Jobs management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('setLeadFilter — changes lead filter without throwing', async () => {
+  test('setLeadFilter: changes lead filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setLeadFilter !== 'function') return { skip: true };
       try {
@@ -372,7 +372,7 @@ test.describe('Jobs management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('renderJobsPage — renders job list without throwing', async () => {
+  test('renderJobsPage: renders job list without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderJobsPage !== 'function') return { skip: true };
       try { renderJobsPage(); return { ok: true }; }
@@ -381,7 +381,7 @@ test.describe('Jobs management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('getBidStage — returns stage object for a bid', async () => {
+  test('getBidStage: returns stage object for a bid', async () => {
     const result = await page.evaluate(() => {
       if (typeof getBidStage !== 'function') return { skip: true };
       try {
@@ -397,7 +397,7 @@ test.describe('Jobs management functions', () => {
     }
   });
 
-  test('openJobSheet — opens job detail for client', async () => {
+  test('openJobSheet: opens job detail for client', async () => {
     const result = await page.evaluate(() => {
       if (typeof openJobSheet !== 'function') return { skip: true };
       try {
@@ -408,7 +408,7 @@ test.describe('Jobs management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('markJobDone — marks job as complete without throwing', async () => {
+  test('markJobDone: marks job as complete without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof markJobDone !== 'function') return { skip: true };
       try {
@@ -422,7 +422,7 @@ test.describe('Jobs management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('reopenJob — reopens completed job without throwing', async () => {
+  test('reopenJob: reopens completed job without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof reopenJob !== 'function') return { skip: true };
       try {
@@ -436,7 +436,7 @@ test.describe('Jobs management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('sendOMWText — constructs SMS link for client', async () => {
+  test('sendOMWText: constructs SMS link for client', async () => {
     const result = await page.evaluate(() => {
       if (typeof sendOMWText !== 'function') return { skip: true };
       try {
@@ -452,7 +452,7 @@ test.describe('Jobs management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openMapsForClient — attempts to open maps for client address', async () => {
+  test('openMapsForClient: attempts to open maps for client address', async () => {
     const result = await page.evaluate(() => {
       if (typeof openMapsForClient !== 'function') return { skip: true };
       try {
@@ -466,7 +466,7 @@ test.describe('Jobs management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('toggleScope — toggles scope item state without throwing', async () => {
+  test('toggleScope: toggles scope item state without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof toggleScope !== 'function') return { skip: true };
       try {
@@ -479,7 +479,7 @@ test.describe('Jobs management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('deleteJob — removes job after confirmation', async () => {
+  test('deleteJob: removes job after confirmation', async () => {
     const result = await page.evaluate(() => {
       if (typeof deleteJob !== 'function') return { skip: true };
       try {
@@ -500,7 +500,7 @@ test.describe('Jobs management functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH E: Mileage — openLogTripModal, delMileage, editMilePurpose, openMileageEdit
+// BATCH E: Mileage: openLogTripModal, delMileage, editMilePurpose, openMileageEdit
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Mileage tracking functions', () => {
@@ -522,7 +522,7 @@ test.describe('Mileage tracking functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('openLogTripModal — opens trip logging modal without throwing', async () => {
+  test('openLogTripModal: opens trip logging modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof openLogTripModal !== 'function') return { skip: true };
       try {
@@ -533,7 +533,7 @@ test.describe('Mileage tracking functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openLogTripModal — opens with pre-filled options', async () => {
+  test('openLogTripModal: opens with pre-filled options', async () => {
     const result = await page.evaluate(() => {
       if (typeof openLogTripModal !== 'function') return { skip: true };
       try {
@@ -544,7 +544,7 @@ test.describe('Mileage tracking functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openMileageEdit — opens edit modal for existing record', async () => {
+  test('openMileageEdit: opens edit modal for existing record', async () => {
     const result = await page.evaluate(() => {
       if (typeof openMileageEdit !== 'function') return { skip: true };
       try {
@@ -555,7 +555,7 @@ test.describe('Mileage tracking functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('editMilePurpose — updates purpose on existing mileage record', async () => {
+  test('editMilePurpose: updates purpose on existing mileage record', async () => {
     const result = await page.evaluate(() => {
       if (typeof editMilePurpose !== 'function') return { skip: true };
       try {
@@ -567,7 +567,7 @@ test.describe('Mileage tracking functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('delMileage — removes mileage record after confirmation', async () => {
+  test('delMileage: removes mileage record after confirmation', async () => {
     const result = await page.evaluate(() => {
       if (typeof delMileage !== 'function') return { skip: true };
       try {
@@ -588,7 +588,7 @@ test.describe('Mileage tracking functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH F: Bids — getClientRisk, setClientRisk, riskBadge, openEditBid, etc.
+// BATCH F: Bids: getClientRisk, setClientRisk, riskBadge, openEditBid, etc.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Bids management functions', () => {
@@ -613,7 +613,7 @@ test.describe('Bids management functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('getClientRisk — returns risk level string', async () => {
+  test('getClientRisk: returns risk level string', async () => {
     const result = await page.evaluate(() => {
       if (typeof getClientRisk !== 'function') return { skip: true };
       try {
@@ -627,7 +627,7 @@ test.describe('Bids management functions', () => {
     }
   });
 
-  test('setClientRisk — sets risk level on client', async () => {
+  test('setClientRisk: sets risk level on client', async () => {
     const result = await page.evaluate(() => {
       if (typeof setClientRisk !== 'function') return { skip: true };
       try {
@@ -639,7 +639,7 @@ test.describe('Bids management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('riskBadge — returns HTML string for risk levels', async () => {
+  test('riskBadge: returns HTML string for risk levels', async () => {
     const result = await page.evaluate(() => {
       if (typeof riskBadge !== 'function') return { skip: true };
       try {
@@ -653,7 +653,7 @@ test.describe('Bids management functions', () => {
     }
   });
 
-  test('openEditBid — opens existing bid in estimate form', async () => {
+  test('openEditBid: opens existing bid in estimate form', async () => {
     const result = await page.evaluate(() => {
       if (typeof openEditBid !== 'function') return { skip: true };
       try {
@@ -664,7 +664,7 @@ test.describe('Bids management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openPayPanel — opens payment modal without throwing', async () => {
+  test('openPayPanel: opens payment modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof openPayPanel !== 'function') return { skip: true };
       try {
@@ -675,7 +675,7 @@ test.describe('Bids management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('selectPayType — updates payment type UI without throwing', async () => {
+  test('selectPayType: updates payment type UI without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof selectPayType !== 'function') return { skip: true };
       try {
@@ -688,7 +688,7 @@ test.describe('Bids management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('deletePay — removes payment after confirmation', async () => {
+  test('deletePay: removes payment after confirmation', async () => {
     const result = await page.evaluate(() => {
       if (typeof deletePay !== 'function') return { skip: true };
       try {
@@ -704,7 +704,7 @@ test.describe('Bids management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('showFileLienDirect — opens lien filing modal without throwing', async () => {
+  test('showFileLienDirect: opens lien filing modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof showFileLienDirect !== 'function') return { skip: true };
       try {
@@ -715,7 +715,7 @@ test.describe('Bids management functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('autoFillPayAmount — runs without throwing (compatibility stub)', async () => {
+  test('autoFillPayAmount: runs without throwing (compatibility stub)', async () => {
     const result = await page.evaluate(() => {
       if (typeof autoFillPayAmount !== 'function') return { skip: true };
       try { autoFillPayAmount(); return { ok: true }; }
@@ -730,7 +730,7 @@ test.describe('Bids management functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH G: Proposals — syncAdj, showAdjReasonSheet, initSigPad, sendClientHubLink, etc.
+// BATCH G: Proposals: syncAdj, showAdjReasonSheet, initSigPad, sendClientHubLink, etc.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Proposals functions', () => {
@@ -753,7 +753,7 @@ test.describe('Proposals functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('syncAdj — runs without throwing', async () => {
+  test('syncAdj: runs without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof syncAdj !== 'function') return { skip: true };
       try { syncAdj(); return { ok: true }; }
@@ -762,7 +762,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('showAdjReasonSheet — shows modal without throwing', async () => {
+  test('showAdjReasonSheet: shows modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof showAdjReasonSheet !== 'function') return { skip: true };
       try {
@@ -773,7 +773,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('adjReasonPillTap — handles pill selection without throwing', async () => {
+  test('adjReasonPillTap: handles pill selection without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof adjReasonPillTap !== 'function') return { skip: true };
       try {
@@ -784,7 +784,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('confirmAdjReason — saves adjustment reason without throwing', async () => {
+  test('confirmAdjReason: saves adjustment reason without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof confirmAdjReason !== 'function') return { skip: true };
       try {
@@ -795,7 +795,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('clearAdjReason — clears adjustment without throwing', async () => {
+  test('clearAdjReason: clears adjustment without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof clearAdjReason !== 'function') return { skip: true };
       try { clearAdjReason(); return { ok: true }; }
@@ -804,7 +804,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('closeAdjSheetSnap — dismisses sheet without throwing', async () => {
+  test('closeAdjSheetSnap: dismisses sheet without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof closeAdjSheetSnap !== 'function') return { skip: true };
       try { closeAdjSheetSnap(); return { ok: true }; }
@@ -813,7 +813,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('initSigPad — initializes signature canvas without throwing', async () => {
+  test('initSigPad: initializes signature canvas without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof initSigPad !== 'function') return { skip: true };
       try {
@@ -827,7 +827,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('updateTypedSig — updates typed sig preview without throwing', async () => {
+  test('updateTypedSig: updates typed sig preview without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof updateTypedSig !== 'function') return { skip: true };
       try {
@@ -841,7 +841,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('hasSignature — returns boolean', async () => {
+  test('hasSignature: returns boolean', async () => {
     const result = await page.evaluate(() => {
       if (typeof hasSignature !== 'function') return { skip: true };
       try {
@@ -855,7 +855,7 @@ test.describe('Proposals functions', () => {
     }
   });
 
-  test('sendProposalViaSms — opens SMS without throwing', async () => {
+  test('sendProposalViaSms: opens SMS without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof sendProposalViaSms !== 'function') return { skip: true };
       try {
@@ -869,7 +869,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('sendClientHubLink — shows hub link modal without throwing', async () => {
+  test('sendClientHubLink: shows hub link modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof sendClientHubLink !== 'function') return { skip: true };
       try {
@@ -880,7 +880,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openGalleryUpload — opens photo upload modal without throwing', async () => {
+  test('openGalleryUpload: opens photo upload modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof openGalleryUpload !== 'function') return { skip: true };
       try {
@@ -891,7 +891,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('renderGallery — renders photo gallery without throwing', async () => {
+  test('renderGallery: renders photo gallery without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderGallery !== 'function') return { skip: true };
       try { renderGallery(); return { ok: true }; }
@@ -900,7 +900,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('setGalleryFilter — updates gallery filter without throwing', async () => {
+  test('setGalleryFilter: updates gallery filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setGalleryFilter !== 'function') return { skip: true };
       try {
@@ -914,7 +914,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('markBidHandshake — marks bid as won without signature', async () => {
+  test('markBidHandshake: marks bid as won without signature', async () => {
     const result = await page.evaluate(() => {
       if (typeof markBidHandshake !== 'function') return { skip: true };
       try {
@@ -928,7 +928,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('saveAndExitEstimate — saves and exits estimate without throwing', async () => {
+  test('saveAndExitEstimate: saves and exits estimate without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof saveAndExitEstimate !== 'function') return { skip: true };
       try {
@@ -939,7 +939,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('checkStep1Ready — validates step 1 form state', async () => {
+  test('checkStep1Ready: validates step 1 form state', async () => {
     const result = await page.evaluate(() => {
       if (typeof checkStep1Ready !== 'function') return { skip: true };
       try { checkStep1Ready(); return { ok: true }; }
@@ -948,7 +948,7 @@ test.describe('Proposals functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('prefillEstimateRates — prefills form with saved rates', async () => {
+  test('prefillEstimateRates: prefills form with saved rates', async () => {
     const result = await page.evaluate(() => {
       if (typeof prefillEstimateRates !== 'function') return { skip: true };
       try { prefillEstimateRates(); return { ok: true }; }
@@ -963,7 +963,7 @@ test.describe('Proposals functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH H: Finance — renderExpenses, renderIncome, exportAllDataCSV, scheduleJob, etc.
+// BATCH H: Finance: renderExpenses, renderIncome, exportAllDataCSV, scheduleJob, etc.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Finance functions', () => {
@@ -989,7 +989,7 @@ test.describe('Finance functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderExpenses — renders expense list without throwing', async () => {
+  test('renderExpenses: renders expense list without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderExpenses !== 'function') return { skip: true };
       try { renderExpenses(); return { ok: true }; }
@@ -998,7 +998,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('renderIncome — renders income list without throwing', async () => {
+  test('renderIncome: renders income list without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderIncome !== 'function') return { skip: true };
       try { renderIncome(); return { ok: true }; }
@@ -1033,7 +1033,7 @@ test.describe('Finance functions', () => {
     expect(r.hasDay).toBe(true);                   // nested day accordion
   });
 
-  test('renderMonthlyPL — renders P&L summary without throwing', async () => {
+  test('renderMonthlyPL: renders P&L summary without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderMonthlyPL !== 'function') return { skip: true };
       try { renderMonthlyPL(); return { ok: true }; }
@@ -1042,7 +1042,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('renderTrackerTab — renders tracker tab without throwing', async () => {
+  test('renderTrackerTab: renders tracker tab without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderTrackerTab !== 'function') return { skip: true };
       try { renderTrackerTab(); return { ok: true }; }
@@ -1051,7 +1051,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('setMoneyFilter — changes filter without throwing', async () => {
+  test('setMoneyFilter: changes filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setMoneyFilter !== 'function') return { skip: true };
       try {
@@ -1065,7 +1065,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('editExpense — opens edit form for existing expense', async () => {
+  test('editExpense: opens edit form for existing expense', async () => {
     const result = await page.evaluate(() => {
       if (typeof editExpense !== 'function') return { skip: true };
       try {
@@ -1076,7 +1076,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('delExpense — removes expense after confirmation', async () => {
+  test('delExpense: removes expense after confirmation', async () => {
     const result = await page.evaluate(() => {
       if (typeof delExpense !== 'function') return { skip: true };
       try {
@@ -1090,7 +1090,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('exportAllDataCSV — triggers download without throwing', async () => {
+  test('exportAllDataCSV: triggers download without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof exportAllDataCSV !== 'function') return { skip: true };
       try {
@@ -1112,7 +1112,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('exportIncomeCSV — triggers download without throwing', async () => {
+  test('exportIncomeCSV: triggers download without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof exportIncomeCSV !== 'function') return { skip: true };
       try {
@@ -1130,7 +1130,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('exportMileageCSV — triggers download without throwing', async () => {
+  test('exportMileageCSV: triggers download without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof exportMileageCSV !== 'function') return { skip: true };
       try {
@@ -1148,7 +1148,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('exportFullBackup — triggers JSON backup download without throwing', async () => {
+  test('exportFullBackup: triggers JSON backup download without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof exportFullBackup !== 'function') return { skip: true };
       try {
@@ -1166,7 +1166,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('getLienTimeline — returns timeline object with correct fields', async () => {
+  test('getLienTimeline: returns timeline object with correct fields', async () => {
     const result = await page.evaluate(() => {
       if (typeof getLienTimeline !== 'function') return { skip: true };
       try {
@@ -1179,7 +1179,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('getAutoCollStage — returns appropriate stage for days unpaid', async () => {
+  test('getAutoCollStage: returns appropriate stage for days unpaid', async () => {
     const result = await page.evaluate(() => {
       if (typeof getAutoCollStage !== 'function') return { skip: true };
       try {
@@ -1192,7 +1192,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('scheduleJob — creates job from schedule form without throwing', async () => {
+  test('scheduleJob: creates job from schedule form without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof scheduleJob !== 'function') return { skip: true };
       try {
@@ -1217,7 +1217,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('showDailyBriefing — shows briefing modal without throwing', async () => {
+  test('showDailyBriefing: shows briefing modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof showDailyBriefing !== 'function') return { skip: true };
       try { showDailyBriefing(); return { ok: true }; }
@@ -1226,7 +1226,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('refreshAvail — updates availability calendar without throwing', async () => {
+  test('refreshAvail: updates availability calendar without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof refreshAvail !== 'function') return { skip: true };
       try { refreshAvail(); return { ok: true }; }
@@ -1235,7 +1235,7 @@ test.describe('Finance functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('getNextAvail — returns next available date object', async () => {
+  test('getNextAvail: returns next available date object', async () => {
     const result = await page.evaluate(() => {
       if (typeof getNextAvail !== 'function') return { skip: true };
       try {
@@ -1252,7 +1252,7 @@ test.describe('Finance functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH I: Settings — renderLicensing, obStep1–9, addTimeOff, addVehicle, etc.
+// BATCH I: Settings: renderLicensing, obStep1–9, addTimeOff, addVehicle, etc.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Settings functions', () => {
@@ -1270,7 +1270,7 @@ test.describe('Settings functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderLicensing — renders licensing page without throwing', async () => {
+  test('renderLicensing: renders licensing page without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderLicensing !== 'function') return { skip: true };
       try { renderLicensing(); return { ok: true }; }
@@ -1279,7 +1279,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('setLicFilter — changes license filter without throwing', async () => {
+  test('setLicFilter: changes license filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setLicFilter !== 'function') return { skip: true };
       try {
@@ -1290,7 +1290,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openAddLicense — opens license add modal without throwing', async () => {
+  test('openAddLicense: opens license add modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof openAddLicense !== 'function') return { skip: true };
       try { openAddLicense(); return { ok: true }; }
@@ -1299,7 +1299,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('saveLicenseModal — validates and saves license record', async () => {
+  test('saveLicenseModal: validates and saves license record', async () => {
     const result = await page.evaluate(() => {
       if (typeof saveLicenseModal !== 'function') return { skip: true };
       try {
@@ -1318,7 +1318,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('addTimeOff — adds time-off block to schedule', async () => {
+  test('addTimeOff: adds time-off block to schedule', async () => {
     const result = await page.evaluate(() => {
       if (typeof addTimeOff !== 'function') return { skip: true };
       try {
@@ -1329,7 +1329,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('removeTimeOff — removes time-off block by index', async () => {
+  test('removeTimeOff: removes time-off block by index', async () => {
     const result = await page.evaluate(() => {
       if (typeof removeTimeOff !== 'function') return { skip: true };
       try {
@@ -1342,7 +1342,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('getTimeOffDays — returns Set of blocked dates', async () => {
+  test('getTimeOffDays: returns Set of blocked dates', async () => {
     const result = await page.evaluate(() => {
       if (typeof getTimeOffDays !== 'function') return { skip: true };
       try {
@@ -1356,7 +1356,7 @@ test.describe('Settings functions', () => {
     }
   });
 
-  test('addVehicle — adds vehicle from input fields', async () => {
+  test('addVehicle: adds vehicle from input fields', async () => {
     const result = await page.evaluate(() => {
       if (typeof addVehicle !== 'function') return { skip: true };
       try {
@@ -1373,7 +1373,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('removeVehicle — removes vehicle by index', async () => {
+  test('removeVehicle: removes vehicle by index', async () => {
     const result = await page.evaluate(() => {
       if (typeof removeVehicle !== 'function') return { skip: true };
       try {
@@ -1386,7 +1386,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('getVehicles — returns array of vehicle objects', async () => {
+  test('getVehicles: returns array of vehicle objects', async () => {
     const result = await page.evaluate(() => {
       if (typeof getVehicles !== 'function') return { skip: true };
       try {
@@ -1400,7 +1400,7 @@ test.describe('Settings functions', () => {
     }
   });
 
-  test('applySettings — applies tax settings without throwing', async () => {
+  test('applySettings: applies tax settings without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof applySettings !== 'function') return { skip: true };
       try { applySettings(); return { ok: true }; }
@@ -1409,7 +1409,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('resetSettings — resets to defaults with confirmation', async () => {
+  test('resetSettings: resets to defaults with confirmation', async () => {
     const result = await page.evaluate(() => {
       if (typeof resetSettings !== 'function') return { skip: true };
       try {
@@ -1423,33 +1423,10 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('obStep1 — renders onboarding step 1 without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep1 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep1(el);
-        return { ok: true, hasContent: el.innerHTML.length > 0 };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep2 — renders onboarding step 2 without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep2 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep2(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep3 — renders trade selection step', async () => {
+  // obStep1/2/4/5/6/7/9 deleted in the 11→3 onboarding restructure (§9.9). Step 1
+  // is now obStepAccount (covered in e2e-functions3); step 2 = obStep3 (trade),
+  // step 3 = obStep8 (payments): both still tested below.
+  test('obStep3: renders trade selection step', async () => {
     const result = await page.evaluate(() => {
       if (typeof obStep3 !== 'function') return { skip: true };
       try {
@@ -1462,59 +1439,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('obStep4 — renders business info step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep4 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep4(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep5 — renders role selection step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep5 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep5(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep6 — renders vehicle step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep6 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep6(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep7 — renders team member step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep7 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep7(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('obStep8 — renders payment setup step', async () => {
+  test('obStep8: renders payment setup step', async () => {
     const result = await page.evaluate(() => {
       if (typeof obStep8 !== 'function') return { skip: true };
       try {
@@ -1527,24 +1452,11 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('obStep9 — renders final review step', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof obStep9 !== 'function') return { skip: true };
-      try {
-        const el = document.createElement('div');
-        document.body.appendChild(el);
-        obStep9(el);
-        return { ok: true };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('clearAllData — requires double confirmation (cancel at first)', async () => {
+  test('clearAllData: requires double confirmation (cancel at first)', async () => {
     const result = await page.evaluate(() => {
       if (typeof clearAllData !== 'function') return { skip: true };
       try {
-        // Cancel at first confirmation — data should NOT be cleared
+        // Cancel at first confirmation, data should NOT be cleared
         const origConfirm = window.zConfirm;
         let callCount = 0;
         window.zConfirm = (msg, cb, opts) => { callCount++; /* do NOT call cb */ };
@@ -1556,7 +1468,7 @@ test.describe('Settings functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_smsApply — substitutes template variables', async () => {
+  test('_smsApply: substitutes template variables', async () => {
     const result = await page.evaluate(() => {
       if (typeof _smsApply !== 'function') return { skip: true };
       try {
@@ -1569,7 +1481,7 @@ test.describe('Settings functions', () => {
     }
   });
 
-  test('_getSmsDefaults — returns default SMS templates object', async () => {
+  test('_getSmsDefaults: returns default SMS templates object', async () => {
     const result = await page.evaluate(() => {
       if (typeof _getSmsDefaults !== 'function') return { skip: true };
       try {
@@ -1589,7 +1501,7 @@ test.describe('Settings functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH J: Cloud — renderTeam, openAddEmployeeModal, _enterOfflineMode, autoEscalate, etc.
+// BATCH J: Cloud: renderTeam, openAddEmployeeModal, _enterOfflineMode, autoEscalate, etc.
 // ═══════════════════════════════════════════════════════════════════════════════
 
 test.describe('Cloud / team functions', () => {
@@ -1610,7 +1522,7 @@ test.describe('Cloud / team functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('renderTeam — renders team roster without throwing', async () => {
+  test('renderTeam: renders team roster without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderTeam !== 'function') return { skip: true };
       try { renderTeam(); return { ok: true }; }
@@ -1619,7 +1531,7 @@ test.describe('Cloud / team functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openAddEmployeeModal — opens employee add modal without throwing', async () => {
+  test('openAddEmployeeModal: opens employee add modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof openAddEmployeeModal !== 'function') return { skip: true };
       try { openAddEmployeeModal(); return { ok: true }; }
@@ -1628,7 +1540,7 @@ test.describe('Cloud / team functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('removeEmployee — removes employee by index after confirmation', async () => {
+  test('removeEmployee: removes employee by index after confirmation', async () => {
     const result = await page.evaluate(() => {
       if (typeof removeEmployee !== 'function') return { skip: true };
       try {
@@ -1642,7 +1554,7 @@ test.describe('Cloud / team functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('autoEscalateProposals — scans bids without throwing', async () => {
+  test('autoEscalateProposals, scans bids without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof autoEscalateProposals !== 'function') return { skip: true };
       try { autoEscalateProposals(); return { ok: true }; }
@@ -1651,7 +1563,7 @@ test.describe('Cloud / team functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('showScheduleSuggestion — shows scheduling modal without throwing', async () => {
+  test('showScheduleSuggestion, shows scheduling modal without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof showScheduleSuggestion !== 'function') return { skip: true };
       try {
@@ -1662,7 +1574,7 @@ test.describe('Cloud / team functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_enterOfflineMode — transitions to offline without throwing', async () => {
+  test('_enterOfflineMode: transitions to offline without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _enterOfflineMode !== 'function') return { skip: true };
       try {
@@ -1679,10 +1591,10 @@ test.describe('Cloud / team functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH K: Generic Estimate — trade selection, T&M functions, BYO, industrial
+// BATCH K: Generic Estimate, trade selection, T&M functions, BYO, industrial
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Generic estimate — trade switcher and T&M functions', () => {
+test.describe('Generic estimate, trade switcher and T&M functions', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -1702,7 +1614,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('openBidNotes — stores bidId without throwing', async () => {
+  test('openBidNotes: stores bidId without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof openBidNotes !== 'function') return { skip: true };
       try {
@@ -1713,7 +1625,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('showNotesFab / hideNotesFab — stub functions run without throwing', async () => {
+  test('showNotesFab / hideNotesFab: stub functions run without throwing', async () => {
     const result = await page.evaluate(() => {
       const fns = [showNotesFab, hideNotesFab, toggleNotesPanel, clearNotesPanel, _resetNotesForNewEstimate];
       const available = fns.filter(f => typeof f === 'function');
@@ -1726,7 +1638,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('applyPermissions — updates UI based on user role without throwing', async () => {
+  test('applyPermissions: updates UI based on user role without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof applyPermissions !== 'function') return { skip: true };
       try { applyPermissions(); return { ok: true }; }
@@ -1735,7 +1647,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('getActiveTrade — returns current trade string', async () => {
+  test('getActiveTrade: returns current trade string', async () => {
     const result = await page.evaluate(() => {
       if (typeof getActiveTrade !== 'function') return { skip: true };
       try {
@@ -1749,7 +1661,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     }
   });
 
-  test('setActiveTrade — sets active trade without throwing', async () => {
+  test('setActiveTrade: sets active trade without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setActiveTrade !== 'function') return { skip: true };
       try {
@@ -1761,7 +1673,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_getTradeLines — returns array of trade strings', async () => {
+  test('_getTradeLines: returns array of trade strings', async () => {
     const result = await page.evaluate(() => {
       if (typeof _getTradeLines !== 'function') return { skip: true };
       try {
@@ -1775,7 +1687,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     }
   });
 
-  test('_renderNavTradeSwitcher — renders trade pills without throwing', async () => {
+  test('_renderNavTradeSwitcher, renders trade pills without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _renderNavTradeSwitcher !== 'function') return { skip: true };
       try { _renderNavTradeSwitcher(); return { ok: true }; }
@@ -1784,7 +1696,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('setHittersFilter — sets hitters filter without throwing', async () => {
+  test('setHittersFilter: sets hitters filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setHittersFilter !== 'function') return { skip: true };
       try {
@@ -1798,7 +1710,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openGenericEstimate — opens generic estimate for client', async () => {
+  test('openGenericEstimate: opens generic estimate for client', async () => {
     const result = await page.evaluate(() => {
       if (typeof openGenericEstimate !== 'function') return { skip: true };
       try {
@@ -1811,7 +1723,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openTMEstimate — opens T&M estimate without throwing', async () => {
+  test('openTMEstimate: opens T&M estimate without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof openTMEstimate !== 'function') return { skip: true };
       try {
@@ -1824,7 +1736,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('openFreeFormEstimate — opens free-form estimate without throwing', async () => {
+  test('openFreeFormEstimate: opens free-form estimate without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof openFreeFormEstimate !== 'function') return { skip: true };
       try {
@@ -1837,7 +1749,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmAdj — adjusts crew count without throwing', async () => {
+  test('_tmAdj: adjusts crew count without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmAdj !== 'function') return { skip: true };
       try {
@@ -1849,7 +1761,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmRecalc — recalculates T&M labor without throwing', async () => {
+  test('_tmRecalc: recalculates T&M labor without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmRecalc !== 'function') return { skip: true };
       try { _tmRecalc(); return { ok: true }; }
@@ -1858,7 +1770,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmCalcDeposit — calculates deposit amount without throwing', async () => {
+  test('_tmCalcDeposit: calculates deposit amount without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmCalcDeposit !== 'function') return { skip: true };
       try { _tmCalcDeposit(); return { ok: true }; }
@@ -1867,7 +1779,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmCalcNte — updates NTE cap without throwing', async () => {
+  test('_tmCalcNte: updates NTE cap without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmCalcNte !== 'function') return { skip: true };
       try { _tmCalcNte(); return { ok: true }; }
@@ -1876,7 +1788,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmSetCycle — sets billing cycle without throwing', async () => {
+  test('_tmSetCycle: sets billing cycle without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmSetCycle !== 'function') return { skip: true };
       try {
@@ -1887,7 +1799,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmSyncCycleButtons — syncs cycle button state without throwing', async () => {
+  test('_tmSyncCycleButtons: syncs cycle button state without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmSyncCycleButtons !== 'function') return { skip: true };
       try { _tmSyncCycleButtons(); return { ok: true }; }
@@ -1896,7 +1808,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmShowPage — renders T&M single-page layout without throwing', async () => {
+  test('_tmShowPage: renders T&M single-page layout without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmShowPage !== 'function') return { skip: true };
       try { _tmShowPage(); return { ok: true }; }
@@ -1905,7 +1817,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmInputChange — syncs T&M inputs without throwing', async () => {
+  test('_tmInputChange: syncs T&M inputs without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmInputChange !== 'function') return { skip: true };
       try { _tmInputChange(); return { ok: true }; }
@@ -1914,7 +1826,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_tmRenderMatList — renders material list without throwing', async () => {
+  test('_tmRenderMatList: renders material list without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _tmRenderMatList !== 'function') return { skip: true };
       try { _tmRenderMatList(); return { ok: true }; }
@@ -1923,7 +1835,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('calcGeiTotal — calculates total from line items', async () => {
+  test('calcGeiTotal: calculates total from line items', async () => {
     const result = await page.evaluate(() => {
       if (typeof calcGeiTotal !== 'function') return { skip: true };
       try {
@@ -1938,7 +1850,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('renderGeiLines — renders line items without throwing', async () => {
+  test('renderGeiLines: renders line items without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderGeiLines !== 'function') return { skip: true };
       try { renderGeiLines(); return { ok: true }; }
@@ -1947,7 +1859,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('addGeiLine — adds blank line to estimate', async () => {
+  test('addGeiLine: adds blank line to estimate', async () => {
     const result = await page.evaluate(() => {
       if (typeof addGeiLine !== 'function') return { skip: true };
       try {
@@ -1960,7 +1872,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geiSyncScopeButtons — syncs scope button states without throwing', async () => {
+  test('_geiSyncScopeButtons: syncs scope button states without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiSyncScopeButtons !== 'function') return { skip: true };
       try { _geiSyncScopeButtons(); return { ok: true }; }
@@ -1969,7 +1881,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geiSetScope — sets commercial/residential scope without throwing', async () => {
+  test('_geiSetScope: sets commercial/residential scope without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiSetScope !== 'function') return { skip: true };
       try {
@@ -1982,7 +1894,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geiToggleEmergency — toggles emergency mode without throwing', async () => {
+  test('_geiToggleEmergency: toggles emergency mode without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiToggleEmergency !== 'function') return { skip: true };
       try {
@@ -1994,7 +1906,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geiPriceMult — returns numeric multiplier', async () => {
+  test('_geiPriceMult: returns numeric multiplier', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiPriceMult !== 'function') return { skip: true };
       try {
@@ -2009,7 +1921,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     }
   });
 
-  test('_geiLocationMult — returns numeric state multiplier', async () => {
+  test('_geiLocationMult: returns numeric state multiplier', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiLocationMult !== 'function') return { skip: true };
       try {
@@ -2023,7 +1935,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     }
   });
 
-  test('_geiTierBadge — returns HTML string', async () => {
+  test('_geiTierBadge: returns HTML string', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiTierBadge !== 'function') return { skip: true };
       try {
@@ -2037,7 +1949,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     }
   });
 
-  test('_geiRenderCartBar — renders cart bar without throwing', async () => {
+  test('_geiRenderCartBar: renders cart bar without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiRenderCartBar !== 'function') return { skip: true };
       try { _geiRenderCartBar(); return { ok: true }; }
@@ -2046,7 +1958,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geiRenderStepBar — renders wizard step bar without throwing', async () => {
+  test('_geiRenderStepBar: renders wizard step bar without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiRenderStepBar !== 'function') return { skip: true };
       try { _geiRenderStepBar(); return { ok: true }; }
@@ -2055,7 +1967,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_byoShowPage — renders BYO layout without throwing', async () => {
+  test('_byoShowPage: renders BYO layout without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _byoShowPage !== 'function') return { skip: true };
       try { _byoShowPage(); return { ok: true }; }
@@ -2064,7 +1976,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_byoRenderSections — renders BYO sections without throwing', async () => {
+  test('_byoRenderSections: renders BYO sections without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _byoRenderSections !== 'function') return { skip: true };
       try { _byoRenderSections(); return { ok: true }; }
@@ -2073,7 +1985,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_byoUpdateRail — updates BYO totals without throwing', async () => {
+  test('_byoUpdateRail: updates BYO totals without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _byoUpdateRail !== 'function') return { skip: true };
       try { _byoUpdateRail(); return { ok: true }; }
@@ -2082,7 +1994,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_byoToggle — toggles BYO item state without throwing', async () => {
+  test('_byoToggle: toggles BYO item state without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _byoToggle !== 'function') return { skip: true };
       try {
@@ -2094,7 +2006,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geiRenderTemplates — renders service templates without throwing', async () => {
+  test('_geiRenderTemplates: renders service templates without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiRenderTemplates !== 'function') return { skip: true };
       try { _geiRenderTemplates(); return { ok: true }; }
@@ -2103,7 +2015,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('_geiVisibleJobIds — returns Set or null without throwing', async () => {
+  test('_geiVisibleJobIds: returns Set or null without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geiVisibleJobIds !== 'function') return { skip: true };
       try {
@@ -2117,7 +2029,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     }
   });
 
-  test('goGeiStep — navigates estimate wizard steps without throwing', async () => {
+  test('goGeiStep: navigates estimate wizard steps without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof goGeiStep !== 'function') return { skip: true };
       try {
@@ -2130,7 +2042,7 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('saveGenericEstimate — saves estimate draft without throwing', async () => {
+  test('saveGenericEstimate: saves estimate draft without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof saveGenericEstimate !== 'function') return { skip: true };
       try {
@@ -2147,6 +2059,6 @@ test.describe('Generic estimate — trade switcher and T&M functions', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// BATCH L: Industrial Equipment Estimate — openIndustrialEquipEstimate, _calcInd, etc.
+// BATCH L: Industrial Equipment Estimate, openIndustrialEquipEstimate, _calcInd, etc.
 // ═══════════════════════════════════════════════════════════════════════════════
 

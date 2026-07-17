@@ -1,22 +1,21 @@
 name: Flow Tests (live Supabase)
 
-# ON-DEMAND + NIGHTLY (not every push) — the live suite drives the deployed
-# preview's /api Pages Function on every Supabase call, which burns the Cloudflare
-# Workers/Functions daily quota when run per-commit across viewports. So it now
-# runs only: (1) manually (workflow_dispatch), (2) nightly, and (3) when a PR
-# carries the `run-flow` label. The offline shards still hard-gate EVERY push and
-# are free (fully mocked). The specs SKIP cleanly when E2E_DEV_* secrets are absent.
+# ON-DEMAND ONLY (not every push, not nightly). The live suite drives the deployed
+# preview's /api Pages Function on every Supabase call and reads the metered Dev
+# database, so an unattended run burns Cloudflare Functions quota AND Supabase
+# egress. The nightly cron was the top idle-day egress source (removed 2026-07-16).
+# It now runs only: (1) manually (workflow_dispatch), and (2) when a PR carries the
+# `run-flow` label. The offline shards still hard-gate EVERY push and are free
+# (fully mocked). The specs SKIP cleanly when E2E_DEV_* secrets are absent.
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 7 * * *'   # nightly 07:00 UTC
   pull_request:
     types: [labeled]      # only fires the job below when the label is `run-flow`
-  # NOTE: deliberately NO `push: [main]` trigger. The header above states this suite
-  # is on-demand + nightly only; a main-push trigger fired the expensive cloud live
-  # suite on every merge and timed out at 20 min (the red-on-main after #51). Merges
-  # are gated by the free offline shards; run this suite manually or via the nightly
-  # cron / `run-flow` label when a live check is actually wanted.
+  # NOTE: deliberately NO `push: [main]` and NO `schedule:` cron. A main-push trigger
+  # fired the expensive cloud live suite on every merge and timed out at 20 min (the
+  # red-on-main after #51); the nightly cron silently burned Supabase egress on days
+  # nobody opened the app. Merges are gated by the free offline shards; run this suite
+  # manually or via the `run-flow` label when a live check is actually wanted.
 
 concurrency:
   group: flow-${{ github.ref }}

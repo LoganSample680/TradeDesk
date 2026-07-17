@@ -1,4 +1,4 @@
-// REAL flow — the page crawler (task #13 core, the broad "agentic dickhead"
+// REAL flow, the page crawler (task #13 core, the broad "agentic dickhead"
 // sweep). After signing into the live account it discovers EVERY .pg view in the
 // DOM and navigates to each one through the real goPg() router, twice in rapid
 // succession (to stress the per-page render race guards), asserting that every
@@ -8,7 +8,7 @@
 //
 // It is deliberately NON-destructive: it only navigates, never clicks buttons,
 // so it is safe to run against the real account every time. A page that throws
-// while rendering real data — the single most common prod regression — fails here
+// while rendering real data, the single most common prod regression, fails here
 // with the exact page id, no repro needed.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, finding } = require('./live-helpers');
@@ -25,7 +25,7 @@ const BENIGN = [
 ];
 function realError(text) { return !BENIGN.some(b => text.includes(b)); }
 
-test.describe('page crawler — every view renders clean (UI-driven)', () => {
+test.describe('page crawler, every view renders clean (UI-driven)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
@@ -50,7 +50,7 @@ test.describe('page crawler — every view renders clean (UI-driven)', () => {
         act: async (p) => {
           const before = errors.length;
           // Double-navigate fast: first hop away, then two hops to the target in
-          // the same tick — exercises the render race guard a real fast-tapper hits.
+          // the same tick, exercises the render race guard a real fast-tapper hits.
           await p.evaluate((id) => { goPg('pg-dash'); goPg(id); goPg(id); }, pid);
           await p.waitForTimeout(250);
           p.__errDelta = errors.length - before;

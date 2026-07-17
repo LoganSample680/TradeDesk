@@ -1,18 +1,18 @@
-// js/geo-track.js — Crew location tracking + geofence time-on-site.
+// js/geo-track.js: Crew location tracking + geofence time-on-site.
 //
 // Consent model:
 //   1. The contractor enables S.teamTracking in Settings (business-hours window
 //      + geofence radius).
-//   2. Employees are auto-enrolled — crew tracking is a mandatory condition of
+//   2. Employees are auto-enrolled, crew tracking is a mandatory condition of
 //      using TradeDesk, so there is no separate in-app opt-in for employees.
 //      (The browser/OS location-permission prompt is still shown on first run;
 //      that is an OS gate and cannot be bypassed.) Owners tracking their OWN
 //      time on jobs keep a one-time per-device opt-in.
-// Tracking ONLY runs inside the business-hours window — never on personal time.
+// Tracking ONLY runs inside the business-hours window, never on personal time.
 //
 // Writes:
-//   • location_pings    — throttled breadcrumb (lat/lon) for the live crew map
-//   • job_time_entries  — arrival→departure durations per job (feeds Job Profit)
+//   • location_pings   , throttled breadcrumb (lat/lon) for the live crew map
+//   • job_time_entries , arrival→departure durations per job (feeds Job Profit)
 // All manager-side reads of this data are RLS-gated server-side (has_team_perm).
 //
 // Every entry point is wrapped so a geolocation/permission hiccup never throws a
@@ -27,18 +27,18 @@ let _geoJobCoords={};      // jobId -> {lat,lng} geocode cache (per session)
 let _geoWasInShop=false;   // currently inside office/shop geofence
 let _geoShopArrivedAt=null;// ISO timestamp of shop arrival
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
-let _geoPingBusy=false;    // re-entrancy guard: _geoOnPing awaits geocodes — overlapping
+let _geoPingBusy=false;    // re-entrancy guard: _geoOnPing awaits geocodes, overlapping
                            // pings must never interleave the fence state machine
-let _geoGapHiddenAt=null;  // ISO of the last hidden/suspend moment with an entry open —
+let _geoGapHiddenAt=null;  // ISO of the last hidden/suspend moment with an entry open,
                            // the last VERIFIED on-site time if the next ping lands outside
 let _geoWakeLockObj=null;  // screen wake lock held while inside a job fence
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
-// Supabase with retry — a dead spot at departure time can never lose a time entry
+// Supabase with retry, a dead spot at departure time can never lose a time entry
 // (rural job sites are the NORM, and these rows feed payroll/Job Profit, later OJT).
 // Rows carry a client-minted key; the server's unique (contractor_user_id,
-// client_key) index makes retries idempotent — a retry after a lost response can't
+// client_key) index makes retries idempotent, a retry after a lost response can't
 // double-count hours. Breadcrumb pings are deliberately NOT queued (low value,
 // unbounded growth offline); only time entries are durable.
 const _GEO_QUEUE_KEY='zp3_geo_queue';
@@ -50,7 +50,7 @@ function _geoEnqueue(tbl,row){
   try{
     row.client_key=row.client_key||_geoClientKey();
     const q=_geoQueueRead();q.push({tbl,row});
-    if(q.length>500)q.splice(0,q.length-500); // hard cap — the queue can never grow unbounded
+    if(q.length>500)q.splice(0,q.length-500); // hard cap, the queue can never grow unbounded
     _geoQueueWrite(q);
   }catch(_e){}
   _geoDrainQueue();
@@ -67,18 +67,18 @@ async function _geoDrainQueue(){
         ({error}=await _supa.from(item.tbl).upsert(item.row,{onConflict:'contractor_user_id,client_key',ignoreDuplicates:true}));
         // Hosted DB predating the geo-hardening migration: no unique index → retry as
         // a plain insert; no client_key column at all → retry without the key. Either
-        // way the entry lands — durability beats idempotency when the schema lags.
+        // way the entry lands, durability beats idempotency when the schema lags.
         if(error&&/on conflict|constraint/i.test(String(error.message||''))){({error}=await _supa.from(item.tbl).insert(item.row));}
         if(error&&/client_key/i.test(String(error.message||''))){const{client_key,...plain}=item.row;({error}=await _supa.from(item.tbl).insert(plain));}
       }catch(_e){error=_e;}
-      if(error)break; // offline / transient — stop; the next drain retries from the same head
+      if(error)break; // offline / transient: stop; the next drain retries from the same head
       q.shift();_geoQueueWrite(q);
     }
   }catch(_e){}
   _geoDrainBusy=false;
 }
 
-// ── Screen wake lock — held ONLY while inside a job fence ─────────────────────
+// ── Screen wake lock, held ONLY while inside a job fence ─────────────────────
 // Browsers stop delivering GPS to a backgrounded page; keeping the screen awake
 // on-site keeps the fence clock honest for dash-mounted / in-hand phones. Auto-
 // released by the OS on hide; re-acquired on return while still on a job.
@@ -91,7 +91,7 @@ async function _geoWakeAcquire(){
 }
 function _geoWakeRelease(){try{if(_geoWakeLockObj)_geoWakeLockObj.release();}catch(_e){}_geoWakeLockObj=null;}
 
-// ── Open-entry persistence — survive backgrounding AND app kills ──────────────
+// ── Open-entry persistence, survive backgrounding AND app kills ──────────────
 // The open entry is snapshotted to the device whenever the app hides (and on every
 // arrival), so pocketing the phone or an app kill mid-shift never discards the
 // morning's arrival. The NEXT ping decides the hidden gap: still inside the same
@@ -116,13 +116,13 @@ function _geoRestoreOpen(){
     const s=JSON.parse(localStorage.getItem(_GEO_OPEN_KEY)||'null');
     if(!s||s.uid!==((_supaUser&&_supaUser.id)||null))return;
     if(s.day!==todayKey()){
-      // A previous day's entry never survived to close — close it AT its hiddenAt
+      // A previous day's entry never survived to close, close it AT its hiddenAt
       // (the last verified on-site moment) so the hours aren't silently lost.
       if(s.job&&s.arrivedAt){_geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;_geoCloseEntry(s.job,s.hiddenAt,true);_geoCurrentJob=null;}
       if(s.wasInShop&&s.shopArrivedAt)_geoCloseShopEntry(s.shopArrivedAt,s.hiddenAt);
       _geoClearOpen();return;
     }
-    if(_geoCurrentJob||_geoArrivedAt)return; // live state wins — never clobber a running session
+    if(_geoCurrentJob||_geoArrivedAt)return; // live state wins, never clobber a running session
     _geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;
     _geoWasInShop=!!s.wasInShop;_geoShopArrivedAt=s.shopArrivedAt;
     _geoDriveStartedAt=s.driveStartedAt;
@@ -130,7 +130,7 @@ function _geoRestoreOpen(){
   }catch(_e){}
 }
 
-// ── Manual clock bookends — ride the existing "I've Arrived" / "Mark Done" taps ──
+// ── Manual clock bookends, ride the existing "I've Arrived" / "Mark Done" taps ──
 // A tap works offline, backgrounded, everywhere GPS can't. These write source:'manual'
 // entries through the same durable queue; the geofence entries corroborate them.
 const _GEO_MANUAL_KEY='zp3_geo_manual';
@@ -160,7 +160,7 @@ function _geoManualDone(jobId){
   }catch(_e){}
 }
 
-// ── Breadcrumb retention — owner's device prunes pings older than 90 days ─────
+// ── Breadcrumb retention, owner's device prunes pings older than 90 days ─────
 // One ping/min per crew member grows unbounded otherwise (cost + privacy posture).
 // Arrival/departure SUMMARIES are kept forever; only the raw breadcrumb trail ages out.
 function _geoPrunePings(){
@@ -174,10 +174,10 @@ function _geoPrunePings(){
   }catch(_e){}
 }
 
-// ── Business-hours window — device local time ─────────────────────────────────
+// ── Business-hours window, device local time ─────────────────────────────────
 // S.trackStart/End are set by the contractor as local times (e.g. "07:00").
 // Employees work in the same market as the contractor, so the device's local
-// clock is the correct reference — no hardcoded timezone.
+// clock is the correct reference, no hardcoded timezone.
 function _geoNowMinLocal(){const d=new Date();return d.getHours()*60+d.getMinutes();}
 function _geoParseHM(s){const m=/^(\d{1,2}):(\d{2})$/.exec(s||'');return m?(+m[1])*60+(+m[2]):null;}
 function _geoBusinessHoursNow(){
@@ -186,7 +186,7 @@ function _geoBusinessHoursNow(){
   const now=_geoNowMinLocal();
   return en>st ? (now>=st&&now<en) : (now>=st||now<en); // en<=st ⇒ overnight window
 }
-// Hardcoded generous radius — big enough that GPS drift and street/driveway
+// Hardcoded generous radius, big enough that GPS drift and street/driveway
 // parking always register as "on site" without a per-business setting to tune.
 // Not so big it catches a worker driving past or at the neighbor's (which would
 // end the drive leg early and over-count on-site time).
@@ -227,7 +227,7 @@ async function _geoJobLatLng(j){
 async function _geoOnPing(pos){
   // RE-ENTRANCY GUARD: this handler awaits network geocodes, and watchPosition can
   // fire faster than they resolve. Interleaved runs used to apply a STALE position
-  // after a fresher one and flip arrive/depart backwards — overlapping pings are
+  // after a fresher one and flip arrive/depart backwards, overlapping pings are
   // dropped whole (the next ping, seconds later, carries fresher truth anyway).
   if(_geoPingBusy)return;
   _geoPingBusy=true;
@@ -247,10 +247,10 @@ async function _geoOnPing(pos){
       _geoDriveStartedAt=null; // arriving at shop ends any drive leg
     }else{
       // A hidden gap since shop arrival: if this first post-gap ping is OUTSIDE,
-      // close at the last verified moment — never claim unverified shop time.
+      // close at the last verified moment, never claim unverified shop time.
       if(_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt,_geoGapHiddenAt||undefined);
       _geoShopArrivedAt=null;
-      // Only start drive clock if not already inside a job fence — otherwise
+      // Only start drive clock if not already inside a job fence, otherwise
       // we'd set a stale driveStartedAt mid-job and log phantom drive minutes.
       if(!_geoCurrentJob)_geoDriveStartedAt=new Date().toISOString();
     }
@@ -268,7 +268,7 @@ async function _geoOnPing(pos){
   if(insideId!==_geoCurrentJob){
     const prevJob=_geoCurrentJob;
     // HIDDEN-GAP RESOLUTION (leave): the app was backgrounded while on-site and this
-    // first ping back lands OUTSIDE the fence — the worker left at some unverified
+    // first ping back lands OUTSIDE the fence, the worker left at some unverified
     // point during the gap. Close at the last VERIFIED on-site moment (hiddenAt),
     // tagged 'geofence-gap': conservative, defensible, never claims unseen time.
     if(prevJob&&_geoArrivedAt)await _geoCloseEntry(prevJob,_geoGapHiddenAt||undefined,!!_geoGapHiddenAt); // left previous job
@@ -281,11 +281,11 @@ async function _geoOnPing(pos){
       _geoWakeAcquire();     // keep the screen (and GPS) alive while on-site
     }else{_geoCurrentJob=null;_geoArrivedAt=null;_geoClearOpen();_geoWakeRelease();}
   }else if(insideId){
-    // HIDDEN-GAP RESOLUTION (stay): still inside the same fence after the gap —
+    // HIDDEN-GAP RESOLUTION (stay): still inside the same fence after the gap,
     // one continuous visit, verified at both ends. The hidden time COUNTS.
     _geoWakeAcquire();
   }
-  // Whatever branch ran, THIS completed ping resolved any hidden gap — a stale
+  // Whatever branch ran, THIS completed ping resolved any hidden gap, a stale
   // marker must never truncate a later, fully-visible close.
   _geoGapHiddenAt=null;
   }finally{_geoPingBusy=false;}
@@ -302,8 +302,8 @@ function _geoWritePing(here,acc){
 }
 // All three writers go through the durable queue (_geoEnqueue): the entry is on
 // the device before any network is attempted, so a dead spot can never lose it.
-// `departedIso` (optional) closes at an earlier VERIFIED moment — the hidden-gap
-// path — and `gap` tags the row 'geofence-gap' so reports can show confidence.
+// `departedIso` (optional) closes at an earlier VERIFIED moment, the hidden-gap
+// path: and `gap` tags the row 'geofence-gap' so reports can show confidence.
 async function _geoCloseEntry(jobId,departedIso,gap){
   const arrived=_geoArrivedAt; _geoArrivedAt=null;
   _geoClearOpen();
@@ -336,7 +336,7 @@ function _geoDriveEntry(jobId,driveStartedAt){
   if(mins<2)return;
   if(!_supaUser)return;
   // Only flag for mileage when employee is in a company vehicle for this shift.
-  // Personal vehicle trips stay private — drive TIME is still logged (it's
+  // Personal vehicle trips stay private, drive TIME is still logged (it's
   // compensable labor) but the mileage flag is omitted.
   const companyVeh=typeof _isCompanyVehicleToday==='function'&&_isCompanyVehicleToday();
   _geoEnqueue('job_time_entries',{
@@ -348,7 +348,7 @@ function _geoDriveEntry(jobId,driveStartedAt){
 
 // ── Location-permission banner (employee self-service) ──────────────────────
 // Shown ONLY when an employee's device location is not granted, so they can fix
-// it themselves — the owner never has to chase anyone about enabling it. Nothing
+// it themselves, the owner never has to chase anyone about enabling it. Nothing
 // renders when permission is fine.
 async function _geoPermissionBanner(){
   const el=document.getElementById('dash-geo-perm');
@@ -368,7 +368,7 @@ async function _geoPermissionBanner(){
   el.innerHTML='<div style="background:#FEF2F2;border:1px solid #FCA5A5;border-radius:var(--r);padding:12px 14px;margin-bottom:12px">'+
     '<div style="font-size:13px;font-weight:800;color:#991B1B;margin-bottom:4px">'+svgIcon('📍',{size:13})+' Location is off</div>'+
     '<div style="font-size:12px;color:#991B1B;line-height:1.5;margin-bottom:'+(denied?'0':'10px')+'">'+
-      'TradeDesk logs your drive time and job hours automatically during work hours — it only works with location on. '+
+      'TradeDesk logs your drive time and job hours automatically during work hours, it only works with location on. '+
       (denied
         ?'Turn it back on in your phone: <strong>Settings → TradeDesk → Location → While Using the App</strong>.'
         :'Tap below and choose <strong>Allow While Using</strong>.')+
@@ -378,7 +378,7 @@ async function _geoPermissionBanner(){
 }
 function _geoRequestPermission(){
   // Triggers the OS prompt when state is 'prompt'. (When already 'denied' the OS
-  // won't re-prompt — the banner tells them to use Settings instead.)
+  // won't re-prompt, the banner tells them to use Settings instead.)
   startGeoTracking();
   setTimeout(_geoPermissionBanner,1500);
 }
@@ -406,11 +406,11 @@ function stopGeoTracking(){
 function _geoTrackInit(){
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
-  if(!_geoBusinessHoursNow())return;         // outside hours — nothing to do
-  // Backgrounding mid-shift KEEPS the entry open (the old handler closed it — a
+  if(!_geoBusinessHoursNow())return;         // outside hours, nothing to do
+  // Backgrounding mid-shift KEEPS the entry open (the old handler closed it, a
   // phone in a pocket all day logged only screen-on slivers, and any visit hidden
   // within 2 minutes of arrival was dropped entirely). Instead: snapshot the open
-  // state + the hidden moment; the first ping after return resolves the gap —
+  // state + the hidden moment; the first ping after return resolves the gap,
   // still inside the fence ⇒ one continuous visit (hidden time counts, verified at
   // both ends); outside ⇒ close at the hidden moment as 'geofence-gap' (unverified
   // time is never claimed). stopGeoTracking / out-of-hours still close for real.
@@ -421,7 +421,7 @@ function _geoTrackInit(){
         _geoGapHiddenAt=new Date().toISOString();
         _geoPersistOpen(_geoGapHiddenAt);
       }else{
-        _geoDrainQueue();                      // back online-ish — flush queued entries
+        _geoDrainQueue();                      // back online-ish, flush queued entries
         if(_geoCurrentJob)_geoWakeAcquire();   // wake locks auto-release on hide
       }
     });
@@ -429,7 +429,7 @@ function _geoTrackInit(){
     window.addEventListener('online',()=>{try{_geoDrainQueue();}catch(_e){}});
   }
   // An app kill / reload mid-shift: restore the persisted open entry so the
-  // morning's arrival survives — the next ping resolves it exactly like a
+  // morning's arrival survives, the next ping resolves it exactly like a
   // background gap. A previous DAY's orphan closes at its last verified moment.
   _geoRestoreOpen();
   _geoDrainQueue();
@@ -438,11 +438,11 @@ function _geoTrackInit(){
   // business Address in Settings (S.baddr/bcity/state/bzip), geocoded once and
   // cached on S.officeLat/officeLon. Previously this only happened when the
   // owner ran dispatch route optimization, so shop-time logging silently never
-  // fired until then — kick the one-time geocode here so it always works.
+  // fired until then, kick the one-time geocode here so it always works.
   if(!(S.officeLat&&S.officeLon)&&typeof _geoOfficeCoords==='function')_geoOfficeCoords();
   if(_isEmployee){
     if(!_employeeRecord)return;
-    // Crew tracking is mandatory for employees — a condition of using TradeDesk.
+    // Crew tracking is mandatory for employees, a condition of using TradeDesk.
     // No per-employee app consent: start directly. (The browser/OS still shows
     // its own location-permission prompt on first run; that cannot be bypassed.)
     startGeoTracking();
@@ -470,8 +470,8 @@ function _geoConsentPrompt(isOwner){
   const hrs=escHtml((S.trackStart||'07:00')+'–'+(S.trackEnd||'18:00'));
   const title=isOwner?'Track your own time on jobs?':'Share your location with '+biz+'?';
   const sub=isOwner
-    ?'Logs your drive mileage and time on each job automatically so your own hours show up in Job Profit and Crew Cost — only during work hours ('+hrs+').'
-    :'This logs your drive mileage and time on each job automatically — only during work hours ('+hrs+'). It never tracks you outside that window or after hours.';
+    ?'Logs your drive mileage and time on each job automatically so your own hours show up in Job Profit and Crew Cost, only during work hours ('+hrs+').'
+    :'This logs your drive mileage and time on each job automatically, only during work hours ('+hrs+'). It never tracks you outside that window or after hours.';
   const note=isOwner?'You can turn this off anytime in Settings.':'You can turn this off anytime, and your pay is never affected by declining.';
   sheet.innerHTML=
     '<div style="font-size:30px;margin-bottom:8px">'+svgIcon('📍',{size:30})+'</div>'+

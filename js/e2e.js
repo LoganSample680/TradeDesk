@@ -1,6 +1,6 @@
 // ── TradeDesk E2E Test Runner ─────────────────────────────────────────────
 // Call runE2ETest() from the browser console to exercise all major flows.
-// Results appear as an overlay in the app — no DevTools needed.
+// Results appear as an overlay in the app, no DevTools needed.
 
 async function runE2ETest(){
   const results=[];
@@ -29,7 +29,7 @@ async function runE2ETest(){
     'showNotesFab','hideNotesFab',
     'getActiveTrade','_getTradeLines',
   ];
-  // The interior/exterior "Scope & Price" surface estimator was removed —
+  // The interior/exterior "Scope & Price" surface estimator was removed,
   // assert its entry points are actually gone, not just unused.
   const mustNotExist=[
     'goSurfStepB','goSurfScopeToMeasure','goSurfStepA','toggleSurfWhat',
@@ -41,12 +41,12 @@ async function runE2ETest(){
   for(const fn of mustNotExist){
     check(fn+' was removed with the paint estimator',()=>{
       let val;try{val=eval(fn);}catch(e){val=undefined;}
-      if(typeof val==='function')throw new Error(fn+' still exists — should have been deleted');
+      if(typeof val==='function')throw new Error(fn+' still exists, should have been deleted');
     });
   }
   for(const fn of mustExist){
     check('typeof '+fn+' === function',()=>{
-      // const/let globals are lexical — not on window — use eval to reach them
+      // const/let globals are lexical, not on window, use eval to reach them
       let val;try{val=eval(fn);}catch(e){val=undefined;}
       if(typeof val!=='function')throw new Error(fn+' is '+typeof val);
     });
@@ -75,7 +75,7 @@ async function runE2ETest(){
   }
   const mustNotExistDom=['pg-est','surf-step-a','surf-step-b','surf-scope-first','surf-room-name','e-caddr'];
   for(const id of mustNotExistDom){
-    check('#'+id+' removed with the paint estimator',()=>{if(document.getElementById(id))throw new Error('element #'+id+' still in DOM — should have been removed');});
+    check('#'+id+' removed with the paint estimator',()=>{if(document.getElementById(id))throw new Error('element #'+id+' still in DOM, should have been removed');});
   }
 
   // ── 4. Navigation ─────────────────────────────────────────────────────────
@@ -90,7 +90,7 @@ async function runE2ETest(){
   }
   goPg('pg-dash'); // return to dash
 
-  // ── 5. Generic estimate flow — full walk-through ──────────────────────────
+  // ── 5. Generic estimate flow, full walk-through ──────────────────────────
   section('Generic (Scope & Price / T&M / BYO) estimate flow');
 
   // Need a client to open estimate for
@@ -128,7 +128,7 @@ async function runE2ETest(){
       if(typeof sendProposalViaEmail!=='function')throw new Error('sendProposalViaEmail not a function');
     });
   } else {
-    results.push({name:'proposal tests: no bids yet — skipped',ok:true});
+    results.push({name:'proposal tests: no bids yet, skipped',ok:true});
   }
 
   // ── 8. Finance / books ────────────────────────────────────────────────────
@@ -176,7 +176,7 @@ function _showE2EResults(results){
   document.body.insertAdjacentHTML('beforeend',html);
 }
 
-// ── Global error handler — makes JS errors visible in the app ─────────────
+// ── Global error handler, makes JS errors visible in the app ─────────────
 // Errors show as a red toast so you don't need DevTools open on iOS.
 window.addEventListener('error',e=>{
   if(!e.message||e.message==='Script error.')return; // cross-origin, no info
@@ -189,7 +189,7 @@ window.addEventListener('error',e=>{
 });
 window.addEventListener('unhandledrejection',e=>{
   const msg=(e.reason?.message||String(e.reason)||'');
-  // Suppress service worker fetch/update errors — these fire every SW update check
+  // Suppress service worker fetch/update errors, these fire every SW update check
   // cycle when offline and are not actionable by the user.
   if(msg.includes('sw.js')||msg.includes('ServiceWorker')||msg.includes('load failed')||msg.includes('Failed to fetch')||(!navigator.onLine&&(msg.includes('NetworkError')||msg.includes('network')||msg.includes('fetch'))))return;
   if(typeof showToast==='function')showToast('Unhandled promise: '+msg,'🔴',8000);

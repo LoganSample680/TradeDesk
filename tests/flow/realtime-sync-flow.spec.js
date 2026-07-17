@@ -1,7 +1,7 @@
-// REAL flow — cross-device Realtime sync (task #9). Two pages in ONE context
+// REAL flow, cross-device Realtime sync (task #9). Two pages in ONE context
 // share the dev session (the auth token lives in localStorage), so they model two
 // devices signed into the same account. Device A creates a bid and saves; Device
-// B — which never reloads manually — must receive it through Supabase Realtime:
+// B: which never reloads manually, must receive it through Supabase Realtime:
 // either the per-record postgres_changes patch (_applyRealtimeRecord) or the
 // `data_saved` broadcast that triggers a silent reload (cloud.js
 // _initRealtimeSubscriptions). If neither path delivers the row, sync is broken
@@ -64,7 +64,7 @@ test.describe('realtime cross-device sync (UI-driven)', () => {
       },
     });
 
-    // NO data cleanup — the synced bid + client stay in the dev account on purpose
+    // NO data cleanup, the synced bid + client stay in the dev account on purpose
     // so the owner can inspect what this test created (CLAUDE.md §13.7). Only the
     // extra device page is closed (resource cleanup, not data).
     await pageB.close().catch(() => {});

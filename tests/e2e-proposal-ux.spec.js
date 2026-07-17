@@ -2,8 +2,8 @@
 /**
  * E2E tests for two related proposal UX features:
  *
- * 1. Client hub hides price on card — amount not shown until client opens the proposal
- * 2. Client vs contractor open tracking — sign.html detects who's viewing and
+ * 1. Client hub hides price on card, amount not shown until client opens the proposal
+ * 2. Client vs contractor open tracking, sign.html detects who's viewing and
  *    sends viewer_type:'client' or 'contractor' to the Edge Function, which
  *    stores them in separate timestamps so the contractor can see both.
  *
@@ -31,9 +31,9 @@
 const { test, expect, mockAllExternal, _supabaseShim, waitForAppBoot, assertNoErrors,
         FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL } = require('./helpers');
 
-// ── 1. Client Hub — price hidden from pending proposal cards ─────────────────
+// ── 1. Client Hub, price hidden from pending proposal cards ─────────────────
 
-test.describe('Client hub — price hidden on proposal cards', () => {
+test.describe('Client hub, price hidden on proposal cards', () => {
   test('pending proposal card does NOT show the dollar amount', async ({ page }) => {
     const HUB = {
       contractorUserId: FAKE_USER_ID,
@@ -55,13 +55,13 @@ test.describe('Client hub — price hidden on proposal cards', () => {
     };
 
     // Set __mockHubData BEFORE navigation so the shim's download() picks it up.
-    // (The shim handles storage.download() entirely in JS — page.route() for
+    // (The shim handles storage.download() entirely in JS, page.route() for
     //  storage URLs never fires because no HTTP request is made.)
     await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
     await mockAllExternal(page);
 
     // client.html expects ?t=<token>&u=<contractorUserId>&c=<clientId>
-    // (NOT ?user=...&token=... — those params are not read by client.html)
+    // (NOT ?user=...&token=..., those params are not read by client.html)
     await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(600);
@@ -82,7 +82,7 @@ test.describe('Client hub — price hidden on proposal cards', () => {
   });
 
   test('signed proposal in Documents tab DOES show the amount', async ({ page }) => {
-    // The amount is revealed in the signed/completed view — that's intentional,
+    // The amount is revealed in the signed/completed view, that's intentional,
     // the client has already committed. Only the pre-signature card hides it.
     const HUB = {
       contractorUserId: FAKE_USER_ID,
@@ -102,7 +102,7 @@ test.describe('Client hub — price hidden on proposal cards', () => {
       payments: [],
     };
 
-    // Set __mockHubData BEFORE navigation — same reason as above.
+    // Set __mockHubData BEFORE navigation, same reason as above.
     await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
     await mockAllExternal(page);
 
@@ -125,9 +125,9 @@ test.describe('Client hub — price hidden on proposal cards', () => {
   });
 });
 
-// ── 2. Viewer type detection — client vs contractor ───────────────────────────
+// ── 2. Viewer type detection, client vs contractor ───────────────────────────
 
-test.describe('Proposal view tracking — client vs contractor detection', () => {
+test.describe('Proposal view tracking, client vs contractor detection', () => {
   /**
    * Helper: builds a custom supabase shim JS string where getSession() returns
    * the given userId (or null session if userId is falsy).
@@ -193,7 +193,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
    * Returns a getter function that resolves with the captured request body.
    *
    * IMPORTANT: sign.html resolves the storage key from the URL using ?key=<path>
-   * or ?t=<token>&u=<uid>&b=<bidId>. The ?storage= format is NOT recognised —
+   * or ?t=<token>&u=<uid>&b=<bidId>. The ?storage= format is NOT recognised,
    * always use ?key= or the short-form params.
    */
   async function mountSignRoutes(page, sessionUserId) {
@@ -211,7 +211,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
       const url = route.request().url();
       if (url.startsWith('http://localhost') || url.startsWith('data:')) return route.continue();
 
-      // Supabase CDN — return shim with the given session
+      // Supabase CDN, return shim with the given session
       if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
         return route.fulfill({ status: 200, contentType: 'application/javascript', body: _shimWithSession(sessionUserId) });
       }
@@ -244,7 +244,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
   // Owner (IMG_1110): the 5-step progress bar rendered with unequal segment
   // widths because .dot.active carried flex:2 (double width). It's a universal
-  // 5-step process — every segment must be the same width; color alone marks
+  // 5-step process, every segment must be the same width; color alone marks
   // done/active/upcoming. This guards that the active segment never fattens again.
   test('the 5 step-dot segments are all equal width (active is not fattened)', async ({ page }) => {
     await mountSignRoutes(page, null);
@@ -261,7 +261,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     });
     expect(widths).not.toBeNull();
     expect(widths.length).toBe(5);
-    // All five within 1px of each other — no double-width active segment.
+    // All five within 1px of each other, no double-width active segment.
     const min = Math.min(...widths), max = Math.max(...widths);
     expect(max - min).toBeLessThanOrEqual(1);
     // And the active segment's flex-grow must equal a plain dot's (1), not 2.
@@ -318,7 +318,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
     await page.goto(`/sign.html?key=${key}`);
     // Revealed after the boot dwell (~1.5s) but long before the 3s status
-    // response — the check does not gate the entrance.
+    // response: the check does not gate the entrance.
     await expect(page.locator('body')).toHaveClass(/revealed/, { timeout: 3000 });
     await expect(page.locator('#pg-sign')).toBeVisible();
     // And once the delayed "not signed" answer lands, the sign page must remain
@@ -330,12 +330,12 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
   });
 
   // The head must never regress to parser-blocking third-party scripts or a
-  // render-blocking font stylesheet — those held first paint (the white flash)
+  // render-blocking font stylesheet, those held first paint (the white flash)
   // no matter how fast the proposal data arrived.
   test('vendor scripts are never parser-blocking and the font stylesheet is non-blocking', async ({ page }) => {
     // Parser-blocking vendor tags held first paint (the white flash), and even
     // `defer` evaluated the bundles during the waterfall's first frames (the
-    // chop). Vendor JS is now injected lazily via _loadVendor — any tag present
+    // chop). Vendor JS is now injected lazily via _loadVendor, any tag present
     // must be non-parser-blocking (dynamically injected scripts are async).
     await mountSignRoutes(page, null);
     await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
@@ -349,7 +349,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
         stripeOk: nonBlocking('script[src*="js.stripe.com"]'),
         lazyLoader: typeof window._loadVendor === 'function', // the on-demand injector exists
         fontNonBlocking: (() => {
-          // rel="stylesheet" specifically — a rel="preconnect" to the same host
+          // rel="stylesheet" specifically: a rel="preconnect" to the same host
           // also matches on href and has no media attribute.
           const l = document.querySelector('link[rel="stylesheet"][href*="fonts.googleapis.com"]');
           return !!l && l.getAttribute('media') !== null; // print-media swap trick applied
@@ -363,7 +363,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     assertNoErrors(page, 'lazy vendor scripts');
   });
 
-  // The proposal document is several screens tall — animating it as one block
+  // The proposal document is several screens tall, animating it as one block
   // forced full layout+raster and hung the waterfall. During the entrance it
   // must carry content-visibility:auto (below-fold content skipped), released
   // via body.td-settled once the cascade is over so the full doc lays out on
@@ -384,7 +384,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
   });
 
   // Owner: a branded boot moment ("Loading your proposal…", business name, then
-  // waterfall) replaces chasing an instant reveal — the dwell absorbs fonts,
+  // waterfall) replaces chasing an instant reveal, the dwell absorbs fonts,
   // layout, and raster so nothing ever flashes or chops. Same treatment as the
   // client hub boot. This pins the full lifecycle.
   test('sign boot: business name + loading copy shown, holds, then dismisses into the waterfall', async ({ page }) => {
@@ -396,7 +396,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     await page.goto(`/sign.html?key=${key}`);
 
     // Boot is up immediately with the branding and loading copy (stash path
-    // populates the name at parse time — before any network).
+    // populates the name at parse time, before any network).
     await expect(page.locator('#sign-boot')).toBeVisible();
     const boot = await page.evaluate(() => ({
       name: document.getElementById('sign-boot-name')?.textContent,
@@ -433,15 +433,15 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
   });
 
   test('sends viewer_type=client when no auth session (real client opening)', async ({ page }) => {
-    // No session — simulates a client opening the link on their own device
+    // No session, simulates a client opening the link on their own device
     const getBody = await mountSignRoutes(page, null);
 
-    // Use ?key= format — sign.html reads params.get('key') to resolve the storage path.
+    // Use ?key= format, sign.html reads params.get('key') to resolve the storage path.
     // The ?storage= format is NOT recognised by sign.html and causes an error page.
     await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
     await page.waitForLoadState('networkidle');
     // View logging is deliberately postponed ~1.6s past the entrance waterfall
-    // (vendor eval mid-cascade was the chop) — poll instead of a fixed wait.
+    // (vendor eval mid-cascade was the chop), poll instead of a fixed wait.
     await expect.poll(getBody, { timeout: 6000 }).not.toBeNull();
 
     const body = getBody();
@@ -457,7 +457,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
     await page.waitForLoadState('networkidle');
     // View logging is deliberately postponed ~1.6s past the entrance waterfall
-    // (vendor eval mid-cascade was the chop) — poll instead of a fixed wait.
+    // (vendor eval mid-cascade was the chop), poll instead of a fixed wait.
     await expect.poll(getBody, { timeout: 6000 }).not.toBeNull();
 
     const body = getBody();
@@ -467,13 +467,13 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
   });
 
   test('sends viewer_type=client when a DIFFERENT user is logged in (not the contractor)', async ({ page }) => {
-    // Some other authenticated user (e.g. employee) — NOT the contractor
+    // Some other authenticated user (e.g. employee): NOT the contractor
     const getBody = await mountSignRoutes(page, 'some-other-user-id-99999');
 
     await page.goto(`/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`);
     await page.waitForLoadState('networkidle');
     // View logging is deliberately postponed ~1.6s past the entrance waterfall
-    // (vendor eval mid-cascade was the chop) — poll instead of a fixed wait.
+    // (vendor eval mid-cascade was the chop), poll instead of a fixed wait.
     await expect.poll(getBody, { timeout: 6000 }).not.toBeNull();
 
     const body = getBody();
@@ -492,7 +492,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
     // Inject client open data and a pending bid.
     // _proposalViewsByBidClient / _proposalViewsByBidContractor are let-vars in cloud.js,
-    // exposed on window via Object.defineProperty in that file — assignment here propagates
+    // exposed on window via Object.defineProperty in that file, assignment here propagates
     // back into the module scope so renderDash() reads the updated maps.
     // bids and clients are similarly exposed via Object.defineProperty in data.js.
     await page.evaluate(({ bidId, ts }) => {
@@ -553,7 +553,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
           status: 'Pending',
           bid_date: new Date().toISOString().slice(0, 10),
           signingToken: FAKE_TOKEN,
-          // signHubUrl must be non-null — client.html filters on b.id && b.signHubUrl
+          // signHubUrl must be non-null, client.html filters on b.id && b.signHubUrl
           signHubUrl: `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`,
         },
         {
@@ -574,7 +574,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     await page.addInitScript(data => { window.__mockHubData = data; }, HUB);
     await mockAllExternal(page); // registers broad catch-all FIRST
 
-    // Register specific capture route AFTER mockAllExternal — Playwright checks
+    // Register specific capture route AFTER mockAllExternal, Playwright checks
     // routes LIFO so this fires first, captures the body, then fulfills.
     const capturedCalls = [];
     await page.route('**/functions/v1/log-proposal-view', async route => {
@@ -586,7 +586,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(800);
 
-    // One call per pending bid with signHubUrl — order may vary
+    // One call per pending bid with signHubUrl, order may vary
     expect(capturedCalls.length).toBe(2);
 
     const sentBidIds = capturedCalls.map(c => c.bidId).sort();
@@ -595,7 +595,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
     capturedCalls.forEach(call => {
       expect(call.contractorUserId).toBe(FAKE_USER_ID);
-      // Hub opens must use 'client-hub' viewerType — this writes hub_opened_at,
+      // Hub opens must use 'client-hub' viewerType: this writes hub_opened_at,
       // distinct from client_opened_at (which sign.html sets when the client
       // opens a specific proposal). Two separate timestamps on the dashboard.
       expect(call.viewerType).toBe('client-hub');
@@ -646,7 +646,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
   test('client.html does NOT fire log-proposal-view when ?preview=1 is in URL', async ({ page }) => {
     // _previewClientHub() in clients.js always appends &preview=1 when opening the
-    // iframe. This is the primary guard — no session needed, no origin-specific
+    // iframe. This is the primary guard, no session needed, no origin-specific
     // localStorage timing issues in iframe context.
     const HUB = {
       contractorUserId: FAKE_USER_ID,
@@ -676,7 +676,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
 
-    // preview=1 — no logged-in session, simulates iframe context
+    // preview=1: no logged-in session, simulates iframe context
     await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1&preview=1`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(800);
@@ -687,7 +687,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
   test('client.html with preview=1 renders "Review & Sign" links with &preview=1 appended', async ({ page }) => {
     // Prevents contractor clicking "Review & Sign" inside the hub preview from
-    // logging a client view in sign.html — the link carries preview=1 through.
+    // logging a client view in sign.html: the link carries preview=1 through.
     const SIGN_URL = `https://tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`;
     const HUB = {
       contractorUserId: FAKE_USER_ID,
@@ -730,11 +730,11 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
 
   test('full pipeline: client opens hub → dashboard shows Hub opened + Proposal opened separately', async ({ page }) => {
     // Confirms the two-timestamp design end-to-end:
-    //  Step 1 — client.html fires log-proposal-view with viewerType:'client-hub'
+    //  Step 1, client.html fires log-proposal-view with viewerType:'client-hub'
     //            → contractor sees "Hub opened · Xm ago"
-    //  Step 2 — sign.html fires log-proposal-view with viewerType:'client'
+    //  Step 2, sign.html fires log-proposal-view with viewerType:'client'
     //            → contractor sees "Proposal opened · Xm ago" (separate line)
-    //  Step 3 — contractor dashboard shows BOTH badges simultaneously
+    //  Step 3, contractor dashboard shows BOTH badges simultaneously
     const HUB = {
       contractorUserId: FAKE_USER_ID,
       contractorName: 'Zach Pro Painting',
@@ -763,14 +763,14 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
       await route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
     });
 
-    // Step 1: client opens hub — should fire with viewerType:'client-hub'
+    // Step 1: client opens hub, should fire with viewerType:'client-hub'
     await page.goto(`/client.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&c=1`);
     await page.waitForLoadState('networkidle');
     await page.waitForTimeout(800);
     expect(capturedCalls.length).toBeGreaterThan(0);
     expect(capturedCalls[0].viewerType).toBe('client-hub'); // not 'client'
 
-    // Step 2: contractor opens dashboard — inject BOTH timestamps as the DB would have them
+    // Step 2: contractor opens dashboard, inject BOTH timestamps as the DB would have them
     await page.goto('/');
     await waitForAppBoot(page);
 
@@ -805,7 +805,7 @@ test.describe('Proposal view tracking — client vs contractor detection', () =>
   });
 
   test('does NOT fire log-proposal-view when ?preview=1 is in the URL', async ({ page }) => {
-    // ?preview=1 means the contractor used the Preview button — skip all view tracking
+    // ?preview=1 means the contractor used the Preview button, skip all view tracking
     // regardless of auth state, so the badge on the dashboard is never polluted.
     const getBody = await mountSignRoutes(page, null); // no session
 

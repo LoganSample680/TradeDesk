@@ -4,8 +4,8 @@
  *
  * The end-to-end delta MERGE (pull only changed rows, propagate soft-deletes,
  * reconcile multi-device) runs against the real updated_at trigger and is proven
- * on the cloud gate (the concurrency race specs). What's proven HERE — offline,
- * deterministically — is the safety layer that must never regress:
+ * on the cloud gate (the concurrency race specs). What's proven HERE, offline,
+ * deterministically, is the safety layer that must never regress:
  *   • owner-scoping: one account can NEVER read another account's delta sidecar
  *     or cache (cross-account bleed is the worst-case failure).
  *   • persistence: the cursor + known-cloud hashes are written only once a cursor
@@ -19,7 +19,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('delta-load — safety layer', () => {
+test.describe('delta-load: safety layer', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -31,7 +31,7 @@ test.describe('delta-load — safety layer', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test.describe('_readDeltaMeta — owner guard', () => {
+  test.describe('_readDeltaMeta: owner guard', () => {
     test('returns the sidecar for the matching owner', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_delta_meta', JSON.stringify({ _owner: 'u1', cursor: '2026-01-01T00:00:00Z', syncedHash: {} }));
@@ -69,7 +69,7 @@ test.describe('delta-load — safety layer', () => {
     });
   });
 
-  test.describe('_paintCacheForDelta — repaint base, owner-scoped', () => {
+  test.describe('_paintCacheForDelta: repaint base, owner-scoped', () => {
     test('paints the cached arrays in place for the matching owner', async () => {
       const r = await page.evaluate(() => {
         const saved = bids.slice();
@@ -106,7 +106,7 @@ test.describe('delta-load — safety layer', () => {
     });
   });
 
-  test.describe('_writeLocalCache — delta sidecar persistence', () => {
+  test.describe('_writeLocalCache: delta sidecar persistence', () => {
     test('writes owner+cursor+syncedHash once a cursor exists', async () => {
       const r = await page.evaluate(() => {
         const savedUser = window._supaUser, savedCursor = _deltaCursor, savedHash = _syncedHash;

@@ -14,7 +14,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('payroll-onboarding.js — exhaustive coverage', () => {
+test.describe('payroll-onboarding.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -104,7 +104,7 @@ test.describe('payroll-onboarding.js — exhaustive coverage', () => {
     expect(n).toBe(0);
   });
 
-  test('_payrollSetupDone() counts only business-setup keys — w4 moved to per-hire and no longer counts', async () => {
+  test('_payrollSetupDone() counts only business-setup keys, w4 moved to per-hire and no longer counts', async () => {
     const n = await page.evaluate(() => {
       S.payrollSetup = { ein: true, posters: true, w4: true, notARealKey: true };
       return _payrollSetupDone();
@@ -112,7 +112,7 @@ test.describe('payroll-onboarding.js — exhaustive coverage', () => {
     expect(n).toBe(2);
   });
 
-  test('_payrollSetupDone() is 4 when every business item is checked (boundary — full completion)', async () => {
+  test('_payrollSetupDone() is 4 when every business item is checked (boundary: full completion)', async () => {
     const n = await page.evaluate(() => {
       S.payrollSetup = {};
       _FEDERAL_PAYROLL_SETUP.forEach(i => { S.payrollSetup[i.key] = true; });
@@ -227,7 +227,7 @@ test.describe('payroll-onboarding.js — exhaustive coverage', () => {
   test('_payrollStateSectionHTML() falls back to generic guidance when extra data is missing (state not yet researched)', async () => {
     const html = await page.evaluate(() => _payrollStateSectionHTML('ZZ', null, null));
     expect(html).toContain('Register with your state workforce/unemployment agency');
-    // escHtml entity-escapes the apostrophe (XSS-safe by design — see the
+    // escHtml entity-escapes the apostrophe (XSS-safe by design, see the
     // dedicated escaping test above), so match around it rather than through it.
     expect(html).toContain('Check your state');
     expect(html).toContain('requirement and threshold');
@@ -312,7 +312,7 @@ test.describe('payroll-onboarding.js — exhaustive coverage', () => {
       S.employees = [{ id: 777, name: 'TX Hire', role: 'tech', permissions: {} }];
       return _payrollSetupBodyHTML(null);
     });
-    expect(html).toContain('Not needed — Texas has no income tax on wages');
+    expect(html).toContain('Not needed, Texas has no income tax on wages');
   });
 
   test('renderPayrollSetupCard() reflects a checked item with strike-through styling', async () => {
@@ -368,7 +368,7 @@ test.describe('payroll-onboarding.js — exhaustive coverage', () => {
     await page.evaluate(() => document.getElementById('_payroll-setup-modal-ov')?.remove());
   });
 
-  test('_showPayrollSetupPrompt(empId, false) — repeat hire — leads with THAT employee\'s paperwork', async () => {
+  test('_showPayrollSetupPrompt(empId, false), repeat hire, leads with THAT employee\'s paperwork', async () => {
     const result = await page.evaluate(() => {
       S.payrollSetup = {};
       S.state = 'CA';
@@ -514,7 +514,7 @@ test.describe('payroll-onboarding.js — exhaustive coverage', () => {
 
   test('a long state note (KY local tax) renders a "more" toggle that reveals the full text on click', async () => {
     // #payroll-setup-card is display:none by default in the markup (only
-    // renderTeam()'s hook flips it to block) — .innerText is layout-aware and
+    // renderTeam()'s hook flips it to block), .innerText is layout-aware and
     // reads '' on a display:none element, so assert on the toggle's actual
     // DOM state (style.display + textContent) rather than rendered text size.
     const result = await page.evaluate(() => {
@@ -579,19 +579,19 @@ test.describe('W-2/1099 misclassification-risk copy', () => {
     expect(subBtnCount).toBeGreaterThan(0);
   });
 
-  test('_employeeModalHTML(null,null) — new employee — includes the behavioral-control steer line', async () => {
+  test('_employeeModalHTML(null,null): new employee, includes the behavioral-control steer line', async () => {
     const html = await page.evaluate(() => _employeeModalHTML(null, null));
     expect(html).toContain('Add W-2 Employee');
     expect(html).toContain('you set the hours, direct the job');
   });
 
-  test('_employeeModalHTML(emp, 0) — editing existing — omits the steer line', async () => {
+  test('_employeeModalHTML(emp, 0), editing existing, omits the steer line', async () => {
     const html = await page.evaluate(() => _employeeModalHTML({ name: 'Test Tech', role: 'tech' }, 0));
     expect(html).not.toContain('you set the hours, direct the job');
     expect(html).toContain('Edit Test Tech');
   });
 
-  test('_subModalHTML(null,null) — new sub — includes steer line and misclassification disclaimer', async () => {
+  test('_subModalHTML(null,null): new sub, includes steer line and misclassification disclaimer', async () => {
     const html = await page.evaluate(() => _subModalHTML(null, null));
     expect(html).toContain('Add 1099 Sub Contractor');
     expect(html).toContain('their own schedule');
@@ -599,7 +599,7 @@ test.describe('W-2/1099 misclassification-risk copy', () => {
     expect(html).toContain('personally liable');
   });
 
-  test('_subModalHTML(sub, 0) — editing existing — omits steer line and disclaimer', async () => {
+  test('_subModalHTML(sub, 0), editing existing, omits steer line and disclaimer', async () => {
     const html = await page.evaluate(() => _subModalHTML({ name: 'Test Sub', trade: 'Drywall' }, 0));
     expect(html).not.toContain('most audited issues at the IRS');
     expect(html).toContain('Edit Test Sub');
@@ -607,7 +607,7 @@ test.describe('W-2/1099 misclassification-risk copy', () => {
 
   test('_subModalHTML disclaimer text is HTML-safe (no unescaped user data interpolated into it)', async () => {
     const html = await page.evaluate(() => _subModalHTML(null, null));
-    // The disclaimer is static copy — sanity check it has no stray unclosed tags
+    // The disclaimer is static copy, sanity check it has no stray unclosed tags
     const openDivs = (html.match(/<div/g) || []).length;
     const closeDivs = (html.match(/<\/div>/g) || []).length;
     expect(openDivs).toBe(closeDivs);
@@ -629,7 +629,7 @@ test.describe('_saveEmployee() → every new W-2 hire triggers the payroll setup
 
   test.afterAll(async () => { await page.close(); });
 
-  // No email on any of these employees — keeps _saveEmployee's Supabase
+  // No email on any of these employees, keeps _saveEmployee's Supabase
   // upsert branch (if(email&&_supa&&_supaUser)) unreached, so this exercises
   // the trigger logic in isolation without depending on network mocking.
   async function addEmployee(page, name, role) {
@@ -662,7 +662,7 @@ test.describe('_saveEmployee() → every new W-2 hire triggers the payroll setup
   });
 
   // Intentional behavior change (owner request 2026-07-12): the prompt now
-  // fires on EVERY new W-2 hire — W-4/I-9/new-hire reporting restart from
+  // fires on EVERY new W-2 hire, W-4/I-9/new-hire reporting restart from
   // zero per person, so "first hire only" silently skipped the paperwork
   // reminder for everyone after employee #1.
   test('adding a SECOND non-owner employee re-opens the prompt with new-hire framing (isFirst=false)', async () => {

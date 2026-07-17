@@ -2,7 +2,7 @@
 const { test, expect, mockAllExternal, _supabaseShim, _supabaseShimIntake, waitForAppBoot, goPg, assertNoErrors, FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL } = require('./helpers');
 
 test.describe('TradeDesk main app', () => {
-  /** Shared browser page — create once, reuse across tests in group. */
+  /** Shared browser page, create once, reuse across tests in group. */
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -21,7 +21,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 1: App loads ──────────────────────────────────────────────────
-  test('Phase 1 — app loads, dashboard visible', async () => {
+  test('Phase 1, app loads, dashboard visible', async () => {
     const greet = await page.locator('#dash-greet').textContent({ timeout: 8000 });
     expect(greet).toBeTruthy();
 
@@ -30,7 +30,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 2: Version number in DOM ─────────────────────────────────────
-  test('Phase 2 — version number present in version.json and APP_VERSION', async () => {
+  test('Phase 2, version number present in version.json and APP_VERSION', async () => {
     const res = await page.request.get('/version.json');
     const json = await res.json();
     expect(json.version).toMatch(/^\d{2}\.\d{2}\.\d{2}\.\d+$/);
@@ -42,9 +42,9 @@ test.describe('TradeDesk main app', () => {
     }
   });
 
-  // ── Phase 3: Estimate creation — Alice Smith ────────────────────────────
-  test('Phase 3 — estimate creation (Alice Smith)', async () => {
-    // The paint interior/exterior estimator (pg-est) was removed — every trade now
+  // ── Phase 3: Estimate creation, Alice Smith ────────────────────────────
+  test('Phase 3, estimate creation (Alice Smith)', async () => {
+    // The paint interior/exterior estimator (pg-est) was removed, every trade now
     // uses the generic estimator (pg-est-generic: Scope & Price / T&M / BYO).
     await page.evaluate(() => {
       if (typeof openGenericEstimate === 'function') openGenericEstimate(null, null, 'general');
@@ -86,7 +86,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 4: Inject Bob Garcia bid ──────────────────────────────────────
-  test('Phase 4 — inject Bob Garcia bid', async () => {
+  test('Phase 4, inject Bob Garcia bid', async () => {
     const bobId = await page.evaluate(([bidId]) => {
       if (typeof bids === 'undefined') return null;
       bids.push({
@@ -98,8 +98,8 @@ test.describe('TradeDesk main app', () => {
     expect(bobId).toBe(FAKE_BID_ID_2);
   });
 
-  // ── Phase 5: Dashboard — sent proposals appear ──────────────────────────
-  test('Phase 5 — dashboard shows sent proposals', async () => {
+  // ── Phase 5: Dashboard: sent proposals appear ──────────────────────────
+  test('Phase 5, dashboard shows sent proposals', async () => {
     await page.evaluate(() => {
       if (typeof saveAll === 'function') saveAll();
       goPg('pg-dash');
@@ -120,7 +120,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 6: Signature detection → Closed Won + schedule alerts ──────────
-  test('Phase 6 — checkNewSignatures → Closed Won → schedule alerts', async () => {
+  test('Phase 6, checkNewSignatures → Closed Won → schedule alerts', async () => {
     // Inject a fake logged-in user
     await page.evaluate(uid => {
       window._supaUser = { id: uid, email: 'zach@test.com' };
@@ -155,8 +155,8 @@ test.describe('TradeDesk main app', () => {
     }
   });
 
-  // ── Phase 7: Schedule alert chain — modal, Later, Schedule now, Lock ─────
-  test('Phase 7 — schedule alert chain', async () => {
+  // ── Phase 7: Schedule alert chain, modal, Later, Schedule now, Lock ─────
+  test('Phase 7, schedule alert chain', async () => {
     // Ensure alerts are queued
     await page.evaluate(([id1, id2]) => {
       const alerts = [
@@ -176,7 +176,7 @@ test.describe('TradeDesk main app', () => {
       );
       expect(modal1Visible).toBe(true);
 
-      // Click "Later" — 2026-07-14 owner directive: Later SILENCES the stack.
+      // Click "Later", 2026-07-14 owner directive: Later SILENCES the stack.
       // The old behavior (assert a chained second modal) was an endless
       // carousel with N stacked alerts; the intended behavior flipped, so the
       // assertion flips with it (§10.4): NO modal after Later, and the
@@ -227,8 +227,8 @@ test.describe('TradeDesk main app', () => {
     });
   });
 
-  // ── Phase 8: Amount preservation — no re-rounding ────────────────────────
-  test('Phase 8 — proposal amount preserved ($2,375 not re-rounded)', async () => {
+  // ── Phase 8: Amount preservation, no re-rounding ────────────────────────
+  test('Phase 8, proposal amount preserved ($2,375 not re-rounded)', async () => {
     const result = await page.evaluate(() => {
       if (typeof bids === 'undefined') return null;
       const testBid = { id: 'amt-test-e2e', amount: 2375, client_name: 'Amount Test', status: 'Draft' };
@@ -246,7 +246,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 9: All pages navigate without errors ────────────────────────────
-  test('Phase 9 — all pages navigate without JS errors', async () => {
+  test('Phase 9, all pages navigate without JS errors', async () => {
     const pages = [
       { id: 'pg-dash',     name: 'Dashboard'    },
       { id: 'pg-leads',    name: 'Leads'        },
@@ -279,7 +279,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 10: Pull-to-refresh fully removed (real-time sync makes it pointless) ──
-  test('Phase 10 — pull-to-refresh is removed: no PTR keyframe, no refresh bar on pull-down', async () => {
+  test('Phase 10, pull-to-refresh is removed: no PTR keyframe, no refresh bar on pull-down', async () => {
     const r = await page.evaluate(() => {
       // 1. The _ptr_rotate keyframe must be gone from all stylesheets.
       let keyframeFound = false;
@@ -309,7 +309,7 @@ test.describe('TradeDesk main app', () => {
 
   // pg-est (interior/exterior estimate) must suppress overscroll so scrolling
   // never triggers native pull-to-refresh / scroll-chaining.
-  test('Phase 10b — #pg-est and its overscroll-behavior CSS rule were removed with the paint estimator', async () => {
+  test('Phase 10b, #pg-est and its overscroll-behavior CSS rule were removed with the paint estimator', async () => {
     const r = await page.evaluate(() => {
       const css = Array.from(document.styleSheets).flatMap(s => {
         try { return Array.from(s.cssRules); } catch (e) { return []; }
@@ -321,7 +321,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 11: Books tabs → stat cards ────────────────────────────────────
-  test('Phase 11 — Books tabs: income, expenses, mileage, summary', async () => {
+  test('Phase 11, Books tabs: income, expenses, mileage, summary', async () => {
     // Inject sample data
     await page.evaluate(() => {
       const today = new Date().toISOString().slice(0, 10);
@@ -358,7 +358,7 @@ test.describe('TradeDesk main app', () => {
         const el = document.getElementById('tr-t-' + t);
         return el ? el.classList.contains('active') : null;
       }, tab);
-      // Tab element may not have this ID pattern — just verify tracker is active
+      // Tab element may not have this ID pattern, just verify tracker is active
       if (tabEl !== null) {
         expect(tabEl, `Books tab ${tab} should be active`).toBe(true);
       }
@@ -366,7 +366,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 12: Mileage accordion ──────────────────────────────────────────
-  test('Phase 12 — mileage accordion open / close / selectable addresses', async () => {
+  test('Phase 12, mileage accordion open / close / selectable addresses', async () => {
     await page.evaluate(() => typeof goToTrackerTab === 'function' && goToTrackerTab('mileage'));
     await page.waitForTimeout(400);
 
@@ -406,15 +406,15 @@ test.describe('TradeDesk main app', () => {
         document.querySelectorAll('[id^="mile-addr-"] span[style*="user-select:all"]').length >= 2 ||
         document.querySelectorAll('[id^="mile-addr-"] span[style*="user-select: all"]').length >= 2
       );
-      // This is a warning-level check — addresses may not always be present
+      // This is a warning-level check, addresses may not always be present
       if (!selectable) {
-        console.warn('user-select:all spans not found — addresses may not be easily selectable');
+        console.warn('user-select:all spans not found, addresses may not be easily selectable');
       }
     }
   });
 
   // ── Phase 13: iOS bridge functions ───────────────────────────────────────
-  test('Phase 13 — iOS bridge functions (tdPrint, _clientBaseUrl)', async () => {
+  test('Phase 13, iOS bridge functions (tdPrint, _clientBaseUrl)', async () => {
     const bridges = await page.evaluate(() => {
       let nativeCalled = false;
       window._tdNativePrint = () => { nativeCalled = true; };
@@ -453,7 +453,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 14: IRS rate auto-refresh year-based skip logic ────────────────
-  test('Phase 14 — IRS rate auto-refresh skip for current year', async () => {
+  test('Phase 14, IRS rate auto-refresh skip for current year', async () => {
     const result = await page.evaluate(() => {
       if (typeof autoRefreshRates !== 'function') return { exists: false };
       const YEAR_KEY = 'zp3_rate_year';
@@ -474,7 +474,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 15: Income + Expense books rendering ────────────────────────────
-  test('Phase 15 — Books income and expense rows render', async () => {
+  test('Phase 15, Books income and expense rows render', async () => {
     await page.evaluate(() => typeof goToTrackerTab === 'function' && goToTrackerTab('income'));
     await page.waitForTimeout(400);
 
@@ -504,10 +504,10 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 16: Settings save / restore ─────────────────────────────────────
-  test('Phase 16 — settings save and restore IRS rate', async () => {
+  test('Phase 16, settings save and restore IRS rate', async () => {
     await goPg(page, 'pg-settings');
 
-    // #set-irs lives inside the Tax setup detail panel — open it first.
+    // #set-irs lives inside the Tax setup detail panel, open it first.
     await page.evaluate(() => {
       if (typeof _openSetDetail === 'function') _openSetDetail('taxes');
     });
@@ -538,23 +538,23 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 17: Lien panel disclaimer ──────────────────────────────────────
-  test('Phase 17 — lien panel has legal disclaimer', async () => {
+  test('Phase 17, lien panel has legal disclaimer', async () => {
     const lienText = await page.evaluate(() =>
       document.getElementById('cd-lien-panel')?.textContent || ''
     );
     if (lienText.length > 0) {
       expect(lienText).toMatch(/attorney|consult|verify|jurisdiction/i);
     }
-    // If panel not present in current view that's OK — just log
+    // If panel not present in current view that's OK, just log
   });
 
   // ── Phase 18: Zero console errors entire session ──────────────────────────
-  test('Phase 18 — zero JavaScript errors across entire session', async () => {
+  test('Phase 18, zero JavaScript errors across entire session', async () => {
     assertNoErrors(page, 'main app session');
   });
 
   // ── Phase 19: Decline bid → Closed Lost ──────────────────────────────────
-  test('Phase 19 — decline bid → status becomes Closed Lost', async () => {
+  test('Phase 19, decline bid → status becomes Closed Lost', async () => {
     const result = await page.evaluate(bidId => {
       if (typeof bids === 'undefined') return null;
       const bid = bids.find(b => b.id === bidId);
@@ -571,7 +571,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 20: Long-press delete on jobs ──────────────────────────────────
-  test('Phase 20 — job delete function exists (long-press handler)', async () => {
+  test('Phase 20, job delete function exists (long-press handler)', async () => {
     // Inject a test job
     const jobId = await page.evaluate(() => {
       if (typeof jobs === 'undefined') return null;
@@ -602,7 +602,7 @@ test.describe('TradeDesk main app', () => {
   });
 
   // ── Phase 21: Dashboard stat card navigation ──────────────────────────────
-  test('Phase 21 — stat card click navigates to books tab', async () => {
+  test('Phase 21, stat card click navigates to books tab', async () => {
     await goPg(page, 'pg-dash');
 
     // Click Revenue stat card → income tab
@@ -622,7 +622,7 @@ test.describe('TradeDesk main app', () => {
 //  SIGN.HTML TEST GROUP
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — proposal signing page', () => {
+test.describe('sign.html: proposal signing page', () => {
   let page;
   let logProposalViewCalled = false;
 
@@ -644,7 +644,7 @@ test.describe('sign.html — proposal signing page', () => {
       bidId: FAKE_BID_ID_1,
     });
 
-    // Specific log-proposal-view route registered LAST — Playwright uses LIFO so this
+    // Specific log-proposal-view route registered LAST, Playwright uses LIFO so this
     // takes priority over the catch-all above, allowing us to track whether it was called.
     await page.route('**/functions/v1/log-proposal-view', async route => {
       logProposalViewCalled = true;
@@ -656,14 +656,14 @@ test.describe('sign.html — proposal signing page', () => {
     await page.context().close();
   });
 
-  test('sign.html — loads with proposal data (not-yet-signed)', async () => {
+  test('sign.html: loads with proposal data (not-yet-signed)', async () => {
     // Load sign.html with a fake token
     await page.goto(
       `/sign.html?key=proposals/${FAKE_USER_ID}/${FAKE_BID_ID_1}_${FAKE_TOKEN}.json`,
       { waitUntil: 'domcontentloaded', timeout: 20000 }
     );
 
-    // No boot overlay anymore — init() reveals pg-sign directly with a fade.
+    // No boot overlay anymore, init() reveals pg-sign directly with a fade.
     // The page either shows pg-sign or pg-err depending on the mock; give init() time.
     await page.waitForTimeout(2000);
 
@@ -684,21 +684,21 @@ test.describe('sign.html — proposal signing page', () => {
     expect(signVisible || doneVisible || !errVisible).toBe(true);
   });
 
-  test('sign.html — business name rendered in topbar', async () => {
-    // Do NOT re-navigate here — that causes init() to run twice and generates
+  test('sign.html: business name rendered in topbar', async () => {
+    // Do NOT re-navigate here, that causes init() to run twice and generates
     // console errors that break the "zero console errors" test.
     // The previous test already loaded sign.html; we just check document.title.
     const url = page.url();
     if (url.includes('sign.html')) {
       // document.title is set by static HTML ('Review & Sign Your Proposal') and
-      // may be overwritten by init() — either way it is always non-empty.
+      // may be overwritten by init(): either way it is always non-empty.
       const title = await page.evaluate(() => document.title || '').catch(() => '');
       expect(title.length).toBeGreaterThan(0);
     }
     // If we're somehow not on sign.html (e.g. navigation error), skip gracefully.
   });
 
-  test('sign.html — sticky bar contains amount', async () => {
+  test('sign.html: sticky bar contains amount', async () => {
     const total = await page.evaluate(() => {
       const el = document.getElementById('sticky-total');
       return el ? el.textContent : '';
@@ -709,15 +709,15 @@ test.describe('sign.html — proposal signing page', () => {
     }
   });
 
-  test('sign.html — log-proposal-view Edge Function called on load', async () => {
-    // The init() function calls log-proposal-view — check our flag
+  test('sign.html: log-proposal-view Edge Function called on load', async () => {
+    // The init() function calls log-proposal-view, check our flag
     // Give a moment for async calls to resolve
     await page.waitForTimeout(1500);
-    // This test is best-effort — the call happens if init() runs without error
+    // This test is best-effort, the call happens if init() runs without error
     // We just verify the route was wired correctly (no assertion failure on route)
   });
 
-  test('sign.html — decline modal appears and works', async () => {
+  test('sign.html: decline modal appears and works', async () => {
     // If pg-sign is visible, click the decline button
     const declineBtn = page.locator('button:has-text("decline")').first();
     if (await declineBtn.count() > 0 && await declineBtn.isVisible()) {
@@ -745,11 +745,11 @@ test.describe('sign.html — proposal signing page', () => {
     }
   });
 
-  test('sign.html — zero console errors on load', async () => {
+  test('sign.html: zero console errors on load', async () => {
     assertNoErrors(page, 'sign.html');
   });
 
-  test('sign.html — already-signed state shows done page', async () => {
+  test('sign.html: already-signed state shows done page', async () => {
     // Create a fresh page with alreadySigned=true
     const ctx = page.context();
     const signedPage = await ctx.newPage();
@@ -775,7 +775,7 @@ test.describe('sign.html — proposal signing page', () => {
       return pg ? pg.style.display === 'block' : false;
     });
 
-    // If done page is shown, verify it has confirmation info (evaluate — never hangs)
+    // If done page is shown, verify it has confirmation info (evaluate: never hangs)
     if (doneVisible) {
       const doneTitle = await signedPage.evaluate(() => {
         const el = document.getElementById('done-title');
@@ -788,7 +788,7 @@ test.describe('sign.html — proposal signing page', () => {
     await signedPage.close();
   });
 
-  test('sign.html — Missouri address shows MO statute not KS', async () => {
+  test('sign.html: Missouri address shows MO statute not KS', async () => {
     const ctx = page.context();
     const moPage = await ctx.newPage();
     moPage._consoleErrors = [];
@@ -818,7 +818,7 @@ test.describe('sign.html — proposal signing page', () => {
     await moPage.close();
   });
 
-  test('sign.html — cancel deadline skips Sundays (FTC 16 CFR Part 429)', async () => {
+  test('sign.html: cancel deadline skips Sundays (FTC 16 CFR Part 429)', async () => {
     // Fix clock to Friday 2026-05-29 so the test is deterministic.
     // FTC 3 business days from Friday: Sat May 30 (1), Sun May 31 skip, Mon Jun 1 (2), Tue Jun 2 (3) → deadline Tuesday June 2.
     const ctx = page.context();
@@ -854,7 +854,7 @@ test.describe('sign.html — proposal signing page', () => {
 //  CLIENT.HTML HUB TEST GROUP
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('client.html — project hub', () => {
+test.describe('client.html: project hub', () => {
   let page;
 
   const MOCK_HUB_DATA = {
@@ -944,7 +944,7 @@ test.describe('client.html — project hub', () => {
       if (url.includes('favicon') || url.includes('js.stripe.com')) {
         return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
       }
-      // Hub data endpoint — client.html fetches a JSON blob from storage via Supabase SDK
+      // Hub data endpoint, client.html fetches a JSON blob from storage via Supabase SDK
       // (The shim handles this via window.__mockHubData; this fallback catches direct fetch calls)
       if (url.includes('/storage/v1/object/') || url.includes('/storage/v1/object/public/')) {
         return route.fulfill({
@@ -972,7 +972,7 @@ test.describe('client.html — project hub', () => {
     await page.context().close();
   });
 
-  test('client.html — page loads without fatal error', async () => {
+  test('client.html: page loads without fatal error', async () => {
     // client.html requires t (token), u (userId), and c (clientId) URL params.
     // The Supabase shim uses window.__mockHubData (injected via addInitScript) to serve hub JSON.
     // Wrap goto in try/catch so a navigation error doesn't stop the whole test.
@@ -981,21 +981,21 @@ test.describe('client.html — project hub', () => {
         `/client.html?c=901&u=${FAKE_USER_ID}&t=${FAKE_TOKEN}`,
         { waitUntil: 'domcontentloaded', timeout: 30000 }
       );
-    } catch (_) { /* navigation error — still check what rendered */ }
+    } catch (_) { /* navigation error, still check what rendered */ }
 
     // Allow init() to complete
     await page.waitForTimeout(3000);
 
-    // Instant DOM snapshot via evaluate — never hangs regardless of element state
+    // Instant DOM snapshot via evaluate, never hangs regardless of element state
     const bodyLen = await page.evaluate(() =>
       document.body ? document.body.innerHTML.length : 0
     ).catch(() => 0);
 
-    // client.html is 120 KB of static HTML — body must always have content
+    // client.html is 120 KB of static HTML, body must always have content
     expect(bodyLen).toBeGreaterThan(100);
   });
 
-  test('client.html — topbar name element exists', async () => {
+  test('client.html: topbar name element exists', async () => {
     // #topbar-name is static HTML in client.html.
     // If the previous test's goto failed, try navigating now.
     const currentUrl = page.url();
@@ -1013,17 +1013,17 @@ test.describe('client.html — project hub', () => {
       !!(document.getElementById('topbar-name') || document.querySelector('.topbar-name'))
     ).catch(() => false);
 
-    // #topbar-name is in client.html static HTML — it always exists once the page loaded
+    // #topbar-name is in client.html static HTML, it always exists once the page loaded
     expect(exists).toBe(true);
   });
 
-  test('client.html — bottom nav has multiple tabs', async () => {
+  test('client.html: bottom nav has multiple tabs', async () => {
     const bnItems = await page.locator('.bn-item').count();
-    // May be 0 if the page error state is shown — just verify no crash
+    // May be 0 if the page error state is shown, just verify no crash
     expect(bnItems).toBeGreaterThanOrEqual(0);
   });
 
-  test('client.html — zero console errors on load', async () => {
+  test('client.html: zero console errors on load', async () => {
     // Use the same filter as assertNoErrors() + supabase noise
     assertNoErrors(page, 'client.html');
   });
@@ -1033,7 +1033,7 @@ test.describe('client.html — project hub', () => {
 //  PROPOSAL VIEW TRACKING (👀 badge) TEST GROUP
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Proposal view tracking — 👀 Opened badge', () => {
+test.describe('Proposal view tracking, 👀 Opened badge', () => {
   test('view badge appears on bid after sign.html opens proposal', async ({ page }) => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -1066,7 +1066,7 @@ test.describe('Proposal view tracking — 👀 Opened badge', () => {
                      pageText.includes('view') ||
                      pageText.includes('Opened') ||
                      pageText.includes('999001');
-    // This is informational — the badge depends on renderProposalsPage implementation
+    // This is informational, the badge depends on renderProposalsPage implementation
     // Just ensure no crash occurred
     assertNoErrors(page, 'view tracking');
   });
@@ -1076,7 +1076,7 @@ test.describe('Proposal view tracking — 👀 Opened badge', () => {
 //  SETTINGS SAVE / RESTORE
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Settings — save and restore', () => {
+test.describe('Settings: save and restore', () => {
   test('settings fields persist across navigation', async ({ page }) => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -1084,7 +1084,7 @@ test.describe('Settings — save and restore', () => {
 
     await goPg(page, 'pg-settings');
 
-    // Set ALL fields via evaluate — getElementById works on hidden elements inside
+    // Set ALL fields via evaluate, getElementById works on hidden elements inside
     // detail panels; value= works regardless of display state.
     await page.evaluate(() => {
       const setField = (id, val) => {
@@ -1098,7 +1098,7 @@ test.describe('Settings — save and restore', () => {
       setField('set-irs',   '0.675');
     });
 
-    // Save — saveSettings() reads form values directly from DOM elements
+    // Save: saveSettings() reads form values directly from DOM elements
     await page.evaluate(() => {
       if (typeof saveSettings === 'function') saveSettings();
     });
@@ -1109,7 +1109,7 @@ test.describe('Settings — save and restore', () => {
     await goPg(page, 'pg-settings');
     await page.waitForTimeout(500);
 
-    // Read IRS value via evaluate — works on hidden/accordion-closed element
+    // Read IRS value via evaluate, works on hidden/accordion-closed element
     const irsAfter = await page.evaluate(() => {
       const el = document.getElementById('set-irs');
       return el ? el.value : '';
@@ -1121,10 +1121,10 @@ test.describe('Settings — save and restore', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  EDGE FUNCTION MOCK — log-proposal-view
+//  EDGE FUNCTION MOCK, log-proposal-view
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Edge Function mock — log-proposal-view', () => {
+test.describe('Edge Function mock, log-proposal-view', () => {
   test('log-proposal-view is called and returns ok:true', async ({ page }) => {
     let called = false;
 
@@ -1215,7 +1215,7 @@ test.describe('Tax calculation engine', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('calcBrackets — all income in first bracket', async () => {
+  test('calcBrackets: all income in first bracket', async () => {
     const tax = await page.evaluate(() => {
       if (typeof calcBrackets === 'undefined') return null;
       return calcBrackets(5000, [[11925, 0.10], [Infinity, 0.22]]);
@@ -1223,7 +1223,7 @@ test.describe('Tax calculation engine', () => {
     if (tax !== null) expect(tax).toBeCloseTo(500, 2);
   });
 
-  test('calcBrackets — income spans two brackets', async () => {
+  test('calcBrackets: income spans two brackets', async () => {
     const tax = await page.evaluate(() => {
       if (typeof calcBrackets === 'undefined') return null;
       return calcBrackets(20000, [[11925, 0.10], [48475, 0.12], [Infinity, 0.22]]);
@@ -1232,7 +1232,7 @@ test.describe('Tax calculation engine', () => {
     if (tax !== null) expect(tax).toBeCloseTo(2161.5, 1);
   });
 
-  test('calcBrackets — zero income returns zero', async () => {
+  test('calcBrackets: zero income returns zero', async () => {
     const tax = await page.evaluate(() => {
       if (typeof calcBrackets === 'undefined') return null;
       return calcBrackets(0, [[11925, 0.10], [Infinity, 0.22]]);
@@ -1240,7 +1240,7 @@ test.describe('Tax calculation engine', () => {
     if (tax !== null) expect(tax).toBe(0);
   });
 
-  test('calcBrackets — Infinity bracket catches remainder', async () => {
+  test('calcBrackets: Infinity bracket catches remainder', async () => {
     const tax = await page.evaluate(() => {
       if (typeof calcBrackets === 'undefined') return null;
       return calcBrackets(100000, [[11925, 0.10], [48475, 0.12], [Infinity, 0.22]]);
@@ -1248,22 +1248,22 @@ test.describe('Tax calculation engine', () => {
     if (tax !== null) expect(tax).toBeGreaterThan(0);
   });
 
-  test('SE tax — seBase = netSelf × 0.9235', async () => {
+  test('SE tax, seBase = netSelf × 0.9235', async () => {
     const seBase = await page.evaluate(() => 50000 * 0.9235);
     expect(seBase).toBeCloseTo(46175, 0);
   });
 
-  test('SE tax — seTax = seBase × 0.153', async () => {
+  test('SE tax, seTax = seBase × 0.153', async () => {
     const seTax = await page.evaluate(() => (50000 * 0.9235) * 0.153);
     expect(seTax).toBeCloseTo(7064.775, 1);
   });
 
-  test('SE tax — seDed = seTax / 2', async () => {
+  test('SE tax, seDed = seTax / 2', async () => {
     const seDed = await page.evaluate(() => ((50000 * 0.9235) * 0.153) / 2);
     expect(seDed).toBeCloseTo(3532.3875, 1);
   });
 
-  test('FED_BRACKETS — all four filing statuses defined', async () => {
+  test('FED_BRACKETS: all four filing statuses defined', async () => {
     const result = await page.evaluate(() => {
       if (typeof FED_BRACKETS === 'undefined') return null;
       return {
@@ -1283,7 +1283,7 @@ test.describe('Tax calculation engine', () => {
     }
   });
 
-  test('KS_BRACKETS — single and mfj defined', async () => {
+  test('KS_BRACKETS: single and mfj defined', async () => {
     const result = await page.evaluate(() => {
       if (typeof KS_BRACKETS === 'undefined') return null;
       return {
@@ -1297,7 +1297,7 @@ test.describe('Tax calculation engine', () => {
     }
   });
 
-  test('STD_DED — single deduction defined and reasonable', async () => {
+  test('STD_DED: single deduction defined and reasonable', async () => {
     const stdDed = await page.evaluate(() => {
       if (typeof STD_DED === 'undefined') return null;
       return STD_DED.single;
@@ -1305,7 +1305,7 @@ test.describe('Tax calculation engine', () => {
     if (stdDed !== null) expect(stdDed).toBeGreaterThan(10000);
   });
 
-  test('full SE + federal tax — $60k net income, single', async () => {
+  test('full SE + federal tax, $60k net income, single', async () => {
     const result = await page.evaluate(() => {
       if (typeof calcBrackets === 'undefined' || typeof FED_BRACKETS === 'undefined') return null;
       const netSelf = 60000;
@@ -1325,7 +1325,7 @@ test.describe('Tax calculation engine', () => {
     }
   });
 
-  test('reserve rate — 20%–50% for typical self-employment income', async () => {
+  test('reserve rate, 20%–50% for typical self-employment income', async () => {
     const rate = await page.evaluate(() => {
       if (typeof calcBrackets === 'undefined' || typeof FED_BRACKETS === 'undefined') return null;
       const tIn    = 60000, tEx = 5000, tMi = 1000 * 0.67;

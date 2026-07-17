@@ -1,11 +1,11 @@
 // @ts-check
 /**
- * HANDLER SWEEP — the fence against "a wired control throws on click and nobody
+ * HANDLER SWEEP, the fence against "a wired control throws on click and nobody
  * ever clicked it in a test." (See the Stripe Integrations "Manage" bug: an
  * inline onclick called a render fn with the wrong args → uncaught TypeError,
  * toasted in prod, invisible to tests because no test fired the real control.)
  *
- * The error NET is already complete — helpers.js hooks BOTH page.on('console')
+ * The error NET is already complete, helpers.js hooks BOTH page.on('console')
  * and page.on('pageerror'), so any synchronous throw from a handler is caught.
  * What was missing was COVERAGE: nothing physically fired the control. This spec
  * closes that by walking the REAL DOM of every page + settings panel and firing
@@ -19,7 +19,7 @@
  *
  * ISOLATION: a fired control may legitimately navigate/reload the app (a whole
  * different concern from a console error). So the sweep boots FRESH per screen
- * and re-verifies the app is loaded before every control — if a prior control
+ * and re-verifies the app is loaded before every control, if a prior control
  * unloaded the page, it reboots and carries on with the NEXT control rather than
  * cascading a "goPg is undefined" failure into every later screen.
  */
@@ -27,10 +27,10 @@
 const { test, expect, mockAllExternal, waitForAppBoot, goPg } = require('./helpers');
 
 // Only skip controls that NAVIGATE away, redirect externally, sign out, or
-// DESTROY data — a blind click on those is unsafe / leaves the screen. Anything
+// DESTROY data, a blind click on those is unsafe / leaves the screen. Anything
 // that merely reveals a panel, toggles a setting, or opens an in-app modal MUST
 // survive a click clean and is intentionally NOT skipped (that is the bug class
-// we are fencing — _openStripeConnect reveals a panel and used to throw).
+// we are fencing, _openStripeConnect reveals a panel and used to throw).
 const SKIP = /goPg|goBack|goHome|goDash|navTo|switchPg|signOut|signout|logout|logOut|reload|supaShowLogin|showLogin|window\.open|location\s*[.=]|\.href|openUrl|mailto|tel:|delete[A-Z]|remove[A-Z]|wipe|clearData|clearAll|clearAllData|factoryReset|resetApp|eraseAll|export|downloadPdf|printProposal|window\.print|\.submit\(\s*\)/;
 
 // Mirror of helpers.assertNoErrors's environmental-noise filter (network/CDN
@@ -65,7 +65,7 @@ async function isBooted(page) {
   ).catch(() => false);
 }
 
-// Full reboot — a clean slate (used at the start of each screen, and to recover
+// Full reboot, a clean slate (used at the start of each screen, and to recover
 // if a fired control navigated/reloaded the app out from under us).
 async function bootFresh(page) {
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
@@ -77,7 +77,7 @@ async function bootFresh(page) {
 // throw from the handler is reported to window.onerror (→ page.on('pageerror'))
 // and does NOT propagate out of .click()/dispatchEvent, so we read the error
 // buffer from Node after a tick rather than catching here. A navigation kicked
-// off by the click destroys the execution context — caught and treated as "not a
+// off by the click destroys the execution context, caught and treated as "not a
 // console error", the next iteration reboots.
 async function fireNthControl(page, i, container) {
   return page.evaluate(({ idx, skipSrc, sel }) => {
@@ -106,7 +106,7 @@ async function sweepScreen(page, label, gotoScreen, container) {
   const HARD_CAP = 60; // safety bound; no screen wires this many controls
   await bootFresh(page); // clean state per screen (state can't leak in from a prior screen)
   for (let i = 0; i < HARD_CAP; i++) {
-    if (!(await isBooted(page))) await bootFresh(page); // a prior control navigated — recover
+    if (!(await isBooted(page))) await bootFresh(page); // a prior control navigated, recover
     await gotoScreen();
     await page.waitForTimeout(160);
     page._consoleErrors.length = 0;    // reset the net
@@ -127,7 +127,7 @@ const PAGES = ['pg-dash', 'pg-leads', 'pg-clients', 'pg-proposals', 'pg-jobs',
   'pg-contracts', 'pg-gallery', 'pg-team', 'pg-dispatch', 'pg-checklist',
   'pg-cal', 'pg-settings'];
 
-test.describe('handler sweep — settings panels', () => {
+test.describe('handler sweep, settings panels', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -148,7 +148,7 @@ test.describe('handler sweep — settings panels', () => {
   }
 });
 
-test.describe('handler sweep — pages', () => {
+test.describe('handler sweep, pages', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });

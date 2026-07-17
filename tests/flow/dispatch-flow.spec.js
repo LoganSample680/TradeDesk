@@ -1,12 +1,12 @@
-// REAL flow — the dispatch board (task #18 core): assign a scheduled job to a
+// REAL flow, the dispatch board (task #18 core): assign a scheduled job to a
 // crew member through the real Assign sheet (cloud.js _dispatchAssign →
 // _dispatchDoAssign) and verify the assignment + the durable crewHistory record
 // that powers the estimate crew-trust ranking. Jobs round-trip through td_jobs
 // and S.employees rides the settings payload, so the seed save proves the write
 // path end-to-end.
 //
-// NOTE: live GPS geo-fencing (arrive/depart time-on-site) can't run headless — it
-// needs real location pings within business hours — so this covers the
+// NOTE: live GPS geo-fencing (arrive/depart time-on-site) can't run headless, it
+// needs real location pings within business hours, so this covers the
 // deterministic assignment half, which is where the dispatch data is written.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, step, report, resetLedger, cloudRows, seedName, seedAddr } = require('./live-helpers');
@@ -37,13 +37,13 @@ test.describe('dispatch board (UI-driven)', () => {
       act: async (p) => {
         await p.evaluate(({ jobId, empId, empName, clientId, clientName, jobAddr, today }) => {
           // Seed a crew member + a realistic scheduled job (real client, real
-          // address, real job title) for today — not "E2E Dispatch Job / No address".
+          // address, real job title) for today, not "E2E Dispatch Job / No address".
           S.employees = (S.employees || []).filter(e => e.id !== empId);
           S.employees.push({ id: empId, name: empName, role: 'Painter' });
           clients.push({ id: clientId, name: clientName, addr: jobAddr, source: 'Referral', _e2e: 'dispatch' });
-          jobs.push({ id: jobId, client_id: clientId, name: 'Interior repaint — ' + clientName, addr: jobAddr,
+          jobs.push({ id: jobId, client_id: clientId, name: 'Interior repaint, ' + clientName, addr: jobAddr,
             eventType: 'job', status: 'upcoming', start: today, days: 1, _e2e: 'dispatch' });
-          _dispatchAssign(jobId);                          // 1 tap — open the Assign sheet
+          _dispatchAssign(jobId);                          // 1 tap, open the Assign sheet
         }, { jobId, empId, empName, clientId, clientName, jobAddr, today });
         // Tap the crew member's button in the sheet (matches the seeded name).
         await p.waitForSelector('.zmodal-overlay', { timeout: 10000 });
@@ -67,7 +67,7 @@ test.describe('dispatch board (UI-driven)', () => {
       },
     });
 
-    // NO cleanup — the assigned job + crew member stay in the dev account on purpose
+    // NO cleanup, the assigned job + crew member stay in the dev account on purpose
     // so the owner can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

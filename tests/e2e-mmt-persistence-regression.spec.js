@@ -3,29 +3,29 @@
  * Regression guards for four reported bugs (the §14 self-heal "this can never
  * come back" tests). Each maps to a root-cause fix:
  *
- *  BUG 1a — Monthly goal didn't persist on reboot.
+ *  BUG 1a, Monthly goal didn't persist on reboot.
  *           Root cause: the goal-prompt setter called bare saveAll() without
  *           bumping S.settingsTs, so a cloud settings row carrying goalMonthly:0
  *           at an equal/higher settingsTs overwrote the goal back to 0 in
  *           _mergeIncomingSettings on the next boot.
  *           Fix: goal-prompt setter bumps settingsTs (dashboard.js).
  *
- *  BUG 1b — Location permission didn't persist on reboot.
+ *  BUG 1b, Location permission didn't persist on reboot.
  *           Root cause: locationGranted/locationDenied were stripped from the
  *           cloud payload (cloud.js supaSaveToCloud), and the grant/deny write
  *           paths didn't bump settingsTs. A cloud-authoritative reload then had
  *           no location state to restore.
  *           Fix: stop stripping the flags + bump settingsTs on grant/deny.
  *
- *  BUG 2  — Make Money Today action buttons were different sizes (label-driven
+ *  BUG 2 , Make Money Today action buttons were different sizes (label-driven
  *           width). Fix: .tf-acts>.btn CSS makes every button flex:1 1 0 so all
  *           buttons in a row are identical width regardless of label length.
  *
- *  BUG 3  — MMT collapsible sections did not default to closed. Root cause:
+ *  BUG 3 , MMT collapsible sections did not default to closed. Root cause:
  *           _sec() passed defaultOpen=true for dep-sched & collect, force-setting
  *           _mmtCol_<id>=false on first render. Fix: removed defaultOpen; every
  *           section defaults collapsed (undefined !== false ⇒ collapsed).
- *           (2026-07-10: 'dep-sched' merged away — deposits owed now live in the
+ *           (2026-07-10: 'dep-sched' merged away, deposits owed now live in the
  *           'collect' section and deposit-paid unscheduled bids in 'schedule'.
  *           The default-collapsed guard now covers those ids.)
  */
@@ -60,7 +60,7 @@ test.describe('MMT + persistence regressions', () => {
       // Collect section: Closed Won, completed, balance owed.
       bids.unshift({ id: bidCollect, client_id: cid, client_name: 'DefClosed Collect', amount: 5000,
         status: 'Closed Won', draft: false, completion_date: '2026-01-01', bid_date: '2025-12-01', surfaces: [] });
-      // Deposit owed (Closed Won, not completed, deposit required & unpaid) — since the
+      // Deposit owed (Closed Won, not completed, deposit required & unpaid), since the
       // 2026-07-10 merge this ALSO lives in the Collect section (one money queue).
       bids.unshift({ id: bidDep, client_id: cid, client_name: 'DefClosed Dep', amount: 8000, deposit: 2000,
         status: 'Closed Won', draft: false, bid_date: '2025-12-05', surfaces: [] });
@@ -210,7 +210,7 @@ test.describe('MMT + persistence regressions', () => {
     expect(r.err, `renderTodayFeed threw: ${r.err}`).toBe('');
     expect(r.widths.length, `expected multiple action buttons, got labels: ${r.labels.join('|')}`).toBeGreaterThanOrEqual(2);
     const min = Math.min(...r.widths), max = Math.max(...r.widths);
-    // flex:1 1 0 distributes the row evenly — every button is the same width
+    // flex:1 1 0 distributes the row evenly, every button is the same width
     // (allow 1.5px for sub-pixel rounding) even though labels differ in length.
     expect(max - min, `buttons unequal width: ${r.labels.map((l, i) => l + '=' + r.widths[i] + 'px').join(', ')}`).toBeLessThanOrEqual(1.5);
   });
@@ -294,7 +294,7 @@ test.describe('MMT + persistence regressions', () => {
 
   test('BUG1a: the REAL goal-prompt modal setter bumps settingsTs (pins the fix)', async () => {
     // Drives the actual checkGoalPrompt() modal end-to-end. This pins the
-    // dashboard.js setter itself — a revert to bare saveAll() (no settingsTs bump)
+    // dashboard.js setter itself, a revert to bare saveAll() (no settingsTs bump)
     // fails here even though the merge-engine test above would still pass.
     const seed = await page.evaluate(() => {
       const origGoal = S.goalMonthly, origTs = S.settingsTs, origBids = [...bids], origPay = [...payments];

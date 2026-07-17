@@ -7,7 +7,7 @@
  * 2. Dashboard shows "Today at H:MM AM/PM" for timestamps from today
  * 3. Dashboard shows "Yesterday at H:MM AM/PM" for timestamps from yesterday
  * 4. Dashboard shows "Mon, May 25 at H:MM AM/PM" for older timestamps
- * 5. View count of 1 shows no "×" suffix (clean — don't show "1×")
+ * 5. View count of 1 shows no "×" suffix (clean: don't show "1×")
  * 6. Both Hub and Proposal opened badges show when both timestamps present
  * 7. Zero console errors throughout
  */
@@ -18,7 +18,7 @@ const {
   FAKE_BID_ID_1, FAKE_USER_ID,
 } = require('./helpers');
 
-// Unique bid IDs for this test file — don't collide with FAKE_BID_ID_1 used elsewhere
+// Unique bid IDs for this test file, don't collide with FAKE_BID_ID_1 used elsewhere
 const VC_BID_ID = 800001;
 
 // ── Shared setup helper ────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ async function injectViewsAndRender(page, opts = {}) {
   } = opts;
 
   await page.evaluate(({ bidId, hubTs, clientTs, contractorTs, hubCount, clientCount }) => {
-    // Add (or replace) a pending bid — push so we don't clobber the existing array
+    // Add (or replace) a pending bid, push so we don't clobber the existing array
     const existing = window.bids.findIndex(b => b.id === bidId);
     const bid = {
       id: bidId,
@@ -75,7 +75,7 @@ async function injectViewsAndRender(page, opts = {}) {
 
 // ── Dashboard view count + timestamp tests ─────────────────────────────────────
 
-test.describe('Dashboard — view counts and timezone timestamps', () => {
+test.describe('Dashboard: view counts and timezone timestamps', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -136,7 +136,7 @@ test.describe('Dashboard — view counts and timezone timestamps', () => {
   test('shows "Yesterday at H:MM" for hub opened yesterday', async () => {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(14, 30, 0, 0); // 2:30 PM yesterday — well past 60m cutoff
+    yesterday.setHours(14, 30, 0, 0); // 2:30 PM yesterday, well past 60m cutoff
     await injectViewsAndRender(page, { hubTs: yesterday.toISOString(), hubCount: 1 });
 
     const text = await page.textContent('#pg-dash');

@@ -1,8 +1,8 @@
-// REAL correctness flow — the sales-tax + income-tax engines (task #16). Unlike
+// REAL correctness flow, the sales-tax + income-tax engines (task #16). Unlike
 // the seeding-driven flows, this drives the PURE production tax functions
 // (sales-tax.js calcSalesTax/getJobTaxTreatment, utils.js calcBrackets) with
 // known inputs and asserts known-correct outputs. Tax math is where a contractor
-// gets audited — every rule here is a documented treatment that must never drift.
+// gets audited, every rule here is a documented treatment that must never drift.
 // Each case is a step() so a regression throws a one-line finding() naming the
 // exact tax rule that broke.
 const { test, expect } = require('./flow-test');
@@ -17,7 +17,7 @@ test.describe('sales-tax + income-tax engine correctness', () => {
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
   test('sales-tax treatments and income-tax brackets compute exactly', async ({ page }) => {
-    // ── Capital improvement (painting, KS, residential): NO customer tax — the
+    // ── Capital improvement (painting, KS, residential): NO customer tax, the
     // contractor pays tax on materials at purchase. taxAmount must be 0. ──
     await step(page, {
       label: 'KS capital improvement → no customer tax', page: 'sales-tax', role: 'contractor',

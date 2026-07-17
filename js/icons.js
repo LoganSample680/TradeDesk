@@ -1,18 +1,18 @@
-// Icon set — inline SVGs sourced from Lucide (ISC license, lucide.dev), one
+// Icon set, inline SVGs sourced from Lucide (ISC license, lucide.dev), one
 // consistent 24x24 stroke-based line-icon style app-wide. Replaces raw emoji
-// used as functional UI icons (nav tabs, badges, toasts, buttons) — emoji
+// used as functional UI icons (nav tabs, badges, toasts, buttons), emoji
 // render inconsistently across platforms and read as unpolished on a
 // document/screen a client is looking at. Decorative text emoji in casual
 // copy is a separate, smaller concern; this covers emoji standing in for an
 // icon.
 //
 // svgIcon(emoji, opts) returns an inline <svg> string. opts: size (default 16),
-// color (default 'currentColor' — inherits the surrounding text color),
+// color (default 'currentColor', inherits the surrounding text color),
 // strokeWidth (default 2), style (extra inline CSS appended to the svg tag).
 // Falls back to the raw emoji itself if no mapping exists, so a missed case
 // degrades to the original glyph rather than rendering blank.
 //
-// Named svgIcon/hasSvgIcon (not icon/hasIcon) — "icon" is already a common
+// Named svgIcon/hasSvgIcon (not icon/hasIcon): "icon" is already a common
 // local variable/param name throughout the app (showToast's own 2nd param,
 // cloud.js, finance.js, fleet.js all declare a local `icon` holding an emoji
 // string); a global function of that name would get shadowed and throw the
@@ -219,9 +219,9 @@ const _ICON_PATHS={
 };
 
 // Many emoji appear in the wild with an optional trailing variation selector
-// (U+FE0F, "text vs. emoji presentation" — e.g. the invisible extra codepoint
+// (U+FE0F, "text vs. emoji presentation", e.g. the invisible extra codepoint
 // in some copy-pasted "⚠️"/"✏️"). _ICON_PATHS keys on the bare codepoint, so
-// strip VS16 before lookup — otherwise svgIcon('⚠️') silently no-ops and
+// strip VS16 before lookup, otherwise svgIcon('⚠️') silently no-ops and
 // falls back to the raw (still VS16-suffixed) glyph while svgIcon('⚠')
 // works, which is a confusing, easy-to-miss inconsistency.
 function _stripVS16(s) { return String(s || '').replace(/\uFE0F/g, ''); }
@@ -237,6 +237,6 @@ function svgIcon(emoji, opts) {
     '" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-2px' +
     (opts.style ? ';' + opts.style : '') + '">' + inner + '</svg>';
 }
-// hasSvgIcon(emoji) — true if a mapping exists, for callers that want to branch
+// hasSvgIcon(emoji): true if a mapping exists, for callers that want to branch
 // (e.g. skip the svgIcon() wrapper and fall back to plain text).
 function hasSvgIcon(emoji) { return !!_ICON_PATHS[_stripVS16(emoji)]; }

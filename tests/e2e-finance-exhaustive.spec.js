@@ -8,7 +8,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('finance.js — exhaustive coverage', () => {
+test.describe('finance.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -66,7 +66,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('openExpenseFlow', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('golden path — creates #expense-modal in DOM', async () => {
+    test('golden path, creates #expense-modal in DOM', async () => {
       const r = await page.evaluate(() => {
         try { openExpenseFlow(); return { ok: true, exists: !!document.getElementById('expense-modal') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -75,7 +75,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('idempotent — second call does not create duplicate modal', async () => {
+    test('idempotent: second call does not create duplicate modal', async () => {
       const r = await page.evaluate(() => {
         try {
           openExpenseFlow(); openExpenseFlow();
@@ -106,7 +106,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasSaveBtn).toBe(true);
     });
 
-    test('5 concurrent calls — no stack corruption, exactly 1 modal', async () => {
+    test('5 concurrent calls, no stack corruption, exactly 1 modal', async () => {
       const r = await page.evaluate(() => {
         try {
           for (let i = 0; i < 5; i++) openExpenseFlow();
@@ -117,7 +117,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('corrupted localStorage before call — does not crash', async () => {
+    test('corrupted localStorage before call, does not crash', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_data', '{INVALID{{{{');
         try { openExpenseFlow(); return { ok: true }; }
@@ -142,7 +142,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // closeExpenseFlow
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('closeExpenseFlow', () => {
-    test('golden path — removes #expense-modal', async () => {
+    test('golden path, removes #expense-modal', async () => {
       const r = await page.evaluate(() => {
         try { openExpenseFlow(); closeExpenseFlow(); return { ok: true, gone: !document.getElementById('expense-modal') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -151,7 +151,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.gone).toBe(true);
     });
 
-    test('no modal present — does not throw', async () => {
+    test('no modal present, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         try { closeExpenseFlow(); return { ok: true }; }
@@ -172,7 +172,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.editId).toBe(null);
     });
 
-    test('multiple consecutive closes — no throw', async () => {
+    test('multiple consecutive closes, no throw', async () => {
       const r = await page.evaluate(() => {
         try { closeExpenseFlow(); closeExpenseFlow(); closeExpenseFlow(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -190,7 +190,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('empty imagePages — hides preview element', async () => {
+    test('empty imagePages, hides preview element', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [];
         try { _renderExpPages(); return { ok: true, display: document.getElementById('exp-preview-img')?.style.display }; }
@@ -200,7 +200,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('none');
     });
 
-    test('one page — shows preview with page thumbnail', async () => {
+    test('one page, shows preview with page thumbnail', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }];
         try { _renderExpPages(); return { ok: true, display: document.getElementById('exp-preview-img')?.style.display }; }
@@ -210,7 +210,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('missing preview element — does not throw', async () => {
+    test('missing preview element, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('exp-preview-img')?.remove();
         try { _renderExpPages(); return { ok: true }; }
@@ -219,7 +219,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('3 repeated calls — no duplicate thumbnails', async () => {
+    test('3 repeated calls, no duplicate thumbnails', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }];
         try {
@@ -232,7 +232,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.imgCount).toBe(1);
     });
 
-    test('large page count (100 pages) — no throw', async () => {
+    test('large page count (100 pages), no throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = Array.from({ length: 100 }, (_, i) => ({ b64: 'aA==', key: 'k' + i }));
         try { _renderExpPages(); return { ok: true }; }
@@ -242,14 +242,14 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null imagePages entry — renders without crash', async () => {
+    test('null imagePages entry, renders without crash', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [null];
         try { _renderExpPages(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
         finally { _expState.imagePages = []; _renderExpPages(); }
       });
-      // May throw if page data is null — graceful means page doesn't crash
+      // May throw if page data is null, graceful means page doesn't crash
       expect(typeof r.ok).toBe('boolean');
     });
   });
@@ -261,7 +261,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     test.beforeEach(async () => { await page.evaluate(() => { openExpenseFlow(); }); });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('golden path — removes page at valid index', async () => {
+    test('golden path, removes page at valid index', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aGVsbG8=', key: null }, { b64: 'dGVzdA==', key: null }];
         try { _removeExpPage(0); return { ok: true, len: _expState.imagePages.length, firstB64: _expState.imagePages[0]?.b64 }; }
@@ -272,7 +272,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.firstB64).toBe('dGVzdA==');
     });
 
-    test('null index — does not throw', async () => {
+    test('null index, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage(null); return { ok: true }; }
@@ -281,7 +281,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined index — does not throw', async () => {
+    test('undefined index, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage(undefined); return { ok: true }; }
@@ -290,7 +290,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('index -1 — does not throw', async () => {
+    test('index -1, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage(-1); return { ok: true }; }
@@ -299,7 +299,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('index beyond array length — does not throw', async () => {
+    test('index beyond array length, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage(999); return { ok: true, len: _expState.imagePages.length }; }
@@ -308,7 +308,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty imagePages — does not throw', async () => {
+    test('empty imagePages, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [];
         try { _removeExpPage(0); return { ok: true }; }
@@ -317,7 +317,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('removes last page — sets hasReceipt false', async () => {
+    test('removes last page, sets hasReceipt false', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         _expState.hasReceipt = true;
@@ -328,7 +328,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasReceipt).toBe(false);
     });
 
-    test('string index — does not throw', async () => {
+    test('string index, does not throw', async () => {
       const r = await page.evaluate(() => {
         _expState.imagePages = [{ b64: 'aA==', key: null }];
         try { _removeExpPage('bad'); return { ok: true }; }
@@ -344,7 +344,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('expTriggerAttach', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('called without modal present — does not throw', async () => {
+    test('called without modal present, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         // Stub out _showReceiptScanner to prevent file picker
@@ -357,7 +357,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('addPage=true — does not throw', async () => {
+    test('addPage=true: does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -368,7 +368,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('addPage=false — does not throw', async () => {
+    test('addPage=false: does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -379,7 +379,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null arg — does not throw', async () => {
+    test('null arg, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -390,7 +390,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -406,7 +406,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // expAttachPhotoOnly
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('expAttachPhotoOnly', () => {
-    test('null input — delegates to expTriggerAttach without crash', async () => {
+    test('null input, delegates to expTriggerAttach without crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -417,7 +417,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined input — does not throw', async () => {
+    test('undefined input, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -435,7 +435,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('expTriggerScan', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('called without modal — does not throw', async () => {
+    test('called without modal, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         const orig = window._showReceiptScanner;
@@ -447,7 +447,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -463,7 +463,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // expProcessPhoto
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('expProcessPhoto', () => {
-    test('null input — delegates without crash', async () => {
+    test('null input, delegates without crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -474,7 +474,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined input — does not throw', async () => {
+    test('undefined input, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._showReceiptScanner;
         window._showReceiptScanner = () => {};
@@ -490,16 +490,16 @@ test.describe('finance.js — exhaustive coverage', () => {
   // compressAndEncodeImage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('compressAndEncodeImage', () => {
-    test('null file — rejects gracefully (does not crash page)', async () => {
+    test('null file, rejects gracefully (does not crash page)', async () => {
       const r = await page.evaluate(async () => {
         try { await compressAndEncodeImage(null); return { ok: false }; }
         catch (e) { return { ok: true, isError: true, msg: e.message }; }
       });
-      // Should reject — important thing is page is still alive
+      // Should reject, important thing is page is still alive
       expect(r.ok).toBe(true);
     });
 
-    test('undefined file — rejects gracefully', async () => {
+    test('undefined file, rejects gracefully', async () => {
       const r = await page.evaluate(async () => {
         try { await compressAndEncodeImage(undefined); return { ok: false }; }
         catch (e) { return { ok: true, isError: true }; }
@@ -507,7 +507,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid minimal Blob — resolves to base64 string', async () => {
+    test('valid minimal Blob, resolves to base64 string', async () => {
       const r = await page.evaluate(async () => {
         // 1x1 white JPEG
         const b64 = '/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/xAAUAQEAAAAAAAAAAAAAAAAAAAAA/8QAFBEBAAAAAAAAAAAAAAAAAAAAAP/aAAwDAQACEQMRAD8AJQAB/9k=';
@@ -531,7 +531,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       }
     });
 
-    test('maxPx=0 — handles degenerate dimensions without crash', async () => {
+    test('maxPx=0: handles degenerate dimensions without crash', async () => {
       const r = await page.evaluate(async () => {
         const bytes = new Uint8Array([
           0xFF,0xD8,0xFF,0xE0,0,16,74,70,73,70,0,1,1,0,0,1,0,1,0,0,
@@ -557,7 +557,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('maxPx=Number.MAX_SAFE_INTEGER — does not crash', async () => {
+    test('maxPx=Number.MAX_SAFE_INTEGER: does not crash', async () => {
       const r = await page.evaluate(async () => {
         const bytes = new Uint8Array([0xFF,0xD8,0xFF,0xD9]); // minimal valid JPEG
         const blob = new Blob([bytes], { type: 'image/jpeg' });
@@ -572,7 +572,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _gpuInit
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_gpuInit', () => {
-    test('no WebGPU available — returns false gracefully', async () => {
+    test('no WebGPU available, returns false gracefully', async () => {
       const r = await page.evaluate(async () => {
         const origGpu = navigator.gpu;
         // Temporarily hide GPU
@@ -585,7 +585,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(false);
     });
 
-    test('zero dimensions — does not throw', async () => {
+    test('zero dimensions, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const origGpu = navigator.gpu;
         Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true });
@@ -596,7 +596,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null dimensions — does not throw', async () => {
+    test('null dimensions, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const origGpu = navigator.gpu;
         Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true });
@@ -612,7 +612,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _gpuSobelAsync
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_gpuSobelAsync', () => {
-    test('no GPU device initialised — returns null gracefully', async () => {
+    test('no GPU device initialised, returns null gracefully', async () => {
       const r = await page.evaluate(async () => {
         _gpuDestroy(); // ensure clean state
         const fakeVideo = { videoWidth: 0 };
@@ -623,12 +623,12 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('null video — returns null gracefully', async () => {
+    test('null video, returns null gracefully', async () => {
       const r = await page.evaluate(async () => {
         try { const result = await _gpuSobelAsync(null, 180, 180); return { ok: true, result }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // May throw or return null — page must survive
+      // May throw or return null, page must survive
       expect(['boolean'].includes(typeof r.ok)).toBe(true);
     });
   });
@@ -637,7 +637,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _gpuDestroy
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_gpuDestroy', () => {
-    test('golden path — resets _gpu state to null values', async () => {
+    test('golden path, resets _gpu state to null values', async () => {
       const r = await page.evaluate(() => {
         try { _gpuDestroy(); return { ok: true, dev: window._gpu?.dev, tw: window._gpu?.tw }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -647,7 +647,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.tw).toBe(0);
     });
 
-    test('called twice — no throw', async () => {
+    test('called twice, no throw', async () => {
       const r = await page.evaluate(() => {
         try { _gpuDestroy(); _gpuDestroy(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -655,7 +655,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         try { for (let i = 0; i < 5; i++) _gpuDestroy(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -674,7 +674,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       });
     });
 
-    test('fileOrNull=null — appends file input to body', async () => {
+    test('fileOrNull=null: appends file input to body', async () => {
       const r = await page.evaluate(() => {
         const orig = window._loadAndBuildScanUI;
         window._loadAndBuildScanUI = () => {};
@@ -686,7 +686,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('fileOrNull provided — calls _loadAndBuildScanUI', async () => {
+    test('fileOrNull provided, calls _loadAndBuildScanUI', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window._loadAndBuildScanUI;
@@ -700,7 +700,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('null callback — does not throw', async () => {
+    test('null callback, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window._loadAndBuildScanUI;
         window._loadAndBuildScanUI = () => {};
@@ -721,7 +721,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await page.evaluate(() => { document.getElementById('live-scan-ui')?.remove(); });
     });
 
-    test('no camera — falls back to file input without crashing', async () => {
+    test('no camera, falls back to file input without crashing', async () => {
       const r = await page.evaluate(async () => {
         // Stub getUserMedia to fail (no camera in test env)
         const origMD = navigator.mediaDevices;
@@ -744,7 +744,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null callback — falls back without crash', async () => {
+    test('null callback, falls back without crash', async () => {
       const r = await page.evaluate(async () => {
         const origMD = navigator.mediaDevices;
         Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: async () => { throw new Error('no cam'); } }, configurable: true });
@@ -796,7 +796,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await page.evaluate(() => { document.getElementById('rcpt-scan-ui')?.remove(); });
     });
 
-    test('valid jpeg blob — calls _buildScanUI', async () => {
+    test('valid jpeg blob, calls _buildScanUI', async () => {
       const r = await page.evaluate(async () => {
         let called = false;
         const orig = window._buildScanUI;
@@ -819,7 +819,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null file — does not throw (onerror path calls callback)', async () => {
+    test('null file, does not throw (onerror path calls callback)', async () => {
       const r = await page.evaluate(() => {
         const orig = window._buildScanUI;
         window._buildScanUI = () => {};
@@ -839,7 +839,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await page.evaluate(() => { document.getElementById('rcpt-scan-ui')?.remove(); });
     });
 
-    test('valid image — creates #rcpt-scan-ui', async () => {
+    test('valid image, creates #rcpt-scan-ui', async () => {
       const r = await page.evaluate(() => {
         const img = new Image(); img.width = 100; img.height = 100;
         // Use naturalWidth/naturalHeight by drawing to canvas first
@@ -873,17 +873,17 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('null image — does not crash page', async () => {
+    test('null image, does not crash page', async () => {
       const r = await page.evaluate(() => {
         const blob = new Blob(['dummy'], { type: 'image/jpeg' });
         try { _buildScanUI(null, blob, () => {}); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // Either returns ok or throws cleanly — page must survive
+      // Either returns ok or throws cleanly, page must survive
       expect(typeof r.ok).toBe('boolean');
     });
 
-    test('null callback — does not throw on construction', async () => {
+    test('null callback, does not throw on construction', async () => {
       const r = await page.evaluate(() => {
         const fakeImg = new Image();
         Object.defineProperty(fakeImg, 'naturalWidth', { value: 100 });
@@ -900,7 +900,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _detectDocCorners
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_detectDocCorners', () => {
-    test('valid edge data with detectable rectangle — returns 4 corner points', async () => {
+    test('valid edge data with detectable rectangle, returns 4 corner points', async () => {
       const r = await page.evaluate(() => {
         const tw = 20, th = 20;
         // Create an image data with a white rectangle on black background
@@ -918,13 +918,13 @@ test.describe('finance.js — exhaustive coverage', () => {
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // May return null if heuristics don't find a rect in 20x20 — that is acceptable
+      // May return null if heuristics don't find a rect in 20x20, that is acceptable
       if (r.result !== null) {
         expect(r.result).toHaveLength(4);
       }
     });
 
-    test('empty data array — returns null gracefully', async () => {
+    test('empty data array, returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         try { const result = _detectDocCorners(new Uint8Array(0), 0, 0, 640, 480); return { ok: true, result }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -933,7 +933,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('null data — returns null gracefully', async () => {
+    test('null data, returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         try { const result = _detectDocCorners(null, 10, 10, 640, 480); return { ok: true, result }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -942,7 +942,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('all-black image — returns null (no edges)', async () => {
+    test('all-black image, returns null (no edges)', async () => {
       const r = await page.evaluate(() => {
         const tw = 40, th = 40;
         const data = new Uint8Array(tw * th * 4); // all zeros
@@ -953,7 +953,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('1x1 data — returns null gracefully', async () => {
+    test('1x1 data, returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         const data = new Uint8Array([255, 255, 255, 255]);
         try { const result = _detectDocCorners(data, 1, 1, 100, 100); return { ok: true, result }; }
@@ -963,7 +963,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.result).toBe(null);
     });
 
-    test('negative dimensions — returns null gracefully', async () => {
+    test('negative dimensions, returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         const data = new Uint8Array(4);
         try { const result = _detectDocCorners(data, -1, -1, 100, 100); return { ok: true, result }; }
@@ -972,7 +972,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('outW=0, outH=0 — does not throw', async () => {
+    test('outW=0, outH=0, does not throw', async () => {
       const r = await page.evaluate(() => {
         const tw = 10, th = 10;
         const data = new Uint8Array(tw * th * 4).fill(128);
@@ -987,7 +987,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _scanDetectCorners / _scanDetectCornersFromCanvas
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_scanDetectCorners + _scanDetectCornersFromCanvas', () => {
-    test('_scanDetectCorners — valid canvas context — does not throw', async () => {
+    test('_scanDetectCorners: valid canvas context, does not throw', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 40; canvas.height = 40;
         const ctx = canvas.getContext('2d');
@@ -998,7 +998,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_scanDetectCorners — zero width/height — returns null gracefully', async () => {
+    test('_scanDetectCorners: zero width/height: returns null gracefully', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1;
         const ctx = canvas.getContext('2d');
@@ -1008,7 +1008,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_scanDetectCornersFromCanvas — delegates to _scanDetectCorners', async () => {
+    test('_scanDetectCornersFromCanvas, delegates to _scanDetectCorners', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 40; canvas.height = 40;
         const ctx = canvas.getContext('2d');
@@ -1028,7 +1028,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _scanWarp
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_scanWarp', () => {
-    test('golden path — produces output canvas', async () => {
+    test('golden path, produces output canvas', async () => {
       const r = await page.evaluate(() => {
         const img = new Image();
         const canvas = document.createElement('canvas'); canvas.width = 100; canvas.height = 100;
@@ -1047,7 +1047,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.h).toBeGreaterThan(0);
     });
 
-    test('degenerate corners (all same point) — produces canvas without crash', async () => {
+    test('degenerate corners (all same point), produces canvas without crash', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 50; canvas.height = 50;
         canvas.getContext('2d').fillRect(0,0,50,50);
@@ -1058,17 +1058,17 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null image — does not crash page', async () => {
+    test('null image, does not crash page', async () => {
       const r = await page.evaluate(() => {
         const corners = [{x:0,y:0},{x:10,y:0},{x:10,y:10},{x:0,y:10}];
         try { _scanWarp(null, 100, 100, corners); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
       });
-      // Graceful — either succeeds or throws but page lives
+      // Graceful: either succeeds or throws but page lives
       expect(typeof r.ok).toBe('boolean');
     });
 
-    test('null corners — does not crash page', async () => {
+    test('null corners, does not crash page', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 10; canvas.height = 10;
         try { _scanWarp(canvas, 10, 10, null); return { ok: true }; }
@@ -1082,7 +1082,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _scanHomography
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_scanHomography', () => {
-    test('golden path — returns 8-element array', async () => {
+    test('golden path, returns 8-element array', async () => {
       const r = await page.evaluate(() => {
         const src = [[0,0],[100,0],[100,100],[0,100]];
         const dst = [[10,10],[90,10],[90,90],[10,90]];
@@ -1094,7 +1094,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.len).toBe(8);
     });
 
-    test('identity transform — diagonal values near 1', async () => {
+    test('identity transform, diagonal values near 1', async () => {
       const r = await page.evaluate(() => {
         const pts = [[0,0],[100,0],[100,100],[0,100]];
         try { const h = _scanHomography(pts, pts); return { ok: true, h0: h[0], h4: h[4] }; }
@@ -1106,9 +1106,9 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(Math.abs(r.h4 - 1)).toBeLessThan(0.01);
     });
 
-    test('degenerate (collinear points) — returns array without crash', async () => {
+    test('degenerate (collinear points), returns array without crash', async () => {
       const r = await page.evaluate(() => {
-        // Collinear points — matrix will be singular
+        // Collinear points, matrix will be singular
         const src = [[0,0],[1,0],[2,0],[3,0]];
         const dst = [[0,0],[1,0],[2,0],[3,0]];
         try { const h = _scanHomography(src, dst); return { ok: true, isArray: Array.isArray(h) }; }
@@ -1117,7 +1117,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null input — does not crash page', async () => {
+    test('null input, does not crash page', async () => {
       const r = await page.evaluate(() => {
         try { _scanHomography(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1130,7 +1130,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // _scanEnhance
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_scanEnhance', () => {
-    test('golden path — modifies canvas in-place without throw', async () => {
+    test('golden path, modifies canvas in-place without throw', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 50; canvas.height = 50;
         const ctx = canvas.getContext('2d');
@@ -1143,7 +1143,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.w).toBe(50);
     });
 
-    test('1x1 canvas — does not crash', async () => {
+    test('1x1 canvas, does not crash', async () => {
       const r = await page.evaluate(() => {
         const canvas = document.createElement('canvas'); canvas.width = 1; canvas.height = 1;
         try { _scanEnhance(canvas); return { ok: true }; }
@@ -1152,7 +1152,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null canvas — does not crash page', async () => {
+    test('null canvas, does not crash page', async () => {
       const r = await page.evaluate(() => {
         try { _scanEnhance(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1160,9 +1160,9 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(typeof r.ok).toBe('boolean');
     });
 
-    test('uniform solid-color canvas — stretches contrast without crash', async () => {
+    test('uniform solid-color canvas, stretches contrast without crash', async () => {
       const r = await page.evaluate(() => {
-        // All pixels identical — denominator would be 0 if not guarded
+        // All pixels identical, denominator would be 0 if not guarded
         const canvas = document.createElement('canvas'); canvas.width = 10; canvas.height = 10;
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = 'rgb(128,128,128)'; ctx.fillRect(0,0,10,10);
@@ -1185,7 +1185,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await cleanModals();
     });
 
-    test('valid ISO date — creates confirmation widget', async () => {
+    test('valid ISO date, creates confirmation widget', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -1197,7 +1197,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('null aiDate — shows "(no date found)" label', async () => {
+    test('null aiDate, shows "(no date found)" label', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -1212,7 +1212,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasLabel).toBe(true);
     });
 
-    test('empty aiDate — does not throw', async () => {
+    test('empty aiDate, does not throw', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -1223,7 +1223,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null statusEl — does not throw', async () => {
+    test('null statusEl, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _confirmReceiptDate('2025-06-15', null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1232,7 +1232,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('removes existing rcpt-date-confirm before creating new — no duplicate', async () => {
+    test('removes existing rcpt-date-confirm before creating new, no duplicate', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -1247,7 +1247,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('yes button — sets em-date value and removes widget', async () => {
+    test('yes button, sets em-date value and removes widget', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -1264,7 +1264,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.dateVal).toBe('06/15/2025');
     });
 
-    test('no button — clears em-date and removes widget', async () => {
+    test('no button, clears em-date and removes widget', async () => {
       const r = await page.evaluate(() => {
         const statusEl = document.createElement('div');
         document.body.appendChild(statusEl);
@@ -1289,7 +1289,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     test.beforeEach(async () => { await page.evaluate(() => { openExpenseFlow(); }); });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('no expense modal — does not throw', async () => {
+    test('no expense modal, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         try { toggleExpenseSections(); return { ok: true }; }
@@ -1298,7 +1298,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('category=meals — shows meal section', async () => {
+    test('category=meals: shows meal section', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('em-cat').value = 'meals';
         try { toggleExpenseSections(); return { ok: true, display: document.getElementById('em-meal-section')?.style.display }; }
@@ -1308,7 +1308,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('category=marketing — shows marketing section', async () => {
+    test('category=marketing: shows marketing section', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('em-cat').value = 'marketing';
         try { toggleExpenseSections(); return { ok: true, display: document.getElementById('em-marketing-section')?.style.display }; }
@@ -1318,7 +1318,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('category=other — hides both sections', async () => {
+    test('category=other: hides both sections', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('em-cat').value = 'other';
         try {
@@ -1335,7 +1335,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.mkt).toBe('none');
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         try { for (let i = 0; i < 5; i++) toggleExpenseSections(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1351,7 +1351,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     test.beforeEach(async () => { await page.evaluate(() => { openExpenseFlow(); }); });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('delegates to toggleExpenseSections — does not throw', async () => {
+    test('delegates to toggleExpenseSections, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { toggleMealFields(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1364,7 +1364,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // toggleCashWarning
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('toggleCashWarning', () => {
-    test('no _inc-method element — does not throw', async () => {
+    test('no _inc-method element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { toggleCashWarning(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1372,7 +1372,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('method=Cash — shows cash warning', async () => {
+    test('method=Cash: shows cash warning', async () => {
       const r = await page.evaluate(() => {
         const sel = document.createElement('select'); sel.id = '_inc-method';
         const opt = document.createElement('option'); opt.value = 'Cash'; sel.appendChild(opt); sel.value = 'Cash';
@@ -1386,7 +1386,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.display).toBe('block');
     });
 
-    test('method=Card — hides warning, unchecks confirm', async () => {
+    test('method=Card: hides warning, unchecks confirm', async () => {
       const r = await page.evaluate(() => {
         const sel = document.createElement('select'); sel.id = '_inc-method';
         const opt = document.createElement('option'); opt.value = 'Card'; sel.appendChild(opt); sel.value = 'Card';
@@ -1402,7 +1402,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.checked).toBe(false);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         try { for (let i = 0; i < 5; i++) toggleCashWarning(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1420,7 +1420,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       await page.evaluate(() => { expenses = expenses.filter(e => e.id < 1700000000000); });
     });
 
-    test('missing vendor — shows error, does not save', async () => {
+    test('missing vendor, shows error, does not save', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = '';
@@ -1435,7 +1435,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.added).toBe(0);
     });
 
-    test('missing amount — shows error, does not save', async () => {
+    test('missing amount, shows error, does not save', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
@@ -1450,7 +1450,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.added).toBe(0);
     });
 
-    test('zero amount — shows error', async () => {
+    test('zero amount, shows error', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
@@ -1464,7 +1464,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.added).toBe(0);
     });
 
-    test('negative amount — shows error', async () => {
+    test('negative amount, shows error', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Home Depot';
@@ -1478,7 +1478,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.added).toBe(0);
     });
 
-    test('meal category without purpose — shows IRS error', async () => {
+    test('meal category without purpose, shows IRS error', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Denny\'s';
@@ -1495,7 +1495,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.errText).toMatch(/business purpose/i);
     });
 
-    test('golden path — adds expense to array and closes modal', async () => {
+    test('golden path, adds expense to array and closes modal', async () => {
       const r = await page.evaluate(async () => {
         openExpenseFlow();
         document.getElementById('em-vendor').value = 'Sherwin-Williams';
@@ -1517,7 +1517,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.modalGone).toBe(true);
     });
 
-    test('no expense-modal — does not throw', async () => {
+    test('no expense-modal, does not throw', async () => {
       const r = await page.evaluate(async () => {
         document.getElementById('expense-modal')?.remove();
         try { await expSave(); return { ok: true }; }
@@ -1526,7 +1526,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not crash', async () => {
+    test('corrupted localStorage, does not crash', async () => {
       const r = await page.evaluate(async () => {
         localStorage.setItem('zp3_data', '{INVALID{{{{');
         openExpenseFlow();
@@ -1547,7 +1547,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('quickAction', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('type="expense" — opens expense modal', async () => {
+    test('type="expense", opens expense modal', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('expense-modal')?.remove();
         try { quickAction('expense'); return { ok: true, hasModal: !!document.getElementById('expense-modal') }; }
@@ -1557,7 +1557,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasModal).toBe(true);
     });
 
-    test('type="drive" — calls openDriveModal or catches safely', async () => {
+    test('type="drive", calls openDriveModal or catches safely', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('drive'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1565,7 +1565,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type="collect" — delegates to openCollectModal', async () => {
+    test('type="collect", delegates to openCollectModal', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.openCollectModal;
@@ -1578,7 +1578,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('type="estimate" — does not throw', async () => {
+    test('type="estimate", does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('estimate'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1586,7 +1586,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type="schedule" — does not throw', async () => {
+    test('type="schedule", does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('schedule'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1594,7 +1594,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('type="complete" — does not throw', async () => {
+    test('type="complete", does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('complete'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1602,7 +1602,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null type — does not throw', async () => {
+    test('null type, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1610,7 +1610,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined type — does not throw', async () => {
+    test('undefined type, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1618,7 +1618,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string type — does not throw', async () => {
+    test('empty string type, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1626,7 +1626,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown type — does not throw', async () => {
+    test('unknown type, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('unknown_action_xyz'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1634,7 +1634,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window.openCollectModal;
         window.openCollectModal = () => {};
@@ -1645,7 +1645,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — does not crash', async () => {
+    test('corrupted localStorage, does not crash', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_data', '{INVALID{{{{');
         try { quickAction('expense'); return { ok: true }; }
@@ -1662,7 +1662,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('openCompleteJobModal', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('golden path — creates zmodal-overlay in DOM', async () => {
+    test('golden path, creates zmodal-overlay in DOM', async () => {
       const r = await page.evaluate(() => {
         try { openCompleteJobModal(); return { ok: true, hasModal: !!document.querySelector('.zmodal-overlay') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1671,7 +1671,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasModal).toBe(true);
     });
 
-    test('no active jobs — shows "No active jobs" message', async () => {
+    test('no active jobs, shows "No active jobs" message', async () => {
       const r = await page.evaluate(() => {
         const origJobs = [...jobs];
         jobs = [];
@@ -1686,12 +1686,12 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasNoJobs).toBe(true);
     });
 
-    test('active job present — shows job in list', async () => {
+    test('active job present, shows job in list', async () => {
       const r = await page.evaluate(() => {
         // Our fixture job 56601 belongs to Finance Test Alpha. Re-seed it INSIDE
         // the test tick: a late cloud/cache load can reassign `jobs` after the
         // beforeEach and drop the fixture, so openCompleteJobModal shows "No active
-        // jobs" — the intermittent WebKit failure (task #22, shared-page state race).
+        // jobs", the intermittent WebKit failure (task #22, shared-page state race).
         if (typeof clients !== 'undefined' && !clients.some(c => c.id === 78801)) clients.push({ id: 78801, name: 'Finance Test Alpha', phone: '316-555-9001', addr: '1 Finance St, Wichita KS 67202', email: 'alpha@fintest.com' });
         if (typeof bids !== 'undefined' && !bids.some(b => b.id === 67701)) bids.push({ id: 67701, client_id: 78801, client_name: 'Finance Test Alpha', amount: 3500, status: 'Closed Won', draft: false });
         if (typeof jobs !== 'undefined' && !jobs.some(j => j.id === 56601)) jobs.push({ id: 56601, client_id: 78801, bid_id: 67701, name: 'Finance job A', status: 'scheduled', start: '2025-06-01', days: 2 });
@@ -1705,7 +1705,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.text).toMatch(/Finance Test Alpha/);
     });
 
-    test('5 concurrent calls — no crash, modals stack but page survives', async () => {
+    test('5 concurrent calls, no crash, modals stack but page survives', async () => {
       const r = await page.evaluate(() => {
         try { for (let i = 0; i < 5; i++) openCompleteJobModal(); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1730,7 +1730,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('markJobCompleteFromDash', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('invalid jobId — returns early without crash', async () => {
+    test('invalid jobId, returns early without crash', async () => {
       const r = await page.evaluate(() => {
         try { markJobCompleteFromDash(999999, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1738,7 +1738,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null jobId — does not throw', async () => {
+    test('null jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { markJobCompleteFromDash(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1746,7 +1746,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('valid jobId with zmodal-overlay triggerBtn — closes sheet', async () => {
+    test('valid jobId with zmodal-overlay triggerBtn, closes sheet', async () => {
       const r = await page.evaluate(() => {
         // Create a fake overlay
         const ov = document.createElement('div'); ov.className = 'zmodal-overlay';
@@ -1765,7 +1765,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ovGone).toBe(true);
     });
 
-    test('valid jobId null triggerBtn — calls markJobDone', async () => {
+    test('valid jobId null triggerBtn, calls markJobDone', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.markJobDone;
@@ -1778,7 +1778,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('undefined jobId — does not throw', async () => {
+    test('undefined jobId, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { markJobCompleteFromDash(undefined, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1793,7 +1793,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('showQuickPicker', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('golden path — creates overlay with title and search input', async () => {
+    test('golden path, creates overlay with title and search input', async () => {
       const r = await page.evaluate(() => {
         try {
           document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
@@ -1807,7 +1807,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.hasSearch).toBe(true);
     });
 
-    test('suggestions array with items — renders suggestion buttons', async () => {
+    test('suggestions array with items, renders suggestion buttons', async () => {
       const r = await page.evaluate(() => {
         const suggestions = [
           { label: 'Alice', sub: 'Estimate today', clientId: 78801, icon: '📅' },
@@ -1824,7 +1824,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.btnCount).toBeGreaterThanOrEqual(2);
     });
 
-    test('empty suggestions — does not crash', async () => {
+    test('empty suggestions, does not crash', async () => {
       const r = await page.evaluate(() => {
         try { showQuickPicker('T', 'S', [], 'estimate', false); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1832,7 +1832,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null title — does not throw', async () => {
+    test('null title, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { showQuickPicker(null, null, [], 'estimate', false); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1840,7 +1840,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('allowNew=true — shows + New client button', async () => {
+    test('allowNew=true: shows + New client button', async () => {
       const r = await page.evaluate(() => {
         try {
           showQuickPicker('T', 'S', [], 'estimate', true);
@@ -1852,7 +1852,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.exists).toBe(true);
     });
 
-    test('allowNew=false — no new-client button', async () => {
+    test('allowNew=false: no new-client button', async () => {
       const r = await page.evaluate(() => {
         try {
           showQuickPicker('T', 'S', [], 'estimate', false);
@@ -1876,7 +1876,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.len).toBe(1);
     });
 
-    test('click outside overlay — removes it', async () => {
+    test('click outside overlay, removes it', async () => {
       await page.evaluate(() => { document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove()); showQuickPicker('T','S',[],'estimate',false); });
       await page.evaluate(() => { const ov = document.querySelector('.zmodal-overlay'); if (ov) ov.click(); });
       const gone = await page.evaluate(() => !document.querySelector('.zmodal-overlay'));
@@ -1896,7 +1896,7 @@ test.describe('finance.js — exhaustive coverage', () => {
     });
     test.afterEach(async () => { await cleanModals(); });
 
-    test('empty query — clears results', async () => {
+    test('empty query, clears results', async () => {
       const r = await page.evaluate(() => {
         const inp = document.getElementById('qp-search');
         inp.value = '';
@@ -1907,7 +1907,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.html).toBe('');
     });
 
-    test('matching query — renders client buttons', async () => {
+    test('matching query, renders client buttons', async () => {
       const r = await page.evaluate(() => {
         const inp = document.getElementById('qp-search');
         inp.value = 'Finance Test Alpha';
@@ -1922,7 +1922,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.btnCount).toBeGreaterThanOrEqual(1);
     });
 
-    test('no match — shows "No match found" and new-wrap', async () => {
+    test('no match, shows "No match found" and new-wrap', async () => {
       const r = await page.evaluate(() => {
         const inp = document.getElementById('qp-search');
         inp.value = 'xyzzynonexistentclientxyz';
@@ -1939,7 +1939,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.wrapVisible).toBe('block');
     });
 
-    test('no qp-results element — does not throw', async () => {
+    test('no qp-results element, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.getElementById('qp-results')?.remove();
         const inp = document.getElementById('qp-search');
@@ -1950,7 +1950,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null element — does not throw', async () => {
+    test('null element, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onQPSearch(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1965,7 +1965,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('pickQuickClient', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('valid button with dataset — calls executeQuickAction and removes overlay', async () => {
+    test('valid button with dataset, calls executeQuickAction and removes overlay', async () => {
       const r = await page.evaluate(() => {
         const suggestions = [{ label: 'Finance Test Alpha', sub: 'S', clientId: 78801, icon: '📅' }];
         showQuickPicker('T', 'S', suggestions, 'estimate', false);
@@ -1986,7 +1986,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.overlayGone).toBe(true);
     });
 
-    test('invalid idx — returns early without crash', async () => {
+    test('invalid idx, returns early without crash', async () => {
       const r = await page.evaluate(() => {
         const overlay = document.createElement('div'); overlay.className = 'zmodal-overlay';
         overlay.dataset.suggestions = '[]';
@@ -1999,7 +1999,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null btn — does not throw', async () => {
+    test('null btn, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { pickQuickClient(null, 'estimate'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2014,7 +2014,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('pickQPClient', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('valid cid — removes overlay and calls executeQuickAction', async () => {
+    test('valid cid, removes overlay and calls executeQuickAction', async () => {
       const r = await page.evaluate(() => {
         const overlay = document.createElement('div'); overlay.className = 'zmodal-overlay';
         document.body.appendChild(overlay);
@@ -2033,7 +2033,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.overlayGone).toBe(true);
     });
 
-    test('null cid — does not throw', async () => {
+    test('null cid, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window.executeQuickAction;
         window.executeQuickAction = () => {};
@@ -2044,7 +2044,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('no overlay present — does not throw', async () => {
+    test('no overlay present, does not throw', async () => {
       const r = await page.evaluate(() => {
         document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
         const orig = window.executeQuickAction;
@@ -2056,7 +2056,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown actionType — does not crash', async () => {
+    test('unknown actionType, does not crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window.executeQuickAction;
         window.executeQuickAction = () => {};
@@ -2074,7 +2074,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   test.describe('executeQuickAction', () => {
     test.afterEach(async () => { await cleanModals(); });
 
-    test('actionType="expense" — calls showQuickExpenseModal', async () => {
+    test('actionType="expense", calls showQuickExpenseModal', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.showQuickExpenseModal;
@@ -2087,7 +2087,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('actionType="estimate" — calls openEstimateForClient', async () => {
+    test('actionType="estimate", calls openEstimateForClient', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.openEstimateForClient;
@@ -2102,7 +2102,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('actionType="schedule" with bidId — calls schedFromBid', async () => {
+    test('actionType="schedule" with bidId, calls schedFromBid', async () => {
       const r = await page.evaluate(() => {
         let called = false, calledWith = null;
         const orig = window.schedFromBid;
@@ -2118,7 +2118,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.calledWith).toBe(67701);
     });
 
-    test('actionType="schedule" without bidId — calls openClientDetail', async () => {
+    test('actionType="schedule" without bidId, calls openClientDetail', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.openClientDetail;
@@ -2133,7 +2133,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('actionType="drive" — calls openLogTripModal', async () => {
+    test('actionType="drive", calls openLogTripModal', async () => {
       const r = await page.evaluate(() => {
         let called = false;
         const orig = window.openLogTripModal;
@@ -2148,7 +2148,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.called).toBe(true);
     });
 
-    test('null actionType — does not throw', async () => {
+    test('null actionType, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { executeQuickAction(null, 78801, null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2156,7 +2156,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null clientId — does not throw', async () => {
+    test('null clientId, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = window.showQuickExpenseModal;
         window.showQuickExpenseModal = () => {};
@@ -2167,7 +2167,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('sets currentClientId — global updated', async () => {
+    test('sets currentClientId, global updated', async () => {
       const r = await page.evaluate(() => {
         const orig = window.showQuickExpenseModal;
         window.showQuickExpenseModal = () => {};
@@ -2179,7 +2179,7 @@ test.describe('finance.js — exhaustive coverage', () => {
       expect(r.clientId).toBe(78801);
     });
 
-    test('5 concurrent calls — no crash', async () => {
+    test('5 concurrent calls, no crash', async () => {
       const r = await page.evaluate(() => {
         const orig = window.showQuickExpenseModal;
         window.showQuickExpenseModal = () => {};
@@ -2194,7 +2194,7 @@ test.describe('finance.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // no console errors
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — finance.js', async () => {
+  test('no console errors, finance.js', async () => {
     assertNoErrors(page, 'finance.js');
   });
 });

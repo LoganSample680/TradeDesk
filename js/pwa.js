@@ -76,7 +76,7 @@ async function pwaShare({title,text,url}){
       await navigator.share({title,text,url});
       return true;
     }catch(e){
-      if(e.name==='AbortError')return false; // user cancelled — not an error
+      if(e.name==='AbortError')return false; // user cancelled, not an error
     }
   }
   // Fallback: copy URL to clipboard
@@ -120,7 +120,7 @@ function _pwaHandleShortcut(){
           return j.start<=tk&&addDays(j.start,(parseInt(j.days)||1)-1)>=tk;
         });
         if(active&&typeof openClockInSheet==='function')openClockInSheet(active.id);
-        else showToast('No active job today — open a job to clock in','⏱️');
+        else showToast('No active job today, open a job to clock in','⏱️');
       },300);
     }
     else if(sc==='share-photo'){
@@ -132,7 +132,7 @@ function _pwaHandleShortcut(){
 
 async function _pwaHandleSharedPhoto(){
   // share_target POSTs a multipart form to /?shortcut=share-photo
-  // By the time JS runs, the POST body is gone — use Cache API to retrieve it
+  // By the time JS runs, the POST body is gone, use Cache API to retrieve it
   // (standard pattern for share_target with files)
   if(!('caches' in window))return;
   try{

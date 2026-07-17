@@ -1,4 +1,4 @@
-// Adversarial flow spec — the full bid / payment / lien matrix ("every Doctor
+// Adversarial flow spec, the full bid / payment / lien matrix ("every Doctor
 // Strange scenario"). Seeds realistic clients (real names, random phones, mixed
 // addresses) each tied to a bid in a distinct state, then asserts the app's rule
 // engine classifies every one correctly: payStatus, getBidPaid, lien eligibility.
@@ -15,12 +15,12 @@ const ADDR = [
   '15 Mission Rd, Fairway, KS 66205', '720 Commercial St, Emporia, KS 66801', '',
 ];
 
-test.describe('bids/payments/liens — full scenario matrix', () => {
+test.describe('bids/payments/liens: full scenario matrix', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => {
     await signIn(page);
-    // NO pre-sweep — prior scenario rows are intentionally LEFT in the dev account
+    // NO pre-sweep, prior scenario rows are intentionally LEFT in the dev account
     // so the owner can poke at everything the tests put in (CLAUDE.md §13.7). Rows
     // are uniquely tagged per run, so leaving them never collides. Manual delete only.
   });
@@ -39,17 +39,17 @@ test.describe('bids/payments/liens — full scenario matrix', () => {
       // not "No line items or surfaces stored". Room spec strings drive paint lines.
       const mkSurfaces = (type) => {
         if (type.startsWith('Interior')) return [
-          { id: 1, type: 'walls', qty: 1240, wallSqft: 1240, room: 'Living Room — SW 7008 Alabaster Eg-Shel' },
-          { id: 2, type: 'ceiling', qty: 470, room: 'Living Room — SW ProMar Ceiling Flat White' },
-          { id: 3, type: 'trim', qty: 190, room: 'Living Room — SW ProClassic Semi-Gloss White' },
+          { id: 1, type: 'walls', qty: 1240, wallSqft: 1240, room: 'Living Room, SW 7008 Alabaster Eg-Shel' },
+          { id: 2, type: 'ceiling', qty: 470, room: 'Living Room, SW ProMar Ceiling Flat White' },
+          { id: 3, type: 'trim', qty: 190, room: 'Living Room, SW ProClassic Semi-Gloss White' },
         ];
         if (type.startsWith('Exterior')) return [
-          { id: 1, type: 'ext_walls', qty: 1880, wallSqft: 1880, room: 'Body — SW Duration Satin SW 7015 Repose Gray' },
-          { id: 2, type: 'ext_trim', qty: 260, room: 'Trim — SW Duration Gloss Extra White' },
-          { id: 3, type: 'deck', qty: 340, room: 'Back Deck — SW SuperDeck Semi-Trans' },
+          { id: 1, type: 'ext_walls', qty: 1880, wallSqft: 1880, room: 'Body: SW Duration Satin SW 7015 Repose Gray' },
+          { id: 2, type: 'ext_trim', qty: 260, room: 'Trim: SW Duration Gloss Extra White' },
+          { id: 3, type: 'deck', qty: 340, room: 'Back Deck, SW SuperDeck Semi-Trans' },
         ];
         if (type.startsWith('Time')) return [
-          { id: 1, type: 'walls', qty: 820, wallSqft: 820, room: 'Interior repaint — SW Cashmere Eg-Shel' },
+          { id: 1, type: 'walls', qty: 820, wallSqft: 820, room: 'Interior repaint, SW Cashmere Eg-Shel' },
         ];
         return []; // BYO / generic uses geiLines instead
       };
@@ -95,8 +95,8 @@ test.describe('bids/payments/liens — full scenario matrix', () => {
           signedAt: s.status === 'Closed Won' ? daysAgo((s.completedDaysAgo || 5) + 5) : undefined,
           // Type-specific shape so each estimate kind is exercised:
           geiLines: isBYO ? [
-            { desc: 'Cabinet refinishing — 18 doors / 6 drawers', qty: 1, rate: Math.round(s.amount * 0.55), total: Math.round(s.amount * 0.55) },
-            { desc: 'Wall & trim repaint — main level', qty: 1, rate: Math.round(s.amount * 0.45), total: Math.round(s.amount * 0.45) },
+            { desc: 'Cabinet refinishing, 18 doors / 6 drawers', qty: 1, rate: Math.round(s.amount * 0.55), total: Math.round(s.amount * 0.55) },
+            { desc: 'Wall & trim repaint, main level', qty: 1, rate: Math.round(s.amount * 0.45), total: Math.round(s.amount * 0.45) },
           ] : undefined,
           trade_type: isBYO ? 'general' : undefined,
           tmRate: isTM ? 85 : undefined, tmHours: isTM ? Math.round(s.amount / 85) : undefined,
@@ -110,7 +110,7 @@ test.describe('bids/payments/liens — full scenario matrix', () => {
         if (s.pay === 'deposit') payments.push({ id: nextId(), bid_id: bidId, client_id: cid, amount: s.deposit, type: 'deposit', method: 'Check', date: daysAgo((s.completedDaysAgo || 5) + 2) });
         if (s.pay === 'full') payments.push({ id: nextId(), bid_id: bidId, client_id: cid, amount: s.amount, type: 'final', method: 'Card', date: daysAgo(s.completedDaysAgo || 5) });
         // Job for won bids
-        if (s.status === 'Closed Won') jobs.push({ id: nextId(), client_id: cid, bid_id: bidId, name: name + ' — job', status: 'complete', start: daysAgo((s.completedDaysAgo || 5) + 7), eventType: 'job' });
+        if (s.status === 'Closed Won') jobs.push({ id: nextId(), client_id: cid, bid_id: bidId, name: name + ', job', status: 'complete', start: daysAgo((s.completedDaysAgo || 5) + 7), eventType: 'job' });
         // Filed lien
         if (s.fileLien && typeof liens !== 'undefined') liens.push({ id: nextId(), bid_id: bidId, client_id: cid, amount: s.amount, filedAt: daysAgo(5) });
 
@@ -127,7 +127,7 @@ test.describe('bids/payments/liens — full scenario matrix', () => {
         });
       });
 
-      // Mileage logs — drives between job sites, tied to seeded clients so the
+      // Mileage logs, drives between job sites, tied to seeded clients so the
       // sweep cleans them. Visible in the mileage tracker.
       if (typeof mileage !== 'undefined') {
         seededCids.forEach((c, k) => {
@@ -140,7 +140,7 @@ test.describe('bids/payments/liens — full scenario matrix', () => {
           });
         });
       }
-      // Expenses — materials / fuel / tools, tied to seeded clients.
+      // Expenses: materials / fuel / tools, tied to seeded clients.
       if (typeof expenses !== 'undefined') {
         const cats = [['materials', 'Materials', 'Sherwin-Williams'], ['fuel', 'Fuel', 'QuikTrip'], ['tools', 'Tools', 'Home Depot']];
         seededCids.forEach((c, k) => {

@@ -39,12 +39,12 @@ function _fmtMin(m){
 }
 
 // Owner correction 2026-07-11: hiding Clock in when there's no job was
-// backwards — you'd still want to clock in because you're physically on
+// backwards: you'd still want to clock in because you're physically on
 // site, job record or not. The real bug was that tapping it with nothing to
 // clock into dead-ended on the client profile page instead of doing
 // anything. Fix: always offer Clock in; if there's no existing job target,
 // create a minimal walk-up job for this client (same shape schedule.js/
-// proposals.js already use for ad-hoc jobs) and clock into that — no new
+// proposals.js already use for ad-hoc jobs) and clock into that, no new
 // data model, just reuses the existing job-scoped time-tracking machinery.
 function _nearbyClockIn(clientId,jobId){
   if(!jobId){
@@ -176,7 +176,7 @@ function _markJobComplete(jobId){
   },{title:'Complete job',yes:'Mark complete',danger:false});
 }
 
-// Tags WHO is clocking in/editing — previously untracked, so a shared account's
+// Tags WHO is clocking in/editing: previously untracked, so a shared account's
 // manual clock entries were indistinguishable between the owner and any crew
 // member. null loggedByUid means the owner (their own account has no separate
 // employee-user id); an employee's own auth id otherwise. Feeds the Time Log.
@@ -211,12 +211,12 @@ function clockIn(jobId,scopeId,scopeLabel){
   const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
   // Owner request 2026-07-11 ("bulletproof"): persist the entry the INSTANT the
   // clock starts, not only when it stops. Before this, clockOut() was the only
-  // place a timeEntries row was ever created — a crashed tab, a dead phone, or
+  // place a timeEntries row was ever created, a crashed tab, a dead phone, or
   // just forgetting to clock out meant the ENTIRE session was never saved
   // anywhere, silently. Now an "open" row (end_time/minutes null) is written and
   // synced immediately; clockOut() finds and closes this same row instead of
   // creating a new one. This open row is also what makes force-clock-out and
-  // reload-survival possible — it's the one source of truth for "is anyone
+  // reload-survival possible, it's the one source of truth for "is anyone
   // still clocked in," visible to every device, not just the one that's running.
   const{loggedByUid,loggedByName}=_tlLoggedByInfo();
   const entryId=Date.now();
@@ -241,7 +241,7 @@ function clockOut(saveEntry,silent){
     if(openEntry){
       openEntry.end_time=new Date().toISOString();openEntry.minutes=minutes;openEntry.open=false;
     }else{
-      // Defensive fallback only — the open row should always exist (written by
+      // Defensive fallback only, the open row should always exist (written by
       // clockIn above). Never silently drop real logged time if it's somehow
       // missing (deleted mid-timer, or a session from before this fix).
       const{loggedByUid,loggedByName}=_tlLoggedByInfo();
@@ -251,7 +251,7 @@ function clockOut(saveEntry,silent){
     if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
     saveAll();
     if(!silent){
-      const label=scopeLabel?scopeLabel+' — '+jobName:jobName;
+      const label=scopeLabel?scopeLabel+', '+jobName:jobName;
       showToast(_fmtMin(minutes)+' logged · '+label,'⏱');
     }
   }else if(openEntry){
@@ -267,10 +267,10 @@ function clockOut(saveEntry,silent){
 }
 
 // On boot, an open entry (clocked in, never closed) belonging to THIS person on
-// THIS account means either: (a) this device reloaded mid-timer — _activeTimer
+// THIS account means either: (a) this device reloaded mid-timer, _activeTimer
 // (a `let`, not persisted) doesn't survive a reload, but the open row does, so
 // this reconnects the live banner/interval to it; or (b) another device force-
-// closed it while this one was away — in which case there's no longer a
+// closed it while this one was away, in which case there's no longer a
 // matching open row and nothing to rehydrate. Either way the data was never at
 // risk; this only restores the LIVE UI state.
 function _rehydrateActiveTimer(){
@@ -286,9 +286,9 @@ function _rehydrateActiveTimer(){
   showClockBanner();
 }
 
-// Owner request 2026-07-11 ("bulletproof" — matches Jobber's #1 timesheet
+// Owner request 2026-07-11 ("bulletproof", matches Jobber's #1 timesheet
 // complaint, "admin can't force-stop a forgotten clock"): a manager can close
-// someone else's still-open entry from Time Log. Marks who force-closed it —
+// someone else's still-open entry from Time Log. Marks who force-closed it,
 // never silently rewrite whose clock this was.
 function forceClockOutEntry(entryId){
   if(typeof _canViewComp==='function'&&!_canViewComp())return;
@@ -304,9 +304,9 @@ function forceClockOutEntry(entryId){
   typeof renderTimeLog==='function'&&renderTimeLog();
 }
 
-// Owner request 2026-07-11 ("bulletproof" — matches Jobber's other top
+// Owner request 2026-07-11 ("bulletproof", matches Jobber's other top
 // complaint, "totals don't add up and I can't fix them"). Manual entries only
-// — GPS-verified auto entries aren't user-editable once §9.5 ships, same as
+//, GPS-verified auto entries aren't user-editable once §9.5 ships, same as
 // every competitor researched. Own entries always editable; others' only with
 // the payroll permission (same gate as Job Profit/Crew Cost).
 function deleteTimeEntry(entryId){
@@ -318,7 +318,7 @@ function deleteTimeEntry(entryId){
 }
 function _openEditTimeEntry(entryId){
   const e=timeEntries.find(x=>x.id===entryId);if(!e)return;
-  if(e.open)return; // still running — clock out first, then edit
+  if(e.open)return; // still running, clock out first, then edit
   if(!_isMyTimeEntry(e)&&!(typeof _canViewComp==='function'&&_canViewComp()))return;
   document.querySelectorAll('.zmodal-overlay').forEach(o=>o.remove());
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
@@ -348,11 +348,11 @@ function _saveEditedTimeEntry(entryId){
     return;
   }
   const minutes=Math.max(1,Math.round((end.getTime()-start.getTime())/60000));
-  // A single clock session can't legitimately run longer than a day — beyond
+  // A single clock session can't legitimately run longer than a day, beyond
   // that is almost certainly a fat-fingered date, not a real shift. Caught
   // here so an edit can never silently produce an "impossible" day total.
   if(minutes>1440){
-    if(errEl){errEl.textContent='That\'s over 24 hours for one entry — check the dates.';errEl.style.display='block';}
+    if(errEl){errEl.textContent='That\'s over 24 hours for one entry, check the dates.';errEl.style.display='block';}
     return;
   }
   e.start_time=start.toISOString();e.end_time=end.toISOString();
@@ -375,6 +375,9 @@ function updateClockTimer(){
   const full=(h?h+'h ':'')+timeStr;
   const el=document.getElementById('clock-banner-time');
   if(el)el.textContent=(_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+full;
+  // Live time-on-site counter on the dashboard on-site card (minute granularity).
+  const os=document.getElementById('dash-onsite-time');
+  if(os){const hh=Math.floor(elapsed/3600),mm=Math.floor((elapsed%3600)/60);os.textContent=(hh?hh+'h ':'')+mm+'m';}
 }
 
 function showClockBanner(){
@@ -429,9 +432,9 @@ function doneForDay(){
 }
 
 // ── Nearby detection (home-page smart clock-in / collect / diagnostic) ───────
-// Any client with an address is a candidate — not just ones with a scheduled
-// job. Owner request 2026-07-11: always surface all 3 possible actions —
-// Clock in, Start Estimate/Invoice, Collect — not just the single highest-
+// Any client with an address is a candidate, not just ones with a scheduled
+// job. Owner request 2026-07-11: always surface all 3 possible actions,
+// Clock in, Start Estimate/Invoice, Collect, not just the single highest-
 // priority one. Start Estimate/Invoice needs nothing but a client, so it's
 // always available. Clock in targets today's active job if there is one,
 // else falls back to the client's nearest open (non-done) job so manual
@@ -448,10 +451,10 @@ function _geocodeAddr(addr){
     .then(r=>r.json()).then(d=>d[0]?{lat:parseFloat(d[0].lat),lon:parseFloat(d[0].lon)}:null).catch(()=>null);
 }
 // Nominatim's free tier caps lookups at ~1/sec, so every client's geocoded
-// coords are cached — keyed by client id, in a dedicated localStorage blob,
+// coords are cached, keyed by client id, in a dedicated localStorage blob,
 // NEVER re-geocoded unless the address text changes. Deliberately NOT stored
 // on the client record / pushed through saveAll(): this is a disposable,
-// device-local optimization, not app data — routing it through the full
+// device-local optimization, not app data, routing it through the full
 // account-sync engine would fire a cloud round-trip on every newly-seen
 // address from a background heartbeat, for zero benefit (worst case on a
 // cache miss is just one extra geocode later). Brand-new/uncached addresses
@@ -481,8 +484,8 @@ function _nearbyResolveClient(c,myLat,myLon,tk){
 }
 async function checkNearbyJob(){
   if(!navigator.geolocation||!_supaUser)return;
-  // `return` (not a bare call) so a caller that DOES await this — tests, mainly;
-  // production fires it and moves on — resolves only once the async callback
+  // `return` (not a bare call) so a caller that DOES await this, tests, mainly;
+  // production fires it and moves on, resolves only once the async callback
   // below has actually run, not the instant geoIfGranted's sync half returns.
   return geoIfGranted(async pos=>{
     const{latitude:myLat,longitude:myLon}=pos.coords;
@@ -493,7 +496,7 @@ async function checkNearbyJob(){
     // raw array order, so ANY uncached client positioned before the real match
     // forced a live geocode round-trip before the next candidate was even
     // checked. Cached clients are the common case (same client book every day)
-    // and cost nothing — check ALL of them first, with zero network/delay, before
+    // and cost nothing, check ALL of them first, with zero network/delay, before
     // ever touching the throttled uncached path.
     const uncached=[];
     for(const c of clients){
@@ -509,7 +512,7 @@ async function checkNearbyJob(){
         uncached.push(c);
       }
     }
-    // No cached client is nearby — fall back to throttled geocoding of the rest.
+    // No cached client is nearby, fall back to throttled geocoding of the rest.
     // Still respects Nominatim's ~1 req/sec limit, but this path only runs (and
     // only costs real seconds) the first time a client's address is seen, not
     // on every dashboard load once the cache is warm.
@@ -539,7 +542,7 @@ function sendReminderSMS(cid){
   const firstName=c.name.split(' ')[0];
   const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
-  const msg='Hi '+firstName+'! This is '+bname+' reminding you of your painting proposal '+timeStr+'. Looking forward to seeing you. See you soon! '+(bphone?'— '+bphone:'');
+  const msg='Hi '+firstName+'! This is '+bname+' reminding you of your painting proposal '+timeStr+'. Looking forward to seeing you. See you soon! '+(bphone?'- '+bphone:'');
   const phone=c.phone.replace(/\D/g,'');
   window.location.href='sms:'+phone+'&body='+encodeURIComponent(msg);
 }
@@ -585,7 +588,7 @@ function getBidStage(b){
   const scheduled=bidJobs.filter(j=>j.start>=tk).sort((a,x)=>a.start.localeCompare(x.start))[0];
   if(scheduled)return{stage:'scheduled',label:'Job scheduled',color:'#185FA5',priority:4,jobs:bidJobs};
   if(balance<=0.01&&b.completion_date)return{stage:'paid',label:'Paid in full',color:'var(--green)',priority:8,jobs:bidJobs};
-  return{stage:'signed',label:'Signed — schedule job',color:'var(--blue)',priority:3,jobs:bidJobs};
+  return{stage:'signed',label:'Signed: schedule job',color:'var(--blue)',priority:3,jobs:bidJobs};
 }
 
 function renderJobsPage(){
@@ -926,13 +929,13 @@ function openJobSheet(clientId){
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('📅')+' Schedule</div>'+
         '<div style="background:var(--amber-lt);border-radius:var(--r);padding:10px 14px;display:flex;justify-content:space-between;align-items:center">'+
-          '<div style="font-size:13px;font-weight:600;color:#856404">Signed — not yet scheduled</div>'+
+          '<div style="font-size:13px;font-weight:600;color:#856404">Signed: not yet scheduled</div>'+
           '<button onclick="this.closest(\'.zmodal-overlay\').remove();schedFromBid('+bid.id+')" style="padding:7px 12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Schedule →</button>'+
         '</div>'+
       '</div>';
   }
 
-  // ── Materials / supply list + scope — one section per won bid ─
+  // ── Materials / supply list + scope, one section per won bid ─
   function _buildBidMaterialsHtml(b,showBidLabel){
     if(!b||!b.surfaces||!b.surfaces.length)return'';
     const allSwProds=Object.values(SW_PRODUCTS).flat();
@@ -942,7 +945,7 @@ function openJobSheet(clientId){
     b.surfaces.forEach(s=>{
       if(!s.qty)return;
       const t=SURF_TYPES.find(x=>x.v===s.type);if(!t||t.unit!=='sq ft')return;
-      const spec=(s.room||'').indexOf(' — ')>-1?(s.room||'').split(' — ').slice(1).join(' — '):'';
+      const spec=(s.room||'').indexOf(', ')>-1?(s.room||'').split(', ').slice(1).join(', '):'';
       const key=spec||'Paint';
       if(!orderMap[key])orderMap[key]={sqFt:0,spec,cov:350};
       const _pSqft=(s.type==='walls'||s.type==='ext_walls')?(s.wallSqft||s.qty):s.qty;
@@ -1036,7 +1039,7 @@ function openJobSheet(clientId){
             progressPhotos.map((p,i)=>renderThumb(p,i,'progress')).join('')+
           '</div>'+
           '<div style="display:flex;gap:6px">'+
-            '<input type="text" id="_progLbl-'+photoJobId+'" maxlength="60" placeholder="Label (optional) — e.g. Framing, Rough-in" style="flex:1;min-width:0;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
+            '<input type="text" id="_progLbl-'+photoJobId+'" maxlength="60" placeholder="Label (optional): e.g. Framing, Rough-in" style="flex:1;min-width:0;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);font-size:12px;font-family:inherit">'+
             '<label style="display:inline-flex;align-items:center;gap:5px;padding:7px 12px;border-radius:var(--r);border:1px dashed var(--denim);color:var(--denim);font-size:11px;font-weight:700;cursor:pointer;background:var(--bg2);flex-shrink:0;white-space:nowrap">'+
               '<input type="file" accept="image/*" capture="environment" onchange="addJobPhoto('+photoJobId+',this,\'progress\',document.getElementById(\'_progLbl-'+photoJobId+'\').value);this.closest(\'.zmodal-overlay\').remove();setTimeout(()=>openJobSheet('+clientId+'),600)" style="display:none">+ Photo</label>'+
           '</div>'+
@@ -1163,7 +1166,7 @@ function openJobSheet(clientId){
     tasksHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('✅')+' Crew Tasks</div>'+
-        '<div id="_jtasks-list-'+latestJob.id+'">'+(_taskRows||'<div style="font-size:12px;color:var(--text3);padding:4px 0">No tasks — add one below</div>')+'</div>'+
+        '<div id="_jtasks-list-'+latestJob.id+'">'+(_taskRows||'<div style="font-size:12px;color:var(--text3);padding:4px 0">No tasks, add one below</div>')+'</div>'+
         '<div style="display:flex;gap:8px;margin-top:10px">'+
           '<input id="_jtask-input-'+latestJob.id+'" placeholder="e.g. Call ahead 30 min before arrival" '+
             'style="flex:1;font-size:13px;padding:8px 10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit" '+
@@ -1180,9 +1183,9 @@ function openJobSheet(clientId){
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">'+svgIcon('⚡')+' Actions</div>'+
       '<div style="display:grid;gap:8px">'+
         (jobActions.length?
-          jobActions.map(j=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();markJobDone('+j.id+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">✓ Mark job complete — '+escHtml(j.name||'')+'</button>').join('')
+          jobActions.map(j=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();markJobDone('+j.id+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green-mid);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">✓ Mark job complete, '+escHtml(j.name||'')+'</button>').join('')
         :'')+
-        (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">'+svgIcon('📋')+' Change order — adjust scope or price</button>':'')+
+        (bid?'<button onclick="this.closest(\'.zmodal-overlay\').remove();showChangeOrderModal('+bid.id+','+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;text-align:left">'+svgIcon('📋')+' Change order, adjust scope or price</button>':'')+
         '<button onclick="this.closest(\'.zmodal-overlay\').remove();openClientDetail('+clientId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text);text-align:left">'+svgIcon('📋')+' Full client record & history</button>'+
       '</div>'+
     '</div>';
@@ -1308,7 +1311,7 @@ async function _shareBeforeAfterCard(clientId){
       try{
         if(supaEnabled&&supaEnabled()&&_supaUser){
           const path=_supaUser.id+'/'+clientId+'/ba-'+Date.now()+'.jpg';
-          // The composed card is already a bounded-size canvas JPEG — no main
+          // The composed card is already a bounded-size canvas JPEG, no main
           // recompress needed, but it gets the immutable cache header + a grid thumb.
           const{error:upErr}=await _supa.storage.from('gallery').upload(path,blob,{contentType:'image/jpeg',upsert:false,cacheControl:_PHOTO_CACHE});
           if(!upErr){
@@ -1327,7 +1330,7 @@ async function _shareBeforeAfterCard(clientId){
       }catch(_e){}
       const file=new File([blob],'before-after.jpg',{type:'image/jpeg'});
       if(navigator.share&&navigator.canShare&&navigator.canShare({files:[file]})){
-        try{await navigator.share({files:[file],title:biz+' — Before & After',text:(c?c.name+' · ':'')+'Finished job by '+biz});}
+        try{await navigator.share({files:[file],title:biz+', Before & After',text:(c?c.name+' · ':'')+'Finished job by '+biz});}
         catch(e){if(e.name!=='AbortError')showToast('Share cancelled','');}
       } else {
         const url=URL.createObjectURL(blob);
@@ -1347,7 +1350,7 @@ function openAssignSubModal(jobId,clientId){
   const box=document.createElement('div');box.className='zmodal';
   const subOpts=subs.length
     ?subs.map((s,i)=>'<option value="'+i+'">'+escHtml(s.name||'Sub')+(s.trade?' ('+escHtml(s.trade)+')':'')+'</option>').join('')
-    :'<option value="">— No subs in roster —</option>';
+    :'<option value="">- No subs in roster -</option>';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:14px">Assign Subcontractor</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Subcontractor</label>'+
@@ -1376,7 +1379,7 @@ function _saveSubAssignment(jobId,clientId){
   j.subs.push({subId:sub.id,subName:sub.name,desc,amount,paid:false,paidDate:''});
   saveAll();
   // The live pipe: a linked sub gets the job ADDRESS + start date the moment
-  // they're assigned — that's when they need it (mileage, routing). Address
+  // they're assigned, that's when they need it (mileage, routing). Address
   // only: never the job name, description, amount, or client details.
   if(typeof _offerJobToLinkedSub==='function'&&sub.id){
     const _asBid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
@@ -1390,7 +1393,7 @@ function markSubPaid(jobId,subIdx,clientId){
   const j=jobs.find(x=>x.id===jobId);if(!j||!j.subs||!j.subs[subIdx])return;
   const sp=j.subs[subIdx];
   sp.paid=true;sp.paidDate=todayKey();
-  // Paying a sub IS a Schedule C Line 11 (contract labor) expense — write it so the
+  // Paying a sub IS a Schedule C Line 11 (contract labor) expense, write it so the
   // deduction and the 1099-NEC yearly total both happen automatically. subPayKey
   // dedupes: marking the same assignment paid twice never double-logs.
   const _spKey=jobId+':'+subIdx;
@@ -1399,23 +1402,23 @@ function markSubPaid(jobId,subIdx,clientId){
     expenses.push({
       id:Date.now(),date:sp.paidDate,cat:'subs',catLabel:'Subcontractors',
       vendor:sp.subName||'Subcontractor',amount:sp.amount,
-      notes:'Sub pay — '+(sp.desc||j.name||''),
+      notes:'Sub pay, '+(sp.desc||j.name||''),
       subId:sp.subId,subPayKey:_spKey,
       job_id:j.bid_id||null,job_name:j.name||(_spBid?_spBid.client_name:''),client_id:j.client_id||null,
       deductible:true,created_at:new Date().toISOString(),
     });
     expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
   }
-  saveAll();showToast('Marked paid — logged as contract-labor expense','✓');
+  saveAll();showToast('Marked paid, logged as contract-labor expense','✓');
   // The live pipe: if this sub runs their own TradeDesk account (linked at
   // invite redemption), offer them this payment for THEIR books. Fire-and-
-  // forget — a no-op for unlinked subs, and never blocks the local flow.
+  // forget: a no-op for unlinked subs, and never blocks the local flow.
   // Scope is deliberately tight: amount + date + job ADDRESS only (the sub
-  // needs the address for mileage records). Never job names/descriptions —
+  // needs the address for mileage records). Never job names/descriptions:
   // those can carry the GC's client details.
   if(typeof _offerPaymentToLinkedSub==='function'&&sp.subId){
     const _spBid2=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
-    // Prefer the job's OWN address, fall back to its bid's — mirrors the
+    // Prefer the job's OWN address, fall back to its bid's: mirrors the
     // assignment path (_saveSubAssignment). A job with a direct address and no
     // bid (pipe-sourced or hand-scheduled) must still send its address so the
     // sub's mileage records stay accurate.
@@ -1433,7 +1436,7 @@ function _extendJob(jobId,parentOverlay){
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px 28px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(12px);transition:opacity .2s cubic-bezier(.22,1,.36,1),transform .2s cubic-bezier(.22,1,.36,1)';
   sheet.innerHTML=
     '<div style="font-size:16px;font-weight:800;margin-bottom:4px">Extend job duration</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Currently '+cur+' day'+(cur!==1?'s':'')+' — how many days to add?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Currently '+cur+' day'+(cur!==1?'s':'')+', how many days to add?</div>'+
     [1,2,3,5,7,14].map(d=>'<button onclick="_doExtendJob('+jobId+','+d+',this)" style="display:inline-block;padding:10px 18px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin:0 6px 8px 0;min-height:44px">+'+d+'d</button>').join('')+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="display:block;width:100%;margin-top:8px;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
@@ -1456,7 +1459,7 @@ function openPushBackModal(jobId,clientId,parentOverlay){
   const firstName=c?c.name.split(' ')[0]:'there';
   const biz=S.bname||'your contractor';
   const oldDate=parseD(j.start).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
-  const defaultMsg='Hi '+firstName+', this is '+biz+'. We need to push your job back a bit — we\'ll get you on the schedule as soon as possible and confirm the new date. We\'re sorry for any inconvenience and appreciate your patience!';
+  const defaultMsg='Hi '+firstName+', this is '+biz+'. We need to push your job back a bit, we\'ll get you on the schedule as soon as possible and confirm the new date. We\'re sorry for any inconvenience and appreciate your patience!';
   document.getElementById('_pb-modal-ov')?.remove();
   const ov=document.createElement('div');ov.id='_pb-modal-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
@@ -1520,13 +1523,13 @@ function sendOMWText(clientId){
   if(!c||!c.phone)return;
   const firstName=(c.name||'').split(' ')[0];
   const biz=S.bname||'TradeDesk';
-  const msg='Hi '+firstName+', this is '+biz+' — I\'m on my way! I\'ll be there shortly.';
+  const msg='Hi '+firstName+', this is '+biz+', I\'m on my way! I\'ll be there shortly.';
   window.location.href='sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg);
 }
 // Egress fix: phone photos are 3–8MB and were uploaded RAW, then served
 // full-size even inside 110px thumbnail grids. Compress to a 1600px-long-edge
 // JPEG (visually identical at any app size) + a 360px thumbnail for grids;
-// the full image loads only in the lightbox. Returns null on ANY failure —
+// the full image loads only in the lightbox. Returns null on ANY failure,
 // callers then upload the original file exactly as before, so a photo can
 // never be lost to a decode error (odd formats, HEIC on old engines, etc.).
 async function _compressPhoto(fileOrBlob,opts){
@@ -1552,14 +1555,14 @@ async function _compressPhoto(fileOrBlob,opts){
 // Immutable-path uploads (every path carries Date.now()) → cache for a year so
 // browsers and the CDN absorb repeat views instead of Supabase egress.
 const _PHOTO_CACHE='31536000';
-// Upload the 360px thumbnail alongside the main photo. Non-fatal by design —
+// Upload the 360px thumbnail alongside the main photo. Non-fatal by design,
 // a failed thumb just means grids fall back to the full image (pre-fix behavior).
 async function _uploadPhotoThumb(thumbBlob,mainPath){
   try{
     if(!thumbBlob)return{thumbUrl:'',thumbPath:''};
     const thumbPath=mainPath.replace(/([^/]+)$/,'t-$1').replace(/\.[a-z0-9]+$/i,'.jpg');
     // One retry on failure: a transient network blip here loses the thumbnail
-    // FOREVER (nothing re-attempts later — grids permanently fall back to full
+    // FOREVER (nothing re-attempts later, grids permanently fall back to full
     // bytes, defeating the egress win for that photo). Seen live: main upload
     // 200, thumb dropped, on a flaky runner network.
     let error;
@@ -1603,17 +1606,17 @@ function addJobPhoto(jobId,input,type,caption){
             typeof _uploadClientHub==='function'&&_uploadClientHub(j.client_id).catch(()=>{});
           }
         }else{
-          // Storage offline — mark base64 for retry on reconnect
+          // Storage offline, mark base64 for retry on reconnect
           const lastPhoto=j.photos[j.photos.length-1];
           if(lastPhoto){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
         }
       }catch(_e){
-        // Network error — mark for retry
+        // Network error, mark for retry
         const lastPhoto=j.photos[j.photos.length-1];
         if(lastPhoto&&!lastPhoto.pendingUpload){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
       }
     }else{
-      // Not connected to Supabase — mark base64 for upload when online
+      // Not connected to Supabase, mark base64 for upload when online
       const lastPhoto=j.photos[j.photos.length-1];
       if(lastPhoto){lastPhoto.pendingUpload=true;lastPhoto._uploadExt=(file.name.split('.').pop()||'jpg').toLowerCase();lastPhoto._uploadMime=file.type||'image/jpeg';saveAll();}
     }
@@ -1692,7 +1695,7 @@ function _renderJobTasks(jobId){
   const el=document.getElementById('_jtasks-list-'+jobId);if(!el)return;
   const j=jobs.find(x=>x.id===jobId);
   const tasks=(j&&j.tasks)||[];
-  if(!tasks.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No tasks — add one below</div>';return;}
+  if(!tasks.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No tasks, add one below</div>';return;}
   el.innerHTML=tasks.map(t=>{
     const doneInfo=t.done&&t.doneBy
       ?'<div style="font-size:10px;color:var(--green-mid);margin-top:2px">✓ '+escHtml(t.doneBy)+(t.doneAt?' · '+_fmtTaskTime(t.doneAt):'')+'</div>'
@@ -1799,7 +1802,7 @@ let _adjType=null;
 // but confirmJobDone only runs AFTER "Complete job" -> closeTopModal() removes
 // THIS modal -> showJobDebrief() (a separate modal) -> confirmMarkComplete().
 // By then this modal's inputs are detached from the document, so every read
-// silently returned nothing — completion date always fell back to today, and
+// silently returned nothing, completion date always fell back to today, and
 // price adjustments were dropped entirely, with no error. Captured here,
 // while the modal is still live, and threaded through instead.
 let _jobDoneCapture=null;
@@ -1825,9 +1828,9 @@ function _previewAdjTotal(jobId){
   preview.innerHTML='<span style="color:var(--text3)">'+fmt(bid.amount)+'</span> <span style="color:'+color+'">'+arrow+' '+fmt(newTotal)+'</span>';
 }
 // Validates + captures the still-live markJobDone modal fields, then either
-// proceeds straight to the debrief step (no adjustment, or a price DECREASE —
+// proceeds straight to the debrief step (no adjustment, or a price DECREASE,
 // the client owes less, nothing to protect against) or requires a client
-// signature first (a price INCREASE — the one case that needs the same
+// signature first (a price INCREASE, the one case that needs the same
 // protection a signed change order gives: nothing on file yet says the client
 // agreed to owe more).
 function _startJobComplete(jobId){
@@ -1862,19 +1865,19 @@ function _showJobDoneSignStep(jobId){
   const newTotal=Math.round((bid.amount+cap.adjAmt)*100)/100;
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Confirm the price increase</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">A price increase needs the client\'s sign-off — same protection as a change order — so nobody\'s surprised by the final bill.</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">A price increase needs the client\'s sign-off, same protection as a change order, so nobody\'s surprised by the final bill.</div>'+
     '<div style="background:#EBF2FB;border:1.5px solid #93C5FD;border-radius:var(--r);padding:12px 14px;margin-bottom:16px">'+
       '<div style="font-size:11px;color:#1E3A8A;font-weight:700;text-transform:uppercase;margin-bottom:4px">'+escHtml(cap.adjReason)+'</div>'+
       '<div style="font-size:13px;color:#1E3A8A">'+fmt(bid.amount)+' → <strong>'+fmt(newTotal)+'</strong></div>'+
     '</div>'+
     esignPadHTML('job-sign')+
-    // Literal same consent block as a change order — this IS one.
+    // Literal same consent block as a change order, this IS one.
     esignConsentHTML('job-sign',ESIGN_NOTE_CHANGE_ORDER)+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       '<button onclick="markJobDone('+jobId+')" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">← Back</button>'+
       '<button onclick="_confirmJobDoneSign('+jobId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Confirm &amp; complete ✓</button>'+
     '</div>';
-  // Shared e-sign pad (esign.js) — same markup + capture code as every signing surface.
+  // Shared e-sign pad (esign.js): same markup + capture code as every signing surface.
   // Wired synchronously: the canvas is already in the DOM the instant box.innerHTML
   // above runs, so deferring this via setTimeout only opens a window where a fast
   // confirm click finds no registered pad yet (esignResult returns "no-pad").
@@ -1892,7 +1895,7 @@ function _confirmJobDoneSign(jobId){
 async function confirmJobDone(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   // Read from the capture taken in _startJobComplete while the modal was still
-  // live — by the time this runs (after the debrief step) that modal's inputs
+  // live: by the time this runs (after the debrief step) that modal's inputs
   // are long detached from the document (see root-cause note above _adjType).
   const cap=_jobDoneCapture||{};
   const dateStr=cap.dateStr||todayKey();
@@ -1908,9 +1911,9 @@ async function confirmJobDone(jobId){
         if(adjType==='increase'){
           // Routed through the SAME structure a normal signed change order
           // uses (owner: "we have change orders... that's what protects
-          // everyone") — carries the signature captured in _confirmJobDoneSign.
+          // everyone"): carries the signature captured in _confirmJobDoneSign.
           // Shows up everywhere change orders already do: Documents tab,
-          // client hub, dashboard change-order rollups — no new UI needed.
+          // client hub, dashboard change-order rollups, no new UI needed.
           const coNum=(b.changeOrders||[]).length+1;
           const originalAmount=b.amount;
           const newAmount=Math.max(0,Math.round((b.amount+adjAmt)*100)/100);
@@ -1922,7 +1925,7 @@ async function confirmJobDone(jobId){
           });
           b.amount=newAmount;
         }else{
-          // Decrease — client owes LESS, no dispute-protection need, same
+          // Decrease: client owes LESS, no dispute-protection need, same
           // no-signature path as before.
           b.amount=Math.max(0,Math.round((b.amount-adjAmt)*100)/100);
           if(!b.adjustments)b.adjustments=[];
@@ -1975,7 +1978,7 @@ async function confirmJobDone(jobId){
   if(S.reviewUrl){
     setTimeout(()=>showReviewRequestPrompt(j.client_id),800);
   }
-  // saveAll() above only SCHEDULES a debounced cloud write (2s timer) — every UI
+  // saveAll() above only SCHEDULES a debounced cloud write (2s timer), every UI
   // reaction (scorecard, expense prompt, review prompt) is scheduled unblocked above,
   // so this await only delays THIS function's own completion, not any visible UI.
   // Force + await the write now so the job's completion_date (and its mirror onto
@@ -1985,7 +1988,7 @@ async function confirmJobDone(jobId){
 }
 function confirmMarkComplete(jobId){confirmJobDone(jobId);}
 
-// Post-job debrief — shown when marking job complete (only if the linked bid
+// Post-job debrief, shown when marking job complete (only if the linked bid
 // has scope hours tracked; jobs with no roomScopeMap skip straight to complete)
 function showJobDebrief(jobId){
   const job=jobs.find(j=>j.id===jobId);if(!job)return;
@@ -2012,7 +2015,7 @@ function showJobDebrief(jobId){
   });
   box.innerHTML=
     `<div style="font-size:17px;font-weight:800;margin-bottom:4px">How'd the job go?</div>
-    <div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6">Optional — enter actual hours for each task. Over time this builds your personal benchmarks so future estimates get sharper. Skip anything you didn't track.</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6">Optional: enter actual hours for each task. Over time this builds your personal benchmarks so future estimates get sharper. Skip anything you didn't track.</div>
     ${debriefRows}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px">
       <button onclick="this.closest('.zmodal-overlay').remove();confirmMarkComplete(${jobId})"
@@ -2070,7 +2073,7 @@ function showReviewRequestPrompt(clientId){
   const c=getClientById(clientId);if(!c)return;
   const firstName=c.name.split(' ')[0];
   const reviewUrl=S.reviewUrl||'';
-  const msg='Hi '+firstName+', thank you so much for choosing '+((S.bname||'us'))+' — it was a pleasure working with you! If you have a moment, we\'d really appreciate a quick Google review: '+reviewUrl;
+  const msg='Hi '+firstName+', thank you so much for choosing '+((S.bname||'us'))+', it was a pleasure working with you! If you have a moment, we\'d really appreciate a quick Google review: '+reviewUrl;
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=

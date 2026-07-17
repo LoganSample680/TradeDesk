@@ -76,7 +76,7 @@ function makeTestBid(overrides = {}) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 1. PROPOSALS PAGE — Tab navigation, sort, month headers, close-out visibility
+// 1. PROPOSALS PAGE, Tab navigation, sort, month headers, close-out visibility
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('Proposals page', () => {
   let page;
@@ -97,7 +97,7 @@ test.describe('Proposals page', () => {
         return btn ? btn.textContent.trim() : null;
       });
     });
-    // At least 3 of the 5 tabs must be present — exact selectors vary
+    // At least 3 of the 5 tabs must be present, exact selectors vary
     const found = tabs.filter(Boolean);
     expect(found.length).toBeGreaterThanOrEqual(3);
   });
@@ -156,13 +156,23 @@ test.describe('Proposals page', () => {
   });
 
   test('declined bids show the lost reason in red', async () => {
-    const bid = makeTestBid({ id: 88106, status: 'Closed Lost', signingToken: 'tok-lost2', client_name: 'Went Elsewhere', lostReason: 'Chose competitor' });
-    await injectBids(page, [bid]);
-    await page.evaluate(() => {
+    // Seed + filter + read the render in ONE synchronous evaluate. `bids` is a
+    // live array reassigned by the debounced cloud-merge (js/data.js); doing the
+    // inject in a separate evaluate leaves a window where that merge can rebuild
+    // `bids` from a pre-inject snapshot and drop the just-added fixture. Keeping
+    // seed→render→read atomic makes the assertion race-free.
+    const html = await page.evaluate(() => {
+      const bid = {
+        id: 88106, client_id: 999, client_name: 'Went Elsewhere', name: 'Went Elsewhere',
+        amount: 5000, deposit: 1250, status: 'Closed Lost', draft: false,
+        signingToken: 'tok-lost2', bid_date: '2026-05-15', trade_type: 'painting',
+        lostReason: 'Chose competitor', surfaces: [], roomScopeMap: {}, scope: {},
+      };
+      const i = window.bids.findIndex(x => x.id === bid.id);
+      if (i >= 0) window.bids[i] = bid; else window.bids.unshift(bid);
       if (typeof setProposalFilter === 'function') setProposalFilter('declined');
+      return document.getElementById('proposals-list').innerHTML;
     });
-    await page.waitForTimeout(300);
-    const html = await page.locator('#proposals-list').innerHTML();
     expect(html).toContain('Chose competitor');
     await page.evaluate(() => { if (typeof setProposalFilter === 'function') setProposalFilter('all'); });
   });
@@ -173,9 +183,9 @@ test.describe('Proposals page', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 2. PROPOSALS PAGE — Mobile (390px): Date column hidden, buttons accessible
+// 2. PROPOSALS PAGE, Mobile (390px): Date column hidden, buttons accessible
 // ═══════════════════════════════════════════════════════════════════════════════
-test.describe('Proposals page — mobile layout', () => {
+test.describe('Proposals page, mobile layout', () => {
   let page;
   test.beforeAll(async ({ browser }) => { page = await bootApp(browser, { mobile: true }); });
   test.afterAll(async () => { await page.context().close(); });
@@ -219,7 +229,7 @@ test.describe('Proposals page — mobile layout', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 3. CLOSE-OUT FLOW — Dialog, submission, hub refresh
+// 3. CLOSE-OUT FLOW, Dialog, submission, hub refresh
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('Close-out estimate flow', () => {
   let page;
@@ -325,7 +335,7 @@ test.describe('Close-out estimate flow', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 4. MAKE MONEY TODAY — Build, Pending sections; no duplicate draft+sent entries
+// 4. MAKE MONEY TODAY, Build, Pending sections; no duplicate draft+sent entries
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('Make Money Today dashboard', () => {
   let page;
@@ -355,7 +365,7 @@ test.describe('Make Money Today dashboard', () => {
         window.bids = window.bids.filter(b => b.id !== bidId);
         window.bids.unshift({ id: bidId, client_name: 'Adam Ryder', status: 'Pending', signingToken: 'tok-sent-' + bidId, amount: 14037 });
       }
-      // Re-render dash — this triggers the draft-vs-sent check
+      // Re-render dash, this triggers the draft-vs-sent check
       if (typeof renderDash === 'function') try { renderDash(); } catch(e) {}
       // After render, draft should be cleared
       const draft = loadEstFullDraft();
@@ -375,7 +385,7 @@ test.describe('Make Money Today dashboard', () => {
     const found = dashHtml.includes('Pending Client') || dashHtml.includes('8,000');
     // Only assert if renderDash produced output (may be in different element)
     if (dashHtml.length > 100) {
-      // Not a hard failure — verify no crash occurred
+      // Not a hard failure, verify no crash occurred
       expect(true).toBe(true);
     }
   });
@@ -403,7 +413,7 @@ test.describe('Make Money Today dashboard', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 5. DEPOSIT % — Settings field, estimator default, sign.html badge
+// 5. DEPOSIT %, Settings field, estimator default, sign.html badge
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('Deposit percentage flow', () => {
   let page;
@@ -518,7 +528,7 @@ test.describe('Deposit percentage flow', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 6. PER-ROOM COST BREAKDOWN — Contractor bid view (toggleBidSummary)
+// 6. PER-ROOM COST BREAKDOWN, Contractor bid view (toggleBidSummary)
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('Per-room cost breakdown (contractor bid view)', () => {
   let page;
@@ -635,9 +645,9 @@ test.describe('Per-room cost breakdown (contractor bid view)', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 7. SIGN.HTML — Color selection step, payment flow, deposit badge
+// 7. SIGN.HTML: Color selection step, payment flow, deposit badge
 // ═══════════════════════════════════════════════════════════════════════════════
-test.describe('sign.html — color selection and payment flow', () => {
+test.describe('sign.html: color selection and payment flow', () => {
   let page;
   const paintingProp = {
     ...MOCK_PROPOSAL,
@@ -712,7 +722,7 @@ test.describe('sign.html — color selection and payment flow', () => {
     expect(result.hasColorInput).toBe(true);
   });
 
-  test('color pick inputs are editable — client can type a color', async () => {
+  test('color pick inputs are editable, client can type a color', async () => {
     const firstInput = page.locator('#color-pick-rows input[type="text"]').first();
     const count = await firstInput.count();
     if (count === 0) return;
@@ -764,9 +774,9 @@ test.describe('sign.html — color selection and payment flow', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 8. SIGN.HTML — Non-painting job skips color pick step
+// 8. SIGN.HTML: Non-painting job skips color pick step
 // ═══════════════════════════════════════════════════════════════════════════════
-test.describe('sign.html — non-painting job skips color pick', () => {
+test.describe('sign.html: non-painting job skips color pick', () => {
   let page;
   const generalProp = {
     ...MOCK_PROPOSAL,
@@ -810,7 +820,7 @@ test.describe('sign.html — non-painting job skips color pick', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 9. NAVIGATION — Every main page loads without crash or console errors
+// 9. NAVIGATION: Every main page loads without crash or console errors
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('Full app navigation coverage', () => {
   let page;
@@ -840,9 +850,9 @@ test.describe('Full app navigation coverage', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 10. ESTIMATOR — Deposit field, proposal build, per-room preview
+// 10. ESTIMATOR: Deposit field, proposal build, per-room preview
 // ═══════════════════════════════════════════════════════════════════════════════
-test.describe('Paint estimator flow — removed, replaced by generic estimator', () => {
+test.describe('Paint estimator flow, removed, replaced by generic estimator', () => {
   let page;
   test.beforeAll(async ({ browser }) => { page = await bootApp(browser); });
   test.afterAll(async () => { await page.context().close(); });
@@ -870,7 +880,7 @@ test.describe('Paint estimator flow — removed, replaced by generic estimator',
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 11. SETTINGS — Rates & pricing fields save and restore
+// 11. SETTINGS: Rates & pricing fields save and restore
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('Settings persistence', () => {
   let page;
@@ -917,23 +927,23 @@ test.describe('Settings persistence', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 12. BID HISTORY — Supabase row-history trigger wiring (JS-side sanity)
+// 12. BID HISTORY, Supabase row-history trigger wiring (JS-side sanity)
 // ═══════════════════════════════════════════════════════════════════════════════
 test.describe('Bid history infrastructure', () => {
   let page;
   test.beforeAll(async ({ browser }) => { page = await bootApp(browser); });
   test.afterAll(async () => { await page.context().close(); });
 
-  // The paint-era recovery system was removed (owner-approved) — it snapshotted
+  // The paint-era recovery system was removed (owner-approved): it snapshotted
   // and restored surfaces/roomScopeMap for the deleted paint estimator and never
   // worked reliably. §7.1: prove the entry points are gone AND the boot no longer
   // writes the snapshot key.
-  test('recovery system removed — functions gone, boot writes no zp3_recovery_snapshot', async () => {
+  test('recovery system removed, functions gone, boot writes no zp3_recovery_snapshot', async () => {
     const result = await page.evaluate(() => {
       return {
         recoverFn: typeof recoverBidRooms,
         captureFn: typeof _captureRecoverySnapshot,
-        // The app booted in beforeAll (supaInit ran) — the snapshot key must not appear
+        // The app booted in beforeAll (supaInit ran), the snapshot key must not appear
         snapWritten: !!localStorage.getItem('zp3_recovery_snapshot'),
       };
     });
@@ -948,7 +958,7 @@ test.describe('Bid history infrastructure', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 13. PROPOSAL RLS POLICIES — No uncast auth.uid() comparisons
+// 13. PROPOSAL RLS POLICIES, No uncast auth.uid() comparisons
 // ═══════════════════════════════════════════════════════════════════════════════
 // (Validates the migration linting rule that caught the bid_history bug)
 test.describe('Migration files: RLS auth.uid() cast compliance', () => {
@@ -965,7 +975,7 @@ test.describe('Migration files: RLS auth.uid() cast compliance', () => {
       const lines = content.split('\n');
       lines.forEach((line, i) => {
         const trimmed = line.trim();
-        // Skip SQL comment lines — comments may reference old patterns for documentation
+        // Skip SQL comment lines, comments may reference old patterns for documentation
         if (trimmed.startsWith('--')) return;
         // Matches: = auth.uid() NOT followed by ::text or ::uuid cast
         // Catches: col = auth.uid() but allows: col::text = auth.uid()::text
@@ -974,7 +984,7 @@ test.describe('Migration files: RLS auth.uid() cast compliance', () => {
         }
       });
     }
-    expect(violations, `Found uncast auth.uid() comparisons — add ::text casts:\n${violations.join('\n')}`).toHaveLength(0);
+    expect(violations, `Found uncast auth.uid() comparisons, add ::text casts:\n${violations.join('\n')}`).toHaveLength(0);
   });
 
   test('bid_history migration uses ::text cast on both sides', () => {
@@ -986,9 +996,9 @@ test.describe('Migration files: RLS auth.uid() cast compliance', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 14. CLIENT HUB — Color selections visible after signing
+// 14. CLIENT HUB, Color selections visible after signing
 // ═══════════════════════════════════════════════════════════════════════════════
-test.describe('Client hub — color selections display', () => {
+test.describe('Client hub, color selections display', () => {
   let page;
   test.beforeAll(async ({ browser }) => { page = await bootApp(browser); });
   test.afterAll(async () => { await page.context().close(); });
@@ -1004,7 +1014,7 @@ test.describe('Client hub — color selections display', () => {
       const testProp = { colorChoices };
       // Find the function that renders color choices
       const rendered = colorChoices.map(ch =>
-        `<div>${ch.room} — ${ch.colorName}${ch.swCode ? ' ('+ch.swCode+')' : ''}</div>`
+        `<div>${ch.room}: ${ch.colorName}${ch.swCode ? ' ('+ch.swCode+')' : ''}</div>`
       ).join('');
       return { hasColors: rendered.includes('Accessible Beige') && rendered.includes('Lazy Gray') };
     });
@@ -1018,11 +1028,11 @@ test.describe('Client hub — color selections display', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 15. MAKE MONEY TODAY — Dedup / idempotency: no phantom entries on re-render
+// 15. MAKE MONEY TODAY, Dedup / idempotency: no phantom entries on re-render
 //     (the old localStorage "est_full_draft" dedup/heal mechanism this used to test
-//     was removed with the paint estimator — drafts now live only in bids[])
+//     was removed with the paint estimator, drafts now live only in bids[])
 // ═══════════════════════════════════════════════════════════════════════════════
-test.describe('Make Money Today — dedup idempotency', () => {
+test.describe('Make Money Today, dedup idempotency', () => {
   let page;
   test.beforeAll(async ({ browser }) => { page = await bootApp(browser); });
   test.afterAll(async () => { await page.context().close(); });
@@ -1059,12 +1069,12 @@ test.describe('Make Money Today — dedup idempotency', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// 16. HTTP ERROR SCENARIOS — 401, 404, 500 from Supabase/storage, network hangs
+// 16. HTTP ERROR SCENARIOS, 401, 404, 500 from Supabase/storage, network hangs
 // ═══════════════════════════════════════════════════════════════════════════════
-test.describe('HTTP error scenarios — app resilience', () => {
+test.describe('HTTP error scenarios, app resilience', () => {
 
   // ── 401 Unauthorized: expired/invalid session ──────────────────────────────
-  test.describe('401 Unauthorized — auth failure', () => {
+  test.describe('401 Unauthorized, auth failure', () => {
     let page;
     test.beforeAll(async ({ browser }) => {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
@@ -1077,7 +1087,7 @@ test.describe('HTTP error scenarios — app resilience', () => {
     test.afterAll(async () => { await page.context().close(); });
 
     test('app boots without crashing even when auth.getUser returns 401', async () => {
-      // Activate 401 mode post-boot — simulates a mid-session token expiry
+      // Activate 401 mode post-boot, simulates a mid-session token expiry
       await mockWithErrorFlags(page, { __authFail401: true });
       // Trigger a cloud sync that would call getUser/getSession
       await page.evaluate(async () => {
@@ -1110,7 +1120,7 @@ test.describe('HTTP error scenarios — app resilience', () => {
         if (typeof renderDash === 'function') try { renderDash(); } catch(e) {}
       });
       await page.waitForTimeout(300);
-      // Dashboard container must still exist — app must not blank/crash on 401
+      // Dashboard container must still exist, app must not blank/crash on 401
       const dashExists = await page.locator('#pg-dash').count();
       expect(dashExists).toBeGreaterThan(0);
       await mockWithErrorFlags(page, { __authFail401: false });
@@ -1118,7 +1128,7 @@ test.describe('HTTP error scenarios — app resilience', () => {
   });
 
   // ── 404 Not Found: proposal storage missing ────────────────────────────────
-  test.describe('404 Not Found — proposal missing from storage', () => {
+  test.describe('404 Not Found, proposal missing from storage', () => {
     let page;
     test.beforeAll(async ({ browser }) => {
       const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -1135,12 +1145,12 @@ test.describe('HTTP error scenarios — app resilience', () => {
 
     test('sign.html shows an error or fallback state when proposal returns 404', async () => {
       const body = await page.locator('body').textContent({ timeout: 5000 }).catch(() => '');
-      // App must show SOMETHING — not a blank page
+      // App must show SOMETHING, not a blank page
       expect(body.length).toBeGreaterThan(10);
       // If the app shows an explicit error message, great; if it falls back gracefully, also acceptable
       const hasErrorIndicator = /not found|expired|invalid|error|unavailable|sorry/i.test(body);
       const hasAnyContent = body.length > 50;
-      // Either explicit error OR graceful fallback content — either is passing
+      // Either explicit error OR graceful fallback content, either is passing
       expect(hasAnyContent).toBe(true);
     });
 
@@ -1158,7 +1168,7 @@ test.describe('HTTP error scenarios — app resilience', () => {
         !e.includes('AggregateError') &&
         !e.includes('JSON Parse error') &&
         !e.includes('Unhandled Promise Rejection') &&
-        !e.includes('not found') && // expected — proposal 404
+        !e.includes('not found') && // expected: proposal 404
         !e.includes('Not Found')
       );
       expect(errors).toHaveLength(0);
@@ -1166,7 +1176,7 @@ test.describe('HTTP error scenarios — app resilience', () => {
   });
 
   // ── 500 Internal Server Error: Supabase REST outage ───────────────────────
-  test.describe('500 Internal Server Error — Supabase REST down', () => {
+  test.describe('500 Internal Server Error, Supabase REST down', () => {
     let page;
     test.beforeAll(async ({ browser }) => {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
@@ -1190,7 +1200,7 @@ test.describe('HTTP error scenarios — app resilience', () => {
       await mockWithErrorFlags(page, { __serverError500: false });
     });
 
-    test('app does not crash on 500 — dashboard still renders from local cache', async () => {
+    test('app does not crash on 500, dashboard still renders from local cache', async () => {
       await mockWithErrorFlags(page, { __serverError500: true });
       await page.evaluate(() => {
         if (typeof renderDash === 'function') try { renderDash(); } catch(e) {}
@@ -1224,15 +1234,15 @@ test.describe('HTTP error scenarios — app resilience', () => {
         !e.includes('AggregateError') &&
         !e.includes('JSON Parse error') &&
         !e.includes('Unhandled Promise Rejection') &&
-        !e.includes('Internal server error') &&  // expected — from 500 error object
+        !e.includes('Internal server error') &&  // expected: from 500 error object
         !e.includes('PGRST500')
       );
       expect(errs).toHaveLength(0);
     });
   });
 
-  // ── 200 success confirmation — normal path still works after error recovery ─
-  test.describe('200 OK — normal flow after error recovery', () => {
+  // ── 200 success confirmation, normal path still works after error recovery ─
+  test.describe('200 OK, normal flow after error recovery', () => {
     let page;
     test.beforeAll(async ({ browser }) => {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
@@ -1272,7 +1282,7 @@ test.describe('HTTP error scenarios — app resilience', () => {
         const { error } = await _supa.auth.getUser();
         return { hadError: !!error };
       });
-      // Now recover — clear the flag
+      // Now recover, clear the flag
       await mockWithErrorFlags(page, { __authFail401: false });
       const okResult = await page.evaluate(async () => {
         if (typeof _supa === 'undefined') return null;
@@ -1306,7 +1316,7 @@ test.describe('HTTP error scenarios — app resilience', () => {
   });
 
   // ── Storage 401 on public proposal URL ────────────────────────────────────
-  test.describe('Storage 401 — client denied access to proposal', () => {
+  test.describe('Storage 401, client denied access to proposal', () => {
     let page;
     test.beforeAll(async ({ browser }) => {
       const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -1327,13 +1337,13 @@ test.describe('HTTP error scenarios — app resilience', () => {
 
     test('sign.html shows fallback UI rather than blank page on storage 401', async () => {
       const text = await page.locator('body').textContent({ timeout: 5000 }).catch(() => '');
-      // Page must not be blank — any content is acceptable
+      // Page must not be blank, any content is acceptable
       expect(text.length).toBeGreaterThan(5);
     });
   });
 
   // ── Offline mode: all Supabase calls fail ─────────────────────────────────
-  test.describe('Offline mode — all Supabase calls return error', () => {
+  test.describe('Offline mode, all Supabase calls return error', () => {
     let page;
     test.beforeAll(async ({ browser }) => {
       const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, bypassCSP: true });
@@ -1371,7 +1381,7 @@ test.describe('HTTP error scenarios — app resilience', () => {
       const html = await page.locator('#proposals-list').innerHTML().catch(() => '');
       const hasCache = html.includes('Offline Cached Client');
       await mockWithErrorFlags(page, { __offlineMode: false });
-      // App must render from cache — cached bids still visible
+      // App must render from cache, cached bids still visible
       if (html.length > 50) {
         expect(hasCache).toBe(true);
       }

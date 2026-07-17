@@ -1,8 +1,8 @@
-// REAL flow — the GENERIC estimator end-to-end SEND (task #29). estimate-build
+// REAL flow, the GENERIC estimator end-to-end SEND (task #29). estimate-build
 // covers the paint estimator all the way to an uploaded artifact; estimate-scale
 // drives T&M/BYO but stops at pricing. This closes the gap: build a Time &
 // Materials proposal AND a Build-Your-Own proposal through the real generic
-// estimator and actually SEND each — generic-estimate.js sendGenericProposal()
+// estimator and actually SEND each, generic-estimate.js sendGenericProposal()
 // assembles the bid, uploads the proposal JSON to the 'proposals' storage bucket,
 // and stamps bid.proposalKey/signingToken. We poll storage until the artifact
 // lands and assert the bid also round-tripped into the cloud (td_bids).

@@ -1,4 +1,4 @@
-// Adversarial flow spec — 50-state legal correctness, ONE test per state.
+// Adversarial flow spec, 50-state legal correctness, ONE test per state.
 //
 // The proposal Terms & Conditions inject the lien notice and cancellation
 // citation verbatim:
@@ -11,7 +11,7 @@ const { needsLiveCreds, signIn, finding, scopeBypassHeader } = require('./live-h
 
 const STATES = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD', 'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'];
 
-test.describe('legal — 50-state lien + cancellation statutes in proposal T&C', () => {
+test.describe('legal: 50-state lien + cancellation statutes in proposal T&C', () => {
   test.describe.configure({ mode: 'serial' });
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
@@ -19,7 +19,7 @@ test.describe('legal — 50-state lien + cancellation statutes in proposal T&C',
   let results = {};
 
   test.beforeAll(async ({ browser }) => {
-    // Sign in ONCE and precompute every state's strings — the per-state tests
+    // Sign in ONCE and precompute every state's strings, the per-state tests
     // below are then cheap assertions against this map. Manual context so the
     // baseURL is applied here too; the bypass header is scoped to same-origin
     // only via scopeBypassHeader (see live-helpers.js for why a blanket header
@@ -58,7 +58,7 @@ test.describe('legal — 50-state lien + cancellation statutes in proposal T&C',
   test.afterAll(async () => { if (page) await page.context().close(); });
 
   for (const st of STATES) {
-    test(`${st} — exact lien + cancellation statute carries into T&C`, async () => {
+    test(`${st}: exact lien + cancellation statute carries into T&C`, async () => {
       const r = results[st];
       expect(r, `no result computed for ${st}`).toBeTruthy();
       expect(r.lienStatute, finding({ page: 'proposal T&C', control: `STATE_LIEN[${st}]`, rule: 'state must define a lien statute', expected: 'statute string', got: String(r.lienStatute), suspect: 'legal.js STATE_LIEN' })).toBeTruthy();

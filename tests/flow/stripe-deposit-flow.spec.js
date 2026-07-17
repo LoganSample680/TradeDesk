@@ -1,4 +1,4 @@
-// REAL flow — Stripe deposit checkout (task #12). Stripe Connect is an EXTERNAL
+// REAL flow, Stripe deposit checkout (task #12). Stripe Connect is an EXTERNAL
 // dependency: the embedded card checkout (Stripe Elements iframe on sign.html)
 // only works when the dev account has a Stripe Connect account with
 // charges_enabled in TEST mode. Driving the Elements iframe with a test card
@@ -8,7 +8,7 @@
 //     with a real balance ONLY when charges_enabled is true, and
 //   • the offered amount equals the bid balance (never more).
 // When Stripe Connect is NOT enabled on the dev account (the default), it
-// soft-skips with a clear note instead of failing — so the gate documents the
+// soft-skips with a clear note instead of failing, so the gate documents the
 // dependency without going red on a perfectly valid account that hasn't
 // connected Stripe. Wire test-mode Stripe → this immediately starts asserting.
 const { test, expect } = require('./flow-test');
@@ -58,7 +58,7 @@ test.describe('Stripe deposit checkout (UI-driven)', () => {
       rule: async (p) => {
         const r = p.__stripe;
         if (!r.enabled) {
-          return { ok: true, got: 'SKIP — Stripe Connect not enabled on dev account (charges_enabled=false); wire test-mode Stripe to assert' };
+          return { ok: true, got: 'SKIP: Stripe Connect not enabled on dev account (charges_enabled=false); wire test-mode Stripe to assert' };
         }
         // Connect is live: the Stripe button MUST be offered, and at the balance.
         const cents = Math.round((r.balance || 0));
@@ -67,7 +67,7 @@ test.describe('Stripe deposit checkout (UI-driven)', () => {
       },
     });
 
-    // NO cleanup — the client + bid stay in the dev account on purpose so the owner
+    // NO cleanup, the client + bid stay in the dev account on purpose so the owner
     // can inspect what this test created (CLAUDE.md §13.7).
 
     const rep = report(FLOW, BASELINE, page);

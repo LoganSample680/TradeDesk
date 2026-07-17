@@ -35,7 +35,7 @@
   --font-ui:'Inter Tight',-apple-system,sans-serif;
 }
 body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif);background:var(--bg);color:var(--text);min-height:100vh}
-/* Cross-document view transition — cross-fade hub ↔ sign page instead of a white
+/* Cross-document view transition, cross-fade hub ↔ sign page instead of a white
    navigation flash (supported browsers; ignored elsewhere). */
 @view-transition{navigation:auto}
 
@@ -62,7 +62,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .nav-icon{font-size:16px;width:22px;text-align:center;flex-shrink:0}
 .nav-footer{margin-top:auto;padding:14px 18px;font-size:10px;color:var(--text3)}
 
-/* ── Bottom nav (mobile) — same dark-ink tab bar as the TradeDesk app
+/* ── Bottom nav (mobile): same dark-ink tab bar as the TradeDesk app
    (#mobile-tabbar), not the old white strip with a top border. Active tab gets
    a soft pill behind the icon. */
 .bottom-nav{position:fixed;bottom:0;left:0;right:0;background:var(--ink);border-top:1px solid rgba(255,255,255,.08);display:flex;align-items:stretch;z-index:100;padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -99,7 +99,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .pg-status h2{font-size:26px;font-weight:900;margin-bottom:10px;font-family:var(--font-display);letter-spacing:-.4px}
 .pg-status p{font-size:14px;color:var(--text2);line-height:1.7;max-width:380px;margin:0 auto}
 
-/* ── Hero — photoless "aurora" premium card ──────────────────────────────────
+/* ── Hero, photoless "aurora" premium card ──────────────────────────────────
    Research (2026 SaaS-premium default): a multi-blob radial mesh over a dark
    base + a faint grain overlay reads richer than a photo, works for a client
    who owns MANY properties (no single subject to show), is resolution-free, and
@@ -122,12 +122,12 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-hero-eyebrow{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;color:rgba(255,255,255,.5);margin-bottom:5px}
 .hub-hero-greeting{font-size:38px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-.8px;line-height:1;margin-bottom:6px}
 .hub-hero-sub{font-size:13px;color:rgba(255,255,255,.62);font-weight:600;margin-bottom:10px}
-/* Phone reads as a tappable chip, not dim text — a real affordance + higher contrast. */
+/* Phone reads as a tappable chip, not dim text, a real affordance + higher contrast. */
 .hub-hero-phone{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:rgba(255,255,255,.82);text-decoration:none;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);padding:5px 11px;border-radius:999px;margin-bottom:14px;transition:transform .12s cubic-bezier(.22,1,.36,1),background .15s}
 .hub-hero-phone svg{width:12px;height:12px}
 .hub-hero-phone:active{transform:scale(.96)}
 /* Contractor LOGO fills the hero's right side when they have one. No generic
-   letter-monogram fallback — an initial in a box read as filler, not brand. */
+   letter-monogram fallback, an initial in a box read as filler, not brand. */
 .hub-hero-badge{position:absolute;top:22px;right:20px;z-index:1;width:54px;height:54px;border-radius:15px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.95);overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,.2)}
 .hub-hero-badge img{width:100%;height:100%;object-fit:contain;padding:6px;box-sizing:border-box}
 .hub-progress-row{display:flex;justify-content:space-between;font-size:11px;color:rgba(255,255,255,.45);margin-bottom:5px;font-weight:600}
@@ -199,7 +199,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-badge-paid{background:var(--green-lt);color:var(--green-mid);border:1px solid var(--green-border)}
 .hub-badge-due{background:#FEF3C7;color:#92400E;border:1px solid #FADF98}
 
-/* ── Trust — split, inline sentences, NOT pills (research: decision-point placement
+/* ── Trust, split, inline sentences, NOT pills (research: decision-point placement
    beats arrival for conversion; inline reads as fact, a badge/pill grid reads as
    "trying too hard"). Two instances carry different emphasis so it's reinforcement:
    credibility (years/reviews) in the hero on arrival; safety (Licensed & Insured ·
@@ -223,12 +223,12 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-approval-amt{font-size:11px;color:var(--text3)}
 .hub-approval-link{font-size:12px;font-weight:700;color:var(--denim);text-decoration:none;display:block;margin-top:4px}
 
-/* ── Bid rows — elevated proposal cards ──────────────────────────────────────
+/* ── Bid rows, elevated proposal cards ──────────────────────────────────────
    Research synthesis (PaintScout / DripJobs / QuoteIQ + Qwilr/Proposify data):
    borderless double-shadow elevation instead of a hairline box, a brand-tinted
    document chip so the card isn't text-only, a soft pill status chip, and a
    thin brand accent rail down the left edge. Price stays OFF the card by design
-   (loss-aversion — revealed inside the proposal after scope). */
+   (loss-aversion: revealed inside the proposal after scope). */
 .hub-bid-row{position:relative;background:#fff;border-radius:18px;padding:18px 18px 18px 22px;margin-bottom:12px;overflow:hidden;box-shadow:0 1px 2px rgba(16,24,40,.05),0 10px 26px rgba(16,24,40,.10);transition:transform .12s ease,box-shadow .12s ease}
 .hub-bid-row::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:linear-gradient(180deg,var(--denim),color-mix(in srgb,var(--denim) 55%,#000))}
 .hub-bid-row:active{transform:translateY(1px);box-shadow:0 1px 2px rgba(16,24,40,.06),0 4px 12px rgba(16,24,40,.10)}
@@ -242,7 +242,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-bid-pending-msg{font-size:12px;color:var(--text3);margin-top:4px}
 .hub-btn{display:block;padding:13px 16px;border-radius:10px;border:none;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;text-decoration:none;text-align:center}
 /* Primary client actions carry the contractor's brand color (--denim is the
-   ADA-clamped brandColor set by applyBranding) — the hub reads as THEIR
+   ADA-clamped brandColor set by applyBranding), the hub reads as THEIR
    contractor's, not a generic black-and-white page. */
 .hub-btn-sign{background:linear-gradient(155deg,var(--denim) 0%,rgba(0,0,0,.25) 340%) var(--denim);color:#fff;box-shadow:0 3px 14px rgba(27,22,18,.22)}
 
@@ -338,17 +338,17 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 #prop-overlay{position:fixed;inset:0;background:#fff;z-index:500;overflow-y:auto;display:none}
 .prop-wrap{max-width:680px;margin:0 auto;padding:14px 12px 44px}
 /* The proposal card itself carries its own border+shadow (baked into the stored
-   HTML at send time) — the 24px side padding above double-frames it on a phone
+   HTML at send time), the 24px side padding above double-frames it on a phone
    screen, wasting width on a page a client is reading closely. Tighten to a
-   small gutter (not 0 — keeps the card's rounded corners/shadow from clipping
+   small gutter (not 0, keeps the card's rounded corners/shadow from clipping
    at the viewport edge) so the content actually uses the screen. */
 @media(max-width:640px){.prop-wrap{padding-left:8px;padding-right:8px}}
 .prop-close{position:fixed;top:16px;right:16px;background:var(--ink);color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-family:inherit;z-index:10}
 
-/* ── Boot overlay — same premium treatment as the TradeDesk app boot screen
+/* ── Boot overlay, same premium treatment as the TradeDesk app boot screen
    (glow drift, breathing mark, wordmark sheen, progress track + sheen), but
    client-specific: contractor logo/name center stage, "Loading your client
-   hub…" copy. Element IDs (boot-logo/boot-name/boot-bar) are unchanged — the
+   hub…" copy. Element IDs (boot-logo/boot-name/boot-bar) are unchanged, the
    load-progress JS drives the same widths on the same timings as before. */
 #boot-overlay{position:fixed;inset:0;background:radial-gradient(120% 80% at 0% 100%,rgba(45,93,168,.36) 0%,transparent 55%),linear-gradient(155deg,#1B1612 0%,#1F2230 100%);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .75s cubic-bezier(.4,0,.2,1),transform .75s cubic-bezier(.4,0,.2,1),filter .75s cubic-bezier(.4,0,.2,1);will-change:opacity,transform,filter;overflow:hidden}
 .cbo-glow{position:absolute;width:130vmax;height:130vmax;left:50%;top:55%;background:radial-gradient(closest-side,rgba(45,93,168,.30),transparent 65%);animation:cbo-drift 9s ease-in-out infinite alternate;pointer-events:none}
@@ -390,7 +390,7 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 
 
 /* ── Mobile contact strip (PR3) ── */
-/* Contact pair — Call (filled brand) + Text (warm brand-tonal). Research: 66% of
+/* Contact pair, Call (filled brand) + Text (warm brand-tonal). Research: 66% of
    clients prefer messaging (+40% reply), so Text gets an inviting tonal fill, not
    a thin outline; both are ≥48px tap targets with icon+label and a press-scale
    micro-interaction so every tap is acknowledged. Real tel:/sms: hrefs (dead-
@@ -416,13 +416,13 @@ body{font-family:var(--font-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-
 .hub-co-btn-approve{padding:7px 12px;border-radius:8px;background:var(--ink);color:#fff;font-size:12px;font-weight:700;border:none;cursor:pointer;font-family:inherit}
 .hub-co-btn-decline{padding:7px 12px;border-radius:8px;background:transparent;color:var(--text2);border:1.5px solid var(--border2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
 
-/* Loading spinner — same treatment as sign.html, so a loading moment on the
+/* Loading spinner, same treatment as sign.html, so a loading moment on the
    client hub matches the vibe of the rest of the client-facing surfaces
    instead of a plain "Loading…" text block sitting there doing nothing. */
 .hub-spinner{width:32px;height:32px;border-radius:50%;border:3px solid var(--border2);border-top-color:var(--denim);margin:0 auto 12px;animation:hub-spin .8s linear infinite}
 @keyframes hub-spin{to{transform:rotate(360deg)}}
 
-/* Waterfall reveal for the hub home (Overview) — matches the proposal's
+/* Waterfall reveal for the hub home (Overview): matches the proposal's
    cascade (sign.html) and the app dashboard: once the boot overlay clears, the
    overview's top-level blocks fade + rise in top-to-bottom sequence. Applied
    as a one-shot class on the first hub reveal, not on tab switches. */
@@ -476,7 +476,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
 </head>
 <body>
 
-<!-- Boot overlay — covers everything until hub data loads -->
+<!-- Boot overlay, covers everything until hub data loads -->
 <div id="boot-overlay">
   <div class="cbo-glow"></div>
   <div class="cbo-center">
@@ -503,7 +503,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     </div>
     <div id="checkout-embed-container" style="padding:12px 12px 0"></div>
     <div style="padding:12px 18px 18px">
-      <button id="checkout-submit-btn" onclick="_submitCheckoutPayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(180,40,40,.30)">Pay — Secure Checkout</button>
+      <button id="checkout-submit-btn" onclick="_submitCheckoutPayment()" disabled style="display:block;width:100%;padding:14px;border-radius:10px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;box-shadow:0 3px 14px rgba(180,40,40,.30)">Pay: Secure Checkout</button>
       <div id="checkout-pay-err" style="font-size:12px;color:#c0392b;text-align:center;margin-top:8px;min-height:16px"></div>
     </div>
   </div>
@@ -564,7 +564,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     <div class="help-title">Help & FAQ</div>
     <div class="help-sec">
       <div class="help-sec-hd"><script>document.write(svgIcon('💳'))</script> How payments work</div>
-      <div class="help-sec-body"><span class="hub-cn-name">Your contractor</span> sends you a secure payment link. You can pay by card, ACH bank transfer, or Apple Pay. Deposits are due before work begins; the final balance is due on completion. All payments are processed securely — <span class="hub-cn-name">your contractor</span> never sees your card details.</div>
+      <div class="help-sec-body"><span class="hub-cn-name">Your contractor</span> sends you a secure payment link. You can pay by card, ACH bank transfer, or Apple Pay. Deposits are due before work begins; the final balance is due on completion. All payments are processed securely, <span class="hub-cn-name">your contractor</span> never sees your card details.</div>
     </div>
     <div class="help-sec">
       <div class="help-sec-hd"><script>document.write(svgIcon('✍'))</script> How signing works</div>
@@ -577,7 +577,7 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
     <div class="help-sec">
       <div class="help-sec-hd"><script>document.write(svgIcon('❓'))</script> Common questions</div>
       <div class="help-sec-body">
-        <strong>Can I change the scope after signing?</strong> Yes — <span class="hub-cn-name">your contractor</span> can send a change order for your approval.<br><br>
+        <strong>Can I change the scope after signing?</strong> Yes: <span class="hub-cn-name">your contractor</span> can send a change order for your approval.<br><br>
         <strong>Is this hub link private?</strong> Yes. The link is unique to you and not publicly indexed.<br><br>
         <strong>How do I get a copy of my invoice?</strong> Go to the Payments tab and tap any invoice row to open a printable version.
       </div>
@@ -612,18 +612,18 @@ button.hub-method-chip:hover{background:rgba(255,255,255,.18);border-color:rgba(
 const SUPA_URL='https://mwtsmctajhrrybblgorf.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im13dHNtY3RhamhycnliYmxnb3JmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxNjIwNjMsImV4cCI6MjA5MDczODA2M30.-FMn1pEs9PpCvv8eGwSbtucWAWvcfEcQ1SYx4nD207M';
 // Session-isolated: never inherits a TradeDesk login from the same browser. All hub
-// data calls run as `anon` — the role real clients use — so a logged-in contractor
+// data calls run as `anon`, the role real clients use, so a logged-in contractor
 // previewing the hub exercises the exact same RLS/storage paths as a client.
 // (Authenticated role lacks storage download + update policies → "Could not load proposal".)
 const _supa=supabase.createClient(SUPA_URL,SUPA_KEY,{auth:{persistSession:false,autoRefreshToken:false,storageKey:'sb-hub-isolated'}});
 // _supaAuth exists only to read the contractor's session for view-tracking suppression.
 const _supaAuth=supabase.createClient(SUPA_URL,SUPA_KEY);
-// Boot overlay minimum dwell — the premium boot screen was dismissing the moment
+// Boot overlay minimum dwell, the premium boot screen was dismissing the moment
 // hub data landed (~200ms on a warm load), so it flashed past. Hold it for at
 // least MIN_BOOT_MS so it reads as an intentional, polished load (owner). The
 // error/preview dismiss path stays instant. _bootStart is stamped at parse time
 // (≈ when the overlay first paints).
-// window (not const) so the dwell clock is resettable — the boot-dwell test
+// window (not const) so the dwell clock is resettable, the boot-dwell test
 // resets it to "now" to exercise the real min-dwell hold deterministically.
 window._bootStart=Date.now();
 const MIN_BOOT_MS=2800;
@@ -641,7 +641,7 @@ function _setBootName(name){
 // color from cache before the snapshot fetch returns, so it doesn't pop in later.
 (function(){
   try{
-    // Keyed by CONTRACTOR (u), not client (c) — the business name is the same
+    // Keyed by CONTRACTOR (u), not client (c): the business name is the same
     // across all of a contractor's client hubs, so once ANY of their hubs has
     // loaded on this device, every other one shows the name instantly.
     const uid=new URLSearchParams(location.search).get('u');
@@ -652,14 +652,14 @@ function _setBootName(name){
     }
   }catch(e){}
 })();
-// Set at parse time — renderAll() runs before init() finishes, so the flag must
+// Set at parse time, renderAll() runs before init() finishes, so the flag must
 // exist before the first render or Review & Sign links miss the preview param.
 let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(location.search).get('preview')==='1';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 // Egress fix: route public gallery images through the Cloudflare edge cache
-// (/img/<path>) when served from Cloudflare — repeat hub views hit Cloudflare,
+// (/img/<path>) when served from Cloudflare, repeat hub views hit Cloudflare,
 // not Supabase. Localhost/dev and non-storage URLs pass through untouched.
 function _cdnPhoto(u){
   try{
@@ -669,7 +669,7 @@ function _cdnPhoto(u){
     return m?'/img/'+m[1]:u;
   }catch(_e){return u;}
 }
-// Image fallback: retry the direct URL once before hiding — an undeployed /img
+// Image fallback: retry the direct URL once before hiding, an undeployed /img
 // route or edge failure degrades to the pre-fix direct load, never a blank tile.
 function _imgFallback(el,mode){
   const d=el.dataset?el.dataset.dsrc:'';
@@ -702,14 +702,14 @@ function sanitizeHtml(html){
   });
   return doc.body.innerHTML;
 }
-// Alias — app pages define escHtml; code copied from them (signature block, etc.)
+// Alias: app pages define escHtml; code copied from them (signature block, etc.)
 // references it. Without this alias those paths throw ReferenceError at render.
 const escHtml=esc;
 // When open via _previewClientHub (preview=1), append &preview=1 to sign.html links so
-// clicking "Review & Sign" doesn't log a client view — the contractor is just previewing.
+// clicking "Review & Sign" doesn't log a client view, the contractor is just previewing.
 const _signHref=url=>url?((_isContractorPreview?(url+(url.includes('?')?'&':'?')+'preview=1'):url)):url;
 // Hub snapshots and proposal JSONs are rewritten in place (payments, signatures),
-// but Supabase storage serves them with cache-control: max-age=3600 — the browser
+// but Supabase storage serves them with cache-control: max-age=3600: the browser
 // HTTP cache could show a stale balance / "Pay" CTA for up to an hour after the
 // contractor logs a payment. Fetch the public object URL with cache:'no-store'
 // plus a cb= cache-buster (defeats CDN/edge caches too); fall back to
@@ -718,7 +718,7 @@ async function _fetchStorageJson(key){
   try{
     const pub=_supa.storage.from('proposals').getPublicUrl(key)?.data?.publicUrl;
     if(!pub)throw new Error('no public url');
-    // 10s abort — a hung request on a weak connection must fall through to the
+    // 10s abort, a hung request on a weak connection must fall through to the
     // download() path instead of freezing the boot screen forever.
     const ac=new AbortController();
     const tm=setTimeout(()=>ac.abort(),10000);
@@ -734,12 +734,12 @@ async function _fetchStorageJson(key){
   }
 }
 // Merge authoritative signing state from signed_proposals over a hub snapshot.
-// Single merge path — used by init() and the live refresher (_refreshHub).
+// Single merge path, used by init() and the live refresher (_refreshHub).
 async function _mergeSignedProposals(hub,u){
   const bidIds=hub.bids.map(b=>String(b.id));
   if(!u||!bidIds.length)return;
   try{
-    // select('*') — resilient to schema drift; optional columns (epa_*, cancelled_*)
+    // select('*'): resilient to schema drift; optional columns (epa_*, cancelled_*)
     // may not exist in every environment and an explicit list would fail the whole query.
     const{data:sigs}=await _supa.from('signed_proposals')
       .select('*')
@@ -748,7 +748,7 @@ async function _mergeSignedProposals(hub,u){
       const bid=hub.bids.find(b=>String(b.id)===sp.bid_id);
       if(!bid)return;
       // A DECLINE also writes a signed_proposals row (payment_status='declined',
-      // signed_at = decline timestamp — that's how the contractor app learns of
+      // signed_at = decline timestamp, that's how the contractor app learns of
       // it). It is a terminal NO, not a signature: never promote it to Closed
       // Won or stamp a "Signed by" name/date from it. Live bug: a declined
       // proposal rendered a full CLIENT SIGNATURE block in the hub viewer.
@@ -757,7 +757,7 @@ async function _mergeSignedProposals(hub,u){
         bid.declinedAt=bid.declinedAt||sp.signed_at;
         bid.lostAt=bid.lostAt||sp.signed_at; // Documents' declined card reads lostAt/lostReason
         if(sp.decline_reason){bid.declineReason=sp.decline_reason;bid.lostReason=bid.lostReason||sp.decline_reason;}
-        bid.balance=0; // nothing owed on a declined proposal — no pay CTA
+        bid.balance=0; // nothing owed on a declined proposal, no pay CTA
         return;
       }
       if(bid.status==='Pending'){
@@ -772,7 +772,7 @@ async function _mergeSignedProposals(hub,u){
       if(sp.rrp_renovator_name)bid.rrpRenovatorName=sp.rrp_renovator_name;
       if(sp.cancelled_at){bid.cancelledAt=sp.cancelled_at;bid.cancelledName=sp.cancelled_signed_name||'';bid.balance=0;}
       // Change orders: the signed_proposals row is authoritative for signing
-      // state — merge it over the snapshot (which may predate the signature)
+      // state: merge it over the snapshot (which may predate the signature)
       if(Array.isArray(sp.change_orders)&&sp.change_orders.length){
         bid.changeOrders=bid.changeOrders||[];
         sp.change_orders.forEach(dbCo=>{
@@ -783,7 +783,7 @@ async function _mergeSignedProposals(hub,u){
         });
       }
       // Roll signed COs into the contract total/balance when the snapshot
-      // predates them — otherwise the 30s live refresh snaps the balance back
+      // predates them, otherwise the 30s live refresh snaps the balance back
       // to the pre-CO amount. Each CO chains from the total it was written
       // against, so only apply COs whose originalAmount matches the current
       // total (idempotent once the contractor republishes the snapshot).
@@ -806,7 +806,7 @@ async function _mergeSignedProposals(hub,u){
   }catch(e){console.warn('sig check:',e);}
 }
 // ── Live refresh ──────────────────────────────────────────────────────────────
-// The snapshot is only fetched on load — payments, change orders, and
+// The snapshot is only fetched on load, payments, change orders, and
 // cancellations the contractor logs while the hub sits open would never appear.
 // Re-fetch + re-render the current view every 30s while visible, and immediately
 // on tab focus. Postponed (next tick retries) while the client is mid-flow in a
@@ -820,7 +820,7 @@ function _hubInteractionOpen(){
     const el=document.getElementById(id);
     if(el&&el.style.display&&el.style.display!=='none')return true;
   }
-  // Client is typing (chat input, etc.) — re-rendering would eat the text
+  // Client is typing (chat input, etc.): re-rendering would eat the text
   const ae=document.activeElement;
   if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA'))return true;
   return false;
@@ -841,9 +841,9 @@ async function _refreshHub(){
     const t=p.get('t'),u=p.get('u'),c=p.get('c');
     if(!t||!u||!c)return;
     const{data,error}=await _fetchStorageJson('client-hub/'+u+'/'+c+'_'+t+'.json');
-    if(error||!data)return; // transient fetch failure — keep showing current data
+    if(error||!data)return; // transient fetch failure, keep showing current data
     // Carry forward in-memory signed CO state into the fresh snapshot.
-    // DB column may not exist yet so the DB merge can't restore it — without
+    // DB column may not exist yet so the DB merge can't restore it, without
     // this the 30s refresh wipes the just-signed CO amount back to original.
     if(_hub)_hub.bids.forEach(lb=>{
       const fb=data.bids.find(b=>b.id===lb.id);if(!fb)return;
@@ -854,13 +854,13 @@ async function _refreshHub(){
       });
     });
     await _mergeSignedProposals(data,u);
-    if(_hubInteractionOpen())return; // modal opened mid-fetch — drop this cycle
+    if(_hubInteractionOpen())return; // modal opened mid-fetch, drop this cycle
     _hub=data;
     _renderActiveView();
   }catch(e){}finally{_hubRefreshBusy=false;}
 }
 // Poll cadence (egress): the live-push channel below delivers changes in seconds,
-// so while it's healthy the poll is only a safety net — every 10th tick (5 min).
+// so while it's healthy the poll is only a safety net, every 10th tick (5 min).
 // Channel down, never connected, or errored → every tick (30s), today's exact
 // behavior. _hubPollTick is a named function so tests can drive it directly.
 let _hubTickN=0;
@@ -874,11 +874,11 @@ function _startHubRefresh(){
   _hubTickN=0;
   _hubRefreshTimer=setInterval(_hubPollTick,30000);
 }
-// Live push — a content-free "something changed" nudge on a per-client Realtime
+// Live push, a content-free "something changed" nudge on a per-client Realtime
 // broadcast channel (mirrors the contractor app's sig-feed-<uid> pattern), so a
 // status change lands in seconds instead of waiting out the 30s poll above. The
 // poll stays as-is: if this channel never connects or a message drops, the next
-// tick still catches up — nothing here is required for correctness.
+// tick still catches up, nothing here is required for correctness.
 let _hubLiveChan=null,_hubLiveOk=false;
 function _startHubLiveChannel(u,c){
   if(!_supa||_hubLiveChan)return;
@@ -887,7 +887,7 @@ function _startHubLiveChannel(u,c){
     _hubLiveChan.on('broadcast',{event:'updated'},()=>{_refreshHub();});
     // Health-tracked: _hubLiveOk gates the poll cadence above. Anything short of
     // a confirmed SUBSCRIBED (error, timeout, close, never-connected) keeps the
-    // 30s poll — the stretched cadence only applies while push provably works.
+    // 30s poll, the stretched cadence only applies while push provably works.
     _hubLiveChan.subscribe((s)=>{
       if(s==='SUBSCRIBED'){if(!_hubLiveOk&&_hubTickN>0)_refreshHub();_hubLiveOk=true;}
       else if(s==='CLOSED'||s==='CHANNEL_ERROR'||s==='TIMED_OUT')_hubLiveOk=false;
@@ -895,7 +895,7 @@ function _startHubLiveChannel(u,c){
   }catch(e){}
 }
 // Nudge peers (the same client's other open tabs/devices) after this tab writes
-// a signing state change — the snapshot in storage doesn't change on a client-side
+// a signing state change, the snapshot in storage doesn't change on a client-side
 // signature, so without this only the poll would carry it to other tabs.
 function _hubNudgePeers(){
   try{if(_hubLiveChan&&_hubLiveOk)_hubLiveChan.send({type:'broadcast',event:'updated',payload:{}});}catch(_e){}
@@ -909,14 +909,14 @@ async function init(){
     const key='client-hub/'+u+'/'+c+'_'+t+'.json';
     const{data,error}=await _fetchStorageJson(key);
     if(error||!data){
-      // Hub JSON not ready yet — check if they completed onboarding on this device
+      // Hub JSON not ready yet, check if they completed onboarding on this device
       const p2=new URLSearchParams(location.search);
       const cid=p2.get('c');
       if(cid&&localStorage.getItem('td_onb_done_'+cid)){showQuoteInProgress(null);return;}
       showState('err');return;
     }
     _hub=data;
-    // Cap the merge at 6s — it's an enhancement over the snapshot, not a boot
+    // Cap the merge at 6s, it's an enhancement over the snapshot, not a boot
     // requirement. A hung postgrest query must not freeze the loading screen;
     // _refreshHub() and _recheckSigned() re-merge shortly after anyway.
     await Promise.race([_mergeSignedProposals(_hub,u),new Promise(r=>setTimeout(r,6000))]);
@@ -931,9 +931,9 @@ async function init(){
     showState('hub');
     // Log a hub view for each pending proposal visible in this hub.
     // Two layers of contractor detection so previews never pollute client analytics:
-    //   1. ?preview=1 — set by _previewClientHub() in clients.js (iframe opens always use this)
-    //   2. Session check — belt-and-suspenders for direct URL opens while logged in
-    // viewerType:'client-hub' writes hub_opened_at — distinct from client_opened_at
+    //   1. ?preview=1: set by _previewClientHub() in clients.js (iframe opens always use this)
+    //   2. Session check, belt-and-suspenders for direct URL opens while logged in
+    // viewerType:'client-hub' writes hub_opened_at, distinct from client_opened_at
     // (which sign.html writes when the client opens a specific proposal).
     if(!_isContractorPreview){
       try{
@@ -975,7 +975,7 @@ async function initOnboard(t,u,c){
   // Apply branding if hub loaded, else minimal topbar
   if(_hub){
     applyBranding(_hub);
-    document.title=(_hub.contractorName||'Your Contractor')+' — Get a Quote';
+    document.title=(_hub.contractorName||'Your Contractor')+', Get a Quote';
   }else{
     document.getElementById('topbar-name').textContent='Get a Quote';
   }
@@ -984,7 +984,7 @@ async function initOnboard(t,u,c){
   document.getElementById('bottom-nav').style.display='none';
   document.getElementById('pg-hub').style.display='none';
   document.getElementById('pg-load') && (document.getElementById('pg-load').style.display='none');
-  // Check if already completed — hub address OR localStorage flag (set on this device after submit)
+  // Check if already completed, hub address OR localStorage flag (set on this device after submit)
   if((_hub&&_hub.clientAddr)||localStorage.getItem('td_onb_done_'+c)){
     showQuoteInProgress(_hub);
     return;
@@ -996,7 +996,7 @@ async function initOnboard(t,u,c){
     '<div style="text-align:center;margin-bottom:28px">'+
       '<div style="font-size:36px;margin-bottom:8px">'+svgIcon('📋',{size:36})+'</div>'+
       '<div style="font-size:22px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px">'+(firstName?'Hi '+esc(firstName)+'!':'Get your free quote')+'</div>'+
-      '<div style="font-size:14px;color:var(--text2);line-height:1.6">'+esc(contractorName)+' needs a couple details to prepare your quote — takes about 2 minutes.</div>'+
+      '<div style="font-size:14px;color:var(--text2);line-height:1.6">'+esc(contractorName)+' needs a couple details to prepare your quote, takes about 2 minutes.</div>'+
     '</div>'+
     '<div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--rl);padding:20px">'+
       '<div style="margin-bottom:16px">'+
@@ -1112,11 +1112,11 @@ async function submitOnboard(userId,clientId){
     setTimeout(()=>{location.href=hubUrl.toString();},2000);
   }catch(e){
     if(btn){btn.textContent='Send my details →';btn.disabled=false;}
-    alert('Something went wrong — please try again or contact us directly.');
+    alert('Something went wrong, please try again or contact us directly.');
   }
 }
 function showQuoteInProgress(h){
-  _stateShown=true; // boot resolved — keep the watchdog from overriding this screen
+  _stateShown=true; // boot resolved, keep the watchdog from overriding this screen
   const name=h?.contractorName||'Your contractor';
   const phone=h?.contractorPhone||'';
   document.getElementById('pg-hub').innerHTML=
@@ -1128,7 +1128,7 @@ function showQuoteInProgress(h){
     '</div>';
   const pgLoad=document.getElementById('pg-load');if(pgLoad)pgLoad.style.display='none';
   document.getElementById('pg-hub').style.display='block';
-  _dismissBootOverlay(true); // overlay is fixed + z-9999 — without this the screen stays stuck on the loader
+  _dismissBootOverlay(true); // overlay is fixed + z-9999, without this the screen stays stuck on the loader
 }
 let _bootDismissTimers=[];
 function _dismissBootOverlay(fast){
@@ -1137,7 +1137,7 @@ function _dismissBootOverlay(fast){
   // Cancel any timers a prior dismiss scheduled. Without this, an earlier
   // fast-path call (e.g. the mock boot's 220ms dismiss) leaves a pending
   // display:none/opacity:0 timeout that fires ~1s later and hides the overlay
-  // out from under a later dwell call — a stale-timer race, not a timing bug.
+  // out from under a later dwell call, a stale-timer race, not a timing bug.
   _bootDismissTimers.forEach(clearTimeout);_bootDismissTimers=[];
   // Hold the boot screen for a minimum dwell on the normal (hub-loaded) path so
   // it doesn't flash past on a fast load. Errors/preview dismiss immediately.
@@ -1150,7 +1150,7 @@ function _dismissBootOverlay(fast){
   // Fill the progress bar smoothly across the remaining dwell, hitting 100% just
   // before the fade instead of snapping.
   if(bb){bb.style.width='92%';_bootDismissTimers.push(setTimeout(()=>{bb.style.width='100%';},Math.max(0,delay-300)));}
-  // Premium exit — same blur+scale fade as the TradeDesk app boot (index.html
+  // Premium exit, same blur+scale fade as the TradeDesk app boot (index.html
   // .td-fadeout), so the hub blooms into view rather than hard-cutting. As the
   // overlay fades, waterfall the hub-home content in beneath it (same cascade
   // as the proposal) so the home page reveals in sequence, not all at once.
@@ -1169,7 +1169,7 @@ function _playHubCascade(){
   ov.classList.remove('hub-cascade');void ov.offsetWidth; // restart if already applied
   ov.classList.add('hub-cascade');
 }
-let _stateShown=false; // watchdog guard — set once boot resolves either way
+let _stateShown=false; // watchdog guard, set once boot resolves either way
 function showState(s){
   _stateShown=true;
   document.getElementById('pg-err').style.display=s==='err'?'block':'none';
@@ -1178,10 +1178,10 @@ function showState(s){
   else if(s==='err'){_dismissBootOverlay(true);}
 }
 // WCAG clamp for the contractor's brand color (self-contained copy of utils.js
-// adaBrand — this page loads no app JS). --denim renders as colored text on
+// adaBrand: this page loads no app JS). --denim renders as colored text on
 // white (links, timeline) AND as a bg under white text (buttons, chat bubbles):
 // darken toward black, hue preserved, until ≥4.6:1 vs white so no brand pick
-// can ever produce illegible text. Snapshots are clamped at upload too — this
+// can ever produce illegible text. Snapshots are clamped at upload too, this
 // covers legacy snapshots that stored a light color before the clamp existed.
 function _adaBrand(hex){
   const h=String(hex||'').trim().replace('#','');
@@ -1194,12 +1194,12 @@ function _adaBrand(hex){
 }
 function applyBranding(h){
   if(h.brandColor)document.documentElement.style.setProperty('--denim',_adaBrand(h.brandColor));
-  document.title=(h.contractorName||'Project Hub')+' — Your Hub';
+  document.title=(h.contractorName||'Project Hub')+', Your Hub';
   // Swap generic "your contractor" placeholders in static copy (e.g. Help drawer) for the business name.
   const _cnName=(h.contractorName||'').trim();
   if(_cnName)document.querySelectorAll('.hub-cn-name').forEach(el=>{el.textContent=_cnName;});
   const logoEl=document.getElementById('topbar-logo-img'),nameEl=document.getElementById('topbar-name');
-  // logoUrl (new snapshots — hosted once, cached forever) with base64 logoData
+  // logoUrl (new snapshots, hosted once, cached forever) with base64 logoData
   // as the legacy fallback so hubs uploaded before the egress fix keep working.
   const _hLogo=h.logoUrl||h.logoData;
   if(_hLogo){logoEl.src=_hLogo;logoEl.style.display='block';nameEl.style.display='none';}
@@ -1213,7 +1213,7 @@ function applyBranding(h){
     if(isSafeUrl)nf.innerHTML='<a href="'+esc(safeUrl)+'" target="_blank" style="color:inherit;text-decoration:none">'+esc(safeUrl.replace(/^https?:\/\//,''))+'</a>';
     else nf.textContent=safeUrl;
   }
-  // Populate + animate boot overlay — a contractor logo replaces the generic
+  // Populate + animate boot overlay, a contractor logo replaces the generic
   // house mark (same swap the app's boot screen does for white-label).
   _setBootName(h.contractorName||'');
   // Cache the business name + brand color (keyed by contractor) so the next visit
@@ -1283,7 +1283,7 @@ function renderOverview(){
     {type:'change_order',id:'co1',label:'Add garage door trim',amount:420,status:'pending'}
   ];
 
-  // Hero — logoUrl (new snapshots) falls back to embedded logoData (legacy).
+  // Hero: logoUrl (new snapshots) falls back to embedded logoData (legacy).
   const _heroLogo=h.logoUrl||h.logoData;
   let html='<div class="hub-hero'+(_heroLogo?' has-badge':'')+'">';
   if(_heroLogo)html+='<div class="hub-hero-badge"><img src="'+esc(_heroLogo)+'" alt=""></div>';
@@ -1293,7 +1293,7 @@ function renderOverview(){
   html+='<div class="hub-hero-sub">'+esc(h.contractorName||'')+'</div>';
   if(h.contractorPhone)html+='<a class="hub-hero-phone" target="_top" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'">'+svgIcon('📞',{size:12})+esc(h.contractorPhone)+'</a>';
   else html+='<div style="margin-bottom:14px"></div>';
-  // Credibility half of the trust split — light, one line, on arrival (NN/g: bank
+  // Credibility half of the trust split, light, one line, on arrival (NN/g: bank
   // baseline trust before the ask). Years in business + a reviews link only.
   { const _hc=[];
     if(h.yearsInBusiness&&Number(h.yearsInBusiness)>0)_hc.push('<span>'+svgIcon('⭐',{size:12})+esc(h.yearsInBusiness)+' years in business</span>');
@@ -1321,7 +1321,7 @@ function renderOverview(){
   const approvalsHtml=_renderApprovalsCard(approvals);
   if(approvalsHtml)html+='<div class="hub-approv-mobile">'+approvalsHtml+'</div>';
 
-  // Change orders awaiting the client's signature — prominent approval card
+  // Change orders awaiting the client's signature, prominent approval card
   const pendingCOs=[];
   h.bids.forEach(b=>{if(b.cancelledAt)return;(b.changeOrders||[]).forEach(co=>{if(!co.signedAt)pendingCOs.push({bid:b,co});});});
   pendingCOs.forEach(({bid,co})=>{
@@ -1342,7 +1342,7 @@ function renderOverview(){
     html+='</div>';
   });
 
-  // Pay CTA — one card per payable bid
+  // Pay CTA, one card per payable bid
   if(payableBids.length){
     payableBids.forEach(bid=>{
       const depPaid=(bid.deposit||0)>0.01&&(bid.paid||0)>=(bid.deposit||0)-0.01;
@@ -1372,7 +1372,7 @@ function renderOverview(){
       }
     });
   }else if(totalPaid>0.01){
-    html+='<div class="hub-paid-banner"><div style="font-size:28px">'+svgIcon('✅',{size:28})+'</div><div><div class="hub-paid-title">Paid in full</div><div class="hub-paid-sub">'+fmt(totalPaid)+' received — thank you!</div></div></div>';
+    html+='<div class="hub-paid-banner"><div style="font-size:28px">'+svgIcon('✅',{size:28})+'</div><div><div class="hub-paid-title">Paid in full</div><div class="hub-paid-sub">'+fmt(totalPaid)+' received: thank you!</div></div></div>';
   }
 
   // Two-col layout
@@ -1381,7 +1381,7 @@ function renderOverview(){
   // Main col
   html+='<div class="hub-col-main">';
 
-  // Feed: daily updates — hidden entirely when there's nothing to show, so
+  // Feed: daily updates, hidden entirely when there's nothing to show, so
   // "Awaiting your signature" (the highest-priority action) isn't pushed below
   // an empty placeholder card with nothing in it.
   if(activeJobs.length){
@@ -1399,7 +1399,7 @@ function renderOverview(){
     // arrival-point for conversion; inline sentence, never a pill/badge wall). The
     // credibility half (years/reviews) rides in the hero on arrival; the
     // safety half (Licensed & Insured · warranty) sits right above each
-    // Review & Sign button — built once here, reused per card.
+    // Review & Sign button, built once here, reused per card.
     // Warranty period → adjective form so it reads right: "1 year" → "1-year",
     // "6 months" → "6-month". Result: "1-year workmanship warranty".
     const _warrAdj=String(h.warrantyPeriod||'').trim().replace(/^(\d+)\s+(year|month|day)s?$/i,'$1-$2');
@@ -1412,7 +1412,7 @@ function renderOverview(){
     html+='<div class="hub-feed-hd" style="margin-top:4px">Awaiting your signature</div>';
     pendingBids.slice(0,3).forEach(b=>{
       html+='<div class="hub-bid-row">';
-      // No per-card status pill — the section header already says "Awaiting your
+      // No per-card status pill, the section header already says "Awaiting your
       // signature", so a pill on every card was redundant AND fought long
       // estimate names for width. The name now gets the full row.
       html+='<div class="hub-bid-top">'+
@@ -1420,14 +1420,14 @@ function renderOverview(){
         '<div class="hub-bid-hd"><div class="hub-bid-name">'+esc(b.type||'Proposal')+'</div>'+
         '<div class="hub-bid-date">Sent '+fmtDate(b.bid_date)+' · #'+String(b.id).slice(-6)+'</div></div>'+
       '</div>';
-      /* Price intentionally hidden from the card — research shows showing a large
+      /* Price intentionally hidden from the card, research shows showing a large
          dollar amount before the client reads the scope triggers loss-aversion and
          kills conversions. Price is revealed inside the proposal after scope context. */
       html+=_ctaTrust;   // risk-killers immediately above the sign button (thumb zone)
       if(b.signHubUrl){
         html+='<a href="'+esc(_signHref(b.signHubUrl))+'" class="hub-btn hub-btn-sign" style="width:100%">'+svgIcon('✍')+' Review &amp; Sign →</a>';
       }else{
-        html+='<div class="hub-bid-pending-msg">Sign link on the way — check back soon</div>';
+        html+='<div class="hub-bid-pending-msg">Sign link on the way, check back soon</div>';
       }
       html+='</div>';
     });
@@ -1481,7 +1481,7 @@ function renderOverview(){
     pendingBids.forEach(b=>{
       html+='<div class="hub-approval-item">';
       html+='<div class="hub-approval-name">'+esc(b.type||'Proposal')+'</div>';
-      /* Amount hidden from sidebar too — price revealed only after the client opens
+      /* Amount hidden from sidebar too, price revealed only after the client opens
          the proposal and reads the full scope (same rationale as the main card). */
       html+='<div class="hub-approval-amt">'+fmtDate(b.bid_date)+'</div>';
       if(b.signHubUrl)html+='<a href="'+esc(_signHref(b.signHubUrl))+'" class="hub-approval-link">Review &amp; Sign →</a>';
@@ -1515,7 +1515,7 @@ function renderProject(){
     const jobPhotos=job.photos||[];
     const beforePhotos=jobPhotos.filter(p=>p.type==='before');
     const afterPhotos=jobPhotos.filter(p=>p.type==='after');
-    // Chronological — this IS the milestone timeline for the job, so it must read
+    // Chronological: this IS the milestone timeline for the job, so it must read
     // in the order things actually happened, not upload-request-arrival order.
     const progressPhotos=jobPhotos.filter(p=>p.type==='progress').slice().sort((a,b)=>(a.uploadedAt||'').localeCompare(b.uploadedAt||''));
     const otherPhotos=jobPhotos.filter(p=>p.type!=='before'&&p.type!=='after'&&p.type!=='progress');
@@ -1549,7 +1549,7 @@ function renderProject(){
       }else html+='<div></div>';
       html+='</div>';
     }
-    // Milestone timeline — one entry per progress photo, oldest first, dated and
+    // Milestone timeline, one entry per progress photo, oldest first, dated and
     // (if the contractor typed one) labeled, so a multi-week remodel reads as a
     // day-by-day story instead of a flat thumbnail grid.
     if(progressPhotos.length){
@@ -1662,15 +1662,15 @@ function renderPayments(){
     html+='</div>'; // end header
     html+='<div id="pb-'+bid_id+'" style="display:'+(autoOpen?'block':'none')+'">';
 
-    // Pay buttons — single "Pay now" opens embedded Stripe modal
+    // Pay buttons, single "Pay now" opens embedded Stripe modal
     if(!isPaid&&h.stripeEnabled){
       html+='<div style="background:var(--bg-card);padding:14px 16px;border-bottom:1px solid var(--border)">';
       const surchargeOn=!!h.ccSurchargeEnabled;
       const pct=h.ccSurchargePct||3;
-      const bigBtn=(fn,amtCents,label)=>'<button id="pay-btn-'+bid_id+'" onclick="'+fn+'('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30);margin-bottom:10px">'+label+' — Secure Checkout</button>';
+      const bigBtn=(fn,amtCents,label)=>'<button id="pay-btn-'+bid_id+'" onclick="'+fn+'('+bid_id+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30);margin-bottom:10px">'+label+', Secure Checkout</button>';
       if(!depPaid&&deposit>0.01&&balance>deposit+0.01){
         html+=bigBtn('payBalance',Math.round(balance*100),'Pay in full '+fmt(balance));
-        html+='<div style="font-size:10px;color:var(--text3);margin-bottom:8px;text-align:center">— or —</div>';
+        html+='<div style="font-size:10px;color:var(--text3);margin-bottom:8px;text-align:center">- or -</div>';
         html+='<button onclick="payDeposit('+bid_id+')" style="display:block;width:100%;padding:11px;border-radius:10px;border:1.5px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:700;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;margin-bottom:10px">Pay deposit only '+fmt(deposit)+'</button>';
       }else if(!depPaid&&deposit>0.01){
         html+=bigBtn('payDeposit',Math.round(deposit*100),'Pay deposit '+fmt(deposit));
@@ -1714,7 +1714,7 @@ function renderPayments(){
       html+='</div>';
     }
 
-    // Invoice link — only once the job is marked complete (same gate as Documents)
+    // Invoice link, only once the job is marked complete (same gate as Documents)
     if(bid.completion_date){
       html+='<button onclick="openInvoice('+bid_id+')" style="display:flex;align-items:center;gap:10px;width:100%;padding:12px 16px;background:var(--bg-card);border:none;border-top:0;cursor:pointer;font-family:inherit;text-align:left">';
       html+='<div style="width:32px;height:32px;background:var(--bg);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">'+svgIcon('📄')+'</div>';
@@ -1823,7 +1823,7 @@ function _cancelShowStep1(dl){
   const contractorName=esc((_hub&&_hub.contractorName)||'your contractor');
   const reasons=['Price concerns','Schedule conflict','Found another contractor','Changed my mind','Other'];
   let h=_cancelHdr('Notice of Cancellation');
-  h+='<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:#92400E;font-weight:700">'+svgIcon('⏳',{size:12})+' Cancellation window open — expires '+dl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at midnight</div>';
+  h+='<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:#92400E;font-weight:700">'+svgIcon('⏳',{size:12})+' Cancellation window open, expires '+dl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at midnight</div>';
   h+='<div style="font-size:15px;font-weight:800;color:#1a1a18;margin-bottom:6px">Why are you considering cancelling?</div>';
   h+='<div style="font-size:13px;color:#64748b;margin-bottom:14px">Helps '+contractorName+' improve their service.</div>';
   reasons.forEach(r=>{h+='<button class="cancel-reason-opt" data-reason="'+r+'" onclick="_cancelPickReason(this)" style="display:block;width:100%;text-align:left;padding:11px 14px;margin-bottom:8px;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;font-size:14px;cursor:pointer;font-family:inherit;color:#1a1a18;transition:border-color .15s,background .15s">'+r+'</button>';});
@@ -1856,12 +1856,12 @@ function _cancelShowStep2(){
   h+='<div style="text-align:center;padding:4px 0 16px">';
   h+='<div style="font-size:36px;margin-bottom:12px">'+svgIcon('📞',{size:36})+'</div>';
   h+='<div style="font-size:16px;font-weight:800;color:#1a1a18;margin-bottom:10px">Have you spoken with '+contractorName+' first?</div>';
-  h+='<div style="font-size:13px;color:#64748b;line-height:1.65;margin-bottom:20px">Most concerns — pricing, scheduling, scope — can be resolved with a quick conversation. Once you cancel, the contract is voided and <strong>cannot be reinstated</strong>.</div>';
+  h+='<div style="font-size:13px;color:#64748b;line-height:1.65;margin-bottom:20px">Most concerns, pricing, scheduling, scope, can be resolved with a quick conversation. Once you cancel, the contract is voided and <strong>cannot be reinstated</strong>.</div>';
   if(phone){
     h+='<a target="_top" href="tel:'+phone+'" style="display:block;width:100%;padding:13px;border-radius:10px;background:#1b1612;color:#fff;font-size:15px;font-weight:800;text-decoration:none;text-align:center;margin-bottom:10px;box-sizing:border-box">'+svgIcon('📞',{size:15})+' Call '+contractorName+'</a>';
     h+='<a target="_top" href="sms:'+phone+'" style="display:block;width:100%;padding:12px;border:1.5px solid #1b1612;border-radius:10px;background:#fff;color:#1b1612;font-size:14px;font-weight:700;text-decoration:none;text-align:center;margin-bottom:20px;box-sizing:border-box">'+svgIcon('💬',{size:14})+' Text '+contractorName+'</a>';
   }
-  h+='<button id="cancel-proceed-btn" onclick="_cancelShowStep3()" style="background:none;border:none;font-size:12px;color:#94a3b8;cursor:pointer;font-family:inherit;text-decoration:underline;padding:4px">I\'ve already tried — I still want to cancel</button>';
+  h+='<button id="cancel-proceed-btn" onclick="_cancelShowStep3()" style="background:none;border:none;font-size:12px;color:#94a3b8;cursor:pointer;font-family:inherit;text-decoration:underline;padding:4px">I\'ve already tried, I still want to cancel</button>';
   h+='</div>';
   _cancelSetContent(h);
 }
@@ -1880,7 +1880,7 @@ function _cancelShowStep3(){
     else refundNote='Contact '+_cn('your contractor')+' to arrange your refund of '+fmt(refundDue)+'. Cash and check refunds are due within 10 business days.';
   }
   let h=_cancelHdr('Notice of Cancellation');
-  h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+' — Detach &amp; Retain</div>';
+  h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+', Detach &amp; Retain</div>';
   h+='<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:14px">NOTICE OF CANCELLATION</div>';
   h+='<div style="font-size:12px;color:#2d3748;line-height:1.8">';
   h+='<p style="margin:0 0 8px"><strong>Date of Transaction:</strong> '+txDate+'</p>';
@@ -1897,7 +1897,7 @@ function _cancelShowStep3(){
   h+='<button id="cancel-submit-btn" disabled onclick="_submitCancellation('+bid.id+')" style="width:100%;padding:13px;border:none;border-radius:10px;background:#991B1B;color:#fff;font-size:14px;font-weight:800;cursor:default;font-family:inherit;opacity:.5;transition:opacity .2s">Submitting in 5…</button>';
   h+='</div>';
   _cancelSetContent(h);
-  // 5-second delay before the submit button enables — gives time to reconsider
+  // 5-second delay before the submit button enables, gives time to reconsider
   let secs=5;
   _cancelTimer=setInterval(()=>{
     secs--;
@@ -1921,7 +1921,7 @@ function _cancelShowConfirmed(bid){
     else refundNote='Contact '+_cn('your contractor')+' to arrange your refund of '+fmt(refundDue)+' within 10 business days.';
   }
   let h=_cancelHdr('Notice of Cancellation');
-  h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+' — Detach &amp; Retain</div>';
+  h+='<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">'+cancelStatute+', Detach &amp; Retain</div>';
   h+='<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#1a365d;margin-bottom:14px">NOTICE OF CANCELLATION</div>';
   h+='<div style="font-size:12px;color:#2d3748;line-height:1.8"><p style="margin:0 0 8px"><strong>Date of Transaction:</strong> '+txDate+'</p><p style="margin:0 0 10px;font-weight:700">YOU MAY CANCEL THIS TRANSACTION, WITHOUT ANY PENALTY OR OBLIGATION, WITHIN '+daysWord+' BUSINESS DAYS FROM THE ABOVE DATE.</p></div>';
   h+='<div style="border-top:1px solid #e2e8f0;padding-top:14px"><div style="background:#FEE2E2;border:1px solid #FCA5A5;border-radius:8px;padding:12px 14px;font-size:12px;color:#991B1B"><strong>'+svgIcon('🚫')+' Cancellation submitted</strong><br>Signed by '+esc(bid.cancelledName||'you')+' · '+dt;
@@ -1929,7 +1929,7 @@ function _cancelShowConfirmed(bid){
   h+='<br>'+_cn('Your contractor')+' has been notified.</div></div>';
   _cancelSetContent(h);
 }
-// EPA Renovate Right pre-renovation disclosure — rendered as a signed document
+// EPA Renovate Right pre-renovation disclosure, rendered as a signed document
 // with the client's actual signature image + date/time at the bottom.
 function _showEpaDoc(bidId){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
@@ -1944,7 +1944,7 @@ function _showEpaDoc(bidId){
       '<div style="font-size:13px;font-weight:800;color:#92400E">'+svgIcon('⚠',{size:13})+' EPA Renovate Right Disclosure</div>'+
       '<button onclick="document.getElementById(\'epa-doc-ov\').remove()" style="border:none;background:none;font-size:22px;color:#94a3b8;cursor:pointer;padding:0;line-height:1">'+svgIcon('✕',{size:22})+'</button>'+
     '</div>'+
-    '<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">EPA 40 CFR Part 745 — Pre-Renovation Disclosure</div>'+
+    '<div style="text-align:center;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#94a3b8;margin-bottom:10px">EPA 40 CFR Part 745, Pre-Renovation Disclosure</div>'+
     '<div style="text-align:center;font-size:14px;font-weight:800;text-transform:uppercase;color:#92400E;margin-bottom:14px">Confirmation of Receipt</div>'+
     '<div style="font-size:12px;color:#2d3748;line-height:1.8">'+
       '<p style="margin:0 0 10px">I confirm that I received a copy of the EPA pamphlet <em>"Renovate Right: Important Lead Hazard Information for Families, Child Care Providers and Schools"</em> informing me of the potential risk of lead hazard exposure from renovation activity to be performed in my dwelling. I received this pamphlet before the work began.</p>'+
@@ -1957,14 +1957,14 @@ function _showEpaDoc(bidId){
       sigImg+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">'+
         '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Signed By</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(bid.signerName||'Client')+'</div></div>'+
-        '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Date &amp; Time</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(dt||'—')+'</div></div>'+
+        '<div><div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#999;margin-bottom:3px">Date &amp; Time</div><div style="font-size:13px;font-weight:700;color:#1a1a18">'+esc(dt||'-')+'</div></div>'+
       '</div>'+
     '</div>'+
   '</div>';
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   document.body.appendChild(ov);
 }
-// ── Change Order — remote review & e-signature ───────────────────────────────
+// ── Change Order, remote review & e-signature ───────────────────────────────
 // Pending: CO badge, original contract, change requested, adjustment, new total,
 // legal paragraph, the ONE shared signing pad (esign.js). Signed: renders as a
 // signed document (signature image + signer + date/time), like the EPA disclosure.
@@ -2003,12 +2003,12 @@ function _showCODoc(bidId,coNum){
   h+='<div style="font-size:26px;font-weight:800;color:#166534">'+fmt(co.newAmount)+'</div>';
   h+='</div>';
   if(signed){
-    // Shared signed-doc block (esign.js) — same component as proposals + the
+    // Shared signed-doc block (esign.js): same component as proposals + the
     // owner's record. Update once, updates everywhere.
     h+=esignSigBlockHTML({title:'Approved & Signed',marginTop:'0',sigData:sigImgData,signerName:co.signerName||'Client',signedAt:co.signedAt});
   }else{
     h+=esignPadHTML('co-hub',{nameId:'co-hub-sign-name'});
-    // The ONE shared consent block — literal same text as the in-person CO
+    // The ONE shared consent block, literal same text as the in-person CO
     // sign and the job price-increase sign-off.
     h+=esignConsentHTML('co-hub',ESIGN_NOTE_CHANGE_ORDER);
     h+='<div id="co-hub-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:6px"></div>';
@@ -2022,8 +2022,8 @@ function _showCODoc(bidId,coNum){
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   document.body.appendChild(ov);
   if(!signed){
-    // Shared e-sign pad (esign.js) — markup, listeners, typed-preview all live there.
-    // Wired synchronously — the canvas is already in the DOM by this point, and
+    // Shared e-sign pad (esign.js): markup, listeners, typed-preview all live there.
+    // Wired synchronously, the canvas is already in the DOM by this point, and
     // deferring via setTimeout only opens a window where a fast submit finds no
     // registered pad yet (esignResult returns "no-pad").
     esignWire('co-hub',{nameId:'co-hub-sign-name',errId:'co-hub-err'});
@@ -2041,7 +2041,7 @@ async function _submitCOHubSign(bidId,coNum){
   if(btn){btn.disabled=true;btn.textContent='Submitting…';}
   const ts=new Date().toISOString();
   try{
-    // The DB row is authoritative — re-read it, sign the matching entry, write back.
+    // The DB row is authoritative, re-read it, sign the matching entry, write back.
     // Falls back to the hub snapshot's CO list if the read returns nothing.
     let arr=null;
     try{
@@ -2054,11 +2054,11 @@ async function _submitCOHubSign(bidId,coNum){
     entry.signedAt=ts;entry.signerName=name;entry.signatureData=sigData;
     const{error}=await _supa.from('signed_proposals').update({change_orders:arr}).eq('bid_id',String(bidId));
     if(error){
-      // Column not yet in schema (migration pending merge) — local state already updated above.
+      // Column not yet in schema (migration pending merge), local state already updated above.
       // Contractor will see signature on next hub refresh after migration is applied.
       console.warn('CO sign DB write deferred:',error.message);
     }
-    // Instant contractor-tab refresh (same-browser) — cloud.js listens for this key
+    // Instant contractor-tab refresh (same-browser): cloud.js listens for this key
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,changeOrder:coNum}));}catch(_){}
     _hubNudgePeers(); // other hub tabs/devices of this client see the signature in seconds, not at the next poll
     co.signedAt=ts;co.signerName=name;co.sigData=sigData;co.status='signed';
@@ -2087,7 +2087,7 @@ async function _submitCOHubSign(bidId,coNum){
     }
   }catch(e){
     console.warn('change order sign:',e);
-    if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact '+_cnText('your contractor')+'.');
+    if(errEl)errEl.textContent='Could not submit, '+(e.message||'please try again or contact '+_cnText('your contractor')+'.');
     if(btn){btn.disabled=false;btn.innerHTML=svgIcon('✓',{size:14})+' Sign Change Order';}
   }
 }
@@ -2100,7 +2100,7 @@ async function _submitCancellation(bidId){
   if(btn){btn.disabled=true;btn.textContent='Submitting…';}
   const ts=new Date().toISOString();
   try{
-    // cancelled_at can't be written directly from the hub anymore — an anonymous
+    // cancelled_at can't be written directly from the hub anymore, an anonymous
     // PATCH by bid_id is indistinguishable from a forced-cancel attack. cancel-proposal
     // re-validates the hub link's secret token server-side, sets cancelled_at, and
     // issues any Stripe refund in one privileged call.
@@ -2110,7 +2110,7 @@ async function _submitCancellation(bidId){
     }});
     if(error)throw error;
     if(data?.error)throw new Error(data.error);
-    // Instant contractor-tab refresh (same-browser) — cloud.js listens for this key
+    // Instant contractor-tab refresh (same-browser): cloud.js listens for this key
     try{localStorage.setItem('zp3_sig_notify',JSON.stringify({bidId:String(bidId),ts,cancelled:true}));}catch(_){}
     bid.cancelledAt=ts;bid.cancelledName=name;bid.balance=0;
     document.getElementById('cancel-notice-ov')?.remove();
@@ -2118,7 +2118,7 @@ async function _submitCancellation(bidId){
     _showCancelForm(bidId); // reopen in confirmed state
   }catch(e){
     console.error('cancellation:',e);
-    if(errEl)errEl.textContent='Could not submit — '+(e.message||'please try again or contact '+_cnText('your contractor')+' directly.');
+    if(errEl)errEl.textContent='Could not submit, '+(e.message||'please try again or contact '+_cnText('your contractor')+' directly.');
     if(btn){btn.disabled=false;btn.textContent='Submit Cancellation Notice';}
   }
 }
@@ -2136,7 +2136,7 @@ function renderDocuments(){
     html+='<div class="card"><div class="hub-empty-state"><div class="hub-empty-icon">'+svgIcon('📁',{size:48})+'</div><div class="hub-empty-title">No documents yet</div><div class="hub-empty-body">Signed proposals and invoices will appear here once a proposal is signed.</div></div></div>';
   }
 
-  // One accordion card per signed estimate — invoice + agreement nested inside
+  // One accordion card per signed estimate, invoice + agreement nested inside
   wonBids.forEach((bid,i)=>{
     const isPaid=(bid.balance||0)<0.01;
     const autoOpen=i===0;
@@ -2163,7 +2163,7 @@ function renderDocuments(){
     if(bid.completion_date){
       const _isDiag=bid.kind==='diagnostic';
       if(_isDiag&&(bid.signedAt||bid.signed)){
-        // Signed diagnostic charge — a real signed document (notes + date + signature).
+        // Signed diagnostic charge, a real signed document (notes + date + signature).
         const _dgMeta=svgIcon('✍',{size:11})+' Signed by '+esc(bid.signerName||'client')+' · '+new Date(bid.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
         html+=_docRow(svgIcon('📄',{size:18}),'Diagnostic Charge',_dgMeta,'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Signed</span>','openDiagnosticDoc('+bid.id+')','');
       }else{
@@ -2176,25 +2176,25 @@ function renderDocuments(){
         :'Tap to view signed proposal';
       html+=_docRow(svgIcon('📋',{size:18}),'Signed Agreement',_sigMeta,'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Contract</span>','openProposal('+bid.id+')','');
     }
-    // EPA RRP disclosure — doc 2 of the signing flow on pre-1978 homes. Acknowledged
+    // EPA RRP disclosure, doc 2 of the signing flow on pre-1978 homes. Acknowledged
     // with the same signature as the agreement, so it shows the same signer + timestamp.
     if(_hasEpaDoc){
       const _epaTs=bid.epaAckAt||bid.signedAt;
       const _epaMeta=svgIcon('✍',{size:11})+' Acknowledged by '+esc(bid.signerName||'client')+' · '+new Date(_epaTs).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
       html+=_docRow(svgIcon('⚠',{size:18}),'EPA Renovate Right Disclosure',_epaMeta,'<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','_showEpaDoc('+bid.id+')','');
     }
-    // Change orders — signed ones render like the EPA doc (signature + metadata);
+    // Change orders, signed ones render like the EPA doc (signature + metadata);
     // pending ones open the review & sign modal.
     _bidCOs.forEach(co=>{
       const _coMeta=co.signedAt
         ?svgIcon('✍',{size:11})+' Signed by '+esc(co.signerName||'client')+' · '+new Date(co.signedAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
-        :'Review &amp; sign — '+(co.type==='sub'?'−':'+')+fmt(co.amount)+' adjustment';
+        :'Review &amp; sign: '+(co.type==='sub'?'−':'+')+fmt(co.amount)+' adjustment';
       const _coTag=co.signedAt
         ?'<span class="hub-doc-tag hub-doc-tag-contract" style="margin-left:6px">Signed</span>'
         :'<span class="hub-doc-tag" style="margin-left:6px;background:#FEF3C7;color:#92400E">Action needed</span>';
       html+=_docRow(svgIcon('📋',{size:18}),'Change Order #'+co.coNum,_coMeta,_coTag,'_showCODoc('+bid.id+','+co.coNum+')','');
     });
-    // Cancellation notice — e-signable while the rescission window is open
+    // Cancellation notice, e-signable while the rescission window is open
     // (_cancelWindowOpen is the authority); the row removes itself entirely once
     // the window closes. Exception: a submitted cancellation stays visible
     // permanently as the legal record.
@@ -2204,7 +2204,7 @@ function renderDocuments(){
       const _cancelDl=_cancelDeadline(bid.signedAt||bid.bid_date,_cd);
       const _cancelMeta=_isCancelled
         ?'Submitted '+fmtDate(bid.cancelledAt)+(bid.cancelledName?' by '+esc(bid.cancelledName):'')
-        :'Window open — expires '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'');
+        :'Window open, expires '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'');
       const _cancelTag=_isCancelled
         ?'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEE2E2;color:#991B1B">Cancelled</span>'
         :'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEF3C7;color:#92400E">Active</span>';
@@ -2222,7 +2222,7 @@ function renderDocuments(){
     html+='</div>'; // end card
   });
 
-  // Declined / abandoned proposals — read-only record with the reason. No invoice,
+  // Declined / abandoned proposals, read-only record with the reason. No invoice,
   // no Review & Sign, no cancellation row; the original proposal artifact (if one was
   // uploaded) opens read-only via openProposal so the client can still see it.
   lostBids.forEach((bid)=>{
@@ -2266,7 +2266,7 @@ function renderDocuments(){
   if(h.epaRequired){
     html+='<div class="card" style="margin-bottom:12px">';
     html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Compliance</div>';
-    html+=_docRow(svgIcon('⚠',{size:18}),'EPA Lead Paint Pamphlet','Renovate Right — required for pre-1978 homes','<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','','https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools');
+    html+=_docRow(svgIcon('⚠',{size:18}),'EPA Lead Paint Pamphlet','Renovate Right, required for pre-1978 homes','<span class="hub-doc-tag hub-doc-tag-epa" style="margin-left:6px">EPA</span>','','https://www.epa.gov/lead/renovate-right-important-lead-hazard-information-families-child-care-providers-and-schools');
     html+='</div>';
   }
 
@@ -2277,8 +2277,8 @@ function renderDocuments(){
   html+='<div class="card">';
   html+='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">Your contractor</div>';
   html+='<div class="hub-contractor-grid">';
-  html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Business</div><div class="hub-contractor-val">'+esc(h.contractorName||'—')+'</div></div>';
-  html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Phone</div><div class="hub-contractor-val">'+(h.contractorPhone?'<a target="_top" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" style="color:inherit;text-decoration:none">'+esc(h.contractorPhone)+'</a>':'—')+'</div></div>';
+  html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Business</div><div class="hub-contractor-val">'+esc(h.contractorName||'-')+'</div></div>';
+  html+='<div class="hub-contractor-cell"><div class="hub-contractor-lbl">Phone</div><div class="hub-contractor-val">'+(h.contractorPhone?'<a target="_top" href="tel:'+h.contractorPhone.replace(/\D/g,'')+'" style="color:inherit;text-decoration:none">'+esc(h.contractorPhone)+'</a>':'-')+'</div></div>';
   if(h.bwebsite){
     const safeUrl=(h.bwebsite||'').trim();
     const isSafeUrl=/^https?:\/\//i.test(safeUrl);
@@ -2363,7 +2363,7 @@ async function _launchCheckout(bidId,amount,label){
   document.getElementById('stripe-modal-amt').textContent=fmt(amount/100)+' · Secure Checkout';
   document.getElementById('checkout-embed-container').innerHTML='<div style="padding:32px 20px;text-align:center"><div class="hub-spinner"></div><div style="color:#9ca3af;font-size:14px">Loading payment options…</div></div>';
   const submitBtn=document.getElementById('checkout-submit-btn');
-  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+' — Secure Checkout';}
+  if(submitBtn){submitBtn.disabled=true;submitBtn.style.display='none';submitBtn.textContent='Pay '+fmt(amount/100)+', Secure Checkout';}
   document.getElementById('stripe-overlay').style.display='block';
   document.body.style.overflow='hidden';
   if(btn){if(btnOrig)btn.innerHTML=btnOrig;else btn.textContent=label;btn.disabled=false;}
@@ -2418,7 +2418,7 @@ async function _launchCheckout(bidId,amount,label){
   }
 }
 async function _submitCheckoutPayment(){
-  if(!_stripeCheckoutInstance||!_stripeCheckoutElements)return;// cs_ path has no elements — submit button is hidden anyway
+  if(!_stripeCheckoutInstance||!_stripeCheckoutElements)return;// cs_ path has no elements, submit button is hidden anyway
   const btn=document.getElementById('checkout-submit-btn');
   if(btn){btn.disabled=true;btn.textContent='Processing…';}
   const hubBase=location.href.split('?')[0];
@@ -2430,7 +2430,7 @@ async function _submitCheckoutPayment(){
       const errEl=document.getElementById('checkout-pay-err');
       if(errEl)errEl.textContent=error.message||'Payment failed. Please try again.';
     }
-    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeCheckoutAmt/100)+' — Secure Checkout';}
+    if(btn){btn.disabled=false;btn.textContent='Pay '+fmt(_stripeCheckoutAmt/100)+', Secure Checkout';}
   }
 }
 function closePaymentModal(){
@@ -2454,7 +2454,7 @@ async function payDeposit(bidId){
   await _launchCheckout(bidId,amount,'Pay deposit');
 }
 function _pay4Btns(bidId,fn,amt,h){
-  return '<button id="pay-btn-'+bidId+'" onclick="'+fn+'('+bidId+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30)">Pay '+fmt(amt)+' — Secure Checkout</button>';
+  return '<button id="pay-btn-'+bidId+'" onclick="'+fn+'('+bidId+')" style="display:block;width:100%;padding:14px;border-radius:12px;border:none;background:var(--red);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:var(--font-ui,inherit);text-align:center;box-shadow:0 4px 18px rgba(180,40,40,.30)">Pay '+fmt(amt)+', Secure Checkout</button>';
 }
 function _showCashMsg(){
   const biz=escHtml(_hub.contractorName||'your contractor');
@@ -2484,11 +2484,11 @@ function showPaymentSuccess(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
   const banner=document.createElement('div');
   banner.style.cssText='position:fixed;top:60px;left:0;right:0;z-index:300;background:#16a34a;color:#fff;padding:14px 20px;text-align:center;font-size:14px;font-weight:700;box-shadow:0 2px 8px rgba(0,0,0,.2)';
-  banner.innerHTML=svgIcon('✅',{size:14})+' Payment received — thank you! We\'ll be in touch.';
+  banner.innerHTML=svgIcon('✅',{size:14})+' Payment received, thank you! We\'ll be in touch.';
   document.body.appendChild(banner);setTimeout(()=>banner.remove(),6000);
   if(bid){bid.paymentStatus='paid';bid.balance=0;renderAll();}
 }
-// Signed diagnostic-charge document — what you found (notes), the fee, the
+// Signed diagnostic-charge document, what you found (notes), the fee, the
 // dates, and the client's signature, rendered with the SHARED signed-doc block.
 function openDiagnosticDoc(bidId){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
@@ -2541,13 +2541,13 @@ function openInvoice(bidId){
   html+='</tbody></table>';
   html+='<div class="inv-totals"><div class="inv-total-row"><span>Subtotal</span><span>'+fmt(bid.amount)+'</span></div>';
   bidPayments.filter(p=>p.amount>0).forEach(p=>{
-    html+='<div class="inv-total-row" style="color:#3B8C2A"><span>Payment ('+esc(p.date||'')+') — '+esc(tl[p.type]||p.type||'Payment')+'</span><span>('+fmt(p.amount)+')</span></div>';
+    html+='<div class="inv-total-row" style="color:#3B8C2A"><span>Payment ('+esc(p.date||'')+'): '+esc(tl[p.type]||p.type||'Payment')+'</span><span>('+fmt(p.amount)+')</span></div>';
   });
   html+='<div class="inv-total-row inv-total-grand"><span>Balance due</span><span>'+fmt(balance)+'</span></div></div>';
   html+='<div style="background:'+bdBg+';border:2px solid '+bdBrd+';border-radius:8px;padding:16px 20px;margin-top:24px;display:flex;justify-content:space-between;align-items:center">';
   html+='<div><div style="font-size:12px;font-weight:700;color:'+bdClr+';text-transform:uppercase;letter-spacing:.05em">'+(isPaid?'Paid in full '+svgIcon('✓',{size:12}):'Balance due')+'</div>';
   html+='<div style="font-size:11px;color:'+bdClr+';margin-top:3px">'+(isPaid?'Thank you for your business!':'Please remit payment at your earliest convenience')+'</div>';
-  if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay Now — Secure Checkout</button>';
+  if(!isPaid&&h.stripeEnabled)html+='<button id="pay-inv-btn-'+bid.id+'" onclick="payBalance('+bid.id+')" style="margin-top:10px;background:var(--red);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 10px rgba(180,40,40,.30)">Pay Now, Secure Checkout</button>';
   html+='</div><div style="font-size:28px;font-weight:800;color:'+bdClr+'">'+fmt(balance)+'</div></div>';
   html+='<div class="inv-footer-text">'+esc(h.contractorName)+' · '+(h.contractorPhone?esc(h.contractorPhone)+' · ':'')+'Thank you for choosing us!</div>';
   html+='<div style="margin-top:40px;padding-top:20px;border-top:1px solid #e0e0dc;display:flex;gap:10px" class="no-print">';
@@ -2594,7 +2594,7 @@ async function openProposal(bidId){
   const bid=_hub.bids.find(b=>b.id===bidId);
   if(!bid||!bid.proposalKey){alert('Proposal document not available. Please contact us.');return;}
   const ov=document.getElementById('prop-overlay'),ct=document.getElementById('prop-content');
-  // No loading spinner on proposal open (owner) — clear any prior content and fade
+  // No loading spinner on proposal open (owner): clear any prior content and fade
   // the overlay in; the proposal renders as soon as its JSON resolves.
   ct.innerHTML='';
   ov.style.opacity='0';ov.style.display='block';requestAnimationFrame(()=>ov.style.opacity='1');scrollTo(0,0);
@@ -2602,7 +2602,7 @@ async function openProposal(bidId){
     const{data:propData,error}=await _fetchStorageJson(bid.proposalKey);
     if(error||!propData)throw new Error(error?.message||'document not found in storage');
     // Fall back to the bid's DB-sourced fields when the storage JSON missed the
-    // signing update — the signature block must still show name + timestamp.
+    // signing update, the signature block must still show name + timestamp.
     // Never for a declined proposal: a decline is not a signature.
     const _isDeclined=propData.status==='declined'||!!bid.declinedAt;
     if(!_isDeclined&&propData.status!=='signed'&&bid.signedAt){
@@ -2616,14 +2616,14 @@ async function openProposal(bidId){
     if(_isDeclined){
       const decDate=(propData.declinedAt||bid.declinedAt)?new Date(propData.declinedAt||bid.declinedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'';
       sigBlock='<div style="margin-top:32px;border-top:2px solid #e0e0dc;padding-top:20px">'+
-        '<div style="display:inline-flex;align-items:center;gap:8px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:20px;padding:8px 16px;font-size:12px;font-weight:800;color:#475569">Declined'+(decDate?' — '+escHtml(decDate):'')+'</div>'+
-        '<div style="font-size:12px;color:#94a3b8;margin-top:10px;line-height:1.6">This proposal was declined and is not a signed agreement. If you’ve changed your mind, reach out — we’d love to revisit it.</div>'+
+        '<div style="display:inline-flex;align-items:center;gap:8px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:20px;padding:8px 16px;font-size:12px;font-weight:800;color:#475569">Declined'+(decDate?', '+escHtml(decDate):'')+'</div>'+
+        '<div style="font-size:12px;color:#94a3b8;margin-top:10px;line-height:1.6">This proposal was declined and is not a signed agreement. If you’ve changed your mind, reach out, we’d love to revisit it.</div>'+
       '</div>';
     }
     else if(propData.status==='signed'&&propData.signerName){
       const sigDate=propData.signedAt?new Date(propData.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
       const payLabel=(propData.paymentMethod||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
-      // Shared signed-doc block (esign.js) — same component as COs + the
+      // Shared signed-doc block (esign.js): same component as COs + the
       // owner's record. Update once, updates everywhere.
       sigBlock=esignSigBlockHTML({marginTop:'32px',sigData:propData.signatureDataUrl||'',
         signerName:propData.signerName,signedAt:propData.signedAt||'',
@@ -2635,14 +2635,14 @@ async function openProposal(bidId){
       '<button onclick="closeProp()" class="btn btn-sec" style="width:auto;padding:12px 24px">← Back to hub</button></div>';
   }catch(e){
     console.error('openProposal:',e);
-    // Fall back to a signature certificate built from DB-sourced bid fields — the
+    // Fall back to a signature certificate built from DB-sourced bid fields, the
     // client should never hit a dead end on a document they already signed.
     if(bid.signedAt){
       const dt=new Date(bid.signedAt).toLocaleString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
       const img=bid.signatureData?'<div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;margin:14px 0;text-align:center"><img src="'+esc(bid.signatureData||'')+'" style="max-width:100%;max-height:120px" alt="Client signature"></div>':'';
       ct.innerHTML='<div style="padding:24px 20px">'+
         '<div style="font-size:18px;font-weight:800;margin-bottom:4px">'+esc(bid.type||'Signed Agreement')+'</div>'+
-        '<div style="font-size:12px;color:#64748b;margin-bottom:18px">The full document is temporarily unavailable — here is your signature record.</div>'+
+        '<div style="font-size:12px;color:#64748b;margin-bottom:18px">The full document is temporarily unavailable, here is your signature record.</div>'+
         '<div style="font-size:10px;color:#94a3b8;margin:-10px 0 16px;word-break:break-all">'+esc((e&&e.message?e.message:'unknown error')+(bid.proposalKey?' · key: '+bid.proposalKey:' · no proposalKey on bid'))+'</div>'+
         '<div style="border-top:2px solid #1a1a18;padding-top:14px">'+
           '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#666;margin-bottom:8px">Client Signature</div>'+img+
@@ -2655,7 +2655,7 @@ async function openProposal(bidId){
         '<button onclick="closeProp()" class="btn btn-sec" style="margin-top:24px;width:auto;padding:12px 24px">← Back to hub</button>'+
       '</div>';
     }else{
-      ct.innerHTML='<p style="color:#A32D2D;padding:20px;font-size:14px">Could not load proposal'+(e&&e.message?' — '+esc(e.message):'')+'. Please contact us.</p>'+
+      ct.innerHTML='<p style="color:#A32D2D;padding:20px;font-size:14px">Could not load proposal'+(e&&e.message?', '+esc(e.message):'')+'. Please contact us.</p>'+
         '<button onclick="closeProp()" class="btn btn-sec" style="margin:0 20px 20px;width:auto;padding:12px 24px">← Back</button>';
     }
   }
@@ -2749,7 +2749,7 @@ function _approveChange(approvalId, approved){
 async function _uploadClientDoc(){
   const p=new URLSearchParams(location.search);
   const u=p.get('u'),c=p.get('c');
-  if(!u||!c){alert('Cannot upload — hub not fully loaded.');return;}
+  if(!u||!c){alert('Cannot upload, hub not fully loaded.');return;}
   const inp=document.createElement('input');
   inp.type='file';
   inp.accept='.pdf,.doc,.docx,.jpg,.jpeg,.png,.heic,.gif';
@@ -2764,7 +2764,7 @@ async function _uploadClientDoc(){
       if(!_hub._clientDocs)_hub._clientDocs=[];
       _hub._clientDocs.push({name:file.name,url:publicUrl,meta:'Uploaded by you · '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})});
       renderDocuments();
-    }catch(e){alert('Upload failed — please try again or contact us.');}
+    }catch(e){alert('Upload failed, please try again or contact us.');}
   };
   inp.click();
 }
@@ -2786,7 +2786,7 @@ async function _attachChatFile(){
     const file=inp.files[0];if(!file)return;
     const p=new URLSearchParams(location.search);
     const u=p.get('u'),c=p.get('c');
-    if(!u||!c){alert('Cannot upload — hub not fully loaded.');return;}
+    if(!u||!c){alert('Cannot upload, hub not fully loaded.');return;}
     const path='client-uploads/'+u+'/'+c+'/chat_'+Date.now()+'_'+file.name.replace(/[^a-zA-Z0-9._-]/g,'_');
     try{
       const{error}=await _supa.storage.from('proposals').upload(path,file,{upsert:true,contentType:file.type});
@@ -2806,7 +2806,7 @@ async function _attachChatFile(){
         msgs.appendChild(bubble);
         msgs.scrollTop=msgs.scrollHeight;
       }
-    }catch(e){alert('Upload failed — please try again.');}
+    }catch(e){alert('Upload failed, please try again.');}
   };
   inp.click();
 }
@@ -2822,7 +2822,7 @@ function closeHelp(){
 }
 
 init();
-// Boot watchdog — if neither the hub nor the error state has been shown after
+// Boot watchdog, if neither the hub nor the error state has been shown after
 // 20s (hung request, dead network, unexpected stall), stop pretending to load:
 // reveal the hub if we have data, otherwise the error page with its retry path.
 setTimeout(()=>{

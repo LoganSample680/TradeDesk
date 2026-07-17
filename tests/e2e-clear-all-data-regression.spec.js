@@ -1,8 +1,8 @@
 // @ts-check
 /**
- * Regression guard — "Clear all data" must wipe EVERY local store (§14 self-heal).
+ * Regression guard, "Clear all data" must wipe EVERY local store (§14 self-heal).
  *
- * BUG — clearing all data left maintenance / events / photos / licenses / contracts
+ * BUG, clearing all data left maintenance / events / photos / licenses / contracts
  *       / agreements behind. Root cause: clearAllData() in settings.js only zeroed a
  *       subset of the stores declared in data.js, so the omitted arrays survived a
  *       "Clear all data" and resurfaced on the dashboard.
@@ -13,13 +13,13 @@
  *       cleared state to the cloud, and _clearCrewTrackingCloud() deletes the cloud
  *       crew time-tracking tables so the Crew Today tile empties too.
  *
- * This counts what's in memory AFTER clearAllData — if any store the user can fill
+ * This counts what's in memory AFTER clearAllData, if any store the user can fill
  * survives, this fails forever.
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('Clear all data — every store wiped', () => {
+test.describe('Clear all data, every store wiped', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {

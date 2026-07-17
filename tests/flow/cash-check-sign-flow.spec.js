@@ -1,4 +1,4 @@
-// REAL money-chain flow — a sent proposal gets SIGNED and marked paid by cash/check,
+// REAL money-chain flow, a sent proposal gets SIGNED and marked paid by cash/check,
 // with the full audit record. No Stripe required (the cash/check path writes the
 // signature + payment intent directly). This is the "legit proposals actually signed
 // and marked paid, visible in the account" proof.
@@ -65,13 +65,13 @@ async function signedRow(p, bidId) {
   }, { bidId });
 }
 
-test.describe('cash/check signing — proposal signed + marked paid (UI-driven)', () => {
+test.describe('cash/check signing, proposal signed + marked paid (UI-driven)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
   for (const method of ['cash', 'check']) {
-    test(`a sent proposal is signed and marked paid by ${method} — full audit record`, async ({ page }) => {
+    test(`a sent proposal is signed and marked paid by ${method}, full audit record`, async ({ page }) => {
       const clientId = Date.now() * 1000 + (process.pid % 1000) + (method === 'check' ? 7 : 0);
       const bidId = clientId + 1;
       let ctx = {};
@@ -99,7 +99,7 @@ test.describe('cash/check signing — proposal signed + marked paid (UI-driven)'
         },
       });
 
-      // NO cleanup — the signed proposal stays in the dev account on purpose so the
+      // NO cleanup, the signed proposal stays in the dev account on purpose so the
       // owner can open it and see it executed (CLAUDE.md §13.7).
       const rep = report(FLOW, BASELINE, page);
       expect(rep.totalClicks).toBeGreaterThan(0);

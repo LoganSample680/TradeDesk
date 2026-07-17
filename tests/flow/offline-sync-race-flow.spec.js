@@ -1,18 +1,18 @@
-// REAL flow — offline-sync race safety (the "10 workers, some drop offline mid-bid
+// REAL flow, offline-sync race safety (the "10 workers, some drop offline mid-bid
 // and reconnect" question). Each worker is a SEPARATE browser context signed into
-// the same account — a real second/third/Nth device. We verify the two invariants
+// the same account, a real second/third/Nth device. We verify the two invariants
 // that make concurrent multi-device editing safe:
 //
-//   A. CONCURRENT DISTINCT WRITES — N workers each create a uniquely-id'd bid and
+//   A. CONCURRENT DISTINCT WRITES, N workers each create a uniquely-id'd bid and
 //      save at the same time. All N must land in the cloud. Because writes are
 //      upserts keyed by (id,user_id), distinct ids never collide and no worker's
 //      save clobbers another's row.
 //
-//   B. OFFLINE-DURING-BID + RECONNECT — Worker B goes offline, creates a bid while
+//   B. OFFLINE-DURING-BID + RECONNECT, Worker B goes offline, creates a bid while
 //      offline (its save fails → queued), and meanwhile Worker A (online) creates a
 //      different bid. When B reconnects it pushes its own bid WITHOUT deleting A's.
 //      This is the crux: supaSaveToCloud only soft-deletes ids in THIS device's
-//      _lastKnownIds (cloud.js ~2591) — so B, which never loaded A's bid, can't
+//      _lastKnownIds (cloud.js ~2591), so B, which never loaded A's bid, can't
 //      delete it. After the dust settles BOTH bids must exist in the cloud.
 //
 // All bids are uniquely tagged and LEFT in the dev account for inspection (§13.7);
@@ -73,11 +73,11 @@ test.describe('offline-sync race safety (multi-device)', () => {
     // Spin up the worker devices in parallel.
     const workers = await Promise.all(Array.from({ length: WORKERS }, (_, i) => spawnWorker(browser, i)));
 
-    // ── A. Concurrent distinct writes — every worker's bid must survive. ──
+    // ── A. Concurrent distinct writes, every worker's bid must survive. ──
     await step(page, {
       label: `${WORKERS} workers create distinct bids concurrently`, page: 'cloud', role: 'contractor',
       suspect: 'cloud.js supaSaveToCloud upsert keyed by (id,user_id)',
-      ruleText: 'concurrent saves of distinct bids must ALL land — no worker clobbers another row',
+      ruleText: 'concurrent saves of distinct bids must ALL land, no worker clobbers another row',
       expected: `all ${WORKERS} bid ids present in cloud td_bids`,
       act: async () => {
         await Promise.all(workers.map((w, i) => workerCreatesBid(w.page, ids[i], cids[i], `E2E Race W${i} ${stamp}`)));
@@ -97,7 +97,7 @@ test.describe('offline-sync race safety (multi-device)', () => {
     allIds.push(offlineBidId, onlineBidId);
 
     await step(page, {
-      label: 'worker B offline makes a bid; worker A makes one; B reconnects — neither lost',
+      label: 'worker B offline makes a bid; worker A makes one; B reconnects, neither lost',
       page: 'cloud', role: 'contractor',
       suspect: 'cloud.js _onReconnect + soft-delete guard (_lastKnownIds, ~2591)',
       ruleText: 'a reconnecting offline worker must push its own bid WITHOUT deleting the bid another worker made meanwhile',
@@ -156,11 +156,11 @@ test.describe('offline-sync race safety (multi-device)', () => {
             oplogOn: !!window._opLogShadow,
           };
         }, { id: offlineBidId });
-        return { ok, got: `offlineBid=${off?.present} onlineBid=${on?.present} bDeltaUpserts=${bPushed} — Bmem=${diag.inMemory} cloudRaw=${JSON.stringify(diag.raw)} locDel=${diag.locallyDeleted} lastLoadDel=${diag.lastLoadDeleted} pendCreate=${JSON.stringify(diag.pendingCreateOwners)} oplog=${diag.oplogOn}` };
+        return { ok, got: `offlineBid=${off?.present} onlineBid=${on?.present} bDeltaUpserts=${bPushed}, Bmem=${diag.inMemory} cloudRaw=${JSON.stringify(diag.raw)} locDel=${diag.locallyDeleted} lastLoadDel=${diag.lastLoadDeleted} pendCreate=${JSON.stringify(diag.pendingCreateOwners)} oplog=${diag.oplogOn}` };
       },
     });
 
-    // NO data cleanup — every bid + client this test created stays in the dev account
+    // NO data cleanup, every bid + client this test created stays in the dev account
     // on purpose so the owner can inspect the multi-worker race outcome firsthand
     // (CLAUDE.md §13.7). Only the worker contexts are closed (resource cleanup).
     await Promise.all(workers.map(w => w.ctx.close().catch(() => {})));

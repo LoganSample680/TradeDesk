@@ -1,13 +1,13 @@
-// REAL flow — crew geo-fence time-on-site (task #18 remainder). The earlier claim
+// REAL flow, crew geo-fence time-on-site (task #18 remainder). The earlier claim
 // that GPS geo-fencing "can't be tested headless" was WRONG: the OS just calls
 // geo-track.js _geoOnPing(position) with coordinates, so we call that exact handler
-// with synthetic positions and drive the full arrive→dwell→depart state machine —
+// with synthetic positions and drive the full arrive→dwell→depart state machine,
 // no GPS hardware needed (Playwright could also feed it via setGeolocation, but the
 // handler is the unit under test). We then assert the REAL rows it writes to
 // job_time_entries. Three behaviours are covered:
 //
 //   1. ARRIVE → DWELL → DEPART logs a 'geofence' time entry with the dwell minutes.
-//   2. OUT-OF-BUSINESS-HOURS pings are ignored (no entry) — the privacy gate.
+//   2. OUT-OF-BUSINESS-HOURS pings are ignored (no entry), the privacy gate.
 //   3. A <2-minute pass-through is ignored (no phantom entry).
 //
 // Soft-skips cleanly if the geo tables aren't provisioned in this env. Seed job is
@@ -70,7 +70,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
         S.officeLat = null; S.officeLon = null;
         if (hoursOk) { S.trackStart = '00:00'; S.trackEnd = '23:59'; }
         else {
-          // A 1-hour window 6h from now (clamped to avoid a midnight wrap) — excludes now.
+          // A 1-hour window 6h from now (clamped to avoid a midnight wrap), excludes now.
           const d = new Date(); const n = d.getHours() * 60 + d.getMinutes();
           let s = (n + 360) % 1440, e = s + 60; if (e >= 1440) { s = 60; e = 120; }
           const f = m => String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
@@ -91,7 +91,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
         const ok = await setup(jobOn, true);
         if (!ok) return 0; // hours setup failed (shouldn't with 00:00-23:59)
         await ping(p, SITE.lat, SITE.lon);                       // arrive (inside fence)
-        // DIAGNOSTIC: capture whether arrival actually registered — did _geoMyJobs
+        // DIAGNOSTIC: capture whether arrival actually registered, did _geoMyJobs
         // return our seeded job, did business-hours pass, did _geoCurrentJob get set?
         // This tells us if the failure is ARRIVAL (no current job → nothing to close)
         // vs the INSERT (current job set but no row written).
@@ -110,9 +110,9 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
       },
       rule: async (p) => {
         const r = await geoEntries(p, jobOn);
-        if (r.absent) return { ok: true, got: 'SKIP — job_time_entries not provisioned in this env (pending geo migration)' };
+        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned in this env (pending geo migration)' };
         const gf = (r.rows || []).find(x => x.source === 'geofence');
-        return { ok: !!gf && gf.minutes >= 2, got: gf ? `minutes=${gf.minutes} source=${gf.source}` : `no geofence row — DIAG after arrive: ${JSON.stringify(p.__geoDiag)}` };
+        return { ok: !!gf && gf.minutes >= 2, got: gf ? `minutes=${gf.minutes} source=${gf.source}` : `no geofence row, DIAG after arrive: ${JSON.stringify(p.__geoDiag)}` };
       },
     });
 
@@ -133,9 +133,9 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
         return 1;
       },
       rule: async (p) => {
-        if (p.__gate !== false) return { ok: true, got: 'SKIP — could not build an out-of-hours window (rare clock alignment)' };
+        if (p.__gate !== false) return { ok: true, got: 'SKIP: could not build an out-of-hours window (rare clock alignment)' };
         const r = await geoEntries(p, jobHrs);
-        if (r.absent) return { ok: true, got: 'SKIP — geo tables absent' };
+        if (r.absent) return { ok: true, got: 'SKIP: geo tables absent' };
         const none = (r.rows || []).length === 0;
         return { ok: p.__cur == null && none, got: `currentJob=${p.__cur} rows=${(r.rows || []).length}` };
       },
@@ -157,7 +157,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
       },
       rule: async (p) => {
         const r = await geoEntries(p, jobPass);
-        if (r.absent) return { ok: true, got: 'SKIP — geo tables absent' };
+        if (r.absent) return { ok: true, got: 'SKIP: geo tables absent' };
         return { ok: (r.rows || []).length === 0, got: `rows=${(r.rows || []).length} (expected 0)` };
       },
     });

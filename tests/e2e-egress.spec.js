@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * E2E tests — the egress-fix package (owner mandate 2026-07-14):
+ * E2E tests, the egress-fix package (owner mandate 2026-07-14):
  *
  * 1. Signature-poll watermark: checkNewSignatures does ONE full poll per
  *    session, then delta-polls with .gt('updated_at', watermark) so a
@@ -19,17 +19,17 @@
  *    rebuild with the exact pre-fix dict semantics.
  * 6. sig-feed health: _sigFeedStatus tracks SUBSCRIBED/down, and a recovery
  *    after an outage runs one immediate catch-up sweep (realtime is
- *    at-most-once — pushes dropped during the outage must be reconciled).
+ *    at-most-once, pushes dropped during the outage must be reconciled).
  * 7. Client hub poll cadence: live channel healthy → every 10th tick (5 min);
  *    channel down or never connected → every tick (30s, pre-fix behavior).
  */
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-// 1×1 transparent PNG — a valid, decodable data URL for logo tests.
+// 1×1 transparent PNG, a valid, decodable data URL for logo tests.
 const TINY_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
-test.describe('egress — signature-poll watermark', () => {
+test.describe('egress: signature-poll watermark', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -86,7 +86,7 @@ test.describe('egress — signature-poll watermark', () => {
     expect(r.watermark).toBe('2026-07-14T00:00:00+00:00');
   });
 
-  test('rows without updated_at (un-migrated database) never advance the watermark — every poll stays full', async () => {
+  test('rows without updated_at (un-migrated database) never advance the watermark, every poll stays full', async () => {
     await installStub([
       { bid_id: '990002', client_name: 'Legacy Env', signed_at: '2026-07-14T00:00:00+00:00',
         payment_status: 'pending_cash', payment_method: 'cash' },
@@ -96,13 +96,13 @@ test.describe('egress — signature-poll watermark', () => {
       await checkNewSignatures();
       return { calls: window.__sigCalls.length, anyGt: window.__sigCalls.some(c => 'gt:updated_at' in c), watermark: _sigPollWatermark };
     });
-    expect(r.anyGt, 'no delta poll without a watermark — pre-fix behavior preserved').toBe(false);
+    expect(r.anyGt, 'no delta poll without a watermark, pre-fix behavior preserved').toBe(false);
     expect(r.watermark).toBe(null);
   });
 
   test('failed delta query falls back to the full poll in the same tick (drift safety)', async () => {
     // Stub where the gt query ERRORS (simulates the updated_at column missing)
-    // but the plain query succeeds — checkNewSignatures must retry full, not throw.
+    // but the plain query succeeds, checkNewSignatures must retry full, not throw.
     await page.evaluate(() => {
       window.__sigCalls = [];
       const mkQuery = () => {
@@ -136,7 +136,7 @@ test.describe('egress — signature-poll watermark', () => {
     await installStub([]); // watermarked session, nothing signed yet
     const r = await page.evaluate(async () => {
       _sigPollWatermark = '2026-07-14T00:00:00+00:00';
-      // The signature lands AFTER the watermark — exactly what a delta poll returns.
+      // The signature lands AFTER the watermark, exactly what a delta poll returns.
       const row = { bid_id: '990003', client_name: 'Late Signer', client_signed_name: 'Late Signer',
         signed_at: '2026-07-14T01:00:00+00:00', updated_at: '2026-07-14T01:00:00+00:00',
         payment_status: 'pending_cash', payment_method: 'cash', signature_data: 'data:image/png;base64,sig' };
@@ -178,26 +178,31 @@ test.describe('egress — signature-poll watermark', () => {
     expect(r.whileVisible).toBe(1);
   });
 
-  test('a call landing mid-run is COALESCED, not dropped — a trailing poll always runs (push-collision regression)', async () => {
+  test('a call landing mid-run is COALESCED, not dropped, a trailing poll always runs (push-collision regression)', async () => {
     // Live-run regression: the sig-feed push handler can hold _checkSigsBusy at
     // the exact moment the 30s tick (or a test's own call) arrives. The old
-    // guard silently dropped that call — a real signature then waited a full
+    // guard silently dropped that call, a real signature then waited a full
     // extra poll cycle. The coalescing guard must rerun once after the
     // in-flight poll finishes, so every caller gets a poll that STARTED after
     // their call.
     await installStub([]);
     const r = await page.evaluate(async () => {
       const p1 = checkNewSignatures();      // takes the busy flag
-      const p2 = checkNewSignatures();      // lands mid-run — must coalesce
+      const p2 = checkNewSignatures();      // lands mid-run, must coalesce
       await p1; await p2;
       await new Promise(res => setTimeout(res, 100)); // let the trailing rerun finish
       return { polls: window.__sigCalls.length };
     });
-    expect(r.polls, 'second call must trigger a trailing rerun — 2 polls, not 1').toBe(2);
+    expect(r.polls, 'second call must trigger a trailing rerun, 2 polls, not 1').toBe(2);
   });
 
-  test('schedule popup NEVER surfaces over the boot spinner — it defers until the overlay is gone', async () => {
+  test('schedule popup NEVER surfaces over the boot spinner, it defers until the overlay is gone', async () => {
     const r = await page.evaluate(async () => {
+      // Hermetic start: a prior test in this shared page (or a leaked 700ms retry
+      // chain) can leave a _sched-alert-overlay in the DOM, which would make
+      // duringBoot read true before this test even runs. Clear it first.
+      document.getElementById('_sched-alert-overlay')?.remove();
+      window._showingScheduleAlert = false;
       // Recreate the boot overlay (the booted test app already removed it).
       const ov = document.createElement('div');
       ov.id = 'supa-boot-overlay';
@@ -229,7 +234,7 @@ test.describe('egress — signature-poll watermark', () => {
   });
 });
 
-test.describe('egress — hub logo as URL, base64 only as fallback', () => {
+test.describe('egress: hub logo as URL, base64 only as fallback', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -280,7 +285,7 @@ test.describe('egress — hub logo as URL, base64 only as fallback', () => {
     expect(r.noUrlData).toContain('data:image/png');
     expect(r.noUrlUrl).toBe('');
     expect(r.staleData).toContain('data:image/png');
-    expect(r.staleUrl, 'a stale URL must never ship — wrong logo').toBe('');
+    expect(r.staleUrl, 'a stale URL must never ship, wrong logo').toBe('');
   });
 
   test('no console errors from the logo suite', async () => {
@@ -288,7 +293,7 @@ test.describe('egress — hub logo as URL, base64 only as fallback', () => {
   });
 });
 
-test.describe('egress — photo compression, thumbnails, CDN rewrite', () => {
+test.describe('egress: photo compression, thumbnails, CDN rewrite', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -362,7 +367,7 @@ test.describe('egress — photo compression, thumbnails, CDN rewrite', () => {
       dataUrl: _cdnPhoto('data:image/png;base64,abc'),
       empty: _cdnPhoto(''),
     }));
-    // Tests run on localhost — the rewrite is production-only by design.
+    // Tests run on localhost, the rewrite is production-only by design.
     expect(r.local).toBe('https://mock.supabase.co/storage/v1/object/public/gallery/u/a.jpg');
     expect(r.dataUrl).toBe('data:image/png;base64,abc');
     expect(r.empty).toBe('');
@@ -373,7 +378,7 @@ test.describe('egress — photo compression, thumbnails, CDN rewrite', () => {
   });
 });
 
-test.describe('egress — client hub renders logoUrl and photo thumbs (legacy hubs untouched)', () => {
+test.describe('egress: client hub renders logoUrl and photo thumbs (legacy hubs untouched)', () => {
   const { FAKE_USER_ID, FAKE_TOKEN } = require('./helpers');
   const hubBase = {
     contractorUserId: FAKE_USER_ID, contractorName: 'Egress Painting', clientName: 'Hub Client',
@@ -424,7 +429,7 @@ test.describe('egress — client hub renders logoUrl and photo thumbs (legacy hu
   });
 });
 
-test.describe('egress round 2 — proposal_views watermark probe', () => {
+test.describe('egress round 2, proposal_views watermark probe', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -468,7 +473,7 @@ test.describe('egress round 2 — proposal_views watermark probe', () => {
     });
     expect(r.afterFirst, 'first fetch = ONE full query, no probe').toBe(1);
     expect(r.calls[0].sel).toBe('*');
-    expect(r.calls.length, 'second tick = probe ONLY — the 500-row poll must not run').toBe(2);
+    expect(r.calls.length, 'second tick = probe ONLY, the 500-row poll must not run').toBe(2);
     expect(r.calls[1].sel).toBe('updated_at');
     expect(r.calls[1].gt).toBe('2026-07-14T00:00:00+00:00');
     expect(r.watermark).toBe('2026-07-14T00:00:00+00:00');
@@ -492,7 +497,7 @@ test.describe('egress round 2 — proposal_views watermark probe', () => {
     expect(r.watermark, 'watermark advances past the change').toBe('2026-07-14T02:00:00+00:00');
   });
 
-  test('probe error (un-migrated database) falls back to the full poll in the same tick — pre-fix behavior', async () => {
+  test('probe error (un-migrated database) falls back to the full poll in the same tick, pre-fix behavior', async () => {
     await page.evaluate(() => {
       window.__pvCalls = [];
       const mkQuery = () => {
@@ -514,7 +519,7 @@ test.describe('egress round 2 — proposal_views watermark probe', () => {
     expect(r).toEqual(['updated_at', '*']);
   });
 
-  test('rows without updated_at never arm the watermark — every fetch stays full (drift safety)', async () => {
+  test('rows without updated_at never arm the watermark, every fetch stays full (drift safety)', async () => {
     await installPvStub([{ bid_id: '880003', opened_at: '2026-07-14T00:00:00+00:00' }]);
     const r = await page.evaluate(async () => {
       await _fetchProposalViews();
@@ -531,7 +536,7 @@ test.describe('egress round 2 — proposal_views watermark probe', () => {
   });
 });
 
-test.describe('egress round 2 — sig-feed channel health + recovery catch-up', () => {
+test.describe('egress round 2, sig-feed channel health + recovery catch-up', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -549,18 +554,18 @@ test.describe('egress round 2 — sig-feed channel health + recovery catch-up', 
       checkNewSignatures = (src) => { sweeps++; window.__lastSrc = src; };
       _fetchProposalViews = () => { views++; };
       _sigFeedReady = false; _sigFeedDown = false;
-      _sigFeedStatus('SUBSCRIBED');                    // initial connect — no sweep
+      _sigFeedStatus('SUBSCRIBED');                    // initial connect, no sweep
       const afterConnect = { sweeps, ready: _sigFeedReady };
       _sigFeedStatus('CHANNEL_ERROR');                 // outage
       const afterError = { ready: _sigFeedReady, down: _sigFeedDown };
-      _sigFeedStatus('SUBSCRIBED');                    // recovery — exactly one sweep
+      _sigFeedStatus('SUBSCRIBED');                    // recovery: exactly one sweep
       const afterRecover = { sweeps, views, ready: _sigFeedReady, down: _sigFeedDown, src: window.__lastSrc };
-      _sigFeedStatus('SUBSCRIBED');                    // repeat SUBSCRIBED — no extra sweep
+      _sigFeedStatus('SUBSCRIBED');                    // repeat SUBSCRIBED, no extra sweep
       const afterRepeat = { sweeps };
       checkNewSignatures = origCheck; _fetchProposalViews = origViews;
       return { afterConnect, afterError, afterRecover, afterRepeat };
     });
-    expect(r.afterConnect.sweeps, 'initial connect must not sweep — boot already polls').toBe(0);
+    expect(r.afterConnect.sweeps, 'initial connect must not sweep, boot already polls').toBe(0);
     expect(r.afterConnect.ready).toBe(true);
     expect(r.afterError.ready).toBe(false);
     expect(r.afterError.down).toBe(true);
@@ -574,7 +579,7 @@ test.describe('egress round 2 — sig-feed channel health + recovery catch-up', 
   });
 });
 
-test.describe('egress round 2 — client hub poll cadence (live channel gates the interval)', () => {
+test.describe('egress round 2, client hub poll cadence (live channel gates the interval)', () => {
   const { FAKE_USER_ID, FAKE_TOKEN } = require('./helpers');
   const hubBase = {
     contractorUserId: FAKE_USER_ID, contractorName: 'Egress Painting', clientName: 'Hub Client',
@@ -605,7 +610,7 @@ test.describe('egress round 2 — client hub poll cadence (live channel gates th
       return { live, down };
     });
     expect(r.live, 'healthy channel: 20 ticks → exactly 2 polls (every 10th)').toBe(2);
-    expect(r.down, 'downed channel: every tick polls — todays exact behavior').toBe(10);
+    expect(r.down, 'downed channel: every tick polls, todays exact behavior').toBe(10);
     assertNoErrors(page, 'hub poll cadence');
   });
 
@@ -616,10 +621,10 @@ test.describe('egress round 2 — client hub poll cadence (live channel gates th
       _hubLiveChan = null; _hubLiveOk = false;
       _hubNudgePeers();                                // must not throw with no channel
       _hubLiveChan = { send: () => { sent++; } };
-      _hubNudgePeers();                                // channel present but NOT healthy — no send
+      _hubNudgePeers();                                // channel present but NOT healthy, no send
       const whileDown = sent;
       _hubLiveOk = true;
-      _hubNudgePeers();                                // healthy — sends
+      _hubNudgePeers();                                // healthy: sends
       return { whileDown, sent };
     });
     expect(r.whileDown).toBe(0);

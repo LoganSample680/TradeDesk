@@ -21,7 +21,7 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('tax.js — exhaustive coverage', () => {
+test.describe('tax.js: exhaustive coverage', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -141,7 +141,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 1. onStateChange
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('onStateChange', () => {
-    test('null — does not throw, returns early', async () => {
+    test('null: does not throw, returns early', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -149,7 +149,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -157,7 +157,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string — does not throw, returns early (no STATE_TAX match)', async () => {
+    test('empty string, does not throw, returns early (no STATE_TAX match)', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange(''); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -165,7 +165,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('unknown state code — does not throw', async () => {
+    test('unknown state code, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange('ZZ'); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -173,7 +173,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('number type mismatch — does not throw', async () => {
+    test('number type mismatch, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange(42); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -181,7 +181,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path KS — sets S.state and populates rate inputs', async () => {
+    test('golden path KS, sets S.state and populates rate inputs', async () => {
       const r = await page.evaluate(() => {
         try {
           onStateChange('KS');
@@ -199,7 +199,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.high).toBe('number');
     });
 
-    test('no-income-tax state (TX) — sets S.state to TX', async () => {
+    test('no-income-tax state (TX): sets S.state to TX', async () => {
       const r = await page.evaluate(() => {
         try {
           onStateChange('TX');
@@ -210,7 +210,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.state).toBe('TX');
     });
 
-    test('state with note (AZ flat) — does not throw', async () => {
+    test('state with note (AZ flat), does not throw', async () => {
       const r = await page.evaluate(() => {
         try { onStateChange('AZ'); return { ok: true, state: S.state }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -219,7 +219,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.state).toBe('AZ');
     });
 
-    test('missing DOM elements — does not throw', async () => {
+    test('missing DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         // Temporarily remove DOM stubs
         const ids = ['set-state-label','set-state-info','set-ksl','set-ksh','set-kst','set-kss','set-ksm'];
@@ -234,12 +234,12 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent("onStateChange('KS')", 5);
       expect(ok).toBe(5);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_settings', '{INVALID{{{{');
         try { onStateChange('FL'); return { ok: true }; }
@@ -249,7 +249,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('all 50 state codes — none throw', async () => {
+    test('all 50 state codes, none throw', async () => {
       const r = await page.evaluate(() => {
         const states = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA',
           'HI','ID','IL','IN','IA','KS','KY','LA','ME','MD',
@@ -292,7 +292,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 2. setTaxTab
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setTaxTab', () => {
-    test('null tab — does not throw', async () => {
+    test('null tab, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab(null, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -300,7 +300,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined tab — does not throw', async () => {
+    test('undefined tab, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab(undefined, undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -308,7 +308,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string tab — does not throw (pane will not be found)', async () => {
+    test('empty string tab, does not throw (pane will not be found)', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab('', null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -316,7 +316,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('non-existent pane name — does not throw', async () => {
+    test('non-existent pane name, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab('nonexistent', null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -324,7 +324,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path summary tab — shows pane, marks btn active', async () => {
+    test('golden path summary tab, shows pane, marks btn active', async () => {
       const r = await page.evaluate(() => {
         const btn = document.getElementById('tx-tab-summary');
         const pane = document.getElementById('tx-summary-pane');
@@ -342,7 +342,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       if (r.paneDisplay !== null) expect(r.paneDisplay).toBe('block');
     });
 
-    test('btn is null — does not throw, pane still shown', async () => {
+    test('btn is null, does not throw, pane still shown', async () => {
       const r = await page.evaluate(() => {
         const pane = document.getElementById('tx-quarters-pane');
         try {
@@ -375,7 +375,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       if (r.shownTips !== undefined) expect(r.shownTips).toBe(true);
     });
 
-    test('missing DOM (no tabs or panes) — does not throw', async () => {
+    test('missing DOM (no tabs or panes), does not throw', async () => {
       const r = await page.evaluate(() => {
         // Remove all tab/pane stubs
         const ids = ['tx-tab-summary','tx-tab-quarters','tx-tab-tips',
@@ -393,12 +393,12 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no exception', async () => {
+    test('concurrent calls, no exception', async () => {
       const ok = await concurrent("setTaxTab('summary',null)", 5);
       expect(ok).toBe(5);
     });
 
-    test('number as tab — does not throw', async () => {
+    test('number as tab, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxTab(123, null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -411,7 +411,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 3. _populateTaxYearSel
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_populateTaxYearSel', () => {
-    test('no selector in DOM — returns early without throw', async () => {
+    test('no selector in DOM, returns early without throw', async () => {
       const r = await page.evaluate(() => {
         const sel = document.getElementById('tax-yr-sel');
         if (sel) sel.parentNode.removeChild(sel);
@@ -426,7 +426,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — populates options with current year', async () => {
+    test('golden path, populates options with current year', async () => {
       const r = await page.evaluate(() => {
         const curYr = new Date().getFullYear();
         try {
@@ -441,7 +441,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.count).toBeGreaterThanOrEqual(1);
     });
 
-    test('with income records spanning multiple years — includes data years', async () => {
+    test('with income records spanning multiple years, includes data years', async () => {
       const r = await page.evaluate(() => {
         income = [
           { date: '2022-06-15', amount: 5000 },
@@ -460,7 +460,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.has2023).toBe(true);
     });
 
-    test('income records with invalid dates — does not throw', async () => {
+    test('income records with invalid dates, does not throw', async () => {
       const r = await page.evaluate(() => {
         income = [
           { date: null, amount: 100 },
@@ -506,11 +506,11 @@ test.describe('tax.js — exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
-      // innerHTML replace means each call replaces the options — no duplicates
+      // innerHTML replace means each call replaces the options, no duplicates
       expect(r.total).toBe(r.unique);
     });
 
-    test('concurrent calls — selector is left in a valid state', async () => {
+    test('concurrent calls, selector is left in a valid state', async () => {
       const ok = await concurrent('_populateTaxYearSel()', 5);
       const r = await page.evaluate(() => {
         const sel = document.getElementById('tax-yr-sel');
@@ -519,7 +519,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r).toBeGreaterThanOrEqual(1);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_income', '{INVALID{{{{');
         try { _populateTaxYearSel(); return { ok: true }; }
@@ -549,7 +549,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 4. setTaxYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setTaxYear', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -557,7 +557,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -565,7 +565,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('0 — does not throw', async () => {
+    test('0: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(0); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -573,7 +573,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string year — does not throw, sets _taxPageYear', async () => {
+    test('string year, does not throw, sets _taxPageYear', async () => {
       const r = await page.evaluate(() => {
         try {
           setTaxYear('2023');
@@ -583,7 +583,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path integer year 2024 — header updated', async () => {
+    test('golden path integer year 2024, header updated', async () => {
       const r = await page.evaluate(() => {
         const hd = document.getElementById('tx-data-hd');
         try {
@@ -595,7 +595,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       if (r.hdText !== null) expect(r.hdText).toContain('2024');
     });
 
-    test('boundary year -1 — does not throw', async () => {
+    test('boundary year -1, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(-1); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -603,7 +603,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('very large year — does not throw', async () => {
+    test('very large year, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear(9999); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -611,7 +611,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing tx-data-hd — does not throw', async () => {
+    test('missing tx-data-hd, does not throw', async () => {
       const r = await page.evaluate(() => {
         const hd = document.getElementById('tx-data-hd');
         if (hd) hd.parentNode.removeChild(hd);
@@ -626,12 +626,12 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no stack corruption', async () => {
+    test('concurrent calls, no stack corruption', async () => {
       const ok = await concurrent('setTaxYear(2025)', 5);
       expect(ok).toBe(5);
     });
 
-    test('object type mismatch — does not throw', async () => {
+    test('object type mismatch, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { setTaxYear({}); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -644,7 +644,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 5. _getSsWageBase
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getSsWageBase', () => {
-    test('null — returns default 184500', async () => {
+    test('null: returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -653,7 +653,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('undefined — returns default 184500', async () => {
+    test('undefined: returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -662,7 +662,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('0 — returns default 184500', async () => {
+    test('0: returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(0) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -671,7 +671,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('-1 — returns default 184500', async () => {
+    test('-1: returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(-1) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -680,7 +680,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('year 2024 — returns 168600', async () => {
+    test('year 2024, returns 168600', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2024) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -689,7 +689,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(168600);
     });
 
-    test('year 2025 — returns 176100', async () => {
+    test('year 2025, returns 176100', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -698,7 +698,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(176100);
     });
 
-    test('year 2026 — returns 184500 (SSA-confirmed 2026 wage base, not a copy of 2025)', async () => {
+    test('year 2026, returns 184500 (SSA-confirmed 2026 wage base, not a copy of 2025)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -707,7 +707,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('year 2019 — returns 132900', async () => {
+    test('year 2019, returns 132900', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(2019) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -716,7 +716,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(132900);
     });
 
-    test('string year "2023" — parses and returns 160200', async () => {
+    test('string year "2023", parses and returns 160200', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase('2023') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -725,7 +725,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(160200);
     });
 
-    test('unknown future year 3000 — returns default 184500', async () => {
+    test('unknown future year 3000, returns default 184500', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase(3000) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -734,7 +734,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('object type mismatch — does not throw', async () => {
+    test('object type mismatch, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _getSsWageBase({}) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -744,7 +744,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(184500);
     });
 
-    test('concurrent calls — consistent results', async () => {
+    test('concurrent calls, consistent results', async () => {
       const ok = await concurrent('_getSsWageBase(2024)', 5);
       expect(ok).toBe(5);
     });
@@ -754,7 +754,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 6. _calcSeTax
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_calcSeTax', () => {
-    test('null netSelf — does not throw', async () => {
+    test('null netSelf, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(null, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -762,7 +762,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined netSelf — does not throw', async () => {
+    test('undefined netSelf, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(undefined, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -770,7 +770,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('0 netSelf — returns 0 (no self-employment tax on zero income)', async () => {
+    test('0 netSelf, returns 0 (no self-employment tax on zero income)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(0, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -779,7 +779,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('negative netSelf — returns 0 or negative, does not throw', async () => {
+    test('negative netSelf, returns 0 or negative, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(-1000, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -789,7 +789,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.result).toBe('number');
     });
 
-    test('golden path 50000 in 2025 — returns positive integer tax', async () => {
+    test('golden path 50000 in 2025, returns positive integer tax', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _calcSeTax(50000, 2025);
@@ -806,7 +806,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(Number.isInteger(r.result)).toBe(true);
     });
 
-    test('income above SS wage base (300000) — SS capped, Medicare uncapped', async () => {
+    test('income above SS wage base (300000): SS capped, Medicare uncapped', async () => {
       const r = await page.evaluate(() => {
         try {
           const result = _calcSeTax(300000, 2025);
@@ -822,7 +822,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeLessThan(35000);
     });
 
-    test('null year — uses default wage base 184500, does not throw', async () => {
+    test('null year, uses default wage base 184500, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(50000, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -831,7 +831,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.result).toBe('number');
     });
 
-    test('year 2019 with income at 2019 wage base — correct cap', async () => {
+    test('year 2019 with income at 2019 wage base, correct cap', async () => {
       const r = await page.evaluate(() => {
         try {
           // At exactly 2019 SS wage base: seBase = 132900 / 0.9235 ≈ 143918 so income ~155828
@@ -843,7 +843,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('string netSelf — does not throw (coerces)', async () => {
+    test('string netSelf, does not throw (coerces)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax('50000', 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -852,7 +852,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.result).toBe('number');
     });
 
-    test('very large income 10000000 — does not throw', async () => {
+    test('very large income 10000000, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcSeTax(10000000, 2025) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -872,19 +872,19 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.isInteger).toBe(true);
     });
 
-    test('concurrent calls — all succeed', async () => {
+    test('concurrent calls, all succeed', async () => {
       const ok = await concurrent('_calcSeTax(50000, 2025)', 5);
       expect(ok).toBe(5);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 6b. _calcPayrollLiability — employer W-2 FICA/FUTA liability per pay period.
-  // Deliberately NOT income-tax withholding (out of scope — see comment in
+  // 6b. _calcPayrollLiability, employer W-2 FICA/FUTA liability per pay period.
+  // Deliberately NOT income-tax withholding (out of scope, see comment in
   // tax.js). "Take gross wages + this number to your accountant."
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_calcPayrollLiability', () => {
-    test('golden path — $2,000 gross, fresh year (no prior wages), 2026', async () => {
+    test('golden path, $2,000 gross, fresh year (no prior wages), 2026', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(2000, 0, 0, 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -904,7 +904,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.futaWageBaseHit).toBe(false);
     });
 
-    test('zero gross wages — everything zero, no throw', async () => {
+    test('zero gross wages, everything zero, no throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(0, 0, 0, 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -914,7 +914,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.futa940).toBe(0);
     });
 
-    test('null/undefined gross wages — treated as 0, no throw', async () => {
+    test('null/undefined gross wages, treated as 0, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           return {
@@ -929,7 +929,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.undefResult.fica941Total).toBe(0);
     });
 
-    test('negative gross wages — clamped to 0, never a negative liability', async () => {
+    test('negative gross wages, clamped to 0, never a negative liability', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(-500, 0, 0, 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -939,7 +939,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.fica941Total).toBe(0);
     });
 
-    test('SS wage base cap — this period straddles the cap, only the remaining room is taxed', async () => {
+    test('SS wage base cap, this period straddles the cap, only the remaining room is taxed', async () => {
       // 2026 cap is 184500. Employee already earned 184000 YTD, this period pays 2000 more.
       // Only 500 of it should be SS-taxable; Medicare has no cap and taxes the full 2000.
       const r = await page.evaluate(() => {
@@ -953,7 +953,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.ssWageBaseHit).toBe(true);
     });
 
-    test('SS wage base already exhausted — zero SS tax this period, Medicare still applies', async () => {
+    test('SS wage base already exhausted, zero SS tax this period, Medicare still applies', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(2000, 184500, 0, 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -965,7 +965,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.ssWageBaseHit).toBe(true);
     });
 
-    test('Additional Medicare — crosses the $200,000 threshold mid-period, only the excess is taxed at 0.9%', async () => {
+    test('Additional Medicare, crosses the $200,000 threshold mid-period, only the excess is taxed at 0.9%', async () => {
       // Employee at 199000 YTD, this period pays 3000 more → total 202000.
       // The first 1000 of this period gets them TO the threshold; the remaining
       // 2000 is above it and taxable.
@@ -977,7 +977,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.employeeAddlMedicare).toBe(18); // 2000 * 0.009
     });
 
-    test('Additional Medicare has no employer match — employerFicaMatch excludes it', async () => {
+    test('Additional Medicare has no employer match, employerFicaMatch excludes it', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(5000, 250000, 0, 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -989,7 +989,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.employerFicaMatch).toBe(expectedEmployerMatch);
     });
 
-    test('FUTA wage base cap — $7,000/year per employee, straddled period only taxes the remainder', async () => {
+    test('FUTA wage base cap, $7,000/year per employee, straddled period only taxes the remainder', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(1000, 0, 6500, 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -999,7 +999,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.futaWageBaseHit).toBe(true);
     });
 
-    test('FUTA wage base already exhausted — zero FUTA this period', async () => {
+    test('FUTA wage base already exhausted, zero FUTA this period', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(1000, 0, 7000, 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1009,7 +1009,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.futaWageBaseHit).toBe(true);
     });
 
-    test('SS cap and FUTA cap are independent — hitting one does not affect the other', async () => {
+    test('SS cap and FUTA cap are independent, hitting one does not affect the other', async () => {
       // SS cap far from hit, FUTA cap already exhausted.
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(1000, 5000, 7000, 2026) }; }
@@ -1020,7 +1020,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.futa940).toBe(0);     // FUTA cap already hit
     });
 
-    test('missing year — falls back to the default SS wage base, does not throw', async () => {
+    test('missing year, falls back to the default SS wage base, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(2000, 0, 0, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1029,7 +1029,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.fica941Total).toBeGreaterThan(0);
     });
 
-    test('type-mismatch string numeric inputs — coerced, not thrown', async () => {
+    test('type-mismatch string numeric inputs, coerced, not thrown', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability('2000', '0', '0', 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1038,7 +1038,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.grossWages).toBe(2000);
     });
 
-    test('non-numeric garbage inputs — does not throw, degrades to 0', async () => {
+    test('non-numeric garbage inputs, does not throw, degrades to 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability('abc', {}, [], 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1048,7 +1048,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result.fica941Total).toBe(0);
     });
 
-    test('very large gross wages — well past every cap, no overflow/NaN', async () => {
+    test('very large gross wages, well past every cap, no overflow/NaN', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcPayrollLiability(10000000, 0, 0, 2026) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1071,19 +1071,19 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.every(Boolean)).toBe(true);
     });
 
-    test('concurrent calls — all succeed, no shared-state corruption', async () => {
+    test('concurrent calls, all succeed, no shared-state corruption', async () => {
       const ok = await concurrent('_calcPayrollLiability(2000, 0, 0, 2026)', 5);
       expect(ok).toBe(5);
     });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 6c. _calcGrossWages — hourly (hours×rate+OT) vs salary (fixed per period,
+  // 6c. _calcGrossWages: hourly (hours×rate+OT) vs salary (fixed per period,
   // NEVER hours-driven). Distinct from _empEffectiveHourly (js/cloud.js),
   // which is explicitly job-costing only.
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_calcGrossWages', () => {
-    test('hourly golden path — 40 regular hours at $25/hr, no OT', async () => {
+    test('hourly golden path, 40 regular hours at $25/hr, no OT', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, 2400, 0, 52) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1092,7 +1092,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(1000); // 40 * 25
     });
 
-    test('hourly with OT — 40 regular + 5 OT hours at $25/hr, 1.5x default multiplier', async () => {
+    test('hourly with OT, 40 regular + 5 OT hours at $25/hr, 1.5x default multiplier', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, 2400, 300, 52) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1110,7 +1110,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(1250); // 1000 + (5 * 25 * 2)
     });
 
-    test('salary — fixed per-period pay, weekly (52/yr), COMPLETELY IGNORES hours', async () => {
+    test('salary: fixed per-period pay, weekly (52/yr), COMPLETELY IGNORES hours', async () => {
       const r = await page.evaluate(() => {
         try {
           const fewHours = _calcGrossWages({ pay_type: 'salary', pay_rate: 52000 }, 600, 0, 52);   // 10 hrs
@@ -1120,10 +1120,10 @@ test.describe('tax.js — exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.fewHours).toBe(1000);  // 52000 / 52
-      expect(r.manyHours).toBe(1000); // identical — salary does not move with hours
+      expect(r.manyHours).toBe(1000); // identical: salary does not move with hours
     });
 
-    test('salary — biweekly (26/yr) divides correctly', async () => {
+    test('salary: biweekly (26/yr) divides correctly', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'salary', pay_rate: 52000 }, 0, 0, 26) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1132,7 +1132,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(2000); // 52000 / 26
     });
 
-    test('salary — monthly (12/yr) divides correctly', async () => {
+    test('salary: monthly (12/yr) divides correctly', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'salary', pay_rate: 60000 }, 0, 0, 12) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1141,7 +1141,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(5000); // 60000 / 12
     });
 
-    test('null/undefined comp — treated as hourly $0, returns 0, no throw', async () => {
+    test('null/undefined comp, treated as hourly $0, returns 0, no throw', async () => {
       const r = await page.evaluate(() => {
         try {
           return { ok: true, nullResult: _calcGrossWages(null, 2400, 0, 52), undefResult: _calcGrossWages(undefined, 2400, 0, 52) };
@@ -1152,7 +1152,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.undefResult).toBe(0);
     });
 
-    test('missing pay_rate — returns 0, does not throw', async () => {
+    test('missing pay_rate, returns 0, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly' }, 2400, 0, 52) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1161,7 +1161,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('negative pay_rate — clamped to 0, never negative pay', async () => {
+    test('negative pay_rate, clamped to 0, never negative pay', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: -25 }, 2400, 0, 52) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1170,7 +1170,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('negative minutes — clamped to 0, does not produce negative gross', async () => {
+    test('negative minutes, clamped to 0, does not produce negative gross', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, -600, -300, 52) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1179,7 +1179,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('zero hours, hourly — returns 0, no throw', async () => {
+    test('zero hours, hourly, returns 0, no throw', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, 0, 0, 52) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1188,7 +1188,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('missing payPeriodsPerYear — salary falls back to 52 (weekly)', async () => {
+    test('missing payPeriodsPerYear, salary falls back to 52 (weekly)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'salary', pay_rate: 52000 }, 0, 0, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1197,7 +1197,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(1000); // 52000 / 52
     });
 
-    test('unknown pay_type — treated as hourly, not thrown', async () => {
+    test('unknown pay_type, treated as hourly, not thrown', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'weird', pay_rate: 25 }, 2400, 0, 52) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1206,7 +1206,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(1000);
     });
 
-    test('type-mismatch string inputs — coerced, not thrown', async () => {
+    test('type-mismatch string inputs, coerced, not thrown', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: '25' }, '2400', '0', '52') }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1215,7 +1215,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(1000);
     });
 
-    test('very large hours — no overflow/NaN', async () => {
+    test('very large hours, no overflow/NaN', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcGrossWages({ pay_type: 'hourly', pay_rate: 25 }, 999999999, 0, 52) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1224,7 +1224,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(Number.isFinite(r.result)).toBe(true);
     });
 
-    test('concurrent calls — all succeed', async () => {
+    test('concurrent calls, all succeed', async () => {
       const ok = await concurrent("_calcGrossWages({pay_type:'hourly',pay_rate:25}, 2400, 0, 52)", 5);
       expect(ok).toBe(5);
     });
@@ -1234,7 +1234,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 7. _calcStateEstimate
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_calcStateEstimate', () => {
-    test('null stInfo — returns 0', async () => {
+    test('null stInfo, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcStateEstimate(50000, null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1243,7 +1243,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('undefined stInfo — returns 0', async () => {
+    test('undefined stInfo, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: _calcStateEstimate(50000, undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1252,7 +1252,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('noTax state info — returns 0', async () => {
+    test('noTax state info, returns 0', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: true, low: 0, high: 0, top: 0 };
         try { return { ok: true, result: _calcStateEstimate(50000, txInfo) }; }
@@ -1262,7 +1262,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('zero stateAgi — returns 0', async () => {
+    test('zero stateAgi, returns 0', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 5, high: 9, top: 50000 };
         try { return { ok: true, result: _calcStateEstimate(0, txInfo) }; }
@@ -1272,7 +1272,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('negative stateAgi — returns 0', async () => {
+    test('negative stateAgi, returns 0', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 5, high: 9, top: 50000 };
         try { return { ok: true, result: _calcStateEstimate(-1000, txInfo) }; }
@@ -1282,7 +1282,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('flat rate state (low === high) — uses high rate flat', async () => {
+    test('flat rate state (low === high), uses high rate flat', async () => {
       const r = await page.evaluate(() => {
         // AZ-style flat 2.5%
         const txInfo = { noTax: false, low: 2.5, high: 2.5, top: 999999 };
@@ -1296,7 +1296,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(2500);
     });
 
-    test('top>=999999 (flat bracket) — applies high rate', async () => {
+    test('top>=999999 (flat bracket), applies high rate', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 4.0, high: 4.0, top: 999999 };
         try {
@@ -1309,7 +1309,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(2000);
     });
 
-    test('bracketed state income below top — applies low rate only', async () => {
+    test('bracketed state income below top, applies low rate only', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 3.0, high: 6.0, top: 50000 };
         try {
@@ -1322,7 +1322,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(900);
     });
 
-    test('bracketed state income above top — splits into low+high parts', async () => {
+    test('bracketed state income above top, splits into low+high parts', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 3.0, high: 6.0, top: 50000 };
         try {
@@ -1336,7 +1336,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(3300);
     });
 
-    test('golden path using real KS data — returns positive integer', async () => {
+    test('golden path using real KS data, returns positive integer', async () => {
       const r = await page.evaluate(() => {
         const ksInfo = STATE_TAX['KS'];
         try {
@@ -1349,7 +1349,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.isInteger).toBe(true);
     });
 
-    test('very large stateAgi — does not throw', async () => {
+    test('very large stateAgi, does not throw', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false, low: 5.0, high: 10.0, top: 100000 };
         try { return { ok: true, result: _calcStateEstimate(99999999, txInfo) }; }
@@ -1359,7 +1359,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('stInfo missing low/high fields — does not throw', async () => {
+    test('stInfo missing low/high fields, does not throw', async () => {
       const r = await page.evaluate(() => {
         const txInfo = { noTax: false };
         try { return { ok: true, result: _calcStateEstimate(50000, txInfo) }; }
@@ -1368,7 +1368,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — all succeed', async () => {
+    test('concurrent calls, all succeed', async () => {
       const ok = await concurrent("_calcStateEstimate(40000, {noTax:false,low:3,high:6,top:50000})", 5);
       expect(ok).toBe(5);
     });
@@ -1391,7 +1391,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 8. calcTax
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('calcTax', () => {
-    test('no income, no expenses — does not throw', async () => {
+    test('no income, no expenses, does not throw', async () => {
       await resetData();
       const r = await page.evaluate(() => {
         income = []; expenses = []; mileage = []; payments = []; bids = [];
@@ -1401,7 +1401,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('missing required DOM elements — does not throw', async () => {
+    test('missing required DOM elements, does not throw', async () => {
       const r = await page.evaluate(() => {
         const ids = ['tx-inputs','tx-results','tx-quarters','tx-tips','tx-reserve-banner'];
         const saved = {};
@@ -1417,7 +1417,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path: income present, single filer, KS state — renders results', async () => {
+    test('golden path: income present, single filer, KS state, renders results', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-03-15', amount: 80000 }];
         expenses = [{ date: '2025-04-10', amount: 5000 }];
@@ -1438,7 +1438,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.hasContent).toBe(true);
     });
 
-    test('married filing jointly status — does not throw', async () => {
+    test('married filing jointly status, does not throw', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-06-01', amount: 120000 }];
         const txStatus = document.getElementById('tx-status');
@@ -1451,7 +1451,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('head of household status — does not throw', async () => {
+    test('head of household status, does not throw', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-01-10', amount: 60000 }];
         const txStatus = document.getElementById('tx-status');
@@ -1462,7 +1462,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('expenses exceed income (net self <= 0) — does not throw, SE tax is 0', async () => {
+    test('expenses exceed income (net self <= 0), does not throw, SE tax is 0', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-02-01', amount: 5000 }];
         expenses = [{ date: '2025-02-15', amount: 20000 }];
@@ -1477,7 +1477,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('taxPaid covers total owed — stillOwed is 0', async () => {
+    test('taxPaid covers total owed, stillOwed is 0', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-01-05', amount: 50000 }];
         const paidEl = document.getElementById('tx-paid');
@@ -1492,7 +1492,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('prior year tax set — safe harbor note shown', async () => {
+    test('prior year tax set, safe harbor note shown', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-03-01', amount: 70000 }];
         const priorEl = document.getElementById('tx-prior-yr');
@@ -1536,7 +1536,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('multi-state payments (KS + TX job) — no throw', async () => {
+    test('multi-state payments (KS + TX job), no throw', async () => {
       const r = await page.evaluate(() => {
         bids = [{ id: 99991, addr: '100 Main St, Austin TX 78701', status: 'Closed Won' }];
         bids.push({ id: 99992, addr: '200 Oak Ave, Wichita KS 67202', status: 'Closed Won' });
@@ -1571,7 +1571,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.matches).toBe(1);
     });
 
-    test('high expense ratio > 63% — audit risk block rendered', async () => {
+    test('high expense ratio > 63%: audit risk block rendered', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2026-08-01', amount: 100000 }];
         expenses = [{ date: '2026-08-15', amount: 70000 }];
@@ -1586,7 +1586,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.hasAudit).toBe(true);
     });
 
-    test('medium expense ratio 52–63% — audit medium shown', async () => {
+    test('medium expense ratio 52–63%, audit medium shown', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2026-09-01', amount: 100000 }];
         expenses = [{ date: '2026-09-10', amount: 57000 }];
@@ -1601,7 +1601,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.hasAudit).toBe(true);
     });
 
-    test('low expense ratio < 52% — low risk shown', async () => {
+    test('low expense ratio < 52%, low risk shown', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2026-10-01', amount: 100000 }];
         expenses = [{ date: '2026-10-05', amount: 20000 }];
@@ -1658,7 +1658,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.hasFn).toBe(true);
     });
 
-    test('_nextTaxTip cycling — advances tip index and re-renders', async () => {
+    test('_nextTaxTip cycling, advances tip index and re-renders', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-02-20', amount: 55000 }];
         try {
@@ -1673,7 +1673,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted localStorage — calcTax does not throw', async () => {
+    test('corrupted localStorage, calcTax does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_income', '{INVALID{{{{');
         localStorage.setItem('td_expenses', '[bad json');
@@ -1688,7 +1688,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — no exception', async () => {
+    test('concurrent calls, no exception', async () => {
       await page.evaluate(() => {
         income = [{ date: '2025-04-01', amount: 40000 }];
       });
@@ -1697,7 +1697,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(ok).toBe(5);
     });
 
-    test('payment with amount 0 — filtered out (not counted in income)', async () => {
+    test('payment with amount 0, filtered out (not counted in income)', async () => {
       const r = await page.evaluate(() => {
         income = [];
         payments = [{ bid_id: null, amount: 0, date: '2025-01-01' }];
@@ -1710,7 +1710,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('payments with null date — filtered safely', async () => {
+    test('payments with null date, filtered safely', async () => {
       const r = await page.evaluate(() => {
         payments = [
           { bid_id: 1, amount: 5000, date: null },
@@ -1789,7 +1789,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       if (r.val !== null) expect(r.val).toBe('mfj');
     });
 
-    test('selected year filters correctly — only counts income for that year', async () => {
+    test('selected year filters correctly, only counts income for that year', async () => {
       const r = await page.evaluate(() => {
         income = [
           { date: '2024-05-01', amount: 50000 },
@@ -1814,7 +1814,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // 9. estimateTax
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('estimateTax', () => {
-    test('null netSelf — returns 0', async () => {
+    test('null netSelf, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(null) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1823,7 +1823,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('undefined netSelf — returns 0', async () => {
+    test('undefined netSelf, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(undefined) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1832,7 +1832,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('0 netSelf — returns 0 (early exit for <= 0)', async () => {
+    test('0 netSelf, returns 0 (early exit for <= 0)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(0) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1841,7 +1841,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('-1 netSelf — returns 0 (early exit for <= 0)', async () => {
+    test('-1 netSelf, returns 0 (early exit for <= 0)', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(-1) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1850,7 +1850,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('-999999 netSelf — returns 0', async () => {
+    test('-999999 netSelf, returns 0', async () => {
       const r = await page.evaluate(() => {
         try { return { ok: true, result: estimateTax(-999999) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1859,7 +1859,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('golden path 80000 single 2025 — returns positive integer', async () => {
+    test('golden path 80000 single 2025, returns positive integer', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -1873,7 +1873,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.isInteger).toBe(true);
     });
 
-    test('mfj status — returns lower tax than single (doubled brackets)', async () => {
+    test('mfj status, returns lower tax than single (doubled brackets)', async () => {
       const r = await page.evaluate(() => {
         try {
           S.txStatus = 'mfj';
@@ -1888,7 +1888,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.mfjTax).toBeLessThanOrEqual(r.singleTax);
     });
 
-    test('year 2024 — uses 2024 brackets, not current year', async () => {
+    test('year 2024, uses 2024 brackets, not current year', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -1903,7 +1903,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result2025).toBeGreaterThan(0);
     });
 
-    test('no year provided — uses current year brackets', async () => {
+    test('no year provided, uses current year brackets', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -1915,7 +1915,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('1 dollar netSelf — returns positive tax', async () => {
+    test('1 dollar netSelf, returns positive tax', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -1927,7 +1927,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThanOrEqual(0);
     });
 
-    test('very large income 5000000 — does not throw, returns large number', async () => {
+    test('very large income 5000000, does not throw, returns large number', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -1939,7 +1939,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(100000);
     });
 
-    test('string netSelf "50000" — behaves gracefully (early-exit branch: "50000" > 0 is true)', async () => {
+    test('string netSelf "50000", behaves gracefully (early-exit branch: "50000" > 0 is true)', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -1952,7 +1952,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(typeof r.result).toBe('number');
     });
 
-    test('string "0" — returns 0 (early exit: "0" <= 0 is false in JS, but 0 returns 0)', async () => {
+    test('string "0", returns 0 (early exit: "0" <= 0 is false in JS, but 0 returns 0)', async () => {
       const r = await page.evaluate(() => {
         try {
           // estimateTax(0) → netSelf<=0 → return 0
@@ -1964,7 +1964,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBe(0);
     });
 
-    test('MFS status — does not throw', async () => {
+    test('MFS status, does not throw', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'mfs';
         try {
@@ -1977,7 +1977,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('HOH status — does not throw', async () => {
+    test('HOH status, does not throw', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'hoh';
         try {
@@ -2020,7 +2020,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.t2).toBeLessThan(r.t3);
     });
 
-    test('concurrent calls — all return same result', async () => {
+    test('concurrent calls, all return same result', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         const results = [];
@@ -2035,7 +2035,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(unique).toHaveLength(1);
     });
 
-    test('corrupted localStorage — does not throw', async () => {
+    test('corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('td_settings', '{BAD{{JSON');
         S.txStatus = 'single';
@@ -2048,7 +2048,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('year 2019 — uses 2019 brackets', async () => {
+    test('year 2019, uses 2019 brackets', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -2060,7 +2060,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.result).toBeGreaterThan(0);
     });
 
-    test('fractional income 0.01 — does not throw', async () => {
+    test('fractional income 0.01: does not throw', async () => {
       const r = await page.evaluate(() => {
         S.txStatus = 'single';
         try {
@@ -2074,7 +2074,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 10. Integration — setTaxYear + calcTax loop
+  // 10. Integration: setTaxYear + calcTax loop
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('integration: setTaxYear + calcTax', () => {
     test('switching year updates displayed header', async () => {
@@ -2098,7 +2098,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.text2025).toContain('2025');
     });
 
-    test('tab switch then calcTax — all work together', async () => {
+    test('tab switch then calcTax, all work together', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-01-01', amount: 45000 }];
         try {
@@ -2112,7 +2112,7 @@ test.describe('tax.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('onStateChange then calcTax — state rates applied', async () => {
+    test('onStateChange then calcTax, state rates applied', async () => {
       const r = await page.evaluate(() => {
         income = [{ date: '2025-03-10', amount: 60000 }];
         try {
@@ -2130,7 +2130,7 @@ test.describe('tax.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // 11. Console error guard
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — tax.js', () => {
+  test('no console errors, tax.js', () => {
     assertNoErrors(page, 'tax.js');
   });
 });

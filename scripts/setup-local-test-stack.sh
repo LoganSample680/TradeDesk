@@ -3,7 +3,7 @@
 # Run as root INSIDE LXC 200 (tradedesk-runner), from the repo root:
 #     bash scripts/setup-local-test-stack.sh
 #
-# It is idempotent — safe to re-run. It does NOT touch production. When done it
+# It is idempotent, safe to re-run. It does NOT touch production. When done it
 # prints the local API URL + anon + service_role keys you paste back to Claude so the
 # per-worker isolation harness can be wired + the SUPABASE_UPSTREAM secret pointed here.
 #
@@ -38,7 +38,7 @@ if ! command -v supabase >/dev/null 2>&1; then
   # (the unversioned latest/download/<name> path 404s).
   URL="$(curl -fsSL https://api.github.com/repos/supabase/cli/releases/latest | grep -o "https://[^\"]*_linux_${A}\.tar\.gz" | head -1)"
   [ -n "$URL" ] || die "could not resolve Supabase CLI asset URL from the GitHub API"
-  # The CLI ships as a `supabase` shim + a co-located `supabase-go` binary — they MUST
+  # The CLI ships as a `supabase` shim + a co-located `supabase-go` binary, they MUST
   # live in the same dir. Extract the WHOLE tarball and symlink both onto PATH (copying
   # only the shim makes it fail with "Could not find the supabase-go binary").
   mkdir -p /opt/supabase
@@ -62,9 +62,9 @@ if [ "${FREE_MB:-0}" -ge 3000 ]; then
   USE_TMPFS=1
   mkdir -p "$TMPFS_DIR"
   if ! mountpoint -q "$TMPFS_DIR"; then
-    mount -t tmpfs -o size=2g tmpfs "$TMPFS_DIR" || { USE_TMPFS=0; printf '   (tmpfs mount failed — using on-disk)\n'; }
+    mount -t tmpfs -o size=2g tmpfs "$TMPFS_DIR" || { USE_TMPFS=0; printf '   (tmpfs mount failed, using on-disk)\n'; }
   fi
-  [ "$USE_TMPFS" = 1 ] && ok "Postgres data → tmpfs ($TMPFS_DIR, 2g) — no disk wear, no Frigate contention"
+  [ "$USE_TMPFS" = 1 ] && ok "Postgres data → tmpfs ($TMPFS_DIR, 2g), no disk wear, no Frigate contention"
 else
   ok "RAM tight (<3 GB free) → Postgres data stays on disk (Docker default). Never the Frigate HDD spindle if avoidable."
 fi
@@ -74,13 +74,13 @@ fi
 
 # ── 4. Bring up the stack + apply all migrations ──────────────────────────────
 say "Starting Supabase (Postgres + GoTrue + PostgREST + Realtime + Storage + Kong)"
-[ -f supabase/config.toml ] || die "no supabase/config.toml — run from the repo root"
+[ -f supabase/config.toml ] || die "no supabase/config.toml, run from the repo root"
 supabase start || die "supabase start failed (see output above)"
 say "Resetting DB to a clean schema from supabase/migrations/ ($(ls supabase/migrations/*.sql | wc -l) migrations)"
-supabase db reset || die "supabase db reset failed — a migration likely errored against a fresh DB; paste the output to Claude"
+supabase db reset || die "supabase db reset failed, a migration likely errored against a fresh DB; paste the output to Claude"
 
 # ── 5. Print what Claude needs ────────────────────────────────────────────────
-say "DONE — paste EVERYTHING below back to Claude"
+say "DONE, paste EVERYTHING below back to Claude"
 echo "------------------------------------------------------------------"
 supabase status
 echo "------------------------------------------------------------------"

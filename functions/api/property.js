@@ -30,6 +30,21 @@ export async function onRequest(context) {
       { signal: AbortSignal.timeout(10000) }
     );
     const body = await upstream.text();
+    // A "not found" from the property backend is a normal miss (the address just
+    // isn't in its data), not an app error. Passing the raw 404 through made the
+    // browser log a red /api/property 404 on every lookup. Normalize it to a
+    // 200 {found:false} so the console stays clean; the client marks the address
+    // as looked-up and moves on.
+    if (upstream.status === 404) {
+      return new Response(JSON.stringify({ found: false }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-store',
+          'Access-Control-Allow-Origin': '*',
+        },
+      });
+    }
     return new Response(body, {
       status: upstream.status,
       headers: {

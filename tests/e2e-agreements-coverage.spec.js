@@ -2,12 +2,12 @@
 const { test, expect, mockAllExternal, _supabaseShim, _supabaseShimIntake, waitForAppBoot, goPg, assertNoErrors, FAKE_BID_ID_1, FAKE_BID_ID_2, FAKE_USER_ID, FAKE_TOKEN, FAKE_TOKEN_2, MOCK_PROPOSAL } = require('./helpers');
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// js/agreements.js — function coverage (CLAUDE.md §12: every global function across
-// input classes — null/undefined, empty, boundary, type-mismatch, missing-DOM,
+// js/agreements.js: function coverage (CLAUDE.md §12: every global function across
+// input classes, null/undefined, empty, boundary, type-mismatch, missing-DOM,
 // golden, concurrent, post-error). Targets the 68% previously untested.
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Agreements — pure helpers (_agFmtDate, _agType*, _agKeyTerm, _agStatusChip)', () => {
+test.describe('Agreements: pure helpers (_agFmtDate, _agType*, _agKeyTerm, _agStatusChip)', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -19,7 +19,7 @@ test.describe('Agreements — pure helpers (_agFmtDate, _agType*, _agKeyTerm, _a
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_agFmtDate — exact golden + null/empty/boundary', async () => {
+  test('_agFmtDate: exact golden + null/empty/boundary', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agFmtDate !== 'function') return { skip: true };
       try {
@@ -43,7 +43,7 @@ test.describe('Agreements — pure helpers (_agFmtDate, _agType*, _agKeyTerm, _a
     expect(typeof result.garbage).toBe('string');
   });
 
-  test('_agTypeLabel — each known id + unknown fallback', async () => {
+  test('_agTypeLabel: each known id + unknown fallback', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agTypeLabel !== 'function') return { skip: true };
       try {
@@ -68,7 +68,7 @@ test.describe('Agreements — pure helpers (_agFmtDate, _agType*, _agKeyTerm, _a
     expect(result.undef).toBe('Contract');
   });
 
-  test('_agTypeEmoji — each known id + unknown fallback', async () => {
+  test('_agTypeEmoji: each known id + unknown fallback', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agTypeEmoji !== 'function') return { skip: true };
       try {
@@ -91,7 +91,7 @@ test.describe('Agreements — pure helpers (_agFmtDate, _agType*, _agKeyTerm, _a
     expect(result.nul).toBe('📄');
   });
 
-  test('_agKeyTerm — profit-share pct, employment, custom title, fallback', async () => {
+  test('_agKeyTerm: profit-share pct, employment, custom title, fallback', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agKeyTerm !== 'function') return { skip: true };
       try {
@@ -118,7 +118,7 @@ test.describe('Agreements — pure helpers (_agFmtDate, _agType*, _agKeyTerm, _a
     expect(result.customNoTitle).toBe('Custom contract');
   });
 
-  test('_agStatusChip — each status maps to its chip label', async () => {
+  test('_agStatusChip: each status maps to its chip label', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agStatusChip !== 'function') return { skip: true };
       try {
@@ -151,7 +151,7 @@ test.describe('Agreements — pure helpers (_agFmtDate, _agType*, _agKeyTerm, _a
 // Template bodies + apply logic
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, _agApplyTemplate)', () => {
+test.describe('Agreements: templates (_agProfitShareBody, _agEmploymentBody, _agApplyTemplate)', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -169,7 +169,7 @@ test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, 
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_agProfitShareBody — golden fills party/pct/cadence', async () => {
+  test('_agProfitShareBody: golden fills party/pct/cadence', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agProfitShareBody !== 'function') return { skip: true };
       try {
@@ -193,7 +193,7 @@ test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, 
     expect(result.hasHeader).toBe(true);
   });
 
-  test('_agProfitShareBody — null/empty falls back to placeholders + defaults', async () => {
+  test('_agProfitShareBody: null/empty falls back to placeholders + defaults', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agProfitShareBody !== 'function') return { skip: true };
       try {
@@ -216,7 +216,7 @@ test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, 
     expect(result.emptyHasPlaceholder).toBe(true);
   });
 
-  test('_agProfitShareBody — pct of 0 is treated as a real value, not placeholder', async () => {
+  test('_agProfitShareBody: pct of 0 is treated as a real value, not placeholder', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agProfitShareBody !== 'function') return { skip: true };
       try {
@@ -230,7 +230,7 @@ test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, 
     expect(result.noPlaceholder).toBe(true);
   });
 
-  test('_agEmploymentBody — golden + null party placeholder', async () => {
+  test('_agEmploymentBody: golden + null party placeholder', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agEmploymentBody !== 'function') return { skip: true };
       try {
@@ -253,7 +253,7 @@ test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, 
     expect(result.nulPlaceholder).toBe(true);
   });
 
-  test('_agApplyTemplate — missing DOM target is a no-throw early return', async () => {
+  test('_agApplyTemplate: missing DOM target is a no-throw early return', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agApplyTemplate !== 'function') return { skip: true };
       try {
@@ -266,7 +266,7 @@ test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, 
     expect(result.ok).toBe(true);
   });
 
-  test('_agApplyTemplate — fills empty textarea with profit-share template', async () => {
+  test('_agApplyTemplate: fills empty textarea with profit-share template', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agApplyTemplate !== 'function') return { skip: true };
       try {
@@ -297,7 +297,7 @@ test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, 
     expect(result.tplFlag).toBe('1');
   });
 
-  test('_agApplyTemplate — does NOT clobber user-edited (non-template) body', async () => {
+  test('_agApplyTemplate: does NOT clobber user-edited (non-template) body', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agApplyTemplate !== 'function') return { skip: true };
       try {
@@ -316,7 +316,7 @@ test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, 
     expect(result.preserved).toBe(true);
   });
 
-  test('_agApplyTemplate — custom type clears body to empty template', async () => {
+  test('_agApplyTemplate: custom type clears body to empty template', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agApplyTemplate !== 'function') return { skip: true };
       try {
@@ -344,7 +344,7 @@ test.describe('Agreements — templates (_agProfitShareBody, _agEmploymentBody, 
 // Token / URL generation
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Agreements — token + sign URL (_agToken, _agSignUrl)', () => {
+test.describe('Agreements: token + sign URL (_agToken, _agSignUrl)', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -356,7 +356,7 @@ test.describe('Agreements — token + sign URL (_agToken, _agSignUrl)', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_agToken — 32-char lowercase hex, unique across calls', async () => {
+  test('_agToken: 32-char lowercase hex, unique across calls', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agToken !== 'function') return { skip: true };
       try {
@@ -377,7 +377,7 @@ test.describe('Agreements — token + sign URL (_agToken, _agSignUrl)', () => {
     expect(result.unique).toBe(true);
   });
 
-  test('_agToken — concurrent calls all produce valid unique tokens', async () => {
+  test('_agToken: concurrent calls all produce valid unique tokens', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agToken !== 'function') return { skip: true };
       try {
@@ -395,7 +395,7 @@ test.describe('Agreements — token + sign URL (_agToken, _agSignUrl)', () => {
     expect(result.count).toBe(10);
   });
 
-  test('_agSignUrl — builds contract-sign.html URL with token + id', async () => {
+  test('_agSignUrl: builds contract-sign.html URL with token + id', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agSignUrl !== 'function') return { skip: true };
       try {
@@ -428,7 +428,7 @@ test.describe('Agreements — token + sign URL (_agToken, _agSignUrl)', () => {
 // Filter state + list render
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Agreements — filter + render (setAgFilter, _agSearchInput, _agRenderList, renderContracts)', () => {
+test.describe('Agreements: filter + render (setAgFilter, _agSearchInput, _agRenderList, renderContracts)', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -440,7 +440,7 @@ test.describe('Agreements — filter + render (setAgFilter, _agSearchInput, _agR
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_agRenderList — missing #contracts-list target is a no-throw early return', async () => {
+  test('_agRenderList: missing #contracts-list target is a no-throw early return', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agRenderList !== 'function') return { skip: true };
       try {
@@ -453,7 +453,7 @@ test.describe('Agreements — filter + render (setAgFilter, _agSearchInput, _agR
     expect(result.ok).toBe(true);
   });
 
-  test('_agRenderList — empty agreements renders empty-state markup', async () => {
+  test('_agRenderList: empty agreements renders empty-state markup', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agRenderList !== 'function') return { skip: true };
       try {
@@ -469,7 +469,7 @@ test.describe('Agreements — filter + render (setAgFilter, _agSearchInput, _agR
     expect(result.hasEmpty).toBe(true);
   });
 
-  test('_agRenderList — populated list renders a card per agreement', async () => {
+  test('_agRenderList: populated list renders a card per agreement', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agRenderList !== 'function') return { skip: true };
       try {
@@ -499,7 +499,7 @@ test.describe('Agreements — filter + render (setAgFilter, _agSearchInput, _agR
     expect(result.hasDetailHook).toBe(true);
   });
 
-  test('setAgFilter — changing filter narrows the rendered list', async () => {
+  test('setAgFilter: changing filter narrows the rendered list', async () => {
     const result = await page.evaluate(() => {
       if (typeof setAgFilter !== 'function') return { skip: true };
       try {
@@ -522,7 +522,7 @@ test.describe('Agreements — filter + render (setAgFilter, _agSearchInput, _agR
     expect(result.hidesSent).toBe(true);
   });
 
-  test('_agSearchInput — search term filters by party name', async () => {
+  test('_agSearchInput: search term filters by party name', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agSearchInput !== 'function') return { skip: true };
       try {
@@ -546,7 +546,7 @@ test.describe('Agreements — filter + render (setAgFilter, _agSearchInput, _agR
     expect(result.hidesYak).toBe(true);
   });
 
-  test('renderContracts — missing #contracts-page-body is a no-throw early return', async () => {
+  test('renderContracts: missing #contracts-page-body is a no-throw early return', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderContracts !== 'function') return { skip: true };
       try {
@@ -559,7 +559,7 @@ test.describe('Agreements — filter + render (setAgFilter, _agSearchInput, _agR
     expect(result.ok).toBe(true);
   });
 
-  test('renderContracts — builds search box, chips, and list container', async () => {
+  test('renderContracts: builds search box, chips, and list container', async () => {
     const result = await page.evaluate(() => {
       if (typeof renderContracts !== 'function') return { skip: true };
       try {
@@ -592,7 +592,7 @@ test.describe('Agreements — filter + render (setAgFilter, _agSearchInput, _agR
 // Modals: new/edit/detail
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, openEditAgreement, openAgreementDetail)', () => {
+test.describe('Agreements: modals (_showAgreementModal, openNewAgreement, openEditAgreement, openAgreementDetail)', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -611,7 +611,7 @@ test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, ope
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_showAgreementModal — null arg opens fresh-contract modal in DOM', async () => {
+  test('_showAgreementModal: null arg opens fresh-contract modal in DOM', async () => {
     const result = await page.evaluate(() => {
       if (typeof _showAgreementModal !== 'function') return { skip: true };
       try {
@@ -631,7 +631,7 @@ test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, ope
     expect(result.hasPartyInput).toBe(true);
   });
 
-  test('_showAgreementModal — existing agreement renders Edit title + prefilled values', async () => {
+  test('_showAgreementModal: existing agreement renders Edit title + prefilled values', async () => {
     const result = await page.evaluate(() => {
       if (typeof _showAgreementModal !== 'function') return { skip: true };
       try {
@@ -652,7 +652,7 @@ test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, ope
     expect(result.partyVal).toBe('Existing Party');
   });
 
-  test('openNewAgreement — resets editing id and opens modal', async () => {
+  test('openNewAgreement: resets editing id and opens modal', async () => {
     const result = await page.evaluate(() => {
       if (typeof openNewAgreement !== 'function') return { skip: true };
       try {
@@ -666,7 +666,7 @@ test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, ope
     expect(result.opened).toBe(true);
   });
 
-  test('openEditAgreement — opens modal for a known id; unknown id is no-throw', async () => {
+  test('openEditAgreement: opens modal for a known id; unknown id is no-throw', async () => {
     const result = await page.evaluate(() => {
       if (typeof openEditAgreement !== 'function') return { skip: true };
       try {
@@ -685,7 +685,7 @@ test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, ope
     expect(result.opened).toBe(true);
   });
 
-  test('openAgreementDetail — known id opens detail sheet; unknown id no-throw', async () => {
+  test('openAgreementDetail: known id opens detail sheet; unknown id no-throw', async () => {
     const result = await page.evaluate(() => {
       if (typeof openAgreementDetail !== 'function') return { skip: true };
       try {
@@ -696,7 +696,7 @@ test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, ope
         const opened = !!ov;
         const hasBody = ov ? ov.innerHTML.includes('Body text here') : false;
         // NO-DELETE-BUTTONS policy (owner directive): the detail sheet must NOT carry a
-        // delete button — record deletion moved entirely to the hidden 3s press-and-hold.
+        // delete button, record deletion moved entirely to the hidden 3s press-and-hold.
         const hasDeleteBtn = ov ? ov.innerHTML.includes('deleteAgreement(7001)') : false;
         // unknown id → function returns early (a not found), no modal, no throw
         document.getElementById('_ag-detail-ov')?.remove();
@@ -713,7 +713,7 @@ test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, ope
     expect(result.noModalForUnknown).toBe(true);
   });
 
-  test('openAgreementDetail — signed agreement shows signature block', async () => {
+  test('openAgreementDetail: signed agreement shows signature block', async () => {
     const result = await page.evaluate(() => {
       if (typeof openAgreementDetail !== 'function') return { skip: true };
       try {
@@ -740,7 +740,7 @@ test.describe('Agreements — modals (_showAgreementModal, openNewAgreement, ope
 // Mutation: deleteAgreement
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Agreements — deleteAgreement mutation', () => {
+test.describe('Agreements: deleteAgreement mutation', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -752,7 +752,7 @@ test.describe('Agreements — deleteAgreement mutation', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('deleteAgreement — removes the seeded agreement', async () => {
+  test('deleteAgreement: removes the seeded agreement', async () => {
     const result = await page.evaluate(() => {
       if (typeof deleteAgreement !== 'function') return { skip: true };
       try {
@@ -782,7 +782,7 @@ test.describe('Agreements — deleteAgreement mutation', () => {
     expect(result.goneDeleted).toBe(true);
   });
 
-  test('deleteAgreement — non-existent id is a no-throw no-op', async () => {
+  test('deleteAgreement: non-existent id is a no-throw no-op', async () => {
     const result = await page.evaluate(() => {
       if (typeof deleteAgreement !== 'function') return { skip: true };
       try {
@@ -803,7 +803,7 @@ test.describe('Agreements — deleteAgreement mutation', () => {
     expect(result.after).toBe(1); // unchanged
   });
 
-  test('markAgreementSigned — flips status to signed; unknown id no-throw', async () => {
+  test('markAgreementSigned: flips status to signed; unknown id no-throw', async () => {
     const result = await page.evaluate(() => {
       if (typeof markAgreementSigned !== 'function') return { skip: true };
       try {
@@ -829,11 +829,11 @@ test.describe('Agreements — deleteAgreement mutation', () => {
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Network/storage-touching: _agUpload, _agShowLink, _agSms, copyAgreementLink,
-// sendAgreementForSignature, refreshAgreementSignatures — externals are mocked,
+// sendAgreementForSignature, refreshAgreementSignatures, externals are mocked,
 // assert no-throw only (no network-result assertions).
 // ═══════════════════════════════════════════════════════════════════════════════
 
-test.describe('Agreements — network/storage paths (no-throw)', () => {
+test.describe('Agreements: network/storage paths (no-throw)', () => {
   let page;
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -849,7 +849,7 @@ test.describe('Agreements — network/storage paths (no-throw)', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('_agShowLink — builds the share-link modal without throwing', async () => {
+  test('_agShowLink: builds the share-link modal without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _agShowLink !== 'function') return { skip: true };
       try {
@@ -867,7 +867,7 @@ test.describe('Agreements — network/storage paths (no-throw)', () => {
     expect(result.opened).toBe(true);
   });
 
-  test('_agUpload — returns a result object (error when signed-out) without throwing', async () => {
+  test('_agUpload: returns a result object (error when signed-out) without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof _agUpload !== 'function') return { skip: true };
       try {
@@ -880,7 +880,7 @@ test.describe('Agreements — network/storage paths (no-throw)', () => {
     expect(result.hasResult).toBe(true);
   });
 
-  test('_agSms — builds sms: navigation without throwing', async () => {
+  test('_agSms: builds sms: navigation without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof _agSms !== 'function') return { skip: true };
       try {
@@ -897,7 +897,7 @@ test.describe('Agreements — network/storage paths (no-throw)', () => {
     expect(result.ok).toBe(true);
   });
 
-  test('copyAgreementLink — no-throw for known id (refreshes snapshot + shows link)', async () => {
+  test('copyAgreementLink: no-throw for known id (refreshes snapshot + shows link)', async () => {
     const result = await page.evaluate(async () => {
       if (typeof copyAgreementLink !== 'function') return { skip: true };
       try {
@@ -914,7 +914,7 @@ test.describe('Agreements — network/storage paths (no-throw)', () => {
     expect(result.ok).toBe(true);
   });
 
-  test('sendAgreementForSignature — signed-out path alerts, no-throw', async () => {
+  test('sendAgreementForSignature, signed-out path alerts, no-throw', async () => {
     const result = await page.evaluate(async () => {
       if (typeof sendAgreementForSignature !== 'function') return { skip: true };
       try {
@@ -931,14 +931,14 @@ test.describe('Agreements — network/storage paths (no-throw)', () => {
     expect(result.ok).toBe(true);
   });
 
-  // Regression — a sent agreement was not reliably reaching the cloud. Before:
+  // Regression: a sent agreement was not reliably reaching the cloud. Before:
   // sendAgreementForSignature only called the fire-and-forget saveAll() (a 2s
   // debounce timer) and returned as soon as the upload settled, so a caller that
   // checked td_agreements right after would deterministically see the write
   // before it had even started (the same pattern already fixed this session in
   // _sendCOToHub, sendGenericProposal, confirmJobDone, and saveLien). Fixed:
   // sendAgreementForSignature now awaits _flushSaveNow() before it resolves.
-  test('sendAgreementForSignature awaits the cloud write (_flushSaveNow) before resolving — does not just schedule it', async () => {
+  test('sendAgreementForSignature awaits the cloud write (_flushSaveNow) before resolving, does not just schedule it', async () => {
     const result = await page.evaluate(async () => {
       if (typeof sendAgreementForSignature !== 'function') return { skip: true };
       const origAlert = window.zAlert, origUpload = window._agUpload;
@@ -975,10 +975,10 @@ test.describe('Agreements — network/storage paths (no-throw)', () => {
     if (result.skip) return;
     expect(result.err, 'sendAgreementForSignature threw: ' + result.err).toBeNull();
     expect(result.flushCalled, 'sendAgreementForSignature must call _flushSaveNow, not rely on the bare debounce timer').toBe(true);
-    expect(result.resolvedAfterFlush, 'sendAgreementForSignature must AWAIT the flush — it cannot resolve before the cloud write settles').toBe(true);
+    expect(result.resolvedAfterFlush, 'sendAgreementForSignature must AWAIT the flush, it cannot resolve before the cloud write settles').toBe(true);
   });
 
-  test('refreshAgreementSignatures — no-throw with no pending and with pending', async () => {
+  test('refreshAgreementSignatures, no-throw with no pending and with pending', async () => {
     const result = await page.evaluate(async () => {
       if (typeof refreshAgreementSignatures !== 'function') return { skip: true };
       try {

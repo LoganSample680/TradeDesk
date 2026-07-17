@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Playwright globalSetup — LOCAL-STACK per-worker account provisioning.
+// Playwright globalSetup, LOCAL-STACK per-worker account provisioning.
 //
 // GATED ENTIRELY behind E2E_LOCAL_STACK==='1'. When the flag is unset (the cloud
-// path — today's default), this is a pure no-op: it returns immediately, touches
+// path: today's default), this is a pure no-op: it returns immediately, touches
 // no network, writes no files, and cannot change cloud-suite behavior.
 //
 // WHY: each Playwright worker must own its OWN account so no two workers ever share
@@ -14,7 +14,7 @@
 //
 // LOCAL STACK:
 //   API:    http://127.0.0.1:54321 (fixed local default)
-//   secret: the service_role/secret key — read from env SUPABASE_LOCAL_KEY.
+//   secret: the service_role/secret key, read from env SUPABASE_LOCAL_KEY.
 //           NEVER hardcoded: GitHub secret-scanning rightly blocks committing an
 //           sb_secret_… literal (even a local-dev default). The workflow injects it.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ const path = require('path');
 const LOCAL_API = process.env.SUPABASE_UPSTREAM || 'http://127.0.0.1:54321';
 const LOCAL_SECRET = process.env.SUPABASE_LOCAL_KEY || '';
 const ACCOUNTS_FILE = path.join(__dirname, '.local-accounts.json');
-// Bare CREW auth users (no contractor graph) — the crew-convergence spec links them
+// Bare CREW auth users (no contractor graph), the crew-convergence spec links them
 // to a worker contractor at runtime, exercising the real invite/claim paths.
 const CREW_FILE = path.join(__dirname, '.local-crew.json');
 const CREW_N = Math.max(2, parseInt(process.env.E2E_CREW_N || '6', 10));
@@ -50,7 +50,7 @@ function readWorkerCount() {
 // settings-survive-reboot spec) sees the cloud come back empty. A zj_data row hits
 // loadAccountData()'s "pre-schema solo contractor" branch → returns true → cloud load
 // runs → saves persist. Idempotent upsert; LOCAL-STACK only.
-// Idempotent PostgREST upsert via the service key (bypasses RLS — only FKs/NOT-NULLs matter).
+// Idempotent PostgREST upsert via the service key (bypasses RLS, only FKs/NOT-NULLs matter).
 async function _seedUpsert(table, body, onConflict) {
   try {
     const r = await fetch(`${LOCAL_API}/rest/v1/${table}?on_conflict=${onConflict}`, {
@@ -79,7 +79,7 @@ async function _seedUpsert(table, body, onConflict) {
 // vehicles → zj_data(with myRates so no first-time banner) → team_members (one employee,
 // sourced from the NEXT pool account so cross-account/redaction tests have a real link).
 // FK order matters: accounts first; team_members needs both uids to be real auth users
-// (hence the two-pass provisioning in module.exports — all auth users created before any seed).
+// (hence the two-pass provisioning in module.exports: all auth users created before any seed).
 async function seedAccountData(acct, emp, i) {
   const uid = acct.uid;
   const accountId = uid;                 // account id == owner uid → deterministic + idempotent
@@ -172,10 +172,10 @@ module.exports = async () => {
   }
 
   if (accounts.length === 0) {
-    throw new Error('[global-setup] LOCAL STACK: provisioned ZERO accounts — is the local Supabase stack up at ' + LOCAL_API + '?');
+    throw new Error('[global-setup] LOCAL STACK: provisioned ZERO accounts, is the local Supabase stack up at ' + LOCAL_API + '?');
   }
 
-  // SECOND PASS — now that every auth user exists, seed each as a FULLY-ONBOARDED
+  // SECOND PASS, now that every auth user exists, seed each as a FULLY-ONBOARDED
   // contractor, using the NEXT pool account as its linked employee (team_members needs
   // both uids to be real auth users, which they now are). This makes each local account
   // mirror an established cloud Dev A/B account: full accounts/users graph, rates set
@@ -187,7 +187,7 @@ module.exports = async () => {
   fs.writeFileSync(ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
   console.log(`[global-setup] LOCAL STACK: provisioned ${accounts.length}/${count} per-worker accounts → ${path.basename(ACCOUNTS_FILE)}`);
 
-  // ── CREW POOL — bare auth users (deliberately NO contractor graph: no users/
+  // ── CREW POOL, bare auth users (deliberately NO contractor graph: no users/
   // accounts/zj_data rows), so signing one in exercises the REAL crew-linking paths
   // (token claim / email match) instead of the owner branch. The crew-convergence
   // spec links them to a worker contractor at runtime. Failures are non-fatal: the

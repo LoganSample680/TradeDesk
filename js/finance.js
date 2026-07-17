@@ -12,7 +12,7 @@ function openExpenseFlow(){
     '<option value="Online leads">Online leads</option>'+
     '<option value="Other">Other</option>';
   const catOpts=IRS_EXPENSE_CATS.map(c=>'<option value="'+c.id+'">'+c.icon+' '+c.label+'</option>').join('');
-  const jobOpts='<option value="">— Not tied to a specific job —</option>'+
+  const jobOpts='<option value="">- Not tied to a specific job -</option>'+
     bids.filter(b=>b.status==='Closed Won').map(b=>'<option value="'+b.id+'">'+escHtml(b.client_name||b.name)+(b.addr?' · '+escHtml((b.addr||'').split(',')[0]):'')+'</option>').join('');
   const today=new Date().toISOString().slice(0,10);
   ov.innerHTML=
@@ -53,14 +53,14 @@ function openExpenseFlow(){
           '<div style="font-size:11px;font-weight:800;color:var(--blue);margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">'+svgIcon('📢')+' Marketing channel</div>'+
           '<div class="f"><label>Which lead source did you spend on? <span style="color:#A32D2D">*</span></label>'+
             '<select id="em-mkt-source" style="font-size:13px">'+
-              '<option value="">— Select source —</option>'+mktSrcOpts+
+              '<option value="">- Select source -</option>'+mktSrcOpts+
             '</select>'+
           '</div>'+
         '</div>'+
       '</div>'+
       '<div id="em-meal-section" style="display:none;background:#FFF8F0;border:1.5px solid #F59E0B;border-radius:var(--r);padding:12px;margin-bottom:12px">'+
-        '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">'+svgIcon('🍽')+' Meal — Business purpose required</div>'+
-        '<div class="f" style="margin-bottom:8px"><label>Business purpose <span style="color:#A32D2D">*</span></label><input id="em-meal-purpose" placeholder="e.g. Client meeting — reviewed Bettis job scope" style="font-size:13px"></div>'+
+        '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:8px;text-transform:uppercase;letter-spacing:.04em">'+svgIcon('🍽')+' Meal: Business purpose required</div>'+
+        '<div class="f" style="margin-bottom:8px"><label>Business purpose <span style="color:#A32D2D">*</span></label><input id="em-meal-purpose" placeholder="e.g. Client meeting, reviewed Bettis job scope" style="font-size:13px"></div>'+
         '<div class="f"><label>Who attended</label><input id="em-meal-attendees" placeholder="e.g. Zach + client John Smith" style="font-size:13px"></div>'+
       '</div>'+
       '<div style="margin-bottom:12px">'+
@@ -119,7 +119,7 @@ function expTriggerAttach(addPage){
     }catch(e){if(attachArea)attachArea.style.opacity='1';}
   });
 }
-function expAttachPhotoOnly(input){expTriggerAttach();}  // legacy — redirect to live scanner
+function expAttachPhotoOnly(input){expTriggerAttach();}  // legacy: redirect to live scanner
 
 function expTriggerScan(){
   const tokenP=(async()=>{if(!_supa)return null;const{data}=await _supa.auth.getSession();let t=data?.session?.access_token||null;if(!t){const{data:r}=await _supa.auth.refreshSession();t=r?.session?.access_token||null;}return t;})();
@@ -134,7 +134,7 @@ function expTriggerScan(){
     try{b64=await compressAndEncodeImage(blob);}
     catch(_ce){
       if(scanArea)scanArea.style.opacity='';
-      if(status){status.innerHTML='<div class="tip tip-w">Could not read that image — try another photo.</div>';}
+      if(status){status.innerHTML='<div class="tip tip-w">Could not read that image, try another photo.</div>';}
       return;
     }
     const pageObj={b64,key:null};
@@ -147,7 +147,7 @@ function expTriggerScan(){
       const parsed=await resp.json();
       if(parsed.vendor)document.getElementById('em-vendor').value=parsed.vendor;
       if(parsed.amount)document.getElementById('em-amount').value=parsed.amount;
-      if(parsed.date)document.getElementById('em-date').value='';  // cleared — set properly after user confirms below
+      if(parsed.date)document.getElementById('em-date').value='';  // cleared: set properly after user confirms below
       if(parsed.category)document.getElementById('em-cat').value=parsed.category;
       if(parsed.notes)document.getElementById('em-notes').value=parsed.notes;
       _expState.hasReceipt=true;
@@ -156,7 +156,7 @@ function expTriggerScan(){
       _confirmReceiptDate(parsed.date||'',status);
     }catch(e){
       console.warn('Receipt scan failed:',e);
-      if(status)status.innerHTML='<div class="tip tip-w">Could not auto-read — fill in manually below.</div>';
+      if(status)status.innerHTML='<div class="tip tip-w">Could not auto-read, fill in manually below.</div>';
       if(scanArea)scanArea.style.opacity='1';
     }
   });
@@ -187,7 +187,7 @@ async function compressAndEncodeImage(file,maxPx=1200,qual=0.85){
 
 // ── Receipt Scanner ───────────────────────────────────────────────────────
 
-// WebGPU state — allocated once per scanner session, destroyed on close
+// WebGPU state, allocated once per scanner session, destroyed on close
 const _gpu={dev:null,pipe:null,sampler:null,uniformBuf:null,readBuf:null,tw:0,th:0};
 window._gpu=_gpu;
 
@@ -311,7 +311,7 @@ async function _openLiveScanner(callback){
   const shutterWrap=document.createElement('div');
   shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+20px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:3';
   shutterWrap.innerHTML=
-    '<div id="ls-ready-label" style="background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:20px;opacity:0;transition:opacity .3s">'+svgIcon('✓',{size:12})+' Receipt detected — tap to capture</div>'+
+    '<div id="ls-ready-label" style="background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:20px;opacity:0;transition:opacity .3s">'+svgIcon('✓',{size:12})+' Receipt detected, tap to capture</div>'+
     '<button id="ls-shutter" style="width:76px;height:76px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.4);cursor:pointer;box-shadow:0 4px 28px rgba(0,0,0,.6);display:block;transition:transform .1s,background .2s"></button>';
   ov.appendChild(shutterWrap);
 
@@ -335,11 +335,11 @@ async function _openLiveScanner(callback){
   const TW=180,TH=Math.round(video.videoHeight*180/Math.max(1,video.videoWidth))||180;
   const useGPU=await _gpuInit(TW,TH);
 
-  // Pre-allocate detection canvas once — never recreate it per frame
+  // Pre-allocate detection canvas once, never recreate it per frame
   const detCanvas=document.createElement('canvas');detCanvas.width=TW;detCanvas.height=TH;
   const detCtx=detCanvas.getContext('2d',{willReadFrequently:true});
 
-  // Cache overlay canvas context and size — only resize on actual layout change
+  // Cache overlay canvas context and size, only resize on actual layout change
   const oc=overlay.getContext('2d');
   let ovW=0,ovH=0;
   function syncOverlaySize(){
@@ -403,7 +403,7 @@ async function _openLiveScanner(callback){
     const ready=stableFrames>=STABLE_NEEDED;
     if(stableFrames===0)hint.textContent='Align receipt inside the frame';
     else if(stableFrames<4)hint.textContent='Hold steady…';
-    else if(!ready)hint.textContent='Almost — keep holding…';
+    else if(!ready)hint.textContent='Almost: keep holding…';
     else hint.textContent='';
     if(readyLabel)readyLabel.style.opacity=ready?'1':'0';
     const shutter=document.getElementById('ls-shutter');
@@ -427,7 +427,7 @@ async function _openLiveScanner(callback){
       const imgData=detCtx.getImageData(0,0,TW,TH);
       applyResult(_detectDocCorners(imgData.data,TW,TH,video.videoWidth,video.videoHeight));
     }
-    // No auto-capture — user taps shutter when ready
+    // No auto-capture, user taps shutter when ready
   }
 
   rafId=requestAnimationFrame(rafLoop);
@@ -570,7 +570,7 @@ function _detectDocCorners(data,tw,th,outW,outH){
       const gy=-g[(y-1)*tw+x-1]-2*g[(y-1)*tw+x]-g[(y-1)*tw+x+1]+g[(y+1)*tw+x-1]+2*g[(y+1)*tw+x]+g[(y+1)*tw+x+1];
       e[y*tw+x]=Math.min(255,Math.sqrt(gx*gx+gy*gy));
     }
-    // Adaptive threshold — top 30% of non-trivial edges
+    // Adaptive threshold, top 30% of non-trivial edges
     const vals=[];for(let i=0;i<e.length;i++) if(e[i]>8)vals.push(e[i]);
     if(vals.length<80) return null;
     vals.sort((a,b)=>a-b);
@@ -582,7 +582,7 @@ function _detectDocCorners(data,tw,th,outW,outH){
       if(e[y*tw+x]>thr){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;cnt++;}
     }
     if(cnt<60||x1-x0<tw*0.38||y1-y0<th*0.30) return null;
-    // Reject if bounding box fills nearly the entire frame — probably background clutter not a document
+    // Reject if bounding box fills nearly the entire frame, probably background clutter not a document
     if(x1-x0>tw*0.97&&y1-y0>th*0.97) return null;
     // Walk from each bounding-box corner diagonally inward to find first strong edge
     function walk(sx,sy,dx,dy){
@@ -670,7 +670,7 @@ function _confirmReceiptDate(aiDate,statusEl){
   let displayDate=aiDate||'(no date found)';
   try{if(aiDate){const d=new Date(aiDate+'T12:00:00');displayDate=d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});}}catch(e){}
   div.innerHTML=
-    '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">'+svgIcon('📅',{size:12})+' AI read date as: <strong>'+displayDate+'</strong> — correct?</div>'+
+    '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">'+svgIcon('📅',{size:12})+' AI read date as: <strong>'+displayDate+'</strong>, correct?</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'+
       '<button id="rcpt-yes-btn" style="padding:8px;border-radius:var(--r);border:none;background:#D97706;color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✓',{size:12})+' Yes</button>'+
       '<button id="rcpt-no-btn" style="padding:8px;border-radius:var(--r);border:1px solid #D97706;background:#fff;color:#92400E;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('✗',{size:12})+' Let me fix it</button>'+
@@ -681,13 +681,13 @@ function _confirmReceiptDate(aiDate,statusEl){
     const el=document.getElementById('em-date');
     if(el&&aiDate){const m=aiDate.match(/(\d{4})-(\d{2})-(\d{2})/);el.value=m?m[2]+'/'+m[3]+'/'+m[1]:aiDate;}
     div.remove();
-    if(statusEl)statusEl.innerHTML='<div class="tip tip-s"><strong>'+svgIcon('✓',{size:13})+' Receipt saved</strong> — fill in any missing fields and tap Save.</div>';
+    if(statusEl)statusEl.innerHTML='<div class="tip tip-s"><strong>'+svgIcon('✓',{size:13})+' Receipt saved</strong>, fill in any missing fields and tap Save.</div>';
   };
   div.querySelector('#rcpt-no-btn').onclick=()=>{
     const el=document.getElementById('em-date');
     if(el){el.value='';el.style.borderColor='#D97706';el.style.background='#FEF3C7';el.focus();}
     div.remove();
-    if(statusEl)statusEl.innerHTML='<div class="tip tip-s"><strong>'+svgIcon('✓',{size:13})+' Receipt read</strong> — enter the correct date below.</div>';
+    if(statusEl)statusEl.innerHTML='<div class="tip tip-s"><strong>'+svgIcon('✓',{size:13})+' Receipt read</strong>, enter the correct date below.</div>';
   };
 }
 
@@ -713,7 +713,7 @@ async function expSave(){
   const err=document.getElementById('exp-save-err');
   const vendor=(document.getElementById('em-vendor')?.value||'').trim();
   const amount=parseFloat(document.getElementById('em-amount')?.value||0);
-  // Parse date — handle both MM/DD/YYYY input and raw ISO YYYY-MM-DD (safety net)
+  // Parse date, handle both MM/DD/YYYY input and raw ISO YYYY-MM-DD (safety net)
   const _rawDate=document.getElementById('em-date')?.value||'';
   const _isoM=_rawDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const _dm=!_isoM&&_rawDate.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
@@ -727,7 +727,7 @@ async function expSave(){
   if(cat==='meals'){const mp=(document.getElementById('em-meal-purpose')?.value||'').trim();if(!mp){if(err)err.textContent='IRS requires a business purpose for meal expenses.';document.getElementById('em-meal-purpose')?.focus();return;}}
   const leadSource=cat==='marketing'?(document.getElementById('em-mkt-source')?.value||'').trim():'';
   if(cat==='marketing'&&!leadSource){if(err)err.textContent='Select which marketing channel this belongs to.';document.getElementById('em-mkt-source')?.focus();return;}
-  // Edit mode — update existing record instead of creating new
+  // Edit mode, update existing record instead of creating new
   if(_expState.editId){
     const idx=expenses.findIndex(e=>e.id===_expState.editId);
     if(idx>-1){
@@ -748,20 +748,20 @@ async function expSave(){
         vehicleName:(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):'')||undefined,
         lead_source:leadSource||undefined,meal_purpose:mealPurpose2||undefined,meal_attendees:mealAttendees2||undefined,
         job_id:jobId,job_name:job2?job2.client_name||job2.name:'',
-        receipt:upd_receipt_key||upd_receipt_img?'Yes — photo stored':'No receipt photo',
+        receipt:upd_receipt_key||upd_receipt_img?'Yes: photo stored':'No receipt photo',
         receipt_key:upd_receipt_key,receipt_img:upd_receipt_img,
         receipt_keys:existing_keys.length?existing_keys:undefined,
         deductible:catInfo2.deductible!==false,meals_50:!!(catInfo2.meals_50),
       };
       expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
-      showToast('Expense updated — '+vendor+' '+fmt(amount),'✓');
+      showToast('Expense updated, '+vendor+' '+fmt(amount),'✓');
       closeExpenseFlow();
       setTimeout(()=>{if(typeof renderExpenses==='function')renderExpenses();},0);
       if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
       return;
     }
   }
-  // Duplicate check — same vendor, amount, and date within 2 days
+  // Duplicate check, same vendor, amount, and date within 2 days
   const dupExp=expenses.find(e=>{
     if(e.vendor&&vendor&&e.vendor.toLowerCase()===vendor.toLowerCase()&&
        Math.abs(e.amount-amount)<0.01){
@@ -801,13 +801,13 @@ async function expSave(){
     meal_purpose:mealPurpose||undefined,meal_attendees:mealAttendees||undefined,
     created_at:new Date().toISOString(),
     job_id:jobId,job_name:job?job.client_name||job.name:'',client_id:job?job.client_id:null,
-    receipt:receipt_key||receipt_img?'Yes — photo stored':'No receipt photo',
+    receipt:receipt_key||receipt_img?'Yes: photo stored':'No receipt photo',
     receipt_key,receipt_img,receipt_keys:receipt_keys.length?receipt_keys:undefined,
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
-  showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved — '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
-  if(cat==='tools'&&amount>=500)setTimeout(()=>showToast(svgIcon('💡')+' Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction — flag for your CPA','📋'),900);
+  showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved: '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
+  if(cat==='tools'&&amount>=500)setTimeout(()=>showToast(svgIcon('💡')+' Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction, flag for your CPA','📋'),900);
   closeExpenseFlow();
   goPg('pg-tracker');
   setTimeout(()=>{const b=document.getElementById('tr-t-expenses');if(b)b.click();},200);
@@ -827,6 +827,14 @@ function quickAction(type){
   const wonUnscheduled=bids.filter(b=>b.status==='Closed Won'&&!jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id&&j.eventType!=='estimate'&&j.start>=tk));
 
   if(type==='drive'){
+    // Mileage requires a vehicle on record (IRS: every trip log names a vehicle).
+    // The Drive button is grayed until one exists (_renderDashSetupTodo); this is
+    // the fallback so the flow never dead-ends into an empty mileage log.
+    if((typeof getVehicles==='function'?getVehicles():(S.vehicles||[])).length===0){
+      if(typeof showToast==='function')showToast('Add a vehicle first to log mileage','🚗');
+      if(typeof openAddVehicleModal==='function')openAddVehicleModal();
+      return;
+    }
     try{ openDriveModal(); }catch(e){ console.error('[TradeDesk] openDriveModal failed:',e); }
   } else if(type==='expense'){
     try{ openExpenseFlow(); }catch(e){ console.error('[TradeDesk] openExpenseFlow failed:',e); }
@@ -860,7 +868,7 @@ function quickAction(type){
     const options=[];
     wonUnscheduled.slice(0,8).forEach(b=>{
       const c=getClientById(b.client_id);
-      if(c)options.push({label:c.name,sub:fmt(b.amount)+' — won bid',clientId:b.client_id,bidId:b.id,icon:'✓'});
+      if(c)options.push({label:c.name,sub:fmt(b.amount)+', won bid',clientId:b.client_id,bidId:b.id,icon:'✓'});
     });
     showQuickPicker('Schedule Job','Which job to schedule?',options,'schedule',false);
   } else if(type==='complete'){
@@ -880,7 +888,7 @@ function openCompleteJobModal(){
     return{j,c,priority:isPast?0:isToday?1:2,isPast,isToday};
   }).filter(x=>x.c).sort((a,b)=>a.priority-b.priority||(a.j.start<b.j.start?-1:1));
 
-  // Clear any open overlay first — never stack modals, and keep this deterministic so
+  // Clear any open overlay first, never stack modals, and keep this deterministic so
   // a stale overlay left in the DOM can't be what callers/tests read back.
   document.querySelectorAll('.zmodal-overlay').forEach(el=>el.remove());
   const overlay=document.createElement('div');
@@ -1075,7 +1083,7 @@ function showQuickExpenseModal(clientId,bidId){
         '<label style="font-size:11px;font-weight:700;color:var(--text3)">Which job?</label>'+
         '<select id="qe-bid" style="font-size:13px;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);width:100%;color:var(--text)">'+
           clientBids.map(b=>'<option value="'+b.id+'"'+(bid&&b.id===bid.id?' selected':'')+'>'+
-            escHtml(b.client_name||c.name)+' — '+fmt(b.amount)+(b.status==='Pending'?' (pending)':'')+
+            escHtml(b.client_name||c.name)+', '+fmt(b.amount)+(b.status==='Pending'?' (pending)':'')+
           '</option>').join('')+
         '</select>'+
       '</div>':
@@ -1139,7 +1147,7 @@ function saveQuickExpense(clientId){
     vendor,
     amount,
     pay:'Business card',
-    receipt:'No — need to get it',
+    receipt:'No: need to get it',
     notes:'',
     client_id:clientId,
     job_id:bidId,
@@ -1149,7 +1157,7 @@ function saveQuickExpense(clientId){
   saveAll();
   const overlay=document.querySelector('.zmodal-overlay');
   if(overlay)overlay.remove();
-  showToast(vendor+' — '+fmt(amount)+' logged '+svgIcon('✓'),'💰');
+  showToast(vendor+', '+fmt(amount)+' logged '+svgIcon('✓'),'💰');
   renderDash();
   goPg('pg-dash');
   window.scrollTo({top:0,left:0,behavior:'instant'});
@@ -1167,7 +1175,7 @@ function quickCreateClient(actionType){
       const note=document.createElement('div');
       note.className='tip';
       note.style.marginBottom='10px';
-      note.textContent='Fill in their info and save — you\'ll be taken right back to continue.';
+      note.textContent='Fill in their info and save, you\'ll be taken right back to continue.';
       form.insertBefore(note,form.firstChild);
     }
   },100);
@@ -1204,11 +1212,11 @@ function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>ad
 
 function populateSchedSelect(){
   const cSel=document.getElementById('s-client-sel');
-  if(cSel)cSel.innerHTML='<option value="">— Select a client —</option>'+clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name)+'</option>').join('');
+  if(cSel)cSel.innerHTML='<option value="">- Select a client -</option>'+clients.map(c=>'<option value="'+c.id+'">'+escHtml(c.name)+'</option>').join('');
   const scheduledIds=new Set(jobs.filter(j=>j.bid_id).map(j=>j.bid_id));
   const won=bids.filter(b=>b.status==='Closed Won');
   const bSel=document.getElementById('s-bid-sel');
-  if(bSel)bSel.innerHTML='<option value="">— Select a won bid —</option>'+won.map(b=>'<option value="'+b.id+'"'+(scheduledIds.has(b.id)?' disabled':'')+'>'+escHtml(b.client_name||b.name)+' — '+fmt(b.amount)+(scheduledIds.has(b.id)?' (scheduled)':'')+' </option>').join('');
+  if(bSel)bSel.innerHTML='<option value="">- Select a won bid -</option>'+won.map(b=>'<option value="'+b.id+'"'+(scheduledIds.has(b.id)?' disabled':'')+'>'+escHtml(b.client_name||b.name)+', '+fmt(b.amount)+(scheduledIds.has(b.id)?' (scheduled)':'')+' </option>').join('');
 }
 
 function setSchedType(type,btn){
@@ -1224,9 +1232,9 @@ function setSchedType(type,btn){
   selectedColor=isEst?'#7F77DD':'#185FA5';
   const sw=document.getElementById('s-color-swatch');if(sw)sw.style.background=selectedColor;
   const lb=document.getElementById('s-color-label');
-  if(lb)lb.textContent=isEst?'Shows as purple on the calendar — estimate visit':'Shows as blue on the calendar — paint job';
+  if(lb)lb.textContent=isEst?'Shows as purple on the calendar, estimate visit':'Shows as blue on the calendar, paint job';
   const tip=document.getElementById('sched-tip');
-  if(tip){tip.innerHTML=isEst?'Pick a client, date and time. <strong>Evenings (after 5pm) and weekends</strong> are always open — they never block your paint days.':'Pull from a won bid and pick a start date.';tip.className=isEst?'tip':'tip tip-s';}
+  if(tip){tip.innerHTML=isEst?'Pick a client, date and time. <strong>Evenings (after 5pm) and weekends</strong> are always open, they never block your paint days.':'Pull from a won bid and pick a start date.';tip.className=isEst?'tip':'tip tip-s';}
   const days=document.getElementById('s-days');if(days)days.value=isEst?1:2;
   const buf=document.getElementById('s-buf');if(buf)buf.value=isEst?'0':'1';
   const daysRow=document.getElementById('s-dur-days-row');
@@ -1244,7 +1252,7 @@ function setSchedType(type,btn){
 function pullClient(){
   const cid=parseInt(v('s-client-sel'));if(!cid)return;
   const c=getClientById(cid);if(!c)return;
-  document.getElementById('s-name').value=c.name+' — estimate';
+  document.getElementById('s-name').value=c.name+', estimate';
   document.getElementById('s-addr').value=c.addr||'';
   document.getElementById('s-days').value=1;
   const na=getNextAvail();
@@ -1253,7 +1261,7 @@ function pullClient(){
   availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();
   refreshAvail();updateSchedPreview();
 }
-function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?' — '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;document.getElementById('s-days-src').textContent='from bid';document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from bid:</strong> '+escHtml(b.client_name||'')+' · '+fmt(b.amount)+' · '+(b.days||2)+' days. Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
+function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;document.getElementById('s-days-src').textContent='from bid';document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from bid:</strong> '+escHtml(b.client_name||'')+' · '+fmt(b.amount)+' · '+(b.days||2)+' days. Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
 function buildColorRow(){document.getElementById('s-color-row').innerHTML=JOB_COLORS.map(c=>`<div style="width:24px;height:24px;border-radius:4px;background:${c};cursor:pointer;border:2px solid ${c===selectedColor?'#000':'transparent'}" onclick="selColor('${c}')"></div>`).join('');}
 function selColor(c){selectedColor=c;buildColorRow();}
 function avPrev(){
@@ -1275,7 +1283,7 @@ async function refreshAvail(){
   const _hasPwash=schedType==='job'&&_schedBid?.scope?.pwash===true;
   const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;
 
-  // Build workday-aware end date — skip weekends unless allowed
+  // Build workday-aware end date, skip weekends unless allowed
   function calcWorkEnd(startKey, numDays) {
     if(!startKey) return null;
     let count=0, cur=startKey;
@@ -1321,7 +1329,7 @@ async function refreshAvail(){
     const isRainBlocked=_hasPwash&&wx&&wx.rain;
     const dayNum=parseInt(key.split('-')[2]);
     if(isPast)return'<div class="av-d av-past">'+dayNum+'</div>';
-    // Weekends grayed when not allowed — never blue, never selectable
+    // Weekends grayed when not allowed, never blue, never selectable
     if(isWeekend&&!allowWknd)return'<div class="av-d av-past">'+dayNum+'</div>';
     if(timeOffDays.has(key))return'<div class="av-d" style="background:#FDE68A;color:#92400E;font-weight:700;cursor:not-allowed" title="Time off">'+dayNum+'<br><span style="font-size:11px">'+svgIcon('🏖',{size:11})+'</span></div>';
     if(schedType==='estimate'){
@@ -1330,7 +1338,7 @@ async function refreshAvail(){
     }
     if(isTaken)return'<div class="av-d av-taken">'+dayNum+wxHtml+'</div>';
     if(isBuf)return'<div class="av-d av-buf">'+dayNum+'</div>';
-    if(isRainBlocked)return'<div class="av-d av-taken" title="Rain forecast — pressure wash blocked" style="background:#FEE8E8;cursor:not-allowed">'+dayNum+wxHtml+'</div>';
+    if(isRainBlocked)return'<div class="av-d av-taken" title="Rain forecast, pressure wash blocked" style="background:#FEE8E8;cursor:not-allowed">'+dayNum+wxHtml+'</div>';
     if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
     return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
   }).join('');
@@ -1392,13 +1400,13 @@ function scheduleJob(){
   const name=v('s-name').trim();if(!name){_schedErr('Enter a job name.','s-name');return;}
   const start=v('s-start');if(!start){_schedErr('Pick a start date.','s-start');return;}
   const days=parseInt(v('s-days'))||1;
-  const{booked}=getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i))){_schedErr('One or more days already booked — pick a different start date.','s-start');return;}}
+  const{booked}=getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i))){_schedErr('One or more days already booked, pick a different start date.','s-start');return;}}
   const bidId=parseInt(v('s-bid-sel'))||null,bid=bidId?bids.find(b=>b.id===bidId):null;
   if(bid&&bid.status==='Pending'){_schedErr('The estimate must be signed (Closed Won) before scheduling.','s-bid-sel');return;}
   // Rain block: pressure wash can't start on a rainy day
   if(schedType==='job'&&bid&&bid.scope&&bid.scope.pwash){
     const wx=_weatherCache&&_weatherCache[start];
-    if(wx&&wx.rain){_schedErr('Rain in the forecast for '+start+'. Pressure washing needs dry conditions — pick a clear day.','s-start');return;}
+    if(wx&&wx.rain){_schedErr('Rain in the forecast for '+start+'. Pressure washing needs dry conditions, pick a clear day.','s-start');return;}
   }
   // Duplicate guard: same bid already has a job scheduled
   if(bidId&&jobs.some(j=>j.bid_id===bidId&&j.eventType==='job'&&j.status!=='canceled')){
@@ -1489,7 +1497,7 @@ function renderMonthlyPL(){
   mileage.forEach(r=>{if(r.date)addMonth(mKey(r.date),'miles',r.miles||0);});
 
   const keys=Object.keys(months).sort().reverse();
-  if(!keys.length){el.innerHTML='<div class="empty">No data yet — log income and expenses to see monthly P&L.</div>';return;}
+  if(!keys.length){el.innerHTML='<div class="empty">No data yet, log income and expenses to see monthly P&L.</div>';return;}
 
   let html='<div style="display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:4px 10px;font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);padding-bottom:6px;border-bottom:1px solid var(--border);margin-bottom:6px">'+
     '<span>Month</span><span style="text-align:right">Revenue</span><span style="text-align:right">Expenses</span><span style="text-align:right">Net</span></div>';
@@ -1509,7 +1517,7 @@ function renderMonthlyPL(){
     '</div>';
   });
 
-  // renderMonthlyPL is an ALL-TIME (multi-year) view — totalMiles sums every year's
+  // renderMonthlyPL is an ALL-TIME (multi-year) view, totalMiles sums every year's
   // trips. Pairing it with the YEAR-scoped _vehSchedC(trackerYear).mileDed mismatched
   // the figures and showed $0 when trackerYear==='all'. Use the all-time miles × rate
   // here so the deduction matches the miles shown; the authoritative per-year deduction
@@ -1522,7 +1530,7 @@ function renderMonthlyPL(){
     '<span style="text-align:right;color:#A32D2D">('+fmt(totalExp)+')</span>'+
     '<span style="text-align:right;color:'+(grandNet>=0?'var(--green-mid)':'#A32D2D')+'">'+fmt(grandNet)+'</span>'+
   '</div>'+
-  (totalMiles>0?'<div style="font-size:10px;color:var(--text3);margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">'+totalMiles.toFixed(0)+' mi driven · '+fmt(totalMileDed)+' mileage tax deduction — reduces taxable income, not cash profit</div>':'');
+  (totalMiles>0?'<div style="font-size:10px;color:var(--text3);margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">'+totalMiles.toFixed(0)+' mi driven · '+fmt(totalMileDed)+' mileage tax deduction, reduces taxable income, not cash profit</div>':'');
   el.innerHTML=html;
 }
 
@@ -1538,7 +1546,7 @@ function addReceiptToExpense(expId){
         if(key){exp.receipt_key=key;exp.receipt_img=null;}
         else exp.receipt_img='data:image/jpeg;base64,'+b64;
       }catch(e){exp.receipt_img='data:image/jpeg;base64,'+b64;}
-      exp.receipt='Yes — photo stored';
+      exp.receipt='Yes: photo stored';
       if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
       renderExpenses();showToast('Receipt attached to '+exp.vendor,'📎');
     }catch(e){showToast('Could not attach photo','⚠️');}
@@ -1584,7 +1592,7 @@ async function viewReceipt(expId){
   render();
 }
 function deleteReceiptPhoto(expId){
-  zConfirm('Delete this receipt photo? The expense record stays intact — you can add a new photo anytime.',async()=>{
+  zConfirm('Delete this receipt photo? The expense record stays intact, you can add a new photo anytime.',async()=>{
     const exp=expenses.find(e=>e.id==expId);
     if(!exp)return;
     const keysToDelete=[...(exp.receipt_keys||[]),exp.receipt_key].filter(Boolean);
@@ -1643,12 +1651,12 @@ function openExportPanel(){
         '</select>'+
       '</div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Choose format</div>'+
-      exportOptionHTML('exportAllDataCSV()','📦','Everything — one CSV','Every client, lead, bid, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, bids, jobs, payments, income, expenses, mileage — all labeled sections.')+
-      exportOptionHTML('exportAllXLSX()','📊','Income · Expenses · Mileage — Excel','One workbook, three sheets. All years of income, expenses, and mileage — dollar columns formatted, SUM totals at the bottom of each sheet.')+
-      exportOptionHTML('exportPLCSV()','📈','Profit & Loss CSV','Income vs expenses vs mileage deduction — net profit at the bottom. Hand straight to your accountant.')+
-      exportOptionHTML('exportTaxPDF()','📄','Full tax report — PDF','Schedule C summary, income, expenses by IRS category, mileage log. Print or save — IRS audit ready.')+
-      exportOptionHTML('exportFullBackup()','💾','Full data backup','All clients, jobs, bids, income, expenses, mileage. JSON — restore or migrate anytime.')+
-      exportOptionHTML('exportReceiptImages()','📄','Receipt PDF','All receipt photos in one PDF — sorted by date with vendor, amount and category. Print or send to your CPA.')+
+      exportOptionHTML('exportAllDataCSV()','📦','Everything: one CSV','Every client, lead, bid, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, bids, jobs, payments, income, expenses, mileage, all labeled sections.')+
+      exportOptionHTML('exportAllXLSX()','📊','Income · Expenses · Mileage, Excel','One workbook, three sheets. All years of income, expenses, and mileage, dollar columns formatted, SUM totals at the bottom of each sheet.')+
+      exportOptionHTML('exportPLCSV()','📈','Profit & Loss CSV','Income vs expenses vs mileage deduction, net profit at the bottom. Hand straight to your accountant.')+
+      exportOptionHTML('exportTaxPDF()','📄','Full tax report, PDF','Schedule C summary, income, expenses by IRS category, mileage log. Print or save, IRS audit ready.')+
+      exportOptionHTML('exportFullBackup()','💾','Full data backup','All clients, jobs, bids, income, expenses, mileage. JSON: restore or migrate anytime.')+
+      exportOptionHTML('exportReceiptImages()','📄','Receipt PDF','All receipt photos in one PDF, sorted by date with vendor, amount and category. Print or send to your CPA.')+
     '</div>';
   document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -1790,7 +1798,7 @@ function _xlsByYear(headers,colWidths,items,getDate,buildDataRow,sumCols){
 }
 
 function exportAllXLSX(){
-  if(typeof XLSX==='undefined'){showToast('Export library loading — try again','⏳');return;}
+  if(typeof XLSX==='undefined'){showToast('Export library loading, try again','⏳');return;}
   const biz=S.bname||'TradeDesk';
   const rate=IRS();
   const wb=XLSX.utils.book_new();
@@ -1849,11 +1857,11 @@ function exportAllXLSX(){
 
   downloadXLSX((biz+' Financials.xlsx').replace(/\s+/g,'_'),wb);
   const tot=income.length+expenses.length+mileage.length;
-  showToast(`Excel — ${tot} records across 3 sheets`,'📊');
+  showToast(`Excel: ${tot} records across 3 sheets`,'📊');
 }
 
 function exportExpensesCSV(){
-  if(typeof XLSX==='undefined'){showToast('Export library loading — try again','⏳');return;}
+  if(typeof XLSX==='undefined'){showToast('Export library loading, try again','⏳');return;}
   const yr=getExportYear();
   const biz=S.bname||'TradeDesk';
   const filtered=(yr==='all'?expenses:expenses.filter(e=>e.date?.startsWith(yr)))
@@ -1891,11 +1899,11 @@ function exportExpensesCSV(){
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Expenses');
   downloadXLSX((biz+' Expenses '+(yr==='all'?'All Years':yr)+'.xlsx').replace(/\s+/g,'_'),wb);
-  showToast('Expenses Excel — '+n+' records downloaded','📊');
+  showToast('Expenses Excel, '+n+' records downloaded','📊');
 }
 
 function exportMileageCSV(){
-  if(typeof XLSX==='undefined'){showToast('Export library loading — try again','⏳');return;}
+  if(typeof XLSX==='undefined'){showToast('Export library loading, try again','⏳');return;}
   const yr=getExportYear();
   const biz=S.bname||'TradeDesk';
   const rate=IRS();
@@ -1932,7 +1940,7 @@ function exportMileageCSV(){
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Mileage');
   downloadXLSX((biz+' Mileage '+(yr==='all'?'All Years':yr)+'.xlsx').replace(/\s+/g,'_'),wb);
-  showToast('Mileage log — '+n+' trips downloaded','🚗');
+  showToast('Mileage log, '+n+' trips downloaded','🚗');
 }
 
 function exportAllDataCSV(){
@@ -1946,7 +1954,7 @@ function exportAllDataCSV(){
     rows.forEach(r=>sections.push(r));
     sections.push('');
   };
-  // Year-grouped variant — used for income, expenses, mileage
+  // Year-grouped variant, used for income, expenses, mileage
   const secByYear=(title,headers,records,getDate,buildRow)=>{
     const sorted=[...records].sort((a,b)=>(getDate(b)||'').localeCompare(getDate(a)||''));
     const byYear={};
@@ -2006,7 +2014,7 @@ function exportAllDataCSV(){
     ].join(','))
   );
 
-  // Income — grouped by year, newest first
+  // Income: grouped by year, newest first
   secByYear('INCOME',
     ['Date','Source / Client','Category','Job','Amount','Notes'],
     income, r=>r.date,
@@ -2014,7 +2022,7 @@ function exportAllDataCSV(){
         q(r.job_name),(r.amount||0).toFixed(2),q(r.note||r.notes)].join(',')
   );
 
-  // Expenses — grouped by year, newest first
+  // Expenses: grouped by year, newest first
   secByYear('EXPENSES',
     ['Date','Vendor','IRS Category','Amount','Deductible','Job','Receipt'],
     expenses, e=>e.date,
@@ -2023,7 +2031,7 @@ function exportAllDataCSV(){
           e.deductible===false?'No':'Yes',q(e.job_name),e.receipt_img||e.receipt_key?'Yes':'No'].join(',');}
   );
 
-  // Mileage — grouped by year, newest first
+  // Mileage: grouped by year, newest first
   const rate=IRS();
   secByYear('MILEAGE',
     ['Date','Vehicle','From','To','Miles','IRS Deduction','Purpose','Client'],
@@ -2044,14 +2052,14 @@ function exportAllDataCSV(){
     );
   }
 
-  const header=['"'+biz+' — Full Data Export — '+now+'"',''];
+  const header=['"'+biz+', Full Data Export, '+now+'"',''];
   const csv=[...header,...sections].join('\n');
   downloadFile((biz+' Full Export '+now+'.csv').replace(/[/,\s]+/g,'_'),csv,'text/csv');
-  showToast('Full export — all data downloaded','📦');
+  showToast('Full export, all data downloaded','📦');
 }
 
 function exportIncomeCSV(){
-  if(typeof XLSX==='undefined'){showToast('Export library loading — try again','⏳');return;}
+  if(typeof XLSX==='undefined'){showToast('Export library loading, try again','⏳');return;}
   const yr=getExportYear();
   const biz=S.bname||'TradeDesk';
   const filtered=(yr==='all'?income:income.filter(r=>r.date?.startsWith(yr)))
@@ -2082,7 +2090,7 @@ function exportIncomeCSV(){
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,'Income');
   downloadXLSX((biz+' Income '+(yr==='all'?'All Years':yr)+'.xlsx').replace(/\s+/g,'_'),wb);
-  showToast('Income Excel — '+n+' records downloaded','💰');
+  showToast('Income Excel, '+n+' records downloaded','💰');
 }
 
 function exportPLCSV(){
@@ -2101,7 +2109,7 @@ function exportPLCSV(){
   const tMil=yrMil.reduce((s,m)=>s+(m.miles||0),0)*IRS();
   const net=tInc-tExp;
   const lines=[
-    '"'+biz+' — Profit & Loss — '+label+'"','',
+    '"'+biz+', Profit & Loss, '+label+'"','',
     '"INCOME"','Date,Source / Client,Category,Amount',
     ...yrInc.map(r=>[r.date||'','"'+(r.client_name||r.source||'').replace(/"/g,'""')+'"','"'+(r.cat||'Revenue')+'"',(r.amount||0).toFixed(2)].join(',')),
     ...yrPay.map(p=>[p.date||'','"'+(p.client_name||'Payment').replace(/"/g,'""')+'"','"Payment"',(p.amount||0).toFixed(2)].join(',')),
@@ -2114,7 +2122,7 @@ function exportPLCSV(){
     '"NET PROFIT"','"'+label+'",,'+net.toFixed(2),
   ];
   downloadFile((biz+' P&L '+label+'.csv').replace(/\s+/g,'_'),lines.join('\n'),'text/csv');
-  showToast('P&L exported — '+label,'📈');
+  showToast('P&L exported, '+label,'📈');
 }
 
 function exportTaxPDF(){
@@ -2174,7 +2182,7 @@ function exportTaxPDF(){
   });
   const d=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
   const statusLabel={single:'Single',mfj:'Married Filing Jointly',hoh:'Head of Household'}[status]||status;
-  // Build HTML using string concat — no template literals to avoid parser issues
+  // Build HTML using string concat, no template literals to avoid parser issues
   let h='<!DOCTYPE html><html><head><meta charset="utf-8">';
   h+='<title>'+escHtml(biz)+' Tax Report '+yr+'</title>';
   h+='<style>';
@@ -2207,10 +2215,10 @@ function exportTaxPDF(){
   h+='</style></head><body>';
   // Header
   h+='<div class="hdr"><div class="hdr-t">'+biz+'</div>';
-  h+='<div class="hdr-s">Tax Report — '+yr+' &nbsp;·&nbsp; '+statusLabel+' &nbsp;·&nbsp; '+d+'</div></div>';
+  h+='<div class="hdr-s">Tax Report, '+yr+' &nbsp;·&nbsp; '+statusLabel+' &nbsp;·&nbsp; '+d+'</div></div>';
   h+='<div class="body">';
   // Income & deductions
-  h+='<div class="sec"><div class="sec-t">Income &amp; Deductions — Schedule C</div>';
+  h+='<div class="sec"><div class="sec-t">Income &amp; Deductions: Schedule C</div>';
   h+='<div class="grid">';
   h+='<div class="box"><div class="bl">Gross Revenue</div><div class="bv green">'+fmt(tInc)+'</div></div>';
   h+='<div class="box"><div class="bl">Business Expenses</div><div class="bv red">('+fmt(tExp)+')</div></div>';
@@ -2221,7 +2229,7 @@ function exportTaxPDF(){
   h+='</div></div>';
   // Tax breakdown
   const _pdfHomeStateName=(STATE_TAX[_pdfHome]?.name||_pdfHome||'State');
-  h+='<div class="sec"><div class="sec-t">Tax Liability — Federal vs '+(_pdfMulti?'Multi-State':_pdfHomeStateName+' State')+'</div>';
+  h+='<div class="sec"><div class="sec-t">Tax Liability, Federal vs '+(_pdfMulti?'Multi-State':_pdfHomeStateName+' State')+'</div>';
   h+='<div class="two">';
   // Federal
   h+='<div class="ts">';
@@ -2230,8 +2238,8 @@ function exportTaxPDF(){
   h+='<div class="tr2"><span>Self-employment tax (15.3%)<span class="tsub">Social Security + Medicare</span></span><span class="red">'+fmt(seTax)+'</span></div>';
   h+='<div class="tr2"><span>1/2 SE deduction<span class="tsub">Reduces federal AGI</span></span><span class="green">('+fmt(seDed)+')</span></div>';
   const qbiEst=Math.floor(Math.max(0,net-seDed)*0.20);
-  if(qbiEst>0)h+='<div class="tr2"><span>QBI deduction est. (Sec. 199A)<span class="tsub">20% pass-through — confirm with CPA</span></span><span class="green">('+fmt(qbiEst)+')</span></div>';
-  h+='<div class="tr2"><span>Standard deduction<span class="tsub">Form 1040 — '+statusLabel+'</span></span><span class="green">('+fmt(stdDed)+')</span></div>';
+  if(qbiEst>0)h+='<div class="tr2"><span>QBI deduction est. (Sec. 199A)<span class="tsub">20% pass-through, confirm with CPA</span></span><span class="green">('+fmt(qbiEst)+')</span></div>';
+  h+='<div class="tr2"><span>Standard deduction<span class="tsub">Form 1040, '+statusLabel+'</span></span><span class="green">('+fmt(stdDed)+')</span></div>';
   h+='<div class="tr2"><span>Federal taxable income</span><span style="font-weight:700">'+fmt(fedTaxable)+'</span></div>';
   h+='<div class="tr2"><span>Federal income tax<span class="tsub">Form 1040 brackets</span></span><span class="red">'+fmt(fedTax)+'</span></div>';
   h+='<div class="ttot"><span>Total Federal</span><span class="red">'+fmt(seTax+fedTax)+'</span></div>';
@@ -2259,7 +2267,7 @@ function exportTaxPDF(){
   h+='<div class="tall"><span>Total Estimated Tax Liability</span><span class="red">'+fmt(totalTax)+'</span></div>';
   h+='</div></div>';
   // Income table
-  h+='<div class="sec"><div class="sec-t">Income — '+yrIncome.length+' transactions</div>';
+  h+='<div class="sec"><div class="sec-t">Income: '+yrIncome.length+' transactions</div>';
   h+='<table><thead><tr><th>Date</th><th>Client</th><th>Type</th><th>Method</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
   yrIncome.forEach(r=>{h+='<tr><td>'+(r.date||'')+'</td><td>'+(r.client_name||'')+'</td><td>'+(r.type||'')+'</td><td>'+(r.method||'')+'</td><td style="text-align:right;font-weight:700">'+fmt(r.amount)+'</td></tr>';});
   h+='<tr class="tr"><td colspan="4">Total Income</td><td style="text-align:right">'+fmt(tInc)+'</td></tr></tbody></table></div>';
@@ -2269,7 +2277,7 @@ function exportTaxPDF(){
   Object.values(byCat).sort((a,b)=>b.total-a.total).forEach(c=>{h+='<tr><td>'+c.icon+' '+c.label+'</td><td style="color:#9a9890">'+c.line+'</td><td style="text-align:right;font-weight:700;color:#791F1F">('+fmt(c.total)+')</td></tr>';});
   h+='<tr class="tr"><td colspan="2">Total Expenses</td><td style="text-align:right">('+fmt(tExp)+')</td></tr></tbody></table></div>';
   // Expense detail
-  h+='<div class="sec"><div class="sec-t">Expense Detail — '+yrExp.length+' entries (01/01/'+yr+' - 12/31/'+yr+')</div>';
+  h+='<div class="sec"><div class="sec-t">Expense Detail, '+yrExp.length+' entries (01/01/'+yr+' - 12/31/'+yr+')</div>';
   h+='<table><thead><tr><th>Date</th><th>Vendor</th><th>Category</th><th>Job</th><th>Receipt</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
   yrExp.forEach(e=>{
     const cat=IRS_EXPENSE_CATS.find(c=>c.id===e.cat)||{icon:'',label:e.cat||'Other'};
@@ -2278,7 +2286,7 @@ function exportTaxPDF(){
   });
   h+='<tr class="tr"><td colspan="5">Total</td><td style="text-align:right">('+fmt(tExp)+')</td></tr></tbody></table></div>';
   // Mileage
-  h+='<div class="sec"><div class="sec-t">Mileage Log — '+yrMiles.length+' trips at $'+IRS().toFixed(3)+'/mi</div>';
+  h+='<div class="sec"><div class="sec-t">Mileage Log, '+yrMiles.length+' trips at $'+IRS().toFixed(3)+'/mi</div>';
   h+='<table><thead><tr><th>Date</th><th>Vehicle</th><th>Route</th><th>Purpose</th><th style="text-align:right">Miles</th><th style="text-align:right">Deduction</th></tr></thead><tbody>';
   yrMiles.forEach(m=>{h+='<tr><td>'+(m.date||'')+'</td><td>'+(m.vehicle||'')+'</td><td>'+(m.from||'')+' - '+(m.to||'')+'</td><td>'+(m.purpose||'')+(m.client_name?' - '+m.client_name:'')+'</td><td style="text-align:right">'+((m.miles||0).toFixed(1))+'</td><td style="text-align:right;color:#791F1F">('+fmt((m.miles||0)*IRS())+')</td></tr>';});
   h+='<tr class="tr"><td colspan="4">Total</td><td style="text-align:right">'+tMiles.toFixed(1)+'</td><td style="text-align:right">('+fmt(mileDed)+')</td></tr></tbody></table></div>';
@@ -2289,7 +2297,7 @@ function exportTaxPDF(){
   const w=window.open(url,'_blank');
   if(!w){const a=document.createElement('a');a.href=url;a.target='_blank';document.body.appendChild(a);a.click();document.body.removeChild(a);}
   setTimeout(()=>URL.revokeObjectURL(url),30000);
-  showToast('Tax report opened — Print to save as PDF','📄');
+  showToast('Tax report opened, Print to save as PDF','📄');
 }
 
 
@@ -2300,7 +2308,7 @@ function exportFullBackup(){
     data:{clients,bids,jobs,income,expenses,mileage,payments,liens},settings:S,
     meta:{clients:clients.length,bids:bids.length,expenses:expenses.length,income:income.length,mileage:mileage.length}};
   downloadFile(biz+'_TradeDesk_Backup_'+ts+'.json',JSON.stringify(backup,null,2),'application/json');
-  showToast('Full backup downloaded — keep this safe','💾');
+  showToast('Full backup downloaded, keep this safe','💾');
 }
 async function exportReceiptImages(){
   const yr=document.getElementById('exp-panel-year')?.value||new Date().getFullYear();
@@ -2367,7 +2375,7 @@ async function exportReceiptImages(){
         <div class="pg-num">Receipt ${i+1} of ${filtered.length}</div>
         <div class="pg-meta">
           <span class="field">${d}</span>
-          <span class="field vendor">${e.vendor||'—'}</span>
+          <span class="field vendor">${e.vendor||'-'}</span>
           <span class="field amount">$${Number(e.amount||0).toFixed(2)}</span>
           <span class="field cat">${cat}</span>
           ${e.job_name?`<span class="field job">Job: ${e.job_name}</span>`:''}
@@ -2380,7 +2388,7 @@ async function exportReceiptImages(){
   win.document.open();
   win.document.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8">
-<title>${bname} — Receipts ${yr}</title>
+<title>${bname}: Receipts ${yr}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#fff;color:#1a1a1a}
@@ -2406,7 +2414,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 </style>
 </head><body>
 <div class="no-print">
-  <span><strong>${bname}</strong> — ${filtered.length} receipt${filtered.length>1?'s':''} · ${yr}</span>
+  <span><strong>${bname}</strong>, ${filtered.length} receipt${filtered.length>1?'s':''} · ${yr}</span>
   <button onclick="window.print()">${svgIcon('🖨',{size:14})} Print / Save PDF</button>
 </div>
 ${pages}
@@ -2500,12 +2508,12 @@ async function _openJobProfit(){
   try{
     const{data:tm}=await _supa.from('team_members').select('employee_user_id,pay_type,pay_rate').eq('contractor_user_id',cid);
     (tm||[]).forEach(r=>{if(r.employee_user_id)rateByUid[r.employee_user_id]=(typeof _empLoadedHourly==='function')?_empLoadedHourly(r):(r.pay_type==='salary'?(r.pay_rate||0)/2080:(r.pay_rate||0))*(S.laborBurden||1.3);});
-    // Owner's own tracked time (bills under cid) — cost it with the owner's pay rate
+    // Owner's own tracked time (bills under cid), cost it with the owner's pay rate
     rateByUid[cid]=(typeof _empLoadedHourly==='function')?_empLoadedHourly({pay_type:S.ownerPayType,pay_rate:S.ownerPayRate}):0;
     const{data:te}=await _supa.from('job_time_entries').select('employee_user_id,job_id,minutes,source').eq('contractor_user_id',cid);
     entries=te||[];
   }catch(_e){}
-  // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries) — without
+  // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries), without
   // this, a walk-up job clocked via the nearby-banner Clock in button was
   // invisible to Job Profit entirely, even though the time was really saved.
   // null logged_by_uid means the owner, whose rate already keys off cid above.
@@ -2555,13 +2563,13 @@ async function _openJobProfit(){
       '<div style="text-align:right"><div style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">With tracked labor</div>'+
       '<div style="font-size:18px;font-weight:800">'+trackedCount+'/'+rows.length+'</div></div>'+
     '</div>'+
-    (trackedCount===0?'<div style="font-size:11px;color:var(--text3);background:var(--bg2);border:1px dashed var(--border);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;line-height:1.5">No crew time tracked yet — profit below counts materials only. Enable crew tracking and assign jobs on the dispatch board to capture labor automatically.</div>':'')+
+    (trackedCount===0?'<div style="font-size:11px;color:var(--text3);background:var(--bg2);border:1px dashed var(--border);border-radius:var(--r);padding:8px 10px;margin-bottom:10px;line-height:1.5">No crew time tracked yet, profit below counts materials only. Enable crew tracking and assign jobs on the dispatch board to capture labor automatically.</div>':'')+
     rows.map(r=>{
       const c=(r.profit>=0?'#0E6B39':'#A32D2D');
       const margin=r.revenue>0?Math.round(r.profit/r.revenue*100):0;
       const timeRow=r.plannedHrs!=null?(
         r.underStaffed?
-          '<div style="font-size:10px;color:var(--c-amber);margin-top:3px">'+svgIcon('⚠',{size:11})+' Only '+r.actualHrs.toFixed(1)+'h tracked vs '+r.plannedHrs+'h planned — check crew time on this job</div>':
+          '<div style="font-size:10px;color:var(--c-amber);margin-top:3px">'+svgIcon('⚠',{size:11})+' Only '+r.actualHrs.toFixed(1)+'h tracked vs '+r.plannedHrs+'h planned, check crew time on this job</div>':
         r.noTimeYet?
           '<div style="font-size:10px;color:var(--text3);margin-top:3px">No time logged yet · '+r.plannedHrs+'h planned</div>':
         (r.hasLabor?'<div style="font-size:10px;color:var(--text3);margin-top:3px">⏱ '+r.actualHrs.toFixed(1)+'h on-site / '+r.plannedHrs+'h planned</div>':'')
@@ -2572,7 +2580,7 @@ async function _openJobProfit(){
           '<div style="font-size:14px;font-weight:800;color:'+c+';flex-shrink:0">'+fmt(r.profit)+'</div>'+
         '</div>'+
         '<div style="display:flex;justify-content:space-between;gap:10px;margin-top:3px">'+
-          '<div style="font-size:11px;color:var(--text3)">Rev '+fmt(r.revenue)+' · Mat '+fmt(r.materials)+' · Labor '+(r.hasLabor?fmt(r.labor):'—')+'</div>'+
+          '<div style="font-size:11px;color:var(--text3)">Rev '+fmt(r.revenue)+' · Mat '+fmt(r.materials)+' · Labor '+(r.hasLabor?fmt(r.labor):'-')+'</div>'+
           '<div style="font-size:11px;font-weight:700;color:'+c+';flex-shrink:0">'+margin+'%</div>'+
         '</div>'+
         timeRow+
@@ -2580,7 +2588,7 @@ async function _openJobProfit(){
     }).join('');
 }
 
-// ── Crew labor cost — per-employee rollup + dashboard tile ────────────────────
+// ── Crew labor cost, per-employee rollup + dashboard tile ────────────────────
 function _ctDateStr(d){
   try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
   catch(_e){return d.toISOString().slice(0,10);}
@@ -2615,7 +2623,7 @@ async function _fetchCrewLabor(sinceISO){
   return out;
 }
 // The dashboard "Crew today" tile was DELETED 2026-07-14 (owner: "simplify
-// before we scale") — it duplicated the Time log page's live "Currently
+// before we scale"): it duplicated the Time log page's live "Currently
 // clocked in" banner. Crew hours live there; crew COST lives in Books via
 // _openCrewCost below. _fetchCrewLabor stays (Books + timelog use it).
 // Per-employee Crew Cost report (Today / This week), with per-job breakdown.
@@ -2626,7 +2634,7 @@ async function _openCrewCost(){
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
   const _ccBtn=id=>'<button id="_cc-'+id+'" onclick="_crewCostRender(\''+id+'\')" style="flex:1;padding:8px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;min-width:0">';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('👷',{size:18})+' Crew Cost</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:10px">What each person actually cost you — wage + overhead (payroll taxes, insurance) — from tracked time on site.</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:10px">What each person actually cost you, wage + overhead (payroll taxes, insurance), from tracked time on site.</div>'+
     '<div style="display:flex;gap:6px;margin-bottom:6px">'+
       _ccBtn('today')+'Today</button>'+
       _ccBtn('week')+'This week</button>'+
@@ -2658,7 +2666,7 @@ async function _crewCostRender(range){
   const sinceISO=new Date(new Date(sinceStr+'T00:00:00Z').getTime()-86400000).toISOString();
   const data=await _fetchCrewLabor(sinceISO);
   // Fold in manually-clocked time (js/jobs.js clockOut → timeEntries) alongside
-  // GPS-tracked entries — mapped into the same {employee_user_id,job_id,minutes,
+  // GPS-tracked entries, mapped into the same {employee_user_id,job_id,minutes,
   // arrived_at,source} shape so the aggregation below treats both identically.
   // null logged_by_uid means the owner; _fetchCrewLabor already resolves the
   // owner's rate/name under cid.
@@ -2709,7 +2717,7 @@ async function _crewCostRender(range){
     const hrs=e.min/60,loaded=hrs*(data.loaded[uid]||0),wage=hrs*(data.wage[uid]||0);
     grand+=loaded;
     const jsHrs=e.jobSiteMin/60,drHrs=e.driveMin/60,shHrs=e.shopMin/60;
-    // Use actual days worked (days with any entry), not the full range length —
+    // Use actual days worked (days with any entry), not the full range length,
     // otherwise absent days inflate "unaccounted" for part-week workers.
     const workedDays=Math.max(1,Object.keys(e.dayMins).length);
     const unaccH=Math.max(0,(bizDayMins*workedDays-e.min)/60);
@@ -2755,7 +2763,7 @@ function getTopScope(scope){
 function closeBidHistoryDetail(){const el=document.getElementById('tr-bid-detail');if(el)el.style.display='none';}
 function viewSavedProposal(bidId){
   const b=bids.find(x=>x.id===bidId);
-  if(!b||!b.proposalHtml){zAlert('No saved proposal found for this bid. Proposals are saved starting from this update — older bids won\'t have one stored.',{title:'Not available'});return;}
+  if(!b||!b.proposalHtml){zAlert('No saved proposal found for this bid. Proposals are saved starting from this update, older bids won\'t have one stored.',{title:'Not available'});return;}
   const ov=document.createElement('div');
   ov.setAttribute('data-pov','1');
   ov.style.cssText='position:fixed;inset:0;background:#f0f4f8;z-index:10000;overflow-y:auto;-webkit-overflow-scrolling:touch';
@@ -2801,7 +2809,7 @@ function openBidHistoryDetail(bidId){
   if(!panel||!content)return;
 
   const PAINT_LABELS={std:'Standard (Behr/Valspar)',prem:'Sherwin-Williams Premium',ultra:'SW Emerald Ultra'};
-  const COND_LABELS={'1.0':'Good — minor prep','1.2':'Fair — moderate prep','1.5':'Poor — heavy prep'};
+  const COND_LABELS={'1.0':'Good: minor prep','1.2':'Fair: moderate prep','1.5':'Poor: heavy prep'};
   const surfs=b.surfaces||[];
   const scope=b.scope?Object.entries(b.scope).filter(([k,v])=>v).map(([k])=>{
     const item=SCOPE_ITEMS.find(s=>s.id===k);return item?item.label:k;
@@ -2925,14 +2933,14 @@ function openManualIncomeModal(){
           '<option value="Job payment">Job payment</option><option value="Deposit">Deposit / advance</option><option value="Final payment">Final payment</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
         '</select>'+
         '<div id="_inc-deposit-warn" style="display:none;background:#FFFBEB;border:1.5px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-top:8px;font-size:12px;color:#92400E;line-height:1.5">'+
-          svgIcon('💡',{size:13})+' <strong>Deposits count as income now.</strong> The IRS says any money you receive is taxable the year you get it — even if it\'s a deposit for work you haven\'t done yet. Don\'t wait until the job is done to report it.'+
+          svgIcon('💡',{size:13})+' <strong>Deposits count as income now.</strong> The IRS says any money you receive is taxable the year you get it, even if it\'s a deposit for work you haven\'t done yet. Don\'t wait until the job is done to report it.'+
         '</div></div>'+
       '<div><label style="font-size:11px;font-weight:700;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:5px">Payment method</label>'+
         '<select id="_inc-method" style="width:100%;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text);box-sizing:border-box" onchange="toggleCashWarning()">'+
           '<option value="Check">Check</option><option value="Card">Card</option><option value="Zelle">Zelle</option><option value="Venmo">Venmo</option><option value="Cash">Cash</option><option value="Other">Other</option>'+
         '</select></div>'+
       '<div id="_inc-cash-warn" style="display:none;background:#FFFACD;border:2px solid #F59E0B;border-radius:var(--r);padding:10px 12px;margin-top:10px">'+
-        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:6px">'+svgIcon('⚠',{size:13})+' Cash Income — IRS Red Flag</div>'+
+        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:6px">'+svgIcon('⚠',{size:13})+' Cash Income, IRS Red Flag</div>'+
         '<label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;font-size:12px;color:#78350F">'+
           '<input type="checkbox" id="_inc-cash-confirm" style="margin-top:2px;width:16px;height:16px;flex-shrink:0">'+
           '<span>I confirm this cash was deposited to my business bank account</span>'+
@@ -2978,7 +2986,7 @@ function saveManualIncome(){
   showToast(entryYear!==trackerYear?'Income logged for '+entryYear:'Income logged',entryYear!==trackerYear?'📅':'✅');
   // Save fires synchronously so data hits localStorage before the call stack empties
   if(typeof _flushSaveNow==='function')_flushSaveNow();else saveAll();
-  // Render deferred — table rebuild doesn't block the current frame
+  // Render deferred, table rebuild doesn't block the current frame
   setTimeout(()=>{
     if(entryYear!==trackerYear){
       setTrackerYear(entryYear);
@@ -3007,12 +3015,12 @@ function _bkTogDay(tab,mo,day){
 }
 function _bkDayLabel(d){
   const p=(d||'').split('-').map(Number);
-  if(p.length<3||!p[0]||!p[1]||!p[2])return d||'—';
+  if(p.length<3||!p[0]||!p[1]||!p[2])return d||'-';
   try{return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(_e){return d;}
 }
 // Render a month's rows grouped into per-day accordions (each day its own dropdown,
 // default open). rowFn is the month's local row renderer (_incRow / _expRow).
-// sumFn/fmtFn are optional — default to the original $-amount behavior so Income
+// sumFn/fmtFn are optional, default to the original $-amount behavior so Income
 // and Expenses (the only callers before Time Log) are unaffected; Time Log passes
 // a minutes-sum + duration formatter instead of $ since it isn't a money view.
 function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn){
@@ -3043,8 +3051,8 @@ function renderIncome(){
   const el=document.getElementById('inc-table');if(!el)return;
   const yr=String(trackerYear||new Date().getFullYear());
   const normDate=d=>{if(!d)return'';const c=d.replace(/-/g,'');return c.length>=8?c.slice(0,4)+'-'+c.slice(4,6)+'-'+c.slice(6,8):d;};
-  const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:normDate(r.date),sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.method||r.pay||'—',_src:'income'}));
-  const payRows=payments.filter(p=>p.date&&p.amount!==0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:normDate(p.date),sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.amount<0?'Refund':(p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment'),amount:p.amount,method:p.method||'—',_src:'payment'}));
+  const incRows=income.filter(r=>r.date&&r.date.replace(/-/g,'').startsWith(yr)).map(r=>({id:r.id,date:normDate(r.date),sortDate:r.date.replace(/-/g,''),client_id:r.client_id,client_name:r.client_name,type:r.type||'Income',amount:r.amount,method:r.method||r.pay||'-',_src:'income'}));
+  const payRows=payments.filter(p=>p.date&&p.amount!==0&&p.date.replace(/-/g,'').startsWith(yr)).map(p=>({id:p.id,date:normDate(p.date),sortDate:p.date.replace(/-/g,''),client_id:p.client_id,client_name:p.client_name,type:p.amount<0?'Refund':(p.type==='deposit'?'Deposit':p.type==='final'?'Final payment':'Payment'),amount:p.amount,method:p.method||'-',_src:'payment'}));
   const filtered=[...incRows,...payRows].sort((a,b)=>b.sortDate.localeCompare(a.sortDate));
   const total=filtered.reduce((s,r)=>s+r.amount,0);
   if(!filtered.length){el.innerHTML='<div class="empty">No income in '+yr+'.</div>';return;}
@@ -3059,7 +3067,7 @@ function renderIncome(){
   const curMo=new Date().toISOString().slice(0,7);
   const _methodBadge=m=>{
     const v=(m||'').toLowerCase();
-    if(!m||m==='—')return '<span style="color:var(--text3)">—</span>';
+    if(!m||m==='-')return '<span style="color:var(--text3)">-</span>';
     if(v==='cash')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#D1FAE5;color:#065F46;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">'+svgIcon('💵',{size:11})+' Cash</span>';
     if(v==='check')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#DBEAFE;color:#1E40AF;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">'+svgIcon('✓',{size:11})+' Check</span>';
     if(v==='zelle')return '<span style="display:inline-flex;align-items:center;gap:3px;background:#EDE9FE;color:#5B21B6;font-size:10px;font-weight:700;padding:2px 7px;border-radius:99px;white-space:nowrap">'+svgIcon('⚡',{size:11})+' Zelle</span>';
@@ -3071,9 +3079,9 @@ function renderIncome(){
   const _incRow=r=>{
     const c=clients.find(x=>x.id===r.client_id);
     // data-label drives the mobile card layout (CSS turns each row into a stacked
-    // card on ≤767px — no horizontal scroll). Desktop still renders a real table.
+    // card on ≤767px, no horizontal scroll). Desktop still renders a real table.
     return '<tr data-lp-id="'+r.id+'" data-lp-type="'+r._src+'" data-lp-label="'+escHtml((r.client_name||'record')+' · '+fmt(r.amount||0))+'">'+
-      '<td class="bold" data-label="Client">'+(r.client_name||'—')+'</td>'+
+      '<td class="bold" data-label="Client">'+(r.client_name||'-')+'</td>'+
       '<td class="'+(r.amount<0?'red':'green')+'" data-label="Amount">'+(r.amount<0?'('+fmtD(Math.abs(r.amount))+')':fmtD(r.amount))+'</td>'+
       '<td class="mute" data-label="Date">'+(r.date||'')+'</td>'+
       '<td class="mute" data-label="Type">'+r.type+'</td>'+
@@ -3105,7 +3113,7 @@ function renderIncome(){
     }).join('')+'</div>';
   }catch(err){
     console.error('renderIncome error:',err);
-    html+='<div class="tip tip-a">Error rendering income — check console. ('+err.message+')</div>';
+    html+='<div class="tip tip-a">Error rendering income, check console. ('+err.message+')</div>';
   }
   el.innerHTML=html;
 }
@@ -3115,7 +3123,7 @@ function processReceiptPhoto(input){input.value='';_scanAndFillBooksExpense();}
 
 function _scanAndFillBooksExpense(){
   // Open the expense modal first, then immediately trigger the scan button inside it.
-  // The old inline books form fields (exp-vendor etc.) no longer exist — the modal
+  // The old inline books form fields (exp-vendor etc.) no longer exist, the modal
   // uses em-* fields and expTriggerScan() handles the full scan→AI→fill flow.
   openExpenseFlow();
   setTimeout(()=>expTriggerScan(),80);
@@ -3124,7 +3132,7 @@ function _scanAndFillBooksExpense(){
 function populateExpJobSel(){
   const sel=document.getElementById('exp-job-sel');if(!sel)return;
   const wonJobs=bids.filter(b=>b.status==='Closed Won');
-  sel.innerHTML='<option value="">— Not job-specific —</option>'+
+  sel.innerHTML='<option value="">- Not job-specific -</option>'+
     wonJobs.map(b=>'<option value="'+b.id+'">'+(b.client_name||b.name)+(b.addr?' · '+b.addr:'')+'</option>').join('');
 }
 function renderExpenses(){
@@ -3132,7 +3140,7 @@ function renderExpenses(){
   const yr=String(trackerYear||new Date().getFullYear());
   let filtered=yr==='all'?expenses:expenses.filter(e=>e.date&&e.date.startsWith(yr));
   // One method per vehicle (IRS): a mileage-method vehicle's fuel/maintenance/purchase
-  // records are covered by the per-mile rate — they don't deduct and don't show here.
+  // records are covered by the per-mile rate, they don't deduct and don't show here.
   const _vdE=(yr!=='all'&&typeof _vehSchedC==='function')?_vehSchedC(yr):null;
   const _exclSet=new Set(_vdE?_vdE.excludedIds:[]);
   const _hiddenVeh=_exclSet.size?filtered.filter(e=>_exclSet.has(e.id)):[];
@@ -3143,13 +3151,13 @@ function renderExpenses(){
   const purgeable=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_img);
   let html='';
   if(purgeable.length){
-    html+='<div class="tip tip-w" style="display:flex;justify-content:space-between;align-items:center"><span>'+purgeable.length+' receipt image'+(purgeable.length>1?'s':'')+' past 7 years — images can be deleted, records kept</span><button class="btn btn-sm" onclick="purgeOldReceiptImages()" style="flex-shrink:0;margin-left:8px">Clean up</button></div>';
+    html+='<div class="tip tip-w" style="display:flex;justify-content:space-between;align-items:center"><span>'+purgeable.length+' receipt image'+(purgeable.length>1?'s':'')+' past 7 years, images can be deleted, records kept</span><button class="btn btn-sm" onclick="purgeOldReceiptImages()" style="flex-shrink:0;margin-left:8px">Clean up</button></div>';
   }
   if(_hiddenVeh.length){
     const _hidTot=_hiddenVeh.reduce((s,e)=>s+(e.amount||0),0);
     const _untagN=_vdE?_vdE.untagged:0;
-    html+='<div class="tip tip-w">'+svgIcon('🚗',{size:13})+' <strong>'+_hiddenVeh.length+' vehicle expense'+(_hiddenVeh.length>1?'s':'')+' ('+fmt(_hidTot)+') not shown or deducted</strong> — '+
-      (_untagN?_untagN+' need'+(_untagN>1?'':'s')+' a vehicle picked (edit the expense), the rest are covered by the standard-mileage rate.':'covered by the standard-mileage deduction (one method per vehicle, IRS rule). Keep logging them — they still count in the year-end mileage-vs-actual comparison, and switching the vehicle to Actual expenses in Fleet deducts them instead.')+'</div>';
+    html+='<div class="tip tip-w">'+svgIcon('🚗',{size:13})+' <strong>'+_hiddenVeh.length+' vehicle expense'+(_hiddenVeh.length>1?'s':'')+' ('+fmt(_hidTot)+') not shown or deducted</strong>, '+
+      (_untagN?_untagN+' need'+(_untagN>1?'':'s')+' a vehicle picked (edit the expense), the rest are covered by the standard-mileage rate.':'covered by the standard-mileage deduction (one method per vehicle, IRS rule). Keep logging them, they still count in the year-end mileage-vs-actual comparison, and switching the vehicle to Actual expenses in Fleet deducts them instead.')+'</div>';
   }
   // Both entry paths count: 'subs' (full modal) + 'Subcontractors' (quick modal),
   // plus job-sheet sub payouts via the full report engine.
@@ -3159,13 +3167,13 @@ function renderExpenses(){
     subsFiltered.forEach(e=>{const k=(e.vendor||'Unknown').trim();subsBy[k]=(subsBy[k]||0)+e.amount;});
     const flagged=Object.entries(subsBy).filter(([,amt])=>amt>=600);
     if(flagged.length){
-      html+='<div class="tip tip-a" onclick="if(typeof open1099Report===\'function\')open1099Report('+(yr==='all'?'null':yr)+')" style="background:#FFF3CD;border:1.5px solid #D4A017;color:#6B4C00;cursor:pointer"><strong>'+svgIcon('⚠',{size:13})+' 1099-NEC Required:</strong> '+flagged.length+' subcontractor'+(flagged.length>1?'s':'')+' reached $600+ in '+yr+' — file Form 1099-NEC by Jan 31. '+flagged.map(([v,a])=>v+' ('+fmt(a)+')').join(', ')+' <span style="font-weight:800;text-decoration:underline">Tap for the full per-job report →</span></div>';
+      html+='<div class="tip tip-a" onclick="if(typeof open1099Report===\'function\')open1099Report('+(yr==='all'?'null':yr)+')" style="background:#FFF3CD;border:1.5px solid #D4A017;color:#6B4C00;cursor:pointer"><strong>'+svgIcon('⚠',{size:13})+' 1099-NEC Required:</strong> '+flagged.length+' subcontractor'+(flagged.length>1?'s':'')+' reached $600+ in '+yr+', file Form 1099-NEC by Jan 31. '+flagged.map(([v,a])=>v+' ('+fmt(a)+')').join(', ')+' <span style="font-weight:800;text-decoration:underline">Tap for the full per-job report →</span></div>';
     }
   }
   if(noReceipt.length){
     const missingPct=filtered.length>0?Math.round(noReceipt.length/filtered.length*100):0;
     const cls=missingPct>30?'tip-a':'tip-w';
-    html+='<div class="tip '+cls+'"><strong>'+noReceipt.length+' missing receipt'+(noReceipt.length>1?'s':'')+' ('+missingPct+'% of '+yr+' expenses)</strong>'+(missingPct>30?' — '+svgIcon('⚠',{size:12})+' Over 30% missing. IRS can disallow undocumented expenses.':' — photograph them before they\'re gone.')+'</div>';
+    html+='<div class="tip '+cls+'"><strong>'+noReceipt.length+' missing receipt'+(noReceipt.length>1?'s':'')+' ('+missingPct+'% of '+yr+' expenses)</strong>'+(missingPct>30?', '+svgIcon('⚠',{size:12})+' Over 30% missing. IRS can disallow undocumented expenses.':', photograph them before they\'re gone.')+'</div>';
   }
   if(!expenses.length){el.innerHTML=html+'<div class="empty-state"><div class="empty-state-icon">'+svgIcon('🧾',{size:44})+'</div><h3>No expenses yet</h3><p>Tap the Expense button on the home screen or use the Scan button above to photograph a receipt.</p></div>';return;}
   if(!filtered.length){el.innerHTML=html+'<div class="empty">No expenses in '+yr+'.</div>';return;}
@@ -3190,10 +3198,10 @@ function renderExpenses(){
         :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">'+svgIcon('💾',{size:11})+' View</button>')
       :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
     return '<tr data-lp-id="'+r.id+'" data-lp-type="expense" data-lp-label="'+escHtml((r.vendor||'expense')+' · '+fmt(r.amount||0))+'">'+
-      '<td class="bold" data-label="Vendor">'+(r.vendor||'—')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
+      '<td class="bold" data-label="Vendor">'+(r.vendor||'-')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
       '<td class="red" data-label="Amount">('+fmtD(r.amount||0)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
       '<td class="mute" data-label="Date">'+(r.date||'')+'</td>'+
-      '<td class="mute" style="font-size:10px" data-label="Category">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'—')+'</td>'+
+      '<td class="mute" style="font-size:10px" data-label="Category">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'-')+'</td>'+
       '<td data-label="Receipt">'+recLabel+'</td>'+
       '<td data-label="">'+'<button onclick="editExpense('+r.id+')" style="font-size:11px;padding:3px 9px;border-radius:4px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);cursor:pointer;font-family:inherit;font-weight:600">Edit</button></td>'+
     '</tr>';
@@ -3223,7 +3231,7 @@ function renderExpenses(){
     }).join('')+'</div>';
   }catch(err){
     console.error('renderExpenses error:',err);
-    html+='<div class="tip tip-a">Error rendering expenses — check console. ('+err.message+')</div>';
+    html+='<div class="tip tip-a">Error rendering expenses, check console. ('+err.message+')</div>';
   }
   // Category breakdown chips
   const byCat={};
@@ -3247,11 +3255,11 @@ async function purgeOldReceiptImages(){
   if(!supaEnabled()||!_supaUser)return zAlert('Sign in to manage cloud receipts.');
   const today=todayKey();
   const old=expenses.filter(e=>e.expires_at&&e.expires_at<today&&e.receipt_img);
-  zConfirm('Delete '+old.length+' receipt image'+(old.length>1?'s':'')+' older than 7 years? Dollar amounts and records are kept permanently — only the photos are removed.',async()=>{
+  zConfirm('Delete '+old.length+' receipt image'+(old.length>1?'s':'')+' older than 7 years? Dollar amounts and records are kept permanently, only the photos are removed.',async()=>{
     for(const e of old){
-      e.receipt_img=null;e.receipt_key=null;e.receipt='Records kept — image purged after 7 years';
+      e.receipt_img=null;e.receipt_key=null;e.receipt='Records kept, image purged after 7 years';
     }
-    saveAll();renderExpenses();showToast(old.length+' receipt images purged — records kept','🗑️');
+    saveAll();renderExpenses();showToast(old.length+' receipt images purged, records kept','🗑️');
   },{title:'Purge old receipt images',yes:'Delete images',danger:true});
 }
 function delExpense(id){_userDelete(()=>{expenses=expenses.filter(x=>x.id!==id);_flushSaveNow&&_flushSaveNow();});renderExpenses();}
@@ -3394,7 +3402,7 @@ function renderMoneyPage(){
     const avgDaysOut=allItems.filter(x=>x.bucket==='overdue'&&x.daysUnpaid>0).reduce((s,x,_,a)=>s+x.daysUnpaid/a.length,0)||0;
     summEl.innerHTML='<div class="mets">'+
       '<div class="met"><div class="met-l">Total outstanding</div><div class="met-v" style="color:'+(totalOwed>0?'var(--c-red)':'var(--c-green)')+'">'+fmt(totalOwed)+'</div><div class="met-s">across '+allItems.filter(x=>x.bucket!=='paid').length+' accounts</div></div>'+
-      '<div class="met"><div class="met-l">Avg days out</div><div class="met-v">'+(avgDaysOut?Math.round(avgDaysOut)+'<span class="unit">d</span>':'—')+'</div><div class="met-s">target ≤ 14d</div></div>'+
+      '<div class="met"><div class="met-l">Avg days out</div><div class="met-v">'+(avgDaysOut?Math.round(avgDaysOut)+'<span class="unit">d</span>':'-')+'</div><div class="met-s">target ≤ 14d</div></div>'+
       '<div class="met"><div class="met-l">Lien windows open</div><div class="met-v" style="color:'+(lienOpen?'var(--c-amber)':'var(--text-3)')+'">'+lienOpen+'</div><div class="met-s">'+(lienOpen?'act before deadline':'none expiring soon')+'</div></div>'+
       '<div class="met"><div class="met-l">Collected this month</div><div class="met-v" style="color:var(--c-green)">'+fmt(paidThisMonth)+'</div></div>'+
     '</div>';
@@ -3411,7 +3419,7 @@ function renderMoneyPage(){
   // Sort: most days unpaid first, then highest balance
   show.sort((a,b)=>(b.daysUnpaid||0)-(a.daysUnpaid||0)||(b.balance-a.balance));
   if(!show.length){
-    el.innerHTML='<div class="empty">'+(moneyFilter==='paid'?'No paid jobs in records.':moneyFilter==='all'?'Nothing outstanding — all collected! '+svgIcon('🎉'):'No '+moneyFilter+' items.')+'</div>';return;
+    el.innerHTML='<div class="empty">'+(moneyFilter==='paid'?'No paid jobs in records.':moneyFilter==='all'?'Nothing outstanding, all collected! '+svgIcon('🎉'):'No '+moneyFilter+' items.')+'</div>';return;
   }
   el.innerHTML=show.map(({c,b,balance,paid,total,bucket,daysUnpaid})=>{
     const pct=total>0?Math.min(100,Math.round(paid/total*100)):0;
@@ -3496,7 +3504,7 @@ function openManualInvoiceModal(){
   openCollectModal();
 }
 
-// ── quickAction('collect') — prioritized collect modal ───────────────────
+// ── quickAction('collect'): prioritized collect modal ───────────────────
 function refreshCollectLabel(){
   const owing=bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01);
   const completed=owing.filter(b=>b.completion_date);
@@ -3523,7 +3531,7 @@ function openCollectModal(){
   overlay.className='zmodal-overlay';
   overlay.style.cssText='align-items:center;padding:16px';
   const content=items.length===0?
-    '<div style="text-align:center;padding:24px;color:var(--text3)">'+svgIcon('🎉',{size:16})+' Nothing to collect — all paid!</div>':
+    '<div style="text-align:center;padding:24px;color:var(--text3)">'+svgIcon('🎉',{size:16})+' Nothing to collect, all paid!</div>':
     items.map(({c,b,balance,paid,daysOverdue,isCompleted})=>{
       const urgTag=!isCompleted?'<span style="font-size:10px;background:var(--border2);color:var(--text3);padding:2px 5px;border-radius:4px;font-weight:800">Job not done</span>':
         daysOverdue>=7?'<span style="font-size:10px;background:#A32D2D;color:#fff;padding:2px 5px;border-radius:4px;font-weight:800">'+daysOverdue+'d overdue</span>':

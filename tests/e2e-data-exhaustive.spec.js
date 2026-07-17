@@ -8,15 +8,15 @@
 
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
-test.describe('data.js — exhaustive coverage', () => {
+test.describe('data.js: exhaustive coverage', () => {
   let page;
 
-  // Idempotent fixture seed — filter-then-push so it's safe to re-run. Called in
+  // Idempotent fixture seed, filter-then-push so it's safe to re-run. Called in
   // beforeAll AND beforeEach: a late-resolving background cloud load reassigns the
   // in-memory arrays after the initial seed and drops these fixtures, so a test running
   // after that clobber saw getClientById(55501) return undefined on slower WebKit boots
   // (task #22 race). Re-seeding before EVERY test guarantees the canonical fixture is
-  // present the moment each test reads it — one file-scoped fix for the whole spec.
+  // present the moment each test reads it, one file-scoped fix for the whole spec.
   const seedFixtures = () => page.evaluate(() => {
     clients = clients.filter(c => c.id !== 55501 && c.id !== 55502 && c.id !== 55503);
     bids    = bids.filter(b => b.id !== 44401 && b.id !== 44402);
@@ -50,7 +50,7 @@ test.describe('data.js — exhaustive coverage', () => {
     await seedFixtures();
   });
 
-  // Re-seed before EVERY test — repairs any fixture a late background cloud load
+  // Re-seed before EVERY test, repairs any fixture a late background cloud load
   // clobbered after boot (task #22). Idempotent (filter-then-push), so tests that
   // mutate-and-restore their own fixtures still start from the canonical state.
   test.beforeEach(async () => { await seedFixtures(); });
@@ -68,7 +68,7 @@ test.describe('data.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 1. _pickEstAddr — removed with the paint estimator's multi-property address
+  // 1. _pickEstAddr: removed with the paint estimator's multi-property address
   //    hint (§7.1: assert the old entry point is actually gone)
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_pickEstAddr', () => {
@@ -87,7 +87,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 2. _wmoIcon
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_wmoIcon', () => {
-    test('null/undefined inputs — does not throw', async () => {
+    test('null/undefined inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const a = _wmoIcon(null, null);
@@ -197,7 +197,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.label).toBe('');
     });
 
-    test('negative code, precip 0 — does not throw', async () => {
+    test('negative code, precip 0, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = _wmoIcon(-5, 0); return { ok: true, hasIcon: !!res?.icon }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -205,7 +205,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('string inputs — does not throw', async () => {
+    test('string inputs, does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const res = _wmoIcon('abc', 'xyz'); return { ok: true, hasIcon: !!res?.icon }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -213,7 +213,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — all return valid objects', async () => {
+    test('concurrent calls (5x): all return valid objects', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) {
@@ -250,7 +250,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 3. fetchWeather
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('fetchWeather', () => {
-    test('no location set — returns empty object without throwing', async () => {
+    test('no location set, returns empty object without throwing', async () => {
       const r = await page.evaluate(async () => {
         const origLat = S.weatherLat;
         const origLon = S.weatherLon;
@@ -311,14 +311,14 @@ test.describe('data.js — exhaustive coverage', () => {
         _weatherCache = null;
         _weatherCacheTime = 0;
         _weatherLoading = false;
-        // fetch will fail because CI has the real URL blocked — just confirm flag resets
+        // fetch will fail because CI has the real URL blocked, just confirm flag resets
         await fetchWeather();
         return { loadingReset: _weatherLoading === false };
       });
       expect(r.loadingReset).toBe(true);
     });
 
-    test('concurrent calls — second call returns cache of first, no double-load', async () => {
+    test('concurrent calls, second call returns cache of first, no double-load', async () => {
       const r = await page.evaluate(async () => {
         _weatherCache = { today: { icon: '☀️' } };
         _weatherCacheTime = Date.now();
@@ -334,7 +334,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 4. _proposalBizHeader
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_proposalBizHeader', () => {
-    test('null/undefined/empty args — does not throw', async () => {
+    test('null/undefined/empty args, does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const a = _proposalBizHeader(null, null, null);
@@ -347,7 +347,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.aStr).toBe(true);
     });
 
-    test('golden path — returns HTML string containing biz name', async () => {
+    test('golden path, returns HTML string containing biz name', async () => {
       const r = await page.evaluate(() => {
         const orig = S.logoData;
         S.logoData = '';
@@ -360,7 +360,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasLic).toBe(true);
     });
 
-    test('with logoData set — renders img tag instead of text', async () => {
+    test('with logoData set, renders img tag instead of text', async () => {
       const r = await page.evaluate(() => {
         const orig = S.logoData;
         S.logoData = 'data:image/png;base64,abc123';
@@ -372,7 +372,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasImgSrc).toBe(true);
     });
 
-    test('empty phone — phone line is omitted', async () => {
+    test('empty phone, phone line is omitted', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const html = _proposalBizHeader('Test Biz', '', 'Licensed');
@@ -381,7 +381,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasPhone).toBe(false);
     });
 
-    test('empty lic — lic line is omitted', async () => {
+    test('empty lic, lic line is omitted', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const html = _proposalBizHeader('Test Biz', '555-0000', '');
@@ -390,7 +390,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasLic).toBe(false);
     });
 
-    test('XSS in bname — HTML-escaped', async () => {
+    test('XSS in bname, HTML-escaped', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const html = _proposalBizHeader('<script>alert(1)</script>', '', '');
@@ -400,7 +400,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.escaped).toBe(true);
     });
 
-    test('XSS in phone — HTML-escaped', async () => {
+    test('XSS in phone, HTML-escaped', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const html = _proposalBizHeader('Biz', '<img onerror=alert(1)>', '');
@@ -409,7 +409,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.safe).toBe(true);
     });
 
-    test('concurrent calls (5x) — all return strings', async () => {
+    test('concurrent calls (5x): all return strings', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         let ok = 0;
@@ -424,7 +424,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(5);
     });
 
-    test('very long strings — does not throw, returns string', async () => {
+    test('very long strings, does not throw, returns string', async () => {
       const r = await page.evaluate(() => {
         S.logoData = '';
         const long = 'A'.repeat(5000);
@@ -442,7 +442,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 5. getRole
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getRole', () => {
-    test('_user is null — returns "owner"', async () => {
+    test('_user is null, returns "owner"', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = null;
@@ -453,7 +453,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('owner');
     });
 
-    test('_user has no role — returns "owner"', async () => {
+    test('_user has no role, returns "owner"', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { name: 'Test', id: 'x' };
@@ -464,7 +464,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('owner');
     });
 
-    test('_user.role = "co-owner" — returns "co-owner"', async () => {
+    test('_user.role = "co-owner", returns "co-owner"', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { role: 'co-owner' };
@@ -475,7 +475,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('co-owner');
     });
 
-    test('_user.role = "employee" — returns "employee"', async () => {
+    test('_user.role = "employee", returns "employee"', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { role: 'employee' };
@@ -486,7 +486,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('employee');
     });
 
-    test('concurrent calls (5x) — stable result', async () => {
+    test('concurrent calls (5x): stable result', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { role: 'owner' };
@@ -503,7 +503,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 6. isOwner
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('isOwner', () => {
-    test('owner role, not employee — returns true', async () => {
+    test('owner role, not employee, returns true', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'owner' };
@@ -515,7 +515,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('co-owner role, not employee — returns true', async () => {
+    test('co-owner role, not employee, returns true', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'co-owner' };
@@ -527,7 +527,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('employee role — returns false', async () => {
+    test('employee role, returns false', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'employee' };
@@ -539,7 +539,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_isEmployee = true — returns false even if role is owner', async () => {
+    test('_isEmployee = true, returns false even if role is owner', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'owner' };
@@ -551,7 +551,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_user null, _isEmployee false — returns true (defaults to owner)', async () => {
+    test('_user null, _isEmployee false, returns true (defaults to owner)', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = null;
@@ -568,7 +568,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 7. isEmployee
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('isEmployee', () => {
-    test('_isEmployee false — returns false', async () => {
+    test('_isEmployee false, returns false', async () => {
       const r = await page.evaluate(() => {
         const orig = _isEmployee;
         _isEmployee = false;
@@ -579,7 +579,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_isEmployee true — returns true', async () => {
+    test('_isEmployee true, returns true', async () => {
       const r = await page.evaluate(() => {
         const orig = _isEmployee;
         _isEmployee = true;
@@ -595,7 +595,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 8. canSeeTaxes
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('canSeeTaxes', () => {
-    test('owner — returns true', async () => {
+    test('owner: returns true', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _user = { role: 'owner' };
@@ -607,7 +607,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('employee — returns false', async () => {
+    test('employee: returns false', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user, origEmp = _isEmployee;
         _isEmployee = true;
@@ -624,7 +624,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 9. isLifetimeAccount
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('isLifetimeAccount', () => {
-    test('_account null — returns false', async () => {
+    test('_account null, returns false', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = null;
@@ -635,7 +635,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_account.is_lifetime = false — returns false', async () => {
+    test('_account.is_lifetime = false, returns false', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { is_lifetime: false };
@@ -646,7 +646,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(false);
     });
 
-    test('_account.is_lifetime = true — returns true', async () => {
+    test('_account.is_lifetime = true, returns true', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { is_lifetime: true };
@@ -657,7 +657,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('_account.is_lifetime = 1 (truthy) — returns true', async () => {
+    test('_account.is_lifetime = 1 (truthy): returns true', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { is_lifetime: 1 };
@@ -668,7 +668,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('_account missing is_lifetime key — returns false', async () => {
+    test('_account missing is_lifetime key, returns false', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { business_name: 'No Lifetime' };
@@ -684,7 +684,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 10. getBusinessName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getBusinessName', () => {
-    test('_account null, S.bname empty — returns "TradeDesk"', async () => {
+    test('_account null, S.bname empty, returns "TradeDesk"', async () => {
       const r = await page.evaluate(() => {
         const origAcc = _account, origBname = S.bname;
         _account = null;
@@ -696,7 +696,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('TradeDesk');
     });
 
-    test('_account has business_name — returns it', async () => {
+    test('_account has business_name, returns it', async () => {
       const r = await page.evaluate(() => {
         const orig = _account;
         _account = { business_name: 'Elite Painters LLC' };
@@ -707,7 +707,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Elite Painters LLC');
     });
 
-    test('_account null, S.bname set — returns S.bname', async () => {
+    test('_account null, S.bname set, returns S.bname', async () => {
       const r = await page.evaluate(() => {
         const origAcc = _account, origBname = S.bname;
         _account = null;
@@ -719,7 +719,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Fallback Name');
     });
 
-    test('_account.business_name empty string — falls through to S.bname', async () => {
+    test('_account.business_name empty string, falls through to S.bname', async () => {
       const r = await page.evaluate(() => {
         const origAcc = _account, origBname = S.bname;
         _account = { business_name: '' };
@@ -736,7 +736,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 11. getUserName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getUserName', () => {
-    test('_user null — returns empty string', async () => {
+    test('_user null, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = null;
@@ -747,7 +747,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('_user.name is email address — returns empty string', async () => {
+    test('_user.name is email address, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { name: 'zach@test.com' };
@@ -758,7 +758,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('_user.name is real name — returns it', async () => {
+    test('_user.name is real name, returns it', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { name: 'Zach Johnson' };
@@ -769,7 +769,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Zach Johnson');
     });
 
-    test('_user.name empty string — returns empty string', async () => {
+    test('_user.name empty string, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { name: '' };
@@ -780,7 +780,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('_user.name undefined — returns empty string', async () => {
+    test('_user.name undefined, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const orig = _user;
         _user = { id: 'test-id' };
@@ -796,7 +796,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 12. getOwnerName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getOwnerName', () => {
-    test('no supaUser, no S.ownerName, _user null — returns empty string', async () => {
+    test('no supaUser, no S.ownerName, _user null, returns empty string', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
         const origUser = _user;
@@ -818,7 +818,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.result).toBe('');
     });
 
-    test('S.ownerName is an email — ignored, returns ""', async () => {
+    test('S.ownerName is an email, ignored, returns ""', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
         const origUser = _user, origOwner = S.ownerName;
@@ -835,7 +835,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('');
     });
 
-    test('S.ownerName is a real name — returns it', async () => {
+    test('S.ownerName is a real name, returns it', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
         const origUser = _user, origOwner = S.ownerName;
@@ -852,7 +852,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Zachary Johnson');
     });
 
-    test('_user.name is real name (last fallback) — returns it', async () => {
+    test('_user.name is real name (last fallback), returns it', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supaUser !== 'undefined' ? _supaUser : undefined;
         const origUser = _user, origOwner = S.ownerName;
@@ -896,7 +896,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 13. setOwnerName
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('setOwnerName', () => {
-    test('null — silently sets empty, does not throw', async () => {
+    test('null: silently sets empty, does not throw', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -910,7 +910,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.sOwnerName).toBe('');
     });
 
-    test('undefined — silently sets empty', async () => {
+    test('undefined: silently sets empty', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -924,7 +924,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ownerName).toBe('');
     });
 
-    test('email address — silently rejected (email guard)', async () => {
+    test('email address, silently rejected (email guard)', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -939,7 +939,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.userName).toBe('');
     });
 
-    test('golden path — sets S.ownerName and _user.name', async () => {
+    test('golden path, sets S.ownerName and _user.name', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -952,7 +952,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.userName).toBe('Jane Contractor');
     });
 
-    test('empty string — clears name without throwing', async () => {
+    test('empty string, clears name without throwing', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -966,7 +966,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ownerName).toBe('');
     });
 
-    test('_user null — does not throw (guards _user assignment)', async () => {
+    test('_user null, does not throw (guards _user assignment)', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         try {
@@ -980,7 +980,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ownerName).toBe('Bob Builder');
     });
 
-    test('concurrent calls (5x) — last write wins, no corruption', async () => {
+    test('concurrent calls (5x): last write wins, no corruption', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         _user = { name: '' };
@@ -992,7 +992,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('Name 4');
     });
 
-    test('very long name — does not throw', async () => {
+    test('very long name, does not throw', async () => {
       const r = await page.evaluate(() => {
         const origOwner = S.ownerName, origUser = _user;
         _user = { name: '' };
@@ -1011,7 +1011,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 14. _getBracketsForYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getBracketsForYear', () => {
-    test('null — does not throw, returns brackets object', async () => {
+    test('null: does not throw, returns brackets object', async () => {
       const r = await page.evaluate(() => {
         try { const b = _getBracketsForYear(null); return { ok: true, hasB10: 'b10' in b }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1019,7 +1019,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { const b = _getBracketsForYear(undefined); return { ok: true, hasB10: 'b10' in b }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1027,7 +1027,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('current year — returns S-based values', async () => {
+    test('current year, returns S-based values', async () => {
       const r = await page.evaluate(() => {
         const yr = new Date().getFullYear();
         const b = _getBracketsForYear(yr);
@@ -1037,7 +1037,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasIrsRate).toBe(true);
     });
 
-    test('2025 — returns TAX_HISTORY values', async () => {
+    test('2025: returns TAX_HISTORY values', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear(2025);
         return { b10: b.b10, irsRate: b.irsRate };
@@ -1046,7 +1046,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.irsRate).toBe(0.700);
     });
 
-    test('2023 — returns correct historical data', async () => {
+    test('2023: returns correct historical data', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear(2023);
         return { b10: b.b10, fedSingle: b.fedSingle };
@@ -1055,7 +1055,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.fedSingle).toBe(13850);
     });
 
-    test('2019 (oldest in history) — returns data', async () => {
+    test('2019 (oldest in history), returns data', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear(2019);
         return { b10: b.b10 };
@@ -1063,7 +1063,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.b10).toBe(9700);
     });
 
-    test('1800 (before history) — falls through to TAX_HISTORY[2025]', async () => {
+    test('1800 (before history), falls through to TAX_HISTORY[2025]', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear(1800);
         return { b10: b.b10 };
@@ -1071,7 +1071,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.b10).toBe(11925);
     });
 
-    test('string year "2023" — parses correctly', async () => {
+    test('string year "2023", parses correctly', async () => {
       const r = await page.evaluate(() => {
         const b = _getBracketsForYear('2023');
         return { b10: b.b10 };
@@ -1079,7 +1079,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.b10).toBe(11000);
     });
 
-    test('0 — does not throw, returns fallback', async () => {
+    test('0: does not throw, returns fallback', async () => {
       const r = await page.evaluate(() => {
         try { const b = _getBracketsForYear(0); return { ok: true, hasB10: 'b10' in b }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1087,7 +1087,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — consistent results', async () => {
+    test('concurrent calls (5x): consistent results', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(_getBracketsForYear(2023).b10); }
@@ -1101,7 +1101,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 15. _getFedBracketsForYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getFedBracketsForYear', () => {
-    test('null — does not throw, returns bracket object', async () => {
+    test('null: does not throw, returns bracket object', async () => {
       const r = await page.evaluate(() => {
         try { const b = _getFedBracketsForYear(null); return { ok: true, hasSingle: Array.isArray(b.single) }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1109,7 +1109,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path — returns single, mfj, mfs, hoh bracket arrays', async () => {
+    test('golden path, returns single, mfj, mfs, hoh bracket arrays', async () => {
       const r = await page.evaluate(() => {
         const b = _getFedBracketsForYear(2023);
         return {
@@ -1153,7 +1153,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 16. _getStdDedForYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getStdDedForYear', () => {
-    test('null/undefined — does not throw', async () => {
+    test('null/undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try {
           const a = _getStdDedForYear(null, null);
@@ -1164,27 +1164,27 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path single — returns correct deduction', async () => {
+    test('golden path single, returns correct deduction', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2025, 'single'));
       expect(r).toBe(15000);
     });
 
-    test('golden path mfj — returns correct deduction', async () => {
+    test('golden path mfj, returns correct deduction', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2025, 'mfj'));
       expect(r).toBe(30000);
     });
 
-    test('golden path mfs — returns correct deduction', async () => {
+    test('golden path mfs, returns correct deduction', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2025, 'mfs'));
       expect(r).toBe(15000);
     });
 
-    test('golden path hoh — returns correct deduction', async () => {
+    test('golden path hoh, returns correct deduction', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2025, 'hoh'));
       expect(r).toBe(22500);
     });
 
-    test('unknown status — falls back to fedSingle', async () => {
+    test('unknown status, falls back to fedSingle', async () => {
       const r = await page.evaluate(() => {
         const result = _getStdDedForYear(2025, 'unknown_status');
         const b = _getBracketsForYear(2025);
@@ -1193,7 +1193,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.result).toBe(r.expected);
     });
 
-    test('historical year 2023 single — returns correct value', async () => {
+    test('historical year 2023 single, returns correct value', async () => {
       const r = await page.evaluate(() => _getStdDedForYear(2023, 'single'));
       expect(r).toBe(13850);
     });
@@ -1203,7 +1203,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 17. _getIrsRateForYear
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getIrsRateForYear', () => {
-    test('null — does not throw, returns a number', async () => {
+    test('null: does not throw, returns a number', async () => {
       const r = await page.evaluate(() => {
         try { const v = _getIrsRateForYear(null); return { ok: true, isNum: typeof v === 'number' }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -1212,22 +1212,22 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isNum).toBe(true);
     });
 
-    test('2025 — returns 0.700', async () => {
+    test('2025: returns 0.700', async () => {
       const r = await page.evaluate(() => _getIrsRateForYear(2025));
       expect(r).toBe(0.700);
     });
 
-    test('2023 — returns 0.655', async () => {
+    test('2023: returns 0.655', async () => {
       const r = await page.evaluate(() => _getIrsRateForYear(2023));
       expect(r).toBe(0.655);
     });
 
-    test('2019 — returns 0.580', async () => {
+    test('2019: returns 0.580', async () => {
       const r = await page.evaluate(() => _getIrsRateForYear(2019));
       expect(r).toBe(0.580);
     });
 
-    test('current year — returns S.irsRate', async () => {
+    test('current year, returns S.irsRate', async () => {
       const r = await page.evaluate(() => {
         const yr = new Date().getFullYear();
         const origRate = S.irsRate;
@@ -1239,7 +1239,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(0.725);
     });
 
-    test('unknown year — falls back to S.irsRate or default', async () => {
+    test('unknown year, falls back to S.irsRate or default', async () => {
       const r = await page.evaluate(() => {
         const result = _getIrsRateForYear(1990);
         return { isNum: typeof result === 'number', gtZero: result > 0 };
@@ -1253,7 +1253,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 18. _getActiveStateData
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_getActiveStateData', () => {
-    test('no stateRates — returns KS-default-like object', async () => {
+    test('no stateRates, returns KS-default-like object', async () => {
       const r = await page.evaluate(() => {
         const origRates = S.stateRates, origState = S.state;
         S.stateRates = {};
@@ -1267,7 +1267,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasTop).toBe(true);
     });
 
-    test('stateRates[state] set — returns that data', async () => {
+    test('stateRates[state] set, returns that data', async () => {
       const r = await page.evaluate(() => {
         const origRates = S.stateRates, origState = S.state;
         S.state = 'MO';
@@ -1280,7 +1280,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.high).toBe(5.4);
     });
 
-    test('stateRates null — does not throw', async () => {
+    test('stateRates null, does not throw', async () => {
       const r = await page.evaluate(() => {
         const origRates = S.stateRates;
         S.stateRates = null;
@@ -1291,7 +1291,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('S.state set but stateRates does not have that key — returns KS defaults', async () => {
+    test('S.state set but stateRates does not have that key, returns KS defaults', async () => {
       const r = await page.evaluate(() => {
         const origRates = S.stateRates, origState = S.state;
         S.state = 'ZZ'; // non-existent state
@@ -1308,32 +1308,32 @@ test.describe('data.js — exhaustive coverage', () => {
   // 19. _buildStateBrackets
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_buildStateBrackets', () => {
-    test('null data — returns [[Infinity, 0]]', async () => {
+    test('null data, returns [[Infinity, 0]]', async () => {
       const r = await page.evaluate(() => _buildStateBrackets(null, 'single'));
       expect(r).toEqual([[Infinity, 0]]);
     });
 
-    test('undefined data — returns [[Infinity, 0]]', async () => {
+    test('undefined data, returns [[Infinity, 0]]', async () => {
       const r = await page.evaluate(() => _buildStateBrackets(undefined, 'single'));
       expect(r).toEqual([[Infinity, 0]]);
     });
 
-    test('data.noTax = true — returns [[Infinity, 0]]', async () => {
+    test('data.noTax = true, returns [[Infinity, 0]]', async () => {
       const r = await page.evaluate(() => _buildStateBrackets({ noTax: true, low: 3, high: 5 }, 'single'));
       expect(r).toEqual([[Infinity, 0]]);
     });
 
-    test('data with no high rate — returns [[Infinity, 0]]', async () => {
+    test('data with no high rate, returns [[Infinity, 0]]', async () => {
       const r = await page.evaluate(() => _buildStateBrackets({ low: 3, high: 0, top: 0 }, 'single'));
       expect(r).toEqual([[Infinity, 0]]);
     });
 
-    test('single-rate state (low === high) — returns flat rate bracket', async () => {
+    test('single-rate state (low === high), returns flat rate bracket', async () => {
       const r = await page.evaluate(() => _buildStateBrackets({ low: 5, high: 5, top: 50000 }, 'single'));
       expect(r).toEqual([[Infinity, 0.05]]);
     });
 
-    test('two-bracket state single — returns two brackets', async () => {
+    test('two-bracket state single, returns two brackets', async () => {
       const r = await page.evaluate(() => {
         return _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'single');
       });
@@ -1344,7 +1344,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r[1][1]).toBeCloseTo(0.057);
     });
 
-    test('mfj status — top threshold doubled', async () => {
+    test('mfj status, top threshold doubled', async () => {
       const r = await page.evaluate(() => {
         const single = _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'single');
         const mfj    = _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'mfj');
@@ -1353,7 +1353,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.mfjTop).toBe(r.singleTop * 2);
     });
 
-    test('qss status — same as mfj', async () => {
+    test('qss status, same as mfj', async () => {
       const r = await page.evaluate(() => {
         const mfj = _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'mfj');
         const qss = _buildStateBrackets({ low: 3.1, high: 5.7, top: 15000, noTax: false }, 'qss');
@@ -1362,7 +1362,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.qssTop).toBe(r.mfjTop);
     });
 
-    test('mfs status — top = 0.9 * base', async () => {
+    test('mfs status, top = 0.9 * base', async () => {
       const r = await page.evaluate(() => {
         const single = _buildStateBrackets({ low: 3.1, high: 5.7, top: 10000, noTax: false }, 'single');
         const mfs    = _buildStateBrackets({ low: 3.1, high: 5.7, top: 10000, noTax: false }, 'mfs');
@@ -1371,7 +1371,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.mfsTop).toBe(Math.round(r.singleTop * 0.9));
     });
 
-    test('data with brackets array — uses bracket structure', async () => {
+    test('data with brackets array, uses bracket structure', async () => {
       const r = await page.evaluate(() => {
         const data = { noTax: false, brackets: [
           { top: 15000, rate: 3.1 },
@@ -1384,7 +1384,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.last).toBe(Infinity);
     });
 
-    test('concurrent calls (5x) — consistent result', async () => {
+    test('concurrent calls (5x): consistent result', async () => {
       const r = await page.evaluate(() => {
         const data = { low: 3.1, high: 5.7, top: 15000 };
         const results = [];
@@ -1418,7 +1418,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.valid).toBe(true);
     });
 
-    test('concurrent calls (5x) — always updates S.settingsTs', async () => {
+    test('concurrent calls (5x): always updates S.settingsTs', async () => {
       const r = await page.evaluate(() => {
         S.settingsTs = 0;
         for (let i = 0; i < 5; i++) { _settingsChanged(); }
@@ -1463,7 +1463,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.testKey).toBe(true);
     });
 
-    test('handles corrupted localStorage — does not throw', async () => {
+    test('handles corrupted localStorage, does not throw', async () => {
       const r = await page.evaluate(() => {
         localStorage.setItem('zp3_S', '{INVALID{{{{');
         try { saveAll(); return { ok: true }; }
@@ -1473,7 +1473,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no corruption', async () => {
+    test('concurrent calls (5x): no corruption', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -1533,7 +1533,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.goal).toBe(9999);
     });
 
-    test('corrupted zp3_S — does not throw, uses defaults', async () => {
+    test('corrupted zp3_S, does not throw, uses defaults', async () => {
       const r = await page.evaluate(() => {
         const orig = localStorage.getItem('zp3_S');
         localStorage.setItem('zp3_S', '{INVALID{{{{');
@@ -1547,7 +1547,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted zp3_chk — does not throw', async () => {
+    test('corrupted zp3_chk, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = localStorage.getItem('zp3_chk');
         localStorage.setItem('zp3_chk', '{bad json{{');
@@ -1561,7 +1561,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('corrupted zp3_ev — does not throw', async () => {
+    test('corrupted zp3_ev, does not throw', async () => {
       const r = await page.evaluate(() => {
         const orig = localStorage.getItem('zp3_ev');
         localStorage.setItem('zp3_ev', '[bad{{');
@@ -1638,7 +1638,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -1692,7 +1692,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 23. getClientById
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientById', () => {
-    test('null id — returns undefined', async () => {
+    test('null id, returns undefined', async () => {
       const r = await page.evaluate(() => {
         const result = getClientById(null);
         return { isUndef: result === undefined };
@@ -1700,7 +1700,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isUndef).toBe(true);
     });
 
-    test('undefined id — returns undefined', async () => {
+    test('undefined id, returns undefined', async () => {
       const r = await page.evaluate(() => {
         const result = getClientById(undefined);
         return { isUndef: result === undefined };
@@ -1708,7 +1708,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isUndef).toBe(true);
     });
 
-    test('non-existent id — returns undefined', async () => {
+    test('non-existent id, returns undefined', async () => {
       const r = await page.evaluate(() => {
         const result = getClientById(9999999);
         return { isUndef: result === undefined };
@@ -1716,7 +1716,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isUndef).toBe(true);
     });
 
-    test('golden path — returns correct client object', async () => {
+    test('golden path, returns correct client object', async () => {
       const r = await page.evaluate(() => {
         const c = getClientById(55501);
         return { found: !!c, name: c?.name };
@@ -1725,7 +1725,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.name).toBe('Data Test Alpha');
     });
 
-    test('string id matching numeric — may return undefined (strict equality)', async () => {
+    test('string id matching numeric, may return undefined (strict equality)', async () => {
       const r = await page.evaluate(() => {
         // clients use numeric ids; string '55501' should not match id 55501 via ===
         const result = getClientById('55501');
@@ -1735,7 +1735,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(typeof r.isUndef).toBe('boolean');
     });
 
-    test('concurrent calls (5x) — all return same client', async () => {
+    test('concurrent calls (5x): all return same client', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(getClientById(55501)?.name); }
@@ -1749,87 +1749,87 @@ test.describe('data.js — exhaustive coverage', () => {
   // 24. getClientTier
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientTier', () => {
-    test('null client — returns "C"', async () => {
+    test('null client, returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier(null));
       expect(r).toBe('C');
     });
 
-    test('undefined client — returns "C"', async () => {
+    test('undefined client, returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier(undefined));
       expect(r).toBe('C');
     });
 
-    test('client with explicit tier "A" — returns "A"', async () => {
+    test('client with explicit tier "A", returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ tier: 'A' }));
       expect(r).toBe('A');
     });
 
-    test('client with explicit tier "B" — returns "B"', async () => {
+    test('client with explicit tier "B", returns "B"', async () => {
       const r = await page.evaluate(() => getClientTier({ tier: 'B' }));
       expect(r).toBe('B');
     });
 
-    test('client with explicit tier "C" — returns "C"', async () => {
+    test('client with explicit tier "C", returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier({ tier: 'C' }));
       expect(r).toBe('C');
     });
 
-    test('client source Referral — returns "A"', async () => {
+    test('client source Referral, returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ source: 'Referral' }));
       expect(r).toBe('A');
     });
 
-    test('client source "Real estate agent" — returns "A"', async () => {
+    test('client source "Real estate agent", returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ source: 'Real estate agent' }));
       expect(r).toBe('A');
     });
 
-    test('client source "Repeat customer" — returns "A"', async () => {
+    test('client source "Repeat customer", returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ source: 'Repeat customer' }));
       expect(r).toBe('A');
     });
 
-    test('A-occupation Realtor — returns "A"', async () => {
+    test('A-occupation Realtor, returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Realtor / Real estate agent' }));
       expect(r).toBe('A');
     });
 
-    test('A-occupation Attorney — returns "A"', async () => {
+    test('A-occupation Attorney, returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Attorney / lawyer' }));
       expect(r).toBe('A');
     });
 
-    test('A-occupation Doctor — returns "A"', async () => {
+    test('A-occupation Doctor, returns "A"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Doctor / physician' }));
       expect(r).toBe('A');
     });
 
-    test('B-occupation Engineer — returns "B"', async () => {
+    test('B-occupation Engineer, returns "B"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Engineer / tech' }));
       expect(r).toBe('B');
     });
 
-    test('B-occupation Nurse — returns "B"', async () => {
+    test('B-occupation Nurse, returns "B"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Nurse / healthcare' }));
       expect(r).toBe('B');
     });
 
-    test('B-occupation Teacher — returns "B"', async () => {
+    test('B-occupation Teacher, returns "B"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Teacher / educator' }));
       expect(r).toBe('B');
     });
 
-    test('unknown occupation — returns "C"', async () => {
+    test('unknown occupation, returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier({ occupation: 'Astronaut' }));
       expect(r).toBe('C');
     });
 
-    test('empty client object — returns "C"', async () => {
+    test('empty client object, returns "C"', async () => {
       const r = await page.evaluate(() => getClientTier({}));
       expect(r).toBe('C');
     });
 
-    test('concurrent calls (5x) — stable', async () => {
+    test('concurrent calls (5x): stable', async () => {
       const r = await page.evaluate(() => {
         const c = { source: 'Referral' };
         const results = [];
@@ -1859,17 +1859,17 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe('var(--text3)');
     });
 
-    test('null — returns text3 (fallback)', async () => {
+    test('null: returns text3 (fallback)', async () => {
       const r = await page.evaluate(() => getTierColor(null));
       expect(r).toBe('var(--text3)');
     });
 
-    test('undefined — returns text3 (fallback)', async () => {
+    test('undefined: returns text3 (fallback)', async () => {
       const r = await page.evaluate(() => getTierColor(undefined));
       expect(r).toBe('var(--text3)');
     });
 
-    test('unknown tier — returns text3', async () => {
+    test('unknown tier, returns text3', async () => {
       const r = await page.evaluate(() => getTierColor('Z'));
       expect(r).toBe('var(--text3)');
     });
@@ -1886,23 +1886,23 @@ test.describe('data.js — exhaustive coverage', () => {
   // 26. getClientMileage
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientMileage', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientMileage(null));
       expect(Array.isArray(r)).toBe(true);
       expect(r.length).toBe(0);
     });
 
-    test('undefined cid — returns empty array', async () => {
+    test('undefined cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientMileage(undefined));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('non-existent cid — returns empty array', async () => {
+    test('non-existent cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientMileage(9999999));
       expect(r.length).toBe(0);
     });
 
-    test('golden path — returns matching mileage entries', async () => {
+    test('golden path, returns matching mileage entries', async () => {
       const r = await page.evaluate(() => {
         // loadAll tests may drain the array in WebKit; re-seed if absent
         if (!mileage.find(m => m.id === 99901)) {
@@ -1915,7 +1915,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.miles).toBe(12.5);
     });
 
-    test('concurrent calls (5x) — all return same result', async () => {
+    test('concurrent calls (5x): all return same result', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(getClientMileage(55501).length); }
@@ -1929,12 +1929,12 @@ test.describe('data.js — exhaustive coverage', () => {
   // 27. getClientExpenses
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientExpenses', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientExpenses(null));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('golden path — returns matching expenses', async () => {
+    test('golden path, returns matching expenses', async () => {
       const r = await page.evaluate(() => {
         // loadAll tests may drain the array in WebKit; re-seed if absent
         if (!expenses.find(e => e.id === 11101)) {
@@ -1947,7 +1947,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.amount).toBe(100);
     });
 
-    test('non-existent cid — empty', async () => {
+    test('non-existent cid, empty', async () => {
       const r = await page.evaluate(() => getClientExpenses(9999999));
       expect(r.length).toBe(0);
     });
@@ -1957,18 +1957,18 @@ test.describe('data.js — exhaustive coverage', () => {
   // 28. getClientBids
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientBids', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientBids(null));
       expect(Array.isArray(r)).toBe(true);
       expect(r.length).toBe(0);
     });
 
-    test('undefined cid — returns empty array', async () => {
+    test('undefined cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientBids(undefined));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('golden path — excludes opportunities', async () => {
+    test('golden path, excludes opportunities', async () => {
       const r = await page.evaluate(() => {
         const rows = getClientBids(55501);
         const hasOpportunity = rows.some(b => b.status === 'opportunity');
@@ -1979,12 +1979,12 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.hasOpportunity).toBe(false);
     });
 
-    test('non-existent cid — returns empty array', async () => {
+    test('non-existent cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientBids(9999999));
       expect(r.length).toBe(0);
     });
 
-    test('concurrent calls (5x) — stable', async () => {
+    test('concurrent calls (5x): stable', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(getClientBids(55501).length); }
@@ -1998,12 +1998,12 @@ test.describe('data.js — exhaustive coverage', () => {
   // 29. getClientJobs
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientJobs', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientJobs(null));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('golden path — returns jobs for client', async () => {
+    test('golden path, returns jobs for client', async () => {
       const r = await page.evaluate(() => {
         if (!jobs.find(j => j.id === 33301)) {
           jobs.push({ id: 33301, client_id: 55501, bid_id: 44401, name: 'Data job', status: 'scheduled', start: '2099-11-01' });
@@ -2015,7 +2015,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.name).toBe('Data job');
     });
 
-    test('non-existent cid — empty', async () => {
+    test('non-existent cid, empty', async () => {
       const r = await page.evaluate(() => getClientJobs(9999999));
       expect(r.length).toBe(0);
     });
@@ -2025,12 +2025,12 @@ test.describe('data.js — exhaustive coverage', () => {
   // 30. getClientIncome
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('getClientIncome', () => {
-    test('null cid — returns empty array', async () => {
+    test('null cid, returns empty array', async () => {
       const r = await page.evaluate(() => getClientIncome(null));
       expect(Array.isArray(r)).toBe(true);
     });
 
-    test('golden path — returns income for client', async () => {
+    test('golden path, returns income for client', async () => {
       const r = await page.evaluate(() => {
         if (!income.find(i => i.id === 22201)) {
           income.push({ id: 22201, client_id: 55501, amount: 2000, date: '2026-01-01', method: 'Cash' });
@@ -2042,12 +2042,12 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.amount).toBe(2000);
     });
 
-    test('non-existent cid — empty', async () => {
+    test('non-existent cid, empty', async () => {
       const r = await page.evaluate(() => getClientIncome(9999999));
       expect(r.length).toBe(0);
     });
 
-    test('concurrent calls (5x) — stable', async () => {
+    test('concurrent calls (5x): stable', async () => {
       const r = await page.evaluate(() => {
         const results = [];
         for (let i = 0; i < 5; i++) { results.push(getClientIncome(55501).length); }
@@ -2061,7 +2061,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 31. _lookupProperty
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_lookupProperty', () => {
-    test('no card element in DOM — returns immediately without throwing', async () => {
+    test('no card element in DOM, returns immediately without throwing', async () => {
       const r = await page.evaluate(async () => {
         // Ensure no prop-card-test-id element
         document.getElementById('prop-card-test-id')?.remove();
@@ -2071,7 +2071,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null addr — returns early (card display none or early return)', async () => {
+    test('null addr, returns early (card display none or early return)', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-null-test';
@@ -2083,7 +2083,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined addr — does not throw', async () => {
+    test('undefined addr, does not throw', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-undef-test';
@@ -2095,7 +2095,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty string addr — card hidden (no zip/city-state match)', async () => {
+    test('empty string addr, card hidden (no zip/city-state match)', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-empty-test';
@@ -2108,11 +2108,11 @@ test.describe('data.js — exhaustive coverage', () => {
         finally { card.remove(); }
       });
       expect(r.ok).toBe(true);
-      // Short address has no zip or city/state — card should be hidden
+      // Short address has no zip or city/state: card should be hidden
       expect(r.display).toBe('none');
     });
 
-    test('valid address with zip — does not throw, card visible after debounce', async () => {
+    test('valid address with zip, does not throw, card visible after debounce', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-zip-test';
@@ -2130,7 +2130,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls — last call wins (timer reset), no crash', async () => {
+    test('concurrent calls, last call wins (timer reset), no crash', async () => {
       const r = await page.evaluate(async () => {
         const card = document.createElement('div');
         card.id = 'prop-card-concurrent';
@@ -2151,7 +2151,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 32. _applyScopeRates
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_applyScopeRates', () => {
-    test('null — does not throw', async () => {
+    test('null: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _applyScopeRates(null); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2159,7 +2159,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('undefined — does not throw', async () => {
+    test('undefined: does not throw', async () => {
       const r = await page.evaluate(() => {
         try { _applyScopeRates(undefined); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2167,7 +2167,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('empty array — sets _scopeRates to empty object', async () => {
+    test('empty array, sets _scopeRates to empty object', async () => {
       const r = await page.evaluate(() => {
         _applyScopeRates([]);
         return { isEmpty: Object.keys(window._scopeRates).length === 0 };
@@ -2175,7 +2175,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.isEmpty).toBe(true);
     });
 
-    test('golden path — maps rows to scope_id:trade keys', async () => {
+    test('golden path, maps rows to scope_id:trade keys', async () => {
       const r = await page.evaluate(() => {
         _applyScopeRates([
           { scope_id: 'prime', trade: 'painting', median_min: 60, p25_min: 45, p75_min: 75, sample_count: 100 },
@@ -2189,7 +2189,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.medianMin).toBe(60);
     });
 
-    test('duplicate rows — last write wins', async () => {
+    test('duplicate rows, last write wins', async () => {
       const r = await page.evaluate(() => {
         _applyScopeRates([
           { scope_id: 'tape', trade: 'painting', median_min: 20 },
@@ -2200,7 +2200,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r).toBe(99);
     });
 
-    test('missing scope_id — uses "undefined:trade" key without throwing', async () => {
+    test('missing scope_id, uses "undefined:trade" key without throwing', async () => {
       const r = await page.evaluate(() => {
         try { _applyScopeRates([{ trade: 'painting', median_min: 10 }]); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2208,7 +2208,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — _scopeRates stays an object', async () => {
+    test('concurrent calls (5x): _scopeRates stays an object', async () => {
       const r = await page.evaluate(() => {
         for (let i = 0; i < 5; i++) {
           _applyScopeRates([{ scope_id: 'caulk' + i, trade: 'painting', median_min: i * 10 }]);
@@ -2223,7 +2223,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 33. _fetchScopeRates
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_fetchScopeRates', () => {
-    test('_supa undefined — returns immediately without throwing', async () => {
+    test('_supa undefined, returns immediately without throwing', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supa !== 'undefined' ? _supa : '__MISSING__';
         try {
@@ -2239,7 +2239,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_supa null — returns immediately without throwing', async () => {
+    test('_supa null, returns immediately without throwing', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supa !== 'undefined' ? _supa : null;
         try {
@@ -2260,7 +2260,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         let ok = 0;
         for (let i = 0; i < 5; i++) {
@@ -2276,7 +2276,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // 34. _submitScopeBenchmarks
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_submitScopeBenchmarks', () => {
-    test('empty rows — returns immediately without throwing', async () => {
+    test('empty rows, returns immediately without throwing', async () => {
       const r = await page.evaluate(() => {
         try { _submitScopeBenchmarks([]); return { ok: true }; }
         catch (e) { return { ok: false, err: e.message }; }
@@ -2284,19 +2284,19 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('null rows — does not throw (length check guards against undefined)', async () => {
+    test('null rows, does not throw (length check guards against undefined)', async () => {
       const r = await page.evaluate(() => {
         try { _submitScopeBenchmarks(null); return { ok: true }; }
         catch (e) {
-          // If it throws because null.length fails, that is acceptable — test that it doesn't crash the page
+          // If it throws because null.length fails, that is acceptable, test that it doesn't crash the page
           return { ok: true, threw: true, err: e.message };
         }
       });
-      // Must not cause page crash — function itself may throw safely
+      // Must not cause page crash, function itself may throw safely
       expect(r.ok).toBe(true);
     });
 
-    test('_user null — returns early without throwing', async () => {
+    test('_user null, returns early without throwing', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user;
         _user = null;
@@ -2309,7 +2309,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('_supa undefined — returns early without throwing', async () => {
+    test('_supa undefined, returns early without throwing', async () => {
       const r = await page.evaluate(() => {
         const origSupa = typeof _supa !== 'undefined' ? _supa : null;
         const origUser = _user;
@@ -2324,7 +2324,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('golden path with mocked supa — does not throw', async () => {
+    test('golden path with mocked supa, does not throw', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user;
         _user = { id: 'test-user' };
@@ -2339,7 +2339,7 @@ test.describe('data.js — exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
-    test('concurrent calls (5x) — no crash', async () => {
+    test('concurrent calls (5x): no crash', async () => {
       const r = await page.evaluate(() => {
         const origUser = _user;
         _user = { id: 'test-user' };
@@ -2358,7 +2358,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // 35. Module state variable accessibility
   // ═══════════════════════════════════════════════════════════════════════════
-  test.describe('module state vars — accessible and correct types', () => {
+  test.describe('module state vars, accessible and correct types', () => {
     test('clients/bids/jobs/income/expenses/mileage are arrays', async () => {
       const r = await page.evaluate(() => ({
         clients:  Array.isArray(clients),
@@ -2465,7 +2465,7 @@ test.describe('data.js — exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // 36. _newBidId — internal utility
+  // 36. _newBidId: internal utility
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_newBidId', () => {
     test('returns a number', async () => {
@@ -2495,7 +2495,7 @@ test.describe('data.js — exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   // 37. No console errors
   // ═══════════════════════════════════════════════════════════════════════════
-  test('no console errors — data.js', async () => {
+  test('no console errors, data.js', async () => {
     assertNoErrors(page, 'data.js');
   });
 });

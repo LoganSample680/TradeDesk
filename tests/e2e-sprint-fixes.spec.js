@@ -1,18 +1,18 @@
 // @ts-check
 /**
- * Sprint-fix regression tests — May 30, 2026.
+ * Sprint-fix regression tests, May 30, 2026.
  *
  * Verifies every fix from the sprint:
  *  1. MO cancel statute is §407.705 (Home Solicitation Sales Act), not §407.675 or §407.714
  *  2. _stateKey uses client address state, not contractor home state
  *  3. sign.html lien notice replaces FULL sentence ("Under Missouri law…"), not just citation
- *  4. sign.html — "SIGNING FOR" banner removed from DOM
- *  5. sign.html — UETA checkbox text has no double period
- *  6. T&M toolbar — ← Home button + pencil rename icon present
- *  7. Scope toolbar — ← Home button + pencil rename icon present
- *  8. Email compose overlay — centered modal (align-items:center), not bottom sheet
- *  9. GEI send overlay — #_gei-send-overlay is a centered fixed-position modal
- * 10. Client hub — pay button uses var(--red), not near-black #1b1612
+ *  4. sign.html: "SIGNING FOR" banner removed from DOM
+ *  5. sign.html: UETA checkbox text has no double period
+ *  6. T&M toolbar, ← Home button + pencil rename icon present
+ *  7. Scope toolbar, ← Home button + pencil rename icon present
+ *  8. Email compose overlay, centered modal (align-items:center), not bottom sheet
+ *  9. GEI send overlay, #_gei-send-overlay is a centered fixed-position modal
+ * 10. Client hub, pay button uses var(--red), not near-black #1b1612
  */
 
 const {
@@ -22,10 +22,10 @@ const {
 } = require('./helpers');
 
 // ════════════════════════════════════════════════════════════════════════════
-//  1. LEGAL MODULE — MO STATUTE §407.705
+//  1. LEGAL MODULE, MO STATUTE §407.705
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Legal module — MO cancel statute is §407.705', () => {
+test.describe('Legal module, MO cancel statute is §407.705', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -60,7 +60,7 @@ test.describe('Legal module — MO cancel statute is §407.705', () => {
     }
   });
 
-  test('_lienNotice("MO") says "Missouri law" — not "Kansas law"', async () => {
+  test('_lienNotice("MO") says "Missouri law", not "Kansas law"', async () => {
     const result = await page.evaluate(() => {
       if (typeof _lienNotice !== 'function') return null;
       return _lienNotice('MO');
@@ -86,10 +86,10 @@ test.describe('Legal module — MO cancel statute is §407.705', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  2. _stateKey — client address state beats contractor home state
+//  2. _stateKey: client address state beats contractor home state
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('_stateKey — client address state takes priority over contractor home state', () => {
+test.describe('_stateKey: client address state takes priority over contractor home state', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -141,10 +141,10 @@ test.describe('_stateKey — client address state takes priority over contractor
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  3. sign.html — MO LIEN NOTICE SAYS "MISSOURI LAW", NOT "KANSAS LAW"
+//  3. sign.html: MO LIEN NOTICE SAYS "MISSOURI LAW", NOT "KANSAS LAW"
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — lien notice in proposal body shows correct state name + statute', () => {
+test.describe('sign.html: lien notice in proposal body shows correct state name + statute', () => {
   let page;
 
   // Simulates a T&M proposal saved when contractor was in KS, but job addr is MO.
@@ -213,10 +213,10 @@ test.describe('sign.html — lien notice in proposal body shows correct state na
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  3b. sign.html — old generic lien text (HTML-entity apostrophe) is upgraded
+//  3b. sign.html: old generic lien text (HTML-entity apostrophe) is upgraded
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — generic &#39; lien text upgraded to state-specific notice', () => {
+test.describe('sign.html: generic &#39; lien text upgraded to state-specific notice', () => {
   let page;
 
   // Simulates a pre-sprint T&M proposal where the template used &#39; (HTML entity)
@@ -289,10 +289,10 @@ test.describe('sign.html — generic &#39; lien text upgraded to state-specific 
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  4. sign.html — "SIGNING FOR" BANNER REMOVED
+//  4. sign.html: "SIGNING FOR" BANNER REMOVED
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — "SIGNING FOR" banner removed from DOM', () => {
+test.describe('sign.html: "SIGNING FOR" banner removed from DOM', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -327,10 +327,10 @@ test.describe('sign.html — "SIGNING FOR" banner removed from DOM', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  5. sign.html — UETA TEXT NO DOUBLE PERIOD
+//  5. sign.html: UETA TEXT NO DOUBLE PERIOD
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('sign.html — UETA checkbox text has no double period', () => {
+test.describe('sign.html: UETA checkbox text has no double period', () => {
   let page;
 
   const MOCK_UETA = {
@@ -358,7 +358,7 @@ test.describe('sign.html — UETA checkbox text has no double period', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('no separate UETA agreement checkbox — the signature is the consent (owner directive 2026-07-13)', async () => {
+  test('no separate UETA agreement checkbox, the signature is the consent (owner directive 2026-07-13)', async () => {
     const ckCount = await page.locator('#sig-ck').count();
     expect(ckCount, 'checkbox must be deleted, not just hidden').toBe(0);
   });
@@ -378,10 +378,10 @@ test.describe('sign.html — UETA checkbox text has no double period', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  6. TOOLBARS — HOME BUTTON AND PENCIL ICON
+//  6. TOOLBARS: HOME BUTTON AND PENCIL ICON
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Estimate toolbars — ← Home button and pencil rename icon', () => {
+test.describe('Estimate toolbars, ← Home button and pencil rename icon', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -392,7 +392,7 @@ test.describe('Estimate toolbars — ← Home button and pencil rename icon', ()
     await waitForAppBoot(page);
     // tm-edit-title-btn lives inside tm-topbar-wrap, rendered by _geiRenderTopBar
     // (called from _tmShowPage on a real page visit) rather than existing
-    // statically in the HTML — render it here since this block only checks DOM.
+    // statically in the HTML, render it here since this block only checks DOM.
     await page.evaluate(() => {
       if (typeof _geiRenderTopBar === 'function') _geiRenderTopBar('tm', 'Time &amp; Materials proposal', '_editTMTitle');
     });
@@ -442,10 +442,10 @@ test.describe('Estimate toolbars — ← Home button and pencil rename icon', ()
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  7. EMAIL COMPOSE OVERLAY — CENTERED MODAL
+//  7. EMAIL COMPOSE OVERLAY, CENTERED MODAL
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Email compose overlay — centered modal (align-items:center)', () => {
+test.describe('Email compose overlay, centered modal (align-items:center)', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -521,10 +521,10 @@ test.describe('Email compose overlay — centered modal (align-items:center)', (
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  8. GEI SEND OVERLAY — #_gei-send-overlay IS A CENTERED MODAL
+//  8. GEI SEND OVERLAY, #_gei-send-overlay IS A CENTERED MODAL
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('GEI send overlay — _showGeiSendOverlay creates centered fixed modal', () => {
+test.describe('GEI send overlay, _showGeiSendOverlay creates centered fixed modal', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -584,10 +584,10 @@ test.describe('GEI send overlay — _showGeiSendOverlay creates centered fixed m
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  9. CLIENT HUB — PAY BUTTON IS RED
+//  9. CLIENT HUB, PAY BUTTON IS RED
 // ════════════════════════════════════════════════════════════════════════════
 
-test.describe('Client hub — pay button uses var(--red), not near-black #1b1612', () => {
+test.describe('Client hub, pay button uses var(--red), not near-black #1b1612', () => {
   test('pay button template string contains var(--red), not #1b1612', async ({ page }) => {
     const HUB = {
       contractorUserId: FAKE_USER_ID,
@@ -620,7 +620,7 @@ test.describe('Client hub — pay button uses var(--red), not near-black #1b1612
     // Check that the page source doesn't use the old dark pay-button color
     const html = await page.content();
     // The old near-black color was #1b1612 or #1B1612 on pay BUTTONS
-    // It's fine on the hub-pay-cta container background — check only button context
+    // It's fine on the hub-pay-cta container background, check only button context
     const payBtnEl = await page.evaluate(() => {
       return document.querySelector('[id^="pay-btn-"]')?.style.background || null;
     });

@@ -4,7 +4,7 @@ Object.defineProperty(window,'_renderDashRunning',{get:()=>_renderDashRunning,se
 function _trendHtml(curr,prev,reverseColor){
   if(!prev||prev===0)return '';
   const pct=Math.round((curr-prev)/Math.abs(prev)*100);
-  if(Math.abs(pct)<1)return '<div class="met-s">— vs LY</div>';
+  if(Math.abs(pct)<1)return '<div class="met-s">- vs LY</div>';
   const isUp=pct>0;
   const isGood=reverseColor?!isUp:isUp;
   const color=isGood?'var(--c-green)':'var(--c-red)';
@@ -36,7 +36,7 @@ function _showNewLeadsPicker(){
   const rows=leads.map(c=>{
     const days=c.created?Math.floor((new Date(tk+'T12:00')-new Date(c.created+'T12:00'))/86400000):0;
     const ageLabel=days<=0?'New today':days+'d ago';
-    // Client ids are Date.now() at creation (~13-digit epoch ms) — use that for a real
+    // Client ids are Date.now() at creation (~13-digit epoch ms), use that for a real
     // date+time stamp rather than just the relative "Xd ago" label. Falls back to just
     // the relative label for older/fixture ids that predate this or aren't real timestamps.
     const _cts=Number(c.id);
@@ -69,6 +69,168 @@ function _pickLeadForEstimate(clientId){
   const c=getClientById(clientId);
   if(!c)return;
   _doOpenEstimate(c);
+}
+// Setup to-do, a self-dismissing checklist pinned to the top of the dashboard
+// (owner 2026-07-14). Holds the setup steps that moved OUT of the signup wizard
+// (§9.9); it renders only while something is still unfinished and collapses to
+// nothing once every item is handled. First item: add a vehicle, which also
+// ungrays the Drive quick-action (mileage can't be logged without a vehicle on
+// record, an IRS requirement). Owner-only: employees never see setup tasks.
+function _renderDashSetupTodo(){
+  const el=document.getElementById('dash-setup-todo');
+  if(!el)return;
+  const hasVehicle=(typeof getVehicles==='function'?getVehicles():(S.vehicles||[])).length>0;
+  // Gray the Drive button until a vehicle exists, pointer-events:none makes it
+  // physically un-tappable, matching the "can't log mileage yet" intent; the
+  // quickAction('drive') guard is the belt-and-suspenders fallback.
+  const drive=document.getElementById('qa-drive-btn');
+  if(drive){
+    drive.style.opacity=hasVehicle?'':'.4';
+    drive.style.pointerEvents=hasVehicle?'':'none';
+    drive.setAttribute('aria-disabled',hasVehicle?'false':'true');
+    drive.title=hasVehicle?'':'Add a vehicle first to log mileage';
+  }
+  if(typeof _isEmployee!=='undefined'&&_isEmployee){el.style.display='none';el.innerHTML='';return;}
+  // No flash on sign-in. renderDash() fires once the moment we land on the
+  // dashboard (goPg('pg-dash')), BEFORE the account's cloud settings have loaded,
+  // so S.setupDone / vehicles / logo / skipped are all still empty. Rendering the
+  // full "get job-ready" list here and then collapsing it a beat later once the
+  // real (completed) state lands is exactly the brief flash the owner saw. Keep
+  // the card hidden until settings are authoritative (_authSettingsLoaded, the same
+  // "settings saves are safe" gate cloud.js sets after the cloud round-trip). A
+  // signed-out/local user has no cloud load pending, so they're never gated.
+  const _signedIn=typeof _supaUser!=='undefined'&&!!_supaUser;
+  const _settingsReady=typeof _authSettingsLoaded!=='undefined'&&_authSettingsLoaded;
+  if(_signedIn&&!_settingsReady){el.style.display='none';return;}
+  // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
+  // from day one and drops off the moment it's done (or the contractor skips an
+  // optional one); the whole card collapses once nothing's left. Copy is money/
+  // time-framed: the only thing that moves contractors (not "complete your
+  // profile"). Progress starts ABOVE zero (endowed-progress effect): signup already
+  // did real work, account, trade, payment method, so we credit it and the bar
+  // never opens at 0. No points/badges/streaks (they backfire with pros).
+  const skipped=Array.isArray(S.setupSkipped)?S.setupSkipped:[];
+  // Prime the Stripe status SYNCHRONOUSLY from its localStorage cache
+  // (td_stripe_status_<uid>, 1h TTL, written by _fetchStripeConnectStatus). Otherwise
+  // _stripeConnectStatus is null until the async fetch lands ~500ms after the first
+  // render, so a contractor who already connected Stripe sees "Turn on card payments"
+  // render as a todo and then vanish the instant the status arrives, that show-then-hide
+  // is the one-second checklist flash on sign-in. With the cache primed, a connected
+  // owner is known on frame one (item stays hidden), while a genuinely fresh account has
+  // no cache and correctly shows the item.
+  try{
+    if((typeof _stripeConnectStatus==='undefined'||_stripeConnectStatus===null)&&typeof _supaUser!=='undefined'&&_supaUser){
+      const _sUid=(typeof _effectiveUid==='function'&&_effectiveUid())||_supaUser.id||'';
+      const _sc=JSON.parse(localStorage.getItem('td_stripe_status_'+_sUid)||'null');
+      if(_sc&&_sc.ts&&(Date.now()-_sc.ts)<3600000&&_sc.data)_stripeConnectStatus=_sc.data;
+    }
+  }catch(_e){}
+  const stripeOk=!!(typeof _stripeConnectStatus!=='undefined'&&_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
+  const hasLogo=!!(S.logoData||S.logoUrl);
+  const ALL=[
+    {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your vehicles',
+      sub:'Mileage writes itself off at tax time, and it turns on the Drive button.',cta:'Add vehicle'},
+    {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
+      sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
+    {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
+      sub:'Estimates that look like a real company, not a text message.',cta:'Add logo'},
+    {id:'team',done:false,icon:'👥',title:'Add your crew',
+      sub:'W-2 employees clock in so you stop chasing hours on paper, or invite 1099 subs. Solo? Say so and this goes away.',cta:'Set up'},
+  ];
+  const remaining=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
+  // Endowed progress: credit the 3 things signup genuinely finished (account, trade,
+  // payment method chosen). These are real, not fake filler, so the head start is
+  // honest and doesn't backfire.
+  const BASE_DONE=3;
+  const total=BASE_DONE+ALL.length;
+  const doneCount=BASE_DONE+ALL.filter(t=>t.done||skipped.includes(t.id)).length;
+
+  if(!remaining.length){
+    // Everything handled, one clean, adult "done" moment, then gone for good. No
+    // confetti, no mascot; just a confident seal a pro respects. Dismiss retires it.
+    if(S.setupDone){el.style.display='none';el.innerHTML='';return;}
+    el.style.display='block';
+    el.innerHTML=
+      '<div class="card" style="margin-bottom:14px;padding:16px;border:1px solid var(--green-mid,#16a34a);background:linear-gradient(135deg,rgba(22,163,74,.10),rgba(22,163,74,.02));display:flex;align-items:center;gap:12px">'+
+        '<span style="width:34px;height:34px;flex-shrink:0;border-radius:50%;background:var(--green-mid,#16a34a);color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px">'+svgIcon('✓',{size:18,color:'#fff'})+'</span>'+
+        '<span style="flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--text)">You’re set up, TradeDesk’s ready to run your jobs.</span>'+
+        '<button onclick="S.setupDone=true;if(typeof saveAll===\'function\')saveAll();_renderDashSetupTodo()" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--green-mid,#16a34a);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">Done</button>'+
+      '</div>';
+    return;
+  }
+  const pct=Math.max(0,Math.min(100,Math.round(doneCount/total*100)));
+  el.style.display='block';
+  el.innerHTML=
+    '<div class="card" style="margin-bottom:14px;padding:0;overflow:hidden;border:1px solid var(--blue);box-shadow:0 2px 12px rgba(45,93,168,.12)">'+
+      '<div style="padding:12px 16px 10px;background:linear-gradient(135deg,rgba(45,93,168,.10),rgba(45,93,168,.02));border-bottom:1px solid var(--border)">'+
+        '<div style="display:flex;align-items:center;gap:8px">'+
+          '<span style="font-size:15px">'+svgIcon('⚡',{size:15})+'</span>'+
+          '<span style="font-size:13px;font-weight:800;color:var(--text);letter-spacing:-.01em">Get job-ready</span>'+
+          '<span style="margin-left:auto;font-size:12px;font-weight:800;color:var(--blue)">'+remaining.length+' left</span>'+
+        '</div>'+
+        // Endowed-progress bar, never opens at zero.
+        '<div style="height:6px;border-radius:6px;background:rgba(45,93,168,.15);margin-top:9px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:var(--blue);border-radius:6px;transition:width .4s cubic-bezier(.22,1,.36,1)"></div></div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:6px">'+doneCount+' of '+total+' done · knock these out once and this card’s gone for good.</div>'+
+      '</div>'+
+      remaining.map(it=>
+        '<div class="td-setup-row" style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">'+
+          '<span style="width:34px;height:34px;flex-shrink:0;border-radius:9px;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:17px">'+svgIcon(it.icon,{size:17})+'</span>'+
+          '<span style="flex:1;min-width:0">'+
+            '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+it.title+'</span>'+
+            '<span style="display:block;font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px">'+it.sub+'</span>'+
+            '<button onclick="_skipSetupTodo(\''+it.id+'\')" style="margin-top:4px;background:none;border:none;padding:0;font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>'+
+          '</span>'+
+          '<button onclick="_setupTodoGo(\''+it.id+'\')" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">'+it.cta+'</button>'+
+        '</div>'
+      ).join('')+
+    '</div>';
+  // Drop the trailing row's divider so the last item sits flush with the card edge.
+  const rows=el.querySelectorAll('.td-setup-row');
+  if(rows.length)rows[rows.length-1].style.borderBottom='none';
+}
+// Setup-to-do actions. Kept out of inline onclick so the quoting stays sane and
+// the nav targets are guarded (a missing settings detail can never throw).
+function _setupTodoGo(id){
+  if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
+  if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
+  if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
+  if(id==='team'){_setupTeamChooser();return;}
+}
+// Team is a fork, not a single action (owner 2026-07-14): W-2 employee, 1099 sub,
+// or "I don't have a team", the last one is the honest completion for a solo op,
+// so the card can actually empty out instead of nagging forever.
+function _setupTeamChooser(){
+  document.getElementById('setup-team-chooser')?.remove();
+  const ov=document.createElement('div');
+  ov.id='setup-team-chooser';
+  ov.style.cssText='position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const opt=(icon,title,sub,onclick)=>'<button onclick="'+onclick+'" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:15px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:10px">'+
+    '<span style="width:36px;height:36px;flex-shrink:0;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px">'+svgIcon(icon,{size:18})+'</span>'+
+    '<span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+title+'</span><span style="display:block;font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4">'+sub+'</span></span>'+
+  '</button>';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px;padding:18px 16px 24px;box-sizing:border-box">'+
+    '<div style="font-size:17px;font-weight:800;color:var(--text);margin-bottom:4px">Add your crew</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Who works with you? You can add more anytime.</div>'+
+    opt('👷','Add a W-2 employee','Payroll, hours, and taxes, we\'ll walk you through hiring paperwork.',"document.getElementById('setup-team-chooser').remove();_setupTeamRoute('w2')")+
+    opt('🧰','Invite a 1099 sub','Send an invite, they join and you track what you pay them.',"document.getElementById('setup-team-chooser').remove();_setupTeamRoute('1099')")+
+    opt('🙋','I don\'t have a team','You run solo, clear this off your list.',"document.getElementById('setup-team-chooser').remove();_skipSetupTodo('team')")+
+  '</div>';
+  document.body.appendChild(ov);
+}
+function _setupTeamRoute(kind){
+  // Both land on the team surface where you invite a person and set W-2 vs 1099;
+  // once a real member exists the item clears (skip records intent meanwhile).
+  if(typeof goPg==='function')goPg('pg-settings');
+  setTimeout(()=>{
+    if(typeof _openSetDetail==='function')_openSetDetail('team');
+    if(typeof openInviteEmployeeModal==='function')openInviteEmployeeModal();
+  },180);
+}
+function _skipSetupTodo(id){
+  if(!Array.isArray(S.setupSkipped))S.setupSkipped=[];
+  if(!S.setupSkipped.includes(id)){S.setupSkipped.push(id);if(typeof saveAll==='function')saveAll();}
+  _renderDashSetupTodo();
 }
 function renderDash(){
   if(_renderDashRunning)return; // prevent cascade
@@ -108,8 +270,8 @@ function renderDash(){
   const totalDecided=wonBidsAll+lostBidsAll;
   const closeRatio=totalDecided>0?Math.round(wonBidsAll/totalDecided*100):null;
   const closeColor=closeRatio===null?'var(--text3)':closeRatio>=40?'var(--green-mid)':closeRatio>=25?'var(--amber)':'#A32D2D';
-  const closeLabel=closeRatio===null?'—':closeRatio+'%';
-  const closeSub=closeRatio===null?'No decided bids yet':closeRatio>=40?'Above avg '+svgIcon('✓',{size:12}):closeRatio>=25?'Near avg (~33%)':'Below avg — follow up more';
+  const closeLabel=closeRatio===null?'-':closeRatio+'%';
+  const closeSub=closeRatio===null?'No decided bids yet':closeRatio>=40?'Above avg '+svgIcon('✓',{size:12}):closeRatio>=25?'Near avg (~33%)':'Below avg, follow up more';
   const wonBidAmts=bids.filter(b=>b.status==='Closed Won').map(b=>b.amount||0);
   const avgJobVal=wonBidAmts.length?Math.round(wonBidAmts.reduce((s,a)=>s+a,0)/wonBidAmts.length):null;
 
@@ -139,7 +301,7 @@ function renderDash(){
       else if(_pendingBids>0)_biggestNote=_pendingBids+' pending bid'+(+_pendingBids>1?'s':'')+' need attention.';
       _subEl.textContent=_attnItems+' thing'+(_attnItems>1?'s':'')+' need'+(_attnItems===1?'s':'')+' your attention today. '+_biggestNote;
     }else{
-      _subEl.textContent='You\'re all caught up — nothing urgent.';
+      _subEl.textContent='You\'re all caught up, nothing urgent.';
     }
   }else if(_subEl){_subEl.textContent='';}
 
@@ -237,12 +399,12 @@ function renderDash(){
       '</div>'+
       '<div class="met" data-kpi="avgjob">'+
         '<div class="met-l">Avg job</div>'+
-        '<div class="met-v">'+(avgJobVal!==null?fmtShort(avgJobVal):'—')+'</div>'+
+        '<div class="met-v">'+(avgJobVal!==null?fmtShort(avgJobVal):'-')+'</div>'+
       '</div>'+
     '</div>';
   }
 
-  // Hobby loss check — 3 of last 5 years negative profit
+  // Hobby loss check, 3 of last 5 years negative profit
   const _hobbyEl=document.getElementById('dash-hobby-warn');
   if(_hobbyEl&&!_isEmployee){
     const _cy=new Date().getFullYear();
@@ -258,7 +420,7 @@ function renderDash(){
       _hobbyEl.style.display='block';
       _hobbyEl.innerHTML='<div style="background:#FFF8E7;border:1.5px solid #D4A017;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
         '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:3px">'+svgIcon('⚠',{size:12})+' '+_lossYears+' of last 5 years show net losses</div>'+
-        '<div style="font-size:12px;color:var(--text2);line-height:1.5">You\'ve had losses several years in a row. The IRS may start asking questions — talk to your CPA about showing you run this as a real business.</div>'+
+        '<div style="font-size:12px;color:var(--text2);line-height:1.5">You\'ve had losses several years in a row. The IRS may start asking questions, talk to your CPA about showing you run this as a real business.</div>'+
       '</div>';
     }else{_hobbyEl.style.display='none';}
   }
@@ -271,7 +433,7 @@ function renderDash(){
     if(closeRatio!==null&&closeRatio<25&&totalDecided>=3){
       closeTip.style.display='block';
       closeTip.innerHTML='<div style="background:#FFF8F0;border:1px solid var(--amber);border-radius:var(--rl);padding:12px 14px">'+
-        '<div style="font-size:12px;font-weight:700;color:#B8600A;margin-bottom:4px">'+svgIcon('🔑',{size:12})+' Closing ratio is '+closeRatio+'% — below average</div>'+
+        '<div style="font-size:12px;font-weight:700;color:#B8600A;margin-bottom:4px">'+svgIcon('🔑',{size:12})+' Closing ratio is '+closeRatio+'%: below average</div>'+
         '<div style="font-size:12px;color:var(--text2);line-height:1.5">Industry average is around 33%. Common reasons: slow follow-up, price too high, or not enough urgency at the estimate.</div>'+
       '</div>';
     } else {
@@ -307,56 +469,66 @@ function renderDash(){
   renderDashToday();
   renderDashCollect();
   renderTodayFeed();
+  _renderDashSetupTodo();
   const _nearbyEl=document.getElementById('dash-nearby');
   if(_nearbyEl){
-    if(_nearbyJob&&!_activeTimer){
-      // Owner request 2026-07-10/11, revised twice on 2026-07-11 after live
-      // testing: a permanently-disabled Collect button read as broken, not
-      // "not applicable right now" (Nielsen/NN disabled-control guidance
-      // applies here — a control that never does anything is worse than not
-      // showing it). Collect is now conditionally INCLUDED, not disabled: it
-      // only renders when there's a real balance owed. Clock in is different —
-      // it always shows, full stop, because being physically on site is
-      // reason enough to want to track time whether or not a job record
-      // exists yet. What was actually broken was the FALLBACK: it used to
-      // dead-end on the client profile page instead of doing anything.
-      // _nearbyClockIn() (js/jobs.js) fixes that properly — with no job
-      // target it creates a minimal walk-up job for this client on the spot
-      // and clocks straight into that, reusing the existing job-scoped
-      // time-tracking machinery instead of a dead redirect. Estimate/Invoice
-      // always shows too — needs nothing but a client, and already routes
-      // into Collect once the charge is saved. Remaining buttons split the
-      // row evenly via the existing .tf-acts>.btn flex:1 rule.
-      const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
-      _nearbyEl.style.display='block';
-      const nb=_nearbyJob;
-      const clockTarget=nb.jobId||nb.fallbackJobId;
-      const hasBalance=nb.balance>0.01;
-      const nbSub=nb.addr+(hasBalance?' · '+fmt(nb.balance)+' owed':'');
+    // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):
+    //   pre-clock-in  → geofence prompt with Clock in
+    //   on the clock  → live "on site" timer + Arrived stamp + Clock out
+    // Shows whenever there's a nearby job OR an active clock; hidden otherwise.
+    const _onClock=(typeof _activeTimer!=='undefined'&&_activeTimer&&_activeTimer.startTime)?_activeTimer:null;
+    if(_onClock||_nearbyJob){
       if(!document.getElementById('_td-nearby-anim-style')){
         const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
-        // A subtle live-indicator dot pulse signals "right now" — a small,
-        // standard convention (recording/online-status badges), not a foreign
-        // animation. The card itself uses the exact same background/shadow as
-        // every other dashboard card (only the left accent stripe differs), so
-        // it doesn't read as a different-colored card.
+        // A radar-ping (concentric rings expanding from the pin) + a live status dot
+        // read as "on site, right now", the GPS moment made visible.
         _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
-          '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}';
+          '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
+          '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}';
         document.head.appendChild(_s);
       }
-      const nbBtns=[];
-      nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('▶',{size:11})+' Clock in</button>');
-      nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('📋',{size:11})+' Estimate/Invoice</button>');
-      if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px;padding:0 6px">'+svgIcon('💰',{size:11})+' Collect →</button>');
-      _nearbyEl.innerHTML='<div class="tf-card" style="position:relative;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
-        '<span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c-green);border-radius:var(--r-lg) 0 0 var(--r-lg)"></span>'+
-        '<div class="tf-icon t-green">'+svgIcon('📍',{size:18})+'</div>'+
-        '<div class="tf-body">'+
-          '<div class="tf-name"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c-green);margin-right:6px;animation:tdNearbyDot 1.6s ease-in-out infinite"></span>You\'re here — '+escHtml(nb.clientName)+'</div>'+
-          '<div class="tf-sub" style="color:var(--c-green-deep)">'+escHtml(nbSub)+'</div>'+
-        '</div>'+
-        '<div class="tf-acts" style="padding-left:0;gap:5px">'+nbBtns.join('')+'</div>'+
-      '</div>';
+      const _svgPin=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+      const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
+      const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
+      const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
+      _nearbyEl.style.display='block';
+      const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
+      const _cardHead=(name,addr,extra)=>'<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
+          '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+            '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite"></span>'+
+            '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite;animation-delay:.8s"></span>'+
+            '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite;animation-delay:1.6s"></span>'+
+            '<span style="position:relative;z-index:2;width:34px;height:34px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#0E6B39);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(14,107,57,.5)">'+_svgPin('#fff',17)+'</span>'+
+          '</div>'+
+          '<div style="flex:1;min-width:0">'+
+            '<span style="display:inline-flex;align-items:center;gap:6px;background:#0E6B39;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px"><span style="width:6px;height:6px;border-radius:50%;background:#7CFFB0;animation:tdNearbyDot 1.4s ease-in-out infinite"></span>ON SITE</span>'+
+            '<div style="font-size:18px;font-weight:800;letter-spacing:-.02em;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B1612" title="You\'re here">'+escHtml(name)+'</div>'+
+            (addr?'<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:600;margin-top:3px"><span style="flex-shrink:0">'+_svgPin('#0E6B39',12)+'</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(addr)+'</span></div>':'')+
+            (extra||'')+
+          '</div>'+
+        '</div>';
+      if(_onClock){
+        // ON THE CLOCK: live time-on-site (updateClockTimer ticks #dash-onsite-time every 1s).
+        const _aj=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===_onClock.jobId):null;
+        const _cAddr=(_aj&&_aj.addr)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).addr||''):'')||'';
+        const _cid=(_aj&&_aj.client_id)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).id||null):null);
+        const _extra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_onClock.startTime)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span id="dash-onsite-time">'+_fmtDur(_onClock.startTime)+'</span> on site</div>';
+        const ocBtns=[];
+        ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
+        if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Estimate</button>');
+        _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
+      } else {
+        // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
+        const nb=_nearbyJob;
+        const clockTarget=nb.jobId||nb.fallbackJobId;
+        const hasBalance=nb.balance>0.01;
+        const nbBtns=[];
+        nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:linear-gradient(160deg,#22c55e,#12894a);color:#fff;box-shadow:0 6px 16px -6px rgba(14,107,57,.6);display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><path d="M7 5v14l11-7z"/></svg>Clock in</button>');
+        nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Estimate</button>');
+        if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#0E6B39;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px">'+svgIcon('💰',{size:13,color:'#fff'})+'Collect</button>');
+        const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
+        _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
+      }
     }else{_nearbyEl.style.display='none';}
   }
   // Update new nav badges
@@ -364,7 +536,7 @@ function renderDash(){
   const _cl=document.getElementById('qa-collect-label');
   if(_cl)_cl.textContent=_owing.length?'Collect ('+_owing.length+')':'Collect';
   const _qb=document.getElementById('qa-collect-btn');
-  // Class toggle, not inline styles — the old inline gray killed the icon chip
+  // Class toggle, not inline styles, the old inline gray killed the icon chip
   // and read as a dead gray blob. qa-idle mutes the chip; qa-g lights it green
   // only when there's actually money to collect.
   if(_qb){
@@ -409,11 +581,11 @@ function _empSetStatus(jobId,newState){
   }
   if(!j.empStatus)j.empStatus={};
   j.empStatus[empId]=newState;
-  // "I've Arrived" doubles as the manual clock-in bookend — a tap works offline
+  // "I've Arrived" doubles as the manual clock-in bookend, a tap works offline
   // and backgrounded, everywhere GPS can't. The geofence entries corroborate it.
   if(newState==='arrived'&&typeof _geoManualArrive==='function')_geoManualArrive(j.id);
   saveAll();
-  const label=newState==='enroute'?'On your way!':'Arrived — get to work!';
+  const label=newState==='enroute'?'On your way!':'Arrived: get to work!';
   showToast(label,newState==='enroute'?'🚗':'📍');
   renderDash();
 }
@@ -445,7 +617,7 @@ function _empToggleTask(jobId,taskId){
   saveAll();renderDash();
 }
 
-// One-tap mileage log for a pipe-landed job — the whole reason a linked
+// One-tap mileage log for a pipe-landed job, the whole reason a linked
 // contractor's address crosses the pipe is so the drive there gets tracked.
 // Looks the job up by id (not baked into the onclick string) so the address/
 // client name never need HTML+JS double-escaping.
@@ -471,7 +643,7 @@ function renderDashToday(){
   if(!todayJobs.length){
     const dow=new Date().getDay();
     const msgs=[
-      'Nothing Sunday — recharge for the week.',
+      'Nothing Sunday, recharge for the week.',
       'Open Monday. Book an estimate today.',
       'Open Tuesday. Good day to follow up.',
       'Open Wednesday. Mid-week reach out.',
@@ -483,7 +655,7 @@ function renderDashToday(){
       '<div style="text-align:center;padding:12px 0">'+
         '<div style="font-size:22px;margin-bottom:6px">'+(dow===0||dow===6?svgIcon('🛋',{size:22}):svgIcon('🎯',{size:22}))+'</div>'+
         '<div style="font-size:13px;font-weight:700;margin-bottom:4px">'+msgs[dow]+'</div>'+
-        '<div style="font-size:11px;color:var(--text3);margin-top:4px">Open day — check Make Money Today</div>'+
+        '<div style="font-size:11px;color:var(--text3);margin-top:4px">Open day, check Make Money Today</div>'+
       '</div>';
     return;
   }
@@ -494,13 +666,13 @@ function renderDashToday(){
     const isEst=j.eventType==='estimate';
     const isActive=j.start<=tk&&addDays(j.start,(parseInt(j.days)||1)-1)>=tk;
     // One-tap mileage shortcut, appended to whichever crew-row branch
-    // renders below — pipe-landed jobs only, and only when the job itself
-    // carries an address (j.addr is what the modal prefills — the client
+    // renders below, pipe-landed jobs only, and only when the job itself
+    // carries an address (j.addr is what the modal prefills, the client
     // card's address is deliberately NOT a fallback here, since pipe payer
     // cards never store addresses).
     const _mileBtn=(j.pipeSourced&&j.addr)?
       '<button onclick="event.stopPropagation();_dashLogPipeMileage('+j.id+')" style="margin-left:8px;padding:4px 10px;border-radius:20px;border:1px solid var(--green-mid,#0E6B39);background:transparent;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--green-mid,#0E6B39);white-space:nowrap">'+svgIcon('🚗',{size:11})+' Log mileage</button>':'';
-    // Sub side: bid your piece back to the GC — the job address arrived via the
+    // Sub side: bid your piece back to the GC, the job address arrived via the
     // pipe, so the composer opens with it prefilled (no searching). Flips to a
     // "Bid sent" pill once sent. Same pipe-sourced + has-address gate as mileage.
     const _bidBtn=(j.pipeSourced&&j.addr)?(j.bidSentAt
@@ -599,7 +771,7 @@ function _assignCrewToJob(jobId,empId){
   const tk=todayKey();
   if(empId!=null){
     j.assignedTo=empId;j.assignedDate=tk;
-    // Durable record of everyone ever assigned — powers the crew trust ranking on estimates.
+    // Durable record of everyone ever assigned, powers the crew trust ranking on estimates.
     if(!Array.isArray(j.crewHistory))j.crewHistory=[];
     if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
     const emp=(S.employees||[]).find(e=>String(e.id)===String(empId));
@@ -665,7 +837,7 @@ function renderDashCollect(){
     }
   }
   if(!collectItems.length){
-    el.innerHTML='<div style="color:var(--text3);font-size:12px;padding:8px 0">All collected — no outstanding balances.</div>';
+    el.innerHTML='<div style="color:var(--text3);font-size:12px;padding:8px 0">All collected, no outstanding balances.</div>';
     return;
   }
   collectItems.sort((a,b)=>b.balance-a.balance);
@@ -688,10 +860,10 @@ function renderDashCollect(){
 
 // ── On-load unpaid work alert ────────────────────────────────────────────────
 function checkUnpaidOnLoad(){
-  // NOTE: intentionally NOT navigator.webdriver-guarded — offline specs call this directly
+  // NOTE: intentionally NOT navigator.webdriver-guarded: offline specs call this directly
   // to assert it shows its modal. Its only BOOT auto-fire is via showDailyBriefing (which IS
   // webdriver-guarded), so under automation it never auto-pops, but a direct call still works.
-  // Hold until boot fully done (overlay gone + waterfall settled) — same gate as
+  // Hold until boot fully done (overlay gone + waterfall settled), same gate as
   // showDailyBriefing, so a direct boot-time call can't pop over the loading screen.
   if(document.getElementById('supa-boot-overlay')||document.getElementById('_update-ov')||document.getElementById('pg-dash')?.classList.contains('boot-cascade')){
     setTimeout(checkUnpaidOnLoad,350);return;
@@ -714,11 +886,11 @@ function checkUnpaidOnLoad(){
   const lienFiled=stage==='lien_filed';
   const otherCount=unpaid.length-1;
   const urgIcon=days>=30?svgIcon('🚨',{size:30,color:'#A32D2D'}):days>=14?svgIcon('⚠',{size:30,color:'var(--amber)'}):svgIcon('💰',{size:30,color:'var(--green-mid)'});
-  const urgLabel=days>=30?'30+ days overdue — act now':days>=14?'Seriously overdue':days>=7?'Overdue':'Balance due';
+  const urgLabel=days>=30?'30+ days overdue, act now':days>=14?'Seriously overdue':days>=7?'Overdue':'Balance due';
   const urgColor=days>=14?'#A32D2D':'var(--amber)';
   let actionBtn='';
   if(lienFiled){
-    // "View lien" must show the FILED lien document — not the client record.
+    // "View lien" must show the FILED lien document, not the client record.
     // printKansasLien() is the same action the filed-lien card button uses
     // ("View lien doc"), rendering the recorded lien in its own window.
     actionBtn='<button onclick="this.closest(\'.zmodal-overlay\').remove();printKansasLien('+b.id+')" style="flex:2;padding:13px;border-radius:var(--r);border:none;background:#3D0000;color:#FFB3B3;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('⚖',{size:14})+' View lien</button>';
@@ -772,9 +944,9 @@ function printKansasLien(bidId){
   const firstWorkDate=job?job.start:bid.bid_date||lastWorkDate;
   const fmtD=d=>{if(!d)return'_______________';const[y,m,dy]=d.split('-');const mn=['January','February','March','April','May','June','July','August','September','October','November','December'];return mn[parseInt(m)-1]+' '+parseInt(dy)+', '+y;};
   const surfTypes=[...new Set((bid.surfaces||[]).map(s=>s.type).filter(Boolean))];
-  const workDesc=surfTypes.length?surfTypes.join(', ')+' — painting and coating services':(bid.type||'Painting and coating services');
+  const workDesc=surfTypes.length?surfTypes.join(', ')+', painting and coating services':(bid.type||'Painting and coating services');
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Mechanic's Lien — ${escHtml(c.name)}</title>
+<title>Mechanic's Lien, ${escHtml(c.name)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Times New Roman',Times,serif;font-size:13pt;color:#000;background:#fff;padding:40px}
@@ -804,7 +976,7 @@ function printKansasLien(bidId){
 <script>
   // Self-contained: this document lives in a window.open() tab, so it CANNOT reach
   // the parent app's print helper. Use the native window.print()/window.close() that
-  // exist right here — the old handler referenced a parent-only function undefined in
+  // exist right here, the old handler referenced a parent-only function undefined in
   // this scope, so the Print button silently threw and never printed (iOS + desktop).
   function tdDoPrint(){ try{ window.focus(); }catch(e){} window.print(); }
   function tdBack(){
@@ -902,7 +1074,7 @@ ${lien.notes?'<div class="section"><div class="label">Notes / Case Reference</di
   <div style="margin-top:16px">
     <div class="label" style="margin-bottom:8px">Printed Name & Title</div>
     <div class="sig-line"></div>
-    <div class="sig-label">${escHtml(owner||'Contractor')}, Owner — ${escHtml(bname)}</div>
+    <div class="sig-label">${escHtml(owner||'Contractor')}, Owner, ${escHtml(bname)}</div>
   </div>
 </div>
 
@@ -923,14 +1095,14 @@ ${lien.notes?'<div class="section"><div class="label">Notes / Case Reference</di
     </div>
   </div>
   <div style="margin-top:12px;font-size:10pt">
-    <strong>File with:</strong> ${escHtml(filingInfo.office)} — ${escHtml(countyShort)}, ${escHtml(detectedState)}<br>
+    <strong>File with:</strong> ${escHtml(filingInfo.office)}: ${escHtml(countyShort)}, ${escHtml(detectedState)}<br>
     Search Apple Maps for "${escHtml(countyShort)} ${escHtml(filingInfo.office)}" to find the exact office address.<br>
     <strong>Statute:</strong> ${escHtml(filingInfo.cite)}<br>
     ${filingInfo.notes.map(n=>'→ '+escHtml(n)).join('<br>')}
   </div>
 </div>
 
-${bid.proposalHtml?`<div class="page-break"></div><div class="proposal-section"><h1 style="margin-bottom:20px">Exhibit A — Original Proposal</h1><div style="border:1px solid #000;padding:16px">${bid.proposalHtml}</div></div>`:''}
+${bid.proposalHtml?`<div class="page-break"></div><div class="proposal-section"><h1 style="margin-bottom:20px">Exhibit A, Original Proposal</h1><div style="border:1px solid #000;padding:16px">${bid.proposalHtml}</div></div>`:''}
 
 </body></html>`;
 
@@ -939,7 +1111,7 @@ ${bid.proposalHtml?`<div class="page-break"></div><div class="proposal-section">
   else{zAlert('Allow pop-ups to open the lien document. In Safari: tap AA in address bar → Allow pop-ups.');}
 }
 
-// ── Release of Mechanic's Lien — the recordable discharge filed once paid ─────
+// ── Release of Mechanic's Lien, the recordable discharge filed once paid ─────
 // Once the debt is satisfied, the contractor has a STATUTORY DUTY to file a lien
 // release with the same Register of Deeds so the property title is cleared;
 // failing to do so exposes them to penalties. Mirrors printKansasLien's shape
@@ -964,7 +1136,7 @@ function printKansasLienRelease(bidId){
   const filedDate=lien.date||'';
   const releaseDate=lien.releasedDate||todayKey();
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Release of Mechanic's Lien — ${escHtml(c.name)}</title>
+<title>Release of Mechanic's Lien, ${escHtml(c.name)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
   body{font-family:'Times New Roman',Times,serif;font-size:13pt;color:#000;background:#fff;padding:40px}
@@ -1061,7 +1233,7 @@ function printKansasLienRelease(bidId){
   <div style="margin-top:16px">
     <div class="label" style="margin-bottom:8px">Printed Name &amp; Title</div>
     <div class="sig-line"></div>
-    <div class="sig-label">${escHtml(owner||'Contractor')}, Owner — ${escHtml(bname)}</div>
+    <div class="sig-label">${escHtml(owner||'Contractor')}, Owner, ${escHtml(bname)}</div>
   </div>
 </div>
 
@@ -1082,7 +1254,7 @@ function printKansasLienRelease(bidId){
     </div>
   </div>
   <div style="margin-top:12px;font-size:10pt">
-    <strong>File with:</strong> ${escHtml(filingInfo.office)} — ${escHtml(countyShort)}, ${escHtml(detectedState)}<br>
+    <strong>File with:</strong> ${escHtml(filingInfo.office)}: ${escHtml(countyShort)}, ${escHtml(detectedState)}<br>
     File this release in the SAME office where the original lien was recorded to clear the title.<br>
     <strong>Statute:</strong> ${escHtml(filingInfo.cite)}
   </div>
@@ -1105,7 +1277,7 @@ function _markDepositCash(bidId){
   const depAmt=(bid.deposit||0)>0?bid.deposit:bid.amount||0;
   zConfirm('Mark '+fmt(depAmt)+' deposit collected as cash?',()=>{
     payments.push({id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
-      date:todayKey(),type:'deposit',amount:depAmt,method:'cash',ref:'Cash — recorded from feed'});
+      date:todayKey(),type:'deposit',amount:depAmt,method:'cash',ref:'Cash: recorded from feed'});
     saveAll();renderDash();showToast('Cash deposit recorded','💰');
     _refreshClientHub(bid.client_id); // keep client hub balance in sync
   });
@@ -1125,7 +1297,7 @@ function renderTodayFeed(){
   const _bidInbox=(typeof _subBidInboxHTML==='function')?_subBidInboxHTML(typeof _subBids!=='undefined'?_subBids:null):'';
   const finalPayItems=[],depositItems=[],scheduleItems=[],pendingItems=[],buildItems=[],alertItems=[];
 
-  // ALERTS — License expiring/expired (always first, outside sections)
+  // ALERTS: License expiring/expired (always first, outside sections)
   const licAlerts=getLicenseAlerts();
   if(licAlerts.length){
     const hasExpired=licAlerts.some(l=>_licStatus(l)==='expired');
@@ -1141,7 +1313,7 @@ function renderTodayFeed(){
     );
   }
 
-  // COLLECT — Completed jobs with balance owed
+  // COLLECT: Completed jobs with balance owed
   bids.filter(b=>b.status==='Closed Won'&&getBidBalance(b)>0.01&&b.completion_date).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const bal=getBidBalance(b);
@@ -1158,7 +1330,7 @@ function renderTodayFeed(){
     let actBtns='';
     // Collections actions: one SMS/lien button + Collect. Equal width is enforced
     // globally by the .tf-acts>.btn CSS rule (flex:1 1 0), so every button in the
-    // row is the same size regardless of label. Call removed — texting is the
+    // row is the same size regardless of label. Call removed, texting is the
     // collections channel and the row only has space for two even buttons.
     if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
     else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' File Lien</button>';
@@ -1176,9 +1348,9 @@ function renderTodayFeed(){
     );
   });
 
-  // COLLECT + SCHEDULE — Won bids not yet completed
+  // COLLECT + SCHEDULE, Won bids not yet completed
   bids.filter(b=>b.status==='Closed Won'&&!b.completion_date&&!b.clientCancelled).forEach(b=>{
-    // If no deposit was required treat as paid — $0-deposit and cash-upfront jobs
+    // If no deposit was required treat as paid, $0-deposit and cash-upfront jobs
     const depositRequired=(b.deposit||0)>0;
     const depositPaid=!depositRequired||getBidPaid(b.id)>0;
     const hasJob=jobs.some(j=>(j.bid_id===b.id||(j.client_id===b.client_id&&!j.bid_id))&&j.eventType!=='estimate');
@@ -1186,7 +1358,7 @@ function renderTodayFeed(){
     const c=getClientById(b.client_id);
     const cDisp=c?c.name:b.client_name||b.name||'Client';
     if(!hasJob&&depositPaid){
-      // Deposit collected (or not required) — just needs scheduling
+      // Deposit collected (or not required), just needs scheduling
       scheduleItems.push(
         '<div class="tf-card">'+
           '<div class="tf-icon">'+svgIcon('📅',{size:18})+'</div>'+
@@ -1200,7 +1372,7 @@ function renderTodayFeed(){
         '</div>'
       );
     } else {
-      // Deposit still needed — money owed, so it lives in the Collect section
+      // Deposit still needed, money owed, so it lives in the Collect section
       const depAmt=depositRequired?fmt(b.deposit):fmt(b.amount);
       const _dTypeLbl=(typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'';
       const subText=_dTypeLbl+(hasJob?'Job in progress · deposit not collected · '+depAmt:'Deposit required before scheduling · '+depAmt);
@@ -1220,7 +1392,7 @@ function renderTodayFeed(){
     }
   });
 
-  // CLOSE — 2nd follow-up needed
+  // CLOSE: 2nd follow-up needed
   bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft&&(b.noResponseCount||0)>=1).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
@@ -1244,12 +1416,12 @@ function renderTodayFeed(){
     );
   });
 
-  // CLOSE — Follow-up overdue
+  // CLOSE: Follow-up overdue
   bids.filter(b=>b.status==='Pending'&&!b.signingToken&&!b.draft&&b.followup&&b.followup<=tk&&!(b.noResponseCount>=1)).forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
     const stage=b.followupStage||1;
-    const msgs=['Hey '+fn+', just checking in — did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the estimate I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled — let me know!'];
+    const msgs=['Hey '+fn+', just checking in, did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the estimate I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled, let me know!'];
     const smsBody=encodeURIComponent(msgs[Math.min(stage-1,msgs.length-1)]);
     const daysOut=Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000);
     pendingItems.push(
@@ -1270,7 +1442,7 @@ function renderTodayFeed(){
     );
   });
 
-  // CLOSE — Awaiting signature
+  // CLOSE: Awaiting signature
   bids.filter(b=>b.signingToken&&b.status==='Pending').forEach(b=>{
     const c=getClientById(b.client_id);if(!c)return;
     const days=b.bid_date?Math.floor((new Date(tk+'T12:00')-new Date(b.bid_date+'T12:00'))/86400000):0;
@@ -1341,7 +1513,7 @@ function renderTodayFeed(){
     // Estimate type spelled out (never an acronym) so the feed shows which
     // kind of estimate was chosen without opening it.
     const typeLbl=typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):'';
-    const subLabel=(typeLbl?typeLbl+' · ':'')+(isDraft&&!b.amount?'In progress — finish &amp; send':isDraft?'Draft — finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet'));
+    const subLabel=(typeLbl?typeLbl+' · ':'')+(isDraft&&!b.amount?'In progress, finish &amp; send':isDraft?'Draft: finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet'));
     buildItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">'+svgIcon('✏',{size:18})+'</div>'+
@@ -1358,7 +1530,7 @@ function renderTodayFeed(){
     );
   });
 
-  // BUILD — New leads with no estimates yet
+  // BUILD: New leads with no estimates yet
   const newLeads=_mmtNewLeads();
   if(newLeads.length){
     buildItems.push(
@@ -1375,7 +1547,7 @@ function renderTodayFeed(){
 
   const showFinalPay=true,showDepSched=true,showPending=true,showBuild=true;
 
-  // Section builder — every MMT section defaults CLOSED. _mmtCol_<id> is undefined
+  // Section builder, every MMT section defaults CLOSED. _mmtCol_<id> is undefined
   // until the user taps the header (see _mmtToggle); undefined !== false, so col is
   // true (collapsed) on first render. No section auto-expands. (CLAUDE.md §11.6)
   const _sec=(id,icon,label,color,items,show)=>{
@@ -1396,7 +1568,7 @@ function renderTodayFeed(){
   const _feedSub=document.getElementById('dash-feed-sub');
 
   if(!totalShown){
-    const msg='You\'re caught up — nothing to chase right now.';
+    const msg='You\'re caught up, nothing to chase right now.';
     // A pending bid still needs the GC even when everything else is clear.
     el.innerHTML=_bidInbox||('<div style="padding:14px;font-size:13px;color:var(--text3)">'+msg+'</div>');
     if(_feedSub)_feedSub.textContent=_bidInbox?'1 bid to sign':'all caught up';
@@ -1420,17 +1592,17 @@ function renderTodayFeed(){
     _sec('pending',svgIcon('📨',{size:14}),'Pending','#7c3aed',pendingItems,showPending)+
     _sec('schedule',svgIcon('📅',{size:14}),'Schedule','var(--blue)',scheduleItems,showDepSched)+
     // ONE money queue (owner decision 2026-07-10): Collect = every dollar owed right
-    // now — completed-job balances (red, overdue receivable) AND deposits not yet
+    // now: completed-job balances (red, overdue receivable) AND deposits not yet
     // collected (blue, gates scheduling). Matches the qa-collect quick-action count,
     // which already tallies ALL owed balances. Card colors keep the "why" visible.
     _sec('collect',svgIcon('💰',{size:14}),'Collect','#A32D2D',[...finalPayItems,...depositItems],showFinalPay);
   _mmtFeedEnter(el);
 }
 
-// Make Money Today — smoother entrance (owner request 2026-07-04): the feed's
+// Make Money Today, smoother entrance (owner request 2026-07-04): the feed's
 // sections fade+rise in a gentle top→bottom stagger the FIRST time they render
 // this session (window._mmtEntered one-shot), instead of snapping in. Opacity+
-// small translate only — no layout thrash — and it never replays on the frequent
+// small translate only, no layout thrash, and it never replays on the frequent
 // data-driven re-renders, so it reads as a polished reveal, not a flicker.
 function _mmtFeedEnter(el){
   try{
@@ -1456,7 +1628,7 @@ function checkGoalPrompt(){
     box.className='zmodal';
     box.innerHTML=
       '<div style="font-size:22px;text-align:center;margin-bottom:8px">'+svgIcon('🎯',{size:22})+'</div>'+
-      '<div class="zmodal-title" style="text-align:center">5 paid jobs — milestone!</div>'+
+      '<div class="zmodal-title" style="text-align:center">5 paid jobs, milestone!</div>'+
       '<div class="zmodal-msg" style="text-align:center">Your average job is '+fmt(avgVal)+'. Set a monthly revenue goal and the app will track your progress and tell you exactly how many estimates you need.</div>'+
       '<div class="zmodal-btns" style="flex-direction:column;gap:8px">'+
         '<input type="number" id="goal-prompt-input" placeholder="Monthly goal e.g. 8000" min="0" step="500" '+
@@ -1473,7 +1645,7 @@ function checkGoalPrompt(){
       // Bump settingsTs so this goal wins the next cloud merge. Without it, a cloud
       // settings row carrying goalMonthly:0 at an equal/higher settingsTs (e.g. a
       // prior Settings save with the goal field blank) overwrites the goal back to
-      // 0 on the next boot — the "goal doesn't persist on reboot" bug.
+      // 0 on the next boot, the "goal doesn't persist on reboot" bug.
       if(typeof _settingsChanged==='function')_settingsChanged();else{S.settingsTs=Date.now();saveAll();}
       // PUSH to the cloud now (not just saveAll). saveAll is local-only, so a
       // prompt-set goal that's never synced is lost on a cloud-authoritative reload /
@@ -1523,7 +1695,7 @@ function renderGoal(){
       '</div>'+
       '<div style="display:flex;justify-content:space-between;align-items:center">'+
         '<div style="font-size:13px;font-weight:700;color:'+barColor+'">'+
-          (pct>=100?svgIcon('🎯',{size:13})+' Goal hit!':pct+'% — '+fmt(remaining)+' to go')+
+          (pct>=100?svgIcon('🎯',{size:13})+' Goal hit!':pct+'%: '+fmt(remaining)+' to go')+
         '</div>'+
         '<div style="font-size:11px;color:'+(onTrack?'var(--green-mid)':'var(--amber)')+'">'+
           (onTrack?'On track':'Behind pace')+
@@ -1557,7 +1729,7 @@ function renderLeadSources(){
   }
 
   const PALETTE=['#185FA5','#63B841','#D85A30','#7F77DD','#E89A3C','#3BAABF','#A32D2D','#2C7A3A','#8C8C8C'];
-  const ICONS={'Door to door':svgIcon('🚪',{size:14}),'Door hanger':svgIcon('📄',{size:14}),'Vehicle / truck wrap':svgIcon('🚛',{size:14}),'Yard sign':svgIcon('🪧',{size:14}),'Word of mouth':svgIcon('💬',{size:14}),'Word of mouth (organic)':svgIcon('💬',{size:14}),'Referral':svgIcon('🤝',{size:14}),'Referral — someone sent them':svgIcon('🤝',{size:14}),'Real estate agent':svgIcon('🏡',{size:14}),'Property manager':svgIcon('🏢',{size:14}),'Builder / contractor':svgIcon('🔨',{size:14}),'Repeat customer':svgIcon('🔄',{size:14}),'Google / online':svgIcon('🔍',{size:14}),'Facebook':svgIcon('📘',{size:14}),'Nextdoor':svgIcon('🏘',{size:14}),'Instagram':svgIcon('📸',{size:14}),'Craigslist':svgIcon('📋',{size:14}),'Church / community':svgIcon('⛪',{size:14}),'Neighborhood event':svgIcon('🎪',{size:14}),'Other':svgIcon('📋',{size:14}),'No source set':svgIcon('❓',{size:14})};
+  const ICONS={'Door to door':svgIcon('🚪',{size:14}),'Door hanger':svgIcon('📄',{size:14}),'Vehicle / truck wrap':svgIcon('🚛',{size:14}),'Yard sign':svgIcon('🪧',{size:14}),'Word of mouth':svgIcon('💬',{size:14}),'Word of mouth (organic)':svgIcon('💬',{size:14}),'Referral':svgIcon('🤝',{size:14}),'Referral: someone sent them':svgIcon('🤝',{size:14}),'Real estate agent':svgIcon('🏡',{size:14}),'Property manager':svgIcon('🏢',{size:14}),'Builder / contractor':svgIcon('🔨',{size:14}),'Repeat customer':svgIcon('🔄',{size:14}),'Google / online':svgIcon('🔍',{size:14}),'Facebook':svgIcon('📘',{size:14}),'Nextdoor':svgIcon('🏘',{size:14}),'Instagram':svgIcon('📸',{size:14}),'Craigslist':svgIcon('📋',{size:14}),'Church / community':svgIcon('⛪',{size:14}),'Neighborhood event':svgIcon('🎪',{size:14}),'Other':svgIcon('📋',{size:14}),'No source set':svgIcon('❓',{size:14})};
 
   const sources={};
   clients.forEach(c=>{
@@ -1593,23 +1765,23 @@ function renderLeadSources(){
 
   const tbodyRows=visible.map(([src,d])=>{
     // Close rate is won / TOTAL leads from this source (the count shown in the
-    // adjacent Leads column) — not won / decided. Using won/(won+lost) ignored
+    // adjacent Leads column), not won / decided. Using won/(won+lost) ignored
     // still-pending leads and overstated the rate (e.g. 2 won of 4 leads showed
     // 100% instead of 50%). Guarded permanently by close-rate-detector.spec.js.
     const cr=d.leads>0?Math.round(d.won/d.leads*100):null;
     const crCls=cr===null?'':cr>=40?' green':cr>=25?'':' red';
-    const crStr=cr!==null?cr+'%':'—';
+    const crStr=cr!==null?cr+'%':'-';
     const cost=mktCosts[src]||0;
     const roi=cost>0&&d.revenue>0?Math.round(d.revenue/cost*10)/10:null;
-    const roiStr=roi!==null?(roi+'×'):cost>0?'0×':'—';
+    const roiStr=roi!==null?(roi+'×'):cost>0?'0×':'-';
     const roiCls=roi===null?'':roi>=3?' green':roi>=1?'':' red';
     return `<tr>
       <td style="font-weight:700">${ICONS[src]||svgIcon('📋',{size:14})} ${escHtml(src)}</td>
       <td class="num">${d.leads}</td>
       <td class="num">${d.won}</td>
       <td class="num${crCls}">${crStr}</td>
-      <td class="num">${d.revenue>0?fmtShort(d.revenue):'—'}</td>
-      ${hasAnyROI?`<td class="num">${cost>0?fmtShort(cost):'—'}</td><td class="num${roiCls}">${roiStr}</td>`:''}
+      <td class="num">${d.revenue>0?fmtShort(d.revenue):'-'}</td>
+      ${hasAnyROI?`<td class="num">${cost>0?fmtShort(cost):'-'}</td><td class="num${roiCls}">${roiStr}</td>`:''}
     </tr>`;
   }).join('');
 
@@ -1639,7 +1811,7 @@ function renderLeadSources(){
 function closeSourceDetail(){const el=document.getElementById('source-detail');if(el)el.style.display='none';}
 function showSourceDetail(src){
   const el=document.getElementById('source-detail');if(!el)return;
-  const ICONS={'Door to door':svgIcon('🚪',{size:14}),'Door hanger':svgIcon('📄',{size:14}),'Vehicle / truck wrap':svgIcon('🚛',{size:14}),'Yard sign':svgIcon('🪧',{size:14}),'Word of mouth':svgIcon('💬',{size:14}),'Word of mouth (organic)':svgIcon('💬',{size:14}),'Referral':svgIcon('🤝',{size:14}),'Referral — someone sent them':svgIcon('🤝',{size:14}),'Real estate agent':svgIcon('🏡',{size:14}),'Property manager':svgIcon('🏢',{size:14}),'Builder / contractor':svgIcon('🔨',{size:14}),'Repeat customer':svgIcon('🔄',{size:14}),'Google / online':svgIcon('🔍',{size:14}),'Facebook':svgIcon('📘',{size:14}),'Nextdoor':svgIcon('🏘',{size:14}),'Instagram':svgIcon('📸',{size:14}),'Craigslist':svgIcon('📋',{size:14}),'Church / community':svgIcon('⛪',{size:14}),'Neighborhood event':svgIcon('🎪',{size:14}),'Other':svgIcon('📋',{size:14}),'No source set':svgIcon('❓',{size:14})};
+  const ICONS={'Door to door':svgIcon('🚪',{size:14}),'Door hanger':svgIcon('📄',{size:14}),'Vehicle / truck wrap':svgIcon('🚛',{size:14}),'Yard sign':svgIcon('🪧',{size:14}),'Word of mouth':svgIcon('💬',{size:14}),'Word of mouth (organic)':svgIcon('💬',{size:14}),'Referral':svgIcon('🤝',{size:14}),'Referral: someone sent them':svgIcon('🤝',{size:14}),'Real estate agent':svgIcon('🏡',{size:14}),'Property manager':svgIcon('🏢',{size:14}),'Builder / contractor':svgIcon('🔨',{size:14}),'Repeat customer':svgIcon('🔄',{size:14}),'Google / online':svgIcon('🔍',{size:14}),'Facebook':svgIcon('📘',{size:14}),'Nextdoor':svgIcon('🏘',{size:14}),'Instagram':svgIcon('📸',{size:14}),'Craigslist':svgIcon('📋',{size:14}),'Church / community':svgIcon('⛪',{size:14}),'Neighborhood event':svgIcon('🎪',{size:14}),'Other':svgIcon('📋',{size:14}),'No source set':svgIcon('❓',{size:14})};
   const srcClients=clients.filter(c=>(c.source||'Unknown')===src);
   let won=0,lost=0,revenue=0,pending=0;
   srcClients.forEach(c=>{
@@ -1652,7 +1824,7 @@ function showSourceDetail(src){
   const decided=won+lost;
   const cr=decided>0?Math.round(won/decided*100):null;
   const crColor=cr===null?'var(--text3)':cr>=40?'var(--green-mid)':cr>=25?'var(--amber)':'#A32D2D';
-  const avgVal=won>0?fmt(Math.round(revenue/won)):'—';
+  const avgVal=won>0?fmt(Math.round(revenue/won)):'-';
   el.style.display='block';
   el.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
@@ -1661,11 +1833,11 @@ function showSourceDetail(src){
     '</div>'+
     '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;text-align:center">'+
       '<div><div style="font-size:20px;font-weight:800">'+srcClients.length+'</div><div style="font-size:10px;color:var(--text3)">Leads</div></div>'+
-      '<div><div style="font-size:20px;font-weight:800;color:'+crColor+'">'+(cr!==null?cr+'%':'—')+'</div><div style="font-size:10px;color:var(--text3)">Close rate</div></div>'+
-      '<div><div style="font-size:20px;font-weight:800;color:var(--green-mid)">'+(revenue>0?fmt(revenue):'—')+'</div><div style="font-size:10px;color:var(--text3)">Revenue</div></div>'+
+      '<div><div style="font-size:20px;font-weight:800;color:'+crColor+'">'+(cr!==null?cr+'%':'-')+'</div><div style="font-size:10px;color:var(--text3)">Close rate</div></div>'+
+      '<div><div style="font-size:20px;font-weight:800;color:var(--green-mid)">'+(revenue>0?fmt(revenue):'-')+'</div><div style="font-size:10px;color:var(--text3)">Revenue</div></div>'+
       '<div><div style="font-size:20px;font-weight:800">'+avgVal+'</div><div style="font-size:10px;color:var(--text3)">Avg job</div></div>'+
     '</div>'+
-    (pending>0?'<div style="font-size:11px;color:var(--amber);margin-top:8px;text-align:center">'+pending+' pending bid'+(pending>1?'s':'')+' — not yet counted in close rate</div>':'');
+    (pending>0?'<div style="font-size:11px;color:var(--amber);margin-top:8px;text-align:center">'+pending+' pending bid'+(pending>1?'s':'')+', not yet counted in close rate</div>':'');
 }
 const CLOSE_RATE = 0.60; // 60% industry avg for professional solo painter in Kansas
 
@@ -1718,14 +1890,14 @@ function renderPipeline(){
   let healthColor,healthMsg,action='';
   if(w2paint>=4&&w3paint>=4){
     healthColor='var(--green-mid)';
-    healthMsg='Pipeline full — focus on the work.';
+    healthMsg='Pipeline full, focus on the work.';
   } else if(w2paint>=2||w3paint>=2){
     healthColor='var(--amber)';
     healthMsg='Pipeline needs attention.';
     action=estimatesNeeded>0?'Run <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to fill open days.':'';
   } else {
     healthColor='#A32D2D';
-    healthMsg='Pipeline is thin — book estimates now.';
+    healthMsg='Pipeline is thin, book estimates now.';
     action='You need <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay booked. Best days: Tuesday + Thursday evening.';
   }
 
@@ -1859,7 +2031,7 @@ function renderLeadsPage(){
 function _pfToggleYr(yr){window['_pfYr_'+yr]=window['_pfYr_'+yr]!==true;renderProposalsPage();}
 function _pfToggleMo(yr,mo){window['_pfMo_'+yr+'_'+mo]=window['_pfMo_'+yr+'_'+mo]!==true;renderProposalsPage();}
 
-// Standalone bid detail popup — opens from proposals page or anywhere
+// Standalone bid detail popup, opens from proposals page or anywhere
 function openBidDetail(bidId,view){
   view=view||'bid';
   const b=bids.find(x=>x.id===bidId);if(!b)return;
@@ -1886,11 +2058,11 @@ function openBidDetail(bidId,view){
     '<div id="bdd-proposal-pane" style="padding:16px;max-width:680px;margin:0 auto;display:none"></div>';
   document.body.appendChild(ov);
 
-  // Bid pane — internal contractor details
+  // Bid pane, internal contractor details
   const pays=getBidPayments(bidId);
   const paid=getBidPaid(bidId);
   const PAINT={'std':'Standard (Behr/Valspar)','prem':'Sherwin-Williams Premium','ultra':'SW Emerald Ultra'};
-  const COND={'1.0':'Good — minor prep','1.2':'Fair — moderate prep','1.5':'Poor — heavy prep'};
+  const COND={'1.0':'Good: minor prep','1.2':'Fair: moderate prep','1.5':'Poor: heavy prep'};
   const surfs=b.surfaces||[];
   const scope=b.scope?Object.entries(b.scope).filter(([,v])=>v).map(([k])=>{const s=typeof SCOPE_ITEMS!=='undefined'?SCOPE_ITEMS.find(x=>x.id===k):null;return s?s.label:k;}):[];
   const SURF={'walls':'Walls','ceiling':'Ceiling','trim':'Trim','doors':'Doors','windows':'Windows','cabinets':'Cabinets','ext_walls':'Siding','ext_trim':'Ext trim','deck':'Deck','fence':'Fence','epoxy':'Epoxy floor'};
@@ -1904,7 +2076,7 @@ function openBidDetail(bidId,view){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Surfaces</div>'+
       surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:13px;padding:5px 0;border-bottom:1px solid var(--border)"><span>'+(SURF[s.type]||s.type)+(s.room?' · '+escHtml(s.room):'')+'</span><span style="color:var(--text2)">'+((s.qty||s.sqft||0)+' '+(s.unit||'sqft'))+'</span></div>').join('')+
     '</div>';
-    if(b.paint||b.condition)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text2);margin-bottom:6px"><strong>Paint:</strong> '+(PAINT[b.paint]||b.paint||'—')+'</div><div style="font-size:12px;color:var(--text2)"><strong>Condition:</strong> '+(COND[b.condition]||b.condition||'—')+'</div></div>';
+    if(b.paint||b.condition)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text2);margin-bottom:6px"><strong>Paint:</strong> '+(PAINT[b.paint]||b.paint||'-')+'</div><div style="font-size:12px;color:var(--text2)"><strong>Condition:</strong> '+(COND[b.condition]||b.condition||'-')+'</div></div>';
     if(scope.length)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Scope of work</div>'+scope.map(s=>'<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">'+escHtml(s)+'</div>').join('')+'</div>';
   }else{
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:13px;color:var(--text3);text-align:center;padding:12px 0;font-style:italic">No line items or surfaces stored for this bid.</div></div>';
@@ -1934,13 +2106,13 @@ function openBidDetail(bidId,view){
       }).join('')+
     '</div>';
   }
-  // Close-out controls — only for sent estimates that never closed.
+  // Close-out controls, only for sent estimates that never closed.
   const _isLost=b.status==='Closed Lost'||b.status==='Abandoned';
   const _isWon=b.status==='Closed Won';
   if(_isLost){
     const _lostDate=b.lostAt?new Date(b.lostAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
     bidHTML+='<div class="card" style="margin-bottom:12px;border:1px solid #F0C9C9;background:#FEF2F2">'+
-      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:6px">Closed — lost</div>'+
+      '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:6px">Closed: lost</div>'+
       '<div style="font-size:13px;color:var(--text2);line-height:1.6">'+escHtml(b.lostReason||'Marked lost')+(_lostDate?' · '+_lostDate:'')+'</div>'+
       (b.lostNote?'<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-top:4px;font-style:italic">“'+escHtml(b.lostNote)+'”</div>':'')+
       '<button onclick="reopenEstimate('+bidId+')" class="btn btn-sm" style="margin-top:10px;font-size:12px;font-weight:700">↩ Reopen estimate</button>'+
@@ -1949,13 +2121,13 @@ function openBidDetail(bidId,view){
     bidHTML+='<div class="card" style="margin-bottom:12px">'+
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Didn’t close?</div>'+
       '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:10px">If this estimate won’t move forward, close it out so it stops sitting in “Awaiting signature.”</div>'+
-      '<button onclick="openCloseOutEstimate('+bidId+')" class="btn btn-sm" style="font-size:12px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2">Close out — mark as lost</button>'+
+      '<button onclick="openCloseOutEstimate('+bidId+')" class="btn btn-sm" style="font-size:12px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2">Close out, mark as lost</button>'+
     '</div>';
   }
   bidHTML+='<div style="height:24px"></div>';
   document.getElementById('bdd-bid-pane').innerHTML=bidHTML||'<div style="padding:20px;text-align:center;color:var(--text3)">No details stored.</div>';
 
-  // Proposal pane — what the client received
+  // Proposal pane, what the client received
   const propPane=document.getElementById('bdd-proposal-pane');
   const storageKey=b.signingKey||b.proposalKey||null;
   function _sigBadge(){
@@ -2060,7 +2232,7 @@ function renderProposalsPage(){
     return;
   }
 
-  // Signed tab — year/month accordion with proposal detail cards
+  // Signed tab, year/month accordion with proposal detail cards
   if(f==='signed'){
     const MONTHS=['January','February','March','April','May','June','July','August','September','October','November','December'];
     const SHORT_MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -2070,8 +2242,8 @@ function renderProposalsPage(){
       return {...b,_dk:dk};
     }).sort((a,b)=>b._dk.localeCompare(a._dk));
     sortedSigned.forEach(b=>{
-      const yr=b._dk.slice(0,4)||'—';
-      const mo=b._dk.slice(0,7)||'—';
+      const yr=b._dk.slice(0,4)||'-';
+      const mo=b._dk.slice(0,7)||'-';
       if(!byYear[yr])byYear[yr]={};
       if(!byYear[yr][mo])byYear[yr][mo]=[];
       byYear[yr][mo].push(b);
@@ -2130,7 +2302,7 @@ function renderProposalsPage(){
     return;
   }
 
-  // All other tabs — flat table
+  // All other tabs, flat table
   const statusChip=b=>{
     if(b.clientCancelled)return '<span class="bdg-soft sf-lost">'+svgIcon('🚫',{size:11})+' CLIENT CANCELLED</span>';
     if(b.status==='Closed Won')return '<span class="bdg-soft sf-won">SIGNED</span>';
@@ -2150,14 +2322,14 @@ function renderProposalsPage(){
   let _lastPropMo='';
   const rows=sortedFiltered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
-    const proj=b.addr||b.type||'—';
+    const proj=b.addr||b.type||'-';
     const _depPaid=getBidPaid(b.id);const deposit=b.status==='Closed Won'&&(b.deposit||0)>0.01&&_depPaid>=(b.deposit-0.01)?'<div style="font-size:10px;color:var(--green);font-weight:700;margin-top:2px">Deposit '+fmt(b.deposit)+' received</div>':'';
     const _lostLine=(b.status==='Closed Lost'&&b.lostReason)?'<div style="font-size:10px;color:#A32D2D;font-weight:600;margin-top:2px">'+escHtml(b.lostReason)+'</div>':'';
-    const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
+    const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
     const revFn=(b.status==='Closed Won'||b.clientCancelled)?'openBidDetail('+b.id+',\'bid\')':'openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     const _canCloseOut=b.signingToken&&b.status!=='Closed Won'&&b.status!=='Closed Lost'&&b.status!=='Abandoned'&&!b.clientCancelled;
     const _coBtn=_canCloseOut?'<button class="btn btn-sm" onclick="event.stopPropagation();openCloseOutEstimate('+b.id+')" style="font-size:11px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2;margin-right:6px">Close out</button>':'';
-    // Month section header — inserted as a spanning row when the month changes
+    // Month section header, inserted as a spanning row when the month changes
     const _bmo=b.bid_date?b.bid_date.slice(0,7):'';
     let _moRow='';
     if(_bmo&&_bmo!==_lastPropMo){
@@ -2223,8 +2395,8 @@ function renderEstimatesPage(){
   };
   const rows=filtered.map(b=>{
     const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
-    const proj=b.addr||b.type||'—';
-    const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'—');
+    const proj=b.addr||b.type||'-';
+    const amt=b.isTM&&b.tmNteCap?'~'+fmt(b.amount)+' / NTE '+fmt(b.tmNteCap):(b.amount?fmt(b.amount):'-');
     const revFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
     return '<tr style="cursor:pointer" onclick="'+revFn+'">'+
       '<td><div style="font-weight:800">'+escHtml(c.name)+'</div>'+
@@ -2243,7 +2415,7 @@ function renderEstimatesPage(){
 // Every REAL dashboard card is its own widget (owner directive 2026-07-04:
 // "check all dashboard cards and make sure they can be moved"). alerts/
 // contracts/goal were split out of the old kpi+pipeline mega-widgets.
-// 'crew' was deleted 2026-07-14 ("simplify before we scale") — a saved order
+// 'crew' was deleted 2026-07-14 ("simplify before we scale"): a saved order
 // containing it is harmless: _applyDashOrder skips ids with no matching element.
 const _DASH_DEFAULT_ORDER = ['kpi','alerts','contracts','goal','pipeline','feed','quick','calendar','sources'];
 
@@ -2251,7 +2423,7 @@ const _DASH_DEFAULT_ORDER = ['kpi','alerts','contracts','goal','pipeline','feed'
 // sibling from its old position to its new one, so cards GLIDE aside instead of
 // teleporting. Uses the CSS `translate` property (not `transform`) deliberately:
 // the wiggle animation owns `transform`, and `translate` composes with it, so a
-// card keeps jiggling WHILE it slides — exactly like iOS. Safe on re-entry: a
+// card keeps jiggling WHILE it slides, exactly like iOS. Safe on re-entry: a
 // card grabbed mid-slide re-measures from its live rect, standard FLIP.
 function _flipShift(container, mutate) {
   const kids = [...container.children].filter(el => el.nodeType === 1);
@@ -2281,7 +2453,7 @@ function _getDashWidgetOrder() {
 
 // Merge a saved order with widgets it doesn't know about (added in app updates,
 // e.g. the crew/alerts/contracts/goal split): each unknown id is INSERTED right
-// after its nearest default-order predecessor that the user already placed —
+// after its nearest default-order predecessor that the user already placed,
 // NOT dumped at the bottom. A user's crew card appears where it naturally
 // belongs (after KPIs) instead of below Lead Sources.
 function _mergeDashOrder(saved) {
@@ -2325,7 +2497,7 @@ function _initDashDrag() {
   }
 
   // While editing, swallow any click inside the dashboard so widgets can't be
-  // opened/navigated — only the Done button (outside root) stays live.
+  // opened/navigated: only the Done button (outside root) stays live.
   function _swallowClick(e) { if (editMode) { e.preventDefault(); e.stopPropagation(); } }
 
   function enter() {
@@ -2351,7 +2523,7 @@ function _initDashDrag() {
     placeholder?.remove(); placeholder = null;
     if (dragEl) { dragEl.style.cssText = ''; dragEl = null; }
     // Save new order to the per-individual-user prefs store (keyed by auth.uid),
-    // NOT the shared business settings blob — so each person's layout is isolated.
+    // NOT the shared business settings blob, so each person's layout is isolated.
     const newOrder = getWidgets().map(el => el.dataset.dw);
     S.dashWidgetOrder = newOrder;
     if (typeof _saveUserPrefs === 'function') _saveUserPrefs();
@@ -2375,7 +2547,7 @@ function _initDashDrag() {
     clearTimeout(lpTimer); lpTimer = null;
     if (!editMode) document.body.classList.remove('td-pressing');
   }
-  // Only cancel the long-press if the finger travels past a tolerance — small jitter is fine
+  // Only cancel the long-press if the finger travels past a tolerance, small jitter is fine
   root.addEventListener('pointermove', e => {
     if (lpTimer == null) return;
     if (Math.hypot(e.clientX - _pressX, e.clientY - _pressY) > 12) clearLp();
@@ -2419,7 +2591,7 @@ function _initDashDrag() {
       const r = w.getBoundingClientRect();
       if (e.clientY < r.top + r.height / 2) { before = w; break; }
     }
-    // Only mutate when the target slot actually changed — this also gates the
+    // Only mutate when the target slot actually changed, this also gates the
     // FLIP slide + haptic tick to real reorders, not every pointermove.
     const already = before ? (placeholder.parentNode === root && placeholder.nextElementSibling === before)
                            : root.lastElementChild === placeholder;
@@ -2479,7 +2651,7 @@ let _kpiSortActive = false;
 
 function _initKpiDrag() {
   const cont = document.getElementById('dash-mets-inner');
-  if (!cont) return; // employee daily view has no KPI grid — no-op
+  if (!cont) return; // employee daily view has no KPI grid, no-op
   // The grid is rebuilt every renderDash(), so the element identity changes.
   // Bind to whichever container is live now, flagged on the element itself so
   // the same node is never double-bound.

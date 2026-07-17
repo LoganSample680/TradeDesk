@@ -15,7 +15,7 @@ function openClientDetail(cid,origin){
 function _canEstimate(){ return !_isEmployee || !!(_employeeRecord&&_employeeRecord.permissions&&_employeeRecord.permissions.estimate); }
 
 function openEstimateForClient(){
-  // Permission gate FIRST — covers both entry points (dashboard quick action and
+  // Permission gate FIRST, covers both entry points (dashboard quick action and
   // the client-record buttons both funnel here). A non-estimate employee gets the
   // request-access popup, never the estimator.
   if(!_canEstimate()){ _showEstimateRequestModal(); return; }
@@ -31,17 +31,17 @@ function openEstimateForClient(){
   _rrpGateThenEstimate(c);
 }
 
-// ── Diagnostic charge — fast on-site "I came, I diagnosed X, the fee is $Y" ──
+// ── Diagnostic charge, fast on-site "I came, I diagnosed X, the fee is $Y" ──
 // Research-backed design (owner, 2026-07-09): a diagnostic/trip fee is small-
 // dollar ($70-200 typical) and every source treats it as a plain charge-and-
-// receipt moment, not a contract moment — no client signature anywhere in the
+// receipt moment, not a contract moment, no client signature anywhere in the
 // industry. So this is deliberately NOT routed through sign.html/e-sign: type
 // the finding + fee, it becomes a closed bid (still a real document on the
-// client record — shows in Documents/timeline/invoice like any other job),
+// client record, shows in Documents/timeline/invoice like any other job),
 // then straight into the existing payment-collection panel (card link, QR,
-// or log cash/check) — reusing openPayPanel exactly as a normal job would.
+// or log cash/check): reusing openPayPanel exactly as a normal job would.
 // Owner request 2026-07-11: the nearby-banner "Start Estimate/Invoice" button
-// covers two different jobs — a quick trip-fee/diagnostic charge for work
+// covers two different jobs, a quick trip-fee/diagnostic charge for work
 // already done (openDiagnosticCharge), or a full estimate for a bigger job
 // that needs a formal quote (openEstimateForClient). One button, one tap to
 // pick which, since the banner only has room for 3 buttons total.
@@ -61,11 +61,11 @@ function _nearbyStartWork(clientId){
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
 }
-// Diagnostic / service-call charge — the ONE narrow quick path (owner, 2026-07-13).
+// Diagnostic / service-call charge, the ONE narrow quick path (owner, 2026-07-13).
 // It is NOT a general quick invoice. Use it ONLY for the specific case: you built
 // the client an estimate, they DECLINED it, and you're charging for the trip out +
 // the diagnosis you already did. Real work always goes through the full, signed
-// estimate — so this needs no separate signature (the declined estimate is the
+// estimate: so this needs no separate signature (the declined estimate is the
 // paper trail). The modal STATES that scope plainly (owner: "hand-hold it") so it
 // can't be misused as an unsigned-invoice shortcut for actual work.
 function _diagChargeContext(){
@@ -84,7 +84,7 @@ function openDiagnosticCharge(clientId){
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(c.name||'')+'</div>'+
     '<div class="f" style="margin-bottom:12px">'+
       '<label style="font-size:11px;font-weight:700;color:var(--text3)">What did you find?</label>'+
-      '<textarea id="diag-desc" rows="3" placeholder="e.g. No-heat call — diagnosed failed igniter, needs replacement" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;resize:none;background:var(--bg2);color:var(--text)"></textarea>'+
+      '<textarea id="diag-desc" rows="3" placeholder="e.g. No-heat call, diagnosed failed igniter, needs replacement" style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;resize:none;background:var(--bg2);color:var(--text)"></textarea>'+
       '<div id="diag-desc-err" style="display:none;font-size:11px;color:#A32D2D;margin-top:4px">Type what you found.</div>'+
     '</div>'+
     '<div class="f" style="margin-bottom:16px">'+
@@ -129,7 +129,7 @@ function saveDiagnosticCharge(clientId){
   // Protection before payment: client signs the charge in person, THEN collect.
   _openDiagnosticSign(bid.id,clientId);
 }
-// In-person signature step for a diagnostic charge — the SHARED e-sign pad
+// In-person signature step for a diagnostic charge, the SHARED e-sign pad
 // (js/esign.js), same code as estimates/COs, displayed here. Shows the charge
 // the client is signing for, captures the signature, records it on the bid,
 // pushes it to the client hub as a signed document, and only THEN opens pay.
@@ -158,7 +158,7 @@ function _openDiagnosticSign(bidId,clientId){
     '</div>';
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
-  // Wired synchronously — the canvas is already in the DOM by this point, and
+  // Wired synchronously, the canvas is already in the DOM by this point, and
   // deferring via setTimeout only opens a window where a fast submit finds no
   // registered pad yet (esignResult returns "no-pad").
   esignWire('diag-sign');
@@ -183,7 +183,7 @@ function _submitDiagnosticSign(bidId,clientId){
     if(typeof _refreshClientHub==='function')_refreshClientHub(clientId);
   }catch(_e){}
   closeTopModal();
-  if(typeof showToast==='function')showToast('Signed — collecting payment','✍️');
+  if(typeof showToast==='function')showToast('Signed: collecting payment','✍️');
   openPayPanel(bidId,'final');
 }
 // Popup shown when a non-estimate employee taps a (greyed) estimate entry point:
@@ -212,7 +212,7 @@ async function _submitEstimateRequest(){
     const{error}=await _supa.from('td_permission_requests').insert(row);
     if(error){
       if(/duplicate|unique|23505/i.test((error.message||'')+(error.code||''))){
-        if(typeof showToast==='function')showToast('Request already sent — pending approval.','⏳');return;
+        if(typeof showToast==='function')showToast('Request already sent, pending approval.','⏳');return;
       }
       throw error;
     }
@@ -220,7 +220,7 @@ async function _submitEstimateRequest(){
   }catch(e){console.warn('estimate request failed:',e);if(typeof showToast==='function')showToast('Could not send request.','⚠️');}
 }
 
-// Trades that categorically never disturb painted surfaces — skip RRP question
+// Trades that categorically never disturb painted surfaces, skip RRP question
 const _RRP_EXEMPT_TRADES=['landscaping'];
 function _rrpGateThenEstimate(c){
   if(!c)return;
@@ -249,18 +249,18 @@ function _showRrpModal(c,onProceed){
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_rrp-gate-overlay';
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
-    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+svgIcon('⚠️')+' Pre-1978 Home — Built '+c.yearBuilt+'</div>'+
+    '<div style="font-size:16px;font-weight:800;margin-bottom:4px">'+svgIcon('⚠️')+' Pre-1978 Home, Built '+c.yearBuilt+'</div>'+
     '<div style="font-size:13px;color:var(--text2);margin-bottom:8px;line-height:1.5">Will painted surfaces be disturbed during this job?</div>'+
     '<div style="font-size:11.5px;color:var(--text3);margin-bottom:14px;line-height:1.5">EPA RRP applies when &gt;6 sq ft interior or &gt;20 sq ft exterior painted surface is disturbed.</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">'+
       '<button onclick="_rrpModalNo()" style="padding:13px;border-radius:var(--r);border:2px solid var(--border2);background:var(--bg2);color:var(--text1);font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">No</button>'+
-      '<button onclick="_rrpModalYes()" style="padding:13px;border-radius:var(--r);border:2px solid #d97706;background:#fef3c7;color:#92400e;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Yes — I\'m certified</button>'+
+      '<button onclick="_rrpModalYes()" style="padding:13px;border-radius:var(--r);border:2px solid #d97706;background:#fef3c7;color:#92400e;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">Yes: I\'m certified</button>'+
     '</div>'+
     '<div id="_rrp-cert-msg" style="display:none"></div>';
   ov.appendChild(box);document.body.appendChild(ov);
   window._rrpModalNo=function(){
     if(typeof _rrpPaintAnswer!=='undefined')_rrpPaintAnswer='no';
-    // Persist on the client — proposal send may happen in a later session
+    // Persist on the client, proposal send may happen in a later session
     c.rrpDisturb='no';if(typeof saveAll==='function')saveAll();
     document.getElementById('_rrp-gate-overlay')?.remove();
     onProceed();
@@ -290,7 +290,7 @@ function _showRrpModal(c,onProceed){
 function _gateAddressThenEstimate(c){
   if(!c)return;
   if(!(c.addr||'').trim()){
-    // Lead has no address — must collect before building an estimate
+    // Lead has no address, must collect before building an estimate
     const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addr-gate-overlay';
     const box=document.createElement('div');box.className='zmodal';
     box.innerHTML=
@@ -342,7 +342,7 @@ function _checkMultiPropertyThenOpen(c){
       ()=>{
         if(activeBids.length===1){openGenericEstimate(c,resumeTarget.id,resumeTarget.trade_type||getActiveTrade());}
         else{
-          // Multiple in-progress — show picker
+          // Multiple in-progress, show picker
           const ov=document.createElement('div');ov.className='zmodal-overlay';
           const box=document.createElement('div');box.className='zmodal';
           box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">Choose estimate to resume</div>'+
@@ -558,16 +558,16 @@ function _clientHubUrl(c){
 function renderClientHubPage(){
   const el=document.getElementById('client-hub-list');if(!el)return;
   const subEl=document.getElementById('client-hub-sub');
-  // Newest activity first — sort by created date desc as a reasonable default
+  // Newest activity first, sort by created date desc as a reasonable default
   const sorted=[...clients].sort((a,b)=>(b.created||'').localeCompare(a.created||''));
-  if(subEl)subEl.textContent=sorted.length?sorted.length+' client'+(sorted.length!==1?'s':'')+'  · tap any row to preview':'Every client has a private project portal — preview, share, or copy any link.';
+  if(subEl)subEl.textContent=sorted.length?sorted.length+' client'+(sorted.length!==1?'s':'')+'  · tap any row to preview':'Every client has a private project portal, preview, share, or copy any link.';
   if(!sorted.length){
     el.innerHTML='<div class="card hub-empty-card"><div style="font-size:36px;margin-bottom:8px">'+svgIcon('📂',{size:36})+'</div><h3>No clients yet</h3><p>Add your first client from the Clients tab and a private hub link is created automatically.</p><button class="btn btn-p" onclick="goPg(\'pg-clients\')">Go to Clients →</button></div>';
     return;
   }
   const rowHtml=c=>{
     const url=_clientHubUrl(c);
-    if(!url)return ''; // token not yet generated — skip row
+    if(!url)return ''; // token not yet generated, skip row
     const _stg=getClientStage(c.id);
     const statusBadge=_stg?`<span style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;background:${_stg.color}22;color:${_stg.color};white-space:nowrap">${escHtml(_stg.label)}</span>`:'';
     const phone=(c.phone||'').replace(/\D/g,'');
@@ -620,7 +620,7 @@ function _previewClientHub(url,clientName,clientId){
       '<button onclick="document.getElementById(\'_hub-preview-ov\').remove()" style="display:flex;align-items:center;gap:5px;background:rgba(255,255,255,.12);border:none;color:#fff;font-size:13px;font-weight:700;padding:7px 12px;border-radius:8px;cursor:pointer;font-family:inherit">'+
         '← TradeDesk'+
       '</button>'+
-      '<div style="font-size:13px;color:rgba(255,255,255,.6);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(clientName?escHtml(clientName)+' — Hub preview':'Hub preview')+'</div>'+
+      '<div style="font-size:13px;color:rgba(255,255,255,.6);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(clientName?escHtml(clientName)+', Hub preview':'Hub preview')+'</div>'+
     '</div>'+
     '<iframe src="'+previewUrl+'" style="flex:1;border:none;width:100%;background:#F4F5F7" allow="payment"></iframe>';
   ov.style.display='flex';
@@ -692,7 +692,7 @@ function setCF(f,btn){
   renderClientList();
 }
 function populateClientSelectors(){
-  const opts='<option value="">— Select client —</option>'+clients.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
+  const opts='<option value="">- Select client -</option>'+clients.map(c=>`<option value="${c.id}">${escHtml(c.name)}</option>`).join('');
   ['e-client-sel','inc-client-sel','mil-client-sel'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=opts;});
 }
 function getClientStage(cid){
@@ -708,7 +708,7 @@ function getClientStage(cid){
   });
   if(activeJob)return{stage:'active',label:'Active job today',color:'var(--green-mid)',priority:1};
 
-  // Check won bids FIRST — a client who signed and paid is never a "lead"
+  // Check won bids FIRST, a client who signed and paid is never a "lead"
   const wonBids=cbids.filter(b=>b.status==='Closed Won');
   if(wonBids.length){
     const unpaid=wonBids.filter(b=>getBidBalance(b)>0.01);
@@ -717,7 +717,7 @@ function getClientStage(cid){
     if(completeUnpaid.length)return{stage:'balance_due',label:'Balance due',color:'#A32D2D',priority:2};
     const scheduled=cjobs.find(j=>j.bid_id&&wonBids.find(b=>b.id===j.bid_id)&&j.start>=tk&&j.status!=='done');
     if(scheduled)return{stage:'scheduled',label:'Job scheduled',color:'#185FA5',priority:4};
-    if(unpaid.length)return{stage:'signed',label:'Signed — schedule job',color:'var(--blue)',priority:3};
+    if(unpaid.length)return{stage:'signed',label:'Signed: schedule job',color:'var(--blue)',priority:3};
     if(paid.length)return{stage:'paid',label:'Paid in full',color:'var(--green)',priority:8};
   }
 
@@ -725,7 +725,7 @@ function getClientStage(cid){
   if(pendingBids.length){
     const sentBids=pendingBids.filter(b=>b.signingToken);
     const unsentBids=pendingBids.filter(b=>!b.signingToken);
-    // Saved but never sent to client — show as 'est_ready' (distinct from sent bids)
+    // Saved but never sent to client, show as 'est_ready' (distinct from sent bids)
     if(!sentBids.length&&unsentBids.length){
       return{stage:'est_ready',label:'Estimate ready to send',color:'var(--blue)',priority:5};
     }
@@ -733,7 +733,7 @@ function getClientStage(cid){
     const oldest=activePending.reduce((a,b)=>a.bid_date<b.bid_date?a:b);
     const days=oldest.bid_date?Math.floor((new Date(tk)-new Date(oldest.bid_date+'T12:00:00'))/(1000*60*60*24)):0;
     if(days>=30)return{stage:'abandoned',label:'Bid abandoned ('+days+'d)',color:'#999',priority:9};
-    if(days>=14)return{stage:'bid_urgent',label:'Bid out '+days+'d — follow up',color:'var(--amber)',priority:5};
+    if(days>=14)return{stage:'bid_urgent',label:'Bid out '+days+'d: follow up',color:'var(--amber)',priority:5};
     return{stage:'bid_out',label:'Bid out',color:'#D85A30',priority:6};
   }
 
@@ -786,7 +786,7 @@ function renderClientList(){
     const emptyMsgs={
       won:'No signed jobs waiting to schedule.',active:'No active jobs today.',
       collect:'No outstanding balances.',closed:'No closed jobs yet.',
-      all:'No clients yet — contacts become clients once they sign an estimate.'
+      all:'No clients yet, contacts become clients once they sign an estimate.'
     };
     el.innerHTML='<div class="empty">'+(emptyMsgs[clientFilter]||'No clients here.')+'</div>';
     return;
@@ -880,7 +880,7 @@ function checkClientDupe(val){
     if(editClientId&&c.id===editClientId)return false;
     return (c.name||'').toLowerCase().replace(/\s+/g,' ')===name;
   });
-  if(match){warn.style.display='';warn.textContent='⚠ '+match.name+' is already in your records — is this a different client?';}
+  if(match){warn.style.display='';warn.textContent='⚠ '+match.name+' is already in your records, is this a different client?';}
   else{warn.style.display='none';}
 }
 function openNewClient(){
@@ -973,14 +973,14 @@ function saveClient(){
   const phone=v('cf-phone').trim();
   if(!phone){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a phone number.');return;}
   if(phone.replace(/\D/g,'').length<10){_submitting=false;showFErr('cf-phone','err-cf-phone','Enter a valid 10-digit phone number.');return;}
-  // Address is optional — leads often come in without one; add later from profile
+  // Address is optional, leads often come in without one; add later from profile
   const street=v('cf-street').trim();
   const city=v('cf-city').trim();
   const state=v('cf-state').trim().toUpperCase();
   const zip=v('cf-zip').trim();
   const addr=[street,city,[state,zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
   const source=v('cf-source')||'';
-  if(!source){_submitting=false;showFErr('cf-source','err-cf-source','Select a lead source — this tracks what\'s working.');return;}
+  if(!source){_submitting=false;showFErr('cf-source','err-cf-source','Select a lead source, this tracks what\'s working.');return;}
   const isNew=!editClientId;
   if(isNew){
     const ph=phone.replace(/\D/g,'');
@@ -989,7 +989,7 @@ function saveClient(){
     // Name match = hard block (almost certainly a re-entry of the same person)
     const nameDupe=clients.find(x=>x.id!==editClientId&&(x.name||'').toLowerCase().replace(/\s+/g,' ')===nameLow);
     if(nameDupe){_submitting=false;showFErr('cf-name','err-cf-name',nameDupe.name+' is already in your list. Is this a different person with the same name?');return;}
-    // Phone match = soft warning — two people can share a number (family), allow override
+    // Phone match = soft warning, two people can share a number (family), allow override
     const phoneDupe=realPhone?clients.find(x=>x.id!==editClientId&&(x.phone||'').replace(/\D/g,'')===ph):null;
     if(phoneDupe&&!_allowPhoneDupe){
       _submitting=false;
@@ -1000,7 +1000,7 @@ function saveClient(){
       }
       return;
     }
-    // Address match = info only — landlords and shared addresses are valid
+    // Address match = info only, landlords and shared addresses are valid
     if(street&&city){
       const addrNorm=addr.toLowerCase().replace(/\s+/g,' ');
       const addrDupe=clients.find(x=>x.id!==editClientId&&x.addr&&x.addr.toLowerCase().replace(/\s+/g,' ')===addrNorm);
@@ -1270,7 +1270,7 @@ function renderClientDetail(){
   const _ltv=_wonBids.reduce((sum,b)=>sum+(b.amount||0),0);
   const _tier=getClientTier(c);
   const _lastContactStr=(()=>{
-    const d=c.last_contact_date;if(!d)return '—';
+    const d=c.last_contact_date;if(!d)return '-';
     const days=Math.floor((Date.now()-new Date(d+'T12:00').getTime())/86400000);
     if(days<1)return 'Today';if(days===1)return '1d ago';if(days<30)return days+'d ago';
     if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
@@ -1296,18 +1296,18 @@ function renderClientDetail(){
       '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':svgIcon('🔒')+' ')+'+ New estimate</button>'+
     '</div>'+
     '';
-  // Metric tiles — outside hero in split-3-eq grid
+  // Metric tiles, outside hero in split-3-eq grid
   const _heroMets=document.getElementById('cd-hero-mets');
   if(_heroMets){
     const _met=(label,val,sub,color)=>
       '<div class="met">'+
         '<div class="met-l">'+label+'</div>'+
-        '<div class="met-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'—')+'</div>'+
+        '<div class="met-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'-')+'</div>'+
         (sub?'<div class="met-s">'+sub+'</div>':'')+
       '</div>';
     _heroMets.innerHTML=
       _met('Lifetime value',_ltv>0?fmt(_ltv):null,_wonBids.length+' job'+(  _wonBids.length!==1?'s':''))||
-      _met('Lifetime value','—','No completed jobs')+
+      _met('Lifetime value','-','No completed jobs')+
       _met('Open balance',_totalOwed>0.01?fmt(_totalOwed):(_totalPaidAll>0?'$0':null),
         _totalOwed>0.01?_totalPaidAll>0?fmt(_totalPaidAll)+' paid · '+fmt(_totalOwed+_totalPaidAll)+' total':'Balance due':
         _totalPaidAll>0?'Paid in full':null,
@@ -1315,10 +1315,10 @@ function renderClientDetail(){
       _met('Last contact',_lastContactStr,c.last_contact_date||'');
     // Fix: render all 3 tiles properly
     _heroMets.innerHTML=
-      _met('Lifetime value',_ltv>0?fmt(_ltv):'—',_wonBids.length+' job'+(_wonBids.length!==1?'s':'') ,null)+
+      _met('Lifetime value',_ltv>0?fmt(_ltv):'-',_wonBids.length+' job'+(_wonBids.length!==1?'s':'') ,null)+
       _met('Open balance',_totalOwed>0.01?fmt(_totalOwed):'$0',
         _totalOwed>0.01?(_totalPaidAll>0?fmt(_totalPaidAll)+' paid · '+fmt(_totalOwed+_totalPaidAll)+' total':'Balance due'):
-        _totalPaidAll>0?'Paid in full':'—',
+        _totalPaidAll>0?'Paid in full':'-',
         _totalOwed>0.01?'var(--c-red)':null)+
       _met('Last contact',_lastContactStr,'',null);
   }
@@ -1361,7 +1361,7 @@ function renderClientDetail(){
       <div style="font-size:12px;font-weight:700;color:var(--green-mid)">${svgIcon('✓')} Paid in full</div>
       <div style="font-size:14px;font-weight:700;color:var(--green-mid)">${fmt(totalPaidAll)}</div>
     </div>`:'';
-  // Lien alert — any won bid with balance overdue 30+ days
+  // Lien alert, any won bid with balance overdue 30+ days
   const _lienBid=_wonBids.find(b=>{
     const bal=getBidBalance(b);if(bal<0.01)return false;
     const startDate=new Date(b.completion_date||b.signedAt||Date.now());
@@ -1385,12 +1385,12 @@ function renderClientDetail(){
     </div>`;
   }
   const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📞')} Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📋')} Intake notes:</span> ${escHtml(c.notes)}</div>`:''}</div>`:'';
-  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">${svgIcon('⚠️')} Pre-1978 — EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
+  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">${svgIcon('⚠️')} Pre-1978, EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
   const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML+epaHTML;
   const _metsEl=document.getElementById('cd-client-mets');
   _metsEl.innerHTML=_metsContent;
   _metsEl.style.display=_metsContent?'':'none';
-  // Estimate action buttons — context-aware based on pipeline stage
+  // Estimate action buttons, context-aware based on pipeline stage
   const _cdStage=getClientStage(currentClientId).stage;
   const _cdActions=document.getElementById('cd-estimate-actions');
   if(_cdActions){
@@ -1398,7 +1398,7 @@ function renderClientDetail(){
       const _onbSent=c.onboardingSentAt?'Link sent '+_relTime(c.onboardingSentAt):'';
       _cdActions.innerHTML=
         '<div style="background:var(--amber-lt);border:1.5px solid var(--amber);border-radius:var(--rl);padding:14px 16px;margin-bottom:4px">'+
-          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">'+svgIcon('📋')+' Needs onboarding — send link so they can fill in their address &amp; project details</div>'+
+          '<div style="font-size:12px;font-weight:700;color:#856404;margin-bottom:10px">'+svgIcon('📋')+' Needs onboarding, send link so they can fill in their address &amp; project details</div>'+
           '<button onclick="sendOnboardingLink('+c.id+')" style="width:100%;padding:13px;border-radius:var(--r);border:none;background:var(--amber);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('📲')+' Send onboarding link</button>'+
           (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
         '</div>';
@@ -1483,7 +1483,7 @@ function deleteClientNote(noteId){
   c.notes=(c.notes||[]).filter(n=>n.id!==noteId);
   saveAll();renderClientNotes();
 }
-// Notes previously had no way back in once added — long ones got clipped to
+// Notes previously had no way back in once added, long ones got clipped to
 // whatever fit the one-line display, with no edit path to fix a typo. This opens
 // the full text in a real textarea (scrollable, multi-line) with Save/Delete.
 function editClientNote(noteId){
@@ -1515,7 +1515,7 @@ function renderCDTimeline(){
   const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId),cmiles=getClientMileage(currentClientId);
   const events=[];
   cbids.forEach(b=>{
-    events.push({date:b.bid_date||'',type:'bid',id:b.id,label:`Bid — ${fmt(b.amount)}`,meta:b.status,color:'bid'});
+    events.push({date:b.bid_date||'',type:'bid',id:b.id,label:`Bid: ${fmt(b.amount)}`,meta:b.status,color:'bid'});
     (b.collHistory||[]).forEach(h=>{
       if(!h.ts)return;
       const dateStr=h.ts.slice(0,10);
@@ -1524,13 +1524,13 @@ function renderCDTimeline(){
       const noteText=h.note&&h.note!==stageLabel?h.note:'';
       events.push({date:dateStr,type:'coll',label:'Collection: '+stageLabel,meta:escHtml(noteText)+(noteText?' · ':'')+fmt(b.amount)+' job',color:'coll'});
     });
-    if(b.completion_date)events.push({date:b.completion_date,type:'complete',label:(b.kind==='diagnostic'?'Diagnostic charge — ':'Job completed — ')+fmt(b.amount),meta:b.kind==='diagnostic'?escHtml(b.desc||'Diagnostic visit'):escHtml(b.type||'Painting job'),color:'active'});
+    if(b.completion_date)events.push({date:b.completion_date,type:'complete',label:(b.kind==='diagnostic'?'Diagnostic charge, ':'Job completed, ')+fmt(b.amount),meta:b.kind==='diagnostic'?escHtml(b.desc||'Diagnostic visit'):escHtml(b.type||'Painting job'),color:'active'});
   });
   const allPays=payments.filter(p=>cbids.some(b=>b.id===p.bid_id));
   allPays.forEach(p=>{
     if(!p.date)return;
     const isRefund=p.type==='refund';
-    events.push({date:p.date,type:'payment',label:(isRefund?'Refund — ':'Payment — ')+fmt(Math.abs(p.amount)),meta:escHtml(p.method||'')+(p.ref?' #'+escHtml(p.ref):''),color:isRefund?'lost':'payment'});
+    events.push({date:p.date,type:'payment',label:(isRefund?'Refund: ':'Payment: ')+fmt(Math.abs(p.amount)),meta:escHtml(p.method||'')+(p.ref?' #'+escHtml(p.ref):''),color:isRefund?'lost':'payment'});
   });
   cjobs.forEach(j=>{
     if(j.eventType==='estimate'){
@@ -1543,7 +1543,7 @@ function renderCDTimeline(){
         color:isCanceled?'canceled':'estimate'
       });
     } else {
-      events.push({date:j.start||'',type:'job',label:'Job scheduled — '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0),color:'active'});
+      events.push({date:j.start||'',type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0),color:'active'});
     }
   });
   cmiles.forEach(m=>events.push({date:m.date||'',type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
@@ -1673,7 +1673,7 @@ function renderCDBids(){
       if(lien&&lien.status==='filed')return '<div class="lien-banner"><div><span style="font-size:11px;font-weight:800">'+svgIcon('⚠')+' LIEN FILED</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' outstanding · '+escHtml(lien.county)+'</span></div><button class="btn btn-sm" onclick="openLienPanel('+b.id+')" style="background:rgba(255,100,100,.2);border-color:rgba(255,100,100,.4);color:#FFB3B3;font-size:11px">Edit lien</button></div>';
       if(lien&&lien.status==='intent')return '<div class="overdue-banner"><div><span style="font-size:11px;font-weight:700;color:var(--red)">NOTICE OF INTENT SENT</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' owed · '+days+' days since completion</span></div><button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">Update lien</button></div>';
       if(days>=30)return '<div class="overdue-banner"><div><span style="font-size:11px;font-weight:700;color:var(--red)">'+days+' DAYS OVERDUE</span><br><span style="font-size:12px">'+fmt(getBidBalance(b))+' owed since '+b.completion_date+'</span></div><button class="btn btn-sm btn-r" onclick="openLienPanel('+b.id+')">File lien</button></div>';
-      if(days>=7)return '<div class="tip tip-w"><strong>Balance '+days+' days past completion</strong> — '+fmt(getBidBalance(b))+' owed. <button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="margin-left:6px">Log payment</button></div>';
+      if(days>=7)return '<div class="tip tip-w"><strong>Balance '+days+' days past completion</strong>, '+fmt(getBidBalance(b))+' owed. <button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="margin-left:6px">Log payment</button></div>';
       return '';
     }).join('');
   }
@@ -1701,7 +1701,7 @@ function renderCDBids(){
       if(bpays.length){
         payHTML+='<div style="margin-top:8px;background:var(--bg2);border-radius:var(--r);padding:8px 10px">';
         payHTML+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text3);margin-bottom:5px">Payment history</div>';
-        // NO DELETE BUTTON (owner directive): the visible control is EDIT — fix the
+        // NO DELETE BUTTON (owner directive): the visible control is EDIT, fix the
         // record in place. Deletion is dev-only via the 3s long-press (data-lp-*,
         // cloud.js) and inert for everyone else. Nobody deletes payments in normal use.
         payHTML+=bpays.map(p=>{const isRef=p.type==='refund';const amtDisp=isRef?'<strong style="color:#A32D2D">'+svgIcon('↩')+' -'+fmt(Math.abs(p.amount))+'</strong>':'<strong style="color:var(--green-mid)">+'+fmt(p.amount)+'</strong>';const typeLabel=isRef?'REFUND':(escHtml(p.method)+(p.ref?' #'+escHtml(p.ref):''));return '<div data-lp-id="'+p.id+'" data-lp-type="payment" data-lp-label="'+escHtml('Payment '+fmt(Math.abs(p.amount)))+'" style="display:flex;justify-content:space-between;align-items:center;font-size:11px;padding:3px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text2)">'+p.date+' · '+typeLabel+'</span><span>'+amtDisp+' <button onclick="editPayment('+p.id+')" style="font-size:10px;padding:2px 8px;border-radius:6px;border:1px solid var(--border2);background:none;color:var(--text2);cursor:pointer;font-family:inherit">'+svgIcon('✎')+' Edit</button></span></div>';}).join('');
@@ -1725,19 +1725,19 @@ function renderCDBids(){
     const actBtns=[];
     const isDiag=b.kind==='diagnostic';
     if(isWon){
-      // Close job button — when won but not yet marked complete
+      // Close job button, when won but not yet marked complete
       if(!b.completion_date){const linkedJob=jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id);const jid=linkedJob?.id;if(jid)actBtns.push('<button class="btn btn-sm" onclick="markJobDone('+jid+')" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid)">'+svgIcon('✓')+' Close job</button>');}
       if(balance>0.01)actBtns.push('<button class="btn btn-sm btn-g" onclick="openPayPanel('+b.id+')">+ Log payment</button>');
       if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">'+svgIcon('💳')+' Send pay link</button>');
       if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">'+svgIcon('📲')+' Request pay</a>');}}
       if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">'+svgIcon('↩')+' Issue refund</button>');
       actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
-      // "Final invoice" only for real jobs — a diagnostic charge is already a
+      // "Final invoice" only for real jobs, a diagnostic charge is already a
       // one-line receipt (Print invoice below covers it fine, no reconciliation
       // to do: no change orders, nothing that could be pending).
       if(!isDiag)actBtns.push('<button class="btn btn-sm" onclick="openFinalInvoice('+b.id+')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('🧾')+' Final invoice</button>');
       actBtns.push('<button class="btn btn-sm" onclick="printInvoice('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128438; Print invoice</button>');
-      // Schedule/Revise/Supply list don't apply to a diagnostic charge — it's
+      // Schedule/Revise/Supply list don't apply to a diagnostic charge, it's
       // already done, it's a fee not a scope of work, nothing to build a
       // supply list for.
       if(!isDiag){
@@ -1750,7 +1750,7 @@ function renderCDBids(){
       if(balance>0.01&&days>=14&&days<21)actBtns.push('<button class="btn btn-sm" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'second\')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('💬')+' 2nd notice</button>');
       if(balance>0.01&&days>=21)actBtns.push('<button class="btn btn-sm btn-r" onclick="collSendSMS(bids.find(b=>b.id=='+b.id+'),\'intent\')">'+svgIcon('💬')+' Intent to lien</button>');
       if(lien&&lien.status!=='resolved'&&getBidBalance(b)<=0.01)actBtns.push('<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('✓')+' Release lien</button>');
-      // Recordable release doc — reachable any time after release (re-file, lost copy).
+      // Recordable release doc, reachable any time after release (re-file, lost copy).
       if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('📄')+' Release doc</button>');
       if(!isDiag){
         actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
@@ -1853,8 +1853,8 @@ function openClientProposals(clientId){
   // Group year → month
   const byYear={};
   wonBids.forEach(b=>{
-    const yr=b._dk.slice(0,4)||'—';
-    const mo=b._dk.slice(0,7)||'—';
+    const yr=b._dk.slice(0,4)||'-';
+    const mo=b._dk.slice(0,7)||'-';
     if(!byYear[yr])byYear[yr]={};
     if(!byYear[yr][mo])byYear[yr][mo]=[];
     byYear[yr][mo].push(b);
@@ -1977,7 +1977,7 @@ function _cpOpen(bidId,view){
   const pays=getBidPayments(bidId);
   const paid=getBidPaid(bidId);
   const PAINT={'std':'Standard (Behr/Valspar)','prem':'Sherwin-Williams Premium','ultra':'SW Emerald Ultra'};
-  const COND={'1.0':'Good — minor prep','1.2':'Fair — moderate prep','1.5':'Poor — heavy prep'};
+  const COND={'1.0':'Good: minor prep','1.2':'Fair: moderate prep','1.5':'Poor: heavy prep'};
   const surfs=b.surfaces||[];
   const scope=b.scope?Object.entries(b.scope).filter(([,v])=>v).map(([k])=>{const s=SCOPE_ITEMS?.find(x=>x.id===k);return s?s.label:k;}):[];
   const SURF={'walls':'Walls','ceiling':'Ceiling','trim':'Trim','doors':'Doors','windows':'Windows','cabinets':'Cabinets','ext_walls':'Siding','ext_trim':'Ext trim','deck':'Deck','fence':'Fence','epoxy':'Epoxy floor'};
@@ -2000,7 +2000,7 @@ function _cpOpen(bidId,view){
     bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:10px">Surfaces</div>'+
       surfs.map(s=>'<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)"><span>'+(SURF[s.type]||s.type)+(s.room?' · '+escHtml(s.room):'')+'</span><span style="color:var(--text2)">'+((s.qty||s.sqft||0)+' '+(s.unit||'sqft'))+'</span></div>').join('')+
     '</div>';
-    if(b.paint||b.condition)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Paint:</strong> '+(PAINT[b.paint]||b.paint||'—')+'</div><div style="font-size:12px;color:var(--text2)"><strong>Condition:</strong> '+(COND[b.condition]||b.condition||'—')+'</div></div>';
+    if(b.paint||b.condition)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text2);margin-bottom:4px"><strong>Paint:</strong> '+(PAINT[b.paint]||b.paint||'-')+'</div><div style="font-size:12px;color:var(--text2)"><strong>Condition:</strong> '+(COND[b.condition]||b.condition||'-')+'</div></div>';
     if(scope.length)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Scope of work</div>'+scope.map(s=>'<div style="font-size:13px;padding:3px 0;border-bottom:1px solid var(--border)">'+escHtml(s)+'</div>').join('')+'</div>';
   }
 
@@ -2019,10 +2019,10 @@ function _cpOpen(bidId,view){
   const propPane=document.getElementById('cp-prop-pane');
   const _cpStorageKey=b.signingKey||b.proposalKey||null;
   const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓')+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
-  // Signature block pinned at the bottom of the client view — image from the stored
+  // Signature block pinned at the bottom of the client view, image from the stored
   // proposal JSON when available, falling back to the name/timestamp on the bid so the
   // block still shows when the storage write was missed at signing time.
-  // Owner-record signature display — the SHARED signed-doc block (esign.js),
+  // Owner-record signature display, the SHARED signed-doc block (esign.js),
   // same component the client hub renders. Update once, updates everywhere.
   function _cpSigBlock(prop){
     const at=(prop&&prop.signedAt)||b.signedAt||'';
@@ -2253,7 +2253,7 @@ function renderCDAddresses(){
         <button onclick="removeClientAddress(${i})" style="background:none;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:#A32D2D">✕</button>
       </div></div>`;
   });
-  if(!c.addr&&extras.length===0)html+='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No address — edit client to add one.</div>';
+  if(!c.addr&&extras.length===0)html+='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No address, edit client to add one.</div>';
   el.innerHTML=html;
 }
 function openAddAddressModal(){
@@ -2301,7 +2301,14 @@ async function _lookupPropertyData(clientId,addrParts){
     let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
     if(!res.ok||res.status===204)return;
     const d=await res.json();
-    if(d.error)return;
+    if(d.error||d.found===false){
+      // Backend has no record for this address. Stamp propDataFetchedAt so the
+      // background queue (filters on !propDataFetchedAt) doesn't re-query it on
+      // every boot, that repeated lookup was the recurring /api/property miss.
+      const c0=clients.find(x=>x.id===clientId);
+      if(c0&&!c0.propDataFetchedAt){c0.propDataFetchedAt=new Date().toISOString();c0.propDataMiss=true;saveAll();}
+      return;
+    }
     const c=clients.find(x=>x.id===clientId);if(!c)return;
     if(d.yearBuilt&&!c.yearBuilt)c.yearBuilt=d.yearBuilt;
     if(d.sqft)c.sqft=d.sqft;
@@ -2321,7 +2328,7 @@ async function _lookupPropertyData(clientId,addrParts){
 
 // ── Background property data queue ────────────────────────────────────────────
 // Processes all clients with addresses but no Zillow data, one every 6.5s.
-// Fires automatically after login — handles onboarding imports and existing accounts.
+// Fires automatically after login, handles onboarding imports and existing accounts.
 let _propQueue=[];
 let _propQueueTimer=null;
 

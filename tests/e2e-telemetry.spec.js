@@ -1,7 +1,7 @@
 // @ts-check
-// Observability/telemetry — the analytics + console-error capture layer.
+// Observability/telemetry: the analytics + console-error capture layer.
 // HARD RULE under test: observability is INERT on localhost (the test origin),
-// so it can never add load, noise, or console-wrapping during any test run —
+// so it can never add load, noise, or console-wrapping during any test run,
 // and the app must tolerate its absence everywhere it's referenced.
 const { test, expect, mockAllExternal, waitForAppBoot, goPg, assertNoErrors } = require('./helpers');
 
@@ -18,7 +18,7 @@ test.describe('Telemetry layer', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('observability is inert on localhost — no _obs, no console.error wrapper', async () => {
+  test('observability is inert on localhost, no _obs, no console.error wrapper', async () => {
     const r = await page.evaluate(() => ({
       obs: typeof window._obs,
       // Native console.error must be untouched on the test origin so Playwright's
@@ -39,20 +39,20 @@ test.describe('Telemetry layer', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
-//  ERROR-CAPTURE POLICY — regression for live errors 37 + 38 (hotfix lane)
+//  ERROR-CAPTURE POLICY, regression for live errors 37 + 38 (hotfix lane)
 //
 //  37: "[MapKit] Initialization failed because the server returned error 503"
-//      — Apple's own library logging Apple's own outage. The app already
+//     , Apple's own library logging Apple's own outage. The app already
 //      degrades (Photon geocoding fallback); paging the hotfix lane for a
 //      third-party 503 is a capture-policy bug, not an app bug.
-//  38: "{}" — console.error(object) serialized through bare JSON.stringify,
+//  38: "{}", console.error(object) serialized through bare JSON.stringify,
 //      which yields "{}" for Errors/events/non-enumerable props. A report with
 //      zero content can never be root-caused and re-pages the lane forever.
 //
 //  Observability is deliberately INERT on localhost, so these tests load the
 //  real source into a Node sandbox with a production hostname and drive the
 //  console hook directly. Every capture path is exercised against the actual
-//  shipped file — not a copy of its logic.
+//  shipped file, not a copy of its logic.
 // ════════════════════════════════════════════════════════════════════════════
 
 test.describe('observability error-capture policy (Node sandbox on real source)', () => {
@@ -98,14 +98,14 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
     expect(invocations.length).toBe(0);
   });
 
-  test('MapKit auth/token failures STILL report — the filter is outage-narrow, ours to fix stays ours', () => {
+  test('MapKit auth/token failures STILL report, the filter is outage-narrow, ours to fix stays ours', () => {
     const { consoleObj, invocations } = loadSandbox();
     consoleObj.error('[MapKit] Initialization failed because the authorization token is invalid.');
     expect(invocations.length).toBe(1);
     expect(invocations[0].body.errors[0].message).toContain('authorization token');
   });
 
-  test('regression #38: contentless "{}" reports are dropped — nothing to root-cause, never page the lane', () => {
+  test('regression #38: contentless "{}" reports are dropped, nothing to root-cause, never page the lane', () => {
     const { consoleObj, invocations } = loadSandbox();
     consoleObj.error({});
     expect(invocations.length).toBe(0);

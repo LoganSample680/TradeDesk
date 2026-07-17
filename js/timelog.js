@@ -1,31 +1,31 @@
-// ── Time Log — chronological "where did my time go" view ───────────────────
+// ── Time Log, chronological "where did my time go" view ───────────────────
 // Merges two time-tracking sources that don't otherwise talk to each other:
-//   1. timeEntries (local array / td_time_entries cloud table) — manual
+//   1. timeEntries (local array / td_time_entries cloud table), manual
 //      Clock in/out, tagged with logged_by_uid/logged_by_name at save time
 //      (js/jobs.js clockOut()).
-//   2. job_time_entries (Supabase, via _fetchCrewLabor) — GPS arrival/
+//   2. job_time_entries (Supabase, via _fetchCrewLabor), GPS arrival/
 //      departure auto-tracking (js/geo-track.js), already carries
 //      employee_user_id.
-// Owner call 2026-07-11: structure follows Books exactly — a year selector,
+// Owner call 2026-07-11: structure follows Books exactly, a year selector,
 // then month accordions (newest month first, current/future open by
-// default), then day accordions within each month (newest day first) — the
+// default), then day accordions within each month (newest day first), the
 // same _bkTogMonth/_bkTogDay/_bkRenderDays machinery Income and Expenses
 // already use (js/finance.js), just summing minutes instead of dollars. This
-// is an activity log, not a cost report — no permission gate to see your OWN
+// is an activity log, not a cost report, no permission gate to see your OWN
 // entries. Job Profit and Crew Cost are the $ views; they read the same rows
 // so cost isn't blind to manually-clocked time.
 function _tlJobClientInfo(jobId){
   const j=jobs.find(x=>x.id===jobId);
   const bid=j&&j.bid_id?bids.find(b=>b.id===j.bid_id):null;
   const c=bid?getClientById(bid.client_id):(j?getClientById(j.client_id):null);
-  // Job-site address, not billing address — a bid's own addr (when set) is the
+  // Job-site address, not billing address, a bid's own addr (when set) is the
   // actual property being worked, which can differ from the client's address
   // (property managers, rentals, multi-site commercial accounts). Same
   // precedence js/jobs.js already uses for job cards (bid.addr||client.addr).
   const addr=(bid&&bid.addr)||(j&&j.addr)||(c&&c.addr)||'';
-  return{jobName:j?j.name:'—',clientName:c?c.name:(j?j.name:'—'),addr};
+  return{jobName:j?j.name:'-',clientName:c?c.name:(j?j.name:'-'),addr};
 }
-// Still-running entries — clocked in, never closed. Separate from the history
+// Still-running entries, clocked in, never closed. Separate from the history
 // below: an open entry has no minutes yet, so mixing it into the month/day
 // accordions would just show a confusing "0m" row. This is also the visibility
 // a manager needs to force-close a forgotten clock (§ owner request 2026-07-11).
@@ -46,7 +46,7 @@ function _tlOpenEntries(){
 async function _timeLogRows(sinceISO){
   const rows=[];
   timeEntries.forEach(e=>{
-    if(e.open)return; // still running — shown separately, see _tlOpenEntries
+    if(e.open)return; // still running, shown separately, see _tlOpenEntries
     if(sinceISO&&e.start_time&&e.start_time<sinceISO)return;
     const info=_tlJobClientInfo(e.job_id);
     rows.push({
@@ -76,7 +76,7 @@ function _tlYears(rows){
   if(!years.length)years.push(String(new Date().getFullYear()));
   return years;
 }
-// Sunday of the week containing dateStr — the grouping key for weekly totals
+// Sunday of the week containing dateStr, the grouping key for weekly totals
 // and overtime. Payroll periods vary (weekly/biweekly/semimonthly), but every
 // one of them is built from calendar weeks, so this is the one grouping that's
 // never wrong to offer.
@@ -87,12 +87,12 @@ function _tlWeekKey(dateStr){
   d.setDate(d.getDate()-d.getDay());
   return d.toISOString().slice(0,10);
 }
-// Overtime: federal (FLSA) is per-person, per-week, over 40 hours — the one
+// Overtime: federal (FLSA) is per-person, per-week, over 40 hours, the one
 // rule that's true everywhere. Daily OT (e.g. CA/AK/NV/CO over 8hrs/day) is
 // state-specific; asserting it as a default would be actively wrong for most
 // contractors, so this deliberately only flags the universal rule and leaves
 // the rest to "verify with your state," same disclaimer pattern as the tax
-// tool. Mutates rows in place (adds weekOT) — cheap, avoids a second pass in
+// tool. Mutates rows in place (adds weekOT), cheap, avoids a second pass in
 // every row renderer.
 function _tlComputeOT(rows){
   const byWeek={};
@@ -106,7 +106,7 @@ function _tlComputeOT(rows){
   });
 }
 // Running weekly total for payroll: "as of this day, how many hours has this
-// person logged so far this week" — computed chronologically (oldest day
+// person logged so far this week", computed chronologically (oldest day
 // first) per person per week regardless of display order (rows render
 // newest-first). Granularity is per-DAY, not per-entry: every entry on the
 // same day for the same person shows the same running total (the total
@@ -141,7 +141,7 @@ function _tlComputeWeeklyRunning(rows){
   });
 }
 // Formats an ISO timestamp as a plain clock time ("8:02 AM"). Used for both
-// the Clock In/Clock Out columns and the CSV export — one place so the two
+// the Clock In/Clock Out columns and the CSV export, one place so the two
 // never drift out of format with each other.
 function _tlFmtTime(iso){
   if(!iso)return '';
@@ -169,7 +169,7 @@ function _tlExportCSV(){
   const biz=(typeof S!=='undefined'&&S.bname)?S.bname:'TradeDesk';
   const fname=(biz+'_TimeLog_'+_tlYear+'.csv').replace(/[/,\s]+/g,'_');
   if(typeof downloadFile==='function')downloadFile(fname,lines.join('\n'),'text/csv');
-  typeof showToast==='function'&&showToast('Time Log exported — '+_tlYear,'📋');
+  typeof showToast==='function'&&showToast('Time Log exported, '+_tlYear,'📋');
 }
 let _tlYear=null;
 function _tlPopulateYearSel(years){
@@ -179,7 +179,7 @@ function _tlPopulateYearSel(years){
   sel.innerHTML=years.map(y=>'<option value="'+y+'"'+(y===cur?' selected':'')+'>'+y+'</option>').join('');
 }
 function setTimeLogYear(yr){_tlYear=String(yr);renderTimeLog();}
-// Manual entries only — GPS-verified auto entries aren't user-editable, same as
+// Manual entries only, GPS-verified auto entries aren't user-editable, same as
 // every competitor researched (editing GPS-verified data would defeat its
 // purpose). Own entries always editable/deletable; others' only with the same
 // payroll permission Job Profit/Crew Cost already gate on.
@@ -191,14 +191,14 @@ function _tlCanEdit(r){
 }
 function _tlRow(r){
   const canEdit=_tlCanEdit(r);
-  // Delete isn't a button here — it's the same 3s hold-to-confirm gesture used
+  // Delete isn't a button here, it's the same 3s hold-to-confirm gesture used
   // everywhere else in the app ([data-lp-id], js/cloud.js). The attributes are
   // only emitted when canEdit is true, so the gesture is simply absent (does
   // nothing) on GPS/auto rows and on entries this person isn't allowed to
-  // touch — same visibility rule the Edit button already follows.
+  // touch: same visibility rule the Edit button already follows.
   const lpAttrs=canEdit?' data-lp-id="'+r.rawId+'" data-lp-type="timelog" data-lp-label="'+escHtml(r.personName+' · '+r.clientName)+'"':'';
   // Job address is the primary line (owner request 2026-07-11: "show the day,
-  // job address, person...") — client name/job/task fold into a muted second
+  // job address, person..."): client name/job/task fold into a muted second
   // line along with the manual-vs-GPS source tag, which used to be its own column.
   const jobLine=[r.clientName,(r.jobName&&r.jobName!==r.clientName)?r.jobName:null,r.detail||null].filter(Boolean).map(escHtml).join(' · ');
   const sourceTag=r.source==='auto'?svgIcon('📍',{size:10})+' Auto':svgIcon('▶',{size:10})+' Manual';
@@ -208,10 +208,10 @@ function _tlRow(r){
       (r.addr?'<div style="font-weight:700">'+escHtml(r.addr)+'</div>':'')+
       '<div class="mute" style="font-size:11px;margin-top:'+(r.addr?'2px':'0')+'">'+jobLine+(jobLine?' · ':'')+sourceTag+'</div>'+
     '</td>'+
-    '<td data-label="Clock In">'+(_tlFmtTime(r.startTime)||'—')+'</td>'+
-    '<td data-label="Clock Out">'+(_tlFmtTime(r.endTime)||'—')+'</td>'+
+    '<td data-label="Clock In">'+(_tlFmtTime(r.startTime)||'-')+'</td>'+
+    '<td data-label="Clock Out">'+(_tlFmtTime(r.endTime)||'-')+'</td>'+
     '<td class="bold" data-label="Duration" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.minutes):r.minutes+'m')+
-      (r.weekOT?' <span title="'+escHtml(r.personName)+' logged 40+ hrs the week of '+_tlWeekKey(r.date)+' — verify overtime eligibility with your state; not payroll advice" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-amber-soft);color:var(--c-amber-deep);margin-left:4px;white-space:nowrap">OT WK</span>':'')+
+      (r.weekOT?' <span title="'+escHtml(r.personName)+' logged 40+ hrs the week of '+_tlWeekKey(r.date)+', verify overtime eligibility with your state; not payroll advice" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-amber-soft);color:var(--c-amber-deep);margin-left:4px;white-space:nowrap">OT WK</span>':'')+
     '</td>'+
     '<td data-label="Week total" style="text-align:right">'+(typeof _fmtMin==='function'?_fmtMin(r.weekRunningMin||0):(r.weekRunningMin||0)+'m')+'</td>'+
     '<td data-label="">'+(canEdit?
@@ -219,7 +219,7 @@ function _tlRow(r){
       :'')+'</td>'+
   '</tr>';
 }
-// Still-clocked-in banner — separate from the year/month/day history below,
+// Still-clocked-in banner, separate from the year/month/day history below,
 // refreshed on its own 30s tick while this page is open so elapsed time keeps
 // moving without re-rendering the whole accordion tree. Stops itself the
 // moment the page is no longer active (no leaked timers on other pages).
@@ -236,17 +236,17 @@ function _tlRenderOpenBanner(){
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--c-green-deep);margin-bottom:6px">'+svgIcon('▶',{size:12})+' Currently clocked in</div>'+
     visible.map(r=>
       // 10+ hrs still open is almost always a forgotten clock-out, not a real
-      // shift — flag it so a manager (or the person themselves) notices
+      // shift: flag it so a manager (or the person themselves) notices
       // before it silently becomes a wrong payroll number.
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:7px 0;border-top:1px solid var(--c-green-edge)">'+
         '<div style="min-width:0">'+
-          '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.personName)+(r.elapsedMin>600?' <span title="Clocked in 10+ hours — likely a forgotten clock-out" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-red-soft);color:var(--c-red-deep);margin-left:4px">LONG SHIFT</span>':'')+'</div>'+
+          '<div style="font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.personName)+(r.elapsedMin>600?' <span title="Clocked in 10+ hours, likely a forgotten clock-out" style="font-size:9px;font-weight:800;padding:2px 5px;border-radius:4px;background:var(--c-red-soft);color:var(--c-red-deep);margin-left:4px">LONG SHIFT</span>':'')+'</div>'+
           '<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(r.clientName)+(r.jobName?' · '+escHtml(r.jobName):'')+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">since '+new Date(r.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})+'</div>'+
         '</div>'+
         '<div style="display:flex;align-items:center;gap:8px;flex-shrink:0">'+
           '<div style="font-size:13px;font-weight:800'+(r.elapsedMin>600?';color:var(--c-red-deep)':'')+'">'+(typeof _fmtMin==='function'?_fmtMin(r.elapsedMin):r.elapsedMin+'m')+'</div>'+
-          // Own entry: a real clockOut() — matches _activeTimer by construction
+          // Own entry: a real clockOut(): matches _activeTimer by construction
           // (either this device's live session, or restored by
           // _rehydrateActiveTimer() on boot). Someone else's entry: the
           // manager-only force-close, which audit-tags who closed it.
@@ -276,7 +276,7 @@ async function renderTimeLog(){
   catch(_e){el.innerHTML='<div class="empty">Couldn\'t load time entries.</div>';return;}
   const myUid=(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
   const visible=(typeof _canViewComp==='function'&&_canViewComp())?allRows:allRows.filter(r=>r.personUid===myUid);
-  // "This week" is a live indicator, not tied to the year selector — a
+  // "This week" is a live indicator, not tied to the year selector, a
   // contractor running payroll cares about the current pay period regardless
   // of what year's history they happen to be scrolled to.
   const weekEl=document.getElementById('tl-week-total');

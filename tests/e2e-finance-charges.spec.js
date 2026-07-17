@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * E2E tests — Finance charges on overdue balances
+ * E2E tests, Finance charges on overdue balances
  *
  * Coverage:
  * 1. _calcFinanceCharge returns 0 when balance is paid
@@ -56,7 +56,7 @@ async function bootHub(page, hub) {
   await page.waitForTimeout(600);
 }
 
-test.describe('Finance charges — _calcFinanceCharge unit behaviour', () => {
+test.describe('Finance charges, _calcFinanceCharge unit behaviour', () => {
   test('_calcFinanceCharge returns 0 when balance is fully paid', async ({ page }) => {
     await bootHub(page, hubWith({ balance: 0, paid: 5000 }));
     // Verify no finance charge is injected when balance is 0
@@ -66,7 +66,7 @@ test.describe('Finance charges — _calcFinanceCharge unit behaviour', () => {
   });
 
   test('_calcFinanceCharge returns 0 when balance is 0 (full pay)', async ({ page }) => {
-    // Hub with bid fully paid — financeCharge:0 from snapshot
+    // Hub with bid fully paid, financeCharge:0 from snapshot
     await bootHub(page, hubWith({ balance: 0, paid: 5000, financeCharge: 0, daysOverdue: 0 }));
     const fcCount = await page.locator('text=Finance charge').count();
     expect(fcCount, 'No finance charge line when balance is 0').toBe(0);
@@ -74,7 +74,7 @@ test.describe('Finance charges — _calcFinanceCharge unit behaviour', () => {
   });
 });
 
-test.describe('Finance charges — client hub display', () => {
+test.describe('Finance charges, client hub display', () => {
   test('Finance charge line item appears when bid is 30+ days overdue after completion', async ({ page }) => {
     // 35-day-old completed job, balance $3750, finance charge pre-computed inline
     // 1.5%/month = 0.05%/day; 5 days overdue after 30-day grace → $3750 * 0.0005 * 5 = $9.38
@@ -112,7 +112,7 @@ test.describe('Finance charges — client hub display', () => {
   });
 
   test('No finance charge shown when within grace period (< 30 days after completion)', async ({ page }) => {
-    // Bid with completion date 10 days ago — within grace period, financeCharge should be 0
+    // Bid with completion date 10 days ago, within grace period, financeCharge should be 0
     await bootHub(page, hubWith({ completion_date: GRACE_DATE, financeCharge: 0, daysOverdue: 0 }));
     const fcCount = await page.locator('text=Finance charge').count();
     expect(fcCount, 'Finance charge must NOT appear within 30-day grace period').toBe(0);

@@ -1,6 +1,6 @@
 // @ts-check
 /**
- * Regression guard — the unpaid-balance popup's "⚖️ View lien" button must open
+ * Regression guard, the unpaid-balance popup's "⚖️ View lien" button must open
  * the ACTUAL filed lien document, not the client record (§7.1: behavior change →
  * assert the new entry point AND that the old one is gone).
  *

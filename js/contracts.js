@@ -113,7 +113,7 @@ function editContractModal(ctId){
       '<textarea id="ct-notes" style="font-size:13px;padding:10px;min-height:60px;resize:none;line-height:1.5;width:100%;box-sizing:border-box;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+escHtml(ct.notes||'')+'</textarea></div>'+
     // Mark this service done → advances nextDate to the next cycle, which drops the
     // contract off the dashboard "Maintenance Due" card (it filters nextDate<=today+14).
-    '<button onclick="logContractVisit('+ctId+');document.getElementById(\'_ct-modal-ov\').remove();" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;touch-action:manipulation">'+svgIcon('✓',{size:14})+' Log service — advance to next visit</button>'+
+    '<button onclick="logContractVisit('+ctId+');document.getElementById(\'_ct-modal-ov\').remove();" style="width:100%;padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;touch-action:manipulation">'+svgIcon('✓',{size:14})+' Log service, advance to next visit</button>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'+
       ''+
       '<button onclick="document.getElementById(\'_ct-modal-ov\').remove()" style="padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
@@ -208,7 +208,7 @@ function renderClientContracts(clientId){
           '<div style="background:var(--bg);border-radius:6px;padding:7px;text-align:center">'+
             '<div style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;margin-bottom:2px">Next</div>'+
             '<div style="font-size:12px;font-weight:800;color:'+(ct.nextDate&&ct.nextDate<tk?'#A32D2D':'var(--blue)')+'">'+
-              (ct.nextDate?new Date(ct.nextDate+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—')+
+              (ct.nextDate?new Date(ct.nextDate+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'-')+
             '</div>'+
           '</div>'+
           '<div style="background:var(--bg);border-radius:6px;padding:7px;text-align:center">'+
@@ -247,7 +247,7 @@ function renderContractsDash(){
         const daysUntil=Math.ceil((new Date(ct.nextDate+'T12:00')-new Date())/86400000);
         const isOv=ct.nextDate<tk;
         // Tapping a due item opens the actual maintenance contract (its terms +
-        // log-visit/edit actions) directly, not the client record's contracts tab —
+        // log-visit/edit actions) directly, not the client record's contracts tab,
         // the card is contract-specific, so the click is too.
         return '<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid rgba(45,93,168,.1);cursor:pointer" '+
           'onclick="editContractModal&&editContractModal('+ct.id+')">'+

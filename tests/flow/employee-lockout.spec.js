@@ -1,4 +1,4 @@
-// SECURITY FLOW — an EMPLOYEE account must not reach financials (CLAUDE.md §13,
+// SECURITY FLOW, an EMPLOYEE account must not reach financials (CLAUDE.md §13,
 // task #11). Signs in as the dev contractor (so real contractor data is loaded),
 // then flips the live app into employee mode via the SAME globals production sets
 // on an employee login (_isEmployee / _employeeRecord, cloud.js:228) and exercises
@@ -7,9 +7,9 @@
 // one-line finding() naming the exact gate that broke.
 //
 // Two layers are tested separately:
-//   • UI LOCKOUT (passes today) — nav hidden, money/tax/team pages redirect to
+//   • UI LOCKOUT (passes today), nav hidden, money/tax/team pages redirect to
 //     the dashboard, money tiles hidden, payroll/comp gated.
-//   • DATA-LAYER LEAK — a SEPARATE test (employee-data-leak.spec.js) proves the
+//   • DATA-LAYER LEAK, a SEPARATE test (employee-data-leak.spec.js) proves the
 //     in-memory hole. Kept apart so this suite stays green while the architectural
 //     fix is decided.
 const { test, expect } = require('./flow-test');
@@ -18,7 +18,7 @@ const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'employee-lockout/ui';
 
-// A tech employee: collect/expenses/mileage only — NO financials, team, payroll.
+// A tech employee: collect/expenses/mileage only, NO financials, team, payroll.
 const TECH_PERMS = { collect: true, expenses: true, mileage: true, leads: false, estimate: false, schedule: false, clients: false, financials: false, team: false, payroll: false };
 
 async function becomeEmployee(page) {
@@ -36,7 +36,7 @@ async function becomeEmployee(page) {
   }, TECH_PERMS);
 }
 
-test.describe('employee lockout — financials unreachable (security)', () => {
+test.describe('employee lockout, financials unreachable (security)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); await becomeEmployee(page); });
@@ -107,7 +107,7 @@ test.describe('employee lockout — financials unreachable (security)', () => {
     // ── Dashboard financial tiles hidden ───────────────────────────────────
     // Real production gating (dashboard.js renderDash):
     //   • The financial KPI grid (#dash-mets-inner: Revenue/Expenses/Taxes/Profit)
-    //     is ONLY rendered for contractors — for an employee kpiEl is replaced by
+    //     is ONLY rendered for contractors, for an employee kpiEl is replaced by
     //     the #emp-today-jobs view, so the money grid never enters the DOM (line 92).
     //   • #dash-close-tip is explicitly display:none for employees (line 216).
     //   • #dash-sub keeps its element but its text is BLANKED for employees

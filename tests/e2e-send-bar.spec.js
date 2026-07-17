@@ -4,21 +4,21 @@
  *
  * Covers four areas not tested by e2e-send-email.spec.js:
  *
- * 1. DOM layout  — #proposal-link-bar and #gei-send-bar both contain
+ * 1. DOM layout , #proposal-link-bar and #gei-send-bar both contain
  *                  📱 Text, ✉️ Email, and ⬆️ Other app buttons.
  *
- * 2. Email compose modal — clicking Email opens the compose sheet with
+ * 2. Email compose modal, clicking Email opens the compose sheet with
  *                  pre-filled To/Subject/Body; submitting calls Resend edge
  *                  function; no-email case shows To field empty + focusable.
  *
- * 3. SMS path    — sendProposalViaSms() guards on missing phone; when a phone
+ * 3. SMS path   , sendProposalViaSms() guards on missing phone; when a phone
  *                  number is present the sms: href is built with the correct
  *                  digits (no formatting chars).
  *
- * 4. replyTo     — _sendEmailFromCompose() sets replyTo to the signed-in
+ * 4. replyTo    : _sendEmailFromCompose() sets replyTo to the signed-in
  *                  contractor's email so Resend wires up reply_to + bcc.
  *
- * 5. Generic estimate send bar — after sendGenericProposal() completes,
+ * 5. Generic estimate send bar, after sendGenericProposal() completes,
  *                  #gei-send-bar becomes visible and #gei-send-btn is hidden;
  *                  clicking its Email button opens the compose modal.
  *
@@ -35,7 +35,7 @@ const {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const MOCK_CLIENT_EMAIL = 'bettis@steelers.com';
-const MOCK_CLIENT_PHONE = '4125551234'; // digits only — what the bar stores
+const MOCK_CLIENT_PHONE = '4125551234'; // digits only, what the bar stores
 const MOCK_SIGNING_URL  = `https://zjspainting.tradedeskpro.app/sign.html?t=${FAKE_TOKEN}&u=${FAKE_USER_ID}&b=${FAKE_BID_ID_1}`;
 
 // ── Shared helpers ─────────────────────────────────────────────────────────────
@@ -67,7 +67,7 @@ async function restoreFetch(page) {
 
 /**
  * Seed _pendingShareData with known values (the shared in-memory share-link
- * state read by _proposalShareData() — replaces the old #proposal-link-bar
+ * state read by _proposalShareData(): replaces the old #proposal-link-bar
  * DOM dataset that lived on the now-removed paint estimator page).
  */
 async function seedProposalLinkBar(page, {
@@ -76,7 +76,7 @@ async function seedProposalLinkBar(page, {
   url = MOCK_SIGNING_URL,
 } = {}) {
   await page.evaluate(({ url, cemail, cphone }) => {
-    // Bare identifier, not window.X — _pendingShareData is a top-level `let` (js/data.js).
+    // Bare identifier, not window.X: _pendingShareData is a top-level `let` (js/data.js).
     _pendingShareData = { url, cname: 'Jerome Bettis', bname: 'ZJ Painting', cphone, cemail };
   }, { url, cemail, cphone });
 }
@@ -94,7 +94,7 @@ async function submitEmailCompose(page, { toEmail } = {}) {
     await page.fill('#_ec-to', toEmail);
   }
 
-  // Click Send — force past any stray .zmodal-overlay that intercepts the click in
+  // Click Send, force past any stray .zmodal-overlay that intercepts the click in
   // WebKit (otherwise it retries until the 60s timeout closes the context = flake).
   await page.click('#_ec-send-btn', { force: true });
   await page.waitForTimeout(800);
@@ -104,7 +104,7 @@ async function submitEmailCompose(page, { toEmail } = {}) {
 
 // ── 1. DOM layout ──────────────────────────────────────────────────────────────
 
-test.describe('Send bar — removed with the paint estimator', () => {
+test.describe('Send bar, removed with the paint estimator', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -117,7 +117,7 @@ test.describe('Send bar — removed with the paint estimator', () => {
 
   test.afterAll(async () => { await page.context().close(); });
 
-  test('#proposal-link-bar and #pg-est are gone — the generic estimator send bar covers this now', async () => {
+  test('#proposal-link-bar and #pg-est are gone, the generic estimator send bar covers this now', async () => {
     const r = await page.evaluate(() => ({
       pgEst: !!document.getElementById('pg-est'),
       proposalLinkBar: !!document.getElementById('proposal-link-bar'),
@@ -130,7 +130,7 @@ test.describe('Send bar — removed with the paint estimator', () => {
 
 // ── 2. GEI send bar DOM ────────────────────────────────────────────────────────
 
-test.describe('Generic estimate send bar — DOM layout', () => {
+test.describe('Generic estimate send bar, DOM layout', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -179,16 +179,16 @@ test.describe('Generic estimate send bar — DOM layout', () => {
 
 // ── 3. GEI bar shows after proposal generated ──────────────────────────────────
 
-test.describe('Generic estimate send bar — shows after proposal generated', () => {
+test.describe('Generic estimate send bar, shows after proposal generated', () => {
   let page;
 
   /** Seed the post-generation state (bar visible, dataset filled). Runs before
-   *  EVERY test — a Playwright retry boots a fresh context where earlier tests
+   *  EVERY test, a Playwright retry boots a fresh context where earlier tests
    *  in the file never executed, so each test must set up its own state. */
   async function seedGeiSendBar() {
     await page.evaluate(({ url, cemail, cphone, token, bidId, userId }) => {
-      // _pendingShareData/_pendingSignToken are top-level `let` bindings (js/data.js) —
-      // not on window — so they must be set as bare identifiers from inside this
+      // _pendingShareData/_pendingSignToken are top-level `let` bindings (js/data.js):
+      // not on window, so they must be set as bare identifiers from inside this
       // evaluated callback (which shares the page's global lexical scope), not via
       // window.X (that would create an unrelated property the real code never reads).
       _pendingShareData = { url, cname: 'Jerome Bettis', bname: 'ZJ Painting', cphone, cemail };
@@ -216,7 +216,7 @@ test.describe('Generic estimate send bar — shows after proposal generated', ()
   });
 
   test.beforeEach(async () => {
-    // Re-assert the page + bar state every test — survives retries and any
+    // Re-assert the page + bar state every test, survives retries and any
     // navigation the app performed during a previous test in this group.
     // Also clear any modal overlay a prior test left open: in WebKit a stray
     // .zmodal-overlay intercepts pointer events and blocks the Email click.
@@ -274,9 +274,9 @@ test.describe('Generic estimate send bar — shows after proposal generated', ()
   });
 });
 
-// ── 4. Email compose modal — no client email on file ──────────────────────────
+// ── 4. Email compose modal, no client email on file ──────────────────────────
 
-test.describe('Email compose modal — no client email on file', () => {
+test.describe('Email compose modal, no client email on file', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -295,7 +295,7 @@ test.describe('Email compose modal — no client email on file', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('compose modal opens when client has no email — To field empty', async () => {
+  test('compose modal opens when client has no email, To field empty', async () => {
     await patchFetchForEmail(page);
     await seedProposalLinkBar(page, { cemail: '' });
 
@@ -327,7 +327,7 @@ test.describe('Email compose modal — no client email on file', () => {
     assertNoErrors(page, 'compose modal can enter email and send');
   });
 
-  test('compose modal shows error state on Resend failure — no double-send', async () => {
+  test('compose modal shows error state on Resend failure, no double-send', async () => {
     await patchFetchForEmail(page, { status: 502, body: '{"error":"Bad gateway"}' });
     await seedProposalLinkBar(page, { cemail: MOCK_CLIENT_EMAIL });
 
@@ -336,7 +336,7 @@ test.describe('Email compose modal — no client email on file', () => {
     });
     await page.waitForTimeout(400);
 
-    // Submit — expect error to show in modal (not navigate away)
+    // Submit: expect error to show in modal (not navigate away)
     await page.click('#_ec-send-btn');
     await page.waitForTimeout(1000);
 
@@ -350,13 +350,13 @@ test.describe('Email compose modal — no client email on file', () => {
       return el ? el.textContent : '';
     });
     expect(statusText, 'status should show error message').toContain('⚠️');
-    assertNoErrors(page, 'compose modal shows error on 502 — no double-send');
+    assertNoErrors(page, 'compose modal shows error on 502, no double-send');
   });
 });
 
-// ── 5. sendProposalViaSms — phone guard and sms: URL ──────────────────────────
+// ── 5. sendProposalViaSms: phone guard and sms: URL ──────────────────────────
 
-test.describe('sendProposalViaSms — phone guard and sms: URL', () => {
+test.describe('sendProposalViaSms: phone guard and sms: URL', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -433,9 +433,9 @@ test.describe('sendProposalViaSms — phone guard and sms: URL', () => {
   });
 });
 
-// ── 6. sendProposalViaEmail — replyTo contains contractor email ───────────────
+// ── 6. sendProposalViaEmail: replyTo contains contractor email ───────────────
 
-test.describe('sendProposalViaEmail — replyTo is contractor email', () => {
+test.describe('sendProposalViaEmail: replyTo is contractor email', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -484,7 +484,7 @@ test.describe('sendProposalViaEmail — replyTo is contractor email', () => {
     assertNoErrors(page, 'sendProposalViaEmail replyTo is contractor email');
   });
 
-  test('replyTo is present even when Resend returns ok — BCC goes to contractor', async () => {
+  test('replyTo is present even when Resend returns ok, BCC goes to contractor', async () => {
     await patchFetchForEmail(page, { status: 200, body: '{"ok":true}' });
     await seedProposalLinkBar(page, { cemail: MOCK_CLIENT_EMAIL });
 
@@ -521,9 +521,9 @@ test.describe('sendProposalViaEmail — replyTo is contractor email', () => {
   });
 });
 
-// ── 7. _previewClientHub — logs contractor view, opens iframe with preview=1 ─────
+// ── 7. _previewClientHub: logs contractor view, opens iframe with preview=1 ─────
 
-test.describe('_previewClientHub — contractor view logging', () => {
+test.describe('_previewClientHub: contractor view logging', () => {
   let page;
 
   test.beforeAll(async ({ browser }) => {
@@ -538,7 +538,7 @@ test.describe('_previewClientHub — contractor view logging', () => {
   test.afterAll(async () => { await page.context().close(); });
 
   test('_previewClientHub logs viewerType=contractor for each pending bid', async () => {
-    // Patch window.fetch (WebKit-safe — page.route does not reliably intercept
+    // Patch window.fetch (WebKit-safe: page.route does not reliably intercept
     // same-page fetch() calls in WebKit; see file header) to capture the call.
     await page.evaluate(() => {
       window.__viewCalls = [];

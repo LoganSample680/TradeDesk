@@ -2,13 +2,13 @@
 //
 // The core rule the user wants enforced: multiple bids are fine, but no two bids
 // may share the same id (a true duplicate). Same for clients. This scans the
-// real loaded data after sign-in and fails — listing the offending id + names —
+// real loaded data after sign-in and fails, listing the offending id + names,
 // if any duplicate id exists. It's also the definitive check for whether e.g.
 // "TEsty Test" has two bids with the SAME id (a real dup) vs two distinct bids.
 const { test, expect } = require('./flow-test');
 const { needsLiveCreds, signIn, finding } = require('./live-helpers');
 
-test.describe('data integrity — id uniqueness invariants', () => {
+test.describe('data integrity, id uniqueness invariants', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
   test.beforeEach(async ({ page }) => { await signIn(page); });
