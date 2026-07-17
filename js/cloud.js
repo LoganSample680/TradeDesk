@@ -391,7 +391,14 @@ async function loadAccountData(){
       _isEmployee=true;_contractorUserId=row.contractor_user_id;_employeeRecord=row;
       _user={id:_supaUser.id,email:_supaUser.email,name:row.name||'',role:row.role||'employee',account_id:null};
       applyPermissions();
+      // Owner report 2026-07-17: a returning already-linked crew member landed
+      // in a stale test account with zero indication anything had happened,
+      // just a silent redirect into someone else's business. Every crew
+      // auto-link now shows SOMETHING, first-join keeps its warmer welcome,
+      // a returning session gets a plain factual toast, so a wrong link is
+      // never silent, the signed-in person always has a signal to notice.
       if(welcome)showToast('Welcome to the team, '+escHtml(row.name||'there')+'! 👋','✅');
+      else showToast('Signed in as crew ('+escHtml(row.role||'employee')+'). Not expecting this? Contact the business that invited you.','👷',6000);
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
       return true;
     };
@@ -623,7 +630,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.17.26.8';
+const APP_VERSION='07.17.26.9';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
