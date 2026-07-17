@@ -953,19 +953,20 @@ function printKansasLien(bidId){
   h1{font-size:18pt;text-align:center;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
   h2{font-size:13pt;text-align:center;margin-bottom:24px;font-weight:normal}
   .subtitle{text-align:center;font-size:11pt;margin-bottom:30px;font-style:italic}
-  .section{margin-bottom:18px}
+  .section{margin-bottom:18px;page-break-inside:avoid;break-inside:avoid}
   .label{font-size:10pt;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
   .value{border-bottom:1px solid #000;min-height:24px;padding:2px 4px;font-size:13pt}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .notice{border:2px solid #000;padding:14px;margin:20px 0;font-size:11pt;line-height:1.6}
-  .oath{margin:24px 0;font-size:11pt;line-height:1.8;text-align:justify}
-  .sig-block{margin-top:36px}
+  .notice{border:2px solid #000;padding:14px;margin:20px 0;font-size:11pt;line-height:1.6;page-break-inside:avoid;break-inside:avoid}
+  .oath{margin:24px 0;font-size:11pt;line-height:1.8;text-align:justify;page-break-inside:avoid;break-inside:avoid}
+  .sig-block{margin-top:36px;page-break-inside:avoid;break-inside:avoid}
   .sig-line{border-bottom:1px solid #000;min-height:36px;margin-bottom:4px}
   .sig-label{font-size:10pt;text-align:center;color:#333}
-  .notary{border:1px solid #000;padding:16px;margin-top:28px;font-size:11pt;line-height:1.8}
+  .notary{border:1px solid #000;padding:16px;margin-top:28px;font-size:11pt;line-height:1.8;page-break-inside:avoid;break-inside:avoid}
   .notary-title{font-size:12pt;font-weight:bold;text-transform:uppercase;margin-bottom:10px;text-align:center}
   .page-break{page-break-after:always;margin-bottom:40px}
-  .proposal-section{margin-top:40px}
+  .proposal-section{margin-top:40px;max-width:100%;overflow-wrap:break-word}
+  .proposal-section *{max-width:100%!important;box-sizing:border-box}
   .td-bar-btn{padding:12px 18px;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;min-height:46px;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent;line-height:1}
   @media print{body{padding:20px}.no-print{display:none}}
 </style></head><body>
@@ -1143,16 +1144,16 @@ function printKansasLienRelease(bidId){
   h1{font-size:18pt;text-align:center;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
   h2{font-size:13pt;text-align:center;margin-bottom:24px;font-weight:normal}
   .subtitle{text-align:center;font-size:11pt;margin-bottom:30px;font-style:italic}
-  .section{margin-bottom:18px}
+  .section{margin-bottom:18px;page-break-inside:avoid;break-inside:avoid}
   .label{font-size:10pt;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
   .value{border-bottom:1px solid #000;min-height:24px;padding:2px 4px;font-size:13pt}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .notice{border:2px solid #000;padding:14px;margin:20px 0;font-size:11pt;line-height:1.6}
-  .oath{margin:24px 0;font-size:11pt;line-height:1.8;text-align:justify}
-  .sig-block{margin-top:36px}
+  .notice{border:2px solid #000;padding:14px;margin:20px 0;font-size:11pt;line-height:1.6;page-break-inside:avoid;break-inside:avoid}
+  .oath{margin:24px 0;font-size:11pt;line-height:1.8;text-align:justify;page-break-inside:avoid;break-inside:avoid}
+  .sig-block{margin-top:36px;page-break-inside:avoid;break-inside:avoid}
   .sig-line{border-bottom:1px solid #000;min-height:36px;margin-bottom:4px}
   .sig-label{font-size:10pt;text-align:center;color:#333}
-  .notary{border:1px solid #000;padding:16px;margin-top:28px;font-size:11pt;line-height:1.8}
+  .notary{border:1px solid #000;padding:16px;margin-top:28px;font-size:11pt;line-height:1.8;page-break-inside:avoid;break-inside:avoid}
   .notary-title{font-size:12pt;font-weight:bold;text-transform:uppercase;margin-bottom:10px;text-align:center}
   .td-bar-btn{padding:12px 18px;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;min-height:46px;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent;line-height:1}
   @media print{body{padding:20px}.no-print{display:none}}

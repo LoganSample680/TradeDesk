@@ -167,14 +167,17 @@ async function _renderBillingStatusInner(el) {
   }
   const cycles = status.consecutive_paid_cycles || 0;
   const unlocked = cycles >= 2;
-  const statusLine = status.status === 'past_due'
+  const trialEndStr = status.current_period_end ? new Date(status.current_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  const statusLine = status.status === 'trialing'
+    ? '<div style="font-size:13px;font-weight:700;color:var(--text)">Free trial' + (trialEndStr ? ', ends ' + trialEndStr : '') + '</div>'
+    : status.status === 'past_due'
     ? '<div style="font-size:13px;font-weight:700;color:#856404">Payment past due</div>'
     : '<div style="font-size:13px;font-weight:700;color:' + (unlocked ? 'var(--green-mid)' : 'var(--text)') + '">' +
         (unlocked ? 'Active, exports unlocked' : 'Active, ' + cycles + ' of 2 cycles') + '</div>';
   el.innerHTML =
     '<div style="display:flex;align-items:center;gap:8px;background:' + (unlocked ? 'var(--green-lt)' : 'var(--bg2)') + ';border:1px solid ' + (unlocked ? 'var(--green)' : 'var(--border2)') + ';border-radius:var(--r);padding:10px 12px;margin-bottom:10px">' +
       '<div style="flex:1">' + statusLine +
-        '<div style="font-size:11px;color:var(--text3)">$99/mo · billed on the 1st</div>' +
+        '<div style="font-size:11px;color:var(--text3)">$99/mo after your trial</div>' +
       '</div>' +
     '</div>' +
     '<button class="btn btn-sm" onclick="openBillingPortal()">Manage billing →</button>';

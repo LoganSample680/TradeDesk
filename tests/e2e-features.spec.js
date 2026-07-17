@@ -1712,6 +1712,39 @@ test.describe('printKansasLien: document structure', () => {
     }
   });
 
+  // Mirrors the printKansasLien print-safety test above, same CSS structure,
+  // same "was cutting off when printed" owner report, same fix.
+  test('printKansasLienRelease: every unbreakable block has page-break-inside:avoid', async () => {
+    const result = await page.evaluate(([bidId]) => {
+      if (typeof printKansasLienRelease !== 'function') return null;
+      let html = null;
+      const _origOpen = window.open;
+      window.open = function () { return { document: { _h: '', write(h) { this._h += h; html = this._h; }, close() {} } }; };
+      try { printKansasLienRelease(bidId); } catch (e) { window.open = _origOpen; return { error: e.message }; }
+      window.open = _origOpen;
+      if (!html) return { noHtml: true };
+      const styleBlock = (html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
+      const ruleHasAvoid = (selector) => {
+        const rule = (styleBlock.match(new RegExp('\\.' + selector + '\\{([^}]*)\\}')) || [])[1] || '';
+        return /page-break-inside:\s*avoid/.test(rule) && /break-inside:\s*avoid/.test(rule);
+      };
+      return {
+        noticeAvoids: ruleHasAvoid('notice'),
+        sectionAvoids: ruleHasAvoid('section'),
+        oathAvoids: ruleHasAvoid('oath'),
+        sigBlockAvoids: ruleHasAvoid('sig-block'),
+        notaryAvoids: ruleHasAvoid('notary'),
+      };
+    }, [LIEN_PRINT_BID]);
+    if (result && !result.error && !result.noHtml) {
+      expect(result.noticeAvoids).toBe(true);
+      expect(result.sectionAvoids).toBe(true);
+      expect(result.oathAvoids).toBe(true);
+      expect(result.sigBlockAvoids).toBe(true);
+      expect(result.notaryAvoids).toBe(true);
+    }
+  });
+
   test('printKansasLien: shows zAlert if window.open blocked', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof printKansasLien !== 'function') return null;
@@ -1725,6 +1758,52 @@ test.describe('printKansasLien: document structure', () => {
       return { alerted };
     }, [LIEN_PRINT_BID]);
     if (result !== null) expect(result.alerted).toBe(true);
+  });
+
+  // Owner report 2026-07-17: printed lien documents were cutting content off.
+  // Root cause: no page-break-inside:avoid anywhere in the print CSS, so a
+  // browser's print pagination could slice a bordered box (.notice/.notary)
+  // or a signature block right across a page boundary, the border/content
+  // just stops at the page edge and resumes with no opening border on the
+  // next page, reading as "cut off." Every unbreakable block now carries
+  // page-break-inside:avoid (+ the modern break-inside:avoid alias), so the
+  // browser pushes the WHOLE block to the next page instead of slicing it.
+  test('printKansasLien: every unbreakable block (.notice/.section/.oath/.sig-block/.notary) has page-break-inside:avoid', async () => {
+    const result = await page.evaluate(([bidId]) => {
+      if (typeof printKansasLien !== 'function') return null;
+      let html = null;
+      const _origOpen = window.open;
+      window.open = function () {
+        const w = { document: { _h: '', write(h) { this._h += h; html = this._h; }, close() {} } };
+        return w;
+      };
+      try { printKansasLien(bidId); } catch (e) { window.open = _origOpen; return { error: e.message }; }
+      window.open = _origOpen;
+      if (!html) return { noHtml: true };
+      const styleBlock = (html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
+      const ruleHasAvoid = (selector) => {
+        const rule = (styleBlock.match(new RegExp('\\.' + selector + '\\{([^}]*)\\}')) || [])[1] || '';
+        return /page-break-inside:\s*avoid/.test(rule) && /break-inside:\s*avoid/.test(rule);
+      };
+      return {
+        noticeAvoids: ruleHasAvoid('notice'),
+        sectionAvoids: ruleHasAvoid('section'),
+        oathAvoids: ruleHasAvoid('oath'),
+        sigBlockAvoids: ruleHasAvoid('sig-block'),
+        notaryAvoids: ruleHasAvoid('notary'),
+        // The embedded proposal exhibit (Exhibit A) can't bleed off the page
+        // edge regardless of what width the saved proposal HTML assumes.
+        exhibitContained: /\.proposal-section\s*\{[^}]*max-width:100%/.test(styleBlock),
+      };
+    }, [LIEN_PRINT_BID]);
+    if (result && !result.error && !result.noHtml) {
+      expect(result.noticeAvoids, '.notice (the boxed NOTICE paragraph) must never split across a page').toBe(true);
+      expect(result.sectionAvoids, '.section (each numbered field) must never split across a page').toBe(true);
+      expect(result.oathAvoids, '.oath (the VERIFICATION paragraph) must never split across a page').toBe(true);
+      expect(result.sigBlockAvoids, '.sig-block (signature lines) must never split across a page').toBe(true);
+      expect(result.notaryAvoids, '.notary (the boxed notary acknowledgment) must never split across a page').toBe(true);
+      expect(result.exhibitContained, 'the embedded proposal exhibit must stay within the page width').toBe(true);
+    }
   });
 });
 

@@ -71,31 +71,30 @@ Deno.serve(async (req) => {
     const { returnUrl } = await req.json().catch(() => ({ returnUrl: null }));
     const baseUrl = returnUrl || 'https://logansample680.github.io/TradeDesk/';
 
-    // Owner spec 2026-07-17: card is collected at signup (Stripe Checkout
-    // subscription mode always does this), but the FIRST CHARGE is 14 days
-    // out, not immediate, standard trial pattern so a contractor can back out
-    // free. After that, every contractor bills on the 1st of the month, not
-    // their own signup/trial-end anniversary: trial_end lands the first real
-    // charge on the 1st that's on-or-after day 14, never mid-trial (Stripe
-    // requires billing_cycle_anchor >= trial_end, so the anchor is computed
-    // from the trial end date, not from "now").
-    const trialEndMs = Date.now() + 14 * 24 * 60 * 60 * 1000;
-    const trialEnd = new Date(trialEndMs);
-    let anchorYear = trialEnd.getUTCFullYear(), anchorMonth = trialEnd.getUTCMonth();
-    if (trialEnd.getUTCDate() > 1) anchorMonth += 1; // trial ends mid-month → the FOLLOWING month's 1st
-    const billingCycleAnchor = Math.floor(Date.UTC(anchorYear, anchorMonth, 1, 0, 0, 0) / 1000);
-    const trialEndUnix = Math.floor(trialEndMs / 1000);
-
+    // Owner spec 2026-07-17 (revised): a genuine free trial, no card required
+    // to start it. 14 days, bills on the trial-end anniversary from then on
+    // (no forced calendar-day anchor, that's not how most SaaS does it and it
+    // isn't worth the added complexity). payment_method_collection:'if_required'
+    // is the actual Stripe mechanism for this: since nothing is due today
+    // (full trial, $0), Checkout skips the card form entirely. A card only
+    // gets asked for once Stripe actually needs one, at trial end, via the
+    // billing portal (see openBillingPortal, js/cloud.js) or Stripe's own
+    // trial-ending reminder email.
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
       customer: existingSub?.stripe_customer_id || undefined,
       customer_email: existingSub?.stripe_customer_id ? undefined : (user.email || undefined),
+      payment_method_collection: 'if_required',
       line_items: [{ price: priceId, quantity: 1 }],
       client_reference_id: user.id,
       subscription_data: {
         metadata: { tradedesk_user_id: user.id },
-        trial_end: trialEndUnix,
-        billing_cycle_anchor: billingCycleAnchor,
+        trial_period_days: 14,
+        // No card was collected at signup, so if one still hasn't been added
+        // by day 14, cancel cleanly instead of leaving a dangling unpaid
+        // invoice and a past_due subscription nobody asked for. Exports were
+        // already locked the whole time either way (0 paid cycles).
+        trial_settings: { end_behavior: { missing_payment_method: 'cancel' } },
       },
       success_url: baseUrl + '?billing=success',
       cancel_url: baseUrl + '?billing=cancel',
