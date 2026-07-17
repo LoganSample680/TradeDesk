@@ -495,30 +495,41 @@ function renderDash(){
       const nb=_nearbyJob;
       const clockTarget=nb.jobId||nb.fallbackJobId;
       const hasBalance=nb.balance>0.01;
-      const nbSub=nb.addr+(hasBalance?' · '+fmt(nb.balance)+' owed':'');
+      // NOTE: this card renders ONLY pre-clock-in (guarded by !_activeTimer above);
+      // the moment they clock in, the active timer hides it (owner decision, test-
+      // enforced). So there is no "clocked-in / Arrived stamp" state ON this card, the
+      // arrival stamp belongs wherever the on-the-clock UI lives, not here.
       if(!document.getElementById('_td-nearby-anim-style')){
         const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
-        // A subtle live-indicator dot pulse signals "right now", a small,
-        // standard convention (recording/online-status badges), not a foreign
-        // animation. The card itself uses the exact same background/shadow as
-        // every other dashboard card (only the left accent stripe differs), so
-        // it doesn't read as a different-colored card.
+        // A radar-ping (concentric rings expanding from the pin) + a live status dot
+        // read as "on site, right now", the GPS moment made visible. Same dashboard-card
+        // footprint, richer treatment reserved for this one on-site card.
         _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
-          '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}';
+          '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
+          '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}';
         document.head.appendChild(_s);
       }
+      const _svgPin=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
       const nbBtns=[];
-      nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('▶',{size:11})+' Clock in</button>');
-      nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" class="btn btn-sm" style="font-size:11px;padding:0 6px">'+svgIcon('📋',{size:11})+' Estimate/Invoice</button>');
-      if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" class="btn btn-sm btn-g" style="font-size:11px;padding:0 6px">'+svgIcon('💰',{size:11})+' Collect →</button>');
-      _nearbyEl.innerHTML='<div class="tf-card" style="position:relative;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card)'+(_wasHidden?';animation:tdNearbyIn .2s cubic-bezier(.22,1,.36,1) both':'')+'">'+
-        '<span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--c-green);border-radius:var(--r-lg) 0 0 var(--r-lg)"></span>'+
-        '<div class="tf-icon t-green">'+svgIcon('📍',{size:18})+'</div>'+
-        '<div class="tf-body">'+
-          '<div class="tf-name"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c-green);margin-right:6px;animation:tdNearbyDot 1.6s ease-in-out infinite"></span>You\'re here, '+escHtml(nb.clientName)+'</div>'+
-          '<div class="tf-sub" style="color:var(--c-green-deep)">'+escHtml(nbSub)+'</div>'+
+      nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:linear-gradient(160deg,#22c55e,#12894a);color:#fff;box-shadow:0 6px 16px -6px rgba(14,107,57,.6);display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><path d="M7 5v14l11-7z"/></svg>Clock in</button>');
+      nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Estimate</button>');
+      if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#0E6B39;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px">'+svgIcon('💰',{size:13,color:'#fff'})+'Collect</button>');
+      _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+        '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
+          '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+            '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite"></span>'+
+            '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite;animation-delay:.8s"></span>'+
+            '<span style="position:absolute;inset:0;border-radius:50%;border:2px solid rgba(22,163,74,.5);animation:tdGeoPing 2.4s ease-out infinite;animation-delay:1.6s"></span>'+
+            '<span style="position:relative;z-index:2;width:34px;height:34px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#0E6B39);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(14,107,57,.5)">'+_svgPin('#fff',17)+'</span>'+
+          '</div>'+
+          '<div style="flex:1;min-width:0">'+
+            '<span style="display:inline-flex;align-items:center;gap:6px;background:#0E6B39;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px"><span style="width:6px;height:6px;border-radius:50%;background:#7CFFB0;animation:tdNearbyDot 1.4s ease-in-out infinite"></span>ON SITE</span>'+
+            '<div style="font-size:18px;font-weight:800;letter-spacing:-.02em;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#1B1612" title="You\'re here">'+escHtml(nb.clientName)+'</div>'+
+            '<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:600;margin-top:3px"><span style="flex-shrink:0">'+_svgPin('#0E6B39',12)+'</span><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(nb.addr)+'</span></div>'+
+            (hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'')+
+          '</div>'+
         '</div>'+
-        '<div class="tf-acts" style="padding-left:0;gap:5px">'+nbBtns.join('')+'</div>'+
+        '<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>'+
       '</div>';
     }else{_nearbyEl.style.display='none';}
   }

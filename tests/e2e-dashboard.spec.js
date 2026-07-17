@@ -1122,12 +1122,15 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.html).toContain('_nearbyClockIn(555001,555011)');
       expect(r.html).toContain('Clock in');
       expect(r.html).toContain("_nearbyStartWork(555001)");
-      expect(r.html).toContain('Estimate/Invoice');
+      expect(r.html).toContain('Estimate');   // on-site card redesign: "Estimate" (was "Estimate/Invoice")
       // No dead controls: nothing owed means no Collect button at all, not a
       // disabled ghost, a permanently-inert button reads as broken.
       expect(r.html).not.toContain('Collect');
       expect(r.html).toContain('Banner Clockin');
       expect(r.html).toContain("You're here");
+      // Redesigned on-site card: live ON SITE badge + radar-ping geofence animation.
+      expect(r.html).toContain('ON SITE');
+      expect(r.html).toContain('tdGeoPing');
     });
 
     test('no job scheduled today, Clock in falls back to the client\'s nearest open job', async () => {
@@ -1185,7 +1188,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.ok).toBe(true);
       expect(r.html).toContain("openPayPanel(555002,'final')");
       expect(r.html).toContain('$450.00 owed');
-      expect(r.html).toContain('Collect →');
+      expect(r.html).toContain('Collect');   // on-site card redesign: "Collect" (was "Collect →")
       expect(r.html).not.toContain('disabled');
     });
 
@@ -1197,7 +1200,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         try {
           renderDash();
           const el = document.getElementById('dash-nearby');
-          return { ok: true, html: el ? el.innerHTML : '', btnCount: el ? el.querySelectorAll('.tf-acts button').length : -1 };
+          return { ok: true, html: el ? el.innerHTML : '', btnCount: el ? el.querySelectorAll('button').length : -1 };
         } catch (e) { return { ok: false, err: e.message }; }
         finally { _nearbyJob = origNb; _activeTimer = origTimer; }
       });
@@ -1222,7 +1225,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.html).toContain('_nearbyStartWork(555005)');
-      expect(r.html).toContain('Estimate/Invoice');
+      expect(r.html).toContain('Estimate');   // on-site card redesign: "Estimate" (was "Estimate/Invoice")
     });
 
     test('the pulse/entrance keyframes are injected once, not duplicated across renders', async () => {
