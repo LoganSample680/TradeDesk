@@ -132,10 +132,45 @@ function _checkSubdomain(val) {
     el.innerHTML = '<span style="color:var(--text3)">Use lowercase letters, numbers, hyphens (3–30 chars)</span>';
   }
 }
-function _manageSubscription() {
-  // Will trigger iOS in-app purchase sheet when native wrapper is added
-  zAlert('Subscription management will be available in the TradeDesk iOS app.', {title: 'Manage plan'});
+// Owner spec 2026-07-17: $99/mo platform billing, on the web only. No link to
+// this lives inside a future native app (keeps the app link-free so Apple has
+// no in-app-attributable transaction to claim commission on, see the App
+// Store research this session). Renders into #billing-status-ui in Settings.
+async function _renderBillingStatus() {
+  const el = document.getElementById('billing-status-ui');
+  if (!el) return;
+  el.style.display = 'block';
+  if (!(typeof supaEnabled === 'function' && supaEnabled()) || !window._supaUser) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3)">Sign in to manage billing.</div>';
+    return;
+  }
+  const exempt = await (typeof _isBillingExempt === 'function' ? _isBillingExempt() : Promise.resolve(false));
+  if (exempt) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3)">This account is exempt from billing.</div>';
+    return;
+  }
+  const status = await (typeof _fetchBillingStatus === 'function' ? _fetchBillingStatus() : Promise.resolve(null));
+  if (!status) {
+    el.innerHTML =
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">$99/mo. Subscribe to unlock Books and Time Log exports after your first 2 billing cycles.</div>' +
+      '<button class="btn btn-p" onclick="startTradeDeskBilling()" style="font-size:13px;padding:10px 18px">Subscribe</button>';
+    return;
+  }
+  const cycles = status.consecutive_paid_cycles || 0;
+  const unlocked = cycles >= 2;
+  const statusLine = status.status === 'past_due'
+    ? '<div style="font-size:13px;font-weight:700;color:#856404">Payment past due</div>'
+    : '<div style="font-size:13px;font-weight:700;color:' + (unlocked ? 'var(--green-mid)' : 'var(--text)') + '">' +
+        (unlocked ? 'Active, exports unlocked' : 'Active, ' + cycles + ' of 2 cycles') + '</div>';
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;background:' + (unlocked ? 'var(--green-lt)' : 'var(--bg2)') + ';border:1px solid ' + (unlocked ? 'var(--green)' : 'var(--border2)') + ';border-radius:var(--r);padding:10px 12px;margin-bottom:10px">' +
+      '<div style="flex:1">' + statusLine +
+        '<div style="font-size:11px;color:var(--text3)">$99/mo · billed on the 1st</div>' +
+      '</div>' +
+    '</div>' +
+    '<button class="btn btn-sm" onclick="openBillingPortal()">Manage billing →</button>';
 }
+function _manageSubscription() { _renderBillingStatus(); }
 function _renderIntegrations() {
   const el = document.getElementById('integrations-list');
   if (!el) return;

@@ -212,6 +212,100 @@ async function checkStripeConnectReturn(){
   }
 }
 
+// ── Platform billing (TradeDesk's own $99/mo plan, never Stripe Connect) ────
+// Owner spec 2026-07-17: Books exports + Time Log exports stay locked until a
+// contractor completes 2 CONSECUTIVE, unbroken monthly billing cycles (or the
+// account is on the never-charge allowlist). td_exports_unlocked() (see the
+// 20260804_platform_billing migration) is the single source of truth, an RPC
+// call keeps the actual gate logic server-side, a client can't fake it.
+let _exportsUnlocked=null; // cached boolean
+let _billingStatus=null;   // cached {status, consecutive_paid_cycles, ...} row, for UI display only
+async function _fetchExportsUnlocked(){
+  if(!supaEnabled()||!_supaUser)return false;
+  const cacheKey='td_exports_unlocked_'+_supaUser.id;
+  try{
+    const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');
+    if(cached&&cached.ts&&(Date.now()-cached.ts)<3600000){_exportsUnlocked=cached.data;return cached.data;}
+  }catch(e){}
+  try{
+    const{data,error}=await _supa.rpc('td_exports_unlocked');
+    if(error)return _exportsUnlocked; // transient failure — keep whatever was last known, never fail open to true
+    _exportsUnlocked=!!data;
+    try{localStorage.setItem(cacheKey,JSON.stringify({ts:Date.now(),data:!!data}));}catch(e){}
+    return !!data;
+  }catch(e){return _exportsUnlocked;}
+}
+async function _isBillingExempt(){
+  if(!supaEnabled()||!_supaUser)return false;
+  try{
+    const{data,error}=await _supa.rpc('td_billing_exempt');
+    if(error)return false;
+    return !!data;
+  }catch(e){return false;}
+}
+async function _fetchBillingStatus(){
+  if(!supaEnabled()||!_supaUser)return null;
+  try{
+    const{data,error}=await _supa.from('td_subscriptions').select('*').eq('user_id',_supaUser.id).maybeSingle();
+    if(error)return null;
+    _billingStatus=data;
+    return data;
+  }catch(e){return null;}
+}
+async function startTradeDeskBilling(){
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
+  const btn=event?.target;if(btn){btn.disabled=true;btn.textContent='Starting…';}
+  try{
+    const session=await _supa.auth.getSession();
+    const token=session?.data?.session?.access_token;
+    const res=await fetch(SUPA_URL+'/functions/v1/create-billing-checkout',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({returnUrl:(window._tdNativeReturnUrl||window.location.href.split('#')[0])})
+    });
+    const data=await res.json();
+    if(data.error){zAlert('Could not start checkout: '+data.error);if(btn){btn.disabled=false;btn.textContent='Subscribe';}return;}
+    window.location.href=data.url;
+  }catch(e){
+    zAlert('Could not start checkout: '+e.message);
+    if(btn){btn.disabled=false;btn.textContent='Subscribe';}
+  }
+}
+async function openBillingPortal(){
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
+  try{
+    const session=await _supa.auth.getSession();
+    const token=session?.data?.session?.access_token;
+    const res=await fetch(SUPA_URL+'/functions/v1/create-billing-portal',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({returnUrl:(window._tdNativeReturnUrl||window.location.href.split('#')[0])})
+    });
+    const data=await res.json();
+    if(data.error){zAlert('Could not open billing portal: '+data.error);return;}
+    window.location.href=data.url;
+  }catch(e){
+    zAlert('Could not open billing portal: '+e.message);
+  }
+}
+// Blocks an export action until the account is unlocked. Always re-checks
+// live (not the cache) right before an export, so a lapsed subscription can
+// never keep exporting on a stale cached "true". Returns true if the caller
+// may proceed.
+async function _requireExportsUnlocked(){
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in to export.');return false;}
+  try{localStorage.removeItem('td_exports_unlocked_'+_supaUser.id);}catch(e){}
+  const unlocked=await _fetchExportsUnlocked();
+  if(unlocked)return true;
+  const status=await _fetchBillingStatus();
+  const cycles=status?.consecutive_paid_cycles||0;
+  const msg=status
+    ?('Exports unlock after 2 consecutive billing cycles, you\'re at '+cycles+' of 2. Keep your subscription active and this opens automatically after the next renewal.')
+    :('Books and Time Log exports unlock after your first 2 monthly billing cycles. Subscribe to get started.');
+  zAlert(msg,{title:'Exports not unlocked yet'});
+  return false;
+}
+
 async function sendPaymentLink(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const c=getClientById(bid.client_id);if(!c)return;
@@ -529,7 +623,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.17.26.4';
+const APP_VERSION='07.17.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady

@@ -491,7 +491,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
         window.showToast = (msg) => { toastMsg = msg; };
         const origRows = _tlLastRows;
         _tlLastRows = [];
-        try { _tlExportCSV(); return { downloadCalled, toastMsg }; }
+        try { _tlDoExportCSV(); return { downloadCalled, toastMsg }; }
         finally { _tlLastRows = origRows; window.downloadFile = orig; window.showToast = origToast; }
       });
       expect(r.downloadCalled).toBe(false);
@@ -510,7 +510,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           { date: '2026-07-13', personName: 'Owner (me)', clientName: 'Client, "The" Best', addr: '1 Main St', jobName: 'Job A', detail: 'Sanding', source: 'manual', minutes: 90, weekOT: false, weekRunningMin: 90, startTime: '2026-07-13T08:00:00.000Z', endTime: '2026-07-13T09:30:00.000Z' },
           { date: '2026-07-14', personName: 'Crew A', clientName: 'Other Client', addr: '', jobName: 'Job B', detail: '', source: 'auto', minutes: 2500, weekOT: true, weekRunningMin: 2500, startTime: '2026-07-14T08:00:00.000Z', endTime: null },
         ];
-        try { _tlExportCSV(); return captured; }
+        try { _tlDoExportCSV(); return captured; }
         finally { _tlLastRows = origRows; _tlYear = origYear; window.downloadFile = orig; window.showToast = origToast; }
       });
       expect(r).toBeTruthy();
@@ -540,7 +540,7 @@ test.describe('timelog.js: exhaustive coverage', () => {
           { date: '2026-07-14', personName: 'B', clientName: '', addr: '', jobName: '', detail: '', source: 'manual', minutes: 30 },
           { date: '2026-07-10', personName: 'A', clientName: '', addr: '', jobName: '', detail: '', source: 'manual', minutes: 30 },
         ];
-        try { _tlExportCSV(); return captured; }
+        try { _tlDoExportCSV(); return captured; }
         finally { _tlLastRows = origRows; _tlYear = origYear; window.downloadFile = orig; window.showToast = origToast; }
       });
       expect(r.indexOf('2026-07-10')).toBeLessThan(r.indexOf('2026-07-14'));

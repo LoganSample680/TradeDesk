@@ -150,7 +150,15 @@ function _tlFmtTime(iso){
   return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
 }
 let _tlLastRows=[];
-function _tlExportCSV(){
+// Owner spec 2026-07-17: locked the same as Books exports, 2 consecutive
+// billing cycles or exempt. See _requireExportsUnlocked (js/cloud.js). Split
+// from the actual CSV build below so the build logic stays independently
+// testable (tests/e2e-timelog.spec.js calls _tlDoExportCSV directly).
+async function _tlExportCSV(){
+  if(typeof _requireExportsUnlocked==='function'&&!(await _requireExportsUnlocked()))return;
+  _tlDoExportCSV();
+}
+function _tlDoExportCSV(){
   if(!_tlLastRows.length){typeof showToast==='function'&&showToast('No time entries to export for '+_tlYear,'📋');return;}
   const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
   const header=['Date','Person','Job Address','Client','Job','Task','Source','Clock In','Clock Out','Minutes','Duration','Week Total','Overtime'];

@@ -1624,7 +1624,14 @@ async function fetchStateInfo(state){
     // Falls back gracefully if function doesn't handle this yet
   }catch(e){console.warn('fetchStateInfo:',e);}
 }
-function openExportPanel(){
+// Owner spec 2026-07-17: Books exports (everything this panel offers, CSV/
+// XLSX/PDF alike) stay locked until the contractor's TradeDesk subscription
+// has completed 2 consecutive billing cycles, or the account is exempt.
+// Gated at this single entry point so every export option behind it inherits
+// the check, no per-format gap. _requireExportsUnlocked always re-checks
+// live server-side (never the client's own say-so) and shows the reason.
+async function openExportPanel(){
+  if(typeof _requireExportsUnlocked==='function'&&!(await _requireExportsUnlocked()))return;
   const yr=trackerYear||S.taxYear||new Date().getFullYear();
   const years=[...new Set([
     ...expenses.map(e=>e.date?.slice(0,4)),
