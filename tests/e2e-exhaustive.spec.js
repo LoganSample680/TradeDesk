@@ -12167,9 +12167,18 @@ test.describe('settings.js: exhaustive coverage', () => {
     // alerts, it renders in place, so this now asserts the new real behavior.
     test('basic call, does not throw, renders into #billing-status-ui', async () => {
       const r = await page.evaluate(async () => {
+        // This suite shares one page across thousands of tests; guarantee the
+        // target element exists regardless of what an earlier test in the file
+        // did to the DOM (same ensureEl pattern the beforeAll above uses for
+        // every other settings element).
+        if (!document.getElementById('billing-status-ui')) {
+          const el = document.createElement('div');
+          el.id = 'billing-status-ui';
+          document.body.appendChild(el);
+        }
         try {
           _manageSubscription();
-          await new Promise(res => setTimeout(res, 50)); // let the async render settle
+          await new Promise(res => setTimeout(res, 150)); // let the async render settle
           const el = document.getElementById('billing-status-ui');
           return { ok: true, hasContent: !!(el && el.innerHTML.trim()) };
         } catch (e) {

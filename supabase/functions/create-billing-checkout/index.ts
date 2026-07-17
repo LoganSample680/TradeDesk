@@ -71,13 +71,20 @@ Deno.serve(async (req) => {
     const { returnUrl } = await req.json().catch(() => ({ returnUrl: null }));
     const baseUrl = returnUrl || 'https://logansample680.github.io/TradeDesk/';
 
-    // Owner spec: every contractor bills on the 1st of the month, not their own
-    // signup anniversary. billing_cycle_anchor pins renewals to the next 1st
-    // (UTC); Stripe automatically prorates the initial partial period up to
-    // that anchor, so someone subscribing on the 15th is charged a partial
-    // amount now and the full $99 on the 1st, same as everyone else from then on.
-    const now = new Date();
-    const nextFirstUTC = Math.floor(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1, 0, 0, 0) / 1000);
+    // Owner spec 2026-07-17: card is collected at signup (Stripe Checkout
+    // subscription mode always does this), but the FIRST CHARGE is 14 days
+    // out, not immediate, standard trial pattern so a contractor can back out
+    // free. After that, every contractor bills on the 1st of the month, not
+    // their own signup/trial-end anniversary: trial_end lands the first real
+    // charge on the 1st that's on-or-after day 14, never mid-trial (Stripe
+    // requires billing_cycle_anchor >= trial_end, so the anchor is computed
+    // from the trial end date, not from "now").
+    const trialEndMs = Date.now() + 14 * 24 * 60 * 60 * 1000;
+    const trialEnd = new Date(trialEndMs);
+    let anchorYear = trialEnd.getUTCFullYear(), anchorMonth = trialEnd.getUTCMonth();
+    if (trialEnd.getUTCDate() > 1) anchorMonth += 1; // trial ends mid-month → the FOLLOWING month's 1st
+    const billingCycleAnchor = Math.floor(Date.UTC(anchorYear, anchorMonth, 1, 0, 0, 0) / 1000);
+    const trialEndUnix = Math.floor(trialEndMs / 1000);
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -87,7 +94,8 @@ Deno.serve(async (req) => {
       client_reference_id: user.id,
       subscription_data: {
         metadata: { tradedesk_user_id: user.id },
-        billing_cycle_anchor: nextFirstUTC,
+        trial_end: trialEndUnix,
+        billing_cycle_anchor: billingCycleAnchor,
       },
       success_url: baseUrl + '?billing=success',
       cancel_url: baseUrl + '?billing=cancel',

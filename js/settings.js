@@ -140,6 +140,15 @@ async function _renderBillingStatus() {
   const el = document.getElementById('billing-status-ui');
   if (!el) return;
   el.style.display = 'block';
+  try {
+    await _renderBillingStatusInner(el);
+  } catch (e) {
+    // Never leave the panel silently blank on an unexpected error, a real
+    // contractor should always see SOMETHING actionable here.
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3)">Could not load billing status. <button class="btn btn-sm" onclick="_renderBillingStatus()">Retry</button></div>';
+  }
+}
+async function _renderBillingStatusInner(el) {
   if (!(typeof supaEnabled === 'function' && supaEnabled()) || !window._supaUser) {
     el.innerHTML = '<div style="font-size:12px;color:var(--text3)">Sign in to manage billing.</div>';
     return;
