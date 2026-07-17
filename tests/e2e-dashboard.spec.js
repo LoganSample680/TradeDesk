@@ -1243,20 +1243,28 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.count).toBe(1);
     });
 
-    test('an active timer suppresses the banner regardless of state', async () => {
+    test('active timer: the on-site card persists with live time-on-site + Arrived stamp + Clock out (owner: do 1 and 2)', async () => {
       const r = await page.evaluate(() => {
         const origNb = _nearbyJob, origTimer = _activeTimer;
-        _activeTimer = { jobId: 1, scopeId: 'x', start: Date.now() };
-        _nearbyJob = { clientId: 555004, jobId: null, fallbackJobId: null, bidId: 555002, balance: 450, clientName: 'Suppressed', addr: '2 Test St' };
+        _nearbyJob = null;
+        _activeTimer = { jobId: 555099, clientName: 'On Clock Co', scopeId: null, scopeLabel: null, startTime: Date.now() - 3600000 }; // clocked in 1h ago
         try {
           renderDash();
           const el = document.getElementById('dash-nearby');
-          return { ok: true, display: el ? el.style.display : '' };
+          return { ok: true, display: el ? el.style.display : '', html: el ? el.innerHTML : '' };
         } catch (e) { return { ok: false, err: e.message }; }
         finally { _nearbyJob = origNb; _activeTimer = origTimer; }
       });
-      expect(r.ok).toBe(true);
-      expect(r.display).toBe('none');
+      expect(r.ok, r.err).toBe(true);
+      // Behavior change (owner "do 1 and 2"): the card no longer vanishes on clock-in.
+      // It persists as the on-the-clock view with a live counter, arrival stamp, Clock out.
+      expect(r.display).toBe('block');
+      expect(r.html).toContain('clockOut()');
+      expect(r.html).toContain('dash-onsite-time');   // the live time-on-site counter element
+      expect(r.html).toContain('on site');
+      expect(r.html).toContain('Arrived');
+      expect(r.html).toContain('On Clock Co');
+      expect(r.html).not.toContain('Clock in');       // already on the clock, no clock-in action
     });
   });
 

@@ -375,6 +375,9 @@ function updateClockTimer(){
   const full=(h?h+'h ':'')+timeStr;
   const el=document.getElementById('clock-banner-time');
   if(el)el.textContent=(_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+full;
+  // Live time-on-site counter on the dashboard on-site card (minute granularity).
+  const os=document.getElementById('dash-onsite-time');
+  if(os){const hh=Math.floor(elapsed/3600),mm=Math.floor((elapsed%3600)/60);os.textContent=(hh?hh+'h ':'')+mm+'m';}
 }
 
 function showClockBanner(){
@@ -383,6 +386,9 @@ function showClockBanner(){
   if(jn)jn.textContent=_activeTimer?_activeTimer.clientName:'';
   const bt=document.getElementById('clock-banner-time');
   if(bt)bt.textContent=(_activeTimer&&_activeTimer.scopeLabel?_activeTimer.scopeLabel+' · ':'')+'0:00';
+  // Arrival stamp on the always-visible clock banner (manual clock-in now, geofence auto later).
+  const ba=document.getElementById('clock-banner-arrived');
+  if(ba)ba.textContent=(_activeTimer&&_activeTimer.startTime)?('Arrived '+new Date(_activeTimer.startTime).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p')):'';
   b.style.display='flex';
   if(document.body)document.body.classList.add('clock-active');
 }
