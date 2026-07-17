@@ -132,10 +132,17 @@ function _checkSubdomain(val) {
     el.innerHTML = '<span style="color:var(--text3)">Use lowercase letters, numbers, hyphens (3–30 chars)</span>';
   }
 }
-// Owner spec 2026-07-17: $99/mo platform billing, on the web only. No link to
-// this lives inside a future native app (keeps the app link-free so Apple has
-// no in-app-attributable transaction to claim commission on, see the App
-// Store research this session). Renders into #billing-status-ui in Settings.
+// Owner spec 2026-07-17: $99/mo platform billing. This same card and its
+// "Manage billing" link are fine to ship inside a future native wrapper too
+// (owner preference: a plain external link, Kindle/Spotify-style, over
+// hiding billing from the app entirely). When that wrapper is built, this
+// link must open the SYSTEM browser (not an embedded webview) and keep
+// plain, non-purchase-styled copy, "Manage billing", never "Subscribe now
+// $99/mo", to stay inside Apple's external-link safe harbor. Real residual
+// risk: Apple may still claim commission on a purchase attributed to a link
+// tap within 7 days pending the ongoing Supreme Court appeal, that's a
+// financial/audit exposure the owner has accepted, not an App Store
+// rejection risk. Renders into #billing-status-ui in Settings.
 async function _renderBillingStatus() {
   const el = document.getElementById('billing-status-ui');
   if (!el) return;
