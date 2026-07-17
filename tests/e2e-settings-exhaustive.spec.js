@@ -672,23 +672,23 @@ test.describe('settings.js: exhaustive coverage', () => {
   // _manageSubscription
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('_manageSubscription', () => {
-    test('basic call, does not throw', async () => {
-      const r = await page.evaluate(() => {
-        // Stub zAlert to prevent modal side-effects
-        const orig = window.zAlert;
-        let called = false;
-        window.zAlert = (...args) => { called = true; };
+    // Owner spec 2026-07-17: replaced the old "coming in the iOS app" zAlert
+    // placeholder with the real billing status UI (js/settings.js
+    // _renderBillingStatus), rendered into #billing-status-ui. It no longer
+    // alerts, it renders in place, so this now asserts the new real behavior.
+    test('basic call, does not throw, renders into #billing-status-ui', async () => {
+      const r = await page.evaluate(async () => {
         try {
           _manageSubscription();
-          return { ok: true, called };
+          await new Promise(res => setTimeout(res, 50)); // let the async render settle
+          const el = document.getElementById('billing-status-ui');
+          return { ok: true, hasContent: !!(el && el.innerHTML.trim()) };
         } catch (e) {
           return { ok: false, err: e.message };
-        } finally {
-          window.zAlert = orig;
         }
       });
       expect(r.ok).toBe(true);
-      expect(r.called).toBe(true);
+      expect(r.hasContent, '#billing-status-ui must render something (sign-in prompt, subscribe CTA, or status)').toBe(true);
     });
 
     test('concurrent calls, no crash', async () => {

@@ -120,17 +120,17 @@ security definer
 set search_path = ''
 as $$
 declare
-  _uid uuid := auth.uid();
+  _uid text := auth.uid()::text;
   _exempt boolean;
   _cycles int;
 begin
   if _uid is null then return false; end if;
 
-  select exists(select 1 from public.billing_exempt_users where user_id = _uid) into _exempt;
+  select exists(select 1 from public.billing_exempt_users where user_id::text = _uid) into _exempt;
   if _exempt then return true; end if;
 
   select coalesce(consecutive_paid_cycles, 0) into _cycles
-    from public.td_subscriptions where user_id = _uid;
+    from public.td_subscriptions where user_id::text = _uid;
   return coalesce(_cycles, 0) >= 2;
 end;
 $$;
@@ -149,7 +149,7 @@ security definer
 set search_path = ''
 stable
 as $$
-  select exists(select 1 from public.billing_exempt_users where user_id = auth.uid());
+  select exists(select 1 from public.billing_exempt_users where user_id::text = auth.uid()::text);
 $$;
 
 revoke all on function td_billing_exempt() from public;

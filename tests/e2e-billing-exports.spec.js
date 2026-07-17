@@ -201,7 +201,6 @@ test.describe('Platform billing: export gate', () => {
         } finally { window.zAlert = origAlert; window._fetchBillingStatus = origFetchStatus; }
       });
       expect(r.panelPresent).toBe(false);
-      document.getElementById && await page.evaluate(() => document.getElementById('export-panel')?.remove());
       await restore();
     });
 
