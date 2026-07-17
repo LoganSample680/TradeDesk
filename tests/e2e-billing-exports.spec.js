@@ -261,7 +261,7 @@ test.describe('Platform billing: export gate', () => {
         window._fetchBillingStatus = async () => ({ status: 'canceled' });
         try {
           await _checkBillingGate();
-          return { present: !!document.getElementById('billing-gate-overlay'), locked: window._billingGateLocked };
+          return { present: !!document.getElementById('billing-gate-overlay'), locked: _billingGateLocked };
         } finally { window._fetchBillingStatus = origFetchStatus; }
       });
       expect(r.present).toBe(true);
@@ -275,7 +275,7 @@ test.describe('Platform billing: export gate', () => {
       const r = await page.evaluate(async () => {
         document.body.appendChild(Object.assign(document.createElement('div'), { id: 'billing-gate-overlay' }));
         await _checkBillingGate();
-        return { present: !!document.getElementById('billing-gate-overlay'), locked: window._billingGateLocked };
+        return { present: !!document.getElementById('billing-gate-overlay'), locked: _billingGateLocked };
       });
       expect(r.present).toBe(false);
       expect(r.locked).toBe(false);
@@ -287,7 +287,7 @@ test.describe('Platform billing: export gate', () => {
       const r = await page.evaluate(async () => {
         document.getElementById('billing-gate-overlay')?.remove();
         await _checkBillingGate();
-        return { present: !!document.getElementById('billing-gate-overlay'), locked: window._billingGateLocked };
+        return { present: !!document.getElementById('billing-gate-overlay'), locked: _billingGateLocked };
       });
       expect(r.present, 'a transient RPC error must never brick the whole app').toBe(false);
       expect(r.locked).toBe(false);
