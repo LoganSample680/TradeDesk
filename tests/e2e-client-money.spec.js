@@ -2052,14 +2052,16 @@ test.describe('Job completion, price change signature gate', () => {
   test('openFinalInvoice: warns about pending (unsigned) change orders before generating', async () => {
     const BID_ID = 920008, JOB_ID = 930008;
     await seedJob(BID_ID, JOB_ID, 1000);
-    await page.evaluate(([bId]) => {
-      const b = bids.find(x => x.id === bId);
-      b.completion_date = '2026-06-01';
-      b.changeOrders = [{ id: 1, coNum: 1, date: '2026-06-01', desc: 'Extra outlet', amount: 50, delta: 50, originalAmount: 1000, newAmount: 1050 }]; // no signedAt, pending
-    }, [BID_ID]);
     let alertShown = false;
     page.once('dialog', d => { alertShown = true; d.accept(); });
     const r = await page.evaluate(([bId]) => {
+      // Seed the pending change order AND call openFinalInvoice in ONE synchronous
+      // evaluate. Splitting them let a debounced cloud-merge reassign the live `bids`
+      // array between the mutation and the call, dropping the change order so no warning
+      // fired (webkit fixture-seeding flake). Reading+acting atomically closes the race.
+      const b = bids.find(x => x.id === bId);
+      b.completion_date = '2026-06-01';
+      b.changeOrders = [{ id: 1, coNum: 1, date: '2026-06-01', desc: 'Extra outlet', amount: 50, delta: 50, originalAmount: 1000, newAmount: 1050 }]; // no signedAt, pending
       const orig = window.open;
       window.open = () => ({ document: { write: () => {}, close: () => {} } }); // stub the print window
       let zAlertCalled = false;
