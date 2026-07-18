@@ -2773,7 +2773,11 @@ test.describe('Employee tasks and mileage vehicle pre-fill', () => {
       if (!j) return { kpiFound: false };
       j.tasks = [{ id: 1, text: 'Pick up supplies', done: false }];
       j.assignedTo = 'emp-task-test';
-      j.assignedDate = new Date().toISOString().slice(0, 10);
+      // Assignment now persists for the job's real date span (no daily
+      // reconfirmation stamp), so the fixture's start must actually cover
+      // today for _jobActiveOn() to count it as "today's work".
+      j.start = new Date().toISOString().slice(0, 10);
+      j.days = 1;
       _isEmployee = true;
       _employeeRecord = { id: 'emp-task-test', name: 'Test Worker', role: 'tech' };
       if (typeof renderDash === 'function') renderDash();
@@ -4162,7 +4166,12 @@ test.describe('Dashboard crew assignment from Today\'s Calendar', () => {
     assertNoErrors(page, 'crew assign sheet');
   });
 
-  test('_assignCrewToJob sets assignedTo and assignedDate on the job', async () => {
+  // Old behavior: _assignCrewToJob stamped both assignedTo and assignedDate=today,
+  // so a crew assignment silently expired at midnight and had to be re-confirmed
+  // daily. New behavior (owner spec 2026-07-18, "merge but easy to shift whose on
+  // what jobs"): assignment persists for the job's whole scheduled span, so only
+  // assignedTo is set, assignedDate is no longer stamped on assign.
+  test('_assignCrewToJob sets assignedTo and does not stamp assignedDate', async () => {
     const r = await page.evaluate(() => {
       if (typeof _assignCrewToJob !== 'function') return null;
       const tk = todayKey();
@@ -4173,14 +4182,14 @@ test.describe('Dashboard crew assignment from Today\'s Calendar', () => {
       S.employees.push({ id: 99902, name: 'Crew Member', role: 'tech', permissions: {} });
       _assignCrewToJob(77702, 99902);
       const j = jobs.find(x => x.id === 77702);
-      const result = { assigned: String(j?.assignedTo) === '99902', date: j?.assignedDate === tk };
+      const result = { assigned: String(j?.assignedTo) === '99902', noDateStamp: j?.assignedDate == null };
       jobs = jobs.filter(j => j.id !== 77702);
       S.employees = S.employees.filter(e => e.id !== 99902);
       return result;
     });
     if (r === null) return;
     expect(r.assigned).toBe(true);
-    expect(r.date).toBe(true);
+    expect(r.noDateStamp).toBe(true);
   });
 });
 

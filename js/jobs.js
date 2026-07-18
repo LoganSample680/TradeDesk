@@ -1234,14 +1234,15 @@ function openJobSheet(clientId){
 
   // ── Assigned employee (dispatch) ─────────────────────────────────────────────
   let assignedEmpHtml='';
-  const latestAssignedJob=allJobs.filter(j=>j.assignedTo).sort((a,b)=>(b.assignedDate||'').localeCompare(a.assignedDate||''))[0];
+  const latestAssignedJob=allJobs.filter(j=>j.assignedTo).sort((a,b)=>(b.assignedDate||b.start||'').localeCompare(a.assignedDate||a.start||''))[0];
   if(latestAssignedJob&&latestAssignedJob.assignedTo){
     const assignedEmp=(S.employees||[]).find(e=>String(e.id)===String(latestAssignedJob.assignedTo));
     if(assignedEmp){
+      const _asgnDate=latestAssignedJob.assignedDate||latestAssignedJob.start;
       assignedEmpHtml='<div style="padding:10px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">'+
         '<span style="font-size:11px;font-weight:700;color:var(--text3)">ASSIGNED TO</span>'+
         '<span style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(assignedEmp.name)+'</span>'+
-        (latestAssignedJob.assignedDate?'<span style="font-size:10px;color:var(--text3)">· '+latestAssignedJob.assignedDate+'</span>':'')+
+        (_asgnDate?'<span style="font-size:10px;color:var(--text3)">· '+_asgnDate+'</span>':'')+
       '</div>';
     }
   }

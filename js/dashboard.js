@@ -309,7 +309,7 @@ function renderDash(){
   if(kpiEl&&_isEmployee){
     // Employee home: Today's Jobs (dispatch-assigned) + vehicle line
     const empId=_employeeRecord?.id;
-    const myDayJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk)
+    const myDayJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk))
       .sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
     // Vehicle display
     const vehKey='emp_vehicle_'+tk;
@@ -681,7 +681,7 @@ function renderDashToday(){
     // Quick crew assignment row (owner only, non-estimate jobs)
     const _crewRow=(!_isEmployee&&!isEst)?(()=>{
       if(_crewEmps.length>0){
-        const _aId=j.assignedTo&&j.assignedDate===tk?j.assignedTo:null;
+        const _aId=j.assignedTo||null; // persists for the job's whole span, not just today
         const _aEmp=_aId?_crewEmps.find(e=>String(e.id)===String(_aId)):null;
         return '<div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">'+
           (_aEmp?'<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">'+svgIcon('👤',{size:11})+' '+escHtml(_aEmp.name)+'</span>':
@@ -732,7 +732,6 @@ function renderDashToday(){
 
 function _openCrewAssignSheet(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
-  const tk=todayKey();
   const emps=(S.employees||[]).filter(e=>e.name);
   if(!emps.length){showToast('Add team members first','👤');return;}
   document.getElementById('_crew-assign-ov')?.remove();
@@ -741,7 +740,7 @@ function _openCrewAssignSheet(jobId){
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px 40px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
   const c=getClientById(j.client_id);
-  const curEmpId=j.assignedTo&&j.assignedDate===tk?j.assignedTo:null;
+  const curEmpId=j.assignedTo||null; // persists for the job's whole span, not just today
   const roleLabels={tech:'Field Tech',office:'Office',manager:'Manager',owner:'Owner'};
   sheet.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
@@ -768,14 +767,13 @@ function _openCrewAssignSheet(jobId){
 
 function _assignCrewToJob(jobId,empId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
-  const tk=todayKey();
   if(empId!=null){
-    j.assignedTo=empId;j.assignedDate=tk;
+    j.assignedTo=empId;
     // Durable record of everyone ever assigned, powers the crew trust ranking on estimates.
     if(!Array.isArray(j.crewHistory))j.crewHistory=[];
     if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
     const emp=(S.employees||[]).find(e=>String(e.id)===String(empId));
-    showToast(escHtml(emp?.name||'Crew member')+' assigned today','👤');
+    showToast(escHtml(emp?.name||'Crew member')+' assigned','👤');
   }else{
     j.assignedTo=null;j.assignedDate=null;
     showToast('Assignment removed','');

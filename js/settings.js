@@ -687,6 +687,42 @@ function getBookedDays(){
   });
   return{booked,buf};
 }
+// Is this job's work span (start..start+days-1, done/cancelled jobs never
+// count) active on the given date? Owner spec 2026-07-18: crew assignment
+// now persists for a job's WHOLE span, set once at scheduling time, not
+// reconfirmed by hand each morning, so every place that used to gate on
+// "assignedDate === today" as its only signal for "is this today's work"
+// needs a real date-range check instead. Shared here so geo-track.js,
+// cloud.js's dispatch board, and dashboard.js's crew-assign UI can't drift.
+function _jobActiveOn(j,dateKey){
+  if(!j||j.completion_date||j.cancelled||j.status==='done')return false;
+  const start=j.start||j.date||'';if(!start)return false;
+  const end=addDays(start,(parseInt(j.days)||1)-1);
+  return start<=dateKey&&end>=dateKey;
+}
+// Crew-scoped variant (owner spec 2026-07-18: multi-crew dispatch at
+// multiple times). Two different crews can each have their own job on the
+// same day, that's not a conflict, only a job already assigned to THIS SAME
+// crew is. empId is a S.employees[].id, or falsy for "unassigned, the owner
+// working it themself" (its own pool, distinct from every named crew's pool).
+// Solo accounts (S.employees empty) never call this, getBookedDays() alone
+// is correct and unchanged for them, this function only exists to be opted
+// into once a second crew exists.
+function getBookedDaysForCrew(empId){
+  const booked=new Set(),buf=new Set();
+  getTimeOffDays().forEach(d=>booked.add(d));
+  jobs.forEach(j=>{
+    if(j.eventType==='estimate')return;
+    const sameCrew=empId?String(j.assignedTo||'')===String(empId):!j.assignedTo;
+    if(!sameCrew)return;
+    const workDays=getJobWorkDays(j);
+    workDays.forEach(d=>booked.add(d));
+    const lastDay=workDays.length?workDays[workDays.length-1]:j.start;
+    const b=parseInt(j.buffer)||0;
+    for(let i=1;i<=b;i++)buf.add(addDays(lastDay,i));
+  });
+  return{booked,buf};
+}
 function getNextAvail(){const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;let d=todayKey();for(let i=0;i<180;i++){const dow=parseD(d).getDay();const isWknd=dow===0||dow===6;if(!all.has(d)&&(allowWknd||!isWknd)){const dt=parseD(d);return{key:d,label:dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})};}d=addDays(d,1);}return{key:todayKey(),label:'Check calendar'};}
 // Standalone next-avail that doesn't need DOM, used for scheduling suggestions
 function getNextAvailForBid(bid){

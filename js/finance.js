@@ -1217,6 +1217,11 @@ function populateSchedSelect(){
   const won=bids.filter(b=>b.status==='Closed Won');
   const bSel=document.getElementById('s-bid-sel');
   if(bSel)bSel.innerHTML='<option value="">- Select a won bid -</option>'+won.map(b=>'<option value="'+b.id+'"'+(scheduledIds.has(b.id)?' disabled':'')+'>'+escHtml(b.client_name||b.name)+', '+fmt(b.amount)+(scheduledIds.has(b.id)?' (scheduled)':'')+' </option>').join('');
+  const crewSel=document.getElementById('s-crew-sel');
+  if(crewSel){
+    const emps=(S.employees||[]).filter(e=>e.name);
+    crewSel.innerHTML='<option value="">Unassigned (I\'ll do it)</option>'+emps.map(e=>'<option value="'+e.id+'">'+escHtml(e.name)+'</option>').join('');
+  }
 }
 
 function setSchedType(type,btn){
@@ -1228,7 +1233,18 @@ function setSchedType(type,btn){
   const estF=document.getElementById('sched-est-fields');if(estF)estF.style.display=isEst?'block':'none';
   const jobF=document.getElementById('sched-job-fields');if(jobF)jobF.style.display=isEst?'none':'block';
   const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=isEst?'none':'block';
-  const timeRow=document.getElementById('s-time');if(timeRow){const _tf=timeRow.closest('.f');if(_tf)_tf.style.display=isEst?'':'none';}
+  // Time now applies to jobs too (owner spec 2026-07-18: every job gets real
+  // start-time granularity, not just estimates), same input either way, just
+  // the label and default differ, estimates default to a real time + the
+  // past-now bump (validateEstimateTime), jobs start blank/optional.
+  const timeLbl=document.getElementById('s-time-label');
+  if(timeLbl)timeLbl.innerHTML=isEst?'Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span>':'Start time <span style="font-size:10px;color:var(--text3)">(optional)</span>';
+  const timeInput=document.getElementById('s-time');if(timeInput)timeInput.value=isEst?'09:00':'';
+  // Crew picker, only ever shown once a second person exists to assign work
+  // to, a solo account never sees this row, zero added taps for them.
+  const crewRow=document.getElementById('s-crew-row');
+  if(crewRow)crewRow.style.display=(!isEst&&typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length)?'':'none';
+  const crewSel=document.getElementById('s-crew-sel');if(crewSel)crewSel.value='';
   selectedColor=isEst?'#7F77DD':'#185FA5';
   const sw=document.getElementById('s-color-swatch');if(sw)sw.style.background=selectedColor;
   const lb=document.getElementById('s-color-label');
@@ -1286,7 +1302,11 @@ function onStartChange(){const sv=v('s-start');if(sv){availYear=parseD(sv).getFu
 async function refreshAvail(){
   const M=['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('avail-month-lbl').textContent=M[availMonth]+' '+availYear;
-  const{booked,buf}=getBookedDays(),selected=v('s-start'),days=parseInt(v('s-days'))||1,b=parseInt(v('s-buf'))||0,today=todayKey();
+  // Crew-scoped once a second person exists to assign work to (owner spec
+  // 2026-07-18): each crew has its own availability, a solo account (no
+  // S.employees) always sees the original account-wide getBookedDays().
+  const _hasCrew=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length&&typeof getBookedDaysForCrew==='function');
+  const{booked,buf}=_hasCrew?getBookedDaysForCrew(v('s-crew-sel')||null):getBookedDays(),selected=v('s-start'),days=parseInt(v('s-days'))||1,b=parseInt(v('s-buf'))||0,today=todayKey();
   const timeOffDays=getTimeOffDays();
   const _schedBidId=parseInt(v('s-bid-sel'))||null;
   const _schedBid=_schedBidId?bids.find(b=>b.id===_schedBidId):null;
@@ -1414,7 +1434,9 @@ function scheduleJob(){
   const name=v('s-name').trim();if(!name){_schedErr('Enter a job name.','s-name');return;}
   const start=v('s-start');if(!start){_schedErr('Pick a start date.','s-start');return;}
   const days=parseInt(v('s-days'))||1;
-  const{booked}=getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i))){_schedErr('One or more days already booked, pick a different start date.','s-start');return;}}
+  const _crewId=v('s-crew-sel')||null;
+  const _hasCrew=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length&&typeof getBookedDaysForCrew==='function');
+  const{booked}=_hasCrew?getBookedDaysForCrew(_crewId):getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i))){_schedErr(_hasCrew?'This crew already has a job on one or more of those days, pick a different start date or crew.':'One or more days already booked, pick a different start date.','s-start');return;}}
   const bidId=parseInt(v('s-bid-sel'))||null,bid=bidId?bids.find(b=>b.id===bidId):null;
   if(bid&&bid.status==='Pending'){_schedErr('The estimate must be signed (Closed Won) before scheduling.','s-bid-sel');return;}
   // Rain block: pressure wash can't start on a rainy day
@@ -1428,9 +1450,10 @@ function scheduleJob(){
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
   const clientId=schedType==='estimate'?(parseInt(v('s-client-sel'))||null):(bid?bid.client_id:null);
   const jobValue=schedType==='estimate'?0:(parseFloat(v('s-value'))||0);
-  const jobTime=schedType==='estimate'?(v('s-time')||'09:00'):'';
+  const jobTime=schedType==='estimate'?(v('s-time')||'09:00'):(v('s-time')||'');
   const jobHours=schedType==='estimate'?parseFloat(v('s-hours')||'2'):null;
-  jobs.push({id:Date.now(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming'});
+  const _asgnTo=(schedType==='job'&&_crewId)?_crewId:null;
+  jobs.push({id:Date.now(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
   if(schedType==='estimate'&&clientId){
     const pendingBid=bids.find(b=>b.client_id===clientId&&b.status==='Pending'&&!b.followup);
     if(pendingBid)pendingBid.followup=addDays(start,3);
@@ -1444,11 +1467,12 @@ function resetSched(){
   ['s-name','s-addr','s-start','s-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sv=document.getElementById('s-value');if(sv)sv.value='';
   const sd=document.getElementById('s-days');if(sd)sd.value=schedType==='estimate'?1:2;
-  const st=document.getElementById('s-time');if(st)st.value='09:00';
+  const st=document.getElementById('s-time');if(st)st.value=schedType==='estimate'?'09:00':'';
   const sh=document.getElementById('s-hours');if(sh)sh.value='2';
   const src=document.getElementById('s-days-src');if(src){src.textContent='';src.style.display='none';}
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
   const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=schedType==='estimate'?'none':'block';
+  const crewSel=document.getElementById('s-crew-sel');if(crewSel)crewSel.value='';
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
 }

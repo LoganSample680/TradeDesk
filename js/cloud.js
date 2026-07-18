@@ -688,7 +688,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.18.26.2';
+const APP_VERSION='07.18.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -2402,7 +2402,10 @@ function renderDispatch(){
     ?unassigned.map(j=>_jobCard(j,null)).join('')
     :'<div style="font-size:12px;color:var(--text3);padding:8px 0">No unassigned jobs today.</div>';
   const empCols=emps.map(emp=>{
-    const empJobs=todayJobs.filter(j=>String(j.assignedTo)===String(emp.id)&&j.assignedDate===tk)
+    // todayJobs is already date-range-filtered above, assignment now persists
+    // for a job's whole span (owner spec 2026-07-18), no separate "was this
+    // reconfirmed today" gate needed.
+    const empJobs=todayJobs.filter(j=>String(j.assignedTo)===String(emp.id))
       .sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
     const rc=ROLE_COLORS[emp.role]||'var(--text2)';
     const optBtn=empJobs.length>=2
@@ -2448,7 +2451,9 @@ function _dispatchAssign(jobId){
 }
 function _dispatchDoAssign(jobId,empId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
-  j.assignedTo=empId;j.assignedDate=todayKey();
+  // Owner spec 2026-07-18: assignment now persists for the job's whole span,
+  // no daily "assignedDate" reconfirmation stamp needed or read anywhere.
+  j.assignedTo=empId;
   // Durable record of everyone ever assigned, powers the crew trust ranking on estimates.
   if(!Array.isArray(j.crewHistory))j.crewHistory=[];
   if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
@@ -2476,7 +2481,7 @@ function _dispatchUnassign(jobId){
 }
 function _dispatchMoveUp(jobId,empId){
   const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
+  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk)).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
   const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<=0)return;
   // Normalize to 0..n-1 in current sorted order BEFORE swapping (mirrors _dispatchMoveDown).
   // Doing the forEach reindex AFTER the swap clobbered it, it overwrote dispatchOrder from
@@ -2489,7 +2494,7 @@ function _dispatchMoveUp(jobId,empId){
 }
 function _dispatchMoveDown(jobId,empId){
   const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
+  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk)).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
   const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<0||idx>=empJobs.length-1)return;
   empJobs.forEach((j,i)=>{j.dispatchOrder=i;});
   const temp=empJobs[idx+1].dispatchOrder;
@@ -2512,7 +2517,7 @@ async function _geoOfficeCoords(){
 }
 async function _dispatchOptimizeRoute(empId){
   const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk);
+  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk));
   if(empJobs.length<2){showToast('Need at least 2 jobs to optimize','📋');return;}
   showToast('Optimizing route…','⏳');
   const office=await _geoOfficeCoords();

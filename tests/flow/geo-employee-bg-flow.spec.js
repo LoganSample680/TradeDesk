@@ -3,7 +3,8 @@
 // input. Covers the paths the first two geo specs left out:
 //
 //   1. EMPLOYEE PATH   , _geoMyJobs() filters to jobs dispatched to the employee
-//      (assignedTo + assignedDate), the distinct branch from the owner path.
+//      (assignedTo, gated by _jobActiveOn's real start/days range rather than a
+//      daily assignedDate stamp), the distinct branch from the owner path.
 //   2. DRIVE-PERSONAL  : a drive leg in a PERSONAL vehicle logs source
 //      'drive-personal' (time is compensable, mileage stays private).
 //   3. BREADCRUMB THROTTLE, the first ping writes a location_pings breadcrumb;
@@ -50,7 +51,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
     // ── 1. EMPLOYEE PATH, _geoMyJobs() returns only dispatched jobs. ──
     await step(page, {
       label: 'employee only fences against jobs dispatched to them', page: 'geo', role: 'employee',
-      suspect: 'geo-track.js _geoMyJobs employee branch (assignedTo + assignedDate)',
+      suspect: 'geo-track.js _geoMyJobs employee branch (assignedTo + _jobActiveOn)',
       ruleText: 'when the session is an employee, a ping at a job dispatched to them must arrive there',
       expected: '_geoCurrentJob === the dispatched job',
       act: async (p) => {

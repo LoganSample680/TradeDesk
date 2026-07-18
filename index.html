@@ -2019,11 +2019,16 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
 
+      <div class="f" id="s-crew-row" style="display:none;margin-bottom:10px">
+        <label>Crew</label>
+        <select id="s-crew-sel" onchange="refreshAvail()"><option value="">Unassigned (I'll do it)</option></select>
+      </div>
+
       <div class="fg fg2">
         <div class="f"><label>Name</label><input id="s-name" autocapitalize="words" placeholder="Smith residence"></div>
         <div class="f" id="s-addr-row" style="position:relative"><label>Address</label><input id="s-addr" autocomplete="off"></div>
         <div class="f" id="s-value-row" style="display:none"><label>Job value ($)</label><input id="s-value" type="number" placeholder="0"></div>
-        <div class="f"><label>Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>
+        <div class="f"><label id="s-time-label">Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>
           <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
         </div>
         <div class="f" id="s-dur-days-row"><label>Duration (days)</label>

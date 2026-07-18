@@ -965,6 +965,77 @@ test.describe('Schedule page, selects, type toggle, availability grid', () => {
     if (result.jobVisible !== null) expect(result.jobVisible).toBe(true);
   });
 
+  test('crew picker: hidden for a solo account (zero employees)', async () => {
+    const result = await page.evaluate(() => {
+      const row = document.getElementById('s-crew-row');
+      if (!row || typeof setSchedType !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      S.employees = [];
+      setSchedType('job');
+      const hidden = row.style.display === 'none';
+      S.employees = origEmps;
+      return { skip: false, hidden };
+    });
+    if (!result.skip) expect(result.hidden).toBe(true);
+  });
+
+  test('crew picker: visible and populated once a second person exists', async () => {
+    const result = await page.evaluate(() => {
+      const row = document.getElementById('s-crew-row');
+      const sel = document.getElementById('s-crew-sel');
+      if (!row || !sel || typeof setSchedType !== 'function' || typeof populateSchedSelect !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      S.employees = [{ id: 'crew-ui-1', name: 'Crew UI Tester', role: 'tech' }];
+      populateSchedSelect();
+      setSchedType('job');
+      const visible = row.style.display !== 'none';
+      const hasOption = [...sel.options].some(o => o.text.includes('Crew UI Tester'));
+      S.employees = origEmps;
+      return { skip: false, visible, hasOption };
+    });
+    if (!result.skip) {
+      expect(result.visible).toBe(true);
+      expect(result.hasOption).toBe(true);
+    }
+  });
+
+  test('crew picker: never shown on the estimate tab, even with employees', async () => {
+    const result = await page.evaluate(() => {
+      const row = document.getElementById('s-crew-row');
+      if (!row || typeof setSchedType !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      S.employees = [{ id: 'crew-ui-2', name: 'Crew UI Tester 2', role: 'tech' }];
+      setSchedType('estimate');
+      const hidden = row.style.display === 'none';
+      S.employees = origEmps;
+      setSchedType('job');
+      return { skip: false, hidden };
+    });
+    if (!result.skip) expect(result.hidden).toBe(true);
+  });
+
+  test('scheduleJob: two different crews can book the same days without conflict', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof scheduleJob !== 'function' || typeof getBookedDaysForCrew !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      const origJobs = jobs.slice();
+      try {
+        S.employees = [{ id: 'crew-conf-a', name: 'Crew A', role: 'tech' }, { id: 'crew-conf-b', name: 'Crew B', role: 'tech' }];
+        const start = addDays(todayKey(), 45); // a day unlikely to already be booked
+        // allowWeekend:true keeps this deterministic regardless of what day of
+        // the week `start` lands on (getJobWorkDays skips weekends otherwise).
+        jobs.push({ id: 990001, name: 'Crew A Job', start, days: 1, eventType: 'job', status: 'upcoming', allowWeekend: true, assignedTo: 'crew-conf-a', client_id: null });
+        const crewBFree = !getBookedDaysForCrew('crew-conf-b').booked.has(start);
+        const crewABooked = getBookedDaysForCrew('crew-conf-a').booked.has(start);
+        return { skip: false, crewBFree, crewABooked };
+      } finally { S.employees = origEmps; jobs.length = 0; jobs.push(...origJobs); }
+    });
+    if (!result.skip) {
+      expect(result.crewABooked).toBe(true);
+      expect(result.crewBFree).toBe(true);
+    }
+  });
+
   test('no console errors during schedule page tests', async () => {
     assertNoErrors(page, 'schedule page');
   });
