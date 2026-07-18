@@ -1278,14 +1278,15 @@ function pullClient(){
   refreshAvail();updateSchedPreview();
 }
 function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';
-  // Owner spec 2026-07-18: the bid already carries these, showing them as
-  // editable form fields on a screen whose whole job is "pick a date" was
-  // clutter, not a real workflow (re-typing the bid amount here isn't how a
-  // value change happens, that's a change order). Silently carry them over
-  // instead, and only surface the field back when the bid genuinely doesn't
-  // have the data, so a missing address doesn't silently ship (it's load-
-  // bearing for geofence arrival matching and GC-sub job linking).
-  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display=b.addr?'none':'';
+  // Owner spec 2026-07-18: ADDRESS always stays visible after a bid is pulled,
+  // it's the field that confirms you grabbed the right job (two bids for
+  // similar client names are easy to mix up), and it's load-bearing for
+  // geofence arrival matching + GC-sub job linking, so seeing it is the point.
+  // Job VALUE, on the other hand, isn't a disambiguator and re-typing it here
+  // isn't how a price change happens (that's a change order), so it stays
+  // hidden when the bid already carries it and only reappears if the bid has
+  // no amount, so a genuinely-missing value can still be entered.
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
   const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=(b.amount>0)?'none':'';
   document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from the won bid below.</strong> Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
 function avPrev(){

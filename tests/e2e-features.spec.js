@@ -7753,8 +7753,13 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
     expect(r.toLowerCase()).toContain('start date');
   });
 
-  test.describe('Address / Job value: hidden when the bid already has them (owner: "why do they need to be in the scheduler")', () => {
-    test('bid has both address and a real amount: both fields hidden, values still carried onto the job', async () => {
+  // Owner spec 2026-07-18 (revised): ADDRESS stays visible after pulling a bid,
+  // it's how you confirm you grabbed the right job (similar client names are
+  // easy to mix up) and it's load-bearing for geofencing. Job VALUE keeps the
+  // hide-when-the-bid-has-it behavior (it's not a disambiguator, and re-typing
+  // it here isn't how a price change happens, that's a change order).
+  test.describe('Address always visible to confirm the job; Job value hidden when the bid carries it', () => {
+    test('bid with address + amount: address shown (filled), value hidden, both still carried onto the job', async () => {
       const r = await page.evaluate(() => {
         goPg('pg-schedule');
         setSchedType('job', document.getElementById('sched-tab-job'));
@@ -7770,13 +7775,13 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
           valueValueStillSet: document.getElementById('s-value').value,
         };
       });
-      expect(r.addrRowDisplay, 'address already on the bid, no reason to show an editable field for it').toBe('none');
+      expect(r.addrRowDisplay, 'address stays visible so you can confirm the right job was pulled').not.toBe('none');
       expect(r.valueRowDisplay, 'amount already on the bid, no reason to show an editable field for it').toBe('none');
       expect(r.addrValueStillSet).toBe('42 Elm St');
       expect(r.valueValueStillSet).toBe('5000');
     });
 
-    test('bid is missing address and amount: both fields reappear so the gap can be caught (address is load-bearing for geofence + GC-sub job matching)', async () => {
+    test('bid is missing amount: the value field reappears so the gap can be filled (address always shown regardless)', async () => {
       const r = await page.evaluate(() => {
         goPg('pg-schedule');
         setSchedType('job', document.getElementById('sched-tab-job'));
@@ -7794,7 +7799,7 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
       expect(r.valueRowDisplay).not.toBe('none');
     });
 
-    test('switching bids from full-data to missing-data re-shows the fields (no stale hidden state)', async () => {
+    test('switching bids from has-amount to no-amount re-shows the value field (no stale hidden state); address stays visible throughout', async () => {
       const r = await page.evaluate(() => {
         goPg('pg-schedule');
         setSchedType('job', document.getElementById('sched-tab-job'));
@@ -7804,17 +7809,21 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
         populateSchedSelect();
         document.getElementById('s-bid-sel').value = '990014';
         pullBid();
-        const hiddenFirst = document.getElementById('s-addr-row').style.display === 'none';
+        const valueHiddenFirst = document.getElementById('s-value-row').style.display === 'none';
+        const addrShownFirst = document.getElementById('s-addr-row').style.display !== 'none';
         document.getElementById('s-bid-sel').value = '990015';
         pullBid();
-        const shownAfterSwitch = document.getElementById('s-addr-row').style.display !== 'none';
-        return { hiddenFirst, shownAfterSwitch };
+        const valueShownAfterSwitch = document.getElementById('s-value-row').style.display !== 'none';
+        const addrShownAfterSwitch = document.getElementById('s-addr-row').style.display !== 'none';
+        return { valueHiddenFirst, addrShownFirst, valueShownAfterSwitch, addrShownAfterSwitch };
       });
-      expect(r.hiddenFirst).toBe(true);
-      expect(r.shownAfterSwitch).toBe(true);
+      expect(r.valueHiddenFirst).toBe(true);
+      expect(r.addrShownFirst).toBe(true);
+      expect(r.valueShownAfterSwitch).toBe(true);
+      expect(r.addrShownAfterSwitch).toBe(true);
     });
 
-    test('Clear form / switching to Schedule estimate: resets address row back to visible', async () => {
+    test('Clear form: value field reset back to visible after a full-data pull; address visible throughout', async () => {
       const r = await page.evaluate(() => {
         goPg('pg-schedule');
         setSchedType('job', document.getElementById('sched-tab-job'));
@@ -7823,13 +7832,15 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
         populateSchedSelect();
         document.getElementById('s-bid-sel').value = '990018';
         pullBid();
-        const hiddenAfterPull = document.getElementById('s-addr-row').style.display === 'none';
+        const valueHiddenAfterPull = document.getElementById('s-value-row').style.display === 'none';
         resetSched();
-        const shownAfterClear = document.getElementById('s-addr-row').style.display !== 'none';
-        return { hiddenAfterPull, shownAfterClear };
+        const valueShownAfterClear = document.getElementById('s-value-row').style.display !== 'none';
+        const addrShownAfterClear = document.getElementById('s-addr-row').style.display !== 'none';
+        return { valueHiddenAfterPull, valueShownAfterClear, addrShownAfterClear };
       });
-      expect(r.hiddenAfterPull).toBe(true);
-      expect(r.shownAfterClear).toBe(true);
+      expect(r.valueHiddenAfterPull).toBe(true);
+      expect(r.valueShownAfterClear).toBe(true);
+      expect(r.addrShownAfterClear).toBe(true);
     });
   });
 
