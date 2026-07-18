@@ -690,9 +690,11 @@ function _openJobNoteEditor(jobId){
   document.getElementById('_jobnote-ov')?.remove();
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_jobnote-ov';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
-  const sheet=document.createElement('div');
-  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px 40px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1);max-height:88vh;overflow-y:auto';
-  const _ta=(id,val,ph)=>'<textarea id="'+id+'" placeholder="'+ph+'" style="width:100%;min-height:60px;font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);font-family:inherit;line-height:1.45;resize:none">'+escHtml(val||'')+'</textarea>';
+  // Centered modal, matches every other popup in the app (.zmodal in a flex-centered
+  // .zmodal-overlay), not a bottom sheet.
+  const sheet=document.createElement('div');sheet.className='zmodal';
+  sheet.style.maxWidth='420px';sheet.style.maxHeight='88vh';sheet.style.overflowY='auto';
+  const _ta=(id,val,ph)=>'<textarea id="'+id+'" placeholder="'+ph+'" style="width:100%;box-sizing:border-box;min-height:60px;font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);font-family:inherit;line-height:1.45;resize:none">'+escHtml(val||'')+'</textarea>';
   const _lbl=(t,hint)=>'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:16px 0 6px">'+t+(hint?' <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--text3)">'+hint+'</span>':'')+'</div>';
   sheet.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'+
@@ -718,7 +720,6 @@ function _openJobNoteEditor(jobId){
     '</div>'+
     '<button onclick="_saveJobNote('+j.id+')" class="btn btn-g" style="width:100%;height:48px;font-size:15px;font-weight:800;border-radius:var(--r);margin-top:16px">Save note</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
-  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
 }
 
 // Pull the editor's current field values onto the job/client WITHOUT closing or
