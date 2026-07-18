@@ -132,10 +132,64 @@ function _checkSubdomain(val) {
     el.innerHTML = '<span style="color:var(--text3)">Use lowercase letters, numbers, hyphens (3–30 chars)</span>';
   }
 }
-function _manageSubscription() {
-  // Will trigger iOS in-app purchase sheet when native wrapper is added
-  zAlert('Subscription management will be available in the TradeDesk iOS app.', {title: 'Manage plan'});
+// Owner spec 2026-07-17: $99/mo platform billing. This same card and its
+// "Manage billing" link are fine to ship inside a future native wrapper too
+// (owner preference: a plain external link, Kindle/Spotify-style, over
+// hiding billing from the app entirely). When that wrapper is built, this
+// link must open the SYSTEM browser (not an embedded webview) and keep
+// plain, non-purchase-styled copy, "Manage billing", never "Subscribe now
+// $99/mo", to stay inside Apple's external-link safe harbor. Real residual
+// risk: Apple may still claim commission on a purchase attributed to a link
+// tap within 7 days pending the ongoing Supreme Court appeal, that's a
+// financial/audit exposure the owner has accepted, not an App Store
+// rejection risk. Renders into #billing-status-ui in Settings.
+async function _renderBillingStatus() {
+  const el = document.getElementById('billing-status-ui');
+  if (!el) return;
+  el.style.display = 'block';
+  try {
+    await _renderBillingStatusInner(el);
+  } catch (e) {
+    // Never leave the panel silently blank on an unexpected error, a real
+    // contractor should always see SOMETHING actionable here.
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3)">Could not load billing status. <button class="btn btn-sm" onclick="_renderBillingStatus()">Retry</button></div>';
+  }
 }
+async function _renderBillingStatusInner(el) {
+  if (!(typeof supaEnabled === 'function' && supaEnabled()) || !window._supaUser) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3)">Sign in to manage billing.</div>';
+    return;
+  }
+  const exempt = await (typeof _isBillingExempt === 'function' ? _isBillingExempt() : Promise.resolve(false));
+  if (exempt) {
+    el.innerHTML = '<div style="font-size:12px;color:var(--text3)">This account is exempt from billing.</div>';
+    return;
+  }
+  const status = await (typeof _fetchBillingStatus === 'function' ? _fetchBillingStatus() : Promise.resolve(null));
+  if (!status) {
+    el.innerHTML =
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:10px;line-height:1.5">$99/mo. Subscribe to unlock Books and Time Log exports after your first 2 billing cycles.</div>' +
+      '<button class="btn btn-p" onclick="startTradeDeskBilling()" style="font-size:13px;padding:10px 18px">Subscribe</button>';
+    return;
+  }
+  const cycles = status.consecutive_paid_cycles || 0;
+  const unlocked = cycles >= 2;
+  const trialEndStr = status.current_period_end ? new Date(status.current_period_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '';
+  const statusLine = status.status === 'trialing'
+    ? '<div style="font-size:13px;font-weight:700;color:var(--text)">Free trial' + (trialEndStr ? ', ends ' + trialEndStr : '') + '</div>'
+    : status.status === 'past_due'
+    ? '<div style="font-size:13px;font-weight:700;color:#856404">Payment past due</div>'
+    : '<div style="font-size:13px;font-weight:700;color:' + (unlocked ? 'var(--green-mid)' : 'var(--text)') + '">' +
+        (unlocked ? 'Active, exports unlocked' : 'Active, ' + cycles + ' of 2 cycles') + '</div>';
+  el.innerHTML =
+    '<div style="display:flex;align-items:center;gap:8px;background:' + (unlocked ? 'var(--green-lt)' : 'var(--bg2)') + ';border:1px solid ' + (unlocked ? 'var(--green)' : 'var(--border2)') + ';border-radius:var(--r);padding:10px 12px;margin-bottom:10px">' +
+      '<div style="flex:1">' + statusLine +
+        '<div style="font-size:11px;color:var(--text3)">$99/mo after your trial</div>' +
+      '</div>' +
+    '</div>' +
+    '<button class="btn btn-sm" onclick="openBillingPortal()">Manage billing →</button>';
+}
+function _manageSubscription() { _renderBillingStatus(); }
 function _renderIntegrations() {
   const el = document.getElementById('integrations-list');
   if (!el) return;
@@ -1596,6 +1650,24 @@ async function obSubmit(){
     _config=cfgData;
 
     await _supa.from('zj_data').insert({user_id:uid,account_id:acct.id});
+
+    // Owner spec 2026-07-17: the 14-day free trial starts HERE, silently,
+    // the moment the account exists, not whenever (if ever) someone finds
+    // the Subscribe button in Settings. No card prompt, no redirect, nothing
+    // is due during a full trial so there's nothing to collect. Never blocks
+    // onboarding: if this fails (network hiccup, billing not configured yet
+    // in this env), the Settings billing card's Subscribe button is the
+    // manual fallback, and start-billing-trial is idempotent so a retry from
+    // there can't double-create a subscription.
+    try{
+      const _bSess=await _supa.auth.getSession();
+      const _bTok=_bSess?.data?.session?.access_token;
+      if(_bTok){
+        await fetch(SUPA_URL+'/functions/v1/start-billing-trial',{
+          method:'POST',headers:{Authorization:'Bearer '+_bTok,'Content-Type':'application/json'}
+        });
+      }
+    }catch(_e){}
 
     S.bname=_ob.businessName;S.bphone=_ob.phone;S.blic=_ob.licenseInfo;S.state=_ob.state||'KS';S.warrantyPeriod=_ob.warrantyPeriod||'1 year';
     // Payment methods the contractor chose on the "How do you want to get paid?"

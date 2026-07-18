@@ -1391,6 +1391,31 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
   });
 
+  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up) has the smooth-transition class', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
+      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
+      S.vehicles = []; S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      _renderDashSetupTodo();
+      const card = document.getElementById('dash-setup-todo');
+      const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
+      const cs = ctas[0] ? getComputedStyle(ctas[0]) : null;
+      const out = {
+        ctaCount: ctas.length,
+        allHaveClass: ctas.every(b => b.classList.contains('td-setup-cta')),
+        hasTransition: !!(cs && cs.transitionDuration && cs.transitionDuration !== '0s'),
+      };
+      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
+      return out;
+    });
+    if (r.skip) return;
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 4 CTAs').toBe(4);
+    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up all carry the transition class').toBe(true);
+    expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
+  });
+
   test('_setupTeamChooser: offers W-2 / 1099 / no-team, and "no team" clears the item', async () => {
     const r = await page.evaluate(() => {
       if (typeof _setupTeamChooser !== 'function' || typeof _skipSetupTodo !== 'function') return { skip: true };
@@ -1687,6 +1712,39 @@ test.describe('printKansasLien: document structure', () => {
     }
   });
 
+  // Mirrors the printKansasLien print-safety test above, same CSS structure,
+  // same "was cutting off when printed" owner report, same fix.
+  test('printKansasLienRelease: every unbreakable block has page-break-inside:avoid', async () => {
+    const result = await page.evaluate(([bidId]) => {
+      if (typeof printKansasLienRelease !== 'function') return null;
+      let html = null;
+      const _origOpen = window.open;
+      window.open = function () { return { document: { _h: '', write(h) { this._h += h; html = this._h; }, close() {} } }; };
+      try { printKansasLienRelease(bidId); } catch (e) { window.open = _origOpen; return { error: e.message }; }
+      window.open = _origOpen;
+      if (!html) return { noHtml: true };
+      const styleBlock = (html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
+      const ruleHasAvoid = (selector) => {
+        const rule = (styleBlock.match(new RegExp('\\.' + selector + '\\{([^}]*)\\}')) || [])[1] || '';
+        return /page-break-inside:\s*avoid/.test(rule) && /break-inside:\s*avoid/.test(rule);
+      };
+      return {
+        noticeAvoids: ruleHasAvoid('notice'),
+        sectionAvoids: ruleHasAvoid('section'),
+        oathAvoids: ruleHasAvoid('oath'),
+        sigBlockAvoids: ruleHasAvoid('sig-block'),
+        notaryAvoids: ruleHasAvoid('notary'),
+      };
+    }, [LIEN_PRINT_BID]);
+    if (result && !result.error && !result.noHtml) {
+      expect(result.noticeAvoids).toBe(true);
+      expect(result.sectionAvoids).toBe(true);
+      expect(result.oathAvoids).toBe(true);
+      expect(result.sigBlockAvoids).toBe(true);
+      expect(result.notaryAvoids).toBe(true);
+    }
+  });
+
   test('printKansasLien: shows zAlert if window.open blocked', async () => {
     const result = await page.evaluate(([bidId]) => {
       if (typeof printKansasLien !== 'function') return null;
@@ -1700,6 +1758,52 @@ test.describe('printKansasLien: document structure', () => {
       return { alerted };
     }, [LIEN_PRINT_BID]);
     if (result !== null) expect(result.alerted).toBe(true);
+  });
+
+  // Owner report 2026-07-17: printed lien documents were cutting content off.
+  // Root cause: no page-break-inside:avoid anywhere in the print CSS, so a
+  // browser's print pagination could slice a bordered box (.notice/.notary)
+  // or a signature block right across a page boundary, the border/content
+  // just stops at the page edge and resumes with no opening border on the
+  // next page, reading as "cut off." Every unbreakable block now carries
+  // page-break-inside:avoid (+ the modern break-inside:avoid alias), so the
+  // browser pushes the WHOLE block to the next page instead of slicing it.
+  test('printKansasLien: every unbreakable block (.notice/.section/.oath/.sig-block/.notary) has page-break-inside:avoid', async () => {
+    const result = await page.evaluate(([bidId]) => {
+      if (typeof printKansasLien !== 'function') return null;
+      let html = null;
+      const _origOpen = window.open;
+      window.open = function () {
+        const w = { document: { _h: '', write(h) { this._h += h; html = this._h; }, close() {} } };
+        return w;
+      };
+      try { printKansasLien(bidId); } catch (e) { window.open = _origOpen; return { error: e.message }; }
+      window.open = _origOpen;
+      if (!html) return { noHtml: true };
+      const styleBlock = (html.match(/<style>([\s\S]*?)<\/style>/) || [])[1] || '';
+      const ruleHasAvoid = (selector) => {
+        const rule = (styleBlock.match(new RegExp('\\.' + selector + '\\{([^}]*)\\}')) || [])[1] || '';
+        return /page-break-inside:\s*avoid/.test(rule) && /break-inside:\s*avoid/.test(rule);
+      };
+      return {
+        noticeAvoids: ruleHasAvoid('notice'),
+        sectionAvoids: ruleHasAvoid('section'),
+        oathAvoids: ruleHasAvoid('oath'),
+        sigBlockAvoids: ruleHasAvoid('sig-block'),
+        notaryAvoids: ruleHasAvoid('notary'),
+        // The embedded proposal exhibit (Exhibit A) can't bleed off the page
+        // edge regardless of what width the saved proposal HTML assumes.
+        exhibitContained: /\.proposal-section\s*\{[^}]*max-width:100%/.test(styleBlock),
+      };
+    }, [LIEN_PRINT_BID]);
+    if (result && !result.error && !result.noHtml) {
+      expect(result.noticeAvoids, '.notice (the boxed NOTICE paragraph) must never split across a page').toBe(true);
+      expect(result.sectionAvoids, '.section (each numbered field) must never split across a page').toBe(true);
+      expect(result.oathAvoids, '.oath (the VERIFICATION paragraph) must never split across a page').toBe(true);
+      expect(result.sigBlockAvoids, '.sig-block (signature lines) must never split across a page').toBe(true);
+      expect(result.notaryAvoids, '.notary (the boxed notary acknowledgment) must never split across a page').toBe(true);
+      expect(result.exhibitContained, 'the embedded proposal exhibit must stay within the page width').toBe(true);
+    }
   });
 });
 
@@ -7501,5 +7605,234 @@ test.describe('Never-delete policy, archive + hold + edit', () => {
     expect(r.ref).toBe('1042');
     expect(r.stillOne).toBe(1); // edited, never removed
     assertNoErrors(page, 'edit payment');
+  });
+});
+
+test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('availability grid: a clear day shows no weather clutter, a rain-risk day shows just the icon (no bare temperature), including on booked/buffer days', async () => {
+    // This spec file runs thousands of tests on ONE shared page (§10.5-style
+    // footgun): getBookedDays() derives from the live, shared `jobs` array, so
+    // a hardcoded far-future date can't be trusted to land on an open cell,
+    // some earlier test's leftover job/buffer could cover it. Stub
+    // getBookedDays/getTimeOffDays so this test is deterministic regardless
+    // of what other tests left behind, and cover all three render branches
+    // (open, buffer, taken) since wxHtml must appear on every one of them.
+    const r = await page.evaluate(async () => {
+      const clearKey = '2031-06-10', rainOpenKey = '2031-06-11', rainBufKey = '2031-06-12', rainTakenKey = '2031-06-13';
+      // _weatherCache/_weatherCacheTime (js/data.js) are `let`-declared at top
+      // script scope, a global lexical binding, NOT a window property (the
+      // same footgun as _billingGateLocked earlier this session) — must set
+      // the bare identifier, window._weatherCache is a silent no-op.
+      _weatherCache = {
+        [clearKey]: { icon: '☀️', label: 'Sunny', rain: false, hi: 88, lo: 65 },
+        [rainOpenKey]: { icon: '🌧️', label: 'Rain', rain: true, hi: 74, lo: 60 },
+        [rainBufKey]: { icon: '🌧️', label: 'Rain', rain: true, hi: 74, lo: 60 },
+        [rainTakenKey]: { icon: '🌧️', label: 'Rain', rain: true, hi: 74, lo: 60 },
+      };
+      _weatherCacheTime = Date.now();
+      const origBooked = window.getBookedDays;
+      window.getBookedDays = () => ({ booked: new Set([rainTakenKey]), buf: new Set([rainBufKey]) });
+      const origTimeOff = window.getTimeOffDays;
+      window.getTimeOffDays = () => new Set();
+      try {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        availYear = 2031; availMonth = 5; // June (0-indexed)
+        await refreshAvail();
+        const html = document.getElementById('avail-grid').innerHTML;
+        return {
+          clearHasDegree: html.includes('88°') || html.includes('65°'),
+          rainIconCount: (html.match(/🌧️/g) || []).length,
+        };
+      } finally {
+        window.getBookedDays = origBooked;
+        window.getTimeOffDays = origTimeOff;
+      }
+    });
+    expect(r.clearHasDegree, 'a clear day must not show a temperature readout').toBe(false);
+    expect(r.rainIconCount, 'a rain-risk day must show the icon whether open, buffered, or booked').toBe(3);
+  });
+
+  test('availability legend: no unused "Estimate" swatch, blue swatch reads "Selected" not "Job"', async () => {
+    const r = await page.evaluate(() => {
+      goPg('pg-schedule');
+      const legend = document.querySelector('.av-grid').nextElementSibling;
+      const text = legend ? legend.textContent : '';
+      return { hasEstimate: text.includes('Estimate'), hasSelected: text.includes('Selected'), hasJob: /\bJob\b/.test(text) };
+    });
+    expect(r.hasEstimate, 'the availability grid never renders purple, that legend entry was dead').toBe(false);
+    expect(r.hasSelected).toBe(true);
+    expect(r.hasJob).toBe(false);
+  });
+
+  test('color swatch is a circle, not a rounded square that reads as a checkbox', async () => {
+    const r = await page.evaluate(() => {
+      const sw = document.getElementById('s-color-swatch');
+      return sw ? sw.style.borderRadius : null;
+    });
+    expect(r).toBe('50%');
+  });
+
+  test('"from bid" badge: hidden by default/on estimate mode, shown after pulling a bid, hidden again after Clear', async () => {
+    const r = await page.evaluate(() => {
+      goPg('pg-schedule');
+      setSchedType('job', document.getElementById('sched-tab-job'));
+      const hiddenOnSwitch = document.getElementById('s-days-src').style.display === 'none';
+      bids = bids.filter(b => b.id !== 990001);
+      bids.push({ id: 990001, client_id: 990002, client_name: 'Badge Test Client', amount: 4000, days: 3, status: 'Closed Won' });
+      populateSchedSelect();
+      document.getElementById('s-bid-sel').value = '990001';
+      pullBid();
+      const shownAfterPull = document.getElementById('s-days-src').style.display !== 'none' && document.getElementById('s-days-src').textContent === 'from bid';
+      resetSched();
+      const hiddenAfterClear = document.getElementById('s-days-src').style.display === 'none';
+      return { hiddenOnSwitch, shownAfterPull, hiddenAfterClear };
+    });
+    expect(r.hiddenOnSwitch).toBe(true);
+    expect(r.shownAfterPull).toBe(true);
+    expect(r.hiddenAfterClear).toBe(true);
+  });
+
+  test('buildColorRow / selColor / #s-color-row: the permanently-hidden dead color picker is gone', async () => {
+    const r = await page.evaluate(() => ({
+      buildColorRow: typeof buildColorRow === 'function',
+      selColor: typeof selColor === 'function',
+      el: !!document.getElementById('s-color-row'),
+    }));
+    expect(r.buildColorRow).toBe(false);
+    expect(r.selColor).toBe(false);
+    expect(r.el).toBe(false);
+  });
+
+  test('"Pulled from bid" banner no longer repeats the client/amount/days already shown in the fields below', async () => {
+    const r = await page.evaluate(() => {
+      goPg('pg-schedule');
+      setSchedType('job', document.getElementById('sched-tab-job'));
+      bids = bids.filter(b => b.id !== 990003);
+      bids.push({ id: 990003, client_id: 990004, client_name: 'No Repeat Client', amount: 7777, days: 4, status: 'Closed Won' });
+      populateSchedSelect();
+      document.getElementById('s-bid-sel').value = '990003';
+      pullBid();
+      return document.getElementById('sched-tip').textContent;
+    });
+    expect(r).not.toContain('No Repeat Client');
+    expect(r).not.toContain('7777');
+    expect(r.toLowerCase()).toContain('start date');
+  });
+
+  test.describe('Address / Job value: hidden when the bid already has them (owner: "why do they need to be in the scheduler")', () => {
+    test('bid has both address and a real amount: both fields hidden, values still carried onto the job', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        bids = bids.filter(b => b.id !== 990010);
+        bids.push({ id: 990010, client_id: 990011, client_name: 'Full Data Client', addr: '42 Elm St', amount: 5000, days: 2, status: 'Closed Won' });
+        populateSchedSelect();
+        document.getElementById('s-bid-sel').value = '990010';
+        pullBid();
+        return {
+          addrRowDisplay: document.getElementById('s-addr-row').style.display,
+          valueRowDisplay: document.getElementById('s-value-row').style.display,
+          addrValueStillSet: document.getElementById('s-addr').value,
+          valueValueStillSet: document.getElementById('s-value').value,
+        };
+      });
+      expect(r.addrRowDisplay, 'address already on the bid, no reason to show an editable field for it').toBe('none');
+      expect(r.valueRowDisplay, 'amount already on the bid, no reason to show an editable field for it').toBe('none');
+      expect(r.addrValueStillSet).toBe('42 Elm St');
+      expect(r.valueValueStillSet).toBe('5000');
+    });
+
+    test('bid is missing address and amount: both fields reappear so the gap can be caught (address is load-bearing for geofence + GC-sub job matching)', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        bids = bids.filter(b => b.id !== 990012);
+        bids.push({ id: 990012, client_id: 990013, client_name: 'No Addr Client', addr: '', amount: 0, days: 2, status: 'Closed Won' });
+        populateSchedSelect();
+        document.getElementById('s-bid-sel').value = '990012';
+        pullBid();
+        return {
+          addrRowDisplay: document.getElementById('s-addr-row').style.display,
+          valueRowDisplay: document.getElementById('s-value-row').style.display,
+        };
+      });
+      expect(r.addrRowDisplay).not.toBe('none');
+      expect(r.valueRowDisplay).not.toBe('none');
+    });
+
+    test('switching bids from full-data to missing-data re-shows the fields (no stale hidden state)', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        bids = bids.filter(b => b.id !== 990014 && b.id !== 990015);
+        bids.push({ id: 990014, client_id: 990016, client_name: 'Has Data', addr: '9 Full Ave', amount: 3000, days: 1, status: 'Closed Won' });
+        bids.push({ id: 990015, client_id: 990017, client_name: 'Missing Data', addr: '', amount: 0, days: 1, status: 'Closed Won' });
+        populateSchedSelect();
+        document.getElementById('s-bid-sel').value = '990014';
+        pullBid();
+        const hiddenFirst = document.getElementById('s-addr-row').style.display === 'none';
+        document.getElementById('s-bid-sel').value = '990015';
+        pullBid();
+        const shownAfterSwitch = document.getElementById('s-addr-row').style.display !== 'none';
+        return { hiddenFirst, shownAfterSwitch };
+      });
+      expect(r.hiddenFirst).toBe(true);
+      expect(r.shownAfterSwitch).toBe(true);
+    });
+
+    test('Clear form / switching to Schedule estimate: resets address row back to visible', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        bids = bids.filter(b => b.id !== 990018);
+        bids.push({ id: 990018, client_id: 990019, client_name: 'Reset Test', addr: '5 Reset Rd', amount: 1000, days: 1, status: 'Closed Won' });
+        populateSchedSelect();
+        document.getElementById('s-bid-sel').value = '990018';
+        pullBid();
+        const hiddenAfterPull = document.getElementById('s-addr-row').style.display === 'none';
+        resetSched();
+        const shownAfterClear = document.getElementById('s-addr-row').style.display !== 'none';
+        return { hiddenAfterPull, shownAfterClear };
+      });
+      expect(r.hiddenAfterPull).toBe(true);
+      expect(r.shownAfterClear).toBe(true);
+    });
+  });
+
+  test('Add to calendar / Clear form: buttons still wired and full-width, no orphaned .brow wrapper', async () => {
+    const r = await page.evaluate(() => {
+      goPg('pg-schedule');
+      const root = document.getElementById('pg-schedule');
+      const addBtn = [...root.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add to calendar');
+      const clearBtn = [...root.querySelectorAll('button')].find(b => b.textContent.trim() === 'Clear form');
+      return {
+        addOnclick: addBtn?.getAttribute('onclick') || '',
+        clearOnclick: clearBtn?.getAttribute('onclick') || '',
+        addFullWidth: addBtn?.style.width === '100%',
+        browPresent: !!root.querySelector('.brow'),
+        cardCount: root.querySelectorAll('.card').length,
+      };
+    });
+    expect(r.addOnclick).toContain('scheduleJob()');
+    expect(r.clearOnclick).toContain('resetSched()');
+    expect(r.addFullWidth).toBe(true);
+    expect(r.browPresent).toBe(false);
+    expect(r.cardCount, 'Job details / Pick a date, two distinct sections instead of one long undifferentiated card').toBe(2);
+  });
+
+  test('no console errors from the schedule page cleanup', async () => {
+    assertNoErrors(page, 'schedule page cleanup');
   });
 });

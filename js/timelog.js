@@ -150,7 +150,15 @@ function _tlFmtTime(iso){
   return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
 }
 let _tlLastRows=[];
-function _tlExportCSV(){
+// Owner spec 2026-07-17: locked the same as Books exports, 2 consecutive
+// billing cycles or exempt. See _requireExportsUnlocked (js/cloud.js). Split
+// from the actual CSV build below so the build logic stays independently
+// testable (tests/e2e-timelog.spec.js calls _tlDoExportCSV directly).
+async function _tlExportCSV(){
+  if(typeof _requireExportsUnlocked==='function'&&!(await _requireExportsUnlocked()))return;
+  _tlDoExportCSV();
+}
+function _tlDoExportCSV(){
   if(!_tlLastRows.length){typeof showToast==='function'&&showToast('No time entries to export for '+_tlYear,'📋');return;}
   const esc=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
   const header=['Date','Person','Job Address','Client','Job','Task','Source','Clock In','Clock Out','Minutes','Duration','Week Total','Overtime'];
@@ -285,7 +293,7 @@ async function renderTimeLog(){
     const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
     const wkStartStr=wkStart.toISOString().slice(0,10),wkEndStr=wkEnd.toISOString().slice(0,10);
     const wkMin=visible.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr).reduce((s,r)=>s+(r.minutes||0),0);
-    weekEl.textContent=(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+' this week (Sun–Sat)';
+    weekEl.textContent=(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+' This week (Sun–Sat)';
   }
   const years=_tlYears(visible);
   _tlPopulateYearSel(years);

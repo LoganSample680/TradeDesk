@@ -1245,6 +1245,8 @@ function setSchedType(type,btn){
   if(bufRow)bufRow.style.display=isEst?'none':'';
   ['s-name','s-addr','s-start','s-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sv=document.getElementById('s-value');if(sv)sv.value='';
+  const src=document.getElementById('s-days-src');if(src){src.textContent='';src.style.display='none';}
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
 }
@@ -1261,9 +1263,17 @@ function pullClient(){
   availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();
   refreshAvail();updateSchedPreview();
 }
-function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;document.getElementById('s-days-src').textContent='from bid';document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from bid:</strong> '+escHtml(b.client_name||'')+' · '+fmt(b.amount)+' · '+(b.days||2)+' days. Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
-function buildColorRow(){document.getElementById('s-color-row').innerHTML=JOB_COLORS.map(c=>`<div style="width:24px;height:24px;border-radius:4px;background:${c};cursor:pointer;border:2px solid ${c===selectedColor?'#000':'transparent'}" onclick="selColor('${c}')"></div>`).join('');}
-function selColor(c){selectedColor=c;buildColorRow();}
+function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;(()=>{const src=document.getElementById('s-days-src');if(src){src.textContent='from bid';src.style.display='inline-block';}})();
+  // Owner spec 2026-07-18: the bid already carries these, showing them as
+  // editable form fields on a screen whose whole job is "pick a date" was
+  // clutter, not a real workflow (re-typing the bid amount here isn't how a
+  // value change happens, that's a change order). Silently carry them over
+  // instead, and only surface the field back when the bid genuinely doesn't
+  // have the data, so a missing address doesn't silently ship (it's load-
+  // bearing for geofence arrival matching and GC-sub job linking).
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display=b.addr?'none':'';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=(b.amount>0)?'none':'block';
+  document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from the won bid below.</strong> Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
 function avPrev(){
   const nowY=new Date().getFullYear(),nowM=new Date().getMonth();
   if(availYear===nowY&&availMonth===nowM)return; // already at current month
@@ -1325,7 +1335,11 @@ async function refreshAvail(){
     const isWeekend=dayDow===0||dayDow===6;
     const isWorkday=!isWeekend||(allowWknd);
     const wx=weather[key];
-    const wxHtml=wx?'<div style="font-size:11px;line-height:1">'+wx.icon+'</div><div style="font-size:8px;color:'+(wx.rain?'#A32D2D':'inherit')+';font-weight:600;line-height:1.2">'+wx.hi+'°</div>':'';
+    // Owner feedback 2026-07-17: a weather icon + temperature on EVERY day was
+    // pure noise, the only weather fact that actually matters for scheduling a
+    // paint day is "is rain a risk." Show nothing on clear days, a single rain
+    // icon (temp tucked into the tooltip) only when it actually might rain.
+    const wxHtml=(wx&&wx.rain)?'<div style="font-size:11px;line-height:1;margin-top:1px" title="'+(wx.label||'Rain')+', '+wx.hi+'°">'+wx.icon+'</div>':'';
     const isRainBlocked=_hasPwash&&wx&&wx.rain;
     const dayNum=parseInt(key.split('-')[2]);
     if(isPast)return'<div class="av-d av-past">'+dayNum+'</div>';
@@ -1337,7 +1351,7 @@ async function refreshAvail(){
       return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
     }
     if(isTaken)return'<div class="av-d av-taken">'+dayNum+wxHtml+'</div>';
-    if(isBuf)return'<div class="av-d av-buf">'+dayNum+'</div>';
+    if(isBuf)return'<div class="av-d av-buf">'+dayNum+wxHtml+'</div>';
     if(isRainBlocked)return'<div class="av-d av-taken" title="Rain forecast, pressure wash blocked" style="background:#FEE8E8;cursor:not-allowed">'+dayNum+wxHtml+'</div>';
     if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
     return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
@@ -1432,7 +1446,9 @@ function resetSched(){
   const sd=document.getElementById('s-days');if(sd)sd.value=schedType==='estimate'?1:2;
   const st=document.getElementById('s-time');if(st)st.value='09:00';
   const sh=document.getElementById('s-hours');if(sh)sh.value='2';
-  const src=document.getElementById('s-days-src');if(src)src.textContent='';
+  const src=document.getElementById('s-days-src');if(src){src.textContent='';src.style.display='none';}
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=schedType==='estimate'?'none':'block';
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
 }
@@ -1624,7 +1640,14 @@ async function fetchStateInfo(state){
     // Falls back gracefully if function doesn't handle this yet
   }catch(e){console.warn('fetchStateInfo:',e);}
 }
-function openExportPanel(){
+// Owner spec 2026-07-17: Books exports (everything this panel offers, CSV/
+// XLSX/PDF alike) stay locked until the contractor's TradeDesk subscription
+// has completed 2 consecutive billing cycles, or the account is exempt.
+// Gated at this single entry point so every export option behind it inherits
+// the check, no per-format gap. _requireExportsUnlocked always re-checks
+// live server-side (never the client's own say-so) and shows the reason.
+async function openExportPanel(){
+  if(typeof _requireExportsUnlocked==='function'&&!(await _requireExportsUnlocked()))return;
   const yr=trackerYear||S.taxYear||new Date().getFullYear();
   const years=[...new Set([
     ...expenses.map(e=>e.date?.slice(0,4)),

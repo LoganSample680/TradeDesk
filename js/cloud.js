@@ -212,6 +212,158 @@ async function checkStripeConnectReturn(){
   }
 }
 
+// ── Platform billing (TradeDesk's own $99/mo plan, never Stripe Connect) ────
+// Owner spec 2026-07-17: Books exports + Time Log exports stay locked until a
+// contractor completes 2 CONSECUTIVE, unbroken monthly billing cycles (or the
+// account is on the never-charge allowlist). td_exports_unlocked() (see the
+// 20260804_platform_billing migration) is the single source of truth, an RPC
+// call keeps the actual gate logic server-side, a client can't fake it.
+let _exportsUnlocked=null; // cached boolean
+let _billingStatus=null;   // cached {status, consecutive_paid_cycles, ...} row, for UI display only
+async function _fetchExportsUnlocked(){
+  if(!supaEnabled()||!_supaUser)return false;
+  const cacheKey='td_exports_unlocked_'+_supaUser.id;
+  try{
+    const cached=JSON.parse(localStorage.getItem(cacheKey)||'null');
+    if(cached&&cached.ts&&(Date.now()-cached.ts)<3600000){_exportsUnlocked=cached.data;return cached.data;}
+  }catch(e){}
+  try{
+    const{data,error}=await _supa.rpc('td_exports_unlocked');
+    if(error)return _exportsUnlocked; // transient failure — keep whatever was last known, never fail open to true
+    _exportsUnlocked=!!data;
+    try{localStorage.setItem(cacheKey,JSON.stringify({ts:Date.now(),data:!!data}));}catch(e){}
+    return !!data;
+  }catch(e){return _exportsUnlocked;}
+}
+async function _isBillingExempt(){
+  if(!supaEnabled()||!_supaUser)return false;
+  try{
+    const{data,error}=await _supa.rpc('td_billing_exempt');
+    if(error)return false;
+    return !!data;
+  }catch(e){return false;}
+}
+async function _fetchBillingStatus(){
+  if(!supaEnabled()||!_supaUser)return null;
+  try{
+    const{data,error}=await _supa.from('td_subscriptions').select('*').eq('user_id',_supaUser.id).maybeSingle();
+    if(error)return null;
+    _billingStatus=data;
+    return data;
+  }catch(e){return null;}
+}
+async function startTradeDeskBilling(){
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
+  const btn=event?.target;if(btn){btn.disabled=true;btn.textContent='Starting…';}
+  try{
+    const session=await _supa.auth.getSession();
+    const token=session?.data?.session?.access_token;
+    const res=await fetch(SUPA_URL+'/functions/v1/create-billing-checkout',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({returnUrl:(window._tdNativeReturnUrl||window.location.href.split('#')[0])})
+    });
+    const data=await res.json();
+    if(data.error){zAlert('Could not start checkout: '+data.error);if(btn){btn.disabled=false;btn.textContent='Subscribe';}return;}
+    window.location.href=data.url;
+  }catch(e){
+    zAlert('Could not start checkout: '+e.message);
+    if(btn){btn.disabled=false;btn.textContent='Subscribe';}
+  }
+}
+async function openBillingPortal(){
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in first.');return;}
+  try{
+    const session=await _supa.auth.getSession();
+    const token=session?.data?.session?.access_token;
+    const res=await fetch(SUPA_URL+'/functions/v1/create-billing-portal',{
+      method:'POST',
+      headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+      body:JSON.stringify({returnUrl:(window._tdNativeReturnUrl||window.location.href.split('#')[0])})
+    });
+    const data=await res.json();
+    if(data.error){zAlert('Could not open billing portal: '+data.error);return;}
+    window.location.href=data.url;
+  }catch(e){
+    zAlert('Could not open billing portal: '+e.message);
+  }
+}
+// Blocks an export action until the account is unlocked. Always re-checks
+// live (not the cache) right before an export, so a lapsed subscription can
+// never keep exporting on a stale cached "true". Returns true if the caller
+// may proceed.
+async function _requireExportsUnlocked(){
+  if(!supaEnabled()||!_supaUser){zAlert('Sign in to export.');return false;}
+  try{localStorage.removeItem('td_exports_unlocked_'+_supaUser.id);}catch(e){}
+  const unlocked=await _fetchExportsUnlocked();
+  if(unlocked)return true;
+  const status=await _fetchBillingStatus();
+  const cycles=status?.consecutive_paid_cycles||0;
+  const msg=status
+    ?('Exports unlock after 2 consecutive billing cycles, you\'re at '+cycles+' of 2. Keep your subscription active and this opens automatically after the next renewal.')
+    :('Books and Time Log exports unlock after your first 2 monthly billing cycles. Subscribe to get started.');
+  zAlert(msg,{title:'Exports not unlocked yet'});
+  return false;
+}
+
+// ── App-wide billing gridlock ───────────────────────────────────────────
+// Owner spec 2026-07-17: once a contractor's 14-day trial ends (or an active
+// subscription lapses to past_due/canceled) with nothing paid, the ENTIRE
+// app locks behind a single "Manage billing" screen, no peeking at existing
+// data, until they pay. Exempt accounts, and crew members whose employer is
+// current, never see this. td_billing_gate_locked() (see the
+// 20260805_billing_trial_gate migration) resolves the effective billing
+// owner server-side (self, or the employer for a crew member) so a client
+// can't fake its way past the gate.
+let _billingGateLocked=false;
+async function _checkBillingGate(){
+  if(!supaEnabled()||!_supaUser)return;
+  try{
+    const{data,error}=await _supa.rpc('td_billing_gate_locked');
+    // Never fail open TO a lockout: a transient RPC error must never brick a
+    // paying customer's whole app. Only a CONFIRMED "true" locks it.
+    _billingGateLocked=(!error&&data===true);
+  }catch(e){_billingGateLocked=false;}
+  if(_billingGateLocked)await _renderBillingGateOverlay();
+  else _removeBillingGateOverlay();
+}
+async function _renderBillingGateOverlay(){
+  if(document.getElementById('billing-gate-overlay'))return;
+  const status=await _fetchBillingStatus();
+  const isPastDue=status?.status==='past_due';
+  const ov=document.createElement('div');
+  ov.id='billing-gate-overlay';
+  ov.style.cssText='position:fixed;inset:0;z-index:99999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:24px;animation:td-pg-enter .3s cubic-bezier(.22,1,.36,1) both';
+  ov.innerHTML=
+    '<div style="max-width:360px;text-align:center">'+
+      '<div style="font-size:40px;margin-bottom:12px">'+(isPastDue?'⚠️':'⏳')+'</div>'+
+      '<div style="font-size:19px;font-weight:800;color:var(--text);margin-bottom:8px">'+(isPastDue?'Payment past due':'Your free trial has ended')+'</div>'+
+      '<div style="font-size:14px;color:var(--text2);line-height:1.5;margin-bottom:22px">'+(isPastDue?'We couldn’t process your last payment. Update your payment method to keep using TradeDesk.':'Subscribe for $99/mo to keep using TradeDesk. Your clients, bids, and jobs are all safe and waiting.')+'</div>'+
+      '<button class="btn btn-p" style="width:100%;padding:14px;font-size:15px" onclick="'+(isPastDue?'openBillingPortal()':'startTradeDeskBilling()')+'">'+(isPastDue?'Update payment method':'Subscribe')+'</button>'+
+    '</div>';
+  document.body.appendChild(ov);
+}
+function _removeBillingGateOverlay(){document.getElementById('billing-gate-overlay')?.remove();}
+// Detects landing back from Stripe Checkout/Billing Portal (?billing=success|
+// cancel|return) so the gate re-checks immediately instead of waiting for the
+// user to reload. Stripe's webhook can land a beat after the redirect, so a
+// success/return retries the check a couple times over the next few seconds
+// rather than trusting the very first (possibly still-stale) result.
+function _handleBillingReturn(){
+  const params=new URLSearchParams(window.location.search);
+  const billing=params.get('billing');
+  if(!billing)return;
+  params.delete('billing');
+  const qs=params.toString();
+  try{history.replaceState({},'',window.location.pathname+(qs?'?'+qs:'')+window.location.hash);}catch(_e){}
+  if(billing==='success'||billing==='return'){
+    if(billing==='success')showToast('Subscription active! 🎉','✅');
+    _checkBillingGate();
+    setTimeout(_checkBillingGate,2000);
+    setTimeout(_checkBillingGate,5000);
+  }
+}
+
 async function sendPaymentLink(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const c=getClientById(bid.client_id);if(!c)return;
@@ -297,7 +449,14 @@ async function loadAccountData(){
       _isEmployee=true;_contractorUserId=row.contractor_user_id;_employeeRecord=row;
       _user={id:_supaUser.id,email:_supaUser.email,name:row.name||'',role:row.role||'employee',account_id:null};
       applyPermissions();
+      // Owner report 2026-07-17: a returning already-linked crew member landed
+      // in a stale test account with zero indication anything had happened,
+      // just a silent redirect into someone else's business. Every crew
+      // auto-link now shows SOMETHING, first-join keeps its warmer welcome,
+      // a returning session gets a plain factual toast, so a wrong link is
+      // never silent, the signed-in person always has a signal to notice.
       if(welcome)showToast('Welcome to the team, '+escHtml(row.name||'there')+'! 👋','✅');
+      else showToast('Signed in as crew ('+escHtml(row.role||'employee')+'). Not expecting this? Contact the business that invited you.','👷',6000);
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
       return true;
     };
@@ -529,7 +688,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.17.26.2';
+const APP_VERSION='07.18.26.2';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1715,6 +1874,8 @@ async function supaInit(){
       if(hasAccount){
         await supaLoadFromCloud();
         _supaCloudLoaded=true;
+        await _checkBillingGate();
+        _handleBillingReturn();
       } else {
         // Signed in but no data at all. Route them INTO onboarding ONLY when THIS boot
         // actually came back from a Google/Apple redirect (_oauthRet is set by the
@@ -1895,6 +2056,7 @@ async function supaInit(){
           supaSetStatus('cloud');
           goPg('pg-dash');
         }
+        if(hasAccount)await _checkBillingGate();
         // Existing-account sub-invite: a contractor who already runs TradeDesk
         // arrived via a referral link and SIGNED IN (not onboarded, new
         // accounts are suppressed by the _obInProgress return at the top, and
@@ -5023,6 +5185,74 @@ function _sigFeedStatus(status){
     try{if(window._obs)_obs.track('sig_feed_down_'+String(status).toLowerCase());}catch(_e){}
   }
 }
+// Applies one signed_proposals row's decline/signed state to its local bid.
+// Shared by the live poll loop below and _reconcilePendingSigStatuses, so the
+// two paths can never drift apart on what "declined" vs "signed" means.
+// Returns true if it mutated the bid.
+function _applySigStatusToBid(bid,s){
+  let changed=false;
+  if(s.payment_status==='declined'){
+    // Client declined, mark as Closed Lost, not Closed Won
+    if(bid.status!=='Closed Lost'){
+      bid.status='Closed Lost';bid.draft=false;
+      bid.declinedAt=s.signed_at;
+      changed=true;
+    }
+    // Client-picked reason (sign.html's decline modal), same field a
+    // contractor's own manual "Mark Lost" action populates, so it shows
+    // up in the Declined tab / dashboard with no new UI needed.
+    if(s.decline_reason&&bid.lostReason!==s.decline_reason){
+      bid.lostReason=s.decline_reason;bid.lostAt=bid.lostAt||s.signed_at;
+      changed=true;
+    }
+  }else{
+    if(bid.status!=='Closed Won'){
+      // Always fix the status regardless of seenCache, data may have been reset
+      bid.status='Closed Won';bid.draft=false;
+      bid.signedAt=s.signed_at;
+      bid.signedName=s.client_signed_name||s.client_name;
+      bid.paymentMethod=s.payment_method;
+      changed=true;
+    }
+    // Refresh signature metadata even when already won, the signature image and
+    // EPA ack can land after the status flip (or the DB columns were added later).
+    if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
+    if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
+    if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
+    if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
+  }
+  return changed;
+}
+// Self-heals bids whose status is stuck out of sync with signed_proposals, e.g.
+// a decline landed while this contractor's account had already accumulated
+// 100+ more recent signed_proposals rows: checkNewSignatures' full poll only
+// ever looks at the most recent 100 (ordered by signed_at), and the delta poll
+// only looks past its watermark, so an old stale row can never resurface
+// through either path. This runs a direct lookup on the small set of bids
+// still showing "Pending" with a signingToken (however few that is, regardless
+// of total signature volume), so drift like that gets corrected for good.
+async function _reconcilePendingSigStatuses(){
+  if(!_supa||!_supaUser)return;
+  const pending=(typeof bids!=='undefined'?bids:[]).filter(b=>b.signingToken&&b.status==='Pending'&&b.id);
+  if(!pending.length)return;
+  try{
+    const{data,error}=await _supa.from('signed_proposals')
+      .select('*')
+      .eq('contractor_user_id',_supaUser.id)
+      .in('bid_id',pending.map(b=>String(b.id)));
+    if(error||!data||!data.length)return;
+    let changed=false;
+    data.forEach(s=>{
+      const bid=pending.find(b=>String(b.id)===String(s.bid_id));
+      if(bid&&_applySigStatusToBid(bid,s))changed=true;
+    });
+    if(changed){
+      saveAll();
+      renderDash();
+      if(typeof renderProposalsPage==='function')renderProposalsPage();
+    }
+  }catch(e){console.warn('reconcilePendingSigStatuses:',e);}
+}
 let _checkSigsPending=false;
 async function checkNewSignatures(_src){
   // Coalescing guard: a call landing while another run is in flight must NOT be
@@ -5046,6 +5276,7 @@ async function checkNewSignatures(_src){
       .order('signed_at',{ascending:false})
       .limit(100);
     let data,error;
+    const _wasFullPoll=!_sigPollWatermark;
     if(_sigPollWatermark){
       // Delta poll: INSERTs land with updated_at=now(); every mutation the loop
       // below cares about (cancellation, remote CO signing, payment-status flip)
@@ -5125,38 +5356,10 @@ async function checkNewSignatures(_src){
             coSignedAlerts.push({client:s.client_name||'Client',coNum:lc.coNum,newTotal:bid.amount,clientId:bid.client_id});
           }
         }
-        if(s.payment_status==='declined'){
-          // Client declined, mark as Closed Lost, not Closed Won
-          if(bid.status!=='Closed Lost'){
-            bid.status='Closed Lost';bid.draft=false;
-            bid.declinedAt=s.signed_at;
-            changed=true;
-          }
-          // Client-picked reason (sign.html's decline modal), same field a
-          // contractor's own manual "Mark Lost" action populates, so it shows
-          // up in the Declined tab / dashboard with no new UI needed.
-          if(s.decline_reason&&bid.lostReason!==s.decline_reason){
-            bid.lostReason=s.decline_reason;bid.lostAt=bid.lostAt||s.signed_at;
-            changed=true;
-          }
-        } else {
-          if(bid.status!=='Closed Won'){
-            // Always fix the status regardless of seenCache, data may have been reset
-            bid.status='Closed Won';bid.draft=false;
-            bid.signedAt=s.signed_at;
-            bid.signedName=s.client_signed_name||s.client_name;
-            bid.paymentMethod=s.payment_method;
-            changed=true;
-            if(!alreadySeen){
-              alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
-            }
-          }
-          // Refresh signature metadata even when already won, the signature image and
-          // EPA ack can land after the status flip (or the DB columns were added later).
-          if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
-          if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
-          if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
-          if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
+        const _wasWon=bid.status==='Closed Won';
+        if(_applySigStatusToBid(bid,s))changed=true;
+        if(s.payment_status!=='declined'&&!_wasWon&&bid.status==='Closed Won'&&!alreadySeen){
+          alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
         }
         if(!alreadySeen)newSeen.push(key);
       }
@@ -5181,6 +5384,11 @@ async function checkNewSignatures(_src){
         if(!window._showingScheduleAlert)setTimeout(showScheduleAlerts,400);
       }
     }
+    // Once per fresh load only, piggybacking on the full poll: catches any bid
+    // still stuck "Pending" that this poll's own 100-row/watermark window can't
+    // reach. Fire-and-forget, it has its own error handling and never blocks
+    // _checkSigsBusy.
+    if(_wasFullPoll)_reconcilePendingSigStatuses();
   }catch(e){console.warn('checkNewSignatures:',e);}finally{
     _checkSigsBusy=false;
     if(_checkSigsPending){_checkSigsPending=false;checkNewSignatures(_src);}

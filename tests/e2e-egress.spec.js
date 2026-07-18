@@ -196,6 +196,88 @@ test.describe('egress: signature-poll watermark', () => {
     expect(r.polls, 'second call must trigger a trailing rerun, 2 polls, not 1').toBe(2);
   });
 
+  test('_applySigStatusToBid: a declined row flips a Pending bid to Closed Lost with the client reason, a signed row flips it to Closed Won', async () => {
+    const r = await page.evaluate(() => {
+      const declinedBid = { id: 1, status: 'Pending', signingToken: 'tok-d', draft: true };
+      const declinedChanged = _applySigStatusToBid(declinedBid, {
+        payment_status: 'declined', decline_reason: 'Went with another contractor', signed_at: '2026-07-16T00:00:00+00:00',
+      });
+      const signedBid = { id: 2, status: 'Pending', signingToken: 'tok-s', draft: true };
+      const signedChanged = _applySigStatusToBid(signedBid, {
+        payment_status: 'pending_cash', client_name: 'Bob', signed_at: '2026-07-16T00:00:00+00:00',
+      });
+      // Idempotent: re-applying the same declined row a second time (e.g. the
+      // reconciliation sweep runs again next session) must not report a change.
+      const declinedChangedAgain = _applySigStatusToBid(declinedBid, {
+        payment_status: 'declined', decline_reason: 'Went with another contractor', signed_at: '2026-07-16T00:00:00+00:00',
+      });
+      return { declinedBid, declinedChanged, signedBid, signedChanged, declinedChangedAgain };
+    });
+    expect(r.declinedChanged).toBe(true);
+    expect(r.declinedBid.status).toBe('Closed Lost');
+    expect(r.declinedBid.lostReason).toBe('Went with another contractor');
+    expect(r.declinedBid.draft).toBe(false);
+    expect(r.signedChanged).toBe(true);
+    expect(r.signedBid.status).toBe('Closed Won');
+    expect(r.declinedChangedAgain, 're-applying an already-processed declined row is a no-op').toBe(false);
+  });
+
+  test('_reconcilePendingSigStatuses: a bid stuck Pending gets corrected to Closed Lost from a decline the normal poll window can no longer reach', async () => {
+    // The bug this guards: an account with 100+ signed_proposals rows (or a
+    // decline whose updated_at aged past the delta watermark) means neither
+    // checkNewSignatures poll path will ever re-fetch an old declined row, so
+    // a bid can stay wrongly "Pending" (counted as Awaiting sig) forever. The
+    // reconciliation pass queries by bid_id directly, no date/limit window.
+    await page.evaluate(() => {
+      bids = bids.filter(b => !['990010', '990011', '990012'].includes(String(b.id)));
+      bids.push(
+        { id: 990010, client_id: 77010, client_name: 'Stuck Decline', amount: 1500, status: 'Pending', draft: false, signingToken: 'tok-stuck' },
+        { id: 990011, client_id: 77011, client_name: 'Really Awaiting', amount: 2200, status: 'Pending', draft: false, signingToken: 'tok-real' },
+        { id: 990012, client_id: 77012, client_name: 'Never Sent', amount: 900, status: 'Pending', draft: true }, // no signingToken: must be excluded from the query
+      );
+    });
+    const r = await page.evaluate(async () => {
+      let queriedIds = null;
+      const mkQuery = () => {
+        const q = {};
+        q.select = () => q; q.eq = () => q;
+        q.in = (col, ids) => { queriedIds = ids; return q; };
+        q.then = (resolve) => resolve({
+          data: [{ bid_id: '990010', payment_status: 'declined', decline_reason: 'Price was too high', signed_at: '2026-07-16T00:00:00+00:00' }],
+          error: null,
+        });
+        return q;
+      };
+      window.__origSupa = window.__origSupa || _supa;
+      _supa = { ...window.__origSupa, from: (tbl) => tbl === 'signed_proposals' ? mkQuery() : window.__origSupa.from(tbl) };
+      await _reconcilePendingSigStatuses();
+      const stuck = bids.find(x => String(x.id) === '990010');
+      const real = bids.find(x => String(x.id) === '990011');
+      return {
+        queriedIds,
+        stuckStatus: stuck?.status, stuckReason: stuck?.lostReason,
+        realStatus: real?.status,
+      };
+    });
+    expect(r.queriedIds, 'only signingToken+Pending bids are queried').toEqual(expect.arrayContaining(['990010', '990011']));
+    expect(r.queriedIds).not.toContain('990012');
+    expect(r.stuckStatus, 'the stale declined bid self-heals to Closed Lost').toBe('Closed Lost');
+    expect(r.stuckReason).toBe('Price was too high');
+    expect(r.realStatus, 'a bid genuinely still awaiting signature is left untouched').toBe('Pending');
+  });
+
+  test('_reconcilePendingSigStatuses: no Pending+signingToken bids means zero query cost, not even a call', async () => {
+    const r = await page.evaluate(async () => {
+      bids = bids.filter(b => !(b.signingToken && b.status === 'Pending'));
+      let called = false;
+      window.__origSupa = window.__origSupa || _supa;
+      _supa = { ...window.__origSupa, from: (tbl) => { if (tbl === 'signed_proposals') called = true; return window.__origSupa.from(tbl); } };
+      await _reconcilePendingSigStatuses();
+      return { called };
+    });
+    expect(r.called, 'reconciliation must not query when there is nothing to reconcile').toBe(false);
+  });
+
   test('schedule popup NEVER surfaces over the boot spinner, it defers until the overlay is gone', async () => {
     const r = await page.evaluate(async () => {
       // Hermetic start: a prior test in this shared page (or a leaked 700ms retry

@@ -79,6 +79,63 @@ async function recordRefund(stripe: Stripe, charge: Stripe.Charge, connectedAcco
   }
 }
 
+// ── Platform subscription billing (TradeDesk billing the CONTRACTOR for the
+//    app itself — the platform Stripe account, never Connect. Connect above
+//    is client-to-contractor money and never touches these tables). ─────────
+//
+// metadata.tradedesk_user_id is stamped on the subscription at checkout
+// creation time (create-billing-checkout), so every event here resolves
+// straight back to the account with no separate lookup table.
+async function upsertSubscription(sub: Stripe.Subscription) {
+  const userId = sub.metadata?.tradedesk_user_id;
+  if (!userId) return; // not one of ours — ignore
+  await supabase.from('td_subscriptions').upsert({
+    user_id: userId,
+    stripe_customer_id: String(sub.customer),
+    stripe_subscription_id: sub.id,
+    status: sub.status,
+    current_period_start: new Date(sub.current_period_start * 1000).toISOString(),
+    current_period_end: new Date(sub.current_period_end * 1000).toISOString(),
+    cancel_at_period_end: !!sub.cancel_at_period_end,
+  }, { onConflict: 'user_id' });
+}
+
+// Owner spec 2026-07-17: Books/Time Log exports unlock after 2 CONSECUTIVE,
+// UNBROKEN paid monthly cycles. A failed/lapsed invoice resets the streak to
+// zero — recorded here and read back by td_exports_unlocked() (see the
+// 20260804_platform_billing migration) which the app calls to gate exports.
+async function recordSubscriptionInvoice(invoice: Stripe.Invoice, status: 'paid' | 'payment_failed') {
+  const subId = String(invoice.subscription || '');
+  if (!subId) return; // one-off invoice, not a subscription cycle — nothing to count
+
+  // Idempotent by invoice id: a webhook retry must never double-count a cycle.
+  const { data: existing } = await supabase
+    .from('td_subscription_invoices')
+    .select('id').eq('stripe_invoice_id', invoice.id).maybeSingle();
+  if (existing) return;
+
+  const { data: sub } = await supabase
+    .from('td_subscriptions')
+    .select('user_id, consecutive_paid_cycles')
+    .eq('stripe_subscription_id', subId).maybeSingle();
+  if (!sub) return; // subscription.created hasn't landed yet — a later retry catches it
+
+  await supabase.from('td_subscription_invoices').insert({
+    user_id: sub.user_id,
+    stripe_invoice_id: invoice.id,
+    stripe_subscription_id: subId,
+    status,
+    amount_paid: (invoice.amount_paid || 0) / 100,
+    period_start: invoice.period_start ? new Date(invoice.period_start * 1000).toISOString() : null,
+    period_end: invoice.period_end ? new Date(invoice.period_end * 1000).toISOString() : null,
+  });
+
+  const nextCount = status === 'paid' ? (sub.consecutive_paid_cycles || 0) + 1 : 0;
+  await supabase.from('td_subscriptions')
+    .update({ consecutive_paid_cycles: nextCount })
+    .eq('stripe_subscription_id', subId);
+}
+
 async function recordCompletedPayment(stripe: Stripe, session: Stripe.Checkout.Session, connectedAccountId?: string) {
   const meta = session.metadata!;
   const amountPaid = (session.amount_total || 0) / 100;
@@ -184,6 +241,23 @@ Deno.serve(async (req) => {
   //    of how many times charge.refunded fires or who triggered it. ─────────────────
   if (event.type === 'charge.refunded') {
     await recordRefund(stripe, event.data.object as Stripe.Charge, event.account || undefined);
+  }
+
+  // ── Platform subscription billing (contractor's own TradeDesk plan) ──────
+  if (event.type === 'customer.subscription.created' || event.type === 'customer.subscription.updated') {
+    await upsertSubscription(event.data.object as Stripe.Subscription);
+  }
+  if (event.type === 'customer.subscription.deleted') {
+    const sub = event.data.object as Stripe.Subscription;
+    await supabase.from('td_subscriptions').update({ status: 'canceled' }).eq('stripe_subscription_id', sub.id);
+  }
+  if (event.type === 'invoice.paid') {
+    const inv = event.data.object as Stripe.Invoice;
+    if (inv.subscription) await recordSubscriptionInvoice(inv, 'paid');
+  }
+  if (event.type === 'invoice.payment_failed') {
+    const inv = event.data.object as Stripe.Invoice;
+    if (inv.subscription) await recordSubscriptionInvoice(inv, 'payment_failed');
   }
 
   // ── Connect onboarding completed ──────────────────────────────────────────
