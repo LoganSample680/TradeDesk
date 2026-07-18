@@ -354,7 +354,7 @@ function renderDash(){
           '<div style="font-size:12px;color:var(--text2);flex:1">'+escHtml(addr)+'</div>'+
           (mapsUrl?'<a href="'+mapsUrl+'" style="font-size:11px;font-weight:700;color:var(--blue);text-decoration:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue)">'+svgIcon('🗺',{size:12})+' Navigate</a>':'')+
         '</div>':'')+
-        _jobFieldNote(j.notes)+
+        _jobFieldNote(j,{editable:true})+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
           '<span style="font-size:11px;font-weight:700;color:'+statusColor+'">'+statusLabel+'</span>'+
           _empActionBtn(j)+
@@ -514,7 +514,7 @@ function renderDash(){
         const _cAddr=(_aj&&_aj.addr)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).addr||''):'')||'';
         const _cid=(_aj&&_aj.client_id)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).id||null):null);
         // Field note right where the crew is standing: gate code, dog, ladder.
-        const _ocNoteHtml=_jobFieldNote(_aj&&_aj.notes);
+        const _ocNoteHtml=_jobFieldNote(_aj,{editable:true});
         const _ocNoteBlock=_ocNoteHtml?'<div style="padding:0 14px 2px">'+_ocNoteHtml+'</div>':'';
         const _extra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_onClock.startTime)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span id="dash-onsite-time">'+_fmtDur(_onClock.startTime)+'</span> on site</div>';
         const ocBtns=[];
@@ -528,7 +528,7 @@ function renderDash(){
         const hasBalance=nb.balance>0.01;
         // Field note surfaces on arrival too, before clocking in (gate code etc).
         const _nbJob=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===clockTarget):null;
-        const _nbNoteHtml=_jobFieldNote(_nbJob&&_nbJob.notes);
+        const _nbNoteHtml=_jobFieldNote(_nbJob,{editable:true});
         const _nbNoteBlock=_nbNoteHtml?'<div style="padding:0 14px 2px">'+_nbNoteHtml+'</div>':'';
         const nbBtns=[];
         nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:linear-gradient(160deg,#22c55e,#12894a);color:#fff;box-shadow:0 6px 16px -6px rgba(14,107,57,.6);display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><path d="M7 5v14l11-7z"/></svg>Clock in</button>');
@@ -634,15 +634,83 @@ function _dashLogPipeMileage(jobId){
   const c=getClientById(j.client_id);
   if(typeof openLogTripModal==='function')openLogTripModal({toAddress:j.addr||'',clientId:j.client_id||'',clientName:(c&&c.name)||'',purpose:'Job site'});
 }
-// Field note from the scheduler's Notes box (gate codes, "dog in back",
-// "bring the 24ft ladder"). Internal only, shown to the owner + assigned crew
-// wherever the job renders, never to the client. Returns '' when empty.
-function _jobFieldNote(note){
-  const n=(note||'').trim();if(!n)return'';
-  return '<div style="margin-top:7px;padding:8px 10px;background:var(--bg2);border-radius:var(--r);border-left:3px solid var(--amber,#8A4E00)">'+
-    '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:2px">Field note</div>'+
-    '<div style="font-size:12px;color:var(--text2);line-height:1.4;white-space:pre-wrap">'+escHtml(n)+'</div>'+
+// Field note callout, internal only (owner + assigned crew, never the client).
+// Composes two layers so gate codes/dog warnings never get re-typed:
+//   · SITE  = client.siteNote, persistent, auto-shows on every job at that client
+//   · this job = job.notes, the one-off ("bring the 24ft ladder")
+// job.noteAlert flags it as a hazard → red treatment that can't be skimmed past.
+// Pass the JOB OBJECT (not a string). opts.editable adds an Edit / "+ Add" affordance
+// that opens the field editor. Returns '' when there's nothing to show and not editable.
+function _jobFieldNote(job,opts){
+  opts=opts||{};
+  const j=(job&&typeof job==='object')?job:null;
+  const c=(j&&j.client_id!=null&&typeof clients!=='undefined'&&clients.find)?clients.find(x=>String(x.id)===String(j.client_id)):null;
+  const site=(c&&(c.siteNote||'').trim())||'';
+  const jn=(j&&(j.notes||'').trim())||'';
+  const alert=!!(j&&j.noteAlert);
+  const editable=!!(opts.editable&&j&&j.id!=null);
+  if(!site&&!jn&&!alert){
+    return editable?'<button onclick="event.stopPropagation();_openJobNoteEditor('+j.id+')" style="margin-top:7px;font-size:11px;font-weight:700;color:var(--text3);background:none;border:1px dashed var(--border2);border-radius:var(--r);padding:6px 10px;cursor:pointer;font-family:inherit">+ Add a field note</button>':'';
+  }
+  const accent=alert?'var(--c-red,#B22A20)':'var(--amber,#8A4E00)';
+  const bg=alert?'rgba(178,42,32,.06)':'var(--bg2)';
+  const label=alert?'Heads up':'Field note';
+  const editBtn=editable?'<button onclick="event.stopPropagation();_openJobNoteEditor('+j.id+')" style="margin-left:auto;font-size:10px;font-weight:800;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;padding:0">Edit</button>':'';
+  const siteLine=site?'<div style="font-size:12px;color:var(--text2);line-height:1.4;white-space:pre-wrap"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-right:5px">Site</span>'+escHtml(site)+'</div>':'';
+  const jobLine=jn?'<div style="font-size:12px;color:var(--text2);line-height:1.4;white-space:pre-wrap'+(site?';margin-top:4px':'')+'">'+escHtml(jn)+'</div>':'';
+  return '<div style="margin-top:7px;padding:8px 10px;background:'+bg+';border-radius:var(--r);border-left:3px solid '+accent+'">'+
+    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+(alert?accent:'var(--text3)')+'">'+label+'</span>'+editBtn+'</div>'+
+    siteLine+jobLine+
   '</div>';
+}
+
+// Field-note editor, a bottom sheet (mirrors _openCrewAssignSheet). Edits the
+// one-off job note, the hazard/alert flag, and the client's persistent Site
+// note in one place, so the crew can jot from the field and a gate code gets
+// entered once. Available to the owner + the assigned crew wherever it renders.
+function _openJobNoteEditor(jobId){
+  const j=jobs.find(x=>String(x.id)===String(jobId));if(!j)return;
+  const c=(j.client_id!=null&&clients.find)?clients.find(x=>String(x.id)===String(j.client_id)):null;
+  document.getElementById('_jobnote-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_jobnote-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const sheet=document.createElement('div');
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px 40px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1);max-height:88vh;overflow-y:auto';
+  const _ta=(id,val,ph)=>'<textarea id="'+id+'" placeholder="'+ph+'" style="width:100%;min-height:60px;font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);font-family:inherit;line-height:1.45;resize:none">'+escHtml(val||'')+'</textarea>';
+  sheet.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
+      '<div style="font-size:15px;font-weight:800">Field note</div>'+
+      '<button onclick="document.getElementById(\'_jobnote-ov\').remove()" style="padding:6px 16px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(j.name||c&&c.name||'Job')+'</div>'+
+    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:5px">This job</div>'+
+    _ta('_jn-note-ta',j.notes,'Bring the 24ft ladder, high ceilings in the foyer...')+
+    '<label style="display:flex;align-items:center;gap:10px;margin:14px 0;cursor:pointer">'+
+      '<input type="checkbox" id="_jn-alert"'+(j.noteAlert?' checked':'')+' style="width:20px;height:20px;flex-shrink:0;accent-color:var(--c-red,#B22A20);cursor:pointer">'+
+      '<span><span style="font-size:14px;font-weight:700;color:var(--text)">Flag as hazard</span><span style="display:block;font-size:11px;color:var(--text3)">Dog, safety, tricky access, shows in red everywhere</span></span>'+
+    '</label>'+
+    (j.client_id!=null?
+      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:4px 0 5px">Site access <span style="color:var(--blue)">(saved to the client)</span></div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-bottom:5px">Gate code, dog, where to park, shows on every job here so you never re-type it.</div>'+
+      _ta('_jn-site-ta',c&&c.siteNote,'Gate code 4412, dog in the back yard...')
+    :'')+
+    '<button onclick="_saveJobNote('+j.id+')" class="btn btn-g" style="width:100%;height:48px;font-size:15px;font-weight:800;border-radius:var(--r);margin-top:16px">Save note</button>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+}
+
+function _saveJobNote(jobId){
+  const j=jobs.find(x=>String(x.id)===String(jobId));if(!j)return;
+  const ta=document.getElementById('_jn-note-ta');j.notes=(ta?ta.value:'').trim();
+  const al=document.getElementById('_jn-alert');j.noteAlert=!!(al&&al.checked);
+  const site=document.getElementById('_jn-site-ta');
+  if(site&&j.client_id!=null&&clients.find){const c=clients.find(x=>String(x.id)===String(j.client_id));if(c)c.siteNote=site.value.trim();}
+  saveAll();
+  document.getElementById('_jobnote-ov')?.remove();
+  if(typeof renderDash==='function')try{renderDash();}catch(e){}
+  if(typeof renderClientDetail==='function')try{renderClientDetail();}catch(e){}
+  if(typeof renderDispatch==='function')try{renderDispatch();}catch(e){}
+  showToast('Note saved','✓');
 }
 
 function renderDashToday(){
@@ -743,7 +811,7 @@ function renderDashToday(){
           '</span>'+
         '</div>'+
       '</div>'+
-      _jobFieldNote(j.notes)+
+      _jobFieldNote(j,{editable:true})+
       _crewRow+
     '</div>';
   }).join('');

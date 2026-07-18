@@ -614,25 +614,26 @@ test.describe('dashboard.js: exhaustive coverage', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // _jobFieldNote (scheduler Notes surfaced on the job for owner + assigned crew)
+  // _jobFieldNote, composite: site note + this-job note + hazard flag, editable.
+  // Takes the JOB OBJECT now (not a string).
   // ─────────────────────────────────────────────────────────────────────────────
-  test('_jobFieldNote: empty / null / whitespace return empty string', async () => {
+  test('_jobFieldNote: empty job / null / no note return empty string when not editable', async () => {
     const r = await page.evaluate(() => {
       if (typeof _jobFieldNote !== 'function') return { skip: true };
-      return { skip: false, empty: _jobFieldNote(''), nul: _jobFieldNote(null), undef: _jobFieldNote(undefined), ws: _jobFieldNote('   ') };
+      return { skip: false, nul: _jobFieldNote(null), undef: _jobFieldNote(undefined), noNote: _jobFieldNote({ id: 1, client_id: null }), ws: _jobFieldNote({ id: 1, notes: '   ', client_id: null }) };
     });
     if (r.skip) return;
-    expect(r.empty).toBe('');
     expect(r.nul).toBe('');
     expect(r.undef).toBe('');
+    expect(r.noNote).toBe('');
     expect(r.ws).toBe('');
   });
 
-  test('_jobFieldNote: real note renders the text under a "Field note" label', async () => {
+  test('_jobFieldNote: a job note renders the text under a "Field note" label', async () => {
     const r = await page.evaluate(() => {
       if (typeof _jobFieldNote !== 'function') return { skip: true };
-      const html = _jobFieldNote('Gate code 4412, dog in back');
-      return { skip: false, hasText: html.includes('Gate code 4412, dog in back'), hasLabel: html.toLowerCase().includes('field note') };
+      const html = _jobFieldNote({ id: 1, notes: 'Bring the 24ft ladder', client_id: null });
+      return { skip: false, hasText: html.includes('Bring the 24ft ladder'), hasLabel: html.toLowerCase().includes('field note') };
     });
     if (r.skip) return;
     expect(r.hasText).toBe(true);
@@ -642,12 +643,94 @@ test.describe('dashboard.js: exhaustive coverage', () => {
   test('_jobFieldNote: escapes HTML (no injection from a note)', async () => {
     const r = await page.evaluate(() => {
       if (typeof _jobFieldNote !== 'function') return { skip: true };
-      const html = _jobFieldNote('<img src=x onerror=alert(1)>');
+      const html = _jobFieldNote({ id: 1, notes: '<img src=x onerror=alert(1)>', client_id: null });
       return { skip: false, rawTagAbsent: !html.includes('<img'), escaped: html.includes('&lt;img') };
     });
     if (r.skip) return;
     expect(r.rawTagAbsent).toBe(true);
     expect(r.escaped).toBe(true);
+  });
+
+  test('_jobFieldNote: pulls the client site note (persistent) alongside the job note', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const cid = 555001;
+      clients.push({ id: cid, name: 'Site Client', siteNote: 'Gate code 4412' });
+      try {
+        const html = _jobFieldNote({ id: 1, notes: 'Bring ladder', client_id: cid });
+        return { skip: false, hasSite: html.includes('Gate code 4412'), hasJob: html.includes('Bring ladder'), hasSiteLabel: html.includes('Site') };
+      } finally { clients.splice(clients.findIndex(c => c.id === cid), 1); }
+    });
+    if (r.skip) return;
+    expect(r.hasSite).toBe(true);
+    expect(r.hasJob).toBe(true);
+    expect(r.hasSiteLabel).toBe(true);
+  });
+
+  test('_jobFieldNote: noteAlert flags a hazard (red "Heads up", even with no text)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const html = _jobFieldNote({ id: 1, noteAlert: true, notes: 'Aggressive dog', client_id: null });
+      return { skip: false, notEmpty: html.length > 0, hasHeadsUp: html.toLowerCase().includes('heads up'), red: html.includes('--c-red') };
+    });
+    if (r.skip) return;
+    expect(r.notEmpty).toBe(true);
+    expect(r.hasHeadsUp).toBe(true);
+    expect(r.red).toBe(true);
+  });
+
+  test('_jobFieldNote: editable + no note renders an "Add a field note" button; non-editable renders nothing', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const editable = _jobFieldNote({ id: 7, client_id: null }, { editable: true });
+      const readonly = _jobFieldNote({ id: 7, client_id: null });
+      return { skip: false, editableHasAdd: editable.includes('_openJobNoteEditor(7)'), readonlyEmpty: readonly === '' };
+    });
+    if (r.skip) return;
+    expect(r.editableHasAdd).toBe(true);
+    expect(r.readonlyEmpty).toBe(true);
+  });
+
+  test('_openJobNoteEditor / _saveJobNote: edits the job note, hazard flag, and client site note', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _openJobNoteEditor !== 'function' || typeof _saveJobNote !== 'function') return { skip: true };
+      const cid = 555002, jid = 555003;
+      clients.push({ id: cid, name: 'Editor Client' });
+      jobs.push({ id: jid, name: 'Editor Job', client_id: cid, start: todayKey(), days: 1, eventType: 'job', status: 'upcoming' });
+      try {
+        _openJobNoteEditor(jid);
+        const sheet = !!document.getElementById('_jobnote-ov');
+        document.getElementById('_jn-note-ta').value = 'Bring the sprayer';
+        document.getElementById('_jn-alert').checked = true;
+        document.getElementById('_jn-site-ta').value = 'Side gate, code 9911';
+        _saveJobNote(jid);
+        const j = jobs.find(x => x.id === jid);
+        const c = clients.find(x => x.id === cid);
+        const closed = !document.getElementById('_jobnote-ov');
+        return { skip: false, sheet, jobNote: j.notes, alert: j.noteAlert === true, siteNote: c.siteNote, closed };
+      } finally {
+        jobs.splice(jobs.findIndex(j => j.id === jid), 1);
+        clients.splice(clients.findIndex(c => c.id === cid), 1);
+        document.getElementById('_jobnote-ov')?.remove();
+      }
+    });
+    if (r.skip) return;
+    expect(r.sheet).toBe(true);
+    expect(r.jobNote).toBe('Bring the sprayer');
+    expect(r.alert).toBe(true);
+    expect(r.siteNote).toBe('Side gate, code 9911');
+    expect(r.closed).toBe(true);
+  });
+
+  test('_openJobNoteEditor: missing job id, no throw', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _openJobNoteEditor !== 'function') return { skip: true };
+      try { _openJobNoteEditor(99999999); return { skip: false, ok: true }; }
+      catch (e) { return { skip: false, ok: false, err: e.message }; }
+      finally { document.getElementById('_jobnote-ov')?.remove(); }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
   });
 
   test('renderDashToday: a job with notes surfaces the field note on the owner card', async () => {

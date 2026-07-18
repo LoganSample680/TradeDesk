@@ -688,7 +688,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.18.26.12';
+const APP_VERSION='07.18.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -2380,7 +2380,9 @@ function renderDispatch(){
   function _jobCard(j,empId){
     const c=clients.find(x=>x.id===j.client_id)||{name:j.clientName||j.name||'Job'};
     const addr=escHtml(j.addr||c.addr||'');
-    const note=escHtml(j.notes||j.description||'');
+    // Composite field note (client site note + this job's note + hazard flag),
+    // read-only here, same helper the dashboard/on-site cards use.
+    const note=(typeof _jobFieldNote==='function')?_jobFieldNote(j):(j.notes?escHtml(j.notes):'');
     const empName=empId?(S.employees||[]).find(e=>e.id==empId)?.name||'':'';
     const assignBtn=empId
       ?'<button onclick="_dispatchUnassign('+j.id+')" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit;min-height:36px">Unassign</button>'
@@ -2392,7 +2394,7 @@ function renderDispatch(){
     return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
       '<div style="font-size:13px;font-weight:700;margin-bottom:3px">'+escHtml(c.name)+'</div>'+
       (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+addr+'</div>':'')+
-      (note?'<div style="font-size:11px;color:var(--text2);margin-bottom:6px;line-height:1.4">'+note+'</div>':'')+
+      (note?'<div style="margin-bottom:6px">'+note+'</div>':'')+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px">'+
         orderBtns+assignBtn+
       '</div>'+
