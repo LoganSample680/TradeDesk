@@ -1340,7 +1340,7 @@ async function refreshAvail(){
       return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
     }
     if(isTaken)return'<div class="av-d av-taken">'+dayNum+wxHtml+'</div>';
-    if(isBuf)return'<div class="av-d av-buf">'+dayNum+'</div>';
+    if(isBuf)return'<div class="av-d av-buf">'+dayNum+wxHtml+'</div>';
     if(isRainBlocked)return'<div class="av-d av-taken" title="Rain forecast, pressure wash blocked" style="background:#FEE8E8;cursor:not-allowed">'+dayNum+wxHtml+'</div>';
     if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
     return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';

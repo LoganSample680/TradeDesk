@@ -7620,26 +7620,48 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  test('availability grid: a clear day shows no weather clutter, a rain-risk day shows just the icon (no bare temperature)', async () => {
+  test('availability grid: a clear day shows no weather clutter, a rain-risk day shows just the icon (no bare temperature), including on booked/buffer days', async () => {
+    // This spec file runs thousands of tests on ONE shared page (§10.5-style
+    // footgun): getBookedDays() derives from the live, shared `jobs` array, so
+    // a hardcoded far-future date can't be trusted to land on an open cell,
+    // some earlier test's leftover job/buffer could cover it. Stub
+    // getBookedDays/getTimeOffDays so this test is deterministic regardless
+    // of what other tests left behind, and cover all three render branches
+    // (open, buffer, taken) since wxHtml must appear on every one of them.
     const r = await page.evaluate(async () => {
-      const clearKey = '2031-06-10', rainKey = '2031-06-11';
-      window._weatherCache = {
+      const clearKey = '2031-06-10', rainOpenKey = '2031-06-11', rainBufKey = '2031-06-12', rainTakenKey = '2031-06-13';
+      // _weatherCache/_weatherCacheTime (js/data.js) are `let`-declared at top
+      // script scope, a global lexical binding, NOT a window property (the
+      // same footgun as _billingGateLocked earlier this session) — must set
+      // the bare identifier, window._weatherCache is a silent no-op.
+      _weatherCache = {
         [clearKey]: { icon: '☀️', label: 'Sunny', rain: false, hi: 88, lo: 65 },
-        [rainKey]: { icon: '🌧️', label: 'Rain', rain: true, hi: 74, lo: 60 },
+        [rainOpenKey]: { icon: '🌧️', label: 'Rain', rain: true, hi: 74, lo: 60 },
+        [rainBufKey]: { icon: '🌧️', label: 'Rain', rain: true, hi: 74, lo: 60 },
+        [rainTakenKey]: { icon: '🌧️', label: 'Rain', rain: true, hi: 74, lo: 60 },
       };
-      window._weatherCacheTime = Date.now();
-      goPg('pg-schedule');
-      setSchedType('job', document.getElementById('sched-tab-job'));
-      availYear = 2031; availMonth = 5; // June (0-indexed)
-      await refreshAvail();
-      const html = document.getElementById('avail-grid').innerHTML;
-      return {
-        clearHasDegree: html.includes('88°') || html.includes('65°'),
-        rainHasIcon: html.includes('🌧️'),
-      };
+      _weatherCacheTime = Date.now();
+      const origBooked = window.getBookedDays;
+      window.getBookedDays = () => ({ booked: new Set([rainTakenKey]), buf: new Set([rainBufKey]) });
+      const origTimeOff = window.getTimeOffDays;
+      window.getTimeOffDays = () => new Set();
+      try {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        availYear = 2031; availMonth = 5; // June (0-indexed)
+        await refreshAvail();
+        const html = document.getElementById('avail-grid').innerHTML;
+        return {
+          clearHasDegree: html.includes('88°') || html.includes('65°'),
+          rainIconCount: (html.match(/🌧️/g) || []).length,
+        };
+      } finally {
+        window.getBookedDays = origBooked;
+        window.getTimeOffDays = origTimeOff;
+      }
     });
     expect(r.clearHasDegree, 'a clear day must not show a temperature readout').toBe(false);
-    expect(r.rainHasIcon, 'a rain-risk day must still show the rain icon').toBe(true);
+    expect(r.rainIconCount, 'a rain-risk day must show the icon whether open, buffered, or booked').toBe(3);
   });
 
   test('availability legend: no unused "Estimate" swatch, blue swatch reads "Selected" not "Job"', async () => {
