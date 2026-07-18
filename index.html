@@ -537,14 +537,9 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .sf-card{background:var(--bg-card);border-radius:var(--r-lg);margin-bottom:12px;box-shadow:var(--shadow-card);overflow:hidden}
 .sf-cap{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--text-3);padding:15px 16px 3px}
 .sf-list{padding:0 16px}
-.sf-row{display:flex;align-items:center;gap:13px;padding:11px 0;border-bottom:1px solid var(--line);min-height:44px}
+.sf-row{display:flex;align-items:center;gap:14px;padding:13px 2px;border-bottom:1px solid var(--line);min-height:46px}
 .sf-list>.sf-row:last-child{border-bottom:none}
-.sf-ico{width:38px;height:38px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--text-2);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 1px 2px rgba(27,22,18,.06)}
-.sf-ico.denim{background:var(--denim-soft);color:var(--denim)}
-.sf-ico.green{background:var(--c-green-soft);color:var(--c-green)}
-.sf-ico.amber{background:var(--c-amber-soft);color:var(--c-amber)}
-.sf-ico.terra{background:var(--terra-soft);color:var(--terra)}
-.sf-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.sf-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
 .sf-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)}
 .sf-row input,.sf-row select,.sf-row textarea{border:none;background:transparent;padding:0;font-size:15px;font-weight:600;color:var(--text);height:auto;min-height:0;border-radius:0;-webkit-appearance:none;appearance:none;width:100%}
 .sf-row input:focus,.sf-row select:focus,.sf-row textarea:focus{outline:none;box-shadow:none}
@@ -2036,8 +2031,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   
   <div class="sf-seg">
-    <button type="button" class="sf-seg-btn active" id="sched-tab-est" onclick="setSchedType('estimate',this)"><span data-ico="📋" data-ico-size="15"></span> Estimate</button>
-    <button type="button" class="sf-seg-btn" id="sched-tab-job" onclick="setSchedType('job',this)"><span data-ico="🔨" data-ico-size="15"></span> Job</button>
+    <button type="button" class="sf-seg-btn active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Estimate</button>
+    <button type="button" class="sf-seg-btn" id="sched-tab-job" onclick="setSchedType('job',this)">Job</button>
   </div>
 
   <div id="sched-tip" class="tip" style="margin-bottom:12px">Pick a client and date for the estimate walkthrough.</div>
@@ -2046,37 +2041,31 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="sf-cap">Job</div>
     <div class="sf-list">
       <div class="sf-row" id="sched-est-fields">
-        <div class="sf-ico denim"><span data-ico="👤" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Client</span>
           <select id="s-client-sel" onchange="pullClient()"><option value="">Select a client</option></select>
         </div>
       </div>
       <div class="sf-row" id="sched-job-fields" style="display:none">
-        <div class="sf-ico green"><span data-ico="📄" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Won bid</span>
           <select id="s-bid-sel" onchange="pullBid()"><option value="">Select a won bid</option></select>
         </div>
       </div>
       <div class="sf-row" id="s-crew-row" style="display:none">
-        <div class="sf-ico terra"><span data-ico="👥" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Crew</span>
           <select id="s-crew-sel" onchange="refreshAvail()"><option value="">Unassigned (I'll do it)</option></select>
         </div>
       </div>
       <div class="sf-row">
-        <div class="sf-ico"><span data-ico="🏠" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Job name</span>
           <input id="s-name" autocapitalize="words" placeholder="Smith residence">
         </div>
       </div>
       <div class="sf-row" id="s-addr-row" style="position:relative">
-        <div class="sf-ico"><span data-ico="📍" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Address</span>
           <input id="s-addr" autocomplete="off" placeholder="Job site address">
         </div>
       </div>
       <div class="sf-row" id="s-value-row" style="display:none">
-        <div class="sf-ico green"><span data-ico="💵" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Job value</span>
           <input id="s-value" type="number" placeholder="0" inputmode="decimal">
         </div>
@@ -2088,19 +2077,16 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="sf-cap">Timing</div>
     <div class="sf-list">
       <div class="sf-row">
-        <div class="sf-ico denim"><span data-ico="🕐" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl" id="s-time-label">Start time <span style="font-weight:600">(optional)</span></span>
           <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
         </div>
       </div>
       <div class="sf-row" id="s-dur-days-row">
-        <div class="sf-ico amber"><span data-ico="📆" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Duration (days)</span>
           <input id="s-days" type="number" value="1" min="1" max="60" inputmode="numeric" oninput="refreshAvail()">
         </div>
       </div>
       <div class="sf-row" id="s-dur-hours-row" style="display:none">
-        <div class="sf-ico amber"><span data-ico="⏱" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Duration</span>
           <select id="s-hours">
             <option value="1">1 hour</option>
@@ -2111,7 +2097,6 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
       <div class="sf-row" id="s-buf-row">
-        <div class="sf-ico"><span data-ico="⏳" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Buffer days after</span>
           <select id="s-buf" onchange="refreshAvail()">
             <option value="0">No buffer</option>
@@ -2122,8 +2107,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
       <div class="sf-row">
-        <div class="sf-ico"><span data-ico="🗓" data-ico-size="19"></span></div>
-        <div class="sf-body" style="gap:0"><span style="font-size:14px;font-weight:700;color:var(--text)">Allow weekends</span>
+        <div class="sf-body" style="gap:0"><span style="font-size:15px;font-weight:700;color:var(--text)">Allow weekends</span>
           <span style="font-size:11px;color:var(--text-3);font-weight:500">Let jobs land on Sat/Sun</span>
         </div>
         <label class="sf-switch">
@@ -2166,7 +2150,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <div class="sf-list" style="margin-top:8px">
       <div class="sf-row">
-        <div class="sf-ico"><span data-ico="📝" data-ico-size="19"></span></div>
         <div class="sf-body"><span class="sf-lbl">Notes</span>
           <textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea>
         </div>
