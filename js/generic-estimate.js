@@ -488,6 +488,9 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(c?.addr)setTimeout(_geiLookupClientTaxRate,0);
   const DESC_PH={electrical:'e.g. Panel upgrade, add EV charger in garage',plumbing:'e.g. Replace water heater, install shutoff valves',hvac:'e.g. Replace AC unit, charge refrigerant',roofing:'e.g. Full shingle replacement, fix ridge flashing',landscaping:'e.g. Weekly mowing, spring cleanup, new mulch',general:'e.g. Drywall repair, power washing, handyman'};
   sf('gei-desc','');sf('gei-notes','');sf('gei-tax-pct','0');sf('gei-duration','');
+  // Site notes are CLIENT-level (crew-only, never on the proposal): load from the
+  // client record, not the bid, so they persist across every estimate/job here.
+  sf('gei-sitenote',c?.siteNote||'');
   const descEl=document.getElementById('gei-desc');
   if(descEl)descEl.placeholder=DESC_PH[_geiTrade]||'Describe the job';
   const nwEl=document.getElementById('gei-new-work');
@@ -2886,6 +2889,10 @@ function saveGenericEstimate(draft){
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
   }
+  // Site notes → CLIENT record (never the bid, so they never reach the proposal).
+  // One shared save for every estimate type (T&M, BYO, future), the estimate is
+  // the capture point and it flows to the crew's internal surfaces from here.
+  if(_geiClientId!=null&&clients.find){const _c=clients.find(x=>String(x.id)===String(_geiClientId));if(_c){_c.siteNote=(v('gei-sitenote')||'').trim();saveAll();}}
   if(!draft)_saveToLineHistory();
   showToast(draft?'Draft saved':'Proposal saved','✅');
   if(!draft)goPg('pg-clients');

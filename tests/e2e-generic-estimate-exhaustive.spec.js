@@ -2264,6 +2264,54 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
     });
   });
 
+  test.describe('Site notes (internal): captured on the estimate, saved to the client, never on the proposal', () => {
+    test('gei-sitenote saves to the CLIENT record, not the bid, and stays out of the client-facing bid.notes', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88820, name: 'Site Note Client', addr: '5 Gate Rd' };
+        clients = clients.filter(x => x.id !== 88820).concat([c]);
+        bids = bids.filter(x => x.client_id !== 88820);
+        openGenericEstimate(c, null, 'general');
+        _geiIsFreeForm = true; _geiIsTM = false;
+        document.getElementById('gei-notes').value = 'Client-facing scope + warranty';
+        document.getElementById('gei-sitenote').value = 'Gate code 4412, dog in back';
+        _geiLines = [{ desc: 'Work', qty: 1, rate: 500, total: 500 }];
+        saveGenericEstimate(true);
+        const bid = bids.find(x => x.client_id === 88820);
+        const cl = clients.find(x => x.id === 88820);
+        return {
+          fieldExists: !!document.getElementById('gei-sitenote'),
+          siteOnClient: cl && cl.siteNote,
+          bidNotes: bid && bid.notes,
+          siteLeakedToBid: !!(bid && (bid.notes || '').includes('Gate code')),
+        };
+      });
+      expect(r.fieldExists).toBe(true);
+      expect(r.siteOnClient).toBe('Gate code 4412, dog in back');
+      expect(r.bidNotes).toBe('Client-facing scope + warranty');
+      expect(r.siteLeakedToBid).toBe(false);
+    });
+
+    test('reopening an estimate for that client reloads the site note into the shared field', async () => {
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 88820);
+        openGenericEstimate(c, null, 'general');
+        return { loaded: document.getElementById('gei-sitenote').value };
+      });
+      expect(r.loaded).toBe('Gate code 4412, dog in back');
+    });
+
+    test('PRIVACY: the client-facing proposal builder never reads the site note', async () => {
+      const r = await page.evaluate(() => {
+        const proposalSrc = typeof sendGenericProposal === 'function' ? sendGenericProposal.toString() : '';
+        // The compare/preview card the client sees is built from bid.notes only.
+        return {
+          proposalTouchesSite: proposalSrc.includes('gei-sitenote') || proposalSrc.includes('siteNote'),
+        };
+      });
+      expect(r.proposalTouchesSite).toBe(false);
+    });
+  });
+
   test.describe('_GEI_MODES / _geiShowSharedChrome: one code path for both estimate pages', () => {
     test('_GEI_MODES registry has tm and byo entries with all keys the shared chrome needs', async () => {
       const r = await page.evaluate(() => {
