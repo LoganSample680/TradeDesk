@@ -733,6 +733,23 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
+  test('_openJobNoteEditor: header shows the job address so the crew knows which site', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _openJobNoteEditor !== 'function') return { skip: true };
+      const jid = 555020;
+      jobs.push({ id: jid, name: 'Repaint', client_id: null, addr: '88 Birch Ln', start: todayKey(), days: 1, eventType: 'job', status: 'upcoming' });
+      try {
+        _openJobNoteEditor(jid);
+        return { skip: false, hasAddr: document.getElementById('_jobnote-ov').innerHTML.includes('88 Birch Ln') };
+      } finally {
+        jobs.splice(jobs.findIndex(j => j.id === jid), 1);
+        document.getElementById('_jobnote-ov')?.remove();
+      }
+    });
+    if (r.skip) return;
+    expect(r.hasAddr).toBe(true);
+  });
+
   test('_notephotos / _notePhotoSrc: filter to note-type photos and resolve a src', async () => {
     const r = await page.evaluate(() => {
       if (typeof _notephotos !== 'function' || typeof _notePhotoSrc !== 'function') return { skip: true };

@@ -696,10 +696,15 @@ function _openJobNoteEditor(jobId){
   sheet.style.maxWidth='420px';sheet.style.maxHeight='88vh';sheet.style.overflowY='auto';
   const _ta=(id,val,ph)=>'<textarea id="'+id+'" placeholder="'+ph+'" style="width:100%;box-sizing:border-box;min-height:60px;font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);font-family:inherit;line-height:1.45;resize:none">'+escHtml(val||'')+'</textarea>';
   const _lbl=(t,hint)=>'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:16px 0 6px">'+t+(hint?' <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--text3)">'+hint+'</span>':'')+'</div>';
+  const _addr=(j.addr||(c&&c.addr)||'').trim();
+  const _pin='<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--text3)" stroke-width="2" style="flex-shrink:0"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
   sheet.innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'+
-      '<div><div style="font-size:16px;font-weight:800;line-height:1.1">Field note</div><div style="font-size:12px;color:var(--text3);margin-top:2px">'+escHtml(j.name||c&&c.name||'Job')+'</div></div>'+
-      '<button onclick="document.getElementById(\'_jobnote-ov\').remove()" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border2);background:var(--bg2);font-size:16px;line-height:1;cursor:pointer;font-family:inherit;color:var(--text3)">&times;</button>'+
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">'+
+      '<div style="min-width:0"><div style="font-size:16px;font-weight:800;line-height:1.1">Field note</div>'+
+        '<div style="font-size:12px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.name||c&&c.name||'Job')+'</div>'+
+        (_addr?'<div style="font-size:12px;color:var(--text2);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:4px">'+_pin+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(_addr)+'</span></div>':'')+
+      '</div>'+
+      '<button onclick="document.getElementById(\'_jobnote-ov\').remove()" style="flex-shrink:0;width:32px;height:32px;border-radius:50%;border:1px solid var(--border2);background:var(--bg2);font-size:16px;line-height:1;cursor:pointer;font-family:inherit;color:var(--text3)">&times;</button>'+
     '</div>'+
     _ta('_jn-note-ta',j.notes,'This visit: bring the ladder, extra paint...')+
     '<label style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;cursor:pointer">'+
