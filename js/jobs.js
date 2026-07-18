@@ -56,8 +56,16 @@ function _nearbyClockIn(clientId,jobId){
   }
   openClockInSheet(jobId);
 }
+// A job that's already complete/cancelled is not open for new time entries.
+// Matches the exact condition the automatic geofence tracker already uses
+// (_geoMyJobs, js/geo-track.js) so the manual "tap to clock in" path can't
+// do what the background tracker already refuses to.
+function _jobClosedToClockIn(j){
+  return !!(j.cancelled||j.status==='done'||j.completion_date);
+}
 function openClockInSheet(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  if(_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
   const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
   const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
   const clientName=c?c.name:j.name;
@@ -192,6 +200,10 @@ function _isMyTimeEntry(e){
 
 function clockIn(jobId,scopeId,scopeLabel){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  // Defense in depth: openClockInSheet() already refuses to open on a
+  // closed job, but clockIn() is reachable directly too, never let a
+  // completed/cancelled job accept a new time entry either way.
+  if(_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
   if(_activeTimer){
     if(_activeTimer.jobId===jobId&&_activeTimer.scopeId===(scopeId||null)){
       showToast('Already tracking '+(scopeLabel||'this task'),'⏱');return;

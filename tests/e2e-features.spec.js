@@ -7731,6 +7731,86 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
     expect(r.toLowerCase()).toContain('start date');
   });
 
+  test.describe('Address / Job value: hidden when the bid already has them (owner: "why do they need to be in the scheduler")', () => {
+    test('bid has both address and a real amount: both fields hidden, values still carried onto the job', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        bids = bids.filter(b => b.id !== 990010);
+        bids.push({ id: 990010, client_id: 990011, client_name: 'Full Data Client', addr: '42 Elm St', amount: 5000, days: 2, status: 'Closed Won' });
+        populateSchedSelect();
+        document.getElementById('s-bid-sel').value = '990010';
+        pullBid();
+        return {
+          addrRowDisplay: document.getElementById('s-addr-row').style.display,
+          valueRowDisplay: document.getElementById('s-value-row').style.display,
+          addrValueStillSet: document.getElementById('s-addr').value,
+          valueValueStillSet: document.getElementById('s-value').value,
+        };
+      });
+      expect(r.addrRowDisplay, 'address already on the bid, no reason to show an editable field for it').toBe('none');
+      expect(r.valueRowDisplay, 'amount already on the bid, no reason to show an editable field for it').toBe('none');
+      expect(r.addrValueStillSet).toBe('42 Elm St');
+      expect(r.valueValueStillSet).toBe('5000');
+    });
+
+    test('bid is missing address and amount: both fields reappear so the gap can be caught (address is load-bearing for geofence + GC-sub job matching)', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        bids = bids.filter(b => b.id !== 990012);
+        bids.push({ id: 990012, client_id: 990013, client_name: 'No Addr Client', addr: '', amount: 0, days: 2, status: 'Closed Won' });
+        populateSchedSelect();
+        document.getElementById('s-bid-sel').value = '990012';
+        pullBid();
+        return {
+          addrRowDisplay: document.getElementById('s-addr-row').style.display,
+          valueRowDisplay: document.getElementById('s-value-row').style.display,
+        };
+      });
+      expect(r.addrRowDisplay).not.toBe('none');
+      expect(r.valueRowDisplay).not.toBe('none');
+    });
+
+    test('switching bids from full-data to missing-data re-shows the fields (no stale hidden state)', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        bids = bids.filter(b => b.id !== 990014 && b.id !== 990015);
+        bids.push({ id: 990014, client_id: 990016, client_name: 'Has Data', addr: '9 Full Ave', amount: 3000, days: 1, status: 'Closed Won' });
+        bids.push({ id: 990015, client_id: 990017, client_name: 'Missing Data', addr: '', amount: 0, days: 1, status: 'Closed Won' });
+        populateSchedSelect();
+        document.getElementById('s-bid-sel').value = '990014';
+        pullBid();
+        const hiddenFirst = document.getElementById('s-addr-row').style.display === 'none';
+        document.getElementById('s-bid-sel').value = '990015';
+        pullBid();
+        const shownAfterSwitch = document.getElementById('s-addr-row').style.display !== 'none';
+        return { hiddenFirst, shownAfterSwitch };
+      });
+      expect(r.hiddenFirst).toBe(true);
+      expect(r.shownAfterSwitch).toBe(true);
+    });
+
+    test('Clear form / switching to Schedule estimate: resets address row back to visible', async () => {
+      const r = await page.evaluate(() => {
+        goPg('pg-schedule');
+        setSchedType('job', document.getElementById('sched-tab-job'));
+        bids = bids.filter(b => b.id !== 990018);
+        bids.push({ id: 990018, client_id: 990019, client_name: 'Reset Test', addr: '5 Reset Rd', amount: 1000, days: 1, status: 'Closed Won' });
+        populateSchedSelect();
+        document.getElementById('s-bid-sel').value = '990018';
+        pullBid();
+        const hiddenAfterPull = document.getElementById('s-addr-row').style.display === 'none';
+        resetSched();
+        const shownAfterClear = document.getElementById('s-addr-row').style.display !== 'none';
+        return { hiddenAfterPull, shownAfterClear };
+      });
+      expect(r.hiddenAfterPull).toBe(true);
+      expect(r.shownAfterClear).toBe(true);
+    });
+  });
+
   test('Add to calendar / Clear form: buttons still wired and full-width, no orphaned .brow wrapper', async () => {
     const r = await page.evaluate(() => {
       goPg('pg-schedule');

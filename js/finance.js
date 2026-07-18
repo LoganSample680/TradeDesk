@@ -1246,6 +1246,7 @@ function setSchedType(type,btn){
   ['s-name','s-addr','s-start','s-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sv=document.getElementById('s-value');if(sv)sv.value='';
   const src=document.getElementById('s-days-src');if(src){src.textContent='';src.style.display='none';}
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
 }
@@ -1262,7 +1263,17 @@ function pullClient(){
   availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();
   refreshAvail();updateSchedPreview();
 }
-function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;(()=>{const src=document.getElementById('s-days-src');if(src){src.textContent='from bid';src.style.display='inline-block';}})();document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from the won bid below.</strong> Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
+function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;(()=>{const src=document.getElementById('s-days-src');if(src){src.textContent='from bid';src.style.display='inline-block';}})();
+  // Owner spec 2026-07-18: the bid already carries these, showing them as
+  // editable form fields on a screen whose whole job is "pick a date" was
+  // clutter, not a real workflow (re-typing the bid amount here isn't how a
+  // value change happens, that's a change order). Silently carry them over
+  // instead, and only surface the field back when the bid genuinely doesn't
+  // have the data, so a missing address doesn't silently ship (it's load-
+  // bearing for geofence arrival matching and GC-sub job linking).
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display=b.addr?'none':'';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=(b.amount>0)?'none':'block';
+  document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from the won bid below.</strong> Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
 function avPrev(){
   const nowY=new Date().getFullYear(),nowM=new Date().getMonth();
   if(availYear===nowY&&availMonth===nowM)return; // already at current month
@@ -1436,6 +1447,8 @@ function resetSched(){
   const st=document.getElementById('s-time');if(st)st.value='09:00';
   const sh=document.getElementById('s-hours');if(sh)sh.value='2';
   const src=document.getElementById('s-days-src');if(src){src.textContent='';src.style.display='none';}
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=schedType==='estimate'?'none':'block';
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
 }
