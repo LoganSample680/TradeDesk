@@ -354,6 +354,7 @@ function renderDash(){
           '<div style="font-size:12px;color:var(--text2);flex:1">'+escHtml(addr)+'</div>'+
           (mapsUrl?'<a href="'+mapsUrl+'" style="font-size:11px;font-weight:700;color:var(--blue);text-decoration:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue)">'+svgIcon('🗺',{size:12})+' Navigate</a>':'')+
         '</div>':'')+
+        _jobFieldNote(j.notes)+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
           '<span style="font-size:11px;font-weight:700;color:'+statusColor+'">'+statusLabel+'</span>'+
           _empActionBtn(j)+
@@ -626,6 +627,17 @@ function _dashLogPipeMileage(jobId){
   const c=getClientById(j.client_id);
   if(typeof openLogTripModal==='function')openLogTripModal({toAddress:j.addr||'',clientId:j.client_id||'',clientName:(c&&c.name)||'',purpose:'Job site'});
 }
+// Field note from the scheduler's Notes box (gate codes, "dog in back",
+// "bring the 24ft ladder"). Internal only, shown to the owner + assigned crew
+// wherever the job renders, never to the client. Returns '' when empty.
+function _jobFieldNote(note){
+  const n=(note||'').trim();if(!n)return'';
+  return '<div style="margin-top:7px;padding:8px 10px;background:var(--bg2);border-radius:var(--r);border-left:3px solid var(--amber,#8A4E00)">'+
+    '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:2px">Field note</div>'+
+    '<div style="font-size:12px;color:var(--text2);line-height:1.4;white-space:pre-wrap">'+escHtml(n)+'</div>'+
+  '</div>';
+}
+
 function renderDashToday(){
   const el=document.getElementById('dash-today');if(!el)return;
   const tk=todayKey();
@@ -724,6 +736,7 @@ function renderDashToday(){
           '</span>'+
         '</div>'+
       '</div>'+
+      _jobFieldNote(j.notes)+
       _crewRow+
     '</div>';
   }).join('');

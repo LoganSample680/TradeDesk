@@ -613,6 +613,61 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // _jobFieldNote (scheduler Notes surfaced on the job for owner + assigned crew)
+  // ─────────────────────────────────────────────────────────────────────────────
+  test('_jobFieldNote: empty / null / whitespace return empty string', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      return { skip: false, empty: _jobFieldNote(''), nul: _jobFieldNote(null), undef: _jobFieldNote(undefined), ws: _jobFieldNote('   ') };
+    });
+    if (r.skip) return;
+    expect(r.empty).toBe('');
+    expect(r.nul).toBe('');
+    expect(r.undef).toBe('');
+    expect(r.ws).toBe('');
+  });
+
+  test('_jobFieldNote: real note renders the text under a "Field note" label', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const html = _jobFieldNote('Gate code 4412, dog in back');
+      return { skip: false, hasText: html.includes('Gate code 4412, dog in back'), hasLabel: html.toLowerCase().includes('field note') };
+    });
+    if (r.skip) return;
+    expect(r.hasText).toBe(true);
+    expect(r.hasLabel).toBe(true);
+  });
+
+  test('_jobFieldNote: escapes HTML (no injection from a note)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const html = _jobFieldNote('<img src=x onerror=alert(1)>');
+      return { skip: false, rawTagAbsent: !html.includes('<img'), escaped: html.includes('&lt;img') };
+    });
+    if (r.skip) return;
+    expect(r.rawTagAbsent).toBe(true);
+    expect(r.escaped).toBe(true);
+  });
+
+  test('renderDashToday: a job with notes surfaces the field note on the owner card', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof renderDashToday !== 'function') return { skip: true };
+      const tk = todayKey();
+      const fakeJob = { id: 88871, name: 'Note Job', client_id: null, start: tk, days: 1, color: 'blue', eventType: 'job', notes: 'Park in the alley' };
+      jobs.unshift(fakeJob);
+      try {
+        renderDashToday();
+        const el = document.getElementById('dash-today');
+        return { skip: false, shows: el ? el.innerHTML.includes('Park in the alley') : false };
+      } finally {
+        const idx = jobs.findIndex(j => j.id === 88871); if (idx !== -1) jobs.splice(idx, 1);
+      }
+    });
+    if (r.skip) return;
+    expect(r.shows).toBe(true);
+  });
+
   test('renderDashToday: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       try {
