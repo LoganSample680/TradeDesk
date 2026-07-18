@@ -7734,20 +7734,22 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
   test('Add to calendar / Clear form: buttons still wired and full-width, no orphaned .brow wrapper', async () => {
     const r = await page.evaluate(() => {
       goPg('pg-schedule');
-      const card = document.querySelector('#pg-schedule .card');
-      const addBtn = [...card.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add to calendar');
-      const clearBtn = [...card.querySelectorAll('button')].find(b => b.textContent.trim() === 'Clear form');
+      const root = document.getElementById('pg-schedule');
+      const addBtn = [...root.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add to calendar');
+      const clearBtn = [...root.querySelectorAll('button')].find(b => b.textContent.trim() === 'Clear form');
       return {
         addOnclick: addBtn?.getAttribute('onclick') || '',
         clearOnclick: clearBtn?.getAttribute('onclick') || '',
         addFullWidth: addBtn?.style.width === '100%',
-        browPresent: !!card.querySelector('.brow'),
+        browPresent: !!root.querySelector('.brow'),
+        cardCount: root.querySelectorAll('.card').length,
       };
     });
     expect(r.addOnclick).toContain('scheduleJob()');
     expect(r.clearOnclick).toContain('resetSched()');
     expect(r.addFullWidth).toBe(true);
     expect(r.browPresent).toBe(false);
+    expect(r.cardCount, 'Job details / Pick a date, two distinct sections instead of one long undifferentiated card').toBe(2);
   });
 
   test('no console errors from the schedule page cleanup', async () => {

@@ -1998,98 +1998,107 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb" id="sched-tab-job" onclick="setSchedType('job',this)">Schedule job</button>
   </div>
 
-  <div class="card">
-    <div id="sched-tip" class="tip">Pick a client and date for the estimate walkthrough.</div>
+  <div class="card card-pad-0">
+    <div class="card-hd"><div class="card-hd-title">Job details</div></div>
+    <div style="padding:14px 18px 18px">
+      <div id="sched-tip" class="tip">Pick a client and date for the estimate walkthrough.</div>
 
-    
-    <div id="sched-est-fields">
-      <div class="f" style="margin-bottom:10px">
-        <label>Client</label>
-        <select id="s-client-sel" onchange="pullClient()"><option value="">- Select a client -</option></select>
-      </div>
-    </div>
 
-    
-    <div id="sched-job-fields" style="display:none">
-      <div class="f" style="margin-bottom:10px">
-        <label>Won bid</label>
-        <select id="s-bid-sel" onchange="pullBid()"><option value="">- Select a won bid -</option></select>
-      </div>
-    </div>
-
-    <div class="fg fg2">
-      <div class="f"><label>Name</label><input id="s-name" autocapitalize="words" placeholder="Smith residence"></div>
-      <div class="f" style="position:relative"><label>Address</label><input id="s-addr" autocomplete="off"></div>
-      <div class="f" id="s-value-row" style="display:none"><label>Job value ($)</label><input id="s-value" type="number" placeholder="0"></div>
-      <div class="f"><label>Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>
-        <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
-      </div>
-      <div class="f" id="s-dur-days-row"><label>Duration (days)</label>
-        <input id="s-days" type="number" value="1" min="1" max="60" oninput="refreshAvail()">
-        <span id="s-days-src" style="display:none;font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-lt);border-radius:20px;padding:2px 8px;align-self:flex-start;margin-top:2px"></span>
-      </div>
-      <div class="f" id="s-dur-hours-row" style="display:none"><label>Duration</label>
-        <select id="s-hours">
-          <option value="1">1 hour</option>
-          <option value="1.5">1.5 hours</option>
-          <option value="2" selected>2 hours</option>
-          <option value="3">3 hours</option>
-        </select>
-      </div>
-      <div class="f"><label>Buffer days after</label>
-        <select id="s-buf" onchange="refreshAvail()">
-          <option value="0">No buffer</option>
-          <option value="1" selected>1 day</option>
-          <option value="2">2 days</option>
-          <option value="3">3 days</option>
-        </select>
-      </div>
-    </div>
-
-    
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <div id="s-color-swatch" style="width:10px;height:10px;border-radius:50%;background:#7F77DD;flex-shrink:0"></div>
-      <span id="s-color-label" style="font-size:11px;color:var(--text3)">Shows as purple on the calendar</span>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <input type="checkbox" id="s-allow-weekend" onchange="refreshAvail()" style="width:16px;height:16px;cursor:pointer;accent-color:var(--blue);appearance:auto;-webkit-appearance:checkbox;flex-shrink:0">
-      <label for="s-allow-weekend" style="font-size:12px;font-weight:600;cursor:pointer">Allow weekends</label>
-    </div>
-    <div class="f" style="margin-bottom:6px"><label>Date: tap a day below</label>
-      <input id="s-start" type="date" oninput="onStartChange()">
-    </div>
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-        <span style="font-size:11px;font-weight:700;color:var(--text2)" id="avail-month-lbl"></span>
-        <div style="display:flex;gap:4px">
-          <button class="btn btn-sm" onclick="avPrev()">&#8249;</button>
-          <button class="btn btn-sm" onclick="avNext()">&#8250;</button>
+      <div id="sched-est-fields">
+        <div class="f" style="margin-bottom:10px">
+          <label>Client</label>
+          <select id="s-client-sel" onchange="pullClient()"><option value="">- Select a client -</option></select>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px">
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">S</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">M</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">T</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">W</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">T</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">F</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">S</div>
+
+
+      <div id="sched-job-fields" style="display:none">
+        <div class="f" style="margin-bottom:10px">
+          <label>Won bid</label>
+          <select id="s-bid-sel" onchange="pullBid()"><option value="">- Select a won bid -</option></select>
+        </div>
       </div>
-      <div class="av-grid" id="avail-grid"></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--bg2);border-radius:2px;margin-right:3px;border:1px solid var(--border)"></span>Open</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--red-lt);border-radius:2px;margin-right:3px"></span>Booked</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--amber-lt);border-radius:2px;margin-right:3px"></span>Buffer</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#FDE68A;border-radius:2px;margin-right:3px"></span>Time off</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--denim);border-radius:2px;margin-right:3px"></span>Selected</span>
+
+      <div class="fg fg2">
+        <div class="f"><label>Name</label><input id="s-name" autocapitalize="words" placeholder="Smith residence"></div>
+        <div class="f" style="position:relative"><label>Address</label><input id="s-addr" autocomplete="off"></div>
+        <div class="f" id="s-value-row" style="display:none"><label>Job value ($)</label><input id="s-value" type="number" placeholder="0"></div>
+        <div class="f"><label>Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>
+          <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
+        </div>
+        <div class="f" id="s-dur-days-row"><label>Duration (days)</label>
+          <input id="s-days" type="number" value="1" min="1" max="60" oninput="refreshAvail()">
+          <span id="s-days-src" style="display:none;font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-lt);border-radius:20px;padding:2px 8px;align-self:flex-start;margin-top:2px"></span>
+        </div>
+        <div class="f" id="s-dur-hours-row" style="display:none"><label>Duration</label>
+          <select id="s-hours">
+            <option value="1">1 hour</option>
+            <option value="1.5">1.5 hours</option>
+            <option value="2" selected>2 hours</option>
+            <option value="3">3 hours</option>
+          </select>
+        </div>
+        <div class="f"><label>Buffer days after</label>
+          <select id="s-buf" onchange="refreshAvail()">
+            <option value="0">No buffer</option>
+            <option value="1" selected>1 day</option>
+            <option value="2">2 days</option>
+            <option value="3">3 days</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:12px;margin-top:2px;border-top:1px solid var(--line)">
+        <div style="display:flex;align-items:center;gap:6px">
+          <div id="s-color-swatch" style="width:10px;height:10px;border-radius:50%;background:#7F77DD;flex-shrink:0"></div>
+          <span id="s-color-label" style="font-size:11px;color:var(--text3)">Shows as purple on the calendar</span>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">
+          <input type="checkbox" id="s-allow-weekend" onchange="refreshAvail()" style="width:16px;height:16px;cursor:pointer;accent-color:var(--blue);appearance:auto;-webkit-appearance:checkbox">
+          Allow weekends
+        </label>
       </div>
     </div>
-    <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:10px 0;font-size:12px"></div>
-    <div class="f" style="margin-top:8px"><label>Notes</label><textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea></div>
-    <div id="sched-err" style="display:none;font-size:12px;color:var(--c-red);background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>
-    <button class="btn btn-g" onclick="scheduleJob()" style="width:100%;height:46px;font-size:15px">Add to calendar</button>
-    <button class="btn" onclick="resetSched()" style="width:100%;background:none;border:none;color:var(--text3);font-size:13px;font-weight:600;margin-top:6px">Clear form</button>
+  </div>
+
+  <div class="card card-pad-0">
+    <div class="card-hd"><div class="card-hd-title">Pick a date</div></div>
+    <div style="padding:14px 18px 18px">
+      <div class="f" style="margin-bottom:6px"><label>Date: tap a day below</label>
+        <input id="s-start" type="date" oninput="onStartChange()">
+      </div>
+      <div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+          <span style="font-size:11px;font-weight:700;color:var(--text2)" id="avail-month-lbl"></span>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-sm" onclick="avPrev()">&#8249;</button>
+            <button class="btn btn-sm" onclick="avNext()">&#8250;</button>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px">
+          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">S</div>
+          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">M</div>
+          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">T</div>
+          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">W</div>
+          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">T</div>
+          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">F</div>
+          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">S</div>
+        </div>
+        <div class="av-grid" id="avail-grid"></div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--bg2);border-radius:2px;margin-right:3px;border:1px solid var(--border)"></span>Open</span>
+          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--red-lt);border-radius:2px;margin-right:3px"></span>Booked</span>
+          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--amber-lt);border-radius:2px;margin-right:3px"></span>Buffer</span>
+          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#FDE68A;border-radius:2px;margin-right:3px"></span>Time off</span>
+          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--denim);border-radius:2px;margin-right:3px"></span>Selected</span>
+        </div>
+      </div>
+      <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:10px 0;font-size:12px"></div>
+      <div class="f" style="margin-top:8px"><label>Notes</label><textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea></div>
+      <div id="sched-err" style="display:none;font-size:12px;color:var(--c-red);background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>
+      <button class="btn btn-g" onclick="scheduleJob()" style="width:100%;height:46px;font-size:15px">Add to calendar</button>
+      <button class="btn" onclick="resetSched()" style="width:100%;background:none;border:none;color:var(--text3);font-size:13px;font-weight:600;margin-top:6px">Clear form</button>
+    </div>
   </div>
 </div>
 <div class="pg" id="pg-licensing">
