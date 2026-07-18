@@ -1088,6 +1088,54 @@ test.describe('Schedule page, selects, type toggle, availability grid', () => {
     }
   });
 
+  test('scheduler: the client site note surfaces (read-only) and hides when the client has none', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _schedSiteNote !== 'function') return { skip: true };
+      const cid = 993001;
+      clients.push({ id: cid, name: 'Gate Client', siteNote: 'Gate code 4412, dog in back' });
+      try {
+        _schedSiteNote(cid);
+        const row = document.getElementById('s-sitenote-row');
+        const shown = row.style.display !== 'none' && document.getElementById('s-sitenote').textContent.includes('Gate code 4412');
+        _schedSiteNote(999999999); // unknown client
+        const hiddenUnknown = row.style.display === 'none';
+        _schedSiteNote(null);
+        const hiddenNull = row.style.display === 'none';
+        return { skip: false, shown, hiddenUnknown, hiddenNull };
+      } finally { clients.splice(clients.findIndex(c => c.id === cid), 1); }
+    });
+    if (!r.skip) {
+      expect(r.shown).toBe(true);
+      expect(r.hiddenUnknown).toBe(true);
+      expect(r.hiddenNull).toBe(true);
+    }
+  });
+
+  test('client record: site note loads and saves on the client detail (internal)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof renderCDSiteNote !== 'function' || typeof saveCDSiteNote !== 'function') return { skip: true };
+      const cid = 993002;
+      clients.push({ id: cid, name: 'Detail Client', siteNote: 'Dog in back' });
+      const origCur = (typeof currentClientId !== 'undefined') ? currentClientId : null;
+      try {
+        currentClientId = cid;
+        renderCDSiteNote();
+        const loaded = document.getElementById('cd-sitenote-input').value;
+        document.getElementById('cd-sitenote-input').value = 'New gate 9911';
+        saveCDSiteNote();
+        const saved = clients.find(c => c.id === cid).siteNote;
+        return { skip: false, loaded, saved };
+      } finally {
+        currentClientId = origCur;
+        clients.splice(clients.findIndex(c => c.id === cid), 1);
+      }
+    });
+    if (!r.skip) {
+      expect(r.loaded).toBe('Dog in back');
+      expect(r.saved).toBe('New gate 9911');
+    }
+  });
+
   test('no console errors during schedule page tests', async () => {
     assertNoErrors(page, 'schedule page');
   });

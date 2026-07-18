@@ -1545,6 +1545,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" id="cd-opp-card" style="display:none"><div id="cd-opportunities"></div></div>
     <div class="card" id="cd-client-mets"></div>
     <div class="card" id="cd-addresses-card"><div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Properties<button class="btn btn-sm btn-p" onclick="openAddAddressModal()" style="font-size:11px">+ Add address</button></div><div id="cd-addresses-list"></div></div>
+    <div class="card" id="cd-sitenote-card" style="box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">
+      <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Site access<span style="font-size:10px;color:var(--text3);font-weight:400">Crew only · gate code, dog, parking</span></div>
+      <textarea id="cd-sitenote-input" rows="2" placeholder="Gate code, dog, where to park, tricky access…" style="width:100%;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4;margin-bottom:8px"></textarea>
+      <button class="btn btn-p btn-sm" onclick="saveCDSiteNote()">Save site notes</button>
+    </div>
     <div class="card" id="cd-notes-card">
       <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Notes<span style="font-size:10px;color:var(--text3);font-weight:400">Private · not sent to client</span></div>
       <div id="cd-notes-list" style="margin-bottom:10px"></div>
@@ -2152,6 +2157,11 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:12px 0 0;font-size:12px"></div>
     </div>
     <div class="sf-list" style="margin-top:8px">
+      <div class="sf-row" id="s-sitenote-row" style="display:none">
+        <div class="sf-body"><span class="sf-lbl">Site access <span style="font-weight:600;color:var(--text3)">· from the client</span></span>
+          <div id="s-sitenote" style="font-size:14px;color:var(--text2);line-height:1.4;white-space:pre-wrap;font-weight:600"></div>
+        </div>
+      </div>
       <div class="sf-row">
         <div class="sf-body"><span class="sf-lbl">Notes</span>
           <textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea>

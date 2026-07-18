@@ -1263,15 +1263,27 @@ function setSchedType(type,btn){
   ['s-name','s-addr','s-start','s-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sv=document.getElementById('s-value');if(sv)sv.value='';
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
+  if(typeof _schedSiteNote==='function')_schedSiteNote(null);
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
 }
 
+// Surface the client's internal Site access note (gate code, dog, parking)
+// read-only in the scheduler, the note captured at the estimate flows here so
+// whoever schedules sees it. Hidden when the client has none.
+function _schedSiteNote(clientId){
+  const el=document.getElementById('s-sitenote'),row=document.getElementById('s-sitenote-row');
+  if(!el||!row)return;
+  const c=clientId!=null?getClientById(clientId):null;
+  const sn=(c&&c.siteNote||'').trim();
+  el.textContent=sn;row.style.display=sn?'':'none';
+}
 function pullClient(){
   const cid=parseInt(v('s-client-sel'));if(!cid)return;
   const c=getClientById(cid);if(!c)return;
   document.getElementById('s-name').value=c.name+', estimate';
   document.getElementById('s-addr').value=c.addr||'';
+  _schedSiteNote(cid);
   document.getElementById('s-days').value=1;
   const na=getNextAvail();
   document.getElementById('s-start').value=na.key;
@@ -1290,6 +1302,7 @@ function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.
   // no amount, so a genuinely-missing value can still be entered.
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
   const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=(b.amount>0)?'none':'';
+  _schedSiteNote(b.client_id);
   document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from the won bid below.</strong> Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
 function avPrev(){
   const nowY=new Date().getFullYear(),nowM=new Date().getMonth();
@@ -1475,6 +1488,7 @@ function resetSched(){
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
   const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=schedType==='estimate'?'none':'';
   const crewSel=document.getElementById('s-crew-sel');if(crewSel)crewSel.value='';
+  if(typeof _schedSiteNote==='function')_schedSiteNote(null);
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
 }

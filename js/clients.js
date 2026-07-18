@@ -1418,12 +1418,28 @@ function renderClientDetail(){
   }
   renderCDTimeline();
   renderClientNotes();
+  renderCDSiteNote();
   renderCDRisk();
   renderCDEstimatesUpcoming();
   renderCDOpportunities();
   renderCDAddresses();
   renderTodayLegs();
   setCDTab('overview',document.getElementById('cdt-overview'));
+}
+// Site access note on the client record (gate code, dog, parking). Internal
+// only, same c.siteNote captured at the estimate and shown on the crew's job
+// cards / geofence, never on the client-facing proposal or hub.
+function renderCDSiteNote(){
+  const c=getClientById(currentClientId);if(!c)return;
+  const el=document.getElementById('cd-sitenote-input');if(!el)return;
+  el.value=c.siteNote||'';
+}
+function saveCDSiteNote(){
+  const c=getClientById(currentClientId);if(!c)return;
+  const el=document.getElementById('cd-sitenote-input');
+  c.siteNote=(el?el.value:'').trim();
+  saveAll();
+  if(typeof showToast==='function')showToast('Site notes saved','✓');
 }
 function renderCDRisk(){
   const el=document.getElementById('cd-risk-content');if(!el)return;
