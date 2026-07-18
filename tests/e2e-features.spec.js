@@ -7726,6 +7726,19 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
     expect(r.noBadgeWiring).toBe(true);
   });
 
+  test('time-field label: reads "Estimate visits" in estimate mode, "Start time" in job mode', async () => {
+    const r = await page.evaluate(() => {
+      goPg('pg-schedule');
+      setSchedType('estimate', document.getElementById('sched-tab-est'));
+      const estLbl = document.getElementById('s-time-label').textContent;
+      setSchedType('job', document.getElementById('sched-tab-job'));
+      const jobLbl = document.getElementById('s-time-label').textContent;
+      return { estLbl, jobLbl };
+    });
+    expect(r.estLbl).toBe('Estimate visits');
+    expect(r.jobLbl.toLowerCase()).toContain('start time');
+  });
+
   test('buildColorRow / selColor / #s-color-row: the permanently-hidden dead color picker is gone', async () => {
     const r = await page.evaluate(() => ({
       buildColorRow: typeof buildColorRow === 'function',

@@ -1240,7 +1240,7 @@ function setSchedType(type,btn){
   // the label and default differ, estimates default to a real time + the
   // past-now bump (validateEstimateTime), jobs start blank/optional.
   const timeLbl=document.getElementById('s-time-label');
-  if(timeLbl)timeLbl.innerHTML=isEst?'Time <span style="font-weight:600">(estimate visits)</span>':'Start time <span style="font-weight:600">(optional)</span>';
+  if(timeLbl)timeLbl.innerHTML=isEst?'Estimate visits':'Start time <span style="font-weight:600">(optional)</span>';
   const timeInput=document.getElementById('s-time');if(timeInput)timeInput.value=isEst?'09:00':'';
   // Crew picker, only ever shown once a second person exists to assign work
   // to, a solo account never sees this row, zero added taps for them.
