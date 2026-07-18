@@ -1242,11 +1242,13 @@ function setSchedType(type,btn){
   const timeLbl=document.getElementById('s-time-label');
   if(timeLbl)timeLbl.innerHTML=isEst?'Estimate visits':'Start time <span style="font-weight:600">(optional)</span>';
   const timeInput=document.getElementById('s-time');if(timeInput)timeInput.value=isEst?'09:00':'';
-  // Crew picker, only ever shown once a second person exists to assign work
-  // to, a solo account never sees this row, zero added taps for them.
+  // Crew picker shows in BOTH estimate and job mode once a second person
+  // exists (an estimate visit is still someone's appointment). It's ONE shared
+  // field (owner spec 2026-07-18): the crew you pick in either mode carries
+  // straight to the other, so it's deliberately NOT reset on a mode switch.
+  // A solo account (no employees) never sees the row, zero added taps.
   const crewRow=document.getElementById('s-crew-row');
-  if(crewRow)crewRow.style.display=(!isEst&&typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length)?'':'none';
-  const crewSel=document.getElementById('s-crew-sel');if(crewSel)crewSel.value='';
+  if(crewRow)crewRow.style.display=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length)?'':'none';
   selectedColor=isEst?'#7F77DD':'#185FA5';
   const tip=document.getElementById('sched-tip');
   if(tip){tip.innerHTML=isEst?'Pick a client, date and time. <strong>Evenings (after 5pm) and weekends</strong> are always open, they never block your paint days.':'Pull from a won bid and pick a start date.';tip.className=isEst?'tip':'tip tip-s';}
@@ -1451,7 +1453,9 @@ function scheduleJob(){
   const jobValue=schedType==='estimate'?0:(parseFloat(v('s-value'))||0);
   const jobTime=schedType==='estimate'?(v('s-time')||'09:00'):(v('s-time')||'');
   const jobHours=schedType==='estimate'?parseFloat(v('s-hours')||'2'):null;
-  const _asgnTo=(schedType==='job'&&_crewId)?_crewId:null;
+  // Crew assignment applies to estimates too now (whoever does the visit), not
+  // just jobs, so geofence/time-on-site tracking covers the walkthrough as well.
+  const _asgnTo=_crewId||null;
   jobs.push({id:Date.now(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
   if(schedType==='estimate'&&clientId){
     const pendingBid=bids.find(b=>b.client_id===clientId&&b.status==='Pending'&&!b.followup);

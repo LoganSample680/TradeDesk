@@ -999,19 +999,71 @@ test.describe('Schedule page, selects, type toggle, availability grid', () => {
     }
   });
 
-  test('crew picker: never shown on the estimate tab, even with employees', async () => {
+  // Owner spec 2026-07-18 (revised): crew is now shown in BOTH modes, an estimate
+  // visit is still someone's appointment. (Previous behavior hid it on estimates.)
+  test('crew picker: shown on the estimate tab too, when the account has a team', async () => {
     const result = await page.evaluate(() => {
       const row = document.getElementById('s-crew-row');
       if (!row || typeof setSchedType !== 'function' || typeof S === 'undefined') return { skip: true };
       const origEmps = S.employees;
       S.employees = [{ id: 'crew-ui-2', name: 'Crew UI Tester 2', role: 'tech' }];
       setSchedType('estimate');
-      const hidden = row.style.display === 'none';
+      const shownEstimate = row.style.display !== 'none';
       S.employees = origEmps;
       setSchedType('job');
-      return { skip: false, hidden };
+      return { skip: false, shownEstimate };
     });
-    if (!result.skip) expect(result.hidden).toBe(true);
+    if (!result.skip) expect(result.shownEstimate).toBe(true);
+  });
+
+  // The crew field is ONE shared constant: setting it in either mode carries to
+  // the other (mode switches must not wipe the selection).
+  test('crew picker: selection persists across estimate/job mode switches (shared constant)', async () => {
+    const result = await page.evaluate(() => {
+      const sel = document.getElementById('s-crew-sel');
+      if (!sel || typeof setSchedType !== 'function' || typeof populateSchedSelect !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      S.employees = [{ id: 'crew-const-1', name: 'Constant Crew', role: 'tech' }];
+      populateSchedSelect();
+      setSchedType('job');
+      sel.value = 'crew-const-1';                 // pick in job mode
+      setSchedType('estimate');
+      const heldInEstimate = sel.value === 'crew-const-1';
+      sel.value = '';                             // clear in estimate mode
+      setSchedType('job');
+      const clearedHeldInJob = sel.value === '';  // the change carried back
+      S.employees = origEmps;
+      return { skip: false, heldInEstimate, clearedHeldInJob };
+    });
+    if (!result.skip) {
+      expect(result.heldInEstimate).toBe(true);
+      expect(result.clearedHeldInJob).toBe(true);
+    }
+  });
+
+  test('scheduleJob: an estimate with a crew selected records assignedTo (crew does the visit)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof scheduleJob !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees, origJobs = jobs.slice();
+      try {
+        if (typeof _submitting !== 'undefined') _submitting = false; // clear any leftover submit lock
+        S.employees = [{ id: 'crew-est-1', name: 'Visit Crew', role: 'tech' }];
+        clients.push({ id: 991001, name: 'Estimate Crew Client', phone: '' });
+        populateSchedSelect();
+        setSchedType('estimate', document.getElementById('sched-tab-est'));
+        document.getElementById('s-client-sel').value = '991001';
+        document.getElementById('s-crew-sel').value = 'crew-est-1';
+        document.getElementById('s-name').value = 'Estimate Crew Visit';
+        document.getElementById('s-start').value = addDays(todayKey(), 30);
+        scheduleJob();
+        const j = jobs.find(x => x.client_id === 991001 && x.eventType === 'estimate');
+        return { skip: false, found: !!j, assignedTo: j ? String(j.assignedTo) : null };
+      } finally { S.employees = origEmps; jobs.length = 0; jobs.push(...origJobs); }
+    });
+    if (!result.skip) {
+      expect(result.found).toBe(true);
+      expect(result.assignedTo).toBe('crew-est-1');
+    }
   });
 
   test('scheduleJob: two different crews can book the same days without conflict', async () => {
