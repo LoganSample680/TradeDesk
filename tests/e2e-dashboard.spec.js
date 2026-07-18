@@ -668,6 +668,29 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.shows).toBe(true);
   });
 
+  test('geofence on-site card: surfaces the field note when arriving at a job', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof renderDash !== 'function') return { skip: true };
+      const tk = todayKey();
+      const cid = 78611, jid = 786110;
+      clients.push({ id: cid, name: 'Onsite Note Client', addr: '9 Fence Rd', phone: '' });
+      jobs.push({ id: jid, name: 'Fence Job', client_id: cid, addr: '9 Fence Rd', start: tk, days: 1, eventType: 'job', status: 'upcoming', notes: 'Side gate is unlocked' });
+      // Simulate the geofence "you're nearby, not yet clocked in" state.
+      _nearbyJob = { clientId: cid, clientName: 'Onsite Note Client', addr: '9 Fence Rd', jobId: jid, fallbackJobId: jid, balance: 0, bidId: null };
+      try {
+        renderDash();
+        const el = document.getElementById('dash-nearby');
+        return { skip: false, shows: el ? el.innerHTML.includes('Side gate is unlocked') : false };
+      } finally {
+        _nearbyJob = null;
+        jobs.splice(jobs.findIndex(j => j.id === jid), 1);
+        clients.splice(clients.findIndex(c => c.id === cid), 1);
+      }
+    });
+    if (r.skip) return;
+    expect(r.shows).toBe(true);
+  });
+
   test('renderDashToday: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       try {

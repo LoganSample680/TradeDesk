@@ -513,22 +513,29 @@ function renderDash(){
         const _aj=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===_onClock.jobId):null;
         const _cAddr=(_aj&&_aj.addr)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).addr||''):'')||'';
         const _cid=(_aj&&_aj.client_id)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).id||null):null);
+        // Field note right where the crew is standing: gate code, dog, ladder.
+        const _ocNoteHtml=_jobFieldNote(_aj&&_aj.notes);
+        const _ocNoteBlock=_ocNoteHtml?'<div style="padding:0 14px 2px">'+_ocNoteHtml+'</div>':'';
         const _extra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_onClock.startTime)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span id="dash-onsite-time">'+_fmtDur(_onClock.startTime)+'</span> on site</div>';
         const ocBtns=[];
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
         if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Estimate</button>');
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
+        _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
       } else {
         // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
         const nb=_nearbyJob;
         const clockTarget=nb.jobId||nb.fallbackJobId;
         const hasBalance=nb.balance>0.01;
+        // Field note surfaces on arrival too, before clocking in (gate code etc).
+        const _nbJob=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===clockTarget):null;
+        const _nbNoteHtml=_jobFieldNote(_nbJob&&_nbJob.notes);
+        const _nbNoteBlock=_nbNoteHtml?'<div style="padding:0 14px 2px">'+_nbNoteHtml+'</div>':'';
         const nbBtns=[];
         nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:linear-gradient(160deg,#22c55e,#12894a);color:#fff;box-shadow:0 6px 16px -6px rgba(14,107,57,.6);display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><path d="M7 5v14l11-7z"/></svg>Clock in</button>');
         nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Estimate</button>');
         if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#0E6B39;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px">'+svgIcon('💰',{size:13,color:'#fff'})+'Collect</button>');
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
+        _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
       }
     }else{_nearbyEl.style.display='none';}
   }
