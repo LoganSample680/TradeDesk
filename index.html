@@ -2024,8 +2024,9 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="f"><label>Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>
         <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
       </div>
-      <div class="f" id="s-dur-days-row"><label>Duration (days) <span id="s-days-src" style="font-size:10px;color:var(--blue)"></span></label>
+      <div class="f" id="s-dur-days-row"><label>Duration (days)</label>
         <input id="s-days" type="number" value="1" min="1" max="60" oninput="refreshAvail()">
+        <span id="s-days-src" style="display:none;font-size:10px;font-weight:700;color:var(--blue);background:var(--blue-lt);border-radius:20px;padding:2px 8px;align-self:flex-start;margin-top:2px"></span>
       </div>
       <div class="f" id="s-dur-hours-row" style="display:none"><label>Duration</label>
         <select id="s-hours">
@@ -2047,9 +2048,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <div id="s-color-swatch" style="width:14px;height:14px;border-radius:3px;background:#7F77DD;flex-shrink:0"></div>
+      <div id="s-color-swatch" style="width:10px;height:10px;border-radius:50%;background:#7F77DD;flex-shrink:0"></div>
       <span id="s-color-label" style="font-size:11px;color:var(--text3)">Shows as purple on the calendar</span>
-      <div style="display:none" id="s-color-row"></div>
     </div>
 
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -2082,17 +2082,14 @@ body.dark .cal-cell.other{background:var(--cream)}
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--red-lt);border-radius:2px;margin-right:3px"></span>Booked</span>
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--amber-lt);border-radius:2px;margin-right:3px"></span>Buffer</span>
         <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#FDE68A;border-radius:2px;margin-right:3px"></span>Time off</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#7F77DD;border-radius:2px;margin-right:3px"></span>Estimate</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--denim);border-radius:2px;margin-right:3px"></span>Job</span>
+        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--denim);border-radius:2px;margin-right:3px"></span>Selected</span>
       </div>
     </div>
     <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:10px 0;font-size:12px"></div>
     <div class="f" style="margin-top:8px"><label>Notes</label><textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea></div>
     <div id="sched-err" style="display:none;font-size:12px;color:var(--c-red);background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>
-    <div class="brow">
-      <button class="btn btn-g" onclick="scheduleJob()">Add to calendar</button>
-      <button class="btn" onclick="resetSched()">Clear</button>
-    </div>
+    <button class="btn btn-g" onclick="scheduleJob()" style="width:100%;height:46px;font-size:15px">Add to calendar</button>
+    <button class="btn" onclick="resetSched()" style="width:100%;background:none;border:none;color:var(--text3);font-size:13px;font-weight:600;margin-top:6px">Clear form</button>
   </div>
 </div>
 <div class="pg" id="pg-licensing">

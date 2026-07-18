@@ -7607,3 +7607,128 @@ test.describe('Never-delete policy, archive + hold + edit', () => {
     assertNoErrors(page, 'edit payment');
   });
 });
+
+test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('availability grid: a clear day shows no weather clutter, a rain-risk day shows just the icon (no bare temperature)', async () => {
+    const r = await page.evaluate(async () => {
+      const clearKey = '2031-06-10', rainKey = '2031-06-11';
+      window._weatherCache = {
+        [clearKey]: { icon: '☀️', label: 'Sunny', rain: false, hi: 88, lo: 65 },
+        [rainKey]: { icon: '🌧️', label: 'Rain', rain: true, hi: 74, lo: 60 },
+      };
+      window._weatherCacheTime = Date.now();
+      goPg('pg-schedule');
+      setSchedType('job', document.getElementById('sched-tab-job'));
+      availYear = 2031; availMonth = 5; // June (0-indexed)
+      await refreshAvail();
+      const html = document.getElementById('avail-grid').innerHTML;
+      return {
+        clearHasDegree: html.includes('88°') || html.includes('65°'),
+        rainHasIcon: html.includes('🌧️'),
+      };
+    });
+    expect(r.clearHasDegree, 'a clear day must not show a temperature readout').toBe(false);
+    expect(r.rainHasIcon, 'a rain-risk day must still show the rain icon').toBe(true);
+  });
+
+  test('availability legend: no unused "Estimate" swatch, blue swatch reads "Selected" not "Job"', async () => {
+    const r = await page.evaluate(() => {
+      goPg('pg-schedule');
+      const legend = document.querySelector('.av-grid').nextElementSibling;
+      const text = legend ? legend.textContent : '';
+      return { hasEstimate: text.includes('Estimate'), hasSelected: text.includes('Selected'), hasJob: /\bJob\b/.test(text) };
+    });
+    expect(r.hasEstimate, 'the availability grid never renders purple, that legend entry was dead').toBe(false);
+    expect(r.hasSelected).toBe(true);
+    expect(r.hasJob).toBe(false);
+  });
+
+  test('color swatch is a circle, not a rounded square that reads as a checkbox', async () => {
+    const r = await page.evaluate(() => {
+      const sw = document.getElementById('s-color-swatch');
+      return sw ? sw.style.borderRadius : null;
+    });
+    expect(r).toBe('50%');
+  });
+
+  test('"from bid" badge: hidden by default/on estimate mode, shown after pulling a bid, hidden again after Clear', async () => {
+    const r = await page.evaluate(() => {
+      goPg('pg-schedule');
+      setSchedType('job', document.getElementById('sched-tab-job'));
+      const hiddenOnSwitch = document.getElementById('s-days-src').style.display === 'none';
+      bids = bids.filter(b => b.id !== 990001);
+      bids.push({ id: 990001, client_id: 990002, client_name: 'Badge Test Client', amount: 4000, days: 3, status: 'Closed Won' });
+      populateSchedSelect();
+      document.getElementById('s-bid-sel').value = '990001';
+      pullBid();
+      const shownAfterPull = document.getElementById('s-days-src').style.display !== 'none' && document.getElementById('s-days-src').textContent === 'from bid';
+      resetSched();
+      const hiddenAfterClear = document.getElementById('s-days-src').style.display === 'none';
+      return { hiddenOnSwitch, shownAfterPull, hiddenAfterClear };
+    });
+    expect(r.hiddenOnSwitch).toBe(true);
+    expect(r.shownAfterPull).toBe(true);
+    expect(r.hiddenAfterClear).toBe(true);
+  });
+
+  test('buildColorRow / selColor / #s-color-row: the permanently-hidden dead color picker is gone', async () => {
+    const r = await page.evaluate(() => ({
+      buildColorRow: typeof buildColorRow === 'function',
+      selColor: typeof selColor === 'function',
+      el: !!document.getElementById('s-color-row'),
+    }));
+    expect(r.buildColorRow).toBe(false);
+    expect(r.selColor).toBe(false);
+    expect(r.el).toBe(false);
+  });
+
+  test('"Pulled from bid" banner no longer repeats the client/amount/days already shown in the fields below', async () => {
+    const r = await page.evaluate(() => {
+      goPg('pg-schedule');
+      setSchedType('job', document.getElementById('sched-tab-job'));
+      bids = bids.filter(b => b.id !== 990003);
+      bids.push({ id: 990003, client_id: 990004, client_name: 'No Repeat Client', amount: 7777, days: 4, status: 'Closed Won' });
+      populateSchedSelect();
+      document.getElementById('s-bid-sel').value = '990003';
+      pullBid();
+      return document.getElementById('sched-tip').textContent;
+    });
+    expect(r).not.toContain('No Repeat Client');
+    expect(r).not.toContain('7777');
+    expect(r.toLowerCase()).toContain('start date');
+  });
+
+  test('Add to calendar / Clear form: buttons still wired and full-width, no orphaned .brow wrapper', async () => {
+    const r = await page.evaluate(() => {
+      goPg('pg-schedule');
+      const card = document.querySelector('#pg-schedule .card');
+      const addBtn = [...card.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add to calendar');
+      const clearBtn = [...card.querySelectorAll('button')].find(b => b.textContent.trim() === 'Clear form');
+      return {
+        addOnclick: addBtn?.getAttribute('onclick') || '',
+        clearOnclick: clearBtn?.getAttribute('onclick') || '',
+        addFullWidth: addBtn?.style.width === '100%',
+        browPresent: !!card.querySelector('.brow'),
+      };
+    });
+    expect(r.addOnclick).toContain('scheduleJob()');
+    expect(r.clearOnclick).toContain('resetSched()');
+    expect(r.addFullWidth).toBe(true);
+    expect(r.browPresent).toBe(false);
+  });
+
+  test('no console errors from the schedule page cleanup', async () => {
+    assertNoErrors(page, 'schedule page cleanup');
+  });
+});

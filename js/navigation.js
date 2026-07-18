@@ -49,7 +49,7 @@ function goPg(id){
     setCF(cf,document.getElementById('cft-'+cf));
   }
   if(id==='pg-cal')renderCalendar();
-  if(id==='pg-schedule'){populateSchedSelect();buildColorRow();const _jt=document.getElementById('sched-tab-job');if(_jt)_jt.style.display='';try{setSchedType(schedType,document.getElementById(schedType==='estimate'?'sched-tab-est':'sched-tab-job'));}catch(e){}setTimeout(validateEstimateTime,100);}
+  if(id==='pg-schedule'){populateSchedSelect();const _jt=document.getElementById('sched-tab-job');if(_jt)_jt.style.display='';try{setSchedType(schedType,document.getElementById(schedType==='estimate'?'sched-tab-est':'sched-tab-job'));}catch(e){}setTimeout(validateEstimateTime,100);}
   if(id==='pg-tracker'){trackerYear=new Date().getFullYear();_trackerYearManual=false;renderTrackerTab();populateExpJobSel();}
   if(id==='pg-taxes'){_taxPageYear=new Date().getFullYear();calcTax();}
   if(id==='pg-settings'){

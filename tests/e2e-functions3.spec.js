@@ -4139,24 +4139,15 @@ test.describe('Finance tracker, export, and calendar functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('buildColorRow: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof buildColorRow !== 'function') return { skip: true };
-      try {
-        const r = buildColorRow('painting', '#3a7bd5', 5000);
-        return { ok: typeof r === 'string' || r === undefined };
-      } catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('selColor: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof selColor !== 'function') return { skip: true };
-      try { selColor('#ff0000'); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
+  test('buildColorRow / selColor: removed, the custom job-color picker they built was permanently display:none and unreachable by any click path', async () => {
+    const result = await page.evaluate(() => ({
+      buildColorRow: typeof buildColorRow === 'function',
+      selColor: typeof selColor === 'function',
+      colorRowEl: !!document.getElementById('s-color-row'),
+    }));
+    expect(result.buildColorRow).toBe(false);
+    expect(result.selColor).toBe(false);
+    expect(result.colorRowEl).toBe(false);
   });
 
   test('avPrev: calls without throwing', async () => {
