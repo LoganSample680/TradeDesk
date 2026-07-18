@@ -641,6 +641,19 @@ function _dashLogPipeMileage(jobId){
 // job.noteAlert flags it as a hazard → red treatment that can't be skimmed past.
 // Pass the JOB OBJECT (not a string). opts.editable adds an Edit / "+ Add" affordance
 // that opens the field editor. Returns '' when there's nothing to show and not editable.
+// Note photos (type 'note') attached to a job, e.g. "which door", "where to park".
+function _notephotos(j){return (j&&Array.isArray(j.photos))?j.photos.filter(p=>p&&p.type==='note'):[];}
+function _notePhotoSrc(p){return (p&&(p.data||p.thumbUrl||p.url))||'';}
+// Tiny self-contained fullscreen viewer for a raw image src (no global photo id).
+function _viewNotePhoto(src){
+  if(!src)return;
+  document.getElementById('_notephoto-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_notephoto-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.onclick=()=>ov.remove();
+  const img=document.createElement('img');img.src=src;img.style.cssText='max-width:100%;max-height:100%;border-radius:8px';
+  ov.appendChild(img);document.body.appendChild(ov);
+}
 function _jobFieldNote(job,opts){
   opts=opts||{};
   const j=(job&&typeof job==='object')?job:null;
@@ -648,8 +661,9 @@ function _jobFieldNote(job,opts){
   const site=(c&&(c.siteNote||'').trim())||'';
   const jn=(j&&(j.notes||'').trim())||'';
   const alert=!!(j&&j.noteAlert);
+  const pics=_notephotos(j);
   const editable=!!(opts.editable&&j&&j.id!=null);
-  if(!site&&!jn&&!alert){
+  if(!site&&!jn&&!alert&&!pics.length){
     return editable?'<button onclick="event.stopPropagation();_openJobNoteEditor('+j.id+')" style="margin-top:7px;font-size:11px;font-weight:700;color:var(--text3);background:none;border:1px dashed var(--border2);border-radius:var(--r);padding:6px 10px;cursor:pointer;font-family:inherit">+ Add a field note</button>':'';
   }
   const accent=alert?'var(--c-red,#B22A20)':'var(--amber,#8A4E00)';
@@ -658,9 +672,10 @@ function _jobFieldNote(job,opts){
   const editBtn=editable?'<button onclick="event.stopPropagation();_openJobNoteEditor('+j.id+')" style="margin-left:auto;font-size:10px;font-weight:800;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;padding:0">Edit</button>':'';
   const siteLine=site?'<div style="font-size:12px;color:var(--text2);line-height:1.4;white-space:pre-wrap"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-right:5px">Site</span>'+escHtml(site)+'</div>':'';
   const jobLine=jn?'<div style="font-size:12px;color:var(--text2);line-height:1.4;white-space:pre-wrap'+(site?';margin-top:4px':'')+'">'+escHtml(jn)+'</div>':'';
+  const photoRow=pics.length?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:'+((site||jn)?'7':'2')+'px">'+pics.map(p=>{const s=_notePhotoSrc(p);return s?'<img src="'+escHtml(s)+'" onclick="event.stopPropagation();_viewNotePhoto(this.src)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer">':'';}).join('')+'</div>':'';
   return '<div style="margin-top:7px;padding:8px 10px;background:'+bg+';border-radius:var(--r);border-left:3px solid '+accent+'">'+
     '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+(alert?accent:'var(--text3)')+'">'+label+'</span>'+editBtn+'</div>'+
-    siteLine+jobLine+
+    siteLine+jobLine+photoRow+
   '</div>';
 }
 
@@ -671,6 +686,7 @@ function _jobFieldNote(job,opts){
 function _openJobNoteEditor(jobId){
   const j=jobs.find(x=>String(x.id)===String(jobId));if(!j)return;
   const c=(j.client_id!=null&&clients.find)?clients.find(x=>String(x.id)===String(j.client_id)):null;
+  const pics=_notephotos(j);
   document.getElementById('_jobnote-ov')?.remove();
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_jobnote-ov';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
@@ -694,17 +710,43 @@ function _openJobNoteEditor(jobId){
       '<div style="font-size:11px;color:var(--text3);margin-bottom:5px">Gate code, dog, where to park, shows on every job here so you never re-type it.</div>'+
       _ta('_jn-site-ta',c&&c.siteNote,'Gate code 4412, dog in the back yard...')
     :'')+
+    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:16px 0 6px">Photos <span style="font-weight:600;text-transform:none;letter-spacing:0">(which door, where to park, the panel)</span></div>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+      pics.map((p,i)=>{const s=_notePhotoSrc(p);return '<div style="position:relative;width:56px;height:56px">'+
+        (s?'<img src="'+escHtml(s)+'" onclick="_viewNotePhoto(this.src)" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer">':'')+
+        '<button onclick="_jnDelPhoto('+j.id+','+i+')" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:var(--c-red,#B22A20);color:#fff;font-size:13px;line-height:1;cursor:pointer;font-family:inherit">&times;</button>'+
+      '</div>';}).join('')+
+      '<label style="width:56px;height:56px;border-radius:8px;border:1.5px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:26px;line-height:1">+<input type="file" accept="image/*" onchange="_jnAddPhoto('+j.id+',this)" style="display:none"></label>'+
+    '</div>'+
     '<button onclick="_saveJobNote('+j.id+')" class="btn btn-g" style="width:100%;height:48px;font-size:15px;font-weight:800;border-radius:var(--r);margin-top:16px">Save note</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
   requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
 }
 
-function _saveJobNote(jobId){
-  const j=jobs.find(x=>String(x.id)===String(jobId));if(!j)return;
-  const ta=document.getElementById('_jn-note-ta');j.notes=(ta?ta.value:'').trim();
-  const al=document.getElementById('_jn-alert');j.noteAlert=!!(al&&al.checked);
+// Pull the editor's current field values onto the job/client WITHOUT closing or
+// saving, so an async photo add + editor re-render never drops in-progress text.
+function _jnCaptureEdits(jobId){
+  const j=jobs.find(x=>String(x.id)===String(jobId));if(!j)return null;
+  const ta=document.getElementById('_jn-note-ta');if(ta)j.notes=ta.value.trim();
+  const al=document.getElementById('_jn-alert');if(al)j.noteAlert=!!al.checked;
   const site=document.getElementById('_jn-site-ta');
   if(site&&j.client_id!=null&&clients.find){const c=clients.find(x=>String(x.id)===String(j.client_id));if(c)c.siteNote=site.value.trim();}
+  return j;
+}
+function _jnAddPhoto(jobId,input){
+  _jnCaptureEdits(jobId);
+  if(typeof addJobPhoto==='function')addJobPhoto(jobId,input,'note');
+  // addJobPhoto reads the file async (FileReader); re-open shortly so the new
+  // thumbnail appears. Edits were captured above so nothing typed is lost.
+  setTimeout(()=>{if(document.getElementById('_jobnote-ov'))_openJobNoteEditor(jobId);},450);
+}
+function _jnDelPhoto(jobId,idx){
+  _jnCaptureEdits(jobId);
+  if(typeof deleteJobPhoto==='function')deleteJobPhoto(jobId,idx,'note');
+  _openJobNoteEditor(jobId);
+}
+function _saveJobNote(jobId){
+  const j=_jnCaptureEdits(jobId);if(!j)return;
   saveAll();
   document.getElementById('_jobnote-ov')?.remove();
   if(typeof renderDash==='function')try{renderDash();}catch(e){}

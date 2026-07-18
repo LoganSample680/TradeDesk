@@ -733,6 +733,70 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.ok).toBe(true);
   });
 
+  test('_notephotos / _notePhotoSrc: filter to note-type photos and resolve a src', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _notephotos !== 'function' || typeof _notePhotoSrc !== 'function') return { skip: true };
+      const j = { photos: [{ type: 'before', data: 'b' }, { type: 'note', data: 'data:image/png;base64,AAA' }, { type: 'note', url: 'https://x/y.jpg' }] };
+      const n = _notephotos(j);
+      return { skip: false, count: n.length, src0: _notePhotoSrc(n[0]), src1: _notePhotoSrc(n[1]), noneJob: _notephotos(null).length };
+    });
+    if (r.skip) return;
+    expect(r.count).toBe(2);
+    expect(r.src0).toBe('data:image/png;base64,AAA');
+    expect(r.src1).toBe('https://x/y.jpg');
+    expect(r.noneJob).toBe(0);
+  });
+
+  test('_jobFieldNote: a note photo renders a thumbnail even with no text', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const html = _jobFieldNote({ id: 1, client_id: null, photos: [{ type: 'note', data: 'data:image/png;base64,AAA' }] });
+      return { skip: false, notEmpty: html.length > 0, hasImg: html.includes('<img'), hasSrc: html.includes('data:image/png;base64,AAA') };
+    });
+    if (r.skip) return;
+    expect(r.notEmpty).toBe(true);
+    expect(r.hasImg).toBe(true);
+    expect(r.hasSrc).toBe(true);
+  });
+
+  test('_viewNotePhoto: opens a fullscreen overlay with the image and dismisses on click', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _viewNotePhoto !== 'function') return { skip: true };
+      _viewNotePhoto('data:image/png;base64,AAA');
+      const ov = document.getElementById('_notephoto-ov');
+      const hasImg = !!(ov && ov.querySelector('img'));
+      ov && ov.click();
+      const gone = !document.getElementById('_notephoto-ov');
+      const emptyNoop = (_viewNotePhoto(''), !document.getElementById('_notephoto-ov'));
+      return { skip: false, opened: !!ov, hasImg, gone, emptyNoop };
+    });
+    if (r.skip) return;
+    expect(r.opened).toBe(true);
+    expect(r.hasImg).toBe(true);
+    expect(r.gone).toBe(true);
+    expect(r.emptyNoop).toBe(true);
+  });
+
+  test('_openJobNoteEditor: renders existing note photos with a remove control', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _openJobNoteEditor !== 'function') return { skip: true };
+      const jid = 555010;
+      jobs.push({ id: jid, name: 'Photo Job', client_id: null, start: todayKey(), days: 1, eventType: 'job', status: 'upcoming', photos: [{ type: 'note', data: 'data:image/png;base64,AAA' }] });
+      try {
+        _openJobNoteEditor(jid);
+        const html = document.getElementById('_jobnote-ov').innerHTML;
+        return { skip: false, hasThumb: html.includes('data:image/png;base64,AAA'), hasDel: html.includes('_jnDelPhoto('+jid+',0)'), hasAdd: html.includes('_jnAddPhoto('+jid+',this)') };
+      } finally {
+        jobs.splice(jobs.findIndex(j => j.id === jid), 1);
+        document.getElementById('_jobnote-ov')?.remove();
+      }
+    });
+    if (r.skip) return;
+    expect(r.hasThumb).toBe(true);
+    expect(r.hasDel).toBe(true);
+    expect(r.hasAdd).toBe(true);
+  });
+
   test('renderDashToday: a job with notes surfaces the field note on the owner card', async () => {
     const r = await page.evaluate(() => {
       if (typeof renderDashToday !== 'function') return { skip: true };
