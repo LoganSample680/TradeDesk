@@ -693,24 +693,22 @@ function _openJobNoteEditor(jobId){
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px 40px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1);max-height:88vh;overflow-y:auto';
   const _ta=(id,val,ph)=>'<textarea id="'+id+'" placeholder="'+ph+'" style="width:100%;min-height:60px;font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);font-family:inherit;line-height:1.45;resize:none">'+escHtml(val||'')+'</textarea>';
+  const _lbl=(t,hint)=>'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:16px 0 6px">'+t+(hint?' <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--text3)">'+hint+'</span>':'')+'</div>';
   sheet.innerHTML=
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
-      '<div style="font-size:15px;font-weight:800">Field note</div>'+
-      '<button onclick="document.getElementById(\'_jobnote-ov\').remove()" style="padding:6px 16px;border-radius:20px;border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">'+
+      '<div><div style="font-size:16px;font-weight:800;line-height:1.1">Field note</div><div style="font-size:12px;color:var(--text3);margin-top:2px">'+escHtml(j.name||c&&c.name||'Job')+'</div></div>'+
+      '<button onclick="document.getElementById(\'_jobnote-ov\').remove()" style="width:32px;height:32px;border-radius:50%;border:1px solid var(--border2);background:var(--bg2);font-size:16px;line-height:1;cursor:pointer;font-family:inherit;color:var(--text3)">&times;</button>'+
     '</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+escHtml(j.name||c&&c.name||'Job')+'</div>'+
-    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:5px">This job</div>'+
-    _ta('_jn-note-ta',j.notes,'Bring the 24ft ladder, high ceilings in the foyer...')+
-    '<label style="display:flex;align-items:center;gap:10px;margin:14px 0;cursor:pointer">'+
+    _ta('_jn-note-ta',j.notes,'This visit: bring the ladder, extra paint...')+
+    '<label style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;cursor:pointer">'+
       '<input type="checkbox" id="_jn-alert"'+(j.noteAlert?' checked':'')+' style="width:20px;height:20px;flex-shrink:0;accent-color:var(--c-red,#B22A20);cursor:pointer">'+
-      '<span><span style="font-size:14px;font-weight:700;color:var(--text)">Flag as hazard</span><span style="display:block;font-size:11px;color:var(--text3)">Dog, safety, tricky access, shows in red everywhere</span></span>'+
+      '<span style="font-size:14px;font-weight:700;color:var(--text)">Flag as hazard</span>'+
     '</label>'+
     (j.client_id!=null?
-      '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:4px 0 5px">Site access <span style="color:var(--blue)">(saved to the client)</span></div>'+
-      '<div style="font-size:11px;color:var(--text3);margin-bottom:5px">Gate code, dog, where to park, shows on every job here so you never re-type it.</div>'+
-      _ta('_jn-site-ta',c&&c.siteNote,'Gate code 4412, dog in the back yard...')
+      _lbl('Site access','· every visit')+
+      _ta('_jn-site-ta',c&&c.siteNote,'Gate code, dog, where to park...')
     :'')+
-    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:16px 0 6px">Photos <span style="font-weight:600;text-transform:none;letter-spacing:0">(which door, where to park, the panel)</span></div>'+
+    _lbl('Photos','')+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
       pics.map((p,i)=>{const s=_notePhotoSrc(p);return '<div style="position:relative;width:56px;height:56px">'+
         (s?'<img src="'+escHtml(s)+'" onclick="_viewNotePhoto(this.src)" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer">':'')+
