@@ -1261,7 +1261,6 @@ function setSchedType(type,btn){
   if(bufRow)bufRow.style.display=isEst?'none':'';
   ['s-name','s-addr','s-start','s-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sv=document.getElementById('s-value');if(sv)sv.value='';
-  const src=document.getElementById('s-days-src');if(src){src.textContent='';src.style.display='none';}
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
@@ -1279,7 +1278,7 @@ function pullClient(){
   availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();
   refreshAvail();updateSchedPreview();
 }
-function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;(()=>{const src=document.getElementById('s-days-src');if(src){src.textContent='from bid';src.style.display='inline-block';}})();
+function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';
   // Owner spec 2026-07-18: the bid already carries these, showing them as
   // editable form fields on a screen whose whole job is "pick a date" was
   // clutter, not a real workflow (re-typing the bid amount here isn't how a
@@ -1469,7 +1468,6 @@ function resetSched(){
   const sd=document.getElementById('s-days');if(sd)sd.value=schedType==='estimate'?1:2;
   const st=document.getElementById('s-time');if(st)st.value=schedType==='estimate'?'09:00':'';
   const sh=document.getElementById('s-hours');if(sh)sh.value='2';
-  const src=document.getElementById('s-days-src');if(src){src.textContent='';src.style.display='none';}
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
   const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=schedType==='estimate'?'none':'block';
   const crewSel=document.getElementById('s-crew-sel');if(crewSel)crewSel.value='';

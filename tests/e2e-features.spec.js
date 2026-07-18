@@ -7693,24 +7693,31 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
     expect(r).toBe('50%');
   });
 
-  test('"from bid" badge: hidden by default/on estimate mode, shown after pulling a bid, hidden again after Clear', async () => {
+  // Old behavior: pullBid() overwrote #s-days with the bid's rough estimate and
+  // showed a "from bid" badge, implying the bid was the source of truth for how
+  // long the job would take. New behavior (owner feedback 2026-07-18, "Duration
+  // ... comes from the scheduler"): the ACTUAL duration is a scheduling decision
+  // the contractor makes (crew/timeline dependent), so pullBid() never touches
+  // #s-days, and the badge + its element are gone entirely.
+  test('pullBid: does not overwrite Duration, and the "from bid" badge element is gone', async () => {
     const r = await page.evaluate(() => {
       goPg('pg-schedule');
       setSchedType('job', document.getElementById('sched-tab-job'));
-      const hiddenOnSwitch = document.getElementById('s-days-src').style.display === 'none';
+      document.getElementById('s-days').value = 5; // contractor's own scheduling choice
       bids = bids.filter(b => b.id !== 990001);
       bids.push({ id: 990001, client_id: 990002, client_name: 'Badge Test Client', amount: 4000, days: 3, status: 'Closed Won' });
       populateSchedSelect();
       document.getElementById('s-bid-sel').value = '990001';
       pullBid();
-      const shownAfterPull = document.getElementById('s-days-src').style.display !== 'none' && document.getElementById('s-days-src').textContent === 'from bid';
-      resetSched();
-      const hiddenAfterClear = document.getElementById('s-days-src').style.display === 'none';
-      return { hiddenOnSwitch, shownAfterPull, hiddenAfterClear };
+      const daysUnchanged = document.getElementById('s-days').value === '5';
+      const badgeElGone = !document.getElementById('s-days-src');
+      const pullBidSrc = typeof pullBid === 'function' ? pullBid.toString() : '';
+      const noBadgeWiring = !pullBidSrc.includes('s-days-src');
+      return { daysUnchanged, badgeElGone, noBadgeWiring };
     });
-    expect(r.hiddenOnSwitch).toBe(true);
-    expect(r.shownAfterPull).toBe(true);
-    expect(r.hiddenAfterClear).toBe(true);
+    expect(r.daysUnchanged).toBe(true);
+    expect(r.badgeElGone).toBe(true);
+    expect(r.noBadgeWiring).toBe(true);
   });
 
   test('buildColorRow / selColor / #s-color-row: the permanently-hidden dead color picker is gone', async () => {
