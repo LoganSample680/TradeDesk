@@ -522,6 +522,48 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .av-sel{background:var(--denim);color:#fff;border-color:var(--denim)}
 .av-other{opacity:.2;pointer-events:none}
 .av-past{opacity:.3;cursor:not-allowed;background:var(--cream)}
+.av-open:hover{border-color:var(--denim-edge);background:var(--bg-card)}
+.av-sel{box-shadow:0 2px 6px var(--denim-glow)}
+
+/* ── Schedule page: native-app grouped form (structural redesign 2026-07-18) ──
+   Moves the schedule flow off a stacked-label web form onto icon-led grouped
+   list rows (mirrors .mil-action / .cc-avatar leading-chip language) inside
+   elevated cards, a real segmented type toggle, and an iOS-style switch. Every
+   existing field ID + handler is preserved; only the presentation changed. */
+.sf-seg{display:flex;background:var(--cream);border-radius:var(--r-pill);padding:4px;box-shadow:inset 0 0 0 1px var(--line);margin-bottom:14px;gap:0}
+.sf-seg-btn{flex:1;padding:10px 12px;font-family:var(--font-ui);font-size:13.5px;font-weight:700;letter-spacing:-.1px;color:var(--text-2);border:0;background:none;cursor:pointer;border-radius:var(--r-pill);display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:color .18s,background .18s,box-shadow .18s;white-space:nowrap;font-family:inherit}
+.sf-seg-btn:active{transform:scale(.98)}
+.sf-seg-btn.active{background:var(--bg-card);color:var(--text);box-shadow:0 1px 3px rgba(27,22,18,.14),0 0 0 1px var(--line)}
+.sf-card{background:var(--bg-card);border-radius:var(--r-lg);margin-bottom:12px;box-shadow:var(--shadow-card);overflow:hidden}
+.sf-cap{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--text-3);padding:15px 16px 3px}
+.sf-list{padding:0 16px}
+.sf-row{display:flex;align-items:center;gap:13px;padding:11px 0;border-bottom:1px solid var(--line);min-height:44px}
+.sf-list>.sf-row:last-child{border-bottom:none}
+.sf-ico{width:38px;height:38px;border-radius:11px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--text-2);box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 1px 2px rgba(27,22,18,.06)}
+.sf-ico.denim{background:var(--denim-soft);color:var(--denim)}
+.sf-ico.green{background:var(--c-green-soft);color:var(--c-green)}
+.sf-ico.amber{background:var(--c-amber-soft);color:var(--c-amber)}
+.sf-ico.terra{background:var(--terra-soft);color:var(--terra)}
+.sf-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+.sf-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)}
+.sf-row input,.sf-row select,.sf-row textarea{border:none;background:transparent;padding:0;font-size:15px;font-weight:600;color:var(--text);height:auto;min-height:0;border-radius:0;-webkit-appearance:none;appearance:none;width:100%}
+.sf-row input:focus,.sf-row select:focus,.sf-row textarea:focus{outline:none;box-shadow:none}
+.sf-row select{padding-right:22px;background-position:right 2px center;font-weight:700;cursor:pointer}
+.sf-row input::placeholder{color:var(--text-3);font-weight:500}
+.sf-row textarea{min-height:38px;line-height:1.45;font-weight:500;font-size:14px}
+/* iOS-style switch, reuses the s-allow-weekend checkbox untouched underneath */
+.sf-switch{position:relative;width:46px;height:28px;flex-shrink:0;cursor:pointer;display:inline-block}
+.sf-switch input{position:absolute;inset:0;opacity:0;margin:0;width:100%;height:100%;cursor:pointer;z-index:2;-webkit-appearance:none;appearance:none}
+.sf-switch .sf-track{position:absolute;inset:0;background:var(--line-2);border-radius:var(--r-pill);transition:background .2s}
+.sf-switch .sf-knob{position:absolute;top:3px;left:3px;width:22px;height:22px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .22s cubic-bezier(.22,1,.36,1)}
+.sf-switch input:checked~.sf-track{background:var(--denim)}
+.sf-switch input:checked~.sf-knob{transform:translateX(18px)}
+.sf-foot{padding:4px 16px 16px}
+.sf-cta{width:100%;height:52px;font-size:15.5px;font-weight:800;border-radius:var(--r-lg);letter-spacing:-.1px}
+.sf-clear{width:100%;background:none;border:none;color:var(--text-3);font-size:13px;font-weight:600;margin-top:8px;height:32px;cursor:pointer;font-family:inherit}
+.sf-legend{display:flex;gap:13px;flex-wrap:wrap;margin-top:9px;padding:0 2px}
+.sf-legend span{font-size:10px;color:var(--text-3);font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.sf-legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
 
 /* ── Timeline ── */
 .timeline{padding-left:20px;border-left:2px solid var(--line)}
@@ -1993,48 +2035,73 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="tbar"><div class="tbar-title">Schedule</div><button class="btn btn-sm" onclick="openTimeOffModal()" style="background:var(--amber-lt);border-color:#D97706;color:#92400E;font-weight:700"><span data-ico="🏖" data-ico-size="14"></span> Time off</button></div>
 
   
-  <div class="fbar" style="margin-bottom:12px">
-    <button type="button" class="fb active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Schedule estimate</button>
-    <button type="button" class="fb" id="sched-tab-job" onclick="setSchedType('job',this)">Schedule job</button>
+  <div class="sf-seg">
+    <button type="button" class="sf-seg-btn active" id="sched-tab-est" onclick="setSchedType('estimate',this)"><span data-ico="📋" data-ico-size="15"></span> Estimate</button>
+    <button type="button" class="sf-seg-btn" id="sched-tab-job" onclick="setSchedType('job',this)"><span data-ico="🔨" data-ico-size="15"></span> Job</button>
   </div>
 
-  <div class="card card-pad-0">
-    <div class="card-hd"><div class="card-hd-title">Job details</div></div>
-    <div style="padding:14px 18px 18px">
-      <div id="sched-tip" class="tip">Pick a client and date for the estimate walkthrough.</div>
+  <div id="sched-tip" class="tip" style="margin-bottom:12px">Pick a client and date for the estimate walkthrough.</div>
 
-
-      <div id="sched-est-fields">
-        <div class="f" style="margin-bottom:10px">
-          <label>Client</label>
-          <select id="s-client-sel" onchange="pullClient()"><option value="">- Select a client -</option></select>
+  <div class="sf-card">
+    <div class="sf-cap">Job</div>
+    <div class="sf-list">
+      <div class="sf-row" id="sched-est-fields">
+        <div class="sf-ico denim"><span data-ico="👤" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Client</span>
+          <select id="s-client-sel" onchange="pullClient()"><option value="">Select a client</option></select>
         </div>
       </div>
-
-
-      <div id="sched-job-fields" style="display:none">
-        <div class="f" style="margin-bottom:10px">
-          <label>Won bid</label>
-          <select id="s-bid-sel" onchange="pullBid()"><option value="">- Select a won bid -</option></select>
+      <div class="sf-row" id="sched-job-fields" style="display:none">
+        <div class="sf-ico green"><span data-ico="📄" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Won bid</span>
+          <select id="s-bid-sel" onchange="pullBid()"><option value="">Select a won bid</option></select>
         </div>
       </div>
-
-      <div class="f" id="s-crew-row" style="display:none;margin-bottom:10px">
-        <label>Crew</label>
-        <select id="s-crew-sel" onchange="refreshAvail()"><option value="">Unassigned (I'll do it)</option></select>
+      <div class="sf-row" id="s-crew-row" style="display:none">
+        <div class="sf-ico terra"><span data-ico="👥" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Crew</span>
+          <select id="s-crew-sel" onchange="refreshAvail()"><option value="">Unassigned (I'll do it)</option></select>
+        </div>
       </div>
+      <div class="sf-row">
+        <div class="sf-ico"><span data-ico="🏠" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Job name</span>
+          <input id="s-name" autocapitalize="words" placeholder="Smith residence">
+        </div>
+      </div>
+      <div class="sf-row" id="s-addr-row" style="position:relative">
+        <div class="sf-ico"><span data-ico="📍" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Address</span>
+          <input id="s-addr" autocomplete="off" placeholder="Job site address">
+        </div>
+      </div>
+      <div class="sf-row" id="s-value-row" style="display:none">
+        <div class="sf-ico green"><span data-ico="💵" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Job value</span>
+          <input id="s-value" type="number" placeholder="0" inputmode="decimal">
+        </div>
+      </div>
+    </div>
+  </div>
 
-      <div class="fg fg2">
-        <div class="f"><label>Name</label><input id="s-name" autocapitalize="words" placeholder="Smith residence"></div>
-        <div class="f" id="s-addr-row" style="position:relative"><label>Address</label><input id="s-addr" autocomplete="off"></div>
-        <div class="f" id="s-value-row" style="display:none"><label>Job value ($)</label><input id="s-value" type="number" placeholder="0"></div>
-        <div class="f"><label id="s-time-label">Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>
+  <div class="sf-card">
+    <div class="sf-cap">Timing</div>
+    <div class="sf-list">
+      <div class="sf-row">
+        <div class="sf-ico denim"><span data-ico="🕐" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl" id="s-time-label">Start time <span style="font-weight:600">(optional)</span></span>
           <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
         </div>
-        <div class="f" id="s-dur-days-row"><label>Duration (days)</label>
-          <input id="s-days" type="number" value="1" min="1" max="60" oninput="refreshAvail()">
+      </div>
+      <div class="sf-row" id="s-dur-days-row">
+        <div class="sf-ico amber"><span data-ico="📆" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Duration (days)</span>
+          <input id="s-days" type="number" value="1" min="1" max="60" inputmode="numeric" oninput="refreshAvail()">
         </div>
-        <div class="f" id="s-dur-hours-row" style="display:none"><label>Duration</label>
+      </div>
+      <div class="sf-row" id="s-dur-hours-row" style="display:none">
+        <div class="sf-ico amber"><span data-ico="⏱" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Duration</span>
           <select id="s-hours">
             <option value="1">1 hour</option>
             <option value="1.5">1.5 hours</option>
@@ -2042,7 +2109,10 @@ body.dark .cal-cell.other{background:var(--cream)}
             <option value="3">3 hours</option>
           </select>
         </div>
-        <div class="f"><label>Buffer days after</label>
+      </div>
+      <div class="sf-row" id="s-buf-row">
+        <div class="sf-ico"><span data-ico="⏳" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Buffer days after</span>
           <select id="s-buf" onchange="refreshAvail()">
             <option value="0">No buffer</option>
             <option value="1" selected>1 day</option>
@@ -2051,57 +2121,61 @@ body.dark .cal-cell.other{background:var(--cream)}
           </select>
         </div>
       </div>
-
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:12px;margin-top:2px;border-top:1px solid var(--line)">
-        <div style="display:flex;align-items:center;gap:6px">
-          <div id="s-color-swatch" style="width:10px;height:10px;border-radius:50%;background:#7F77DD;flex-shrink:0"></div>
-          <span id="s-color-label" style="font-size:11px;color:var(--text3)">Shows as purple on the calendar</span>
+      <div class="sf-row">
+        <div class="sf-ico"><span data-ico="🗓" data-ico-size="19"></span></div>
+        <div class="sf-body" style="gap:0"><span style="font-size:14px;font-weight:700;color:var(--text)">Allow weekends</span>
+          <span style="font-size:11px;color:var(--text-3);font-weight:500">Let jobs land on Sat/Sun</span>
         </div>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">
-          <input type="checkbox" id="s-allow-weekend" onchange="refreshAvail()" style="width:16px;height:16px;cursor:pointer;accent-color:var(--blue);appearance:auto;-webkit-appearance:checkbox">
-          Allow weekends
+        <label class="sf-switch">
+          <input type="checkbox" id="s-allow-weekend" onchange="refreshAvail()">
+          <span class="sf-track"></span><span class="sf-knob"></span>
         </label>
       </div>
     </div>
   </div>
 
-  <div class="card card-pad-0">
-    <div class="card-hd"><div class="card-hd-title">Pick a date</div></div>
-    <div style="padding:14px 18px 18px">
-      <div class="f" style="margin-bottom:6px"><label>Date: tap a day below</label>
-        <input id="s-start" type="date" oninput="onStartChange()">
-      </div>
-      <div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-          <span style="font-size:11px;font-weight:700;color:var(--text2)" id="avail-month-lbl"></span>
-          <div style="display:flex;gap:4px">
-            <button class="btn btn-sm" onclick="avPrev()">&#8249;</button>
-            <button class="btn btn-sm" onclick="avNext()">&#8250;</button>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px">
-          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">S</div>
-          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">M</div>
-          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">T</div>
-          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">W</div>
-          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">T</div>
-          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">F</div>
-          <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">S</div>
-        </div>
-        <div class="av-grid" id="avail-grid"></div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
-          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--bg2);border-radius:2px;margin-right:3px;border:1px solid var(--border)"></span>Open</span>
-          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--red-lt);border-radius:2px;margin-right:3px"></span>Booked</span>
-          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--amber-lt);border-radius:2px;margin-right:3px"></span>Buffer</span>
-          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#FDE68A;border-radius:2px;margin-right:3px"></span>Time off</span>
-          <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--denim);border-radius:2px;margin-right:3px"></span>Selected</span>
+  <div class="sf-card">
+    <div class="sf-cap">Pick a date</div>
+    <div style="padding:12px 16px 0">
+      <input id="s-start" type="date" oninput="onStartChange()" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+        <span style="font-size:13px;font-weight:800;letter-spacing:-.2px;color:var(--text)" id="avail-month-lbl"></span>
+        <div style="display:flex;gap:5px">
+          <button class="btn btn-sm" onclick="avPrev()">&#8249;</button>
+          <button class="btn btn-sm" onclick="avNext()">&#8250;</button>
         </div>
       </div>
-      <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:10px 0;font-size:12px"></div>
-      <div class="f" style="margin-top:8px"><label>Notes</label><textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea></div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px">
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">S</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">M</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">T</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">W</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">T</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">F</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">S</div>
+      </div>
+      <div class="av-grid" id="avail-grid"></div>
+      <div class="sf-legend">
+        <span><i style="background:var(--bg3);box-shadow:inset 0 0 0 1px var(--line)"></i>Open</span>
+        <span><i style="background:var(--c-red-soft)"></i>Booked</span>
+        <span><i style="background:var(--c-amber-soft)"></i>Buffer</span>
+        <span><i style="background:#FDE68A"></i>Time off</span>
+        <span><i style="background:var(--denim)"></i>Selected</span>
+      </div>
+      <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:12px 0 0;font-size:12px"></div>
+    </div>
+    <div class="sf-list" style="margin-top:8px">
+      <div class="sf-row">
+        <div class="sf-ico"><span data-ico="📝" data-ico-size="19"></span></div>
+        <div class="sf-body"><span class="sf-lbl">Notes</span>
+          <textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="sf-foot">
       <div id="sched-err" style="display:none;font-size:12px;color:var(--c-red);background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>
-      <button class="btn btn-g" onclick="scheduleJob()" style="width:100%;height:46px;font-size:15px">Add to calendar</button>
-      <button class="btn" onclick="resetSched()" style="width:100%;background:none;border:none;color:var(--text3);font-size:13px;font-weight:600;margin-top:6px">Clear form</button>
+      <button class="btn btn-g sf-cta" onclick="scheduleJob()">Add to calendar</button>
+      <button class="sf-clear" onclick="resetSched()">Clear form</button>
     </div>
   </div>
 </div>

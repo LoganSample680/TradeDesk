@@ -1227,18 +1227,20 @@ function populateSchedSelect(){
 function setSchedType(type,btn){
   schedType=type;
   const isEst=type==='estimate';
-  document.querySelectorAll('#pg-schedule .fbar .fb').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#pg-schedule .sf-seg .sf-seg-btn').forEach(b=>b.classList.remove('active'));
   if(btn)btn.classList.add('active');
   else{const t=document.getElementById(isEst?'sched-tab-est':'sched-tab-job');if(t)t.classList.add('active');}
-  const estF=document.getElementById('sched-est-fields');if(estF)estF.style.display=isEst?'block':'none';
-  const jobF=document.getElementById('sched-job-fields');if(jobF)jobF.style.display=isEst?'none':'block';
-  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=isEst?'none':'block';
+  // These are .sf-row flex rows now, toggle with '' (revert to CSS flex), not
+  // 'block', or the leading icon + body would stack instead of sitting inline.
+  const estF=document.getElementById('sched-est-fields');if(estF)estF.style.display=isEst?'':'none';
+  const jobF=document.getElementById('sched-job-fields');if(jobF)jobF.style.display=isEst?'none':'';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=isEst?'none':'';
   // Time now applies to jobs too (owner spec 2026-07-18: every job gets real
   // start-time granularity, not just estimates), same input either way, just
   // the label and default differ, estimates default to a real time + the
   // past-now bump (validateEstimateTime), jobs start blank/optional.
   const timeLbl=document.getElementById('s-time-label');
-  if(timeLbl)timeLbl.innerHTML=isEst?'Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span>':'Start time <span style="font-size:10px;color:var(--text3)">(optional)</span>';
+  if(timeLbl)timeLbl.innerHTML=isEst?'Time <span style="font-weight:600">(estimate visits)</span>':'Start time <span style="font-weight:600">(optional)</span>';
   const timeInput=document.getElementById('s-time');if(timeInput)timeInput.value=isEst?'09:00':'';
   // Crew picker, only ever shown once a second person exists to assign work
   // to, a solo account never sees this row, zero added taps for them.
@@ -1246,16 +1248,13 @@ function setSchedType(type,btn){
   if(crewRow)crewRow.style.display=(!isEst&&typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length)?'':'none';
   const crewSel=document.getElementById('s-crew-sel');if(crewSel)crewSel.value='';
   selectedColor=isEst?'#7F77DD':'#185FA5';
-  const sw=document.getElementById('s-color-swatch');if(sw)sw.style.background=selectedColor;
-  const lb=document.getElementById('s-color-label');
-  if(lb)lb.textContent=isEst?'Shows as purple on the calendar, estimate visit':'Shows as blue on the calendar, paint job';
   const tip=document.getElementById('sched-tip');
   if(tip){tip.innerHTML=isEst?'Pick a client, date and time. <strong>Evenings (after 5pm) and weekends</strong> are always open, they never block your paint days.':'Pull from a won bid and pick a start date.';tip.className=isEst?'tip':'tip tip-s';}
   const days=document.getElementById('s-days');if(days)days.value=isEst?1:2;
   const buf=document.getElementById('s-buf');if(buf)buf.value=isEst?'0':'1';
   const daysRow=document.getElementById('s-dur-days-row');
   const hoursRow=document.getElementById('s-dur-hours-row');
-  const bufRow=document.querySelector('#s-buf')?.closest('.f');
+  const bufRow=document.getElementById('s-buf-row');
   if(daysRow)daysRow.style.display=isEst?'none':'';
   if(hoursRow)hoursRow.style.display=isEst?'':'none';
   if(bufRow)bufRow.style.display=isEst?'none':'';
@@ -1287,7 +1286,7 @@ function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.
   // have the data, so a missing address doesn't silently ship (it's load-
   // bearing for geofence arrival matching and GC-sub job linking).
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display=b.addr?'none':'';
-  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=(b.amount>0)?'none':'block';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=(b.amount>0)?'none':'';
   document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from the won bid below.</strong> Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
 function avPrev(){
   const nowY=new Date().getFullYear(),nowM=new Date().getMonth();
@@ -1469,7 +1468,7 @@ function resetSched(){
   const st=document.getElementById('s-time');if(st)st.value=schedType==='estimate'?'09:00':'';
   const sh=document.getElementById('s-hours');if(sh)sh.value='2';
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
-  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=schedType==='estimate'?'none':'block';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=schedType==='estimate'?'none':'';
   const crewSel=document.getElementById('s-crew-sel');if(crewSel)crewSel.value='';
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();

@@ -7685,12 +7685,18 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
     expect(r.hasJob).toBe(false);
   });
 
-  test('color swatch is a circle, not a rounded square that reads as a checkbox', async () => {
-    const r = await page.evaluate(() => {
-      const sw = document.getElementById('s-color-swatch');
-      return sw ? sw.style.borderRadius : null;
-    });
-    expect(r).toBe('50%');
+  // The schedule-page structural redesign (2026-07-18) dropped the color
+  // swatch + "Shows as purple on the calendar" caption entirely, it was pure
+  // decoration (the calendar already color-codes days). setSchedType still
+  // sets the `selectedColor` variable used on the created job, but no longer
+  // writes any swatch/label DOM. Assert both dead elements are gone (§7.1).
+  test('color swatch + caption removed in the schedule redesign', async () => {
+    const r = await page.evaluate(() => ({
+      swatch: !!document.getElementById('s-color-swatch'),
+      label: !!document.getElementById('s-color-label'),
+    }));
+    expect(r.swatch).toBe(false);
+    expect(r.label).toBe(false);
   });
 
   // Old behavior: pullBid() overwrote #s-days with the bid's rough estimate and
@@ -7827,25 +7833,37 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
     });
   });
 
-  test('Add to calendar / Clear form: buttons still wired and full-width, no orphaned .brow wrapper', async () => {
+  // Structural redesign 2026-07-18: the two-.card layout became three grouped
+  // .sf-card sections (Job / Timing / Pick a date), and the CTA gets its full
+  // width from the .sf-cta class rather than an inline style. Buttons stay wired
+  // and there's still no orphaned .brow wrapper.
+  test('Add to calendar / Clear form: buttons still wired and full-width, grouped into sections', async () => {
     const r = await page.evaluate(() => {
       goPg('pg-schedule');
       const root = document.getElementById('pg-schedule');
       const addBtn = [...root.querySelectorAll('button')].find(b => b.textContent.trim() === 'Add to calendar');
       const clearBtn = [...root.querySelectorAll('button')].find(b => b.textContent.trim() === 'Clear form');
+      let addFull = false;
+      if (addBtn) {
+        const p = addBtn.parentElement, pcs = getComputedStyle(p);
+        const contentW = p.clientWidth - parseFloat(pcs.paddingLeft) - parseFloat(pcs.paddingRight);
+        addFull = Math.abs(addBtn.getBoundingClientRect().width - contentW) <= 2;
+      }
       return {
         addOnclick: addBtn?.getAttribute('onclick') || '',
         clearOnclick: clearBtn?.getAttribute('onclick') || '',
-        addFullWidth: addBtn?.style.width === '100%',
+        addIsCta: !!addBtn?.classList.contains('sf-cta'),
+        addFullWidth: addFull,
         browPresent: !!root.querySelector('.brow'),
-        cardCount: root.querySelectorAll('.card').length,
+        cardCount: root.querySelectorAll('.sf-card').length,
       };
     });
     expect(r.addOnclick).toContain('scheduleJob()');
     expect(r.clearOnclick).toContain('resetSched()');
+    expect(r.addIsCta).toBe(true);
     expect(r.addFullWidth).toBe(true);
     expect(r.browPresent).toBe(false);
-    expect(r.cardCount, 'Job details / Pick a date, two distinct sections instead of one long undifferentiated card').toBe(2);
+    expect(r.cardCount, 'Job / Timing / Pick a date, three grouped sections').toBe(3);
   });
 
   test('no console errors from the schedule page cleanup', async () => {
