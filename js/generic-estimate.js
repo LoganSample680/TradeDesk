@@ -651,7 +651,7 @@ function goGeiStep(n){
   if(n===2&&(!S.myBundles||!S.myBundles.length)){showGeiOnboarding();return;}
   _geiStep=n;
   [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===n)?'':'none';});
-  if(n===3)_geiRenderSiteNoteField('gen'); // generic wizard's review step gets the shared field too
+  if(n===1)_geiRenderSiteNoteField('gen'); // generic wizard: field lives in step 1, by the property context
   window.scrollTo({top:0,behavior:'instant'});
   _geiRenderStepBar();
   _geiSyncScopeButtons();
@@ -884,10 +884,17 @@ const _GEI_MODES={
 // section never drops unsaved keystrokes and every internal surface reads the
 // same source of truth.
 let _geiSiteNoteT=null;
+// The property this estimate is for: the edited bid's address if any, else the
+// client's primary address. Per-property notes key off this.
+function _geiSiteAddr(){
+  const c=(_geiClientId!=null&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
+  const b=(_geiEditBidId!=null&&bids.find)?bids.find(x=>x.id===_geiEditBidId):null;
+  return (b&&b.addr)||(c&&c.addr)||'';
+}
 function _geiSiteNoteInput(val){
   if(_geiClientId==null||!clients.find)return;
   const c=clients.find(x=>String(x.id)===String(_geiClientId));if(!c)return;
-  c.siteNote=val;
+  setSiteNote(c,_geiSiteAddr(),val);
   if(_geiSiteNoteT)clearTimeout(_geiSiteNoteT);
   _geiSiteNoteT=setTimeout(()=>{try{saveAll();}catch(e){}},400);
 }
@@ -895,13 +902,15 @@ function _geiRenderSiteNoteField(prefix){
   ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-sitenote-wrap');if(w)w.innerHTML='';}});
   const wrap=document.getElementById(prefix+'-sitenote-wrap');if(!wrap)return;
   const c=(_geiClientId!=null&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
-  const val=(c&&c.siteNote)||'';
-  // Mirrors the Terms & Conditions card it sits above, amber inset stripe marks
-  // it internal. One id (#gei-sitenote) across T&M, BYO, and the generic wizard.
+  const addr=_geiSiteAddr();
+  const val=c?getSiteNote(c,addr):'';
+  const addrShort=(addr||'').split(',')[0].trim();
+  // Sits right under the address header, amber inset stripe marks it internal.
+  // One id (#gei-sitenote) across T&M, BYO, and the generic wizard.
   wrap.innerHTML='<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">'+
-    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Notes for your client record</div></div>'+
+    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Property access notes</div></div>'+
     '<div style="padding:12px 14px">'+
-      '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Saved to this client and shown to your crew. Never appears on the proposal the client sees.</div>'+
+      '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Crew only, never on the proposal. Saved to '+(addrShort?'<strong>'+escHtml(addrShort)+'</strong> and auto-loads on every future job there':'this property')+'.</div>'+
       '<textarea id="gei-sitenote" rows="3" oninput="_geiSiteNoteInput(this.value)" placeholder="Gate code, dog, where to park, tricky access..." style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val)+'</textarea>'+
     '</div>'+
   '</div>';
@@ -1213,9 +1222,7 @@ function _byoRenderSections(){
         'style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;box-sizing:border-box;line-height:1.5">'+escHtml(_byoCustomTerms||'')+'</textarea>'+
     '</div>'+
   '</div>';
-  // Internal client-record note sits directly on top of Terms & Conditions.
-  wrap.innerHTML=secHtml+addSecBtn+'<div id="byo-sitenote-wrap"></div>'+tcCard;
-  _geiRenderSiteNoteField('byo');
+  wrap.innerHTML=secHtml+addSecBtn+tcCard;
 }
 function _byoToggle(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();_byoAutosave();}
@@ -2924,12 +2931,12 @@ function saveGenericEstimate(draft){
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
   }
-  // Site notes → CLIENT record (never the bid, so they never reach the proposal).
-  // One shared save for every estimate type (T&M, BYO, future). Only write when
-  // the field was actually rendered (guards against a save from a screen that
-  // never showed it silently wiping an existing site note).
+  // Site notes → per-property note on the CLIENT record (never the bid, so they
+  // never reach the proposal). One shared save for every estimate type (T&M,
+  // BYO, future). Only write when the field was actually rendered (guards
+  // against a save from a screen that never showed it wiping an existing note).
   const _snEl=document.getElementById('gei-sitenote');
-  if(_snEl&&_geiClientId!=null&&clients.find){const _c=clients.find(x=>String(x.id)===String(_geiClientId));if(_c){_c.siteNote=_snEl.value.trim();saveAll();}}
+  if(_snEl&&_geiClientId!=null&&clients.find){const _c=clients.find(x=>String(x.id)===String(_geiClientId));if(_c){setSiteNote(_c,_geiSiteAddr(),_snEl.value.trim());saveAll();}}
   if(!draft)_saveToLineHistory();
   showToast(draft?'Draft saved':'Proposal saved','✅');
   if(!draft)goPg('pg-clients');

@@ -1664,6 +1664,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div class="split-est">
       <div>
+        <!-- Property access notes (crew only, never on the proposal): sits directly under the address -->
+        <div id="tm-sitenote-wrap"></div>
         <!-- Scope of work chips -->
         <div class="card card-pad-0" style="margin-bottom:12px" id="tm-scopecard-wrap"></div>
         <!-- Rates & crew -->
@@ -1737,9 +1739,6 @@ body.dark .cal-cell.other{background:var(--cream)}
             </div>
           </div>
         </div>
-
-        <!-- Internal client-record note (crew only, never on the proposal) -->
-        <div id="tm-sitenote-wrap"></div>
       </div>
 
       <!-- Summary rail -->
@@ -1777,6 +1776,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div class="split-est">
       <div>
+        <!-- Property access notes (crew only, never on the proposal): sits directly under the address -->
+        <div id="byo-sitenote-wrap"></div>
         <!-- Scope of work chips -->
         <div class="card card-pad-0" style="margin-bottom:12px" id="byo-scopecard-wrap"></div>
         <div id="byo-sections"></div>
@@ -1819,6 +1820,8 @@ body.dark .cal-cell.other{background:var(--cream)}
         <button id="gei-emrg-btn" onclick="_geiToggleEmergency()" class="btn btn-sm" style="flex:1;font-size:12px;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)"><span data-ico="🚨" data-ico-size="14"></span> Emergency / after-hours</button>
       </div>
     </div>
+    <!-- Property access notes (crew only, never on the proposal): near the property/address context -->
+    <div id="gen-sitenote-wrap"></div>
     <div class="card" style="margin-bottom:12px">
       <!-- T&M chip (shown in T&M mode) -->
       <div id="gei-tm-chip" style="display:none;margin-bottom:12px">
@@ -1998,7 +2001,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" style="margin-bottom:12px">
       <div class="f"><label>Notes / scope details</label><textarea id="gei-notes" rows="3" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical" placeholder="Scope, exclusions, warranty, payment terms..."></textarea></div>
     </div>
-    <div id="gen-sitenote-wrap"></div>
     <div class="card" style="margin-bottom:12px">
       <div class="f"><label>Est. duration</label><input type="text" id="gei-duration" placeholder="e.g. 4 hrs, 2 days"></div>
     </div>

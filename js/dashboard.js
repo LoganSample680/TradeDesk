@@ -636,7 +636,7 @@ function _dashLogPipeMileage(jobId){
 }
 // Field note callout, internal only (owner + assigned crew, never the client).
 // Composes two layers so gate codes/dog warnings never get re-typed:
-//   · SITE  = client.siteNote, persistent, auto-shows on every job at that client
+//   · SITE  = per-property note (getSiteNote by job address), auto-shows on every job at that address
 //   · this job = job.notes, the one-off ("bring the 24ft ladder")
 // job.noteAlert flags it as a hazard → red treatment that can't be skimmed past.
 // Pass the JOB OBJECT (not a string). opts.editable adds an Edit / "+ Add" affordance
@@ -658,7 +658,7 @@ function _jobFieldNote(job,opts){
   opts=opts||{};
   const j=(job&&typeof job==='object')?job:null;
   const c=(j&&j.client_id!=null&&typeof clients!=='undefined'&&clients.find)?clients.find(x=>String(x.id)===String(j.client_id)):null;
-  const site=(c&&(c.siteNote||'').trim())||'';
+  const site=(c?getSiteNote(c,(j&&j.addr)||c.addr):'').trim();
   const jn=(j&&(j.notes||'').trim())||'';
   const alert=!!(j&&j.noteAlert);
   const pics=_notephotos(j);
@@ -712,8 +712,8 @@ function _openJobNoteEditor(jobId){
       '<span style="font-size:14px;font-weight:700;color:var(--text)">Flag as hazard</span>'+
     '</label>'+
     (j.client_id!=null?
-      _lbl('Site access','· every visit')+
-      _ta('_jn-site-ta',c&&c.siteNote,'Gate code, dog, where to park...')
+      _lbl('Site access','· this address, every visit')+
+      _ta('_jn-site-ta',c?getSiteNote(c,_addr):'','Gate code, dog, where to park...')
     :'')+
     _lbl('Photos','')+
     '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
@@ -734,7 +734,7 @@ function _jnCaptureEdits(jobId){
   const ta=document.getElementById('_jn-note-ta');if(ta)j.notes=ta.value.trim();
   const al=document.getElementById('_jn-alert');if(al)j.noteAlert=!!al.checked;
   const site=document.getElementById('_jn-site-ta');
-  if(site&&j.client_id!=null&&clients.find){const c=clients.find(x=>String(x.id)===String(j.client_id));if(c)c.siteNote=site.value.trim();}
+  if(site&&j.client_id!=null&&clients.find){const c=clients.find(x=>String(x.id)===String(j.client_id));if(c)setSiteNote(c,(j.addr||c.addr),site.value.trim());}
   return j;
 }
 function _jnAddPhoto(jobId,input){

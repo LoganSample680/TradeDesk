@@ -1427,17 +1427,19 @@ function renderClientDetail(){
   setCDTab('overview',document.getElementById('cdt-overview'));
 }
 // Site access note on the client record (gate code, dog, parking). Internal
-// only, same c.siteNote captured at the estimate and shown on the crew's job
-// cards / geofence, never on the client-facing proposal or hub.
+// only, the same per-property note captured at the estimate and shown on the
+// crew's job cards / geofence, never on the client-facing proposal or hub. The
+// client record edits the note for this client's PRIMARY address; per-property
+// notes for other addresses are captured/edited from that job or estimate.
 function renderCDSiteNote(){
   const c=getClientById(currentClientId);if(!c)return;
   const el=document.getElementById('cd-sitenote-input');if(!el)return;
-  el.value=c.siteNote||'';
+  el.value=getSiteNote(c,c.addr);
 }
 function saveCDSiteNote(){
   const c=getClientById(currentClientId);if(!c)return;
   const el=document.getElementById('cd-sitenote-input');
-  c.siteNote=(el?el.value:'').trim();
+  setSiteNote(c,c.addr,(el?el.value:'').trim());
   saveAll();
   if(typeof showToast==='function')showToast('Site notes saved','✓');
 }

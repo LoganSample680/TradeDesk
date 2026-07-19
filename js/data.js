@@ -285,6 +285,35 @@ function loadAll(){
 }
 
 function getClientById(id){return clients.find(c=>c.id===id);}
+// ── Per-property internal site notes ──────────────────────────────────────
+// Gate code, dog, parking, lockbox: crew-only, never on the client's proposal.
+// Keyed by PROPERTY address (street line) on client.siteNotes{}, so a client
+// with two houses keeps a separate note per site and it auto-loads on every
+// future job at that address. Legacy single-note clients (client.siteNote) are
+// read transparently as the note for that client's PRIMARY address, and every
+// write to the primary address keeps client.siteNote in sync so any older reader
+// still works. Whole-object cloud sync persists client.siteNotes for free.
+function siteNoteKey(addr){return (addr||'').toString().split(',')[0].trim().toLowerCase().replace(/\s+/g,' ');}
+function getSiteNote(client,addr){
+  if(!client)return '';
+  const k=siteNoteKey(addr||client.addr);
+  if(k&&client.siteNotes&&client.siteNotes[k]!=null)return client.siteNotes[k];
+  // Legacy single note belongs to the client's primary address only.
+  if(client.siteNote&&(!k||k===siteNoteKey(client.addr)))return client.siteNote;
+  return '';
+}
+function setSiteNote(client,addr,text){
+  if(!client)return;
+  text=(text||'').trim();
+  const k=siteNoteKey(addr||client.addr);
+  // No address on the client/job yet: store on the legacy single-note field so
+  // address-less clients still keep a note (getSiteNote reads it back via !k).
+  if(!k){client.siteNote=text;return;}
+  client.siteNotes=client.siteNotes||{};
+  if(text)client.siteNotes[k]=text;else delete client.siteNotes[k];
+  // Keep the legacy primary-address field in sync for any un-migrated reader.
+  if(k===siteNoteKey(client.addr))client.siteNote=text;
+}
 function getClientTier(c){
   if(!c)return 'C';
   if(c.tier)return c.tier;

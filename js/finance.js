@@ -1275,7 +1275,10 @@ function _schedSiteNote(clientId){
   const el=document.getElementById('s-sitenote'),row=document.getElementById('s-sitenote-row');
   if(!el||!row)return;
   const c=clientId!=null?getClientById(clientId):null;
-  const sn=(c&&c.siteNote||'').trim();
+  // Key by the address currently in the scheduler (bid/client addr), so the note
+  // shown is the one for THIS property, not a sibling property of the same client.
+  const _sa=document.getElementById('s-addr');
+  const sn=(c?getSiteNote(c,(_sa&&_sa.value)||c.addr):'').trim();
   el.textContent=sn;row.style.display=sn?'':'none';
 }
 function pullClient(){

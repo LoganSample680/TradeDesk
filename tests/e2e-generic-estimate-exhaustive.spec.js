@@ -2296,7 +2296,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 88820);
         openGenericEstimate(c, null, 'general');
-        goGeiStep(3); // generic wizard review step mounts the shared #gei-sitenote field
+        goGeiStep(1); // generic wizard: field lives in step 1 (by the property context)
         return { loaded: document.getElementById('gei-sitenote').value };
       });
       expect(r.loaded).toBe('Gate code 4412, dog in back');
@@ -2323,7 +2323,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         const tm = { vis: vis(), count: ids() };
         openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
         const byo = { vis: vis(), count: ids() };
-        openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = false; goGeiStep(3);
+        openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = false; goGeiStep(1);
         const gen = { vis: vis(), count: ids() };
         return { tm, byo, gen };
       });
@@ -2344,18 +2344,60 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.onClient).toBe('Park in the alley, side gate');
     });
 
-    test('BYO: the note card sits directly above the Terms & Conditions card', async () => {
+    test('placement: the note sits at the TOP of the estimate (before the scope card), by the address', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 88823, name: 'Order Client', addr: '7 Order Rd' };
         clients = clients.filter(x => x.id !== 88823).concat([c]);
+        const precedes = (a, b) => !!(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        const tm = precedes(document.getElementById('gei-sitenote'), document.getElementById('tm-scopecard-wrap'));
         openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
-        const note = document.getElementById('gei-sitenote');
-        const terms = document.getElementById('byo-custom-terms');
-        // note precedes terms in document order
-        return { both: !!note && !!terms, notePrecedesTerms: !!(note && terms && (note.compareDocumentPosition(terms) & Node.DOCUMENT_POSITION_FOLLOWING)) };
+        const byo = precedes(document.getElementById('gei-sitenote'), document.getElementById('byo-scopecard-wrap'));
+        return { tm, byo };
       });
-      expect(r.both).toBe(true);
-      expect(r.notePrecedesTerms).toBe(true);
+      expect(r.tm, 'T&M note precedes scope card').toBe(true);
+      expect(r.byo, 'BYO note precedes scope card').toBe(true);
+    });
+
+    test('per-property: two addresses on one client keep separate notes; each auto-loads by address', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88824, name: 'Two Homes LLC', addr: '100 First St' };
+        clients = clients.filter(x => x.id !== 88824).concat([c]);
+        // Note for the primary address, captured on an estimate for it.
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        _geiSiteNoteInput('Lockbox 5590, front porch');
+        // Note for a SECOND property (a bid carrying its own address).
+        const b = { id: 771001, client_id: 88824, client_name: 'Two Homes LLC', addr: '200 Second Ave', amount: 1000 };
+        bids = bids.filter(x => x.id !== 771001).concat([b]);
+        openGenericEstimate(c, b.id, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        const loadedSecondBlank = document.getElementById('gei-sitenote').value; // no note yet for 200 Second Ave
+        _geiSiteNoteInput('Side gate, beware of dog');
+        const cl = clients.find(x => x.id === 88824);
+        // Reopen the FIRST (primary) estimate: should still show the first note, not the second.
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        const reloadedFirst = document.getElementById('gei-sitenote').value;
+        return {
+          loadedSecondBlank,
+          reloadedFirst,
+          first: getSiteNote(cl, '100 First St'),
+          second: getSiteNote(cl, '200 Second Ave'),
+        };
+      });
+      expect(r.loadedSecondBlank).toBe('');                       // second property started blank
+      expect(r.first).toBe('Lockbox 5590, front porch');
+      expect(r.second).toBe('Side gate, beware of dog');
+      expect(r.reloadedFirst).toBe('Lockbox 5590, front porch');  // no cross-property bleed
+    });
+
+    test('edge: a client with NO address still stores/reads a note (legacy single-note fallback)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88825, name: 'No Address Client' }; // no addr
+        clients = clients.filter(x => x.id !== 88825).concat([c]);
+        setSiteNote(c, undefined, 'Call before arriving');
+        return { read: getSiteNote(c, undefined), legacy: c.siteNote };
+      });
+      expect(r.read).toBe('Call before arriving');
+      expect(r.legacy).toBe('Call before arriving');
     });
   });
 

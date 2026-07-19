@@ -929,7 +929,7 @@ function expandCalDay(key){
                 job.name+
               '</div>'+
               (job.notes?'<div style="font-size:11px;color:var(--text3);margin-top:2px">'+job.notes+'</div>':'')+
-              (()=>{const _c=(typeof clients!=='undefined'&&clients.find)?clients.find(x=>x.id===job.client_id):null;const _sn=(_c&&_c.siteNote||'').trim();return _sn?'<div style="font-size:11px;color:var(--text2);margin-top:2px"><strong>Site:</strong> '+escHtml(_sn)+'</div>':'';})()+
+              (()=>{const _c=(typeof clients!=='undefined'&&clients.find)?clients.find(x=>x.id===job.client_id):null;const _sn=(_c?getSiteNote(_c,job.addr||_c.addr):'').trim();return _sn?'<div style="font-size:11px;color:var(--text2);margin-top:2px"><strong>Site:</strong> '+escHtml(_sn)+'</div>':'';})()+
             '</div>'+
             ''+
           '</div>';
