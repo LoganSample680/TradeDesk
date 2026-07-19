@@ -488,9 +488,9 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(c?.addr)setTimeout(_geiLookupClientTaxRate,0);
   const DESC_PH={electrical:'e.g. Panel upgrade, add EV charger in garage',plumbing:'e.g. Replace water heater, install shutoff valves',hvac:'e.g. Replace AC unit, charge refrigerant',roofing:'e.g. Full shingle replacement, fix ridge flashing',landscaping:'e.g. Weekly mowing, spring cleanup, new mulch',general:'e.g. Drywall repair, power washing, handyman'};
   sf('gei-desc','');sf('gei-notes','');sf('gei-tax-pct','0');sf('gei-duration','');
-  // Site notes are CLIENT-level (crew-only, never on the proposal): load from the
-  // client record, not the bid, so they persist across every estimate/job here.
-  sf('gei-sitenote',c?.siteNote||'');
+  // Site notes (crew-only, client-level) are rendered + prefilled lazily by the
+  // shared _geiRenderSiteNoteField when the active layout shows (T&M/BYO chrome
+  // or the generic step 3), so it's one field across every estimate type.
   const descEl=document.getElementById('gei-desc');
   if(descEl)descEl.placeholder=DESC_PH[_geiTrade]||'Describe the job';
   const nwEl=document.getElementById('gei-new-work');
@@ -651,6 +651,7 @@ function goGeiStep(n){
   if(n===2&&(!S.myBundles||!S.myBundles.length)){showGeiOnboarding();return;}
   _geiStep=n;
   [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===n)?'':'none';});
+  if(n===3)_geiRenderSiteNoteField('gen'); // generic wizard's review step gets the shared field too
   window.scrollTo({top:0,behavior:'instant'});
   _geiRenderStepBar();
   _geiSyncScopeButtons();
@@ -874,6 +875,19 @@ const _GEI_MODES={
 // wizard, show the page, render the shared components, brand the title, fill the
 // client sub-header, and restore the saved deposit %. Returns the saved bid (or
 // undefined) so each mode's show-page can do its own field restores from it.
+// Shared internal Site-notes field, ONE code path for every estimate type (T&M,
+// BYO, and the generic wizard). Renders the single #gei-sitenote textarea into
+// the ACTIVE context's wrap (clearing the others so the id never duplicates) and
+// prefills from the CLIENT record. Crew-only, never on the client's proposal.
+function _geiRenderSiteNoteField(prefix){
+  ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-sitenote-wrap');if(w)w.innerHTML='';}});
+  const wrap=document.getElementById(prefix+'-sitenote-wrap');if(!wrap)return;
+  const c=(_geiClientId!=null&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
+  const val=(c&&c.siteNote)||'';
+  wrap.innerHTML='<div class="card" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">'+
+    '<div class="f"><label>Site notes <span style="font-weight:600;color:var(--text3);text-transform:none;letter-spacing:0">· crew only, never on the client\'s proposal</span></label>'+
+    '<textarea id="gei-sitenote" rows="2" style="width:100%;box-sizing:border-box;padding:10px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical" placeholder="Gate code, dog, where to park, tricky access...">'+escHtml(val)+'</textarea></div></div>';
+}
 function _geiShowSharedChrome(prefix){
   const m=_GEI_MODES[prefix];if(!m)return;
   ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
@@ -885,6 +899,7 @@ function _geiShowSharedChrome(prefix){
   _geiRenderProfitGauge(prefix,m.gaugeOninput);
   _geiRenderActionButtons(prefix,m.actionOpts);
   _geiRenderDepositField(prefix,m.depositOninput);
+  _geiRenderSiteNoteField(prefix);
   // Trade branding in title
   const tmMeta=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
   const titleEl=document.getElementById(prefix+'-tbar-title');
@@ -2890,9 +2905,11 @@ function saveGenericEstimate(draft){
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
   }
   // Site notes → CLIENT record (never the bid, so they never reach the proposal).
-  // One shared save for every estimate type (T&M, BYO, future), the estimate is
-  // the capture point and it flows to the crew's internal surfaces from here.
-  if(_geiClientId!=null&&clients.find){const _c=clients.find(x=>String(x.id)===String(_geiClientId));if(_c){_c.siteNote=(v('gei-sitenote')||'').trim();saveAll();}}
+  // One shared save for every estimate type (T&M, BYO, future). Only write when
+  // the field was actually rendered (guards against a save from a screen that
+  // never showed it silently wiping an existing site note).
+  const _snEl=document.getElementById('gei-sitenote');
+  if(_snEl&&_geiClientId!=null&&clients.find){const _c=clients.find(x=>String(x.id)===String(_geiClientId));if(_c){_c.siteNote=_snEl.value.trim();saveAll();}}
   if(!draft)_saveToLineHistory();
   showToast(draft?'Draft saved':'Proposal saved','✅');
   if(!draft)goPg('pg-clients');

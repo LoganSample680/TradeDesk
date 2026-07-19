@@ -1762,6 +1762,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <span class="chip chip-int" id="tm-cad-milestone" onclick="_tmCadence('milestone')">By milestone</span>
             <span class="chip chip-int" id="tm-cad-completion" onclick="_tmCadence('completion')">On completion</span>
           </div>
+          <div id="tm-sitenote-wrap"></div>
           <div id="tm-actions-wrap"></div>
         </div>
       </div>
@@ -1791,6 +1792,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div id="byo-gauge-wrap"></div>
           <div class="summary-divider"></div>
           <div id="byo-deposit-wrap"></div>
+          <div id="byo-sitenote-wrap"></div>
           <div id="byo-actions-wrap"></div>
         </div>
       </div>
@@ -1995,9 +1997,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="card" style="margin-bottom:12px">
       <div class="f"><label>Notes / scope details</label><textarea id="gei-notes" rows="3" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical" placeholder="Scope, exclusions, warranty, payment terms..."></textarea></div>
     </div>
-    <div class="card" style="margin-bottom:12px;box-shadow:inset 3px 0 0 var(--amber,#8A4E00)">
-      <div class="f"><label>Site notes <span style="font-weight:600;color:var(--text3);text-transform:none;letter-spacing:0">· crew only, never on the client's proposal</span></label><textarea id="gei-sitenote" rows="2" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical" placeholder="Gate code, dog, where to park, tricky access..."></textarea></div>
-    </div>
+    <div id="gen-sitenote-wrap"></div>
     <div class="card" style="margin-bottom:12px">
       <div class="f"><label>Est. duration</label><input type="text" id="gei-duration" placeholder="e.g. 4 hrs, 2 days"></div>
     </div>

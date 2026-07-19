@@ -2272,6 +2272,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         bids = bids.filter(x => x.client_id !== 88820);
         openGenericEstimate(c, null, 'general');
         _geiIsFreeForm = true; _geiIsTM = false;
+        goGeiStep(2); // render the BYO page so the shared #gei-sitenote field mounts
         document.getElementById('gei-notes').value = 'Client-facing scope + warranty';
         document.getElementById('gei-sitenote').value = 'Gate code 4412, dog in back';
         _geiLines = [{ desc: 'Work', qty: 1, rate: 500, total: 500 }];
@@ -2295,6 +2296,7 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       const r = await page.evaluate(() => {
         const c = clients.find(x => x.id === 88820);
         openGenericEstimate(c, null, 'general');
+        goGeiStep(3); // generic wizard review step mounts the shared #gei-sitenote field
         return { loaded: document.getElementById('gei-sitenote').value };
       });
       expect(r.loaded).toBe('Gate code 4412, dog in back');
@@ -2309,6 +2311,26 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         };
       });
       expect(r.proposalTouchesSite).toBe(false);
+    });
+
+    test('one code path: the shared site-note field mounts in T&M AND BYO AND the generic wizard', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88821, name: 'Shared Field Client', addr: '9 One Path Rd' };
+        clients = clients.filter(x => x.id !== 88821).concat([c]);
+        const vis = () => { const e = document.getElementById('gei-sitenote'); return !!(e && e.offsetParent !== null); };
+        const ids = () => document.querySelectorAll('#gei-sitenote').length; // exactly one id, never duplicated
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        const tm = { vis: vis(), count: ids() };
+        openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
+        const byo = { vis: vis(), count: ids() };
+        openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = false; goGeiStep(3);
+        const gen = { vis: vis(), count: ids() };
+        return { tm, byo, gen };
+      });
+      for (const mode of ['tm', 'byo', 'gen']) {
+        expect(r[mode].vis, `${mode} field visible`).toBe(true);
+        expect(r[mode].count, `${mode} single id`).toBe(1);
+      }
     });
   });
 
