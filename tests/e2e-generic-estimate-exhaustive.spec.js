@@ -2332,6 +2332,31 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
         expect(r[mode].count, `${mode} single id`).toBe(1);
       }
     });
+
+    test('typing persists live to the client record (no explicit save needed)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88822, name: 'Live Save Client', addr: '3 Live Rd' };
+        clients = clients.filter(x => x.id !== 88822).concat([c]);
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        _geiSiteNoteInput('Park in the alley, side gate'); // what oninput fires
+        return { onClient: clients.find(x => x.id === 88822).siteNote };
+      });
+      expect(r.onClient).toBe('Park in the alley, side gate');
+    });
+
+    test('BYO: the note card sits directly above the Terms & Conditions card', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88823, name: 'Order Client', addr: '7 Order Rd' };
+        clients = clients.filter(x => x.id !== 88823).concat([c]);
+        openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
+        const note = document.getElementById('gei-sitenote');
+        const terms = document.getElementById('byo-custom-terms');
+        // note precedes terms in document order
+        return { both: !!note && !!terms, notePrecedesTerms: !!(note && terms && (note.compareDocumentPosition(terms) & Node.DOCUMENT_POSITION_FOLLOWING)) };
+      });
+      expect(r.both).toBe(true);
+      expect(r.notePrecedesTerms).toBe(true);
+    });
   });
 
   test.describe('_GEI_MODES / _geiShowSharedChrome: one code path for both estimate pages', () => {

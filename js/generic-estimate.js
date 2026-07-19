@@ -879,14 +879,32 @@ const _GEI_MODES={
 // BYO, and the generic wizard). Renders the single #gei-sitenote textarea into
 // the ACTIVE context's wrap (clearing the others so the id never duplicates) and
 // prefills from the CLIENT record. Crew-only, never on the client's proposal.
+// Live persistence: the site note writes straight to the CLIENT record as the
+// contractor types (debounced saveAll), so a re-render of the surrounding
+// section never drops unsaved keystrokes and every internal surface reads the
+// same source of truth.
+let _geiSiteNoteT=null;
+function _geiSiteNoteInput(val){
+  if(_geiClientId==null||!clients.find)return;
+  const c=clients.find(x=>String(x.id)===String(_geiClientId));if(!c)return;
+  c.siteNote=val;
+  if(_geiSiteNoteT)clearTimeout(_geiSiteNoteT);
+  _geiSiteNoteT=setTimeout(()=>{try{saveAll();}catch(e){}},400);
+}
 function _geiRenderSiteNoteField(prefix){
   ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-sitenote-wrap');if(w)w.innerHTML='';}});
   const wrap=document.getElementById(prefix+'-sitenote-wrap');if(!wrap)return;
   const c=(_geiClientId!=null&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
   const val=(c&&c.siteNote)||'';
-  wrap.innerHTML='<div class="card" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">'+
-    '<div class="f"><label>Site notes <span style="font-weight:600;color:var(--text3);text-transform:none;letter-spacing:0">· crew only, never on the client\'s proposal</span></label>'+
-    '<textarea id="gei-sitenote" rows="2" style="width:100%;box-sizing:border-box;padding:10px;border-radius:var(--r);border:1px solid var(--border2);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical" placeholder="Gate code, dog, where to park, tricky access...">'+escHtml(val)+'</textarea></div></div>';
+  // Mirrors the Terms & Conditions card it sits above, amber inset stripe marks
+  // it internal. One id (#gei-sitenote) across T&M, BYO, and the generic wizard.
+  wrap.innerHTML='<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">'+
+    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Notes for your client record</div></div>'+
+    '<div style="padding:12px 14px">'+
+      '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Saved to this client and shown to your crew. Never appears on the proposal the client sees.</div>'+
+      '<textarea id="gei-sitenote" rows="3" oninput="_geiSiteNoteInput(this.value)" placeholder="Gate code, dog, where to park, tricky access..." style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val)+'</textarea>'+
+    '</div>'+
+  '</div>';
 }
 function _geiShowSharedChrome(prefix){
   const m=_GEI_MODES[prefix];if(!m)return;
@@ -1195,7 +1213,9 @@ function _byoRenderSections(){
         'style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;box-sizing:border-box;line-height:1.5">'+escHtml(_byoCustomTerms||'')+'</textarea>'+
     '</div>'+
   '</div>';
-  wrap.innerHTML=secHtml+addSecBtn+tcCard;
+  // Internal client-record note sits directly on top of Terms & Conditions.
+  wrap.innerHTML=secHtml+addSecBtn+'<div id="byo-sitenote-wrap"></div>'+tcCard;
+  _geiRenderSiteNoteField('byo');
 }
 function _byoToggle(idx){
   if(_byoItems[idx]&&!_byoItems[idx].required){_byoItems[idx].on=!_byoItems[idx].on;_byoRenderSections();_byoUpdateRail();_byoAutosave();}
