@@ -2218,61 +2218,83 @@ function _mapsPickAddr(idx){
 }
 let _cdAddrList=[];
 function _cdMapAddr(i){const a=_cdAddrList[i];if(a)window.open('https://maps.apple.com/?daddr='+encodeURIComponent(a),'_blank');}
+function _cdDShort(s){if(!s)return '';const d=new Date(s);return isNaN(d)?String(s):d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});}
+// One property card = one address: Zillow facts + pre-1978 lead trigger + the
+// crew site note + every proposal/job at THIS address with dates, dollars, and
+// running billed/paid totals. Same card for the primary and every extra address.
+function _cdPropCardHtml(c,a,idx,isLast){
+  const p=getProperty(c,a.addr);
+  const note=getSiteNote(c,a.addr);
+  const hist=getPropertyHistory(c,a.addr);
+  const openKey='_cdpropOpen_'+c.id+'_'+idx;
+  const isOpen=!!window[openKey];
+  const pre78=!!(p.yearBuilt&&p.yearBuilt<1978);
+  const pre78Badge=pre78?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">${svgIcon('⚠️')} Pre-1978</span>`:'';
+  const ep=(typeof _parseAddrParts==='function')?_parseAddrParts(a.addr||''):{street:a.addr||'',city:'',state:'',zip:''};
+  const street=(idx===0&&c.street)?c.street:ep.street;
+  const city=(idx===0&&c.city)?c.city:ep.city;
+  const state=(idx===0&&c.state)?c.state:ep.state;
+  const zip=(idx===0&&c.zip)?c.zip:ep.zip;
+  const srcBadge=p.propDataFetchedAt
+    ?(p.propDataExact===false?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(area avg)</span>`:'')
+    :(street&&city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(street)}',city:'${escHtml(city)}',state:'${escHtml(state||'')}',zip:'${escHtml(zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">${svgIcon('🏠')} Look up</button>`:'');
+  const estPill=p.estimatedValue?`<span style="font-size:11px;font-weight:800;color:var(--text2)">${fmt(p.estimatedValue)}</span>`:'';
+  const chevron=`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">${svgIcon('▶')}</span>`;
+  const factCells=[
+    p.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800">${p.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📅')} Year built</div></div>`:'',
+    p.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(p.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📐')} Sq ft</div></div>`:'',
+    p.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(p.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('💰')} Est. value</div></div>`:'',
+    p.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800">${p.bedrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛏')} Beds</div></div>`:'',
+    p.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800">${p.bathrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛁')} Baths</div></div>`:'',
+    p.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(p.lotSize))}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🌳')} Lot</div></div>`:'',
+  ].filter(Boolean).join('');
+  const leadBanner=pre78?`<div style="background:rgba(163,45,45,.08);border:1px solid rgba(163,45,45,.35);border-radius:var(--r);padding:8px 10px;margin:8px 0;color:#A32D2D;font-size:11px;font-weight:600;line-height:1.4">${svgIcon('⚠️')} Pre-1978 home: federal lead-paint (EPA RRP) disclosure required before disturbing painted surfaces.</div>`:'';
+  const noteLine=note?`<div style="font-size:12px;color:var(--text2);margin:8px 0;padding:7px 9px;background:var(--bg2);border-left:3px solid var(--amber,#8A4E00);border-radius:var(--r);white-space:pre-wrap"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-right:5px">Access</span>${escHtml(note)}</div>`:'';
+  const propList=hist.proposals.slice().sort((x,y)=>String(y.bid_date||y.created||'').localeCompare(String(x.bid_date||x.created||''))).map(b=>{
+    const dt=b.bid_date||(b.created?String(b.created).slice(0,10):'');
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid var(--border)"><div style="min-width:0"><div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(b.type||b.name||'Proposal')}</div><div style="font-size:10px;color:var(--text3)">${_cdDShort(dt)}${b.status?' · '+escHtml(b.status):''}</div></div><div style="font-size:12px;font-weight:700;flex-shrink:0">${fmt(b.amount||0)}</div></div>`;
+  }).join('');
+  const jobList=hist.jobs.slice().sort((x,y)=>String(y.start||'').localeCompare(String(x.start||''))).map(j=>{
+    const done=(j.status==='completed'||j.status==='done')&&j.end;
+    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid var(--border)"><div style="min-width:0"><div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name||'Job')}</div><div style="font-size:10px;color:var(--text3)">${j.start?_cdDShort(j.start):''}${done?' → '+_cdDShort(j.end):(j.status?' · '+escHtml(j.status):'')}</div></div><div style="font-size:12px;font-weight:700;flex-shrink:0">${fmt(j.value||0)}</div></div>`;
+  }).join('');
+  const historyBlock=(hist.proposals.length||hist.jobs.length)?`
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">History at this address</span><span style="font-size:11px;color:var(--text3)">Billed <strong style="color:var(--text)">${fmt(hist.billed)}</strong> · Paid <strong style="color:var(--text)">${fmt(hist.paid)}</strong></span></div>
+      ${hist.proposals.length?`<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-top:8px">Proposals</div>${propList}`:''}
+      ${hist.jobs.length?`<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-top:8px">Jobs</div>${jobList}`:''}
+    </div>`:`<div style="font-size:11px;color:var(--text3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">No proposals or jobs at this address yet.</div>`;
+  const panel=isOpen?`<div style="padding:8px 0 2px;border-top:1px solid var(--border);margin-top:8px">
+    ${factCells?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px">${factCells}</div>`:''}
+    ${leadBanner}
+    ${p.lastSaleDate||p.lastSalePrice?`<div style="font-size:12px;color:var(--text3);margin-top:8px">Last sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${p.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(p.lastSalePrice)+'</strong>':''}</div>`:''}
+    ${p.assessorUrl?`<div style="margin-top:6px"><a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">${p.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a></div>`:''}
+    ${noteLine}
+    ${historyBlock}
+  </div>`:'';
+  const removeBtn=idx>0?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();removeClientAddress(${idx-1})" style="background:none;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:#A32D2D">✕</button>`:'';
+  return `<div style="padding:9px 0${isLast?'':';border-bottom:1px solid var(--border)'}">
+    <div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;justify-content:space-between;align-items:flex-start;cursor:pointer">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;display:flex;align-items:center;flex-wrap:wrap;gap:2px">${escHtml(a.label||'Primary')}${pre78Badge}${srcBadge}</div>
+        <div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(a.addr||'No address')}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px;margin-top:2px">
+        ${estPill}${chevron}
+        <button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
+        ${removeBtn}
+      </div>
+    </div>
+    ${panel}
+  </div>`;
+}
 function renderCDAddresses(){
   const el=document.getElementById('cd-addresses-list');if(!el)return;
   const c=getClientById(currentClientId);if(!c)return;
-  const extras=(c.extraAddresses||[]);
-  _cdAddrList=[c.addr,...extras.map(a=>a.addr)];
-  const openKey='_cdpropOpen_'+currentClientId;
-  const isOpen=!!window[openKey];
-  const hasProp=!!(c.yearBuilt||c.sqft||c.estimatedValue||c.stories||c.bedrooms||c.bathrooms||c.exteriorMaterial||c.roofType||c.garage||c.lotSize||c.lastSaleDate||c.isRental);
-  const pre78Badge=c.yearBuilt&&c.yearBuilt<1978?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">${svgIcon('⚠️')} Pre-1978</span>`:'';
-  const srcBadge=c.propDataFetchedAt
-    ?(c.propDataExact===false?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(area avg)</span>`:'')
-    :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">${svgIcon('🏠')} Look up</button>`:'');
-  const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">${svgIcon('▶')}</span>`:'';
-  const propPanel=hasProp&&isOpen?`<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
-      ${c.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📅')} Year built</div></div>`:''}
-      ${c.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📐')} Sq ft</div></div>`:''}
-      ${c.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('💰')} Est. value</div></div>`:''}
-      ${c.stories?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.stories}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🏢')} Stories</div></div>`:''}
-      ${c.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛏')} Beds</div></div>`:''}
-      ${c.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛁')} Baths</div></div>`:''}
-      ${c.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🌳')} Lot</div></div>`:''}
-    </div>
-    ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice||c.assessorUrl?'8px':'0'}">
-      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🏠')} ${escHtml(String(c.exteriorMaterial))}</span>`:''}
-      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🏗️')} ${escHtml(String(c.roofType))}</span>`:''}
-      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🚗')} ${escHtml(String(c.garage))}</span>`:''}
-      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.12);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">${svgIcon('🔑')} Rental</span>`:''}
-    </div>`:''}
-    ${c.lastSaleDate||c.lastSalePrice?`<div style="font-size:12px;color:var(--text3);padding-top:6px;border-top:1px solid var(--border);margin-bottom:${c.assessorUrl?'6px':'0'}">Last sold ${c.lastSaleDate?new Date(c.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${c.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(c.lastSalePrice)+'</strong>':''}</div>`:''}
-    ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">${c.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`:''}
-  </div>`:''
-  let html=`<div style="padding:9px 0${extras.length?';border-bottom:1px solid var(--border)':''}">
-    <div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;justify-content:space-between;align-items:flex-start;cursor:${hasProp?'pointer':'default'}">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:700;display:flex;align-items:center;flex-wrap:wrap;gap:2px">Primary${pre78Badge}${srcBadge}</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(c.addr||'No address')}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px;margin-top:2px">
-        ${chevron}
-        <button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_cdMapAddr(0)" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
-      </div>
-    </div>
-    ${propPanel}
-  </div>`;
-  extras.forEach((a,i)=>{
-    html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0${i<extras.length-1?';border-bottom:1px solid var(--border)':''}">
-      <div><div style="font-size:12px;font-weight:700;color:var(--text3)">${escHtml(a.label||'Property '+(i+2))}</div><div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(a.addr)}</div></div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        <button onclick="_cdMapAddr(${i+1})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
-        <button onclick="removeClientAddress(${i})" style="background:none;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:#A32D2D">✕</button>
-      </div></div>`;
-  });
-  if(!c.addr&&extras.length===0)html+='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No address, edit client to add one.</div>';
-  el.innerHTML=html;
+  const addrs=clientAddresses(c);
+  _cdAddrList=addrs.map(a=>a.addr);
+  if(!addrs.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No address, edit client to add one.</div>';return;}
+  el.innerHTML=addrs.map((a,i)=>_cdPropCardHtml(c,a,i,i===addrs.length-1)).join('');
 }
 function openAddAddressModal(){
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
@@ -2319,26 +2341,29 @@ async function _lookupPropertyData(clientId,addrParts){
     let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
     if(!res.ok||res.status===204)return;
     const d=await res.json();
+    const c=clients.find(x=>x.id===clientId);if(!c)return;
+    // Key property data by the STREET line so it lands on the right address
+    // (primary or an extra), never overwriting a sibling property's data.
+    const _keyAddr=addrParts.street||addr;
+    const _existing=(typeof getProperty==='function')?getProperty(c,_keyAddr):{};
     if(d.error||d.found===false){
       // Backend has no record for this address. Stamp propDataFetchedAt so the
       // background queue (filters on !propDataFetchedAt) doesn't re-query it on
       // every boot, that repeated lookup was the recurring /api/property miss.
-      const c0=clients.find(x=>x.id===clientId);
-      if(c0&&!c0.propDataFetchedAt){c0.propDataFetchedAt=new Date().toISOString();c0.propDataMiss=true;saveAll();}
+      if(!_existing.propDataFetchedAt){setPropertyData(c,_keyAddr,{propDataFetchedAt:new Date().toISOString(),propDataMiss:true});saveAll();}
       return;
     }
-    const c=clients.find(x=>x.id===clientId);if(!c)return;
-    if(d.yearBuilt&&!c.yearBuilt)c.yearBuilt=d.yearBuilt;
-    if(d.sqft)c.sqft=d.sqft;
-    if(d.estValue)c.estimatedValue=d.estValue;
-    if(d.beds)c.bedrooms=d.beds;
-    if(d.baths)c.bathrooms=d.baths;
-    if(d.lastSalePrice)c.lastSalePrice=d.lastSalePrice;
-    if(d.lastSaleDate)c.lastSaleDate=d.lastSaleDate;
-    if(d.propertyUrl)c.assessorUrl=d.propertyUrl;
-    c.propDataSource='zillow';
-    c.propDataExact=true;
-    c.propDataFetchedAt=new Date().toISOString();
+    const _pd={};
+    if(d.yearBuilt&&!_existing.yearBuilt)_pd.yearBuilt=d.yearBuilt; // never override a manually-entered year
+    if(d.sqft)_pd.sqft=d.sqft;
+    if(d.estValue)_pd.estimatedValue=d.estValue;
+    if(d.beds)_pd.bedrooms=d.beds;
+    if(d.baths)_pd.bathrooms=d.baths;
+    if(d.lastSalePrice)_pd.lastSalePrice=d.lastSalePrice;
+    if(d.lastSaleDate)_pd.lastSaleDate=d.lastSaleDate;
+    if(d.propertyUrl)_pd.assessorUrl=d.propertyUrl;
+    _pd.propDataSource='zillow';_pd.propDataExact=true;_pd.propDataFetchedAt=new Date().toISOString();
+    setPropertyData(c,_keyAddr,_pd);
     saveAll();
     if(currentClientId===clientId)renderClientDetail();
   }catch(e){console.warn('Property lookup failed:',e);}

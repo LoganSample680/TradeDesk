@@ -2556,6 +2556,130 @@ test.describe('clients.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Per-property records: facts + lead trigger + history, keyed by address
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('Per-property records (address as first-class)', () => {
+    test('getProperty/setPropertyData: each address keeps its own facts, no cross-bleed', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 970101, name: 'Two Prop', addr: '10 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 Side Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 970101).concat([c]);
+        setPropertyData(c, '10 Main St', { yearBuilt: 2010, estimatedValue: 400000 });
+        setPropertyData(c, '22 Side Ave', { yearBuilt: 1950, estimatedValue: 150000 });
+        return {
+          mainYear: getProperty(c, '10 Main St').yearBuilt,
+          sideYear: getProperty(c, '22 Side Ave').yearBuilt,
+          mainVal: getProperty(c, '10 Main St').estimatedValue,
+          sideVal: getProperty(c, '22 Side Ave').estimatedValue,
+          primaryMirror: c.yearBuilt, // primary write mirrors to client-level
+        };
+      });
+      expect(r.mainYear).toBe(2010);
+      expect(r.sideYear).toBe(1950);
+      expect(r.mainVal).toBe(400000);
+      expect(r.sideVal).toBe(150000);
+      expect(r.primaryMirror).toBe(2010);
+    });
+
+    test('legacy: a client-level yearBuilt reads as the PRIMARY address property (no migration)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 970102, name: 'Legacy', addr: '5 Old Rd, Town, KS 60000', yearBuilt: 1962, estimatedValue: 90000 };
+        clients = clients.filter(x => x.id !== 970102).concat([c]);
+        const p = getProperty(c, c.addr);
+        // A different, unseeded address returns no legacy facts (not the primary's).
+        const other = getProperty(c, '999 Nowhere Blvd');
+        return { legacyYear: p.yearBuilt, legacyVal: p.estimatedValue, otherYear: other.yearBuilt || null };
+      });
+      expect(r.legacyYear).toBe(1962);
+      expect(r.legacyVal).toBe(90000);
+      expect(r.otherYear).toBe(null);
+    });
+
+    test('pre-1978 lead trigger is per-address: only the old property fires', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 970103, name: 'Lead Split', addr: '1 New Way, Town, KS 60000',
+          extraAddresses: [{ label: 'Old', addr: '2 Old Way, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 970103).concat([c]);
+        setPropertyData(c, '1 New Way', { yearBuilt: 2005 });
+        setPropertyData(c, '2 Old Way', { yearBuilt: 1948 });
+        const pre78 = a => { const y = getProperty(c, a).yearBuilt; return !!(y && y < 1978); };
+        return { newPre78: pre78('1 New Way'), oldPre78: pre78('2 Old Way') };
+      });
+      expect(r.newPre78).toBe(false);
+      expect(r.oldPre78).toBe(true);
+    });
+
+    test('getPropertyHistory: proposals, jobs, billed and paid roll up per address', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970104;
+        const c = { id: cid, name: 'Hist Co', addr: 'A St, Town, KS 60000',
+          extraAddresses: [{ label: 'B', addr: 'B Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        bids = bids.filter(b => b.client_id !== cid).concat([
+          { id: 970201, client_id: cid, name: 'P1', addr: 'A St, Town, KS 60000', amount: 1000, status: 'Sent', bid_date: '2026-01-01' },
+          { id: 970202, client_id: cid, name: 'P2', addr: 'B Ave, Town, KS 60000', amount: 2000, status: 'Sent', bid_date: '2026-01-02' },
+          { id: 970203, client_id: cid, name: 'P-noaddr' /* no addr → primary */, amount: 500, status: 'Sent', bid_date: '2026-01-03' },
+        ]);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: 970301, client_id: cid, name: 'J1', addr: 'A St, Town, KS 60000', value: 1000, status: 'completed', start: '2026-01-10', end: '2026-01-12' },
+          { id: 970302, client_id: cid, name: 'J2', addr: 'B Ave, Town, KS 60000', value: 2000, status: 'upcoming', start: '2026-02-01' },
+        ]);
+        payments = payments.filter(p => p.client_id !== cid).concat([
+          { id: 970401, client_id: cid, job_id: 970301, amount: 1000, date: '2026-01-13' },
+        ]);
+        const A = getPropertyHistory(c, 'A St');
+        const B = getPropertyHistory(c, 'B Ave');
+        return {
+          aProps: A.proposals.length, aJobs: A.jobs.length, aBilled: A.billed, aPaid: A.paid,
+          bProps: B.proposals.length, bJobs: B.jobs.length, bBilled: B.billed, bPaid: B.paid,
+        };
+      });
+      expect(r.aProps).toBe(2);   // P1 + the addr-less proposal folds into primary
+      expect(r.aJobs).toBe(1);
+      expect(r.aBilled).toBe(1000);
+      expect(r.aPaid).toBe(1000);
+      expect(r.bProps).toBe(1);
+      expect(r.bJobs).toBe(1);
+      expect(r.bBilled).toBe(2000);
+      expect(r.bPaid).toBe(0);    // B's job not paid yet
+    });
+
+    test('clientAddresses: primary + extras, deduped by street key', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 970105, name: 'Addr Co', addr: '7 First St, Town, KS 60000',
+          extraAddresses: [{ label: 'Two', addr: '8 Second St, Town, KS 60000' }, { label: 'Dupe', addr: '7 First St, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 970105).concat([c]);
+        const a = clientAddresses(c);
+        return { count: a.length, first: a[0].label };
+      });
+      expect(r.count).toBe(2);        // duplicate of primary dropped
+      expect(r.first).toBe('Primary');
+    });
+
+    test('renderCDAddresses: one card per address; pre-1978 banner only on the old one; no throw', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970106;
+        const c = { id: cid, name: 'Render Co', addr: '3 Newer Ln, Town, KS 60000',
+          extraAddresses: [{ label: 'Old rental', addr: '4 Older Ln, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '3 Newer Ln', { yearBuilt: 2001, estimatedValue: 300000 });
+        setPropertyData(c, '4 Older Ln', { yearBuilt: 1940, estimatedValue: 120000 });
+        currentClientId = cid;
+        let ok = true, err = '';
+        try { window['_cdpropOpen_' + cid + '_0'] = true; window['_cdpropOpen_' + cid + '_1'] = true; renderCDAddresses(); }
+        catch (e) { ok = false; err = e.message; }
+        const html = document.getElementById('cd-addresses-list').innerHTML;
+        const leadCount = (html.match(/EPA RRP/g) || []).length;
+        return { ok, err, hasNewer: html.includes('3 Newer Ln'), hasOlder: html.includes('4 Older Ln'), leadCount };
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.hasNewer).toBe(true);
+      expect(r.hasOlder).toBe(true);
+      expect(r.leadCount).toBe(1); // lead banner renders once, for the pre-1978 address only
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // no console errors
   // ═══════════════════════════════════════════════════════════════════════════
   test('no console errors, clients.js', async () => {

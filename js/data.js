@@ -314,6 +314,60 @@ function setSiteNote(client,addr,text){
   // Keep the legacy primary-address field in sync for any un-migrated reader.
   if(k===siteNoteKey(client.addr))client.siteNote=text;
 }
+// ── Per-property records (address = first-class) ──────────────────────────
+// One client owns many addresses (primary c.addr + c.extraAddresses[]). Property
+// facts (Zillow/Redfin lookup: year built, value, sqft, beds/baths, last sale)
+// and the pre-1978 lead trigger are PER-ADDRESS, keyed on client.properties{}.
+// Legacy clients kept these on the client itself; those are read as the record
+// for the client's PRIMARY address, and primary-address writes stay mirrored, so
+// no migration. Whole-object cloud sync persists client.properties for free.
+const _addrKey=siteNoteKey; // one address-normalization key for notes + properties
+const _PROP_FIELDS=['yearBuilt','sqft','estimatedValue','bedrooms','bathrooms','stories','lotSize','exteriorMaterial','roofType','garage','isRental','lastSalePrice','lastSaleDate','assessorUrl','propDataSource','propDataExact','propDataFetchedAt','propDataMiss','rrpDisturb'];
+function getProperty(client,addr){
+  const out={};if(!client)return out;
+  const k=_addrKey(addr||client.addr);
+  const rec=(k&&client.properties&&client.properties[k])||null;
+  const isPrimary=!k||k===_addrKey(client.addr);
+  _PROP_FIELDS.forEach(f=>{
+    if(rec&&rec[f]!=null)out[f]=rec[f];
+    else if(isPrimary&&client[f]!=null)out[f]=client[f]; // legacy client-level = primary address
+  });
+  return out;
+}
+function setPropertyData(client,addr,data){
+  if(!client||!data)return;
+  const k=_addrKey(addr||client.addr);if(!k)return;
+  client.properties=client.properties||{};
+  const rec=client.properties[k]||(client.properties[k]={});
+  _PROP_FIELDS.forEach(f=>{if(data[f]!=null)rec[f]=data[f];});
+  // Mirror to legacy client-level fields for the primary address (back-compat).
+  if(k===_addrKey(client.addr))_PROP_FIELDS.forEach(f=>{if(data[f]!=null)client[f]=data[f];});
+}
+// Every address this client has: primary + saved extras. {label, addr, key}.
+function clientAddresses(client){
+  const out=[];if(!client)return out;const seen={};
+  const push=(label,addr)=>{const k=_addrKey(addr);if(!k||seen[k])return;seen[k]=1;out.push({label,addr,key:k});};
+  push('Primary',client.addr);
+  (client.extraAddresses||[]).forEach((a,i)=>push(a.label||('Property '+(i+2)),a.addr));
+  return out;
+}
+// Proposals + jobs tied to one address (bids/jobs with no address fall to the
+// client's primary), plus billed (job value) and paid (matched payments) totals.
+function getPropertyHistory(client,addr){
+  const res={proposals:[],jobs:[],billed:0,paid:0};
+  if(!client)return res;
+  const cid=client.id,k=_addrKey(addr||client.addr);
+  const match=a=>_addrKey(a||client.addr)===k;
+  const jobIds={};
+  (typeof bids!=='undefined'?bids:[]).forEach(b=>{if(b.client_id===cid&&match(b.addr))res.proposals.push(b);});
+  (typeof jobs!=='undefined'?jobs:[]).forEach(j=>{if(j.client_id===cid&&match(j.addr)){res.jobs.push(j);res.billed+=Number(j.value||0);jobIds[j.id]=1;}});
+  (typeof payments!=='undefined'?payments:[]).forEach(p=>{
+    if(p.client_id!==cid)return;
+    if(p.job_id!=null&&jobIds[p.job_id])res.paid+=Number(p.amount||0);
+    else if(p.bid_id!=null&&res.proposals.some(b=>b.id===p.bid_id))res.paid+=Number(p.amount||0);
+  });
+  return res;
+}
 function getClientTier(c){
   if(!c)return 'C';
   if(c.tier)return c.tier;
