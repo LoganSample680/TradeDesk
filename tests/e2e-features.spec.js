@@ -7640,9 +7640,8 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
     const r = await page.evaluate(async () => {
       const clearKey = '2031-06-10', rainOpenKey = '2031-06-11', rainBufKey = '2031-06-12', rainTakenKey = '2031-06-13';
       // _weatherCache/_weatherCacheTime (js/data.js) are `let`-declared at top
-      // script scope, a global lexical binding, NOT a window property (the
-      // same footgun as _billingGateLocked earlier this session) — must set
-      // the bare identifier, window._weatherCache is a silent no-op.
+      // script scope, a global lexical binding, NOT a window property, so you
+      // must set the bare identifier; window._weatherCache is a silent no-op.
       _weatherCache = {
         [clearKey]: { icon: '☀️', label: 'Sunny', rain: false, hi: 88, lo: 65 },
         [rainOpenKey]: { icon: '🌧️', label: 'Rain', rain: true, hi: 74, lo: 60 },

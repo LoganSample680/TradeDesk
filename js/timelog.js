@@ -150,12 +150,9 @@ function _tlFmtTime(iso){
   return d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
 }
 let _tlLastRows=[];
-// Owner spec 2026-07-17: locked the same as Books exports, 2 consecutive
-// billing cycles or exempt. See _requireExportsUnlocked (js/cloud.js). Split
-// from the actual CSV build below so the build logic stays independently
+// Split from the actual CSV build below so the build logic stays independently
 // testable (tests/e2e-timelog.spec.js calls _tlDoExportCSV directly).
 async function _tlExportCSV(){
-  if(typeof _requireExportsUnlocked==='function'&&!(await _requireExportsUnlocked()))return;
   _tlDoExportCSV();
 }
 function _tlDoExportCSV(){
