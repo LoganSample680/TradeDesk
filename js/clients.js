@@ -2219,6 +2219,8 @@ function _mapsPickAddr(idx){
 let _cdAddrList=[];
 function _cdMapAddr(i){const a=_cdAddrList[i];if(a)window.open('https://maps.apple.com/?daddr='+encodeURIComponent(a),'_blank');}
 function _cdDShort(s){if(!s)return '';const d=new Date(s);return isNaN(d)?String(s):d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});}
+// Compact money for the property value header: $385K, $1.2M (no cents on a home value).
+function _cdCompactMoney(n){n=Number(n)||0;if(n>=1e6)return '$'+(n/1e6).toFixed(n%1e6?1:0).replace(/\.0$/,'')+'M';if(n>=1e3)return '$'+Math.round(n/1e3)+'K';return '$'+Math.round(n);}
 // One property card = one address: Zillow facts + pre-1978 lead trigger + the
 // crew site note + every proposal/job at THIS address with dates, dollars, and
 // running billed/paid totals. Same card for the primary and every extra address.
@@ -2229,64 +2231,83 @@ function _cdPropCardHtml(c,a,idx,isLast){
   const openKey='_cdpropOpen_'+c.id+'_'+idx;
   const isOpen=!!window[openKey];
   const pre78=!!(p.yearBuilt&&p.yearBuilt<1978);
-  const pre78Badge=pre78?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">${svgIcon('⚠️')} Pre-1978</span>`:'';
   const ep=(typeof _parseAddrParts==='function')?_parseAddrParts(a.addr||''):{street:a.addr||'',city:'',state:'',zip:''};
-  const street=(idx===0&&c.street)?c.street:ep.street;
+  const street=((idx===0&&c.street)?c.street:ep.street)||a.addr||'No address';
   const city=(idx===0&&c.city)?c.city:ep.city;
   const state=(idx===0&&c.state)?c.state:ep.state;
   const zip=(idx===0&&c.zip)?c.zip:ep.zip;
-  const srcBadge=p.propDataFetchedAt
-    ?(p.propDataExact===false?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(area avg)</span>`:'')
-    :(street&&city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(street)}',city:'${escHtml(city)}',state:'${escHtml(state||'')}',zip:'${escHtml(zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">${svgIcon('🏠')} Look up</button>`:'');
-  const estPill=p.estimatedValue?`<span style="font-size:11px;font-weight:800;color:var(--text2)">${fmt(p.estimatedValue)}</span>`:'';
-  const chevron=`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">${svgIcon('▶')}</span>`;
-  const factCells=[
-    p.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800">${p.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📅')} Year built</div></div>`:'',
-    p.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(p.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📐')} Sq ft</div></div>`:'',
-    p.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(p.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('💰')} Est. value</div></div>`:'',
-    p.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800">${p.bedrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛏')} Beds</div></div>`:'',
-    p.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800">${p.bathrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛁')} Baths</div></div>`:'',
-    p.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(p.lotSize))}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🌳')} Lot</div></div>`:'',
-  ].filter(Boolean).join('');
-  const leadBanner=pre78?`<div style="background:rgba(163,45,45,.08);border:1px solid rgba(163,45,45,.35);border-radius:var(--r);padding:8px 10px;margin:8px 0;color:#A32D2D;font-size:11px;font-weight:600;line-height:1.4">${svgIcon('⚠️')} Pre-1978 home: federal lead-paint (EPA RRP) disclosure required before disturbing painted surfaces.</div>`:'';
-  const noteLine=note?`<div style="font-size:12px;color:var(--text2);margin:8px 0;padding:7px 9px;background:var(--bg2);border-left:3px solid var(--amber,#8A4E00);border-radius:var(--r);white-space:pre-wrap"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-right:5px">Access</span>${escHtml(note)}</div>`:'';
-  const propList=hist.proposals.slice().sort((x,y)=>String(y.bid_date||y.created||'').localeCompare(String(x.bid_date||x.created||''))).map(b=>{
-    const dt=b.bid_date||(b.created?String(b.created).slice(0,10):'');
-    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid var(--border)"><div style="min-width:0"><div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(b.type||b.name||'Proposal')}</div><div style="font-size:10px;color:var(--text3)">${_cdDShort(dt)}${b.status?' · '+escHtml(b.status):''}</div></div><div style="font-size:12px;font-weight:700;flex-shrink:0">${fmt(b.amount||0)}</div></div>`;
-  }).join('');
-  const jobList=hist.jobs.slice().sort((x,y)=>String(y.start||'').localeCompare(String(x.start||''))).map(j=>{
-    const done=(j.status==='completed'||j.status==='done')&&j.end;
-    return `<div style="display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-top:1px solid var(--border)"><div style="min-width:0"><div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name||'Job')}</div><div style="font-size:10px;color:var(--text3)">${j.start?_cdDShort(j.start):''}${done?' → '+_cdDShort(j.end):(j.status?' · '+escHtml(j.status):'')}</div></div><div style="font-size:12px;font-weight:700;flex-shrink:0">${fmt(j.value||0)}</div></div>`;
-  }).join('');
-  const historyBlock=(hist.proposals.length||hist.jobs.length)?`
-    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border)">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px"><span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">History at this address</span><span style="font-size:11px;color:var(--text3)">Billed <strong style="color:var(--text)">${fmt(hist.billed)}</strong> · Paid <strong style="color:var(--text)">${fmt(hist.paid)}</strong></span></div>
-      ${hist.proposals.length?`<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-top:8px">Proposals</div>${propList}`:''}
-      ${hist.jobs.length?`<div style="font-size:9px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-top:8px">Jobs</div>${jobList}`:''}
-    </div>`:`<div style="font-size:11px;color:var(--text3);margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">No proposals or jobs at this address yet.</div>`;
-  const panel=isOpen?`<div style="padding:8px 0 2px;border-top:1px solid var(--border);margin-top:8px">
-    ${factCells?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px">${factCells}</div>`:''}
-    ${leadBanner}
-    ${p.lastSaleDate||p.lastSalePrice?`<div style="font-size:12px;color:var(--text3);margin-top:8px">Last sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${p.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(p.lastSalePrice)+'</strong>':''}</div>`:''}
-    ${p.assessorUrl?`<div style="margin-top:6px"><a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">${p.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a></div>`:''}
-    ${noteLine}
-    ${historyBlock}
-  </div>`:'';
-  const removeBtn=idx>0?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();removeClientAddress(${idx-1})" style="background:none;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:#A32D2D">✕</button>`:'';
-  return `<div style="padding:9px 0${isLast?'':';border-bottom:1px solid var(--border)'}">
-    <div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;justify-content:space-between;align-items:flex-start;cursor:pointer">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:700;display:flex;align-items:center;flex-wrap:wrap;gap:2px">${escHtml(a.label||'Primary')}${pre78Badge}${srcBadge}</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(a.addr||'No address')}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px;margin-top:2px">
-        ${estPill}${chevron}
-        <button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
-        ${removeBtn}
-      </div>
+  const cityLine=[city,state].filter(Boolean).join(', ');
+  // Collapsed summary line: calm, one row, only what identifies the property.
+  const metaBits=[cityLine,p.yearBuilt?('Built '+p.yearBuilt):''].filter(Boolean);
+  const metaLine=metaBits.join('  ·  ')||'No property details yet';
+  const workCount=hist.proposals.length+hist.jobs.length;
+  const value=p.estimatedValue?_cdCompactMoney(p.estimatedValue):'';
+  // Chips: only the ones that matter at a glance.
+  const chips=[];
+  if(pre78)chips.push(`<span style="font-size:9px;font-weight:800;letter-spacing:.03em;color:#A32D2D;background:rgba(163,45,45,.1);padding:2px 7px;border-radius:20px">PRE-1978</span>`);
+  if(p.isRental)chips.push(`<span style="font-size:9px;font-weight:800;letter-spacing:.03em;color:#E97B00;background:rgba(233,123,0,.12);padding:2px 7px;border-radius:20px">RENTAL</span>`);
+  const chipRow=chips.length?`<div style="display:flex;gap:5px;margin-top:6px">${chips.join('')}</div>`:'';
+
+  // ── Header (always shown) ────────────────────────────────────────────────
+  const labelTag=`<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">${escHtml(a.label||'Primary')}</span>`;
+  const valueBlock=value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'';
+  const chevron=`<span style="font-size:11px;color:var(--text3);flex-shrink:0;display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s">${svgIcon('▶')}</span>`;
+  const header=`<div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer">
+    <div style="flex:1;min-width:0">
+      ${labelTag}
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(street)}</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}</div>
+      ${chipRow}
     </div>
-    ${panel}
+    ${valueBlock}
+    ${chevron}
   </div>`;
+
+  // ── Expanded body ────────────────────────────────────────────────────────
+  let body='';
+  if(isOpen){
+    const leadRow=pre78?`<div style="display:flex;gap:9px;align-items:flex-start;padding:10px 12px;background:rgba(163,45,45,.06);border-radius:12px;margin-bottom:12px;color:#A32D2D;font-size:12px;line-height:1.4"><span style="flex-shrink:0">${svgIcon('⚠️')}</span><span><strong>Pre-1978 home.</strong> Federal lead-paint (EPA RRP) disclosure required before disturbing paint.</span></div>`:'';
+    const noteRow=note?`<div style="display:flex;gap:9px;padding:10px 12px;background:var(--bg2);border-left:3px solid var(--amber,#8A4E00);border-radius:10px;margin-bottom:12px;font-size:12px;color:var(--text2);line-height:1.45;white-space:pre-wrap"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);flex-shrink:0;padding-top:2px">Access</span><span style="min-width:0">${escHtml(note)}</span></div>`:'';
+    // Secondary facts as one calm muted line (beds/baths/last sale).
+    const detailBits=[];
+    if(p.sqft)detailBits.push(`${Number(p.sqft).toLocaleString()} sqft`);
+    if(p.bedrooms||p.bathrooms)detailBits.push(`${p.bedrooms||'?'} bd / ${p.bathrooms||'?'} ba`);
+    if(p.lotSize)detailBits.push(`${escHtml(String(p.lotSize))} lot`);
+    if(p.lastSalePrice||p.lastSaleDate)detailBits.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${p.lastSalePrice?' for '+fmt(p.lastSalePrice):''}`.trim());
+    const detailLine=detailBits.length?`<div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5">${detailBits.join('  ·  ')}</div>`:'';
+    // Work items, one clean chronological list with a type tag.
+    const items=[
+      ...hist.proposals.map(b=>({kind:'Proposal',accent:'var(--blue)',name:b.type||b.name||'Proposal',date:b.bid_date||(b.created?String(b.created).slice(0,10):''),amount:b.amount||0,meta:b.status||''})),
+      ...hist.jobs.map(j=>({kind:'Job',accent:'#1f9d57',name:j.name||'Job',date:j.start||'',amount:j.value||0,meta:(j.status==='completed'||j.status==='done')&&j.end?('Done '+_cdDShort(j.end)):(j.status||'')})),
+    ].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
+    const rows=items.map(it=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.name)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px"><span style="color:${it.accent};font-weight:700">${it.kind}</span>${it.date?'  ·  '+_cdDShort(it.date):''}${it.meta?'  ·  '+escHtml(it.meta):''}</div>
+      </div>
+      <div style="font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">${fmt(it.amount)}</div>
+    </div>`).join('');
+    const workBlock=workCount?`<div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+        <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Work at this address</span>
+        <span style="font-size:12px;color:var(--text2)"><strong style="color:var(--text)">${fmt(hist.paid)}</strong> <span style="color:var(--text3)">of ${fmt(hist.billed)} paid</span></span>
+      </div>
+      ${rows}
+    </div>`:`<div style="font-size:12px;color:var(--text3);padding:2px 0">No proposals or jobs at this address yet.</div>`;
+    // Footer: data source / lookup + map + remove.
+    const srcLink=p.assessorUrl
+      ?`<a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none">${p.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`
+      :(!p.propDataFetchedAt&&street&&city?`<button onclick="_lookupPropertyData(${c.id},{street:'${escHtml(street)}',city:'${escHtml(city)}',state:'${escHtml(state||'')}',zip:'${escHtml(zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit">${svgIcon('🏠')} Look up property</button>`:'');
+    const removeBtn=idx>0?`<button onclick="removeClientAddress(${idx-1})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D">Remove</button>`:'';
+    const footer=`<div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      ${srcLink||'<span></span>'}
+      <div style="flex:1"></div>
+      <button onclick="_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Map</button>
+      ${removeBtn}
+    </div>`;
+    body=`<div style="padding:0 14px 14px">${leadRow}${detailLine}${noteRow}${workBlock}${footer}</div>`;
+  }
+  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
 }
 function renderCDAddresses(){
   const el=document.getElementById('cd-addresses-list');if(!el)return;
