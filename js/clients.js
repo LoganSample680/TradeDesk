@@ -2361,6 +2361,69 @@ function removeClientAddress(idx){
   });
 }
 
+// ── Shared client-address picker ────────────────────────────────────────────
+// ONE component used by BOTH the estimate (header address chip) and the Log-a-
+// trip / start-drive modal (under "Driving to"). Given a client with 2+
+// properties, it lists them; a tap fires onPick(addr). "+ New address" adds one
+// inline and auto-picks it. Callers only open it when clientAddresses(c).length
+// > 1; a single-address client skips it entirely (zero extra taps). Speed is the
+// goal: search/choose the client, then one tap on the right property.
+let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null;
+function pickClientAddress(clientId,onPick){
+  const c=getClientById(clientId);if(!c)return;
+  _addrPickList=(typeof clientAddresses==='function')?clientAddresses(c):[{label:'Primary',addr:c.addr}];
+  _addrPickCb=onPick;_addrPickClientId=clientId;
+  document.getElementById('_addrpick-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addrpick-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const pin='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--blue)" stroke-width="2.2" style="flex-shrink:0"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+  const rows=_addrPickList.map((a,i)=>{
+    const street=(a.addr||'').split(',')[0];
+    const rest=(a.addr||'').includes(',')?(a.addr.split(',').slice(1).join(',').trim()):'';
+    const sub=[a.label,rest].filter(Boolean).join(' · ');
+    return '<div onclick="_addrPickChoose('+i+')" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer">'+pin+
+      '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(street)+'</div>'+
+      (sub?'<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</div>':'')+'</div></div>';
+  }).join('');
+  const sheet=document.createElement('div');sheet.className='zmodal';sheet.style.maxWidth='380px';sheet.style.padding='6px';sheet.id='_addrpick-sheet';
+  sheet.innerHTML=
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:11px 12px 4px">Which property?</div>'+
+    rows+
+    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>New address for this client</div>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+}
+function _addrPickFire(addr){
+  document.getElementById('_addrpick-ov')?.remove();
+  const cb=_addrPickCb;_addrPickCb=null;
+  if(cb)cb(addr);
+}
+function _addrPickChoose(i){const a=_addrPickList[i];if(a)_addrPickFire(a.addr);}
+function _addrPickAddNew(){
+  const sheet=document.getElementById('_addrpick-sheet');if(!sheet)return;
+  const cid=_addrPickClientId;
+  sheet.innerHTML=
+    '<div style="font-size:15px;font-weight:800;padding:10px 12px 8px">New address</div>'+
+    '<div style="padding:0 12px 12px">'+
+      '<input id="_addrpick-new" placeholder="123 Main St, City ST" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+      '<div style="display:flex;gap:8px;margin-top:12px">'+
+        '<button onclick="_addrPickSaveNew()" class="btn btn-g" style="flex:2">Add &amp; use</button>'+
+        '<button onclick="pickClientAddress('+cid+',_addrPickCb)" class="btn" style="flex:1">Back</button>'+
+      '</div>'+
+    '</div>';
+  const inp=document.getElementById('_addrpick-new');
+  if(inp&&typeof _addrAutoFull==='function')_addrAutoFull(inp,null);
+  setTimeout(()=>inp&&inp.focus(),60);
+}
+function _addrPickSaveNew(){
+  const val=(document.getElementById('_addrpick-new')?.value||'').trim();
+  if(!val){if(typeof zAlert==='function')zAlert('Enter an address.');return;}
+  const c=getClientById(_addrPickClientId);if(!c)return;
+  c.extraAddresses=c.extraAddresses||[];
+  c.extraAddresses.push({label:'Additional property',addr:val});
+  if(typeof saveAll==='function')saveAll();
+  _addrPickFire(val);
+}
+
 // ── Property data auto-lookup ───────────────────────────────────────────────
 async function _lookupPropertyData(clientId,addrParts){
   try{

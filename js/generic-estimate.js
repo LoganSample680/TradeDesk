@@ -500,7 +500,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(bidId){
     const b=bids.find(x=>x.id===bidId);
     if(b){
-      sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');
+      sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');if(b.addr)sf('gei-addr',b.addr);
       if(b.geiLines&&b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(b.geiLines));
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
       if(b.jobScope)_geiJobScope=b.jobScope;
@@ -887,9 +887,40 @@ let _geiSiteNoteT=null;
 // The property this estimate is for: the edited bid's address if any, else the
 // client's primary address. Per-property notes key off this.
 function _geiSiteAddr(){
-  const c=(_geiClientId!=null&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
+  // The live #gei-addr field is the source of truth for THIS estimate's address:
+  // it's what the header picker updates and what bid.addr is stamped from on save.
+  // (openGenericEstimate seeds it to the client/bid address on open.)
+  const el=document.getElementById('gei-addr');
+  if(el&&el.value&&el.value.trim())return el.value.trim();
   const b=(_geiEditBidId!=null&&bids.find)?bids.find(x=>x.id===_geiEditBidId):null;
-  return (b&&b.addr)||(c&&c.addr)||'';
+  if(b&&b.addr)return b.addr;
+  const c=(_geiClientId!=null&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
+  return (c&&c.addr)||'';
+}
+// Set the estimate's active address (from the header picker), then re-render the
+// pieces that key off it: the header sub-line and the per-property site note.
+function _geiSetAddr(addr){
+  const el=document.getElementById('gei-addr');if(el)el.value=addr||'';
+  // Keep the open draft bid in sync so a mid-edit autosave can't revert it.
+  if(_geiEditBidId!=null&&bids.find){const b=bids.find(x=>x.id===_geiEditBidId);if(b)b.addr=addr||'';}
+  if(typeof _geiLookupClientTaxRate==='function')setTimeout(_geiLookupClientTaxRate,0);
+  const prefix=_geiIsTM?'tm':_geiIsFreeForm?'byo':'gen';
+  if(typeof _geiRenderSiteNoteField==='function')_geiRenderSiteNoteField(prefix);
+  _geiRenderAddrSub(prefix);
+}
+// Header sub-line "client · address". When the client has 2+ properties the
+// address is a tappable chip that opens the shared picker; one address = plain.
+function _geiRenderAddrSub(prefix){
+  const sub=document.getElementById(prefix+'-page-sub');if(!sub)return;
+  const c=getClientById(_geiClientId);
+  if(!c){sub.textContent='New estimate';return;}
+  const addr=_geiSiteAddr();
+  const street=(addr||'').split(',')[0];
+  const multi=(typeof clientAddresses==='function')&&clientAddresses(c).length>1;
+  const name=escHtml(c.name||'');
+  if(!multi){sub.innerHTML=name+(street?' · '+escHtml(street):'');return;}
+  const pin='<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--blue)" stroke-width="2.4" style="vertical-align:-1px"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+  sub.innerHTML=name+' · <span onclick="pickClientAddress('+c.id+',_geiSetAddr)" style="display:inline-flex;align-items:center;gap:4px;color:var(--blue);font-weight:700;cursor:pointer;border-bottom:1px dashed var(--blue)">'+pin+escHtml(street)+' <span style="font-size:9px">▼</span></span>';
 }
 function _geiSiteNoteInput(val){
   if(_geiClientId==null||!clients.find)return;
@@ -931,15 +962,9 @@ function _geiShowSharedChrome(prefix){
   const tmMeta=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
   const titleEl=document.getElementById(prefix+'-tbar-title');
   if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.innerHTML=_customName?escHtml(_customName):(svgIcon(tmMeta.icon,{size:24})+' '+tmMeta.label+' · '+m.titleSuffix);}
-  // Sub-header: client name · address
-  const c=getClientById(_geiClientId);
-  const sub=document.getElementById(prefix+'-page-sub');
-  if(sub){
-    const parts=[];
-    if(c?.name)parts.push(c.name);
-    if(c?.addr)parts.push(c.addr.split(',')[0]);
-    sub.textContent=parts.join(' · ')||'New estimate';
-  }
+  // Sub-header: client name · address (address is a picker chip when the client
+  // has 2+ properties, so an estimate never silently lands on the wrong one).
+  _geiRenderAddrSub(prefix);
   // Restore deposit % from saved bid (back-calculate from deposit/amount): the
   // field was rendered fresh above, so this must come after _geiRenderDepositField.
   const b=bids.find(x=>x.id===_geiEditBidId);

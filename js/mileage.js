@@ -774,18 +774,29 @@ function _tripDestSearch(val){
 }
 async function _selectTripClient(clientId){
   const c=clients.find(x=>x.id===clientId);if(!c)return;
-  const inp=document.getElementById('lm-to');if(inp)inp.value=c.addr||'';
   const box=document.getElementById('lm-to-sugg');if(box)box.style.display='none';
+  const h=document.getElementById('lm-client');if(h)h.value=c.id;
+  // Client has 2+ properties: open the SHARED address picker (same component the
+  // estimate uses) so the drive lands on the right one, then fill. One address:
+  // fill straight through, no extra tap.
+  const addrs=(typeof clientAddresses==='function')?clientAddresses(c):[];
+  if(addrs.length>1&&typeof pickClientAddress==='function'){
+    pickClientAddress(clientId,addr=>_tripFillDest(c,addr));
+    return;
+  }
+  _tripFillDest(c,c.addr||'');
+}
+async function _tripFillDest(c,addr){
+  const inp=document.getElementById('lm-to');if(inp)inp.value=addr||'';
   _lmCoords.to=null;
   const chip=document.getElementById('lm-to-chip');const chipTxt=document.getElementById('lm-to-chip-txt');
-  if(chip&&chipTxt){chipTxt.textContent=c.name+(c.addr?' · '+c.addr:'');chip.style.display='inline-flex';}
-  const h=document.getElementById('lm-client');if(h)h.value=c.id;
+  if(chip&&chipTxt){chipTxt.textContent=c.name+(addr?' · '+addr:'');chip.style.display='inline-flex';}
   const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
   const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
   // Geocode address now so calculateAndShowRoute has coordinates ready
-  if(c.addr){
+  if(addr){
     try{
-      const results=await _geocodeAddress(c.addr,1);
+      const results=await _geocodeAddress(addr,1);
       if(results.length)_lmCoords.to={lat:results[0].lat,lng:results[0].lon};
     }catch(e){}
   }

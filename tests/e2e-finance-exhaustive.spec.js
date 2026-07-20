@@ -2192,6 +2192,41 @@ test.describe('finance.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Drive destination: multi-address client opens the shared address picker
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('_selectTripClient: right address on a drive', () => {
+    test('multi-address client opens the shared picker; single-address fills straight through', async () => {
+      const r = await page.evaluate(async () => {
+        const multi = { id: 96201, name: 'Multi Drive Co', addr: '10 A St, Town, KS 60000',
+          extraAddresses: [{ label: 'B', addr: '20 B Ave, Town, KS 60000' }] };
+        const solo = { id: 96202, name: 'Solo Drive Co', addr: '5 Only Rd, Town, KS 60000' };
+        clients = clients.filter(x => ![96201, 96202].includes(x.id)).concat([multi, solo]);
+        document.querySelectorAll('.zmodal-overlay, #_addrpick-ov').forEach(e => e.remove());
+        openLogTripModal({});
+        // multi-address: picker opens, destination NOT yet filled
+        await _selectTripClient(96201);
+        const pickerOpen = !!document.getElementById('_addrpick-ov');
+        const toBeforePick = document.getElementById('lm-to').value;
+        // pick the rental
+        _addrPickChoose(1);
+        await new Promise(res => setTimeout(res, 30));
+        const toAfterPick = document.getElementById('lm-to').value;
+        // single-address: fills straight through, no picker
+        await _selectTripClient(96202);
+        const pickerForSolo = !!document.getElementById('_addrpick-ov');
+        const toSolo = document.getElementById('lm-to').value;
+        document.querySelectorAll('.zmodal-overlay, #_addrpick-ov').forEach(e => e.remove());
+        return { pickerOpen, toBeforePick, toAfterPick, pickerForSolo, toSolo };
+      });
+      expect(r.pickerOpen).toBe(true);                 // multi-address opens the picker
+      expect(r.toBeforePick).toBe('');                 // destination waits for the choice
+      expect(r.toAfterPick).toBe('20 B Ave, Town, KS 60000'); // picked address fills it
+      expect(r.pickerForSolo).toBe(false);             // single-address never shows a picker
+      expect(r.toSolo).toBe('5 Only Rd, Town, KS 60000');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // no console errors
   // ═══════════════════════════════════════════════════════════════════════════
   test('no console errors, finance.js', async () => {
