@@ -2399,6 +2399,28 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.read).toBe('Call before arriving');
       expect(r.legacy).toBe('Call before arriving');
     });
+
+    test('EPA/1978 trigger is per-property: the estimate resolves year built for THIS address', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 88826;
+        const c = { id: cid, name: 'Lead Estimate Co', addr: '1 Modern Ln, Town, KS 60000' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '1 Modern Ln', { yearBuilt: 2008 });       // primary: post-1978
+        setPropertyData(c, '9 Historic Ave', { yearBuilt: 1959 });    // extra: pre-1978
+        const b = { id: 883001, client_id: cid, client_name: 'Lead Estimate Co', addr: '9 Historic Ave, Town, KS 60000', amount: 5000 };
+        bids = bids.filter(x => x.id !== 883001).concat([b]);
+        const pre78ForOpenEstimate = () => { const y = getProperty(c, _geiSiteAddr()).yearBuilt; return !!(y && y < 1978); };
+        // New estimate → primary address (2008): not pre-1978.
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false;
+        const newEstPre78 = pre78ForOpenEstimate();
+        // Editing the bid at the historic address (1959): pre-1978 fires.
+        openGenericEstimate(c, b.id, 'general'); _geiIsTM = true; _geiIsFreeForm = false;
+        const bidEstPre78 = pre78ForOpenEstimate();
+        return { newEstPre78, bidEstPre78, siteAddr: _geiSiteAddr() };
+      });
+      expect(r.newEstPre78).toBe(false);   // primary property is a new build
+      expect(r.bidEstPre78).toBe(true);    // the historic-address estimate triggers the disclosure
+    });
   });
 
   test.describe('_GEI_MODES / _geiShowSharedChrome: one code path for both estimate pages', () => {
