@@ -321,6 +321,10 @@ let _tmCapAction='Stop & get re-approval';
 let _geiIsFreeForm=false;
 Object.defineProperty(window,'_geiIsFreeForm',{get:()=>_geiIsFreeForm,set:v=>{_geiIsFreeForm=v;},configurable:true});
 let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
+// Last-known estimate address, set at open/resume and by the property gate. The
+// editable #gei-addr field is the source of truth when present; this is the
+// fallback the resolver uses so the address never depends solely on the DOM.
+let _geiCurAddr='';
 
 function _geiOnAddrInput(){
   clearTimeout(_geiTaxLookupTimer);
@@ -416,12 +420,23 @@ function _maybeResumeActiveEstimate(){
 //  • only empty stubs (or nothing) → open directly; empty stubs are reused
 //    silently so abandoning the type picker twice never piles up blank drafts
 function _geiOpenModeEstimate(c,bidId,mode){
-  if(bidId){openGenericEstimate(c,bidId,null,{mode});return;}
-  const drafts=c?_geiFindDraftsFor(c.id,mode).filter(b=>!_geiDraftIsEmpty(b)):[];
-  if(!drafts.length){openGenericEstimate(c,null,null,{mode});return;}
-  _geiShowDraftChooser(c,mode,drafts);
+  if(bidId){openGenericEstimate(c,bidId,null,{mode});return;} // resume keeps the bid's own address
+  // Owner spec: for a NEW estimate on a client with 2+ properties, pick the
+  // address FIRST (right after choosing T&M/BYO), before the builder appears, so
+  // it can never land on the wrong one. Add-new is inside the picker. Single-
+  // address clients skip straight through, no extra tap.
+  if(c&&typeof clientAddresses==='function'&&clientAddresses(c).length>1&&typeof pickClientAddress==='function'){
+    pickClientAddress(c.id,addr=>_geiOpenModeAt(c,mode,addr));
+    return;
+  }
+  _geiOpenModeAt(c,mode,c?c.addr:'');
 }
-function _geiShowDraftChooser(c,mode,drafts){
+function _geiOpenModeAt(c,mode,addr){
+  const drafts=c?_geiFindDraftsFor(c.id,mode).filter(b=>!_geiDraftIsEmpty(b)):[];
+  if(!drafts.length){openGenericEstimate(c,null,null,{mode,forceAddr:addr});return;}
+  _geiShowDraftChooser(c,mode,drafts,addr);
+}
+function _geiShowDraftChooser(c,mode,drafts,addr){
   document.getElementById('_gei-draft-chooser')?.remove();
   const modeLabel=mode==='tm'?'Time & Materials':'Build Your Own';
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_gei-draft-chooser';
@@ -445,7 +460,7 @@ function _geiShowDraftChooser(c,mode,drafts){
     '<button onclick="document.getElementById(\'_gei-draft-chooser\')?.remove()" style="display:block;width:100%;padding:11px;border-radius:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  ov.dataset.mode=mode;ov.dataset.clientId=c?.id||'';
+  ov.dataset.mode=mode;ov.dataset.clientId=c?.id||'';ov.dataset.addr=addr||'';
 }
 function _geiResumeChosenDraft(bidId){
   const ov=document.getElementById('_gei-draft-chooser');
@@ -456,10 +471,10 @@ function _geiResumeChosenDraft(bidId){
 }
 function _geiStartFreshDraft(){
   const ov=document.getElementById('_gei-draft-chooser');
-  const mode=ov?.dataset.mode;const clientId=Number(ov?.dataset.clientId);
+  const mode=ov?.dataset.mode;const clientId=Number(ov?.dataset.clientId);const addr=ov?.dataset.addr||'';
   ov?.remove();
   const c=getClientById(clientId);if(!c)return;
-  openGenericEstimate(c,null,null,{mode,forceNew:true});
+  openGenericEstimate(c,null,null,{mode,forceNew:true,forceAddr:addr});
 }
 
 function openGenericEstimate(c,bidId,_tradePick,opts){
@@ -484,7 +499,8 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(eyebrowEl)eyebrowEl.textContent=m.label+' proposal';
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
   sf('gei-client',c?.name||'');
-  sf('gei-addr',c?.addr||'');
+  sf('gei-addr',opts?.forceAddr||c?.addr||''); // forceAddr = property chosen at the type gate
+  _geiCurAddr=opts?.forceAddr||c?.addr||'';
   if(c?.addr)setTimeout(_geiLookupClientTaxRate,0);
   const DESC_PH={electrical:'e.g. Panel upgrade, add EV charger in garage',plumbing:'e.g. Replace water heater, install shutoff valves',hvac:'e.g. Replace AC unit, charge refrigerant',roofing:'e.g. Full shingle replacement, fix ridge flashing',landscaping:'e.g. Weekly mowing, spring cleanup, new mulch',general:'e.g. Drywall repair, power washing, handyman'};
   sf('gei-desc','');sf('gei-notes','');sf('gei-tax-pct','0');sf('gei-duration','');
@@ -500,7 +516,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(bidId){
     const b=bids.find(x=>x.id===bidId);
     if(b){
-      sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');if(b.addr)sf('gei-addr',b.addr);
+      sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');if(b.addr){sf('gei-addr',b.addr);_geiCurAddr=b.addr;}
       if(b.geiLines&&b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(b.geiLines));
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
       if(b.jobScope)_geiJobScope=b.jobScope;
@@ -553,6 +569,9 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       _geiEditBidId=_existingGei.id;
       const _b=_existingGei;
       sf('gei-desc',_b.geiDesc||'');sf('gei-notes',_b.notes||'');
+      // The resumed draft's address applies, UNLESS the property gate just picked
+      // one (forceAddr) — a deliberate pick always wins over a stub's default.
+      if(_b.addr&&!opts?.forceAddr){sf('gei-addr',_b.addr);_geiCurAddr=_b.addr;}
       if(_b.geiLines&&_b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(_b.geiLines));
       if(_b.geiTaxPct)sf('gei-tax-pct',_b.geiTaxPct);
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
@@ -887,40 +906,27 @@ let _geiSiteNoteT=null;
 // The property this estimate is for: the edited bid's address if any, else the
 // client's primary address. Per-property notes key off this.
 function _geiSiteAddr(){
-  // The live #gei-addr field is the source of truth for THIS estimate's address:
-  // it's what the header picker updates and what bid.addr is stamped from on save.
-  // (openGenericEstimate seeds it to the client/bid address on open.)
+  // The editable #gei-addr field is the source of truth while present (the user
+  // can retype the job address). If it's absent, fall back to _geiCurAddr (set at
+  // open/resume/gate), then the bid, then the client, so the address never
+  // depends solely on a DOM node existing.
   const el=document.getElementById('gei-addr');
-  if(el&&el.value&&el.value.trim())return el.value.trim();
+  if(el){if(el.value&&el.value.trim())return el.value.trim();}
+  else if(_geiCurAddr)return _geiCurAddr;
   const b=(_geiEditBidId!=null&&bids.find)?bids.find(x=>x.id===_geiEditBidId):null;
   if(b&&b.addr)return b.addr;
   const c=(_geiClientId!=null&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
   return (c&&c.addr)||'';
 }
-// Set the estimate's active address (from the header picker), then re-render the
-// pieces that key off it: the header sub-line and the per-property site note.
-function _geiSetAddr(addr){
-  const el=document.getElementById('gei-addr');if(el)el.value=addr||'';
-  // Keep the open draft bid in sync so a mid-edit autosave can't revert it.
-  if(_geiEditBidId!=null&&bids.find){const b=bids.find(x=>x.id===_geiEditBidId);if(b)b.addr=addr||'';}
-  if(typeof _geiLookupClientTaxRate==='function')setTimeout(_geiLookupClientTaxRate,0);
-  const prefix=_geiIsTM?'tm':_geiIsFreeForm?'byo':'gen';
-  if(typeof _geiRenderSiteNoteField==='function')_geiRenderSiteNoteField(prefix);
-  _geiRenderAddrSub(prefix);
-}
-// Header sub-line "client · address". When the client has 2+ properties the
-// address is a tappable chip that opens the shared picker; one address = plain.
+// Header sub-line "client · address". Plain confirmation of the property the
+// estimate is for (chosen at the type gate for multi-property clients); the
+// address is NOT changed from inside the estimate, by owner preference.
 function _geiRenderAddrSub(prefix){
   const sub=document.getElementById(prefix+'-page-sub');if(!sub)return;
   const c=getClientById(_geiClientId);
   if(!c){sub.textContent='New estimate';return;}
-  const addr=_geiSiteAddr();
-  const street=(addr||'').split(',')[0];
-  const multi=(typeof clientAddresses==='function')&&clientAddresses(c).length>1;
-  const name=escHtml(c.name||'');
-  if(!multi){sub.innerHTML=name+(street?' · '+escHtml(street):'');return;}
-  const pin='<svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="var(--blue)" stroke-width="2.4" style="vertical-align:-1px"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
-  sub.innerHTML=name+' · <span onclick="pickClientAddress('+c.id+',_geiSetAddr)" style="display:inline-flex;align-items:center;gap:4px;color:var(--blue);font-weight:700;cursor:pointer;border-bottom:1px dashed var(--blue)">'+pin+escHtml(street)+' <span style="font-size:9px">▼</span></span>';
+  const street=(_geiSiteAddr()||'').split(',')[0];
+  sub.textContent=(c.name||'')+(street?' · '+street:'');
 }
 function _geiSiteNoteInput(val){
   if(_geiClientId==null||!clients.find)return;

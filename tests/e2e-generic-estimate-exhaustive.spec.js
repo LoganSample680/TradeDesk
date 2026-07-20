@@ -3537,39 +3537,55 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.addr).toBe('1 Only St, Town, KS 60000');
     });
 
-    test('multi-address client: header renders a picker chip; picking the extra address stamps the estimate', async () => {
+    test('multi-address: choosing T&M opens the picker FIRST, then the estimate stamps the picked property', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 96102, name: 'Two Prop', addr: '10 Main St, Town, KS 60000',
           extraAddresses: [{ label: 'Rental', addr: '22 Side Ave, Town, KS 60000' }] };
         clients = clients.filter(x => x.id !== 96102).concat([c]);
-        _geiEditBidId = null; // shared-page guard: no stale edited-bid address bleeds in
-        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
-        const sub = document.getElementById('tm-page-sub');
-        const hasChip = !!(sub && sub.innerHTML.includes('pickClientAddress'));
-        const before = _geiSiteAddr();
-        _geiSetAddr('22 Side Ave, Town, KS 60000'); // what the picker's onPick fires
-        return { hasChip, before, after: _geiSiteAddr() };
+        bids = bids.filter(b => b.client_id !== 96102); // no stray drafts → gate opens the builder directly after the pick
+        _geiEditBidId = null;
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'tm');
+        const pickerFirst = !!document.getElementById('_addrpick-ov'); // gate appears before the builder
+        _addrPickChoose(1); // pick the rental
+        return { pickerFirst, addr: _geiSiteAddr(), tmMode: _geiIsTM };
       });
-      expect(r.hasChip).toBe(true);
-      expect(r.before).toBe('10 Main St, Town, KS 60000'); // defaults to primary
-      expect(r.after).toBe('22 Side Ave, Town, KS 60000');  // picking the rental stamps it (via #gei-addr)
+      expect(r.pickerFirst).toBe(true);
+      expect(r.addr).toBe('22 Side Ave, Town, KS 60000'); // estimate opens stamped with the pick
+      expect(r.tmMode).toBe(true);                        // and it's the T&M builder
     });
 
-    test('the picked address flows to the site note AND the pre-1978 lead trigger', async () => {
+    test('single-address: choosing T&M opens the estimate directly, no picker', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96108, name: 'One Prop', addr: '3 Solo Ln, Town, KS 60000' };
+        clients = clients.filter(x => x.id !== 96108).concat([c]);
+        _geiEditBidId = null;
+        document.querySelectorAll('#_addrpick-ov').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'byo');
+        return { picker: !!document.getElementById('_addrpick-ov'), addr: _geiSiteAddr(), byoMode: _geiIsFreeForm };
+      });
+      expect(r.picker).toBe(false);                      // no gate for a single-address client
+      expect(r.addr).toBe('3 Solo Ln, Town, KS 60000');
+      expect(r.byoMode).toBe(true);
+    });
+
+    test('the property picked at the gate flows to the site note AND the pre-1978 lead trigger', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 96103, name: 'Flow Co', addr: '1 New Way, Town, KS 60000',
           extraAddresses: [{ label: 'Old', addr: '2 Old Way, Town, KS 60000' }] };
         clients = clients.filter(x => x.id !== 96103).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96103);
         setPropertyData(c, '1 New Way', { yearBuilt: 2005 });
         setPropertyData(c, '2 Old Way', { yearBuilt: 1948 });
-        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
-        const pre78 = () => { const y = getProperty(c, _geiSiteAddr()).yearBuilt; return !!(y && y < 1978); };
-        const primaryPre78 = pre78();
-        _geiSetAddr('2 Old Way, Town, KS 60000'); // pick the historic property
-        return { primaryPre78, pickedPre78: pre78() };
+        _geiEditBidId = null;
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'tm');
+        _addrPickChoose(1); // pick the historic property at the gate
+        const y = getProperty(c, _geiSiteAddr()).yearBuilt;
+        return { addr: _geiSiteAddr(), pre78: !!(y && y < 1978) };
       });
-      expect(r.primaryPre78).toBe(false);
-      expect(r.pickedPre78).toBe(true);
+      expect(r.addr).toBe('2 Old Way, Town, KS 60000');
+      expect(r.pre78).toBe(true); // the pre-1978 property drives the lead disclosure
     });
 
     test('pickClientAddress: lists every address + a New-address row; choosing fires the callback', async () => {
