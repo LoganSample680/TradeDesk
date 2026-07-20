@@ -2677,6 +2677,43 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.hasOlder).toBe(true);
       expect(r.leadCount).toBe(1); // lead banner renders once, for the pre-1978 address only
     });
+
+    test('PRIVACY: an employee without financials sees the property but no dollar figures', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970107;
+        const c = { id: cid, name: 'Perm Co', addr: '5 Money Rd, Town, KS 60000' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '5 Money Rd', { yearBuilt: 1970, estimatedValue: 250000, lastSalePrice: 210000, lastSaleDate: '2018-05-01' });
+        bids = bids.filter(b => b.client_id !== cid).concat([{ id: 970501, client_id: cid, name: 'Repaint', addr: '5 Money Rd, Town, KS 60000', amount: 4200, status: 'Sent', bid_date: '2026-01-01' }]);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([{ id: 970601, client_id: cid, name: 'Repaint', addr: '5 Money Rd, Town, KS 60000', value: 4200, status: 'upcoming', start: '2026-02-01' }]);
+        currentClientId = cid;
+        const render = () => { window['_cdpropOpen_' + cid + '_0'] = true; renderCDAddresses(); return document.getElementById('cd-addresses-list').innerHTML; };
+        const _origEmp = window._isEmployee, _origRec = window._employeeRecord;
+        try {
+          // Crew WITHOUT financials: dollars hidden, property still shown.
+          window._isEmployee = true; window._employeeRecord = { permissions: { financials: false } };
+          const crew = render();
+          // Manager WITH financials: dollars shown.
+          window._employeeRecord = { permissions: { financials: true } };
+          const mgr = render();
+          return {
+            crewHasDollar: /\$\d/.test(crew), crewHasProperty: crew.includes('Money Rd') && crew.includes('Repaint') && crew.includes('1970'),
+            crewHasLead: crew.includes('EPA RRP'),
+            mgrHasValue: mgr.includes('$250K'), mgrHasAmount: /\$4,200/.test(mgr), mgrHasPaidTotal: mgr.includes('paid'),
+          };
+        } finally {
+          window._isEmployee = _origEmp; window._employeeRecord = _origRec;
+        }
+      });
+      // Crew: no dollar anywhere, but the property, its work list, and the lead disclosure still render.
+      expect(r.crewHasDollar).toBe(false);
+      expect(r.crewHasProperty).toBe(true);
+      expect(r.crewHasLead).toBe(true);
+      // Manager: value, amounts, and paid total all visible.
+      expect(r.mgrHasValue).toBe(true);
+      expect(r.mgrHasAmount).toBe(true);
+      expect(r.mgrHasPaidTotal).toBe(true);
+    });
   });
 
   // ═══════════════════════════════════════════════════════════════════════════

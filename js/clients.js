@@ -13,6 +13,12 @@ function openClientDetail(cid,origin){
 // `estimate` team permission. The estimate entry points are greyed for employees
 // without it, and any attempt routes through the request-access popup instead.
 function _canEstimate(){ return !_isEmployee || !!(_employeeRecord&&_employeeRecord.permissions&&_employeeRecord.permissions.estimate); }
+// True for contractors/owners always, and for employees only with the `financials`
+// permission. Gates every dollar figure in the property record (est. value,
+// billed/paid, proposal/job amounts). Mirrors the data-level redaction in
+// _employeeRedactedTables (cloud.js): this is the render-time twin so job values
+// (td_jobs is never redacted) and the property value can't leak to field crew.
+function _canSeeFinancials(){ return !_isEmployee || !!(_employeeRecord&&_employeeRecord.permissions&&_employeeRecord.permissions.financials); }
 
 function openEstimateForClient(){
   // Permission gate FIRST, covers both entry points (dashboard quick action and
@@ -2241,7 +2247,8 @@ function _cdPropCardHtml(c,a,idx,isLast){
   const metaBits=[cityLine,p.yearBuilt?('Built '+p.yearBuilt):''].filter(Boolean);
   const metaLine=metaBits.join('  ·  ')||'No property details yet';
   const workCount=hist.proposals.length+hist.jobs.length;
-  const value=p.estimatedValue?_cdCompactMoney(p.estimatedValue):'';
+  const money=(typeof _canSeeFinancials!=='function')||_canSeeFinancials(); // hide $ from crew without financials
+  const value=(money&&p.estimatedValue)?_cdCompactMoney(p.estimatedValue):'';
   // Chips: only the ones that matter at a glance.
   const chips=[];
   if(pre78)chips.push(`<span style="font-size:9px;font-weight:800;letter-spacing:.03em;color:#A32D2D;background:rgba(163,45,45,.1);padding:2px 7px;border-radius:20px">PRE-1978</span>`);
@@ -2273,7 +2280,7 @@ function _cdPropCardHtml(c,a,idx,isLast){
     if(p.sqft)detailBits.push(`${Number(p.sqft).toLocaleString()} sqft`);
     if(p.bedrooms||p.bathrooms)detailBits.push(`${p.bedrooms||'?'} bd / ${p.bathrooms||'?'} ba`);
     if(p.lotSize)detailBits.push(`${escHtml(String(p.lotSize))} lot`);
-    if(p.lastSalePrice||p.lastSaleDate)detailBits.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${p.lastSalePrice?' for '+fmt(p.lastSalePrice):''}`.trim());
+    if(p.lastSalePrice||p.lastSaleDate)detailBits.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${money&&p.lastSalePrice?' for '+fmt(p.lastSalePrice):''}`.trim());
     const detailLine=detailBits.length?`<div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5">${detailBits.join('  ·  ')}</div>`:'';
     // Work items, one clean chronological list with a type tag.
     const items=[
@@ -2285,12 +2292,13 @@ function _cdPropCardHtml(c,a,idx,isLast){
         <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.name)}</div>
         <div style="font-size:11px;color:var(--text3);margin-top:1px"><span style="color:${it.accent};font-weight:700">${it.kind}</span>${it.date?'  ·  '+_cdDShort(it.date):''}${it.meta?'  ·  '+escHtml(it.meta):''}</div>
       </div>
-      <div style="font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">${fmt(it.amount)}</div>
+      ${money?`<div style="font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">${fmt(it.amount)}</div>`:''}
     </div>`).join('');
+    const totalSpan=money?`<span style="font-size:12px;color:var(--text2)"><strong style="color:var(--text)">${fmt(hist.paid)}</strong> <span style="color:var(--text3)">of ${fmt(hist.billed)} paid</span></span>`:'';
     const workBlock=workCount?`<div>
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
         <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Work at this address</span>
-        <span style="font-size:12px;color:var(--text2)"><strong style="color:var(--text)">${fmt(hist.paid)}</strong> <span style="color:var(--text3)">of ${fmt(hist.billed)} paid</span></span>
+        ${totalSpan}
       </div>
       ${rows}
     </div>`:`<div style="font-size:12px;color:var(--text3);padding:2px 0">No proposals or jobs at this address yet.</div>`;
