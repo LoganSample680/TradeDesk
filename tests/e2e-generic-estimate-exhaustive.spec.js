@@ -3555,6 +3555,71 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.tmMode).toBe(true);                        // and it's the T&M builder
     });
 
+    test('adding a NEW address at the gate starts a fresh estimate there, never the primary-address draft', async () => {
+      // Owner-reported: with an in-progress estimate under the primary address,
+      // adding a new address at the gate started the estimate under primary. A
+      // draft belongs to one property, so a different/new address must open fresh.
+      const r = await page.evaluate(() => {
+        const c = { id: 96110, name: 'Multi Draft', addr: '10 Primary St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 Rental Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96110).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96110);
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        // Build a NON-EMPTY T&M draft under the primary address.
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(0); goGeiStep(2);
+        const primaryBid = bids.find(b => b.client_id === 96110);
+        primaryBid.amount = 1500; primaryBid.addr = c.addr; saveAll();
+        // Reopen the gate, add a brand-new address, use it.
+        _geiOpenModeEstimate(c, null, 'tm');
+        _addrPickAddNew();
+        document.getElementById('_addrpick-new').value = '77 New Ct, Town, KS 60000';
+        _addrPickSaveNew();
+        const openedBid = bids.find(b => b.id === _geiEditBidId);
+        return { chooser: !!document.getElementById('_gei-draft-chooser'), addr: _geiSiteAddr(),
+          startedFresh: _geiEditBidId !== primaryBid.id, openedBidAddr: openedBid ? openedBid.addr : null,
+          primaryUntouched: primaryBid.amount === 1500 };
+      });
+      expect(r.chooser).toBe(false);                       // no cross-property draft offered
+      expect(r.addr).toBe('77 New Ct, Town, KS 60000');    // estimate is under the NEW address
+      expect(r.startedFresh).toBe(true);                   // a new bid, not the primary draft
+      expect(r.openedBidAddr).toBe('77 New Ct, Town, KS 60000'); // stamped on the bid
+      expect(r.primaryUntouched).toBe(true);               // the primary draft is left intact
+    });
+
+    test('picking an OTHER existing address with a primary draft opens fresh there (no chooser)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96111, name: 'Two Addr Draft', addr: '10 A St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 B St, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96111).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96111);
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(0); goGeiStep(2);
+        const pb = bids.find(b => b.client_id === 96111); pb.amount = 900; pb.addr = c.addr; saveAll();
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(1); // pick the rental
+        return { chooser: !!document.getElementById('_gei-draft-chooser'), addr: _geiSiteAddr() };
+      });
+      expect(r.chooser).toBe(false);
+      expect(r.addr).toBe('22 B St, Town, KS 60000');
+    });
+
+    test('picking the SAME address that has a draft still offers to resume it', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96112, name: 'Same Addr Draft', addr: '10 C St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 D St, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96112).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96112);
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(0); goGeiStep(2);
+        const pb = bids.find(b => b.client_id === 96112); pb.amount = 700; pb.addr = c.addr; saveAll();
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(0); // pick the SAME (primary) address
+        const chooser = !!document.getElementById('_gei-draft-chooser');
+        if (chooser) _geiResumeChosenDraft(String(pb.id));
+        return { chooser, addr: _geiSiteAddr() };
+      });
+      expect(r.chooser).toBe(true);                        // same-property draft is offered
+      expect(r.addr).toBe('10 C St, Town, KS 60000');      // resumes under that address
+    });
+
     test('single-address: choosing T&M opens the estimate directly, no picker', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 96108, name: 'One Prop', addr: '3 Solo Ln, Town, KS 60000' };

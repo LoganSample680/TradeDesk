@@ -432,10 +432,19 @@ function _geiOpenModeEstimate(c,bidId,mode){
   _geiOpenModeAt(c,mode,c?c.addr:'');
 }
 function _geiOpenModeAt(c,mode,addr){
-  const drafts=c?_geiFindDraftsFor(c.id,mode).filter(b=>!_geiDraftIsEmpty(b)):[];
+  // Drafts belong to a specific property. Only offer a draft to resume when it's
+  // for the SAME address the user just picked at the gate: a primary-address
+  // draft must never surface (or silently resume) when they picked the rental or
+  // added a new address (owner-reported: "added a new address but it started the
+  // estimate under primary"). A draft with no addr is treated as the primary.
+  const _pick=_geiAddrKey(addr||(c&&c.addr)||'');
+  const drafts=c?_geiFindDraftsFor(c.id,mode).filter(b=>!_geiDraftIsEmpty(b)&&_geiAddrKey(b.addr||c.addr||'')===_pick):[];
   if(!drafts.length){openGenericEstimate(c,null,null,{mode,forceAddr:addr});return;}
   _geiShowDraftChooser(c,mode,drafts,addr);
 }
+// Normalize an address to its street line so "same property" comparisons are
+// stable (mirrors data.js siteNoteKey; falls back if that helper isn't loaded).
+function _geiAddrKey(a){return (typeof siteNoteKey==='function')?siteNoteKey(a||''):String(a||'').split(',')[0].trim().toLowerCase().replace(/\s+/g,' ');}
 function _geiShowDraftChooser(c,mode,drafts,addr){
   document.getElementById('_gei-draft-chooser')?.remove();
   const modeLabel=mode==='tm'?'Time & Materials':'Build Your Own';
@@ -553,7 +562,14 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     // old silent-resume behavior unchanged.
     const _mode=opts?.mode;
     const _typeOk=b=>_mode==='tm'?!!b.isTM:_mode==='byo'?!b.isTM:true;
-    const _tMatch=b=>b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending')&&_typeOk(b);
+    // Same-property scoping: only reuse/purge a draft whose address matches the one
+    // being opened. Without this, picking a new/other address would silently resume
+    // the primary-address draft (the owner-reported wrong-address bug). A draft with
+    // no addr is treated as the primary; a legacy direct call with no forceAddr keeps
+    // the old primary-scoped behavior.
+    const _wantAddr=_geiAddrKey(opts?.forceAddr||c?.addr||'');
+    const _addrOk=b=>_geiAddrKey(b.addr||c?.addr||'')===_wantAddr;
+    const _tMatch=b=>b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending')&&_typeOk(b)&&_addrOk(b);
     let _existingGei=bids.find(b=>_tMatch(b)&&b.trade_type===_geiTrade);
     if(!_existingGei){
       // Fallback: pick up old bids that predate the trade_type field
@@ -566,6 +582,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     }
     if(_existingGei){
       _existingGei.trade_type=_geiTrade; // heal legacy bids
+      _existingGei.addr=_existingGei.addr||opts?.forceAddr||c?.addr||''; // heal legacy no-addr drafts to their property
       _geiEditBidId=_existingGei.id;
       const _b=_existingGei;
       sf('gei-desc',_b.geiDesc||'');sf('gei-notes',_b.notes||'');
@@ -591,7 +608,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       // memory: every reload re-downloaded the zombies, which the old load-side GEI
       // filter then re-hid, the silent-hide loop behind the owner's 53-vs-43 report.
       _userDelete(()=>{
-        bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
+        bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)&&_addrOk(b)));
       });
       _resumingExisting=true;
       saveAll();
@@ -604,6 +621,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     // found by the type-aware reuse above, so backing out and re-picking the
     // same type would spawn a duplicate blank draft every time.
     const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0,
+      addr:opts?.forceAddr||c?.addr||'', // the property this estimate is for, so drafts stay same-property-scoped
       ...(_geiIsTM?{isTM:true}:{}),...(_geiIsFreeForm?{isFreeForm:true}:{})};
     bids.unshift(draftBid);_geiEditBidId=draftBid.id;saveAll();
   }
