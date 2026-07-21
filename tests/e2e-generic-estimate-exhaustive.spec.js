@@ -3620,6 +3620,32 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.addr).toBe('10 C St, Town, KS 60000');      // resumes under that address
     });
 
+    test('estimate-type screen stays as the backdrop behind the address gate, then retires when the builder opens', async () => {
+      // Owner: the address picker should sit over the "pick estimate type" screen,
+      // not flash to the dashboard behind it.
+      const r = await page.evaluate(() => {
+        const c = { id: 96115, name: 'Backdrop Co', addr: '10 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 Side Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96115).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96115);
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser, #_style-pick-ov').forEach(e => e.remove());
+        _showEstimateStylePicker(c);
+        const styleUp = !!document.getElementById('_style-pick-ov');
+        _pickEstStyle('tm');                                     // tap T&M -> address gate
+        const gateUp = !!document.getElementById('_addrpick-ov');
+        const backdropStill = !!document.getElementById('_style-pick-ov'); // stays behind the gate
+        _addrPickChoose(1);                                      // pick -> builder opens
+        const sp = document.getElementById('_style-pick-ov');
+        const retired = !sp || sp.style.opacity === '0';         // fading out / gone
+        return { styleUp, gateUp, backdropStill, retired, addr: _geiSiteAddr() };
+      });
+      expect(r.styleUp).toBe(true);
+      expect(r.gateUp).toBe(true);
+      expect(r.backdropStill).toBe(true);   // the estimate-type screen remained as backdrop
+      expect(r.retired).toBe(true);         // and retires once the builder is up
+      expect(r.addr).toBe('22 Side Ave, Town, KS 60000');
+    });
+
     test('single-address: choosing T&M opens the estimate directly, no picker', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 96108, name: 'One Prop', addr: '3 Solo Ln, Town, KS 60000' };

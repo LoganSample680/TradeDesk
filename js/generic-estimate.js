@@ -643,6 +643,11 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     if(_descVal){const _tEl=document.getElementById('gei-trade-title');if(_tEl)_tEl.textContent=_descVal;}
   }
   goPg('pg-est-generic');
+  // The builder is now up: retire the "pick estimate type" screen (kept as the
+  // backdrop behind the address gate for multi-property clients) with a soft fade.
+  const _sp=document.getElementById('_style-pick-ov');
+  if(_sp){_sp.style.opacity='0';_sp.style.transform='translateY(10px)';setTimeout(()=>_sp.remove(),240);}
+  if(typeof _stylePickState!=='undefined')try{_stylePickState=null;}catch(e){}
   goGeiStep(_resumingExisting?2:1);
 }
 

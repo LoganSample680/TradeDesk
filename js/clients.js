@@ -463,16 +463,14 @@ function _showEstimateStylePicker(c,overrideAddr){
   requestAnimationFrame(()=>requestAnimationFrame(()=>{ov.style.opacity='1';ov.style.transform='translateY(0)';}));
 }
 function _pickEstStyle(style){
-  const ov=document.getElementById('_style-pick-ov');
-  const doIt=()=>{
-    const {c,overrideAddr}=_stylePickState||{};
-    if(!c)return;
-    _stylePickState=null;
-    if(style==='tm'){openTMEstimate(c);}
-    else if(style==='freeform'){openFreeFormEstimate(c);}
-  };
-  if(ov){doIt();ov.style.opacity='0';ov.style.transform='translateY(10px)';setTimeout(()=>ov.remove(),220);}
-  else{doIt();}
+  const {c}=_stylePickState||{};
+  if(!c)return;
+  // Open the chosen estimate type. The "pick estimate type" screen stays up as the
+  // backdrop (openGenericEstimate retires it when the builder actually opens), so
+  // the address gate for a multi-property client sits over the estimate-type screen
+  // instead of flashing to the dashboard behind it.
+  if(style==='tm'){openTMEstimate(c);}
+  else if(style==='freeform'){openFreeFormEstimate(c);}
 }
 
 function _doOpenEstimate(c,_overrideAddr,_forceTrade){
