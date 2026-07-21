@@ -1629,16 +1629,15 @@ function renderTodayFeed(){
     if(_contractorTs){
       viewedBadge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_localTs(_contractorTs)+'</div>';
     }
-    const _pSub=[(b.addr||c?.addr||'').split(',')[0].trim(),daysStr].filter(Boolean).join(' · ');
+    const _pStreet=(b.addr||c?.addr||'').split(',')[0].trim();
     pendingItems.push(
-      '<div class="tf-card">'+
+      '<div class="tf-card tf-b-pending">'+
         '<div class="tf-icon">'+svgIcon('📨',{size:18})+'</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-hd">'+
-            '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'')+
-          '</div>'+
-          (_pSub?'<div class="tf-sub tf-1line" style="color:'+urgColor+'">'+escHtml(_pSub)+'</div>':'')+
+          '<div class="tf-cust">'+escHtml(c.name)+'</div>'+
+          (b.amount>0?'<div class="tf-hero">'+_mmtAmt(b.amount)+'</div>':'')+
+          (_pStreet?'<div class="tf-sub tf-1line" style="color:var(--text-3);margin-top:2px">'+escHtml(_pStreet)+'</div>':'')+
+          (daysStr?'<div class="tf-when" style="color:'+urgColor+'">'+escHtml(daysStr)+'</div>':'')+
           viewedBadge+
         '</div>'+
         '<div class="tf-acts">'+
@@ -1663,19 +1662,17 @@ function renderTodayFeed(){
     const typeLbl=typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):'';
     // Header carries the money (or a Draft pill when nothing's priced yet); the meta
     // row carries the estimate type + project name; a subtle status line nudges the
-    // Two lines only: name + amount (or a muted "Draft" when nothing's priced),
-    // then one muted line = property · project. Section header already says BUILD,
-    // so no extra status line.
+    // Money is the hero (this screen is Make Money Today): amount big, client name
+    // small above it, one muted locator line below (property · project). Unpriced
+    // shells lead with the name + a Draft tag since there's no money yet.
     const _sub=[(b.addr||c?.addr||'').split(',')[0].trim(),b.type].filter(Boolean).join(' · ');
     buildItems.push(
-      '<div class="tf-card">'+
+      '<div class="tf-card tf-b-build">'+
         '<div class="tf-icon">'+svgIcon('✏',{size:18})+'</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-hd">'+
-            '<div class="tf-name">'+escHtml(displayName)+'</div>'+
-            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'<div class="tf-amt tf-amt-mut">Draft</div>')+
-          '</div>'+
-          (_sub?'<div class="tf-sub tf-1line" style="color:var(--text-3)">'+escHtml(_sub)+'</div>':'')+
+          '<div class="tf-cust">'+escHtml(displayName)+(b.amount>0?'':'<span class="tf-tag">Draft</span>')+'</div>'+
+          (b.amount>0?'<div class="tf-hero">'+_mmtAmt(b.amount)+'</div>':'')+
+          (_sub?'<div class="tf-sub tf-1line" style="color:var(--text-3);margin-top:2px">'+escHtml(_sub)+'</div>':'')+
         '</div>'+
         '<div class="tf-acts">'+
           '<button onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+

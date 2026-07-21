@@ -368,15 +368,22 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
    equal flex share (flex:1 1 0), centered text, no wrap. "Collect →", "📱 Send",
    "Snooze 2d", "Won ✓" all render to identical width within their row. */
 .tf-acts>.btn,.tf-acts>.btn-sm,.tf-acts>a{flex:1 1 0;min-width:0;justify-content:center;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* Feed-card content: name + amount on the header row, then ONE muted line for the
-   property (and project / timing). Deliberately minimal, the section header
-   already labels the group. */
+/* Feed-card content, "money is the hero" (this screen is Make Money Today): the
+   dollar amount is the biggest element, client name is small context above it, one
+   muted locator line below, a state accent bar on the left. 3 lines, glanceable. */
 .tf-hd{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
 .tf-hd .tf-name{min-width:0}
 .tf-amt{font-size:13px;font-weight:800;color:var(--text);white-space:nowrap;letter-spacing:-.2px;flex-shrink:0}
 .tf-amt-mut{font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em}
 .tf-1line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tf-addr{font-size:11px;margin-top:2px;color:var(--text-3);font-weight:600;display:flex;align-items:center;gap:4px;min-width:0}
+.tf-cust{font-size:12px;font-weight:700;color:var(--text-2);line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:6px}
+.tf-hero{font-size:20px;font-weight:800;color:var(--text);line-height:1.1;letter-spacing:-.6px;margin-top:1px}
+.tf-tag{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:1px 6px;border-radius:4px;background:var(--c-amber-soft);color:#8A5A00;border:1px solid var(--c-amber-edge);flex-shrink:0}
+.tf-when{font-size:11px;font-weight:700;margin-top:3px}
+/* Left state accent bar (QuoteIQ-style): amber=build, blue=pending, red/green=collect. */
+.tf-card.tf-b-build{box-shadow:inset 3px 0 0 var(--c-amber-edge)}
+.tf-card.tf-b-pending{box-shadow:inset 3px 0 0 var(--denim)}
 .tf-addr>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 /* ── Make Money Today sections ── */
