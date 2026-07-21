@@ -1634,9 +1634,12 @@ function renderTodayFeed(){
       '<div class="tf-card tf-b-pending">'+
         '<div class="tf-icon">'+svgIcon('📨',{size:18})+'</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-cust">'+escHtml(c.name)+'</div>'+
-          (b.amount>0?'<div class="tf-hero">'+_mmtAmt(b.amount)+'</div>':'')+
+          '<div class="tf-hd">'+
+            '<div class="tf-name tf-1line">'+escHtml(c.name)+'</div>'+
+            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'')+
+          '</div>'+
           (_pStreet?'<div class="tf-sub tf-1line" style="color:var(--text-3);margin-top:2px">'+escHtml(_pStreet)+'</div>':'')+
+          // Age/urgency is the loud line, the #1 unmet contractor need on sent quotes.
           (daysStr?'<div class="tf-when" style="color:'+urgColor+'">'+escHtml(daysStr)+'</div>':'')+
           viewedBadge+
         '</div>'+
@@ -1662,16 +1665,18 @@ function renderTodayFeed(){
     const typeLbl=typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):'';
     // Header carries the money (or a Draft pill when nothing's priced yet); the meta
     // row carries the estimate type + project name; a subtle status line nudges the
-    // Money is the hero (this screen is Make Money Today): amount big, client name
-    // small above it, one muted locator line below (property · project). Unpriced
-    // shells lead with the name + a Draft tag since there's no money yet.
+    // Name is the anchor (how contractors refer to a job), amount a strong secondary
+    // beside it, one muted locator line below (property · project). Unpriced shells
+    // carry a Draft tag instead of a $ figure.
     const _sub=[(b.addr||c?.addr||'').split(',')[0].trim(),b.type].filter(Boolean).join(' · ');
     buildItems.push(
       '<div class="tf-card tf-b-build">'+
         '<div class="tf-icon">'+svgIcon('✏',{size:18})+'</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-cust">'+escHtml(displayName)+(b.amount>0?'':'<span class="tf-tag">Draft</span>')+'</div>'+
-          (b.amount>0?'<div class="tf-hero">'+_mmtAmt(b.amount)+'</div>':'')+
+          '<div class="tf-hd">'+
+            '<div class="tf-name tf-1line">'+escHtml(displayName)+(b.amount>0?'':'<span class="tf-tag">Draft</span>')+'</div>'+
+            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'')+
+          '</div>'+
           (_sub?'<div class="tf-sub tf-1line" style="color:var(--text-3);margin-top:2px">'+escHtml(_sub)+'</div>':'')+
         '</div>'+
         '<div class="tf-acts">'+
