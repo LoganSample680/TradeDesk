@@ -3608,6 +3608,54 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       expect(r.sheetGone).toBe(true); // picking closes the sheet
     });
 
+    test('picker sheet is horizontally centered at mobile, tablet and desktop', async () => {
+      // Left/right gaps must be equal on every form factor. (Vertical centering is
+      // asserted below via the overlay's CSS contract: measuring the sheet's top/
+      // bottom gap after setViewportSize is unreliable in headless chromium, the
+      // resize leaves a ~16px phantom offset that a fresh page load does not show.)
+      for (const vp of [{ w: 390, h: 844 }, { w: 820, h: 1180 }, { w: 1280, h: 800 }]) {
+        await page.setViewportSize({ width: vp.w, height: vp.h });
+        const m = await page.evaluate(() => {
+          document.getElementById('_addrpick-ov')?.remove();
+          const c = { id: 96106, name: 'Center Co', addr: '1 A St, Town, KS 60000',
+            extraAddresses: [{ label: 'B', addr: '2 B St, Town, KS 60000' }] };
+          clients = clients.filter(x => x.id !== 96106).concat([c]);
+          pickClientAddress(96106, () => {});
+          const r = document.getElementById('_addrpick-sheet').getBoundingClientRect();
+          return { gapLeft: r.left, gapRight: window.innerWidth - r.right };
+        });
+        expect(Math.abs(m.gapLeft - m.gapRight)).toBeLessThanOrEqual(1.5);
+      }
+    });
+
+    test('picker overlay is a full-screen flex box that centers its content both axes', async () => {
+      // The vertical-centering guarantee: a fixed inset:0 overlay, flex-centered,
+      // with symmetric top/bottom padding and a single child (the sheet). If any of
+      // these regress, the sheet stops being centered.
+      const cs = await page.evaluate(() => {
+        document.getElementById('_addrpick-ov')?.remove();
+        const c = { id: 96107, name: 'CSS Co', addr: '3 C St, Town, KS 60000',
+          extraAddresses: [{ label: 'D', addr: '4 D St, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96107).concat([c]);
+        pickClientAddress(96107, () => {});
+        const ov = document.getElementById('_addrpick-ov');
+        const s = getComputedStyle(ov);
+        return { position: s.position, display: s.display, alignItems: s.alignItems,
+          justifyContent: s.justifyContent, padTop: parseFloat(s.paddingTop),
+          padBottom: parseFloat(s.paddingBottom), children: ov.children.length,
+          top: ov.getBoundingClientRect().top, bottom: Math.round(ov.getBoundingClientRect().bottom),
+          vh: window.innerHeight };
+      });
+      expect(cs.position).toBe('fixed');
+      expect(cs.display).toBe('flex');
+      expect(cs.alignItems).toBe('center');
+      expect(cs.justifyContent).toBe('center');
+      expect(cs.padTop).toBe(cs.padBottom);            // symmetric vertical padding
+      expect(cs.children).toBe(1);                     // only the sheet, nothing skewing the cross-axis
+      expect(cs.top).toBe(0);                           // overlay fills the viewport top-to-bottom
+      expect(cs.bottom).toBe(cs.vh);
+    });
+
     test('New address inside the picker: adds it to the client and fires the callback with it', async () => {
       const r = await page.evaluate(() => {
         const c = { id: 96105, name: 'Add Co', addr: '9 Home Rd, Town, KS 60000',
