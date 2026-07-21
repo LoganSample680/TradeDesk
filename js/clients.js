@@ -2247,21 +2247,29 @@ function _cdPropCardHtml(c,a,idx,isLast){
   const workCount=hist.proposals.length+hist.jobs.length;
   const money=(typeof _canSeeFinancials!=='function')||_canSeeFinancials(); // hide $ from crew without financials
   const value=(money&&p.estimatedValue)?_cdCompactMoney(p.estimatedValue):'';
-  // Chips: only the ones that matter at a glance.
-  const chips=[];
-  if(pre78)chips.push(`<span style="font-size:9px;font-weight:800;letter-spacing:.03em;color:#A32D2D;background:rgba(163,45,45,.1);padding:2px 7px;border-radius:20px">PRE-1978</span>`);
-  if(p.isRental)chips.push(`<span style="font-size:9px;font-weight:800;letter-spacing:.03em;color:#E97B00;background:rgba(233,123,0,.12);padding:2px 7px;border-radius:20px">RENTAL</span>`);
-  const chipRow=chips.length?`<div style="display:flex;gap:5px;margin-top:6px">${chips.join('')}</div>`:'';
+  // A rental reads off the label the owner gave it or the property's own flag.
+  const isRental=/rental|tenant|investment/i.test(a.label||'')||!!p.isRental;
+  // Chips: only what matters at a glance. RENTAL is carried by the icon + label
+  // pill, so only the compliance-critical PRE-1978 flag needs a chip here.
+  const chipRow=pre78?`<div style="margin-top:7px"><span style="font-size:9px;font-weight:800;letter-spacing:.03em;color:#A32D2D;background:rgba(163,45,45,.1);padding:2px 7px;border-radius:20px">PRE-1978 · LEAD</span></div>`:'';
 
   // ── Header (always shown) ────────────────────────────────────────────────
-  const labelTag=`<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">${escHtml(a.label||'Primary')}</span>`;
+  // Property-type icon in a tinted tile (house = owner site, building = rental),
+  // a colored label pill, street, then a calm meta line. Enrichable: when we have
+  // no property data yet the meta line invites a lookup instead of reading empty.
+  const accent=isRental?{fg:'#B45900',bg:'rgba(233,123,0,.10)',bd:'rgba(233,123,0,.22)'}:{fg:'#2563eb',bg:'rgba(37,99,235,.08)',bd:'rgba(37,99,235,.18)'};
+  const iconTile=`<div style="width:40px;height:40px;border-radius:11px;background:${accent.bg};border:1px solid ${accent.bd};display:flex;align-items:center;justify-content:center;flex-shrink:0">${svgIcon(isRental?'🏢':'🏠',{size:20})}</div>`;
+  const labelPill=`<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:20px;background:${accent.bg};color:${accent.fg}">${escHtml(a.label||'Primary')}</span>`;
+  const noData=!p.propDataFetchedAt&&!p.yearBuilt&&!p.estimatedValue;
+  const meta2=noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap for property details</span>`:`${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}`;
   const valueBlock=value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'';
   const chevron=`<span style="font-size:11px;color:var(--text3);flex-shrink:0;display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s">${svgIcon('▶')}</span>`;
-  const header=`<div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;align-items:center;gap:12px;padding:14px;cursor:pointer">
+  const header=`<div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;align-items:center;gap:12px;padding:13px 14px;cursor:pointer">
+    ${iconTile}
     <div style="flex:1;min-width:0">
-      ${labelTag}
-      <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(street)}</div>
-      <div style="font-size:12px;color:var(--text3);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}</div>
+      ${labelPill}
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(street)}</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${meta2}</div>
       ${chipRow}
     </div>
     ${valueBlock}
