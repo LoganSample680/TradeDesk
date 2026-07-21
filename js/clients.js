@@ -2389,7 +2389,7 @@ function pickClientAddress(clientId,onPick){
   sheet.innerHTML=
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:11px 12px 4px">Which property?</div>'+
     rows+
-    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">+</span>New address for this client</div>';
+    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--blue)" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>New address for this client</div>';
   ov.appendChild(sheet);document.body.appendChild(ov);
 }
 function _addrPickFire(addr){
