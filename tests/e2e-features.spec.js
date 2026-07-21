@@ -5111,7 +5111,9 @@ test.describe('Build feed, amount-less drafts always visible', () => {
       return { html: feed ? feed.innerHTML : '' };
     });
     expect(r.html).toContain('Shell Draft Client');
-    expect(r.html).toContain('finish');
+    // The card must nudge the owner to finish it ("Finish & send"). Case-insensitive
+    // so the assertion tracks intent, not the exact copy casing.
+    expect(r.html.toLowerCase()).toContain('finish');
     assertNoErrors(page, 'build feed shell draft');
   });
 });

@@ -368,6 +368,20 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
    equal flex share (flex:1 1 0), centered text, no wrap. "Collect →", "📱 Send",
    "Snooze 2d", "Won ✓" all render to identical width within their row. */
 .tf-acts>.btn,.tf-acts>.btn-sm,.tf-acts>a{flex:1 1 0;min-width:0;justify-content:center;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Feed-card content hierarchy: name + amount on the header row, then the property
+   line, then a meta row (estimate-type chip + project type). Keeps a dense card
+   scannable. */
+.tf-hd{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.tf-amt{font-size:13px;font-weight:800;color:var(--text);white-space:nowrap;letter-spacing:-.2px;flex-shrink:0}
+.tf-addr{font-size:11px;margin-top:2px;color:var(--text-3);font-weight:600;display:flex;align-items:center;gap:4px;min-width:0}
+.tf-addr>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf-meta{display:flex;align-items:center;gap:6px;margin-top:6px;flex-wrap:wrap}
+.tf-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:2px 7px;border-radius:999px;background:var(--cream);border:1px solid var(--line);color:var(--text-2);flex-shrink:0}
+.tf-type{font-size:12px;font-weight:600;color:var(--text-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf-stat{font-size:11px;margin-top:5px;line-height:1.35;font-weight:500}
+.tf-pill{display:inline-flex;align-items:center;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.03em;padding:2px 8px;border-radius:999px;white-space:nowrap;flex-shrink:0}
+.tf-pill-amber{background:var(--c-amber-soft);color:#8A5A00;border:1px solid var(--c-amber-edge)}
+.tf-pill-blue{background:var(--denim-soft);color:var(--denim);border:1px solid var(--denim-edge)}
 
 /* ── Make Money Today sections ── */
 .mmt-sec{border-top:1px solid var(--line)}

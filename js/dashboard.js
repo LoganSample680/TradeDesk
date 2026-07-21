@@ -1432,7 +1432,10 @@ function renderTodayFeed(){
   // Street-line address under a money-feed card's name, so multiple bids for one
   // client (different properties) are told apart at a glance. Empty string when
   // there's no address, nothing renders.
-  const _mmtAddrLine=(b,c)=>{const a=(b?.addr||c?.addr||'').split(',')[0].trim();return a?'<div class="tf-sub" style="font-size:11px;color:var(--text3);margin-bottom:1px">'+svgIcon('📍',{size:10})+' '+escHtml(a)+'</div>':'';};
+  const _mmtAddrLine=(b,c)=>{const a=(b?.addr||c?.addr||'').split(',')[0].trim();return a?'<div class="tf-addr">'+svgIcon('📍',{size:11})+'<span>'+escHtml(a)+'</span></div>':'';};
+  // Header amount: drop the ".00" on whole-dollar figures so the card reads clean
+  // ($9,500 not $9,500.00); amounts with real cents keep them.
+  const _mmtAmt=v=>fmt(v).replace(/\.00$/,'');
 
   // ALERTS: License expiring/expired (always first, outside sections)
   const licAlerts=getLicenseAlerts();
@@ -1626,13 +1629,18 @@ function renderTodayFeed(){
     if(_contractorTs){
       viewedBadge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_localTs(_contractorTs)+'</div>';
     }
+    const _pTypeLbl=(typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b):'';
     pendingItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">'+svgIcon('📨',{size:18})+'</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">'+escHtml(c.name)+'</div>'+
+          '<div class="tf-hd">'+
+            '<div class="tf-name">'+escHtml(c.name)+'</div>'+
+            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'')+
+          '</div>'+
           _mmtAddrLine(b,c)+
-          '<div class="tf-sub" style="color:'+urgColor+'">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+fmt(b.amount)+' · '+daysStr+'</div>'+
+          (_pTypeLbl?'<div class="tf-meta"><span class="tf-chip">'+escHtml(_pTypeLbl)+'</span></div>':'')+
+          '<div class="tf-stat" style="color:'+urgColor+'">'+daysStr+'</div>'+
           viewedBadge+
         '</div>'+
         '<div class="tf-acts">'+
@@ -1655,15 +1663,25 @@ function renderTodayFeed(){
     // Estimate type spelled out (never an acronym) so the feed shows which
     // kind of estimate was chosen without opening it.
     const typeLbl=typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):'';
-    const subLabel=(typeLbl?typeLbl+' · ':'')+(isDraft&&!b.amount?'In progress, finish &amp; send':isDraft?'Draft: finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet'));
+    // Header carries the money (or a Draft pill when nothing's priced yet); the meta
+    // row carries the estimate type + project name; a subtle status line nudges the
+    // next action. One clear read instead of three competing gray lines.
+    const _built=!isDraft||b.amount>0;
+    const statLine=isDraft&&!b.amount?'Finish &amp; send':(_built?'Built '+(days===0?'today':days+'d ago')+' · not sent yet':'Draft: finish &amp; send');
     buildItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">'+svgIcon('✏',{size:18})+'</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">'+escHtml(displayName)+'</div>'+
+          '<div class="tf-hd">'+
+            '<div class="tf-name">'+escHtml(displayName)+'</div>'+
+            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'<div class="tf-pill tf-pill-amber">Draft</div>')+
+          '</div>'+
           _mmtAddrLine(b,c)+
-          (b.type?'<div class="tf-sub" style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1px">'+escHtml(b.type)+'</div>':'')+
-          '<div class="tf-sub" style="color:var(--text3)">'+subLabel+'</div>'+
+          ((typeLbl||b.type)?'<div class="tf-meta">'+
+            (typeLbl?'<span class="tf-chip">'+escHtml(typeLbl)+'</span>':'')+
+            (b.type?'<span class="tf-type">'+escHtml(b.type)+'</span>':'')+
+          '</div>':'')+
+          '<div class="tf-stat" style="color:var(--text-3)">'+statLine+'</div>'+
         '</div>'+
         '<div class="tf-acts">'+
           '<button onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
