@@ -1889,6 +1889,29 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.count).toBe(1); // one card, not two
   });
 
+  test('MMT build cards show each bid\'s street address so same-client bids at different properties are told apart', async () => {
+    const r = await page.evaluate(() => {
+      window._mmtCol_build = false; // expand BUILD so cards render into innerHTML
+      clients.unshift({ id: 77120, name: 'Addr Feed Co', addr: '482 Oak Ridge Ln, Wichita, KS 67206' });
+      bids.unshift({ id: 771201, client_id: 77120, client_name: 'Addr Feed Co', status: 'Draft', draft: true, amount: 4200, isTM: true, geiLines: [], bid_date: todayKey(), addr: '482 Oak Ridge Ln, Wichita, KS 67206' });
+      bids.unshift({ id: 771202, client_id: 77120, client_name: 'Addr Feed Co', status: 'Draft', draft: true, amount: 1800, isFreeForm: true, geiLines: [], bid_date: todayKey(), addr: '119 Baker St, Wichita, KS 67211' });
+      let err = '';
+      try { renderTodayFeed(); } catch (e) { err = e.message; }
+      const html = (document.getElementById('dash-money-feed') || {}).innerHTML || '';
+      const cleanup = () => {
+        [771201, 771202].forEach(id => { const i = bids.findIndex(b => b.id === id); if (i !== -1) bids.splice(i, 1); });
+        const ci = clients.findIndex(c => c.id === 77120); if (ci !== -1) clients.splice(ci, 1);
+        delete window._mmtCol_build;
+      };
+      const res = { err, hasPrimary: html.includes('482 Oak Ridge Ln'), hasRental: html.includes('119 Baker St') };
+      cleanup();
+      return res;
+    });
+    expect(r.err).toBe('');
+    expect(r.hasPrimary).toBe(true); // first bid's property
+    expect(r.hasRental).toBe(true);  // second bid's DIFFERENT property, both visible
+  });
+
   test('MMT pending follow-up card has a Close out button using the same close-out framework', async () => {
     const r = await page.evaluate(() => {
       window._mmtCol_pending = false; // expand the Pending section so its cards render into innerHTML (§11.6)

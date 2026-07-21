@@ -1429,6 +1429,10 @@ function renderTodayFeed(){
   }
   const _bidInbox=(typeof _subBidInboxHTML==='function')?_subBidInboxHTML(typeof _subBids!=='undefined'?_subBids:null):'';
   const finalPayItems=[],depositItems=[],scheduleItems=[],pendingItems=[],buildItems=[],alertItems=[];
+  // Street-line address under a money-feed card's name, so multiple bids for one
+  // client (different properties) are told apart at a glance. Empty string when
+  // there's no address, nothing renders.
+  const _mmtAddrLine=(b,c)=>{const a=(b?.addr||c?.addr||'').split(',')[0].trim();return a?'<div class="tf-sub" style="font-size:11px;color:var(--text3);margin-bottom:1px">'+svgIcon('📍',{size:10})+' '+escHtml(a)+'</div>':'';};
 
   // ALERTS: License expiring/expired (always first, outside sections)
   const licAlerts=getLicenseAlerts();
@@ -1474,6 +1478,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">'+svgIcon('💰',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+urgTag+countdownTag+'</div>'+
+          _mmtAddrLine(b,c)+
           '<div class="tf-sub" style="color:#A32D2D">'+fmt(bal)+' owed · '+daysAgo+'d since completion</div>'+
         '</div>'+
         '<div class="tf-acts" style="display:flex;gap:6px">'+actBtns+'</div>'+
@@ -1497,6 +1502,7 @@ function renderTodayFeed(){
           '<div class="tf-icon">'+svgIcon('📅',{size:18})+'</div>'+
           '<div class="tf-body">'+
             '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
+            _mmtAddrLine(b,c)+
             '<div class="tf-sub" style="color:var(--blue)">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+fmt(b.amount)+' · deposit paid · not yet scheduled</div>'+
           '</div>'+
           '<div class="tf-acts">'+
@@ -1514,6 +1520,7 @@ function renderTodayFeed(){
           '<div class="tf-icon">'+(hasJob?svgIcon('💰',{size:18}):svgIcon('💳',{size:18}))+'</div>'+
           '<div class="tf-body">'+
             '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
+            _mmtAddrLine(b,c)+
             '<div class="tf-sub" style="color:'+(hasJob?'#A32D2D':'var(--blue)')+'">'+subText+'</div>'+
           '</div>'+
           '<div class="tf-acts">'+
@@ -1536,6 +1543,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">'+svgIcon('🔥',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
+          _mmtAddrLine(b,c)+
           '<div class="tf-sub" style="color:#A32D2D">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+'2nd follow-up · '+fmt(b.amount)+' · '+Math.abs(daysOut)+'d waiting</div>'+
         '</div>'+
         '<div class="tf-acts">'+
@@ -1623,6 +1631,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">'+svgIcon('📨',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
+          _mmtAddrLine(b,c)+
           '<div class="tf-sub" style="color:'+urgColor+'">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+fmt(b.amount)+' · '+daysStr+'</div>'+
           viewedBadge+
         '</div>'+
@@ -1652,6 +1661,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">'+svgIcon('✏',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(displayName)+'</div>'+
+          _mmtAddrLine(b,c)+
           (b.type?'<div class="tf-sub" style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1px">'+escHtml(b.type)+'</div>':'')+
           '<div class="tf-sub" style="color:var(--text3)">'+subLabel+'</div>'+
         '</div>'+
