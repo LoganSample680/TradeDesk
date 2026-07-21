@@ -1629,7 +1629,7 @@ function renderTodayFeed(){
     if(_contractorTs){
       viewedBadge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_localTs(_contractorTs)+'</div>';
     }
-    const _pTypeLbl=(typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b):'';
+    const _pSub=[(b.addr||c?.addr||'').split(',')[0].trim(),daysStr].filter(Boolean).join(' · ');
     pendingItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">'+svgIcon('📨',{size:18})+'</div>'+
@@ -1638,9 +1638,7 @@ function renderTodayFeed(){
             '<div class="tf-name">'+escHtml(c.name)+'</div>'+
             (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'')+
           '</div>'+
-          _mmtAddrLine(b,c)+
-          (_pTypeLbl?'<div class="tf-meta"><span class="tf-chip">'+escHtml(_pTypeLbl)+'</span></div>':'')+
-          '<div class="tf-stat" style="color:'+urgColor+'">'+daysStr+'</div>'+
+          (_pSub?'<div class="tf-sub tf-1line" style="color:'+urgColor+'">'+escHtml(_pSub)+'</div>':'')+
           viewedBadge+
         '</div>'+
         '<div class="tf-acts">'+
@@ -1665,23 +1663,19 @@ function renderTodayFeed(){
     const typeLbl=typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):'';
     // Header carries the money (or a Draft pill when nothing's priced yet); the meta
     // row carries the estimate type + project name; a subtle status line nudges the
-    // next action. One clear read instead of three competing gray lines.
-    const _built=!isDraft||b.amount>0;
-    const statLine=isDraft&&!b.amount?'Finish &amp; send':(_built?'Built '+(days===0?'today':days+'d ago')+' · not sent yet':'Draft: finish &amp; send');
+    // Two lines only: name + amount (or a muted "Draft" when nothing's priced),
+    // then one muted line = property · project. Section header already says BUILD,
+    // so no extra status line.
+    const _sub=[(b.addr||c?.addr||'').split(',')[0].trim(),b.type].filter(Boolean).join(' · ');
     buildItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">'+svgIcon('✏',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-hd">'+
             '<div class="tf-name">'+escHtml(displayName)+'</div>'+
-            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'<div class="tf-pill tf-pill-amber">Draft</div>')+
+            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'<div class="tf-amt tf-amt-mut">Draft</div>')+
           '</div>'+
-          _mmtAddrLine(b,c)+
-          ((typeLbl||b.type)?'<div class="tf-meta">'+
-            (typeLbl?'<span class="tf-chip">'+escHtml(typeLbl)+'</span>':'')+
-            (b.type?'<span class="tf-type">'+escHtml(b.type)+'</span>':'')+
-          '</div>':'')+
-          '<div class="tf-stat" style="color:var(--text-3)">'+statLine+'</div>'+
+          (_sub?'<div class="tf-sub tf-1line" style="color:var(--text-3)">'+escHtml(_sub)+'</div>':'')+
         '</div>'+
         '<div class="tf-acts">'+
           '<button onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+

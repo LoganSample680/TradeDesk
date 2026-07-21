@@ -5111,9 +5111,10 @@ test.describe('Build feed, amount-less drafts always visible', () => {
       return { html: feed ? feed.innerHTML : '' };
     });
     expect(r.html).toContain('Shell Draft Client');
-    // The card must nudge the owner to finish it ("Finish & send"). Case-insensitive
-    // so the assertion tracks intent, not the exact copy casing.
-    expect(r.html.toLowerCase()).toContain('finish');
+    // Must be actionable in the feed (Resume to finish it, Discard to remove it).
+    // Copy-independent so the guard tracks its real intent, shell drafts stay
+    // visible & removable, not the exact wording.
+    expect(r.html).toContain('discardInProgressBid(991102)');
     assertNoErrors(page, 'build feed shell draft');
   });
 });
