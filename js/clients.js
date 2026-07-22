@@ -54,6 +54,7 @@ function _cdNewMenu(){
   const c=getClientById(currentClientId);if(!c)return;
   _cdActionSheet('New',[
     {icon:'📝',label:'New estimate',act:'openEstimateForClient()'},
+    {icon:'📅',label:'Schedule estimate',act:'schedForClient()'},
     {icon:'🔧',label:'Diagnostic / trip charge',act:'openDiagnosticCharge('+c.id+')'},
   ]);
 }
@@ -1331,7 +1332,7 @@ function renderClientDetail(){
           : '<div style="font-size:13px;font-weight:600;color:rgba(255,255,255,.6);margin-top:4px">No balance · last contact '+_lastContactStr+'</div>'))+
     // Three coherent actions + overflow. Everything else (Client hub, Drive,
     // Email, Diagnostic charge) lives in a menu instead of a flat button wall.
-    '<div class="detail-actions">'+
+    '<div class="detail-actions" style="margin-top:16px">'+
       (c.phone?'<button class="btn" onclick="callClient()">'+svgIcon('📞')+' Call</button>':'')+
       (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">'+svgIcon('💬')+' Text</button>':'')+
       '<button class="btn btn-p" onclick="_cdNewMenu()">+ New</button>'+
@@ -1439,17 +1440,9 @@ function renderClientDetail(){
           (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
         '</div>';
     }else{
-      _cdActions.innerHTML=
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-          '<button onclick="schedForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-            '<span style="font-size:18px">'+svgIcon('📅')+'</span><span>Schedule estimate</span>'+
-            '<span style="font-size:10px;color:var(--text3);font-weight:400">Pick a date &amp; time</span>'+
-          '</button>'+
-          '<button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px'+(_canEstimate()?'':';opacity:.55')+'">'+
-            '<span style="font-size:18px">'+(_canEstimate()?svgIcon('📋'):svgIcon('🔒'))+'</span><span>Start estimate now</span>'+
-            '<span style="font-size:10px;color:var(--blue);font-weight:400">I\'m already here</span>'+
-          '</button>'+
-        '</div>';
+      // New estimate / Schedule estimate now live in the hero "+ New" menu, so the
+      // old two-button block here was a second, redundant "new" control. Removed.
+      _cdActions.innerHTML='';
     }
   }
   renderCDTimeline();
@@ -2293,15 +2286,24 @@ function _cdPropCardHtml(c,a,idx,isLast){
   const iconTile=`<div style="width:40px;height:40px;border-radius:11px;background:${accent.bg};border:1px solid ${accent.bd};display:flex;align-items:center;justify-content:center;flex-shrink:0">${svgIcon(isRental?'🏢':'🏠',{size:20})}</div>`;
   const labelPill=`<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:20px;background:${accent.bg};color:${accent.fg}">${escHtml(a.label||'Primary')}</span>`;
   const noData=!p.propDataFetchedAt&&!p.yearBuilt&&!p.estimatedValue;
-  const meta2=noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap for property details</span>`:`${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}`;
+  const meta2=noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap to look up property details</span>`:`${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}`;
+  // All the property facts inline on the card, so the owner sees them without
+  // having to expand every address (owner ask: "see all property data").
+  const _facts=[];
+  if(p.sqft)_facts.push(`${Number(p.sqft).toLocaleString()} sqft`);
+  if(p.bedrooms||p.bathrooms)_facts.push(`${p.bedrooms||'?'} bd / ${p.bathrooms||'?'} ba`);
+  if(p.lotSize)_facts.push(`${escHtml(String(p.lotSize))} lot`);
+  if(p.lastSalePrice||p.lastSaleDate)_facts.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${money&&p.lastSalePrice?' for '+_cdCompactMoney(p.lastSalePrice):''}`.trim());
+  const factsLine=_facts.length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.45">${_facts.join('  ·  ')}</div>`:'';
   const valueBlock=value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'';
   const chevron=`<span style="font-size:11px;color:var(--text3);flex-shrink:0;display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s">${svgIcon('▶')}</span>`;
-  const header=`<div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;align-items:center;gap:12px;padding:13px 14px;cursor:pointer">
+  const header=`<div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;cursor:pointer">
     ${iconTile}
     <div style="flex:1;min-width:0">
       ${labelPill}
-      <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(street)}</div>
-      <div style="font-size:12px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${meta2}</div>
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:4px;line-height:1.25;word-break:break-word">${escHtml(street)}</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px">${meta2}</div>
+      ${factsLine}
       ${chipRow}
     </div>
     ${valueBlock}
@@ -2313,13 +2315,8 @@ function _cdPropCardHtml(c,a,idx,isLast){
   if(isOpen){
     const leadRow=pre78?`<div style="display:flex;gap:9px;align-items:flex-start;padding:10px 12px;background:rgba(163,45,45,.06);border-radius:12px;margin-bottom:12px;color:#A32D2D;font-size:12px;line-height:1.4"><span style="flex-shrink:0">${svgIcon('⚠️')}</span><span><strong>Pre-1978 home.</strong> Federal lead-paint (EPA RRP) disclosure required before disturbing paint.</span></div>`:'';
     const noteRow=note?`<div style="display:flex;gap:9px;padding:10px 12px;background:var(--bg2);border-left:3px solid var(--amber,#8A4E00);border-radius:10px;margin-bottom:12px;font-size:12px;color:var(--text2);line-height:1.45;white-space:pre-wrap"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);flex-shrink:0;padding-top:2px">Access</span><span style="min-width:0">${escHtml(note)}</span></div>`:'';
-    // Secondary facts as one calm muted line (beds/baths/last sale).
-    const detailBits=[];
-    if(p.sqft)detailBits.push(`${Number(p.sqft).toLocaleString()} sqft`);
-    if(p.bedrooms||p.bathrooms)detailBits.push(`${p.bedrooms||'?'} bd / ${p.bathrooms||'?'} ba`);
-    if(p.lotSize)detailBits.push(`${escHtml(String(p.lotSize))} lot`);
-    if(p.lastSalePrice||p.lastSaleDate)detailBits.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${money&&p.lastSalePrice?' for '+fmt(p.lastSalePrice):''}`.trim());
-    const detailLine=detailBits.length?`<div style="font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.5">${detailBits.join('  ·  ')}</div>`:'';
+    // Property facts (sqft/beds/last sale) now show inline on the collapsed card,
+    // so the expanded body is just the lead flag, access note, and work history.
     // Work items, one clean chronological list with a type tag.
     const items=[
       ...hist.proposals.map(b=>({kind:'Proposal',accent:'var(--blue)',name:b.type||b.name||'Proposal',date:b.bid_date||(b.created?String(b.created).slice(0,10):''),amount:b.amount||0,meta:b.status||''})),
@@ -2351,7 +2348,7 @@ function _cdPropCardHtml(c,a,idx,isLast){
       <button onclick="_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Map</button>
       ${removeBtn}
     </div>`;
-    body=`<div style="padding:0 14px 14px">${leadRow}${detailLine}${noteRow}${workBlock}${footer}</div>`;
+    body=`<div style="padding:0 14px 14px">${leadRow}${noteRow}${workBlock}${footer}</div>`;
   }
   return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
 }
@@ -2366,8 +2363,11 @@ function renderCDAddresses(){
   if(hd){const first=hd.firstChild;if(first&&first.nodeType===3)first.textContent=acctOwns?'Properties':'Job sites';}
   const addrs=clientAddresses(c);
   _cdAddrList=addrs.map(a=>a.addr);
-  if(!addrs.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No address, edit client to add one.</div>';return;}
-  el.innerHTML=addrs.map((a,i)=>_cdPropCardHtml(c,a,i,i===addrs.length-1)).join('');
+  const _noun=acctOwns?'property':'job site';
+  // Always-present, full-width quick-add button (owner ask: "quickly add
+  // addresses"), so a new site is one tap from the bottom of the list.
+  const _addBtn='<button onclick="openAddAddressModal()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:'+(addrs.length?'10px':'2px')+';padding:13px;border:1.5px dashed var(--blue);border-radius:var(--r-lg);background:var(--blue-lt,rgba(37,99,235,.06));color:var(--blue-dk);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('➕',{size:15})+' Add '+_noun+'</button>';
+  el.innerHTML=addrs.map((a,i)=>_cdPropCardHtml(c,a,i,i===addrs.length-1)).join('')+_addBtn;
 }
 function openAddAddressModal(){
   const inS='width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit';
