@@ -107,6 +107,9 @@ function lifecycleTest(kind) {
         n += await type(p, '#cf-phone', clientPhone);
         n += await type(p, '#cf-street', '742 Lifecycle Ln');
         n += await type(p, '#cf-city', 'Wichita');
+        // "Who is this?" (party type) is REQUIRED at the top of the form (saveClient
+        // hard-blocks without it), a real pick, an honest interaction.
+        n += await pick(p, '#cf-partytype', 'Homeowner');
         // Lead source is REQUIRED (saveClient hard-blocks without it), a real
         // pick from the dropdown, an honest interaction.
         n += await pick(p, '#cf-source', 'Referral');

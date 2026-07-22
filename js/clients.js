@@ -897,6 +897,7 @@ function openNewClient(){
   const csrc=document.getElementById('cf-source');if(csrc)csrc.value='';
   const crw=document.getElementById('cf-ref-wrap');if(crw)crw.style.display='none';
   document.getElementById('cf-ptype').value='Single family home';
+  {const _pt=document.getElementById('cf-partytype');if(_pt)_pt.value='';} // force an explicit pick on every new lead
   document.getElementById('client-list').style.display='none';
   const sw=document.getElementById('cf-search-wrap');if(sw)sw.style.display='none';
   document.getElementById('client-form-wrap').style.display='block';
@@ -941,6 +942,7 @@ function openEditClient(){
   document.getElementById('cf-state').value=c.state||_ep.state||'';
   document.getElementById('cf-zip').value=c.zip||_ep.zip||'';
   document.getElementById('cf-ptype').value=c.ptype||'Single family home';
+  {const _pt=document.getElementById('cf-partytype');if(_pt)_pt.value=c.partyType||'homeowner';} // legacy clients predate the field, treat as homeowner
   document.getElementById('cf-email').value=c.email||'';
   document.getElementById('cf-ref').value=c.ref||'';
   const csrc2=document.getElementById('cf-source');if(csrc2)csrc2.value=c.source||'';
@@ -971,7 +973,11 @@ function saveClient(){
   if(_submitting)return;
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
   // Clear all field errors first
-  ['cf-name','cf-phone','cf-street','cf-source'].forEach(clearFErr);
+  ['cf-name','cf-phone','cf-street','cf-source','cf-partytype'].forEach(clearFErr);
+  // Who is this? drives whether the property is shown as theirs (homeowner) or as a
+  // job site they don't own (GC/PM/builder), and how getting-paid tools behave.
+  const partyType=v('cf-partytype')||'';
+  if(!partyType){_submitting=false;showFErr('cf-partytype','err-cf-partytype','Tell us who this is, it changes how we handle the property and getting paid.');return;}
   const name=v('cf-name').trim();
   if(!name){_submitting=false;showFErr('cf-name','err-cf-name','Enter a name.');return;}
   const phone=v('cf-phone').trim();
@@ -1022,7 +1028,7 @@ function saveClient(){
   const _ybRaw=parseInt(document.getElementById('cf-year-built')?.value||'');
   const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),
     addr,street,city,state,zip,
-    ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),
+    ptype:v('cf-ptype'),partyType,source,ref,notes:v('cf-notes'),created:todayKey(),
     yearBuilt:_ybRaw||_existingClient?.yearBuilt||null,
     sqft:_existingClient?.sqft||null,estimatedValue:_existingClient?.estimatedValue||null,
     propertyType:_existingClient?.propertyType||null,stories:_existingClient?.stories||null,

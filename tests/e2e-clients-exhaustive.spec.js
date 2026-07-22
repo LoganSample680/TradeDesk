@@ -2330,6 +2330,44 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.editId).toBeNull();
     });
 
+    test('clears the "Who is this?" party-type on a fresh lead (forces an explicit pick)', async () => {
+      const r = await page.evaluate(() => {
+        const pt = document.getElementById('cf-partytype');
+        if (pt) pt.value = 'gc';
+        openNewClient();
+        return { val: document.getElementById('cf-partytype')?.value };
+      });
+      expect(r.val).toBe('');
+    });
+  });
+
+  test.describe('party type (Who is this?) is required and persists', () => {
+    test('saveClient blocks when party type is not chosen, and stores it once set', async () => {
+      const r = await page.evaluate(() => {
+        openNewClient();
+        window.editClientId = null;
+        const before = clients.length;
+        document.getElementById('cf-name').value = 'Party Type Test Co';
+        document.getElementById('cf-phone').value = '316-555-0199';
+        document.getElementById('cf-source').value = document.getElementById('cf-source').options[1]?.value || 'Google';
+        document.getElementById('cf-partytype').value = ''; // not chosen
+        window._allowPhoneDupe = true;
+        saveClient();
+        const blocked = clients.length === before &&
+          document.getElementById('err-cf-partytype')?.style.display !== 'none';
+        // now choose a type and save
+        document.getElementById('cf-partytype').value = 'gc';
+        window._submitting = false; window._allowPhoneDupe = true;
+        saveClient();
+        const saved = clients.find(c => c.name === 'Party Type Test Co');
+        const partyType = saved ? saved.partyType : null;
+        if (saved) clients.splice(clients.indexOf(saved), 1);
+        return { blocked, partyType };
+      });
+      expect(r.blocked).toBe(true);        // required: no save until chosen
+      expect(r.partyType).toBe('gc');      // persisted on the client record
+    });
+
     test('shows client-form-wrap', async () => {
       const r = await page.evaluate(() => {
         const fw = document.getElementById('client-form-wrap');

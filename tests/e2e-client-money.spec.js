@@ -40,6 +40,7 @@ test.describe('Client management, CRUD and validation', () => {
       const n = document.getElementById('cf-name'); if (n) n.value = '';
       const p = document.getElementById('cf-phone'); if (p) p.value = '3165550101';
       const s = document.getElementById('cf-source'); if (s) s.value = 'Word of mouth';
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner'; // required field, set so the name check is reached
       if (typeof saveClient === 'function') saveClient();
     });
     await page.waitForTimeout(150);
@@ -58,6 +59,7 @@ test.describe('Client management, CRUD and validation', () => {
       const n = document.getElementById('cf-name'); if (n) n.value = 'Test Person';
       const p = document.getElementById('cf-phone'); if (p) p.value = '';
       const s = document.getElementById('cf-source'); if (s) s.value = 'Word of mouth';
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner';
     });
     await page.waitForTimeout(100);
     await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
@@ -77,6 +79,7 @@ test.describe('Client management, CRUD and validation', () => {
       const n = document.getElementById('cf-name'); if (n) n.value = 'Short Phone Test';
       const p = document.getElementById('cf-phone'); if (p) p.value = '555-123';
       const s = document.getElementById('cf-source'); if (s) s.value = 'Word of mouth';
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner';
     });
     await page.waitForTimeout(100);
     await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
@@ -99,6 +102,7 @@ test.describe('Client management, CRUD and validation', () => {
       const s = document.getElementById('cf-source');
       if (s && s.tagName === 'SELECT') s.selectedIndex = 0;
       else if (s) s.value = '';
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner'; // set so the source check is reached
     });
     await page.waitForTimeout(100);
     await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
@@ -137,6 +141,7 @@ test.describe('Client management, CRUD and validation', () => {
           if (s.options[i].value) { s.selectedIndex = i; break; }
         }
       } else if (s) { s.value = 'Word of mouth'; }
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner';
       _submitting = false;
       if (typeof saveClient === 'function') saveClient();
       return { before, after: clients.length };
@@ -162,6 +167,7 @@ test.describe('Client management, CRUD and validation', () => {
           if (s.options[i].value) { s.selectedIndex = i; break; }
         }
       } else if (s) { s.value = 'Word of mouth'; }
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner'; // required, so the dupe-name check is reached
     }, uid);
     await page.waitForTimeout(100);
     // Seed the duplicate IN THE SAME evaluate that calls saveClient, a late

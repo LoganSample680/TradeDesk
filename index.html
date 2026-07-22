@@ -1400,6 +1400,18 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
 
       <div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin-bottom:10px">Required</div>
+      <div class="f" style="margin-bottom:12px">
+        <label>Who is this? <span style="color:var(--c-red)">*</span></label>
+        <select id="cf-partytype" onchange="clearFErr('cf-partytype')">
+          <option value="">- Select who you're working with -</option>
+          <option value="homeowner">Homeowner</option>
+          <option value="gc">General contractor</option>
+          <option value="builder">Builder / developer</option>
+          <option value="pm">Property manager</option>
+          <option value="business">Business / other</option>
+        </select>
+        <div id="err-cf-partytype" style="display:none;font-size:11px;color:var(--c-red);margin-top:3px"></div>
+      </div>
       <div class="fg fg2">
         <div class="f"><label>Full name</label><input id="cf-name" placeholder="John &amp; Sarah Smith" oninput="checkClientDupe(this.value);clearFErr('cf-name')">
           <div id="cf-dupe-warn" style="display:none;font-size:11px;color:var(--c-red);margin-top:4px;background:#FEE8E8;border-radius:var(--r);padding:6px 8px"></div>
