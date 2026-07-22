@@ -3490,17 +3490,24 @@ function renderMoneyPage(){
     const stageColor=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red)':daysUnpaid>=14?'var(--c-amber)':'var(--text-2)'):bucket==='paid'?'var(--c-green)':'var(--text-3)';
     const stageBg=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red-soft)':daysUnpaid>=14?'var(--c-amber-soft)':'var(--cream)'):bucket==='paid'?'var(--c-green-soft)':'var(--cream)';
     const stageBorder=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red-edge)':daysUnpaid>=14?'var(--c-amber-edge)':'var(--line)'):bucket==='paid'?'var(--c-green-edge)':'var(--line)';
+    // Lien path only applies to a client who owns the property (a true client), not
+    // a GC/builder/property manager. No lien deadline warning or lien buttons for them.
+    const canLien=(typeof accountOwnsSites==='function')?accountOwnsSites(c):true;
     const {daysUntilDeadline}=getLienTimeline(b)||{daysUntilDeadline:999};
-    const lienWarn=daysUntilDeadline>0&&daysUntilDeadline<=30?
+    const lienWarn=canLien&&daysUntilDeadline>0&&daysUntilDeadline<=30?
       ' <span style="color:var(--c-red);font-weight:700">· '+svgIcon('⚠',{size:12})+' Lien: '+daysUntilDeadline+'d left</span>':'';
     const nxt=getNextCollAction(stage);
     let nextBtn='';
     if(nxt.smsKey){
-      nextBtn='<button class="btn btn-sm" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+nxt.smsKey+'\')" style="font-size:11px">'+svgIcon('💬',{size:12})+' '+nxt.label+'</button>';
-    } else if(stage==='intent'||stage==='lien_ready'){
+      const key=(nxt.smsKey==='intent'&&!canLien)?'second':nxt.smsKey; // no lien threat to a non-owner
+      const lbl=(nxt.smsKey==='intent'&&!canLien)?'Send demand':nxt.label;
+      nextBtn='<button class="btn btn-sm" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+key+'\')" style="font-size:11px">'+svgIcon('💬',{size:12})+' '+lbl+'</button>';
+    } else if(canLien&&(stage==='intent'||stage==='lien_ready')){
       nextBtn='<button class="btn btn-sm" onclick="showFileLienDirect('+b.id+')" style="font-size:11px;background:var(--c-deep);color:var(--c-deep-soft);border-color:transparent">'+svgIcon('⚖',{size:12})+' '+nxt.label+'</button>';
-    } else if(stage==='lien_filed'){
+    } else if(canLien&&stage==='lien_filed'){
       nextBtn='<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="font-size:11px;background:var(--c-green-soft);color:var(--c-green);border-color:var(--c-green-edge)">'+nxt.label+'</button>';
+    } else if(!canLien&&c.phone){
+      nextBtn='<button class="btn btn-sm" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\'second\')" style="font-size:11px">'+svgIcon('💬',{size:12})+' Send demand</button>';
     }
     return '<div style="padding:14px 18px;border-bottom:1px solid var(--line);cursor:pointer" onclick="openClientDetail('+c.id+',\'money\')" >'+
       '<div style="display:flex;align-items:center;gap:10px">'+

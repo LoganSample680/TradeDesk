@@ -1622,6 +1622,36 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.html).not.toContain('General Contractor / Hiring Party'); // no GC block for a homeowner
   });
 
+  test('collect card: the lien path shows for a true client but NOT for a GC', async () => {
+    const r = await page.evaluate(() => {
+      window._mmtCol_collect = false; // expand the Collect section so cards render into innerHTML
+      const mk = (cid, name, partyType) => {
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name, partyType, phone: '3165550000', addr: '1 Test St, Wichita, KS' }]);
+        const bid = { id: cid * 10 + 1, client_id: cid, client_name: name, amount: 5000, deposit: 0, status: 'Closed Won', completion_date: '2026-04-01', addr: '1 Test St, Wichita, KS', geiLines: [] };
+        bids = bids.filter(b => b.client_id !== cid).concat([bid]);
+        if (typeof liens !== 'undefined') liens = liens.filter(l => l.bid_id !== bid.id).concat([{ id: cid, bid_id: bid.id, client_id: cid, status: 'intent', amount: 5000 }]);
+        return bid.id;
+      };
+      const hoBid = mk(94001, 'Homeowner Client', 'homeowner');
+      const gcBid = mk(94002, 'GC Client', 'gc');
+      renderTodayFeed();
+      const feed = (document.getElementById('dash-money-feed') || {}).innerHTML || '';
+      const cleanup = () => { [94001, 94002].forEach(cid => { bids = bids.filter(b => b.client_id !== cid); clients = clients.filter(c => c.id !== cid); if (typeof liens !== 'undefined') liens = liens.filter(l => l.client_id !== cid); }); delete window._mmtCol_collect; };
+      const res = {
+        homeownerHasNOI: feed.includes('printNoticeOfIntent(' + hoBid + ')'),
+        gcHasNOI: feed.includes('printNoticeOfIntent(' + gcBid + ')'),
+        gcHasFileLien: feed.includes('showFileLienDirect(' + gcBid + ')'),
+        gcHasCollect: feed.includes('openPayPanel(' + gcBid + ')'),
+      };
+      cleanup();
+      return res;
+    });
+    expect(r.homeownerHasNOI).toBe(true);   // true client (owns the property) → lien path offered
+    expect(r.gcHasNOI).toBe(false);         // GC → no Notice of Intent
+    expect(r.gcHasFileLien).toBe(false);    // GC → no File Lien
+    expect(r.gcHasCollect).toBe(true);      // GC still gets normal collection (Collect)
+  });
+
   // ─────────────────────────────────────────────────────────────────────────────
   // checkUnpaidOnLoad
   // ─────────────────────────────────────────────────────────────────────────────

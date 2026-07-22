@@ -2716,25 +2716,20 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.leadCount).toBe(1); // lead banner renders once, for the pre-1978 address only
     });
 
-    test('GC account: section titles "Job sites" and each site shows a separate Owner line', async () => {
+    test('GC account: section is titled "Job sites" (a GC does not own the addresses under them)', async () => {
       const r = await page.evaluate(() => {
         const cid = 970120;
         const c = { id: cid, name: 'Summit Build Group', partyType: 'gc', addr: '10 Spec House Ln, Town, KS 60000' };
         clients = clients.filter(x => x.id !== cid).concat([c]);
-        setPropertyData(c, '10 Spec House Ln', { ownerName: 'Dana Whitfield', ownedByAccount: false, yearBuilt: 2005 });
         currentClientId = cid;
         renderCDAddresses();
         const card = document.getElementById('cd-addresses-card');
-        const title = card ? (card.querySelector('.card-hd')?.firstChild?.textContent || '') : '';
-        const html = document.getElementById('cd-addresses-list').innerHTML;
-        return { title, hasOwner: html.includes('Owner:'), hasOwnerName: html.includes('Dana Whitfield') };
+        return { title: card ? (card.querySelector('.card-hd')?.firstChild?.textContent || '') : '' };
       });
       expect(r.title).toBe('Job sites');       // not "Properties" for a GC who doesn't own them
-      expect(r.hasOwner).toBe(true);
-      expect(r.hasOwnerName).toBe(true);        // the real owner-of-record is named
     });
 
-    test('homeowner account: section stays "Properties", no owner line (they own it)', async () => {
+    test('homeowner account: section stays "Properties"', async () => {
       const r = await page.evaluate(() => {
         const cid = 970121;
         const c = { id: cid, name: 'Rita Alvarez', partyType: 'homeowner', addr: '7 Home St, Town, KS 60000' };
@@ -2742,15 +2737,29 @@ test.describe('clients.js: exhaustive coverage', () => {
         currentClientId = cid;
         renderCDAddresses();
         const card = document.getElementById('cd-addresses-card');
-        const title = card ? (card.querySelector('.card-hd')?.firstChild?.textContent || '') : '';
-        const html = document.getElementById('cd-addresses-list').innerHTML;
-        return { title, hasOwner: html.includes('Owner:') };
+        return { title: card ? (card.querySelector('.card-hd')?.firstChild?.textContent || '') : '' };
       });
       expect(r.title).toBe('Properties');
-      expect(r.hasOwner).toBe(false); // a homeowner's own address never shows an "Owner:" line
     });
 
-    test('saveAddClientAddress: captures property type + a separate owner when the client does not own it', async () => {
+    test('accountOwnsSites: homeowner/business own; GC/builder/PM do not (drives the lien path)', async () => {
+      const r = await page.evaluate(() => ({
+        homeowner: accountOwnsSites({ partyType: 'homeowner' }),
+        business: accountOwnsSites({ partyType: 'business' }),
+        legacy: accountOwnsSites({}),           // no partyType (legacy) = treated as owner
+        gc: accountOwnsSites({ partyType: 'gc' }),
+        builder: accountOwnsSites({ partyType: 'builder' }),
+        pm: accountOwnsSites({ partyType: 'pm' }),
+      }));
+      expect(r.homeowner).toBe(true);
+      expect(r.business).toBe(true);
+      expect(r.legacy).toBe(true);
+      expect(r.gc).toBe(false);
+      expect(r.builder).toBe(false);
+      expect(r.pm).toBe(false);
+    });
+
+    test('saveAddClientAddress: captures the property type (no owner-capture complexity)', async () => {
       const r = await page.evaluate(() => {
         const cid = 970122;
         const c = { id: cid, name: 'GC Co', partyType: 'gc', addr: '1 First St, Town, KS 60000', extraAddresses: [] };
@@ -2759,20 +2768,15 @@ test.describe('clients.js: exhaustive coverage', () => {
         openAddAddressModal();
         document.getElementById('_aa-addr').value = '55 Jobsite Rd, Town, KS 60000';
         document.getElementById('_aa-ptype').value = 'New construction';
-        // GC default: "client owns" is unchecked, owner fields visible
-        const ownsDefault = document.getElementById('_aa-owns').checked;
-        document.getElementById('_aa-owner-name').value = 'Pat Owner';
-        document.getElementById('_aa-owner-phone').value = '3165550000';
+        const hasOwnerFields = !!document.getElementById('_aa-owner-name');
         saveAddClientAddress();
         const prop = getProperty(c, '55 Jobsite Rd');
-        return { ownsDefault, propertyType: prop.propertyType, ownerName: prop.ownerName, ownedByAccount: prop.ownedByAccount,
+        return { hasOwnerFields, propertyType: prop.propertyType,
           added: (c.extraAddresses || []).some(a => /55 Jobsite Rd/.test(a.addr)) };
       });
-      expect(r.ownsDefault).toBe(false);          // GC account defaults to "doesn't own it"
+      expect(r.hasOwnerFields).toBe(false);       // the owner-capture UI was removed
       expect(r.added).toBe(true);
       expect(r.propertyType).toBe('New construction');
-      expect(r.ownerName).toBe('Pat Owner');       // separate owner captured
-      expect(r.ownedByAccount).toBe(false);
     });
 
     test('PRIVACY: an employee without financials sees the property but no dollar figures', async () => {

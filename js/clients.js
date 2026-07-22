@@ -2268,12 +2268,6 @@ function _cdPropCardHtml(c,a,idx,isLast){
   const labelPill=`<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:20px;background:${accent.bg};color:${accent.fg}">${escHtml(a.label||'Primary')}</span>`;
   const noData=!p.propDataFetchedAt&&!p.yearBuilt&&!p.estimatedValue;
   const meta2=noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap for property details</span>`:`${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}`;
-  // Owner-of-record line, only when the client (payer) doesn't own this site (a GC/PM
-  // job). Never present a non-owned site as "theirs"; name the real owner (or invite
-  // it), since that's who a lien / pre-lien notice legally targets.
-  const thirdParty=(typeof propIsThirdPartyOwned==='function')&&propIsThirdPartyOwned(c,a.addr);
-  const ownerNm=(typeof propOwnerName==='function')?propOwnerName(c,a.addr):'';
-  const ownerLine=thirdParty?`<div style="font-size:11px;margin-top:3px;font-weight:600;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${svgIcon('👤',{size:10})} Owner: ${ownerNm?escHtml(ownerNm):'<span style="color:var(--blue)">tap to add</span>'}</div>`:'';
   const valueBlock=value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'';
   const chevron=`<span style="font-size:11px;color:var(--text3);flex-shrink:0;display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s">${svgIcon('▶')}</span>`;
   const header=`<div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;align-items:center;gap:12px;padding:13px 14px;cursor:pointer">
@@ -2282,7 +2276,6 @@ function _cdPropCardHtml(c,a,idx,isLast){
       ${labelPill}
       <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(street)}</div>
       <div style="font-size:12px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${meta2}</div>
-      ${ownerLine}
       ${chipRow}
     </div>
     ${valueBlock}
@@ -2351,27 +2344,16 @@ function renderCDAddresses(){
   el.innerHTML=addrs.map((a,i)=>_cdPropCardHtml(c,a,i,i===addrs.length-1)).join('');
 }
 function openAddAddressModal(){
-  const c=getClientById(currentClientId);
-  // A GC/PM/builder client doesn't own the sites under them, so default the owner
-  // block OPEN and ask who does. A homeowner owns it, so default it closed.
-  const acctOwns=(typeof accountOwnsSites==='function')?accountOwnsSites(c):true;
   const inS='width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit';
   const lblS='font-size:11px;font-weight:700;display:block;margin-bottom:4px';
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  overlay.innerHTML='<div class="zmodal" style="max-width:380px;max-height:88vh;overflow-y:auto"><div class="zmodal-title">Add property address</div>'+
+  overlay.innerHTML='<div class="zmodal" style="max-width:380px"><div class="zmodal-title">Add property address</div>'+
     '<div class="f" style="margin-bottom:10px"><label style="'+lblS+'">Label (e.g. Vacation home, Rental)</label>'+
     '<input id="_aa-label" placeholder="Vacation home" style="'+inS+'"></div>'+
     '<div class="f" style="margin-bottom:10px;position:relative"><label style="'+lblS+'">Address <span style="color:#A32D2D">*</span></label>'+
     '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" autocomplete="off" style="'+inS+'"></div>'+
-    '<div class="f" style="margin-bottom:12px"><label style="'+lblS+'">Property type</label>'+
+    '<div class="f" style="margin-bottom:14px"><label style="'+lblS+'">Property type</label>'+
     '<select id="_aa-ptype" style="'+inS+'"><option value="">- Select -</option><option>Single family home</option><option>Townhouse / condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option><option>Other</option></select></div>'+
-    '<label style="display:flex;align-items:center;gap:8px;margin-bottom:10px;cursor:pointer;font-size:13px;color:var(--text)">'+
-      '<input type="checkbox" id="_aa-owns" '+(acctOwns?'checked':'')+' onchange="document.getElementById(\'_aa-owner-wrap\').style.display=this.checked?\'none\':\'block\'" style="width:17px;height:17px">'+
-      '<span>'+escHtml(c?.name||'This client')+' owns this property</span></label>'+
-    '<div id="_aa-owner-wrap" style="display:'+(acctOwns?'none':'block')+';margin-bottom:12px;padding:11px 12px;background:var(--bg2);border-radius:var(--r);border-left:3px solid var(--amber,#8A4E00)">'+
-      '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">Who owns this site? Named on liens and pre-lien notices, they must be a separate party from the '+escHtml(c?.name||'client')+'.</div>'+
-      '<input id="_aa-owner-name" placeholder="Owner name" style="'+inS+';margin-bottom:8px">'+
-      '<input id="_aa-owner-phone" type="tel" placeholder="Owner phone (optional)" style="'+inS+'"></div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="saveAddClientAddress()" class="btn btn-g" style="flex:1">Add</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
@@ -2388,16 +2370,8 @@ function saveAddClientAddress(){
   const c=getClientById(currentClientId);if(!c)return;
   if(!c.extraAddresses)c.extraAddresses=[];
   c.extraAddresses.push({label,addr});
-  // Property type + who owns it. Unchecking "client owns" captures a separate
-  // owner of record, which is what the lien / Notice of Intent names.
   const ptype=document.getElementById('_aa-ptype')?.value||'';
-  const owns=!!document.getElementById('_aa-owns')?.checked;
-  const oName=(document.getElementById('_aa-owner-name')?.value||'').trim();
-  const oPhone=(document.getElementById('_aa-owner-phone')?.value||'').trim();
-  if(typeof setPropertyData==='function'){
-    setPropertyData(c,addr,{propertyType:ptype||null,isRental:/rental/i.test(ptype)||undefined,
-      ownedByAccount:owns,ownerName:owns?(c.name||''):(oName||null),ownerPhone:owns?null:(oPhone||null)});
-  }
+  if(ptype&&typeof setPropertyData==='function')setPropertyData(c,addr,{propertyType:ptype,isRental:/rental/i.test(ptype)||undefined});
   saveAll();
   document.querySelector('.zmodal-overlay')?.remove();
   renderCDAddresses();

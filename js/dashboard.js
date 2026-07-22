@@ -1556,13 +1556,24 @@ function renderTodayFeed(){
     // globally by the .tf-acts>.btn CSS rule (flex:1 1 0), so every button in the
     // row is the same size regardless of label. Call removed, texting is the
     // collections channel and the row only has space for two even buttons.
-    if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
+    // The lien path (intent-to-lien threat, Notice of Intent, File Lien) only applies
+    // to a TRUE client who owns the property. A GC/builder/property manager doesn't
+    // own the site and the sub may never know the homeowner, so we never show them a
+    // lien path, just plain past-due demands.
+    const canLien=(typeof accountOwnsSites==='function')?accountOwnsSites(c):true;
+    if(next.smsKey&&c.phone){
+      const threat=next.smsKey==='intent'&&!canLien; // don't send a lien threat to a non-owner
+      const key=threat?'second':next.smsKey;
+      const lbl=threat?(svgIcon('💬',{size:11})+' Send demand'):next.label;
+      actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+key+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+lbl+'</button>';
+    }
     // Notice of Intent to Lien = the relationship-safe step BEFORE filing (gets subs
     // paid ~half the time with no lien). Offered at the intent stage; File Lien is the
-    // harder escalation that follows.
-    else if(stage==='intent')actBtns+='<button onclick="printNoticeOfIntent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+svgIcon('📄',{size:11})+' Notice of Intent</button>';
-    else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' File Lien</button>';
-    else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' View lien doc</button>';
+    // harder escalation that follows. Lien-path buttons only for true clients.
+    else if(canLien&&stage==='intent')actBtns+='<button onclick="printNoticeOfIntent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+svgIcon('📄',{size:11})+' Notice of Intent</button>';
+    else if(canLien&&isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' File Lien</button>';
+    else if(canLien&&lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' View lien doc</button>';
+    else if(!canLien&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\'second\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+svgIcon('💬',{size:11})+' Send demand</button>';
     actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>';
     finalPayItems.push(
       '<div class="tf-card">'+
