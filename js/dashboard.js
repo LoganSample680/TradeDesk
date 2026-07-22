@@ -1244,6 +1244,92 @@ ${bid.proposalHtml?`<div class="page-break"></div><div class="proposal-section">
   else{zAlert('Allow pop-ups to open the lien document. In Safari: tap AA in address bar → Allow pop-ups.');}
 }
 
+// ── Notice of Intent to Lien, the relationship-safe "get paid" demand ────────
+// Sent BEFORE any lien is filed. Research (Levelset): ~50% of intent notices get
+// the sub paid with no lien ever filed, 56% within 42 days. Unlike printKansasLien
+// this is NOT a recorded instrument, it's a formal written demand mailed (certified)
+// to the property OWNER OF RECORD and, on a GC job, to the general contractor who
+// hired us. Owner and payer can be different parties (a GC doesn't own the site), so
+// both are named. State-general: statute + filing deadline pulled from STATE_LIEN /
+// LIEN_RULES with a generic fallback, and a prominent "not legal advice" disclaimer.
+function printNoticeOfIntent(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const c=getClientById(bid.client_id);if(!c)return;
+  const bname=S.bname||'TradeDesk';const bphone=S.bphone||'';const blic=S.blic||'';
+  const signer=(typeof getOwnerName==='function'&&getOwnerName())||'';
+  const addr=bid.addr||c.addr||'';
+  const bal=(typeof getBidBalance==='function'?getBidBalance(bid):0)||0;
+  const {stateCode:st,county}=(typeof getCountyForBid==='function')?getCountyForBid(bid):{stateCode:'',county:''};
+  const stateName=(typeof STATE_TAX!=='undefined'&&STATE_TAX[st]?.name)||st||'the applicable state';
+  const statute=(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[st]?.statute)||(st?st+" mechanic's lien statutes":"applicable state mechanic's lien statutes");
+  const rules=(typeof LIEN_RULES!=='undefined'&&LIEN_RULES[st])||null;
+  const demandDays=10; // days to pay before we file; generic, not a statutory NOI window
+  const fmtD=d=>{if(!d)return'____________';const p=String(d).split('-');if(p.length<3)return d;const mn=['January','February','March','April','May','June','July','August','September','October','November','December'];return mn[parseInt(p[1])-1]+' '+parseInt(p[2])+', '+p[0];};
+  const todayD=fmtD(todayKey());
+  const payByD=fmtD(addDays(todayKey(),demandDays));
+  const lastWork=bid.completion_date||bid.bid_date||todayKey();
+  const fileDeadline=rules?fmtD(addDays(lastWork,rules.filing_deadline_days)):'';
+  const workDesc=bid.type||bid.geiDesc||'labor, services and materials furnished';
+  // Owner of record vs the party who hired us. On a GC/PM account the site owner is a
+  // separate person (or unknown → fill-in line); on a homeowner account they're the same.
+  const isGC=/gc|builder|pm|contractor|manager/i.test(c.partyType||'')||!!c.isGC;
+  // Read owner from the raw per-property record (getProperty filters to _PROP_FIELDS,
+  // which doesn't carry owner). Falls back to the client only when they're the owner.
+  const _pk=(typeof siteNoteKey==='function')?siteNoteKey(addr):String(addr||'').split(',')[0].trim().toLowerCase().replace(/\s+/g,' ');
+  const prop=(c.properties&&c.properties[_pk])||{};
+  const ownerName=(prop.owner&&prop.owner.name)||(isGC?'':c.name);
+  const ownerBlock=ownerName?escHtml(ownerName):'________________________________  <span style="font-size:9pt">(property owner of record)</span>';
+  const gcBlock=isGC?`<div class="party"><div class="plabel">And to, General Contractor / Hiring Party</div><div class="pval">${escHtml(c.name)}${c.phone?' · '+escHtml(c.phone):''}</div></div>`:'';
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Notice of Intent to Lien, ${escHtml(c.name)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Times New Roman',Times,serif;font-size:13pt;color:#000;background:#fff;padding:44px;line-height:1.5}
+  h1{font-size:17pt;text-align:center;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+  h2{font-size:11pt;text-align:center;font-weight:normal;font-style:italic;margin-bottom:26px}
+  .row{margin-bottom:14px}
+  .party{margin-bottom:12px}
+  .plabel{font-size:9pt;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;color:#333}
+  .pval{font-size:13pt;border-bottom:1px solid #000;padding:2px 2px 3px}
+  .amt{font-size:20pt;font-weight:bold}
+  .body p{margin-bottom:12px;text-align:justify}
+  .demand{border:2px solid #000;padding:14px 16px;margin:18px 0;font-size:12pt;line-height:1.6}
+  .disc{border:1px solid #999;background:#f6f6f6;padding:12px 14px;margin-top:26px;font-size:9.5pt;line-height:1.5;color:#333}
+  .sig{margin-top:34px}
+  .sig-line{border-bottom:1px solid #000;height:34px;width:60%}
+  .sig-cap{font-size:9pt;color:#333;margin-top:3px}
+  .td-bar-btn{padding:12px 18px;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;min-height:46px;white-space:nowrap;font-family:-apple-system,system-ui,sans-serif;line-height:1}
+  @media print{body{padding:24px}.no-print{display:none}}
+</style></head><body>
+<div class="no-print" style="position:sticky;top:0;z-index:10;background:#185FA5;color:#fff;padding:10px 14px;margin:-44px -44px 30px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+  <button onclick="tdBack()" class="td-bar-btn" style="border:1.5px solid rgba(255,255,255,.6);background:transparent;color:#fff">&larr; Back to TradeDesk</button>
+  <button onclick="tdDoPrint()" class="td-bar-btn" style="border:none;background:#fff;color:#185FA5">&#128424;&#65039; Print / Save PDF</button>
+</div>
+<script>function tdDoPrint(){try{window.focus();}catch(e){}window.print();}function tdBack(){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){try{if(document.referrer)location.href=document.referrer;else history.back();}catch(e){history.back();}}},250);}</script>
+<h1>Notice of Intent to File a Mechanic's Lien</h1>
+<h2>Send by Certified Mail, Return Receipt Requested</h2>
+<div class="row" style="text-align:right">Date: ${todayD}</div>
+<div class="party"><div class="plabel">To, Property Owner of Record</div><div class="pval">${ownerBlock}</div></div>
+${gcBlock}
+<div class="party"><div class="plabel">Property / Job Site</div><div class="pval">${escHtml(addr)}</div></div>
+<div class="party"><div class="plabel">From, Claimant</div><div class="pval">${escHtml(bname)}${blic?' · Lic. '+escHtml(blic):''}${bphone?' · '+escHtml(bphone):''}</div></div>
+<div class="row" style="margin-top:18px"><div class="plabel">Amount Past Due</div><div class="amt">${fmt(bal)}</div></div>
+<div class="body" style="margin-top:16px">
+  <p>You are hereby notified that the undersigned, <strong>${escHtml(bname)}</strong>, furnished ${escHtml(workDesc)} for the improvement of the property located at <strong>${escHtml(addr)}</strong>, with work last furnished on or about <strong>${fmtD(lastWork)}</strong>.</p>
+  <p>The sum of <strong>${fmt(bal)}</strong> remains due and unpaid. Under ${escHtml(statute)}, the undersigned has the right to file and enforce a mechanic's lien against the above property to secure payment of this amount${fileDeadline?', and may do so at any time before the statutory filing deadline of <strong>'+fileDeadline+'</strong>':''}.</p>
+</div>
+<div class="demand"><strong>DEMAND:</strong> Unless full payment of ${fmt(bal)} is received on or before <strong>${payByD}</strong>, the undersigned intends to file a mechanic's lien against the property described above and to pursue all remedies available under law, which may include recovery of interest, costs, and attorney's fees where permitted.</div>
+<div class="body"><p>To resolve this matter, contact <strong>${escHtml(bname)}</strong>${bphone?' at '+escHtml(bphone):''} immediately.</p></div>
+<div class="sig">
+  <div class="sig-line"></div>
+  <div class="sig-cap">${escHtml(signer||bname)}${signer?', for '+escHtml(bname):''}</div>
+</div>
+<div class="disc"><strong>Not legal advice.</strong> Mechanic's-lien and preliminary-notice requirements, deadlines, required wording, and who must be served vary by state and can change. Some states require a specific statutory notice form or advance preliminary notice before this notice is effective. Verify the requirements for ${escHtml(stateName)} with the county/register of deeds or a construction attorney before relying on or filing anything. TradeDesk generates this document as a convenience only.</div>
+</body></html>`;
+  const win=window.open('','_blank');
+  if(win){win.document.write(html);win.document.close();}
+  else{zAlert('Allow pop-ups to open the notice. In Safari: tap AA in the address bar → Allow pop-ups.');}
+}
+
 // ── Release of Mechanic's Lien, the recordable discharge filed once paid ─────
 // Once the debt is satisfied, the contractor has a STATUTORY DUTY to file a lien
 // release with the same Register of Deeds so the property title is cleared;
@@ -1473,6 +1559,10 @@ function renderTodayFeed(){
     // row is the same size regardless of label. Call removed, texting is the
     // collections channel and the row only has space for two even buttons.
     if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
+    // Notice of Intent to Lien = the relationship-safe step BEFORE filing (gets subs
+    // paid ~half the time with no lien). Offered at the intent stage; File Lien is the
+    // harder escalation that follows.
+    else if(stage==='intent')actBtns+='<button onclick="printNoticeOfIntent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+svgIcon('📄',{size:11})+' Notice of Intent</button>';
     else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' File Lien</button>';
     else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' View lien doc</button>';
     actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>';

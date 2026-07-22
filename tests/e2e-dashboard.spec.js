@@ -1574,6 +1574,55 @@ test.describe('dashboard.js: exhaustive coverage', () => {
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
+  // printNoticeOfIntent, the relationship-safe "get paid" demand document
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  test('printNoticeOfIntent: names owner of record AND the GC separately on a GC job', async () => {
+    const r = await page.evaluate(() => {
+      S.bname = "ZJ Paint Co"; S.bphone = '3165550100'; S.blic = 'KS-1';
+      clients = clients.filter(c => c.id !== 95500);
+      bids = bids.filter(b => b.id !== 955001);
+      clients.push({ id: 95500, name: 'Summit Build Group', phone: '3165557788', partyType: 'gc',
+        addr: '2015 SW Randolph Ave, Topeka, KS 66604',
+        properties: { '2015 sw randolph ave': { owner: { name: 'Dana Whitfield' } } } });
+      bids.push({ id: 955001, client_id: 95500, addr: '2015 SW Randolph Ave, Topeka, KS 66604',
+        amount: 8400, deposit: 0, status: 'Closed Won', completion_date: '2026-05-20', type: 'Exterior repaint', geiLines: [] });
+      let html = '';
+      const orig = window.open;
+      window.open = () => ({ document: { write: h => { html = h; }, close: () => {} }, focus: () => {} });
+      let err = '';
+      try { printNoticeOfIntent(955001); } catch (e) { err = e.message; }
+      window.open = orig;
+      return { err, html };
+    });
+    expect(r.err).toBe('');
+    expect(r.html).toContain('Notice of Intent to File a Mechanic'); // the intent notice, not a filed lien
+    expect(r.html).toContain('Dana Whitfield');   // owner of record = who the lien would target
+    expect(r.html).toContain('Summit Build Group'); // GC = who hired/owes, named separately
+    expect(r.html).toContain('$8,400');            // amount past due
+    expect(r.html).toContain('DEMAND');            // pay-by demand
+    expect(r.html.toLowerCase()).toContain('not legal advice'); // disclaimer present
+  });
+
+  test('printNoticeOfIntent: homeowner job leaves the owner line as the client, no GC block', async () => {
+    const r = await page.evaluate(() => {
+      S.bname = "ZJ Paint Co";
+      clients = clients.filter(c => c.id !== 95501);
+      bids = bids.filter(b => b.id !== 955011);
+      clients.push({ id: 95501, name: 'Rita Alvarez', phone: '3165551234', addr: '5 Elm St, Wichita, KS 67206' });
+      bids.push({ id: 955011, client_id: 95501, addr: '5 Elm St, Wichita, KS 67206', amount: 2200, deposit: 0, status: 'Closed Won', completion_date: '2026-05-01', type: 'Interior', geiLines: [] });
+      let html = '';
+      const orig = window.open;
+      window.open = () => ({ document: { write: h => { html = h; }, close: () => {} }, focus: () => {} });
+      try { printNoticeOfIntent(955011); } catch (e) {}
+      window.open = orig;
+      return { html };
+    });
+    expect(r.html).toContain('Rita Alvarez');                       // homeowner is the owner
+    expect(r.html).not.toContain('General Contractor / Hiring Party'); // no GC block for a homeowner
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
   // checkUnpaidOnLoad
   // ─────────────────────────────────────────────────────────────────────────────
 
