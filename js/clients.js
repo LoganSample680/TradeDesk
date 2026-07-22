@@ -37,6 +37,36 @@ function openEstimateForClient(){
   _rrpGateThenEstimate(c);
 }
 
+// Client-record action menus. The header keeps only Call/Text/+New/More; these
+// action sheets hold the rest so the top isn't a wall of competing buttons.
+function _cdActionSheet(title,rows){
+  const c=getClientById(currentClientId);if(!c)return;
+  document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='340px';
+  const row=r=>'<button onclick="document.querySelector(\'.zmodal-overlay\')?.remove();'+r.act+'" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;padding:14px;border:1px solid var(--border2);border-radius:12px;background:var(--bg2);cursor:pointer;font-family:inherit;font-size:15px;font-weight:700;color:var(--text);margin-bottom:8px">'+svgIcon(r.icon,{size:20})+'<span>'+r.label+'</span></button>';
+  box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">'+escHtml(title)+' · '+escHtml(c.name)+'</div>'+
+    rows.map(row).join('')+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%;margin-top:2px">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+}
+function _cdNewMenu(){
+  const c=getClientById(currentClientId);if(!c)return;
+  _cdActionSheet('New',[
+    {icon:'📝',label:'New estimate',act:'openEstimateForClient()'},
+    {icon:'🔧',label:'Diagnostic / trip charge',act:'openDiagnosticCharge('+c.id+')'},
+  ]);
+}
+function _cdMoreMenu(){
+  const c=getClientById(currentClientId);if(!c)return;
+  const rows=[];
+  if(!(typeof gps!=='undefined'&&gps.active))rows.push({icon:'🚗',label:'Drive there',act:'startDriveToClient()'});
+  rows.push({icon:'🔗',label:'Client hub',act:'showHubMenu('+c.id+')'});
+  if(c.email)rows.push({icon:'✉️',label:'Email',act:'emailClient()'});
+  rows.push({icon:'✏️',label:'Edit client',act:'openEditClient()'});
+  _cdActionSheet('More',rows);
+}
+
 // ── Diagnostic charge, fast on-site "I came, I diagnosed X, the fee is $Y" ──
 // Research-backed design (owner, 2026-07-09): a diagnostic/trip fee is small-
 // dollar ($70-200 typical) and every source treats it as a plain charge-and-
@@ -1285,25 +1315,27 @@ function renderClientDetail(){
     if(days<1)return 'Today';if(days===1)return '1d ago';if(days<30)return days+'d ago';
     if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
   })();
-  const _eyebrow='TIER '+_tier+(c.source?' · '+escHtml(c.source):'')+(_ltv>0?' · LTV '+fmt(_ltv):'');
+  const _eyebrow='TIER '+_tier+(c.source?' · '+escHtml(c.source):'');
   document.getElementById('cd-hdr').innerHTML=
     '<div class="detail-eyebrow">'+
       '<span>'+_eyebrow+'</span>'+
       '<button class="btn btn-sm" onclick="openEditClient()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:#fff">Edit</button>'+
     '</div>'+
     '<div class="detail-name">'+escHtml(c.name)+' '+riskBadge(c.id)+'</div>'+
-    '<div class="detail-addr">'+
-      escHtml(c.addr||'No address')+(c.ptype?' · '+escHtml(c.ptype):'')+(c.yearBuilt?' · Built '+c.yearBuilt:'')+
-      (getActiveTrade()==='painting'&&!c.yearBuilt?'<span onclick="openEditClient()" style="color:#fbbf24;font-weight:700;cursor:pointer;margin-left:6px">'+svgIcon('⚠️')+' Add year built</span>':'')+
-    '</div>'+
+    // Money is the hero of a client record (competitor consensus). Balance owed
+    // leads; the address + year-built moved down into the Properties section.
+    (_totalOwed>0.01
+      ? '<div style="font-size:22px;font-weight:800;color:#ff6b6b;letter-spacing:-.4px;margin-top:3px">'+fmt(_totalOwed)+' <span style="font-size:12px;font-weight:700;opacity:.85">owed</span></div>'
+      : (_totalPaidAll>0
+          ? '<div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.72);margin-top:4px">'+svgIcon('✓',{size:12})+' Paid in full · '+fmt(_totalPaidAll)+'</div>'
+          : '<div style="font-size:13px;font-weight:600;color:rgba(255,255,255,.6);margin-top:4px">No balance · last contact '+_lastContactStr+'</div>'))+
+    // Three coherent actions + overflow. Everything else (Client hub, Drive,
+    // Email, Diagnostic charge) lives in a menu instead of a flat button wall.
     '<div class="detail-actions">'+
       (c.phone?'<button class="btn" onclick="callClient()">'+svgIcon('📞')+' Call</button>':'')+
-      (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">'+svgIcon('💬')+' SMS</button>':'')+
-      (c.email?'<button class="btn" onclick="emailClient()">'+svgIcon('✉️')+' Email</button>':'')+
-      (!gps.active?'<button class="btn" onclick="startDriveToClient()">'+svgIcon('🚗')+' Drive there</button>':'')+
-      '<button class="btn" onclick="showHubMenu('+c.id+')">'+svgIcon('🔗')+' Client hub</button>'+
-      '<button class="btn" onclick="openDiagnosticCharge('+c.id+')">'+svgIcon('🔧')+' Diagnostic charge</button>'+
-      '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':svgIcon('🔒')+' ')+'+ New estimate</button>'+
+      (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">'+svgIcon('💬')+' Text</button>':'')+
+      '<button class="btn btn-p" onclick="_cdNewMenu()">+ New</button>'+
+      '<button class="btn" onclick="_cdMoreMenu()">More</button>'+
     '</div>'+
     '';
   // Metric tiles, outside hero in split-3-eq grid
@@ -1315,22 +1347,13 @@ function renderClientDetail(){
         '<div class="met-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'-')+'</div>'+
         (sub?'<div class="met-s">'+sub+'</div>':'')+
       '</div>';
+    // Balance is now the hero above, so the tiles carry the supporting detail:
+    // lifetime value, jobs completed, last contact.
+    const _avg=_wonBids.length?_ltv/_wonBids.length:0;
     _heroMets.innerHTML=
-      _met('Lifetime value',_ltv>0?fmt(_ltv):null,_wonBids.length+' job'+(  _wonBids.length!==1?'s':''))||
-      _met('Lifetime value','-','No completed jobs')+
-      _met('Open balance',_totalOwed>0.01?fmt(_totalOwed):(_totalPaidAll>0?'$0':null),
-        _totalOwed>0.01?_totalPaidAll>0?fmt(_totalPaidAll)+' paid · '+fmt(_totalOwed+_totalPaidAll)+' total':'Balance due':
-        _totalPaidAll>0?'Paid in full':null,
-        _totalOwed>0.01?'var(--c-red)':_totalPaidAll>0?'var(--c-green)':null)+
-      _met('Last contact',_lastContactStr,c.last_contact_date||'');
-    // Fix: render all 3 tiles properly
-    _heroMets.innerHTML=
-      _met('Lifetime value',_ltv>0?fmt(_ltv):'-',_wonBids.length+' job'+(_wonBids.length!==1?'s':'') ,null)+
-      _met('Open balance',_totalOwed>0.01?fmt(_totalOwed):'$0',
-        _totalOwed>0.01?(_totalPaidAll>0?fmt(_totalPaidAll)+' paid · '+fmt(_totalOwed+_totalPaidAll)+' total':'Balance due'):
-        _totalPaidAll>0?'Paid in full':'-',
-        _totalOwed>0.01?'var(--c-red)':null)+
-      _met('Last contact',_lastContactStr,'',null);
+      _met('Lifetime value',_ltv>0?fmt(_ltv):'-',_avg>0?fmt(_avg)+' avg job':null,null)+
+      _met('Jobs done',_wonBids.length?String(_wonBids.length):'-',_wonBids.length===1?'job completed':'jobs completed',null)+
+      _met('Last contact',_lastContactStr,c.last_contact_date||'',null);
   }
   if(gps.active&&gps.clientId===currentClientId){
     document.getElementById('cd-drive-idle').style.display='none';
