@@ -57,12 +57,6 @@ function _cdNewMenu(){
     {icon:'🔧',label:'Diagnostic / trip charge',act:'openDiagnosticCharge('+c.id+')'},
   ]);
 }
-// Hero property line jumps to the full Properties/Job-sites section below, where
-// per-property detail + Add address live.
-function _cdJumpProps(){
-  const el=document.getElementById('cd-addresses-card')||document.getElementById('cd-addresses-list');
-  if(el)el.scrollIntoView({behavior:'smooth',block:'center'});
-}
 function _cdMoreMenu(){
   const c=getClientById(currentClientId);if(!c)return;
   const rows=[];
@@ -1356,29 +1350,13 @@ function renderClientDetail(){
         '<div style="font-family:var(--font-display);font-size:17px;font-weight:900;letter-spacing:-.4px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">'+(val||'-')+'</div>'+
       '</div>';
     const _div='<div style="width:1px;background:var(--border2);margin:3px 0;flex:0 0 auto"></div>';
-    let _html='<div style="display:flex;align-items:stretch;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:12px 4px">'+
+    _heroMets.innerHTML='<div style="display:flex;align-items:stretch;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:12px 4px">'+
       _cell('Lifetime value',_ltv>0?fmt(_ltv):'-')+_div+
       _cell('Jobs',_wonBids.length?String(_wonBids.length):'-')+_div+
       _cell('Last contact',_lastContactStr)+
     '</div>';
-    // Active-property line right at the hero (FieldPulse pattern, the gap the big
-    // players bury). One-line address for single-property clients; a tap-to-jump
-    // "+N more" for property managers / GCs with many sites.
-    const _addrs=(typeof clientAddresses==='function')?clientAddresses(c):[];
-    if(_addrs.length){
-      const _acctOwns=(typeof accountOwnsSites==='function')?accountOwnsSites(c):true;
-      const _street=(_addrs[0].addr||'').split(',')[0].trim();
-      const _more=_addrs.length-1;
-      _html+='<button onclick="_cdJumpProps()" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;margin-top:8px;padding:11px 13px;border:1px solid var(--border2);border-radius:var(--r-lg);background:var(--bg-card);box-shadow:var(--shadow-card);cursor:pointer;font-family:inherit">'+
-        svgIcon(_acctOwns?'🏠':'🏢',{size:17})+
-        '<div style="flex:1;min-width:0">'+
-          '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-3)">'+(_acctOwns?'Property':'Job site')+(_more>0?' · '+_addrs.length+' total':'')+'</div>'+
-          '<div style="font-size:14px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px">'+escHtml(_street||'No address')+'</div>'+
-        '</div>'+
-        (_more>0?'<span style="font-size:12px;font-weight:800;color:var(--blue);white-space:nowrap">+'+_more+' more ›</span>':'<span style="font-size:17px;color:var(--text-3)">›</span>')+
-      '</button>';
-    }
-    _heroMets.innerHTML=_html;
+    // The full Properties / Job-sites section sits right below the hero (moved out
+    // of the Overview tab), so every address is visible without a drill-down.
   }
   if(gps.active&&gps.clientId===currentClientId){
     document.getElementById('cd-drive-idle').style.display='none';
