@@ -1272,14 +1272,12 @@ function printNoticeOfIntent(bidId){
   const workDesc=bid.type||bid.geiDesc||'labor, services and materials furnished';
   // Owner of record vs the party who hired us. On a GC/PM account the site owner is a
   // separate person (or unknown → fill-in line); on a homeowner account they're the same.
-  const isGC=/gc|builder|pm|contractor|manager/i.test(c.partyType||'')||!!c.isGC;
-  // Read owner from the raw per-property record (getProperty filters to _PROP_FIELDS,
-  // which doesn't carry owner). Falls back to the client only when they're the owner.
-  const _pk=(typeof siteNoteKey==='function')?siteNoteKey(addr):String(addr||'').split(',')[0].trim().toLowerCase().replace(/\s+/g,' ');
-  const prop=(c.properties&&c.properties[_pk])||{};
-  const ownerName=(prop.owner&&prop.owner.name)||(isGC?'':c.name);
+  // The site owner (who a lien targets) vs the client who hired/owes us. On a GC/PM
+  // job they differ; propIsThirdPartyOwned/propOwnerName resolve which is which.
+  const thirdParty=(typeof propIsThirdPartyOwned==='function')?propIsThirdPartyOwned(c,addr):(/gc|builder|pm/i.test(c.partyType||'')||!!c.isGC);
+  const ownerName=(typeof propOwnerName==='function')?propOwnerName(c,addr):(thirdParty?'':c.name);
   const ownerBlock=ownerName?escHtml(ownerName):'________________________________  <span style="font-size:9pt">(property owner of record)</span>';
-  const gcBlock=isGC?`<div class="party"><div class="plabel">And to, General Contractor / Hiring Party</div><div class="pval">${escHtml(c.name)}${c.phone?' · '+escHtml(c.phone):''}</div></div>`:'';
+  const gcBlock=thirdParty?`<div class="party"><div class="plabel">And to, General Contractor / Hiring Party</div><div class="pval">${escHtml(c.name)}${c.phone?' · '+escHtml(c.phone):''}</div></div>`:'';
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Notice of Intent to Lien, ${escHtml(c.name)}</title>
 <style>
   *{box-sizing:border-box;margin:0;padding:0}
@@ -1758,7 +1756,10 @@ function renderTodayFeed(){
     // Name is the anchor (how contractors refer to a job), amount a strong secondary
     // beside it, one muted locator line below (property · project). Unpriced shells
     // carry a Draft tag instead of a $ figure.
-    const _sub=[(b.addr||c?.addr||'').split(',')[0].trim(),b.type].filter(Boolean).join(' · ');
+    // Muted line: property, then the spelled-out estimate type (Time & Materials /
+    // Build Your Own, never an acronym), then the project name. Estimate type sits
+    // ahead of the project name so it stays visible when the line truncates.
+    const _sub=[(b.addr||c?.addr||'').split(',')[0].trim(),typeLbl,b.type].filter(Boolean).join(' · ');
     buildItems.push(
       '<div class="tf-card tf-b-build">'+
         '<div class="tf-icon">'+svgIcon('✏',{size:18})+'</div>'+

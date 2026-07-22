@@ -1584,7 +1584,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       bids = bids.filter(b => b.id !== 955001);
       clients.push({ id: 95500, name: 'Summit Build Group', phone: '3165557788', partyType: 'gc',
         addr: '2015 SW Randolph Ave, Topeka, KS 66604',
-        properties: { '2015 sw randolph ave': { owner: { name: 'Dana Whitfield' } } } });
+        properties: { '2015 sw randolph ave': { ownerName: 'Dana Whitfield', ownedByAccount: false } } });
       bids.push({ id: 955001, client_id: 95500, addr: '2015 SW Randolph Ave, Topeka, KS 66604',
         amount: 8400, deposit: 0, status: 'Closed Won', completion_date: '2026-05-20', type: 'Exterior repaint', geiLines: [] });
       let html = '';

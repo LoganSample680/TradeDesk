@@ -322,7 +322,11 @@ function setSiteNote(client,addr,text){
 // for the client's PRIMARY address, and primary-address writes stay mirrored, so
 // no migration. Whole-object cloud sync persists client.properties for free.
 const _addrKey=siteNoteKey; // one address-normalization key for notes + properties
-const _PROP_FIELDS=['yearBuilt','sqft','estimatedValue','bedrooms','bathrooms','stories','lotSize','exteriorMaterial','roofType','garage','isRental','lastSalePrice','lastSaleDate','assessorUrl','propDataSource','propDataExact','propDataFetchedAt','propDataMiss','rrpDisturb'];
+// propertyType/ownerName/ownerPhone/ownedByAccount capture WHO OWNS the site vs
+// who the client (payer) is: on a GC/PM job the owner is a separate party (and the
+// lien/notice must name them). ownedByAccount defaults true so every legacy
+// homeowner record still reads as owning their own address.
+const _PROP_FIELDS=['propertyType','ownerName','ownerPhone','ownedByAccount','yearBuilt','sqft','estimatedValue','bedrooms','bathrooms','stories','lotSize','exteriorMaterial','roofType','garage','isRental','lastSalePrice','lastSaleDate','assessorUrl','propDataSource','propDataExact','propDataFetchedAt','propDataMiss','rrpDisturb'];
 function getProperty(client,addr){
   const out={};if(!client)return out;
   const k=_addrKey(addr||client.addr);
@@ -350,6 +354,26 @@ function clientAddresses(client){
   push('Primary',client.addr);
   (client.extraAddresses||[]).forEach((a,i)=>push(a.label||('Property '+(i+2)),a.addr));
   return out;
+}
+// Does this account TYPE own the sites under it? Homeowner/business do; a GC,
+// builder, or property manager is a payer who doesn't own the property.
+function accountOwnsSites(client){return !/^(gc|builder|pm)$/i.test((client&&client.partyType)||'')&&!(client&&client.isGC);}
+// True when a site is NOT owned by the payer (a GC/PM job, or explicitly flagged
+// "client doesn't own this"). Per-property flag wins over the account-type default.
+function propIsThirdPartyOwned(client,addr){
+  if(!client)return false;
+  const p=getProperty(client,addr);
+  if(p.ownedByAccount===false)return true;
+  if(p.ownedByAccount===true)return false;
+  return !accountOwnsSites(client);
+}
+// Effective owner-of-record NAME for a property (client card + lien notice).
+// Explicit per-property owner wins; else the client when they own it; else ''.
+function propOwnerName(client,addr){
+  if(!client)return'';
+  const p=getProperty(client,addr);
+  if(p.ownerName)return p.ownerName;
+  return propIsThirdPartyOwned(client,addr)?'':(client.name||'');
 }
 // Proposals + jobs tied to one address (bids/jobs with no address fall to the
 // client's primary), plus billed (job value) and paid (matched payments) totals.
