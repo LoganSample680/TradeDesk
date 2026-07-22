@@ -50,17 +50,11 @@ function _cdActionSheet(title,rows){
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%;margin-top:2px">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
 }
-function _cdNewMenu(){
-  const c=getClientById(currentClientId);if(!c)return;
-  _cdActionSheet('New',[
-    {icon:'📝',label:'New estimate',act:'openEstimateForClient()'},
-    {icon:'📅',label:'Schedule estimate',act:'schedForClient()'},
-    {icon:'🔧',label:'Diagnostic / trip charge',act:'openDiagnosticCharge('+c.id+')'},
-  ]);
-}
 function _cdMoreMenu(){
   const c=getClientById(currentClientId);if(!c)return;
   const rows=[];
+  rows.push({icon:'📅',label:'Schedule estimate',act:'schedForClient()'});
+  rows.push({icon:'🔧',label:'Diagnostic / trip charge',act:'openDiagnosticCharge('+c.id+')'});
   if(!(typeof gps!=='undefined'&&gps.active))rows.push({icon:'🚗',label:'Drive there',act:'startDriveToClient()'});
   rows.push({icon:'🔗',label:'Client hub',act:'showHubMenu('+c.id+')'});
   if(c.email)rows.push({icon:'✉️',label:'Email',act:'emailClient()'});
@@ -1335,7 +1329,6 @@ function renderClientDetail(){
     '<div class="detail-actions" style="margin-top:16px">'+
       (c.phone?'<button class="btn" onclick="callClient()">'+svgIcon('📞')+' Call</button>':'')+
       (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">'+svgIcon('💬')+' Text</button>':'')+
-      '<button class="btn btn-p" onclick="_cdNewMenu()">+ New</button>'+
       '<button class="btn" onclick="_cdMoreMenu()">More</button>'+
     '</div>'+
     '';
@@ -1381,23 +1374,14 @@ function renderClientDetail(){
   const wonBids=_wonBids;
   const totalOwed=_totalOwed;
   const totalPaidAll=_totalPaidAll;
+  // The owed / paid-in-full amount already leads the hero, so this is just the
+  // actions (log a payment, jump to bids), not a second big balance readout.
   const balanceHTML=totalOwed>0.01?
-    `<div style="background:#FFF0F0;border:2px solid #A32D2D;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
-      <div>
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:3px">Balance due</div>
-        <div style="font-size:22px;font-weight:800;color:#A32D2D">${fmt(totalOwed)}</div>
-        ${totalPaidAll>0?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${fmt(totalPaidAll)} paid · ${fmt(totalPaidAll+totalOwed)} total</div>`:''}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
-        <button onclick="openQuickPayFromOverview()" class="btn btn-g" style="font-size:13px;padding:10px 14px">+ Log payment</button>
-        <button onclick="setCDTab('bids',document.getElementById('cdt-bids'))" class="btn btn-sm" style="font-size:11px">View bids</button>
-      </div>
+    `<div style="display:flex;gap:8px;margin-bottom:10px">
+      <button onclick="openQuickPayFromOverview()" class="btn btn-g" style="flex:1;font-size:14px;padding:12px 14px">+ Log payment</button>
+      <button onclick="setCDTab('bids',document.getElementById('cdt-bids'))" class="btn" style="flex:1;font-size:14px;padding:12px 14px">View bids</button>
     </div>`
-    :totalPaidAll>0?
-    `<div style="background:var(--green-lt);border:1px solid #97C459;border-radius:var(--rl);padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:12px;font-weight:700;color:var(--green-mid)">${svgIcon('✓')} Paid in full</div>
-      <div style="font-size:14px;font-weight:700;color:var(--green-mid)">${fmt(totalPaidAll)}</div>
-    </div>`:'';
+    :'';
   // Lien alert, any won bid with balance overdue 30+ days
   const _lienBid=_wonBids.find(b=>{
     const bal=getBidBalance(b);if(bal<0.01)return false;
@@ -1422,8 +1406,8 @@ function renderClientDetail(){
     </div>`;
   }
   const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📞')} Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📋')} Intake notes:</span> ${escHtml(c.notes)}</div>`:''}</div>`:'';
-  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">${svgIcon('⚠️')} Pre-1978, EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
-  const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML+epaHTML;
+  // Pre-1978/EPA is already flagged on the property card, so it's not repeated here.
+  const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML;
   const _metsEl=document.getElementById('cd-client-mets');
   _metsEl.innerHTML=_metsContent;
   _metsEl.style.display=_metsContent?'':'none';
@@ -1440,9 +1424,14 @@ function renderClientDetail(){
           (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
         '</div>';
     }else{
-      // New estimate / Schedule estimate now live in the hero "+ New" menu, so the
-      // old two-button block here was a second, redundant "new" control. Removed.
-      _cdActions.innerHTML='';
+      // ONE clear estimate action. The old Schedule-vs-Start-now pair confused
+      // people; scheduling a visit now lives in the More menu, and this is the
+      // single obvious "make a quote" button.
+      const _lock=!_canEstimate();
+      _cdActions.innerHTML=
+        '<button onclick="openEstimateForClient()" style="width:100%;padding:15px;border-radius:var(--r-lg);border:none;background:var(--denim);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:9px'+(_lock?';opacity:.55':'')+'">'+
+          svgIcon(_lock?'🔒':'📋',{size:18})+' New estimate'+
+        '</button>';
     }
   }
   renderCDTimeline();
