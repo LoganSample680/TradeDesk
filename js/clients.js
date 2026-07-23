@@ -2372,12 +2372,31 @@ function renderCDAddresses(){
   // A GC/PM/builder doesn't own the sites under them, so call the section "Job
   // sites," not "Properties" (which would imply they're theirs).
   const acctOwns=(typeof accountOwnsSites==='function')?accountOwnsSites(c):true;
+  const title=acctOwns?'Properties':'Job sites';
   const card=document.getElementById('cd-addresses-card');
   const hd=card?card.querySelector('.card-hd'):null;
-  if(hd){const first=hd.firstChild;if(first&&first.nodeType===3)first.textContent=acctOwns?'Properties':'Job sites';}
   const addrs=clientAddresses(c);
   _cdAddrList=addrs.map(a=>a.addr);
   const _noun=acctOwns?'property':'job site';
+  // Two-level accordion: with 2+ sites the whole group nests under a collapsible
+  // "Properties · N" parent bar (matching the section dropdown); each property
+  // inside is itself an accordion you tap for its details. A single site shows
+  // plainly (no parent to collapse). Parent defaults open so sites stay visible.
+  const multi=addrs.length>=2;
+  const open=multi?(window._cdPropsOpen!==false):true;
+  if(hd){
+    if(multi){
+      hd.style.cursor='pointer';
+      hd.onclick=function(){window._cdPropsOpen=(window._cdPropsOpen===false);renderCDAddresses();};
+      hd.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;width:100%">'+
+        '<span>'+title+' <span style="color:var(--text3);font-weight:600">· '+addrs.length+'</span></span>'+
+        '<span style="display:inline-flex;color:var(--text3);transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>'+
+        '</div>';
+    }else{
+      hd.style.cursor='';hd.onclick=null;hd.textContent=title;
+    }
+  }
+  if(multi&&!open){el.innerHTML='';return;} // collapsed parent: only the "Properties · N" bar shows
   // Always-present, full-width quick-add button (owner ask: "quickly add
   // addresses"), so a new site is one tap from the bottom of the list.
   const _addBtn='<button onclick="openAddAddressModal()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:'+(addrs.length?'10px':'2px')+';padding:13px;border:1.5px dashed var(--blue);border-radius:var(--r-lg);background:var(--blue-lt,rgba(37,99,235,.06));color:var(--blue-dk);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('➕',{size:15})+' Add '+_noun+'</button>';
