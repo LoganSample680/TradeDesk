@@ -2909,8 +2909,27 @@ function calcGeiTotal(){
   return{sub,tax:markup+salesTax,markup,salesTax,total};
 }
 
+// When an estimate is saved at an address the client doesn't have on file yet
+// (typed into the editable address field, or added via the picker's New-address),
+// roll it into the client's property list so it shows up in the Properties
+// accordion, not just on the bid. Owner-reported: "subsequent properties added
+// on an estimate don't roll over to the accordion."
+function _geiEnsureClientProperty(clientId,addr){
+  addr=(addr||'').trim();
+  if(!addr)return;
+  const c=(typeof getClientById==='function')?getClientById(clientId):(typeof clients!=='undefined'?clients.find(x=>x.id===clientId):null);
+  if(!c)return;
+  const norm=a=>(typeof _addrKey==='function')?_addrKey(a):(a||'').trim().toLowerCase();
+  const key=norm(addr);
+  if(!key)return;
+  const existing=(typeof clientAddresses==='function')?clientAddresses(c):[{addr:c.addr}];
+  if(existing.some(a=>norm(a.addr)===key))return; // already the primary or a saved extra
+  c.extraAddresses=c.extraAddresses||[];
+  c.extraAddresses.push({label:'Additional property',addr});
+}
 function saveGenericEstimate(draft){
   const v=id=>document.getElementById(id)?.value||'';
+  _geiEnsureClientProperty(_geiClientId,v('gei-addr'));
   const{total}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;

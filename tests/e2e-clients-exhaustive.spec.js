@@ -2779,6 +2779,27 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.propertyType).toBe('New construction');
     });
 
+    // Regression: an address entered on an estimate must roll into the client's
+    // property list (accordion), not just live on the bid. Owner-reported bug.
+    test('_geiEnsureClientProperty: a new estimate address rolls into the client properties (dedup-safe)', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970131;
+        const c = { id: cid, name: 'Estimate Addr Co', addr: '1 Primary St, Town, KS 60000', extraAddresses: [] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        const has = a => clientAddresses(c).some(x => x.addr === a);
+        _geiEnsureClientProperty(cid, '742 New Job Ln, Town, KS 60000');   // new → added
+        const addedNew = has('742 New Job Ln, Town, KS 60000');
+        const countAfterNew = clientAddresses(c).length;
+        _geiEnsureClientProperty(cid, '1 Primary St, Town, KS 60000');     // primary → no dup
+        _geiEnsureClientProperty(cid, '742 New Job Ln, Town, KS 60000');   // extra again → no dup
+        _geiEnsureClientProperty(cid, '   ');                              // empty → no-op
+        return { addedNew, countAfterNew, finalCount: clientAddresses(c).length };
+      });
+      expect(r.addedNew).toBe(true);
+      expect(r.countAfterNew).toBe(2);   // primary + the new estimate address
+      expect(r.finalCount).toBe(2);      // dedupe + empty never grow the list
+    });
+
     test('PRIVACY: an employee without financials sees the property but no dollar figures', async () => {
       const r = await page.evaluate(() => {
         const cid = 970107;
