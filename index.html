@@ -1572,13 +1572,12 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="cd-estimates-upcoming"></div>
     <div class="card" id="cd-opp-card" style="display:none"><div id="cd-opportunities"></div></div>
     <div class="card" id="cd-client-mets"></div>
-    <div class="card" id="cd-sitenote-card" style="box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">
-      <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Site access<span style="font-size:10px;color:var(--text3);font-weight:400">Crew only · gate code, dog, parking</span></div>
+    <div class="card" id="cd-notes-card" style="box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">
+      <div class="card-hd">Notes</div>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--amber,#8A4E00);margin:2px 0 6px">Site access <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--text3)">· crew sees this on the job (gate code, dog, parking)</span></div>
       <textarea id="cd-sitenote-input" rows="2" placeholder="Gate code, dog, where to park, tricky access…" style="width:100%;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4;margin-bottom:8px"></textarea>
-      <button class="btn btn-p btn-sm" onclick="saveCDSiteNote()">Save site notes</button>
-    </div>
-    <div class="card" id="cd-notes-card">
-      <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Notes<span style="font-size:10px;color:var(--text3);font-weight:400">Private · not sent to client</span></div>
+      <button class="btn btn-p btn-sm" onclick="saveCDSiteNote()">Save site access</button>
+      <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:18px 0 8px;padding-top:16px;border-top:1px solid var(--border)">Private notes <span style="font-weight:500;text-transform:none;letter-spacing:0">· only you, never sent to the client</span></div>
       <div id="cd-notes-list" style="margin-bottom:10px"></div>
       <div style="display:flex;gap:8px;align-items:flex-end">
         <textarea id="cd-note-input" rows="2" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addClientNote();}"></textarea>

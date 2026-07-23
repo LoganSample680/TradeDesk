@@ -1313,20 +1313,29 @@ function renderClientDetail(){
     if(days<1)return 'Today';if(days===1)return '1d ago';if(days<30)return days+'d ago';
     if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
   })();
-  const _eyebrow='TIER '+_tier+(c.source?' · '+escHtml(c.source):'');
+  // TIER as a small filled pill + source, reads more finished than plain text.
+  const _eyebrowHtml='<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16)">TIER '+_tier+'</span>'+(c.source?'<span style="margin-left:8px;opacity:.72;font-weight:700">'+escHtml(c.source)+'</span>':'');
+  // Monogram avatar (first + last initial) gives the card an identity/anchor.
+  const _words=(c.name||'?').trim().split(/\s+/).filter(Boolean);
+  const _initials=(((_words[0]||'?')[0]||'?')+(_words.length>1?((_words[_words.length-1]||'')[0]||''):'')).toUpperCase();
+  const _avatar='<div style="width:52px;height:52px;border-radius:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(255,255,255,.22),rgba(255,255,255,.05));border:1px solid rgba(255,255,255,.16);font-family:var(--font-display);font-size:19px;font-weight:900;letter-spacing:.5px;color:var(--text-cream);box-shadow:0 2px 8px rgba(0,0,0,.18)">'+escHtml(_initials)+'</div>';
+  const _balanceLine=(_totalOwed>0.01
+    ? '<div style="font-size:22px;font-weight:800;color:#ff6b6b;letter-spacing:-.4px;margin-top:3px">'+fmt(_totalOwed)+' <span style="font-size:12px;font-weight:700;opacity:.85">owed</span></div>'
+    : (_totalPaidAll>0
+        ? '<div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.72);margin-top:4px">'+svgIcon('✓',{size:12})+' Paid in full · '+fmt(_totalPaidAll)+'</div>'
+        : '<div style="font-size:13px;font-weight:600;color:rgba(255,255,255,.6);margin-top:4px">No balance · last contact '+_lastContactStr+'</div>'));
   document.getElementById('cd-hdr').innerHTML=
     '<div class="detail-eyebrow">'+
-      '<span>'+_eyebrow+'</span>'+
+      '<span>'+_eyebrowHtml+'</span>'+
       '<button class="btn btn-sm" onclick="openEditClient()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:#fff">Edit</button>'+
     '</div>'+
-    '<div class="detail-name">'+escHtml(c.name)+' '+riskBadge(c.id)+'</div>'+
-    // Money is the hero of a client record (competitor consensus). Balance owed
-    // leads; the address + year-built moved down into the Properties section.
-    (_totalOwed>0.01
-      ? '<div style="font-size:22px;font-weight:800;color:#ff6b6b;letter-spacing:-.4px;margin-top:3px">'+fmt(_totalOwed)+' <span style="font-size:12px;font-weight:700;opacity:.85">owed</span></div>'
-      : (_totalPaidAll>0
-          ? '<div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.72);margin-top:4px">'+svgIcon('✓',{size:12})+' Paid in full · '+fmt(_totalPaidAll)+'</div>'
-          : '<div style="font-size:13px;font-weight:600;color:rgba(255,255,255,.6);margin-top:4px">No balance · last contact '+_lastContactStr+'</div>'))+
+    '<div style="display:flex;align-items:center;gap:14px">'+
+      _avatar+
+      '<div style="flex:1;min-width:0">'+
+        '<div class="detail-name" style="margin-bottom:0;word-break:break-word">'+escHtml(c.name)+' '+riskBadge(c.id)+'</div>'+
+        _balanceLine+
+      '</div>'+
+    '</div>'+
     // Three coherent actions + overflow. Everything else (Client hub, Drive,
     // Email, Diagnostic charge) lives in a menu instead of a flat button wall.
     '<div class="detail-actions" style="margin-top:16px">'+
