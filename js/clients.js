@@ -2306,7 +2306,10 @@ function _cdPropCardHtml(c,a,idx,total){
   const statBlock=openBal>0.01
     ?`<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:#ff6b6b;white-space:nowrap">${fmt(openBal)}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Owed</div></div>`
     :(value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'');
-  const chevron=single?'':`<span style="font-size:11px;color:var(--text3);flex-shrink:0;display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s">${svgIcon('▶')}</span>`;
+  // Down-caret chevron matching the Overview section dropdown, so the property
+  // rows read as the same control (owner: "accordion should look like the
+  // overview accordion"). Rotates to point up when the row is expanded.
+  const chevron=single?'':`<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate(${isOpen?180:0}deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
   const _hdrClick=single?'':`onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()"`;
   const header=`<div ${_hdrClick} style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;${single?'':'cursor:pointer'}">
     ${iconTile}
@@ -2361,7 +2364,7 @@ function _cdPropCardHtml(c,a,idx,total){
     </div>`;
     body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${footer}</div>`;
   }
-  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
+  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
 }
 function renderCDAddresses(){
   const el=document.getElementById('cd-addresses-list');if(!el)return;
