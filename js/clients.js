@@ -50,14 +50,6 @@ function _cdActionSheet(title,rows){
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%;margin-top:2px">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
 }
-// Tab-row overflow: the two secondary record views (Mileage, Expenses) kept off
-// the main pill row live here, one tap away.
-function _cdTabMore(){
-  _cdActionSheet('Views',[
-    {icon:'🚗',label:'Mileage',act:"setCDTab('mileage',null)"},
-    {icon:'🧾',label:'Expenses',act:"setCDTab('expenses',null)"},
-  ]);
-}
 function _cdMoreMenu(){
   const c=getClientById(currentClientId);if(!c)return;
   const rows=[];
@@ -1287,15 +1279,13 @@ function _doImport(){
 
 function setCDTab(tab,btn){
   cdTab=tab;
-  // Four primary tabs stay in the pill row (Overview/Bids/Jobs/Contracts, the
-  // things people open most); Mileage + Expenses live behind the "•••" overflow
-  // so they're kept but don't clutter the row.
+  // Section nav is a single dropdown selector (owner preference) instead of a
+  // pill row, so it never clutters regardless of how many views exist.
   ['overview','bids','jobs','contracts','mileage','expenses'].forEach(t=>{
     const el=document.getElementById('cdt-'+t+'-content');if(el)el.style.display=t===tab?'block':'none';
-    const b=document.getElementById('cdt-'+t);if(b)b.classList.toggle('active',t===tab);
   });
-  const _moreBtn=document.getElementById('cdt-more');
-  if(_moreBtn)_moreBtn.classList.toggle('active',tab==='mileage'||tab==='expenses');
+  const _sel=document.getElementById('cd-tab-select');
+  if(_sel&&_sel.value!==tab)_sel.value=tab;
   if(tab==='mileage')renderCDMileage();
   if(tab==='bids')renderCDBids();
   if(tab==='jobs')renderCDJobs();

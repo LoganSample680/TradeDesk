@@ -1560,13 +1560,14 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="cd-drive-end" style="display:none"></div>
   </div>
   
-  <div class="fbar" style="flex-wrap:nowrap;gap:6px">
-    <button type="button" class="fb active" id="cdt-overview" onclick="setCDTab('overview',this)" style="flex:1;justify-content:center">Overview</button>
-    <button type="button" class="fb" id="cdt-bids" onclick="setCDTab('bids',this)" style="flex:1;justify-content:center">Bids</button>
-    <button type="button" class="fb" id="cdt-jobs" onclick="setCDTab('jobs',this)" style="flex:1;justify-content:center">Jobs</button>
-    <button type="button" class="fb" id="cdt-contracts" onclick="setCDTab('contracts',this)" style="flex:1;justify-content:center">Contracts</button>
-    <button type="button" class="fb" id="cdt-more" onclick="_cdTabMore()" style="flex:0 0 auto;padding:0 13px;font-weight:800;letter-spacing:1px" aria-label="More views: mileage and expenses">•••</button>
-  </div>
+  <select id="cd-tab-select" onchange="setCDTab(this.value)" aria-label="Client record section" style="width:100%;margin-bottom:14px;padding:13px 40px 13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;-webkit-appearance:none;appearance:none;box-shadow:var(--shadow-card);background-image:url(&quot;data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>&quot;);background-repeat:no-repeat;background-position:right 14px center">
+    <option value="overview">Overview</option>
+    <option value="bids">Bids</option>
+    <option value="jobs">Jobs</option>
+    <option value="contracts">Contracts</option>
+    <option value="mileage">Mileage</option>
+    <option value="expenses">Expenses</option>
+  </select>
   <div id="cdt-overview-content">
     <div id="cd-estimates-upcoming"></div>
     <div class="card" id="cd-opp-card" style="display:none"><div id="cd-opportunities"></div></div>
