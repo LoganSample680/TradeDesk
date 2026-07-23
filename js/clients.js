@@ -2245,12 +2245,15 @@ function _cdCompactMoney(n){n=Number(n)||0;if(n>=1e6)return '$'+(n/1e6).toFixed(
 // One property card = one address: Zillow facts + pre-1978 lead trigger + the
 // crew site note + every proposal/job at THIS address with dates, dollars, and
 // running billed/paid totals. Same card for the primary and every extra address.
-function _cdPropCardHtml(c,a,idx,isLast){
+function _cdPropCardHtml(c,a,idx,total){
   const p=getProperty(c,a.addr);
   const note=getSiteNote(c,a.addr);
   const hist=getPropertyHistory(c,a.addr);
+  // Research-backed: 1 property renders fully expanded (an accordion for one item
+  // is pure friction); 2+ collapse to accordion rows you tap to open.
+  const single=(total===1);
   const openKey='_cdpropOpen_'+c.id+'_'+idx;
-  const isOpen=!!window[openKey];
+  const isOpen=single||!!window[openKey];
   const pre78=!!(p.yearBuilt&&p.yearBuilt<1978);
   const ep=(typeof _parseAddrParts==='function')?_parseAddrParts(a.addr||''):{street:a.addr||'',city:'',state:'',zip:''};
   const street=((idx===0&&c.street)?c.street:ep.street)||a.addr||'No address';
@@ -2286,19 +2289,26 @@ function _cdPropCardHtml(c,a,idx,isLast){
   if(p.bedrooms||p.bathrooms)_facts.push(`${p.bedrooms||'?'} bd / ${p.bathrooms||'?'} ba`);
   if(p.lotSize)_facts.push(`${escHtml(String(p.lotSize))} lot`);
   if(p.lastSalePrice||p.lastSaleDate)_facts.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${money&&p.lastSalePrice?' for '+_cdCompactMoney(p.lastSalePrice):''}`.trim());
-  const factsLine=_facts.length?`<div style="font-size:11px;color:var(--text3);margin-top:4px;line-height:1.45">${_facts.join('  ·  ')}</div>`:'';
-  const valueBlock=value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'';
-  const chevron=`<span style="font-size:11px;color:var(--text3);flex-shrink:0;display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s">${svgIcon('▶')}</span>`;
-  const header=`<div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;cursor:pointer">
+  const factsLine=_facts.length?`<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.45">${_facts.join('  ·  ')}</div>`:'';
+  // Collapsed row identifier: single shows the full meta, multi shows just the city.
+  const metaShown=single?meta2:(noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap for details</span>`:escHtml(cityLine||''));
+  // One decision-relevant stat on the row: open balance if owed here, else est. value.
+  const openBal=money?Math.max(0,(hist.billed||0)-(hist.paid||0)):0;
+  const statBlock=openBal>0.01
+    ?`<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:#ff6b6b;white-space:nowrap">${fmt(openBal)}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Owed</div></div>`
+    :(value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'');
+  const chevron=single?'':`<span style="font-size:11px;color:var(--text3);flex-shrink:0;display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s">${svgIcon('▶')}</span>`;
+  const _hdrClick=single?'':`onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()"`;
+  const header=`<div ${_hdrClick} style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;${single?'':'cursor:pointer'}">
     ${iconTile}
     <div style="flex:1;min-width:0">
       ${labelPill}
       <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:4px;line-height:1.25;word-break:break-word">${escHtml(street)}</div>
-      <div style="font-size:12px;color:var(--text3);margin-top:2px">${meta2}</div>
-      ${factsLine}
+      <div style="font-size:12px;color:var(--text3);margin-top:2px">${metaShown}</div>
+      ${single?factsLine:''}
       ${chipRow}
     </div>
-    ${valueBlock}
+    ${statBlock}
     ${chevron}
   </div>`;
 
@@ -2340,7 +2350,7 @@ function _cdPropCardHtml(c,a,idx,isLast){
       <button onclick="_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Map</button>
       ${removeBtn}
     </div>`;
-    body=`<div style="padding:0 14px 14px">${leadRow}${noteRow}${workBlock}${footer}</div>`;
+    body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${footer}</div>`;
   }
   return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--border);border-radius:14px;margin-bottom:10px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
 }
@@ -2359,7 +2369,7 @@ function renderCDAddresses(){
   // Always-present, full-width quick-add button (owner ask: "quickly add
   // addresses"), so a new site is one tap from the bottom of the list.
   const _addBtn='<button onclick="openAddAddressModal()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:'+(addrs.length?'10px':'2px')+';padding:13px;border:1.5px dashed var(--blue);border-radius:var(--r-lg);background:var(--blue-lt,rgba(37,99,235,.06));color:var(--blue-dk);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('➕',{size:15})+' Add '+_noun+'</button>';
-  el.innerHTML=addrs.map((a,i)=>_cdPropCardHtml(c,a,i,i===addrs.length-1)).join('')+_addBtn;
+  el.innerHTML=addrs.map((a,i)=>_cdPropCardHtml(c,a,i,addrs.length)).join('')+_addBtn;
 }
 function openAddAddressModal(){
   const inS='width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit';
