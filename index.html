@@ -1560,13 +1560,11 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="cd-drive-end" style="display:none"></div>
   </div>
   
-  <div class="fbar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;flex-wrap:nowrap">
-    <button type="button" class="fb active" id="cdt-overview" onclick="setCDTab('overview',this)">Overview</button>
-    <button type="button" class="fb" id="cdt-bids" onclick="setCDTab('bids',this)">Bids</button>
-    <button type="button" class="fb" id="cdt-jobs" onclick="setCDTab('jobs',this)">Jobs</button>
-    <button type="button" class="fb" id="cdt-mileage" onclick="setCDTab('mileage',this)">Mileage</button>
-    <button type="button" class="fb" id="cdt-expenses" onclick="setCDTab('expenses',this)">Expenses</button>
-    <button type="button" class="fb" id="cdt-contracts" onclick="setCDTab('contracts',this)">Contracts</button>
+  <div class="fbar" style="flex-wrap:nowrap;gap:6px">
+    <button type="button" class="fb active" id="cdt-overview" onclick="setCDTab('overview',this)" style="flex:1;justify-content:center">Overview</button>
+    <button type="button" class="fb" id="cdt-bids" onclick="setCDTab('bids',this)" style="flex:1;justify-content:center">Bids</button>
+    <button type="button" class="fb" id="cdt-jobs" onclick="setCDTab('jobs',this)" style="flex:1;justify-content:center">Jobs</button>
+    <button type="button" class="fb" id="cdt-contracts" onclick="setCDTab('contracts',this)" style="flex:1;justify-content:center">Contracts</button>
   </div>
   <div id="cdt-overview-content">
     <div id="cd-estimates-upcoming"></div>

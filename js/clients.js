@@ -1279,14 +1279,15 @@ function _doImport(){
 
 function setCDTab(tab,btn){
   cdTab=tab;
-  ['overview','mileage','bids','jobs','expenses','contracts'].forEach(t=>{
+  // Mileage/Expenses moved off the client record (they live in the global
+  // trackers, per competitor + contractor research). Client tabs are now the
+  // four things people actually open: Overview, Bids, Jobs, Contracts.
+  ['overview','bids','jobs','contracts'].forEach(t=>{
     const el=document.getElementById('cdt-'+t+'-content');if(el)el.style.display=t===tab?'block':'none';
     const b=document.getElementById('cdt-'+t);if(b)b.classList.toggle('active',t===tab);
   });
-  if(tab==='mileage')renderCDMileage();
   if(tab==='bids')renderCDBids();
   if(tab==='jobs')renderCDJobs();
-  if(tab==='expenses')renderCDExpenses();
   if(tab==='contracts')renderClientContracts(currentClientId);
 }
 function renderClientDetail(){
