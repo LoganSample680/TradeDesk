@@ -1364,7 +1364,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.html).toContain('_nearbyClockIn(555001,555011)');
       expect(r.html).toContain('Clock in');
       expect(r.html).toContain("_nearbyStartWork(555001)");
-      expect(r.html).toContain('Estimate');   // on-site card redesign: "Estimate" (was "Estimate/Invoice")
+      expect(r.html).toContain('Proposal');   // on-site card: "Proposal" (renamed from Estimate)
       // No dead controls: nothing owed means no Collect button at all, not a
       // disabled ghost, a permanently-inert button reads as broken.
       expect(r.html).not.toContain('Collect');
@@ -1467,7 +1467,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.html).toContain('_nearbyStartWork(555005)');
-      expect(r.html).toContain('Estimate');   // on-site card redesign: "Estimate" (was "Estimate/Invoice")
+      expect(r.html).toContain('Proposal');   // on-site card: "Proposal" (renamed from Estimate)
     });
 
     test('the pulse/entrance keyframes are injected once, not duplicated across renders', async () => {

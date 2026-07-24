@@ -7737,7 +7737,7 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
       const jobLbl = document.getElementById('s-time-label').textContent;
       return { estLbl, jobLbl };
     });
-    expect(r.estLbl).toBe('Estimate visits');
+    expect(r.estLbl).toBe('Proposal visits');
     expect(r.jobLbl.toLowerCase()).toContain('start time');
   });
 

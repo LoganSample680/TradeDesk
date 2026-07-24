@@ -1128,7 +1128,7 @@ function _submitCloseOutEstimate(bidId){
   if(typeof renderDash==='function')renderDash();
   if(typeof renderCDBids==='function')try{renderCDBids();}catch(e){}
   if(typeof renderClientDetail==='function')try{renderClientDetail();}catch(e){}
-  showToast('Estimate closed out, marked lost','✓');
+  showToast('Proposal closed out, marked lost','✓');
 }
 function reopenEstimate(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
@@ -1140,7 +1140,7 @@ function reopenEstimate(bidId){
   document.querySelector('[data-bdov]')?.remove();
   if(typeof renderProposalsPage==='function')renderProposalsPage();
   if(typeof renderDash==='function')renderDash();
-  showToast('Estimate reopened, back to awaiting signature','↩');
+  showToast('Proposal reopened, back to awaiting signature','↩');
 }
 function selectPayType(btn, bidId){
   // Deselect all, keep collect button green but dimmed
@@ -1472,7 +1472,7 @@ function viewBidFromTimeline(bidId){
 
 function deleteBid(bidId){
   const b=bids.find(x=>x.id===bidId);
-  zConfirm('Delete this bid'+(b?' ('+fmt(b.amount)+')':'')+' permanently? Payment records and any lien will also be removed.',()=>{
+  zConfirm('Delete this proposal'+(b?' ('+fmt(b.amount)+')':'')+' permanently? Payment records and any lien will also be removed.',()=>{
     const _cid=b?.client_id;
     _userDelete(()=>{
       bids=bids.filter(x=>x.id!==bidId);
@@ -1482,7 +1482,7 @@ function deleteBid(bidId){
     });
     renderClientDetail();
     if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));
-  },{title:'Delete bid',yes:'Delete permanently',danger:true});
+  },{title:'Delete proposal',yes:'Delete permanently',danger:true});
 }
 async function saveLien(){
   if(!activeLienBidId)return;
