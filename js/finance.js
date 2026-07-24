@@ -2822,7 +2822,7 @@ function getTopScope(scope){
 function closeBidHistoryDetail(){const el=document.getElementById('tr-bid-detail');if(el)el.style.display='none';}
 function viewSavedProposal(bidId){
   const b=bids.find(x=>x.id===bidId);
-  if(!b||!b.proposalHtml){zAlert('No saved proposal found for this proposal. Proposals are saved starting from this update, older proposals won\'t have one stored.',{title:'Not available'});return;}
+  if(!b||!b.proposalHtml){zAlert('No saved proposal document found. We store the proposal document starting from this update, so older proposals won\'t have one.',{title:'Not available'});return;}
   const ov=document.createElement('div');
   ov.setAttribute('data-pov','1');
   ov.style.cssText='position:fixed;inset:0;background:#f0f4f8;z-index:10000;overflow-y:auto;-webkit-overflow-scrolling:touch';
