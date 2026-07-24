@@ -1485,14 +1485,15 @@ function renderCDRisk(){
   const el=document.getElementById('cd-risk-mount');if(!el)return;
   const c=getClientById(currentClientId);if(!c)return;
   const open=(window._cdRiskOpen!==false);
-  const bar=_cdSectionBar('Client risk',open,"window._cdRiskOpen=(window._cdRiskOpen===false);renderCDRisk()");
+  const _anim=(window._cdAccAnim==='risk');window._cdAccAnim=null;
+  const bar=_cdSectionBar('Client risk',open,"window._cdRiskOpen=(window._cdRiskOpen===false);window._cdAccAnim='risk';renderCDRisk()");
   if(!open){el.innerHTML=bar;return;}
   const r=c.riskLevel||'normal';
   const flags=c.riskFlags||[];
   const LEVELS=['normal','watch','high_risk','blacklisted'];
   const LABELS={normal:'Normal',watch:'Watch',high_risk:'High risk',blacklisted:'Blacklisted'};
   const COLORS={normal:'var(--text3)',watch:'var(--amber)',high_risk:'#A32D2D',blacklisted:'#000'};
-  el.innerHTML=bar+'<div class="card td-acc-body" style="margin-top:8px">'+
+  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner">'+
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
       '<div>'+
         '<div style="font-size:14px;font-weight:700;color:'+COLORS[r]+'">'+LABELS[r]+'</div>'+
@@ -1511,7 +1512,7 @@ function renderCDRisk(){
     '</div>'+
     (r==='blacklisted'?'<div style="font-size:11px;color:#A32D2D;margin-top:8px;font-weight:700">Proposals and scheduling are blocked for this client.</div>':'')+
     (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">'+svgIcon('⚠️')+' Previous lien filed. Require full payment before scheduling.</div>':'')+
-    '</div>';
+    '</div></div>';
 }
 function renderClientNotes(){
   const c=getClientById(currentClientId);if(!c)return;
@@ -1519,7 +1520,8 @@ function renderClientNotes(){
   const notes=(Array.isArray(c.notes)?c.notes:[]).slice().sort((a,b)=>(a.ts||'').localeCompare(b.ts||''));
   const open=(window._cdNotesOpen!==false);
   const count=notes.length?' <span style="color:var(--text3);font-weight:700">· '+notes.length+'</span>':'';
-  const bar=_cdSectionBar('Notes',open,"window._cdNotesOpen=(window._cdNotesOpen===false);renderClientNotes()",count);
+  const _anim=(window._cdAccAnim==='notes');window._cdAccAnim=null;
+  const bar=_cdSectionBar('Notes',open,"window._cdNotesOpen=(window._cdNotesOpen===false);window._cdAccAnim='notes';renderClientNotes()",count);
   if(!open){el.innerHTML=bar;return;}
   const listHtml=notes.length?notes.map(n=>{
     const dt=fmtDateMDY(n.ts);
@@ -1531,13 +1533,13 @@ function renderClientNotes(){
       '<button onclick="editClientNote(\''+n.id+'\')" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);flex-shrink:0;touch-action:manipulation">Edit</button>'+
     '</div>';
   }).join(''):'<div style="font-size:12px;color:var(--text3);padding:4px 0">No notes yet.</div>';
-  el.innerHTML=bar+'<div class="card td-acc-body" style="margin-top:8px">'+
+  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner">'+
     '<div style="font-size:10px;color:var(--text3);font-weight:400;margin-bottom:8px">Private · not sent to client</div>'+
     '<div id="cd-notes-list" style="margin-bottom:10px">'+listHtml+'</div>'+
     '<div style="display:flex;gap:8px;align-items:flex-end">'+
       '<textarea id="cd-note-input" rows="2" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();addClientNote();}"></textarea>'+
       '<button class="btn btn-p btn-sm" onclick="addClientNote()">Add</button>'+
-    '</div></div>';
+    '</div></div></div>';
 }
 function addClientNote(){
   const inp=document.getElementById('cd-note-input');if(!inp)return;
@@ -1621,16 +1623,17 @@ function renderCDTimeline(){
   const el=document.getElementById('cd-timeline-mount');if(!el)return;
   const open=(window._cdTimelineOpen!==false);
   const count=events.length?' <span style="color:var(--text3);font-weight:700">· '+events.length+'</span>':'';
-  const bar=_cdSectionBar('Activity timeline',open,"window._cdTimelineOpen=(window._cdTimelineOpen===false);renderCDTimeline()",count);
+  const _anim=(window._cdAccAnim==='timeline');window._cdAccAnim=null;
+  const bar=_cdSectionBar('Activity timeline',open,"window._cdTimelineOpen=(window._cdTimelineOpen===false);window._cdAccAnim='timeline';renderCDTimeline()",count);
   if(!open){el.innerHTML=bar;return;}
-  if(!events.length){el.innerHTML=bar+'<div class="card td-acc-body" style="margin-top:8px"><div class="empty">No activity yet. Add a proposal or drive to this client.</div></div>';return;}
+  if(!events.length){el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner"><div class="empty">No activity yet. Add a proposal or drive to this client.</div></div></div>';return;}
   const byDate={};
   [...events].sort((a,b)=>b.date.localeCompare(a.date)).forEach(e=>{
     if(!byDate[e.date])byDate[e.date]=[];
     byDate[e.date].push(e);
   });
   const tk=todayKey();
-  el.innerHTML=bar+'<div class="card td-acc-body" style="margin-top:8px"><div class="timeline">'+
+  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner"><div class="timeline">'+
     Object.entries(byDate).map(([date,evts],groupIdx)=>{
       const isToday=date===tk;
       const dayLabel=isToday?'Today':fmtDateMDY(date);
@@ -1650,7 +1653,7 @@ function renderCDTimeline(){
         '<div id="'+domId+'" style="display:none;padding-left:4px">'+items+'</div>'+
       '</div>';
     }).join('')+
-  '</div>';
+  '</div></div></div>';
 }
 function toggleTlGroup(id){
   const el=document.getElementById(id);
@@ -2417,13 +2420,14 @@ function renderCDAddresses(){
   const _barStyle='width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-size:15px;font-weight:800;box-shadow:var(--shadow-card);display:flex;align-items:center;justify-content:space-between;cursor:pointer';
   const _chev='<span style="display:inline-flex;color:#888;flex-shrink:0;transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>';
   const _count=addrs.length?' <span style="color:var(--text3);font-weight:700">· '+addrs.length+'</span>':'';
-  const bar='<div onclick="window._cdPropsOpen=(window._cdPropsOpen===false);renderCDAddresses()" style="'+_barStyle+'"><span>'+title+_count+'</span>'+_chev+'</div>';
+  const _anim=(window._cdAccAnim==='props');window._cdAccAnim=null;
+  const bar='<div onclick="window._cdPropsOpen=(window._cdPropsOpen===false);window._cdAccAnim=\'props\';renderCDAddresses()" style="'+_barStyle+'"><span>'+title+_count+'</span>'+_chev+'</div>';
   if(!open){el.innerHTML=bar;return;} // collapsed: only the bar, exactly like a collapsed selector
   const _addBtn='<button onclick="openAddAddressModal()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:8px;padding:13px;border:1.5px dashed var(--blue);border-radius:var(--r-lg);background:var(--blue-lt,rgba(37,99,235,.06));color:var(--blue-dk);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('➕',{size:15})+' Add '+_noun+'</button>';
   const rows=addrs.length
     ?'<div style="margin-top:8px">'+addrs.map((a,i)=>_cdPropCardHtml(c,a,i,addrs.length)).join('')+'</div>'
     :'<div style="font-size:12px;color:var(--text3);padding:8px 2px">No '+_noun+' yet.</div>';
-  el.innerHTML=bar+'<div class="td-acc-body">'+rows+_addBtn+'</div>';
+  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'"><div class="td-acc-inner">'+rows+_addBtn+'</div></div>';
 }
 function openAddAddressModal(){
   const inS='width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit';

@@ -92,8 +92,10 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
    expanded, wrap its revealed body in class="td-acc-body" so it eases open the same
    way everywhere. House easing/timing per CSS standard section 8.4 (entrance
    .18s, spring cubic-bezier). Do not hand-roll a per-accordion animation, reuse this. */
-@keyframes td-acc-reveal{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
-.td-acc-body{animation:td-acc-reveal .18s cubic-bezier(.22,1,.36,1) both}
+@keyframes td-acc-reveal{from{grid-template-rows:0fr;opacity:0}to{grid-template-rows:1fr;opacity:1}}
+.td-acc-body{display:grid;grid-template-rows:1fr}
+.td-acc-body>.td-acc-inner{min-height:0;overflow:hidden}
+.td-acc-body.td-acc-in{animation:td-acc-reveal .3s cubic-bezier(.4,0,.2,1) both}
 /* Authentic iOS springboard wiggle: two desynced animations (rotation +
    position) at ~0.25s, asymmetric -1deg→1.5deg, ~1px translate, no scale. */
 @keyframes td-jiggle-a{0%{transform:rotate(-1deg) translate(-.4px,-.4px);animation-timing-function:ease-in}50%{transform:rotate(1.5deg) translate(.4px,.4px);animation-timing-function:ease-out}100%{transform:rotate(-1deg) translate(-.4px,-.4px)}}
