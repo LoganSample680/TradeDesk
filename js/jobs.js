@@ -104,7 +104,7 @@ function openClockInSheet(jobId){
     }
     rows+='<button onclick="_clockAddTask('+jobId+')" '+
       'style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer;font-size:13px;color:var(--text3)">'+
-      '<span style="font-size:16px">'+svgIcon('➕',{size:16})+'</span><span>Add task not in estimate…</span>'+
+      '<span style="font-size:16px">'+svgIcon('➕',{size:16})+'</span><span>Add task not in proposal…</span>'+
     '</button>';
     const el=document.getElementById('_cks-sheet');if(!el)return;
     el.innerHTML=
@@ -702,7 +702,7 @@ function renderJobsPage(){
 function _renderJobsKanban(el,tk,wonBidsList){
   const pendingSent=bids.filter(b=>b.status==='Pending'&&b.signingToken);
   const cols=[
-    {id:'estimate', label:'Estimate sent',            items:pendingSent},
+    {id:'estimate', label:'Proposal sent',            items:pendingSent},
     {id:'signed',   label:'Signed · ready to sched',  items:wonBidsList.filter(b=>getBidStage(b).stage==='signed')},
     {id:'active',   label:'Active',                    items:wonBidsList.filter(b=>getBidStage(b).stage==='active'||getBidStage(b).stage==='scheduled')},
     {id:'collect',  label:'Collect',                   items:wonBidsList.filter(b=>getBidStage(b).stage==='balance_due')},
@@ -979,7 +979,7 @@ function openJobSheet(clientId){
         '<div style="font-size:11px;color:var(--text3)">'+dot+colorFinish+'</div></div>'+
         '<div style="font-size:14px;font-weight:800;color:var(--blue-dk);flex-shrink:0;margin-left:10px">'+cans+' gal</div></div>';
     }).join('');
-    const bidLabel=showBidLabel?(b.addr||b.name||b.type||'Bid '+b.bid_date||''):'';
+    const bidLabel=showBidLabel?(b.addr||b.name||b.type||'Proposal '+b.bid_date||''):'';
     return '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(bidLabel?'4px':'10px')+'">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+svgIcon('📦')+' Materials</div>'+
@@ -1739,7 +1739,7 @@ function _contractorToggleTask(jobId,taskId){
 function deleteJob(jobId){
   const j=jobs.find(x=>x.id===jobId);
   if(!j)return;
-  const label=j.eventType==='estimate'?'estimate visit':'job';
+  const label=j.eventType==='estimate'?'proposal visit':'job';
   zConfirm('Remove this '+label+' from the calendar?',()=>{
     _userDelete(()=>{jobs=jobs.filter(x=>x.id!==jobId);saveAll();});
     renderClientDetail();renderCalendar();
