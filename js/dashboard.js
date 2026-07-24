@@ -777,10 +777,10 @@ function renderDashToday(){
     const dow=new Date().getDay();
     const msgs=[
       'Nothing Sunday, recharge for the week.',
-      'Open Monday. Book an estimate today.',
+      'Open Monday. Book a proposal today.',
       'Open Tuesday. Good day to follow up.',
       'Open Wednesday. Mid-week reach out.',
-      'Open Thursday. Book weekend estimates.',
+      'Open Thursday. Book weekend proposals.',
       'Open Friday. Homeowners are home this weekend.',
       'Open Saturday. Great day for estimates.'
     ];
@@ -2153,11 +2153,11 @@ function renderPipeline(){
   } else if(w2paint>=2||w3paint>=2){
     healthColor='var(--amber)';
     healthMsg='Pipeline needs attention.';
-    action=estimatesNeeded>0?'Run <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to fill open days.':'';
+    action=estimatesNeeded>0?'Run <strong>'+estimatesNeeded+' proposal'+(estimatesNeeded>1?'s':'')+' this week</strong> to fill open days.':'';
   } else {
     healthColor='#A32D2D';
-    healthMsg='Pipeline is thin, book estimates now.';
-    action='You need <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay booked. Best days: Tuesday + Thursday evening.';
+    healthMsg='Pipeline is thin, book proposals now.';
+    action='You need <strong>'+estimatesNeeded+' proposal'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay booked. Best days: Tuesday + Thursday evening.';
   }
 
   const w1label=parseD(thisMonday).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});

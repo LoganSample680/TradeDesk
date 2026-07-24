@@ -1492,7 +1492,7 @@ function renderCDRisk(){
   const LEVELS=['normal','watch','high_risk','blacklisted'];
   const LABELS={normal:'Normal',watch:'Watch',high_risk:'High risk',blacklisted:'Blacklisted'};
   const COLORS={normal:'var(--text3)',watch:'var(--amber)',high_risk:'#A32D2D',blacklisted:'#000'};
-  el.innerHTML=bar+'<div class="card" style="margin-top:8px">'+
+  el.innerHTML=bar+'<div class="card td-acc-body" style="margin-top:8px">'+
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
       '<div>'+
         '<div style="font-size:14px;font-weight:700;color:'+COLORS[r]+'">'+LABELS[r]+'</div>'+
@@ -1531,7 +1531,7 @@ function renderClientNotes(){
       '<button onclick="editClientNote(\''+n.id+'\')" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);flex-shrink:0;touch-action:manipulation">Edit</button>'+
     '</div>';
   }).join(''):'<div style="font-size:12px;color:var(--text3);padding:4px 0">No notes yet.</div>';
-  el.innerHTML=bar+'<div class="card" style="margin-top:8px">'+
+  el.innerHTML=bar+'<div class="card td-acc-body" style="margin-top:8px">'+
     '<div style="font-size:10px;color:var(--text3);font-weight:400;margin-bottom:8px">Private · not sent to client</div>'+
     '<div id="cd-notes-list" style="margin-bottom:10px">'+listHtml+'</div>'+
     '<div style="display:flex;gap:8px;align-items:flex-end">'+
@@ -1623,14 +1623,14 @@ function renderCDTimeline(){
   const count=events.length?' <span style="color:var(--text3);font-weight:700">· '+events.length+'</span>':'';
   const bar=_cdSectionBar('Activity timeline',open,"window._cdTimelineOpen=(window._cdTimelineOpen===false);renderCDTimeline()",count);
   if(!open){el.innerHTML=bar;return;}
-  if(!events.length){el.innerHTML=bar+'<div class="card" style="margin-top:8px"><div class="empty">No activity yet. Add a proposal or drive to this client.</div></div>';return;}
+  if(!events.length){el.innerHTML=bar+'<div class="card td-acc-body" style="margin-top:8px"><div class="empty">No activity yet. Add a proposal or drive to this client.</div></div>';return;}
   const byDate={};
   [...events].sort((a,b)=>b.date.localeCompare(a.date)).forEach(e=>{
     if(!byDate[e.date])byDate[e.date]=[];
     byDate[e.date].push(e);
   });
   const tk=todayKey();
-  el.innerHTML=bar+'<div class="card" style="margin-top:8px"><div class="timeline">'+
+  el.innerHTML=bar+'<div class="card td-acc-body" style="margin-top:8px"><div class="timeline">'+
     Object.entries(byDate).map(([date,evts],groupIdx)=>{
       const isToday=date===tk;
       const dayLabel=isToday?'Today':fmtDateMDY(date);
@@ -2423,7 +2423,7 @@ function renderCDAddresses(){
   const rows=addrs.length
     ?'<div style="margin-top:8px">'+addrs.map((a,i)=>_cdPropCardHtml(c,a,i,addrs.length)).join('')+'</div>'
     :'<div style="font-size:12px;color:var(--text3);padding:8px 2px">No '+_noun+' yet.</div>';
-  el.innerHTML=bar+rows+_addBtn;
+  el.innerHTML=bar+'<div class="td-acc-body">'+rows+_addBtn+'</div>';
 }
 function openAddAddressModal(){
   const inS='width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit';

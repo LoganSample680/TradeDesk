@@ -2883,6 +2883,20 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.barStillThere).toBe(true);   // bar remains
     });
 
+    test('each open accordion body carries the shared td-acc-body reveal animation', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = true; window._cdTimelineOpen = true; window._cdRiskOpen = true; window._cdPropsOpen = true;
+        renderClientNotes(); renderCDTimeline(); renderCDRisk(); renderCDAddresses();
+        const has = id => document.getElementById(id).innerHTML.includes('class="td-acc-body"') || !!document.querySelector('#' + id + ' .td-acc-body');
+        return { props: has('cd-addresses-list'), notes: has('cd-notes-mount'), tl: has('cd-timeline-mount'), risk: has('cd-risk-mount') };
+      });
+      expect(r.props).toBe(true);
+      expect(r.notes).toBe(true);
+      expect(r.tl).toBe(true);
+      expect(r.risk).toBe(true);
+    });
+
     test('the three bars share the Properties/Overview bar style verbatim', async () => {
       const r = await page.evaluate(() => {
         openClientDetail(77701, 'clients');

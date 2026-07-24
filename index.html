@@ -87,6 +87,13 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 @keyframes td-bar{from{width:0}to{width:68%}}
 @keyframes td-pg-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1}}
 @keyframes td-dash-enter{from{opacity:0;transform:scale(.988)}to{opacity:1}}
+/* THE accordion reveal, one constant for EVERY collapsible section (Properties,
+   Notes, Activity timeline, Client risk, and any future accordion). When a bar is
+   expanded, wrap its revealed body in class="td-acc-body" so it eases open the same
+   way everywhere. House easing/timing per CSS standard section 8.4 (entrance
+   .18s, spring cubic-bezier). Do not hand-roll a per-accordion animation, reuse this. */
+@keyframes td-acc-reveal{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:translateY(0)}}
+.td-acc-body{animation:td-acc-reveal .18s cubic-bezier(.22,1,.36,1) both}
 /* Authentic iOS springboard wiggle: two desynced animations (rotation +
    position) at ~0.25s, asymmetric -1deg→1.5deg, ~1px translate, no scale. */
 @keyframes td-jiggle-a{0%{transform:rotate(-1deg) translate(-.4px,-.4px);animation-timing-function:ease-in}50%{transform:rotate(1.5deg) translate(.4px,.4px);animation-timing-function:ease-out}100%{transform:rotate(-1deg) translate(-.4px,-.4px)}}
