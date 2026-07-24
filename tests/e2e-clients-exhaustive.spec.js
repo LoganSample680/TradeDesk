@@ -3056,6 +3056,49 @@ test.describe('clients.js: exhaustive coverage', () => {
       });
     });
 
+    // Regression (owner-reported): the timeline printed a bid's CURRENT status on
+    // the row dated at its creation, so a proposal created 07/10 and signed 07/12
+    // showed "Closed Won" on 07/10, i.e. won before it was signed. The creation row
+    // now states creation only; wins/losses are their own dated events.
+    test('creation row shows creation state, not the current status', async () => {
+      const r = await page.evaluate((bidId) => {
+        window.currentClientId = 96019;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const html = document.getElementById('cd-timeline-mount').innerHTML;
+        // the bid row itself must not carry the live status
+        const bidRow = html.split('Proposal: ')[1] || '';
+        return { bidRowStart: bidRow.slice(0, 220), full: html };
+      }, AB);
+      expect(r.bidRowStart).toContain('Created');
+      expect(r.bidRowStart).not.toContain('Closed Won');
+    });
+
+    test('a job won without a signature renders a dated "Marked won" event flagged unsigned', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 96021, bidId = 96021001;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Handshake Client', created: '2026-07-01T09:00:00Z' }]);
+        bids = bids.filter(b => b.client_id !== cid).concat([{
+          id: bidId, client_id: cid, client_name: 'Handshake Client', status: 'Closed Won', amount: 3200,
+          bid_date: '2026-07-02', handshake: true, handshake_date: '2026-07-09' }]);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const html = document.getElementById('cd-timeline-mount').innerHTML;
+        let cert = '';
+        const orig = window.open;
+        window.open = () => ({ document: { open(){}, write(h){ cert += h; }, close(){} }, focus(){}, print(){} });
+        exportAuditReport(bidId);
+        window.open = orig;
+        return { html, cert };
+      });
+      expect(r.html).toContain('Marked won, handshake deal');
+      expect(r.html).toContain('No signature on file');
+      expect(r.html).toContain('07/09/2026');            // dated when marked, not at creation
+      expect(r.cert).toContain('No e-signature captured'); // the certificate says so plainly
+    });
+
     test('exportAuditReport on a missing bid does not throw', async () => {
       const ok = await page.evaluate(() => {
         try { exportAuditReport(99999999); return true; } catch (e) { return false; }

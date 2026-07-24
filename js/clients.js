@@ -1595,7 +1595,12 @@ function renderCDTimeline(){
   // Lead created, the top of the audit trail.
   if(_c&&_c.created)events.push({date:String(_c.created).slice(0,10),ts:_c.created,type:'lead',label:'Lead created',meta:escHtml(_c.source||_c.leadSource||''),color:'note'});
   cbids.forEach(b=>{
-    events.push({date:b.bid_date||'',type:'bid',id:b.id,label:`Proposal: ${fmt(b.amount)}`,meta:b.status,color:'bid'});
+    // This row is the proposal being CREATED, so it shows the state at creation.
+    // It used to print b.status (the CURRENT status) on the creation date, which
+    // made a later win read as if it happened before the signature ("Closed Won"
+    // dated the day the proposal was written). Status changes are their own dated
+    // events below.
+    events.push({date:b.bid_date||'',type:'bid',id:b.id,label:`Proposal: ${fmt(b.amount)}`,meta:b.draft?'Draft created':'Created',color:'bid'});
     // Audit lifecycle: started -> sent -> opened(IP) -> hub opened(IP) -> signed(IP).
     if(b.createdAt&&String(b.createdAt).slice(0,10)!==String(b.bid_date))events.push({date:String(b.createdAt).slice(0,10),ts:b.createdAt,type:'started',label:'Proposal started',meta:fmt(b.amount),color:'bid'});
     if(b.sentAt)events.push({date:String(b.sentAt).slice(0,10),ts:b.sentAt,type:'sent',label:'Proposal sent',meta:escHtml(b.notifyEmail||b.sentTo||'to client'),color:'estimate'});
@@ -1614,6 +1619,15 @@ function renderCDTimeline(){
       if(_hub){const ipm=_cdViewMeta(typeof _proposalViewsByBidHubIp!=='undefined'?_proposalViewsByBidHubIp:null,b.id);events.push({date:String(_hub).slice(0,10),ts:_hub,type:'hub',label:'Client opened hub',meta:ipm&&ipm.ip?'IP '+escHtml(ipm.ip):'viewed',color:'estimate'});}
     }
     if(b.signedAt)events.push({date:String(b.signedAt).slice(0,10),ts:b.signedAt,type:'signed',label:'Signed'+(b.signedName?' by '+escHtml(b.signedName):''),meta:(b.signIp?'IP '+escHtml(b.signIp):'e-signed')+(b.paymentMethod?' · '+escHtml(b.paymentMethod):'')+' · <span onclick="event.stopPropagation();exportAuditReport('+b.id+')" style="color:var(--blue);cursor:pointer;font-weight:700">Audit report</span>',color:'payment'});
+    // Won WITHOUT an e-signature (handshake deal or a manual "mark won"). Dated at
+    // the moment it was marked, and flagged as unsigned since that's the fact that
+    // matters if the client later disputes the job.
+    const _wonAt=b.handshake_date||b.wonAt;
+    if(!b.signedAt&&b.status==='Closed Won'&&_wonAt)
+      events.push({date:String(_wonAt).slice(0,10),ts:_wonAt,type:'won',label:b.handshake?'Marked won, handshake deal':'Marked won',meta:'No signature on file',color:'active'});
+    // Terminal states get their own dated rows too, never the creation date.
+    if(b.declinedAt)events.push({date:String(b.declinedAt).slice(0,10),ts:b.declinedAt,type:'declined',label:'Client declined',meta:escHtml(b.lostReason||''),color:'lost'});
+    else if(b.lostAt)events.push({date:String(b.lostAt).slice(0,10),ts:b.lostAt,type:'lost',label:'Marked lost',meta:escHtml(b.lostReason||''),color:'lost'});
     (b.collHistory||[]).forEach(h=>{
       if(!h.ts)return;
       const dateStr=h.ts.slice(0,10);
@@ -1710,10 +1724,17 @@ function exportAuditReport(bidId){
       ['Client opened proposal', _openAt, _cliIp&&_cliIp.ip, _cliIp&&_cliIp.ua],
     ];
   }
+  // A job won without an e-signature (handshake / manually marked won) is stated
+  // outright: the Signed row will read "not recorded", and this row says why.
+  const _wonAt=b.handshake_date||b.wonAt;
+  const _unsignedWin=(!b.signedAt&&b.status==='Closed Won')
+    ?[[(b.handshake?'Marked won, handshake deal':'Marked won by contractor'),_wonAt,'','No e-signature captured']]
+    :[];
   const rows=[
     ['Proposal created', b.createdAt||b.bid_date, '', ''],
     ['Proposal sent', b.sentAt, '', b.notifyEmail||b.sentTo||''],
     ..._mid,
+    ..._unsignedWin,
     ['Signed'+(b.signedName?' by '+b.signedName:''), b.signedAt, b.signIp, b.signUa],
   ];
   const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

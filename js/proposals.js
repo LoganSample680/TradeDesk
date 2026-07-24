@@ -1152,6 +1152,10 @@ function markFUWon(bidId,cid){
     const b=bids.find(x=>x.id===bidId);
     if(b){
       b.status='Closed Won';
+      // Stamp WHEN it was marked won. Without this the audit trail had a win with
+      // no date and fell back to the proposal's creation date, which read as the
+      // job being won before it was ever signed.
+      b.wonAt=new Date().toISOString();
       saveAll();
       window._fromDash=true;
       schedFromBid(bidId);
