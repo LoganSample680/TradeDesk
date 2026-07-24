@@ -1586,6 +1586,8 @@ function _saveEditedClientNote(noteId){
 // Pull the audit maps (IP/device the client opened from), tolerating their absence
 // in offline/test contexts where cloud.js hasn't populated them.
 function _cdViewMeta(map,bidId){try{const m=(typeof map!=='undefined'&&map)?map[String(bidId)]:null;return m||null;}catch(e){return null;}}
+// Human labels for each logged audit event (the sign-flow funnel + opens).
+const CD_AUDIT_LABELS={hub_opened:'Client opened hub',proposal_opened:'Client opened proposal',approved:'Tapped Approve & Sign',signature_ready:'Entered signature',payment_viewed:'Reached payment step',method_selected:'Chose payment method',signed:'Signed'};
 function renderCDTimeline(){
   const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId),cmiles=getClientMileage(currentClientId);
   const _c=getClientById(currentClientId);
@@ -1597,10 +1599,20 @@ function renderCDTimeline(){
     // Audit lifecycle: started -> sent -> opened(IP) -> hub opened(IP) -> signed(IP).
     if(b.createdAt&&String(b.createdAt).slice(0,10)!==String(b.bid_date))events.push({date:String(b.createdAt).slice(0,10),ts:b.createdAt,type:'started',label:'Proposal started',meta:fmt(b.amount),color:'bid'});
     if(b.sentAt)events.push({date:String(b.sentAt).slice(0,10),ts:b.sentAt,type:'sent',label:'Proposal sent',meta:escHtml(b.notifyEmail||b.sentTo||'to client'),color:'estimate'});
-    const _op=(typeof _proposalViewsByBidClient!=='undefined'&&_proposalViewsByBidClient)?_proposalViewsByBidClient[String(b.id)]:null;
-    if(_op){const ipm=_cdViewMeta(typeof _proposalViewsByBidClientIp!=='undefined'?_proposalViewsByBidClientIp:null,b.id);events.push({date:String(_op).slice(0,10),ts:_op,type:'opened',label:'Client opened proposal',meta:ipm&&ipm.ip?'IP '+escHtml(ipm.ip):'viewed',color:'estimate'});}
-    const _hub=(typeof _proposalViewsByBidHubClient!=='undefined'&&_proposalViewsByBidHubClient)?_proposalViewsByBidHubClient[String(b.id)]:null;
-    if(_hub){const ipm=_cdViewMeta(typeof _proposalViewsByBidHubIp!=='undefined'?_proposalViewsByBidHubIp:null,b.id);events.push({date:String(_hub).slice(0,10),ts:_hub,type:'hub',label:'Client opened hub',meta:ipm&&ipm.ip?'IP '+escHtml(ipm.ip):'viewed',color:'estimate'});}
+    // Per-event audit log (each open + every sign-flow step, own timestamp + IP).
+    // Prefer the granular log; fall back to the aggregate open events when absent.
+    const _alog=(typeof _proposalAuditEventsByBid!=='undefined'&&_proposalAuditEventsByBid)?_proposalAuditEventsByBid[String(b.id)]:null;
+    if(_alog&&_alog.length){
+      _alog.forEach(ev=>{
+        if(ev.event==='signed')return; // authoritative signed event comes from bid.signedAt below
+        events.push({date:String(ev.ts).slice(0,10),ts:ev.ts,type:'audit',label:CD_AUDIT_LABELS[ev.event]||ev.event,meta:ev.ip?'IP '+escHtml(ev.ip):'',color:'estimate'});
+      });
+    }else{
+      const _op=(typeof _proposalViewsByBidClient!=='undefined'&&_proposalViewsByBidClient)?_proposalViewsByBidClient[String(b.id)]:null;
+      if(_op){const ipm=_cdViewMeta(typeof _proposalViewsByBidClientIp!=='undefined'?_proposalViewsByBidClientIp:null,b.id);events.push({date:String(_op).slice(0,10),ts:_op,type:'opened',label:'Client opened proposal',meta:ipm&&ipm.ip?'IP '+escHtml(ipm.ip):'viewed',color:'estimate'});}
+      const _hub=(typeof _proposalViewsByBidHubClient!=='undefined'&&_proposalViewsByBidHubClient)?_proposalViewsByBidHubClient[String(b.id)]:null;
+      if(_hub){const ipm=_cdViewMeta(typeof _proposalViewsByBidHubIp!=='undefined'?_proposalViewsByBidHubIp:null,b.id);events.push({date:String(_hub).slice(0,10),ts:_hub,type:'hub',label:'Client opened hub',meta:ipm&&ipm.ip?'IP '+escHtml(ipm.ip):'viewed',color:'estimate'});}
+    }
     if(b.signedAt)events.push({date:String(b.signedAt).slice(0,10),ts:b.signedAt,type:'signed',label:'Signed'+(b.signedName?' by '+escHtml(b.signedName):''),meta:(b.signIp?'IP '+escHtml(b.signIp):'e-signed')+(b.paymentMethod?' · '+escHtml(b.paymentMethod):'')+' · <span onclick="event.stopPropagation();exportAuditReport('+b.id+')" style="color:var(--blue);cursor:pointer;font-weight:700">Audit report</span>',color:'payment'});
     (b.collHistory||[]).forEach(h=>{
       if(!h.ts)return;
@@ -1687,11 +1699,23 @@ function exportAuditReport(bidId){
   const _openAt=(typeof _proposalViewsByBidClient!=='undefined'&&_proposalViewsByBidClient)?_proposalViewsByBidClient[String(b.id)]:null;
   const _hubAt=(typeof _proposalViewsByBidHubClient!=='undefined'&&_proposalViewsByBidHubClient)?_proposalViewsByBidHubClient[String(b.id)]:null;
   const NR='<span style="color:#999">not recorded</span>';
+  // Prefer the full per-event audit log (each step, own timestamp + IP); fall back
+  // to the two aggregate open events when the granular log isn't present.
+  const _alog=(typeof _proposalAuditEventsByBid!=='undefined'&&_proposalAuditEventsByBid)?_proposalAuditEventsByBid[String(b.id)]:null;
+  let _mid;
+  if(_alog&&_alog.length){
+    _mid=_alog.slice().filter(ev=>ev.event!=='signed').sort((x,y)=>String(x.ts).localeCompare(String(y.ts)))
+      .map(ev=>[CD_AUDIT_LABELS[ev.event]||ev.event, ev.ts, ev.ip, ev.ua]);
+  }else{
+    _mid=[
+      ['Client opened hub', _hubAt, _hubIp&&_hubIp.ip, _hubIp&&_hubIp.ua],
+      ['Client opened proposal', _openAt, _cliIp&&_cliIp.ip, _cliIp&&_cliIp.ua],
+    ];
+  }
   const rows=[
     ['Proposal created', b.createdAt||b.bid_date, '', ''],
     ['Proposal sent', b.sentAt, '', b.notifyEmail||b.sentTo||''],
-    ['Client opened hub', _hubAt, _hubIp&&_hubIp.ip, _hubIp&&_hubIp.ua],
-    ['Client opened proposal', _openAt, _cliIp&&_cliIp.ip, _cliIp&&_cliIp.ua],
+    ..._mid,
     ['Signed'+(b.signedName?' by '+b.signedName:''), b.signedAt, b.signIp, b.signUa],
   ];
   const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');

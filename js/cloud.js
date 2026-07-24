@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.24.26.4';
+const APP_VERSION='07.24.26.5';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1407,6 +1407,10 @@ let _proposalViewsByBidStepAt={};      // bid_id → timestamp that step was fir
 // Audit-trail IP/device captured server-side when the client opened the proposal/hub
 let _proposalViewsByBidClientIp={};    // bid_id → {ip, ua} the proposal (sign.html) was opened from
 let _proposalViewsByBidHubIp={};       // bid_id → {ip, ua} the hub (client.html) was opened from
+// Full per-event audit log: bid_id → [{event, ts, ip, ua}, …] newest-first, every
+// open + sign-flow step (hub_opened, proposal_opened, approved, signature_ready,
+// payment_viewed, method_selected, signed) with its own timestamp + captured IP.
+let _proposalAuditEventsByBid={};
 // Expose on window so Playwright E2E tests can inject test data via page.evaluate()
 // (let declarations are not window properties in browser scripts)
 Object.defineProperty(window,'_proposalViewsByBidHubClient',{get:()=>_proposalViewsByBidHubClient,set:v=>{_proposalViewsByBidHubClient=v;},configurable:true});
@@ -1418,6 +1422,7 @@ Object.defineProperty(window,'_proposalViewsByBidStep',{get:()=>_proposalViewsBy
 Object.defineProperty(window,'_proposalViewsByBidStepAt',{get:()=>_proposalViewsByBidStepAt,set:v=>{_proposalViewsByBidStepAt=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidClientIp',{get:()=>_proposalViewsByBidClientIp,set:v=>{_proposalViewsByBidClientIp=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidHubIp',{get:()=>_proposalViewsByBidHubIp,set:v=>{_proposalViewsByBidHubIp=v;},configurable:true});
+Object.defineProperty(window,'_proposalAuditEventsByBid',{get:()=>_proposalAuditEventsByBid,set:v=>{_proposalAuditEventsByBid=v;},configurable:true});
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
@@ -5338,6 +5343,20 @@ async function _fetchProposalViews(){
       _proposalViewsByBidHubIp=_pvHubIp;
       if(_pvChanged)renderDash();
     }
+    // Per-event audit log (every open + sign-flow step, each with its own timestamp
+    // + captured IP) for the client-record audit timeline and exportable report.
+    try{
+      const{data:_ae}=await _supa.from('proposal_audit_events')
+        .select('bid_id,event,ip_address,user_agent,ts')
+        .eq('contractor_user_id',_supaUser.id)
+        .order('ts',{ascending:false})
+        .limit(1500);
+      if(_ae){
+        const _byBid={};
+        _ae.forEach(r=>{if(!r.bid_id)return;(_byBid[r.bid_id]||(_byBid[r.bid_id]=[])).push({event:r.event,ts:r.ts,ip:r.ip_address||null,ua:r.user_agent||null});});
+        _proposalAuditEventsByBid=_byBid;
+      }
+    }catch(_e){}
   }catch(e){}
 }
 // Sign-flow warmth badge, one line telling the contractor how far the client

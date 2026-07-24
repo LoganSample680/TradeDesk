@@ -35,6 +35,24 @@ Deno.serve(async (req: Request) => {
              || req.headers.get('cf-connecting-ip') || null;
     const ua = req.headers.get('user-agent') || null;
 
+    // Append one row to the per-event audit log for every meaningful event, so the
+    // client-record timeline + audit report can show each step with its own
+    // timestamp + IP (not just the furthest step). Fire-and-forget; never blocks
+    // the response and never fails the primary write.
+    const logAuditEvent = (event: string) => {
+      if (!event) return;
+      supa.from('proposal_audit_events').insert({
+        contractor_user_id: contractorUserId,
+        bid_id:             String(bidId),
+        client_id:          clientId != null ? String(clientId) : null,
+        event,
+        ip_address:         ip,
+        user_agent:         ua,
+      }).then(({ error }: { error: unknown }) => {
+        if (error) console.error('proposal_audit_events insert error:', error);
+      });
+    };
+
     // Step ping — sign-flow funnel ('approved' | 'signature_ready' |
     // 'payment_viewed' | 'method_selected' | 'signed'). Monotonic upsert onto
     // proposal_views.furthest_step + one anonymized analytics_events row; the
@@ -50,6 +68,7 @@ Deno.serve(async (req: Request) => {
         console.error('log_proposal_step error:', JSON.stringify(error));
         return json({ error: msg, code: error.code, details: error.details }, 500);
       }
+      logAuditEvent(String(step));
       // Stamp the signature with the signer's IP + device for the audit report.
       // Update-only: the client upserts signed_proposals around the same moment;
       // whichever lands second doesn't clobber the other (each writes its own
@@ -79,6 +98,10 @@ Deno.serve(async (req: Request) => {
       p_ip:                 ip,
       p_ua:                 ua,
     });
+
+    // Log the open as its own audit event (contractor previews aren't client actions).
+    const _vt = viewerType || 'client';
+    if (_vt !== 'contractor') logAuditEvent(_vt === 'client-hub' ? 'hub_opened' : 'proposal_opened');
 
     if (error) {
       const msg = error.message || error.details || error.hint || JSON.stringify(error);

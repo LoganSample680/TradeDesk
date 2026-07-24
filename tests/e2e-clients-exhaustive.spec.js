@@ -2967,6 +2967,29 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/); // a clock time is shown, not just a date
     });
 
+    test('timeline renders EVERY logged step (approved/payment/method) with its own IP', async () => {
+      const r = await page.evaluate((bidId) => {
+        window._proposalAuditEventsByBid = { [bidId]: [
+          { event: 'signed', ts: '2026-07-12T16:41:00Z', ip: '73.202.114.9', ua: 'iPhone' },
+          { event: 'method_selected', ts: '2026-07-12T16:40:00Z', ip: '73.202.114.9', ua: 'iPhone' },
+          { event: 'payment_viewed', ts: '2026-07-12T16:39:00Z', ip: '73.202.114.9', ua: 'iPhone' },
+          { event: 'approved', ts: '2026-07-12T16:38:00Z', ip: '73.202.114.9', ua: 'iPhone' },
+          { event: 'proposal_opened', ts: '2026-07-11T19:08:00Z', ip: '68.44.10.2', ua: 'iPhone' },
+          { event: 'hub_opened', ts: '2026-07-11T08:30:00Z', ip: '68.44.10.2', ua: 'iPhone' },
+        ] };
+        window.currentClientId = 96019;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return document.getElementById('cd-timeline-mount').innerHTML;
+      }, AB);
+      expect(r).toContain('Tapped Approve &amp; Sign');
+      expect(r).toContain('Reached payment step');
+      expect(r).toContain('Chose payment method');
+      expect(r).toContain('Client opened hub');
+      expect(r).toContain('68.44.10.2');   // the open came from a different IP than the sign
+      expect(r).toContain('73.202.114.9');
+    });
+
     test('exportAuditReport builds a certificate containing the IP chain (no throw)', async () => {
       const r = await page.evaluate((bidId) => {
         let captured = '';
