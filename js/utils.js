@@ -99,6 +99,19 @@ function fmtDateMDY(d){
   }catch(e){return String(d);}
 }
 function fmtDateShort(d){return fmtDateMDY(d);}
+// Date + time stamp for the audit trail: "01/01/1900 at 3:42 PM". Accepts an ISO
+// timestamp or Date; falls back to date-only for a plain YYYY-MM-DD (no time to show).
+function fmtDateTimeMDY(d){
+  if(!d)return'';
+  try{
+    const s=String(d);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return fmtDateMDY(s); // date-only, no clock time
+    const dt=(d instanceof Date)?d:new Date(s);
+    if(isNaN(dt.getTime()))return fmtDateMDY(d);
+    const t=dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+    return fmtDateMDY(dt)+' at '+t;
+  }catch(e){return fmtDateMDY(d);}
+}
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function closeTopModal(){const o=document.querySelector('.zmodal-overlay');if(o&&typeof o.remove==='function')o.remove();else if(o&&o.parentNode)o.parentNode.removeChild(o);}
 function zConfirm(msg, onYes, opts={}){

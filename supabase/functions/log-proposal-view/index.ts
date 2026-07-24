@@ -27,6 +27,14 @@ Deno.serve(async (req: Request) => {
       return json({ error: 'contractorUserId and bidId required' }, 400);
     }
 
+    // Audit capture: the client's real IP + device, read server-side from the
+    // request headers (the browser can't set these), so a signed-proposal audit
+    // report can show where the open/signature came from. x-forwarded-for is a
+    // comma list, client first; fall back to Cloudflare's header.
+    const ip = ((req.headers.get('x-forwarded-for') || '').split(',')[0].trim())
+             || req.headers.get('cf-connecting-ip') || null;
+    const ua = req.headers.get('user-agent') || null;
+
     // Step ping — sign-flow funnel ('approved' | 'signature_ready' |
     // 'payment_viewed' | 'method_selected' | 'signed'). Monotonic upsert onto
     // proposal_views.furthest_step + one anonymized analytics_events row; the
@@ -42,6 +50,18 @@ Deno.serve(async (req: Request) => {
         console.error('log_proposal_step error:', JSON.stringify(error));
         return json({ error: msg, code: error.code, details: error.details }, 500);
       }
+      // Stamp the signature with the signer's IP + device for the audit report.
+      // Update-only: the client upserts signed_proposals around the same moment;
+      // whichever lands second doesn't clobber the other (each writes its own
+      // columns), so the IP ends up recorded regardless of ordering.
+      if (String(step) === 'signed' && ip) {
+        const { error: sigErr } = await supa
+          .from('signed_proposals')
+          .update({ ip_address: ip, user_agent: ua })
+          .eq('contractor_user_id', contractorUserId)
+          .eq('bid_id', String(bidId));
+        if (sigErr) console.error('signed_proposals ip stamp error:', sigErr.message);
+      }
       return json({ ok: true }, 200);
     }
 
@@ -56,6 +76,8 @@ Deno.serve(async (req: Request) => {
       p_bid_id:             String(bidId),
       p_viewer_type:        viewerType || 'client',
       p_client_id:          clientId != null ? String(clientId) : null,  // numeric IDs stored as text
+      p_ip:                 ip,
+      p_ua:                 ua,
     });
 
     if (error) {

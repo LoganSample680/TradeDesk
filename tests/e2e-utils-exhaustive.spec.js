@@ -1091,6 +1091,25 @@ test.describe('utils.js: exhaustive coverage', () => {
     });
   });
 
+  test.describe('fmtDateTimeMDY', () => {
+    test('null / empty, returns empty string', async () => {
+      const r = await page.evaluate(() => [fmtDateTimeMDY(null), fmtDateTimeMDY('')]);
+      expect(r).toEqual(['', '']);
+    });
+    test('ISO timestamp, returns MM/DD/YYYY at h:mm AM/PM', async () => {
+      const r = await page.evaluate(() => fmtDateTimeMDY('2026-07-12T16:41:00'));
+      expect(r).toMatch(/^07\/12\/2026 at \d{1,2}:\d{2}\s?(AM|PM)$/);
+    });
+    test('date-only string has no clock time appended', async () => {
+      const r = await page.evaluate(() => fmtDateTimeMDY('2026-07-12'));
+      expect(r).toBe('07/12/2026');
+    });
+    test('garbage input does not throw', async () => {
+      const r = await page.evaluate(() => { try { return { ok: true, v: fmtDateTimeMDY('nope') }; } catch (e) { return { ok: false }; } });
+      expect(r.ok).toBe(true);
+    });
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════
   // 25. escHtml
   // ═══════════════════════════════════════════════════════════════════════════

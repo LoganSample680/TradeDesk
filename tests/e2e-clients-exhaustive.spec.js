@@ -2939,6 +2939,60 @@ test.describe('clients.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Audit trail: the client-record timeline surfaces the full engagement chain
+  // (lead → sent → opened w/ IP → signed w/ IP) and exports a court-ready report.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('client-record audit timeline', () => {
+    const AB = 96019001;
+    test('timeline shows lead/sent/opened/signed events with time + captured IP', async () => {
+      const r = await page.evaluate((bidId) => {
+        clients = clients.filter(c => c.id !== 96019).concat([{ id: 96019, name: 'Audit Client', source: 'Referral', created: '2026-07-08T09:12:00Z' }]);
+        bids = bids.filter(b => b.client_id !== 96019).concat([{
+          id: bidId, client_id: 96019, client_name: 'Audit Client', status: 'Closed Won', amount: 6400,
+          bid_date: '2026-07-10', sentAt: '2026-07-10T14:22:00Z', signedAt: '2026-07-12T16:41:00Z',
+          signedName: 'Audit Client', paymentMethod: 'card', signIp: '73.202.114.9', signUa: 'iPhone Safari' }]);
+        window._proposalViewsByBidClient = { [bidId]: '2026-07-11T19:08:00Z' };
+        window._proposalViewsByBidClientIp = { [bidId]: { ip: '73.202.114.9', ua: 'iPhone Safari' } };
+        window.currentClientId = 96019;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return document.getElementById('cd-timeline-mount').innerHTML;
+      }, AB);
+      expect(r).toContain('Lead created');
+      expect(r).toContain('Proposal sent');
+      expect(r).toContain('Client opened proposal');
+      expect(r).toContain('Signed by Audit Client');
+      expect(r).toContain('73.202.114.9');          // captured IP surfaces
+      expect(r).toContain('Audit report');          // export entry point present
+      expect(r).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/); // a clock time is shown, not just a date
+    });
+
+    test('exportAuditReport builds a certificate containing the IP chain (no throw)', async () => {
+      const r = await page.evaluate((bidId) => {
+        let captured = '';
+        const orig = window.open;
+        window.open = () => ({ document: { open(){}, write(h){ captured += h; }, close(){} }, focus(){}, print(){} });
+        let threw = false;
+        try { exportAuditReport(bidId); } catch (e) { threw = true; }
+        window.open = orig;
+        return { threw, captured };
+      }, AB);
+      expect(r.threw).toBe(false);
+      expect(r.captured).toContain('Proposal Audit Certificate');
+      expect(r.captured).toContain('73.202.114.9');
+      expect(r.captured).toContain('Signed by Audit Client');
+      expect(r.captured).toContain('not legal advice');
+    });
+
+    test('exportAuditReport on a missing bid does not throw', async () => {
+      const ok = await page.evaluate(() => {
+        try { exportAuditReport(99999999); return true; } catch (e) { return false; }
+      });
+      expect(ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // no console errors
   // ═══════════════════════════════════════════════════════════════════════════
   test('no console errors, clients.js', async () => {

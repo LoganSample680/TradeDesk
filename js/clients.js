@@ -1583,11 +1583,25 @@ function _saveEditedClientNote(noteId){
   if(!text){deleteClientNote(noteId);}else{n.text=text;saveAll();renderClientNotes();}
   document.getElementById('_cnote-edit-ov')?.remove();
 }
+// Pull the audit maps (IP/device the client opened from), tolerating their absence
+// in offline/test contexts where cloud.js hasn't populated them.
+function _cdViewMeta(map,bidId){try{const m=(typeof map!=='undefined'&&map)?map[String(bidId)]:null;return m||null;}catch(e){return null;}}
 function renderCDTimeline(){
   const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId),cmiles=getClientMileage(currentClientId);
+  const _c=getClientById(currentClientId);
   const events=[];
+  // Lead created, the top of the audit trail.
+  if(_c&&_c.created)events.push({date:String(_c.created).slice(0,10),ts:_c.created,type:'lead',label:'Lead created',meta:escHtml(_c.source||_c.leadSource||''),color:'note'});
   cbids.forEach(b=>{
     events.push({date:b.bid_date||'',type:'bid',id:b.id,label:`Proposal: ${fmt(b.amount)}`,meta:b.status,color:'bid'});
+    // Audit lifecycle: started -> sent -> opened(IP) -> hub opened(IP) -> signed(IP).
+    if(b.createdAt&&String(b.createdAt).slice(0,10)!==String(b.bid_date))events.push({date:String(b.createdAt).slice(0,10),ts:b.createdAt,type:'started',label:'Proposal started',meta:fmt(b.amount),color:'bid'});
+    if(b.sentAt)events.push({date:String(b.sentAt).slice(0,10),ts:b.sentAt,type:'sent',label:'Proposal sent',meta:escHtml(b.notifyEmail||b.sentTo||'to client'),color:'estimate'});
+    const _op=(typeof _proposalViewsByBidClient!=='undefined'&&_proposalViewsByBidClient)?_proposalViewsByBidClient[String(b.id)]:null;
+    if(_op){const ipm=_cdViewMeta(typeof _proposalViewsByBidClientIp!=='undefined'?_proposalViewsByBidClientIp:null,b.id);events.push({date:String(_op).slice(0,10),ts:_op,type:'opened',label:'Client opened proposal',meta:ipm&&ipm.ip?'IP '+escHtml(ipm.ip):'viewed',color:'estimate'});}
+    const _hub=(typeof _proposalViewsByBidHubClient!=='undefined'&&_proposalViewsByBidHubClient)?_proposalViewsByBidHubClient[String(b.id)]:null;
+    if(_hub){const ipm=_cdViewMeta(typeof _proposalViewsByBidHubIp!=='undefined'?_proposalViewsByBidHubIp:null,b.id);events.push({date:String(_hub).slice(0,10),ts:_hub,type:'hub',label:'Client opened hub',meta:ipm&&ipm.ip?'IP '+escHtml(ipm.ip):'viewed',color:'estimate'});}
+    if(b.signedAt)events.push({date:String(b.signedAt).slice(0,10),ts:b.signedAt,type:'signed',label:'Signed'+(b.signedName?' by '+escHtml(b.signedName):''),meta:(b.signIp?'IP '+escHtml(b.signIp):'e-signed')+(b.paymentMethod?' · '+escHtml(b.paymentMethod):'')+' · <span onclick="event.stopPropagation();exportAuditReport('+b.id+')" style="color:var(--blue);cursor:pointer;font-weight:700">Audit report</span>',color:'payment'});
     (b.collHistory||[]).forEach(h=>{
       if(!h.ts)return;
       const dateStr=h.ts.slice(0,10);
@@ -1618,8 +1632,9 @@ function renderCDTimeline(){
       events.push({date:j.start||'',type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0),color:'active'});
     }
   });
-  cmiles.forEach(m=>events.push({date:m.date||'',type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
-  events.sort((a,b)=>b.date.localeCompare(a.date));
+  cmiles.forEach(m=>events.push({date:m.date||'',ts:m.ts||m.date,type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
+  const _tkey=e=>String(e.ts||e.date||'');
+  events.sort((a,b)=>_tkey(b).localeCompare(_tkey(a)));
   const el=document.getElementById('cd-timeline-mount');if(!el)return;
   const open=(window._cdTimelineOpen!==false);
   const count=events.length?' <span style="color:var(--text3);font-weight:700">· '+events.length+'</span>':'';
@@ -1628,7 +1643,7 @@ function renderCDTimeline(){
   if(!open){el.innerHTML=bar;return;}
   if(!events.length){el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner"><div class="empty">No activity yet. Add a proposal or drive to this client.</div></div></div>';return;}
   const byDate={};
-  [...events].sort((a,b)=>b.date.localeCompare(a.date)).forEach(e=>{
+  [...events].sort((a,b)=>_tkey(b).localeCompare(_tkey(a))).forEach(e=>{
     if(!byDate[e.date])byDate[e.date]=[];
     byDate[e.date].push(e);
   });
@@ -1640,7 +1655,9 @@ function renderCDTimeline(){
       const domId='tl-group-'+groupIdx;
       const items=evts.map(e=>{
         const isBid=e.type==='bid';
-        const inner='<div class="tl-dot '+e.color+'"></div><div class="tl-label">'+e.label+'</div><div class="tl-meta">'+(e.meta||'')+(isBid?' · <span style="font-size:10px;color:var(--blue)">tap to edit</span>':'')+' </div>';
+        const tstr=(e.ts&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.ts)))?new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
+        const metaFull=(tstr?'<span style="color:var(--text3);font-weight:700">'+tstr+'</span>'+(e.meta?' · ':''):'')+(e.meta||'');
+        const inner='<div class="tl-dot '+e.color+'"></div><div class="tl-label">'+e.label+'</div><div class="tl-meta">'+metaFull+(isBid?' · <span style="font-size:10px;color:var(--blue)">tap to edit</span>':'')+' </div>';
         if(isBid)return '<div class="tl-item" onclick="viewBidFromTimeline('+e.id+')" style="cursor:pointer">'+inner+'</div>';
         return '<div class="tl-item">'+inner+'</div>';
       }).join('');
@@ -1654,6 +1671,56 @@ function renderCDTimeline(){
       '</div>';
     }).join('')+
   '</div></div></div>';
+}
+// Court-ready audit certificate for one signed proposal: the created -> sent ->
+// opened (IP) -> signed (IP) chain with timestamps and device, exportable via the
+// browser's print-to-PDF. This is the contractor's evidence in a chargeback or
+// contract dispute. IP/device are captured server-side; historical rows before the
+// audit feature show "not recorded".
+function exportAuditReport(bidId){
+  const b=(typeof bids!=='undefined'?bids:[]).find(x=>String(x.id)===String(bidId));
+  if(!b){if(typeof zAlert==='function')zAlert('Proposal not found.');return;}
+  const c=getClientById(b.client_id)||getClientById(currentClientId)||{};
+  const biz=(typeof S!=='undefined'&&(S.bname||S.businessName))||'TradeDesk';
+  const _cliIp=_cdViewMeta(typeof _proposalViewsByBidClientIp!=='undefined'?_proposalViewsByBidClientIp:null,b.id);
+  const _hubIp=_cdViewMeta(typeof _proposalViewsByBidHubIp!=='undefined'?_proposalViewsByBidHubIp:null,b.id);
+  const _openAt=(typeof _proposalViewsByBidClient!=='undefined'&&_proposalViewsByBidClient)?_proposalViewsByBidClient[String(b.id)]:null;
+  const _hubAt=(typeof _proposalViewsByBidHubClient!=='undefined'&&_proposalViewsByBidHubClient)?_proposalViewsByBidHubClient[String(b.id)]:null;
+  const NR='<span style="color:#999">not recorded</span>';
+  const rows=[
+    ['Proposal created', b.createdAt||b.bid_date, '', ''],
+    ['Proposal sent', b.sentAt, '', b.notifyEmail||b.sentTo||''],
+    ['Client opened hub', _hubAt, _hubIp&&_hubIp.ip, _hubIp&&_hubIp.ua],
+    ['Client opened proposal', _openAt, _cliIp&&_cliIp.ip, _cliIp&&_cliIp.ua],
+    ['Signed'+(b.signedName?' by '+b.signedName:''), b.signedAt, b.signIp, b.signUa],
+  ];
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const fmtTs=t=>t?fmtDateTimeMDY(t):NR;
+  const body=rows.filter(r=>r[1]||r[0].indexOf('Signed')===0||r[0].indexOf('created')>0).map(r=>
+    '<tr><td style="font-weight:700">'+esc(r[0])+'</td><td>'+fmtTs(r[1])+'</td><td>'+(r[2]?esc(r[2]):NR)+'</td><td style="font-size:11px;color:#555;word-break:break-all">'+(r[3]?esc(r[3]):NR)+'</td></tr>'
+  ).join('');
+  const html='<!doctype html><html><head><meta charset="utf-8"><title>Audit report, proposal '+esc(b.id)+'</title>'+
+    '<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:760px;margin:24px auto;padding:0 18px}'+
+    'h1{font-size:20px;margin:0 0 2px}.sub{color:#555;font-size:13px;margin-bottom:18px}'+
+    'table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{text-align:left;padding:9px 10px;border-bottom:1px solid #e2e2e2;vertical-align:top}'+
+    'th{background:#f5f5f5;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#555}'+
+    '.meta{font-size:13px;margin-bottom:6px}.meta b{display:inline-block;min-width:120px;color:#555;font-weight:600}'+
+    '.disc{margin-top:22px;font-size:11px;color:#777;border-top:1px solid #e2e2e2;padding-top:12px}'+
+    '@media print{body{margin:0}}</style></head><body>'+
+    '<h1>'+esc(biz)+'</h1><div class="sub">Proposal Audit Certificate</div>'+
+    '<div class="meta"><b>Proposal #</b> '+esc(b.id)+'</div>'+
+    '<div class="meta"><b>Client</b> '+esc(c.name||b.client_name||'')+'</div>'+
+    '<div class="meta"><b>Amount</b> '+(typeof fmt==='function'?fmt(b.amount):('$'+b.amount))+'</div>'+
+    '<div class="meta"><b>Generated</b> '+fmtDateTimeMDY(new Date())+'</div>'+
+    '<table><thead><tr><th>Event</th><th>Timestamp</th><th>IP address</th><th>Device</th></tr></thead><tbody>'+body+'</tbody></table>'+
+    '<div class="disc">Timestamps, IP addresses, and device details are captured automatically by '+esc(biz)+' at the moment each action occurred; IP and device are recorded server-side from the request and cannot be set by the recipient. Events marked "not recorded" predate audit capture or were not performed. This report is provided as a record of engagement and is not legal advice.</div>'+
+    '</body></html>';
+  try{
+    const w=window.open('','_blank');
+    if(!w){if(typeof zAlert==='function')zAlert('Allow pop-ups to download the audit report, then tap Audit report again.');return;}
+    w.document.open();w.document.write(html);w.document.close();
+    setTimeout(()=>{try{w.focus();w.print();}catch(e){}},350);
+  }catch(e){if(typeof showToast==='function')showToast('Could not open the audit report','⚠️');}
 }
 function toggleTlGroup(id){
   const el=document.getElementById(id);

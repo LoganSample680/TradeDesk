@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.24.26.3';
+const APP_VERSION='07.24.26.4';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1404,6 +1404,9 @@ let _proposalViewsByBidClientCount={}; // number of proposal opens
 // Sign-flow funnel, furthest step the client reached inside sign.html
 let _proposalViewsByBidStep={};        // bid_id → 'approved'|'signature_ready'|'payment_viewed'|'method_selected'|'signed'
 let _proposalViewsByBidStepAt={};      // bid_id → timestamp that step was first reached
+// Audit-trail IP/device captured server-side when the client opened the proposal/hub
+let _proposalViewsByBidClientIp={};    // bid_id → {ip, ua} the proposal (sign.html) was opened from
+let _proposalViewsByBidHubIp={};       // bid_id → {ip, ua} the hub (client.html) was opened from
 // Expose on window so Playwright E2E tests can inject test data via page.evaluate()
 // (let declarations are not window properties in browser scripts)
 Object.defineProperty(window,'_proposalViewsByBidHubClient',{get:()=>_proposalViewsByBidHubClient,set:v=>{_proposalViewsByBidHubClient=v;},configurable:true});
@@ -1413,6 +1416,8 @@ Object.defineProperty(window,'_proposalViewsByBidHubCount',{get:()=>_proposalVie
 Object.defineProperty(window,'_proposalViewsByBidClientCount',{get:()=>_proposalViewsByBidClientCount,set:v=>{_proposalViewsByBidClientCount=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidStep',{get:()=>_proposalViewsByBidStep,set:v=>{_proposalViewsByBidStep=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidStepAt',{get:()=>_proposalViewsByBidStepAt,set:v=>{_proposalViewsByBidStepAt=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsByBidClientIp',{get:()=>_proposalViewsByBidClientIp,set:v=>{_proposalViewsByBidClientIp=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsByBidHubIp',{get:()=>_proposalViewsByBidHubIp,set:v=>{_proposalViewsByBidHubIp=v;},configurable:true});
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
@@ -5072,6 +5077,9 @@ function _applySigStatusToBid(bid,s){
     if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
     if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
     if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
+    // Audit: the signer's IP + device, stamped server-side by the log-proposal-view
+    // Edge Function at sign time. Feeds the exportable audit report.
+    if(s.ip_address&&bid.signIp!==s.ip_address){bid.signIp=s.ip_address;bid.signUa=s.user_agent||null;changed=true;}
   }
   return changed;
 }
@@ -5296,7 +5304,7 @@ async function _fetchProposalViews(){
       data.forEach(v=>{if(v.updated_at&&(!_pvPollWatermark||v.updated_at>_pvPollWatermark))_pvPollWatermark=v.updated_at;});
       // Build into temporaries first, then swap atomically, prevents a renderDash()
       // mid-flight from seeing an empty dict during the rebuild window (flicker race).
-      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={};
+      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={},_pvCliIp={},_pvHubIp={};
       data.forEach(v=>{
         if(!v.bid_id)return;
         if(!_pvBid[v.bid_id])_pvBid[v.bid_id]=v.opened_at;
@@ -5306,6 +5314,9 @@ async function _fetchProposalViews(){
         if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
         if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
         if(v.furthest_step&&!_pvStep[v.bid_id]){_pvStep[v.bid_id]=v.furthest_step;_pvStepAt[v.bid_id]=v.furthest_step_at||null;}
+        // Audit: the IP/device the client opened from (proposal + hub), for the audit report.
+        if(v.client_ip&&!_pvCliIp[v.bid_id])_pvCliIp[v.bid_id]={ip:v.client_ip,ua:v.client_ua||null};
+        if(v.hub_ip&&!_pvHubIp[v.bid_id])_pvHubIp[v.bid_id]={ip:v.hub_ip,ua:v.hub_ua||null};
       });
       // Render ONLY when the view data actually changed. This fetch runs after every
       // load (setTimeout 1500) and on a 30s interval, an unconditional renderDash()
@@ -5323,6 +5334,8 @@ async function _fetchProposalViews(){
       _proposalViewsByBidClientCount=_pvCliCnt;
       _proposalViewsByBidStep=_pvStep;
       _proposalViewsByBidStepAt=_pvStepAt;
+      _proposalViewsByBidClientIp=_pvCliIp;
+      _proposalViewsByBidHubIp=_pvHubIp;
       if(_pvChanged)renderDash();
     }
   }catch(e){}
