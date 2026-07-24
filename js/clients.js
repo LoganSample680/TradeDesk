@@ -2389,7 +2389,7 @@ function renderCDAddresses(){
       hd.style.cursor='pointer';
       hd.onclick=function(){window._cdPropsOpen=(window._cdPropsOpen===false);renderCDAddresses();};
       hd.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;width:100%">'+
-        '<span>'+title+' <span style="color:var(--text3);font-weight:600">· '+addrs.length+'</span></span>'+
+        '<span style="font-size:15px;font-weight:800;color:var(--text)">'+title+' <span style="color:var(--text3);font-weight:700">· '+addrs.length+'</span></span>'+
         '<span style="display:inline-flex;color:var(--text3);transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>'+
         '</div>';
     }else{
