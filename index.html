@@ -1323,7 +1323,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <span class="qa-ico"><span data-ico="🚗" data-ico-size="24"></span></span><span>Drive</span>
           </button>
           <button class="qa" id="qa-estimate-btn" style="--qa-tint:linear-gradient(155deg,#8B5CF6 0%,#6D28D9 100%);--qa-glow:rgba(109,40,217,.35)" onclick="quickAction('estimate')">
-            <span class="qa-ico"><span data-ico="📋" data-ico-size="24"></span></span><span>Estimate</span>
+            <span class="qa-ico"><span data-ico="📋" data-ico-size="24"></span></span><span>Proposal</span>
           </button>
           <button class="qa" style="--qa-tint:linear-gradient(155deg,#DE8514 0%,#B45309 100%);--qa-glow:rgba(180,83,9,.35)" onclick="quickAction('schedule')">
             <span class="qa-ico"><span data-ico="📅" data-ico-size="24"></span></span><span>Schedule</span>
@@ -1562,7 +1562,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   
   <select id="cd-tab-select" onchange="setCDTab(this.value)" aria-label="Client record section" style="width:100%;margin-bottom:14px;padding:13px 40px 13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;-webkit-appearance:none;appearance:none;box-shadow:var(--shadow-card);background-image:url(&quot;data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>&quot;);background-repeat:no-repeat;background-position:right 14px center">
     <option value="overview">Overview</option>
-    <option value="bids">Bids</option>
+    <option value="bids">Proposals</option>
     <option value="jobs">Jobs</option>
     <option value="contracts">Contracts</option>
     <option value="mileage">Mileage</option>
@@ -1590,10 +1590,10 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
   <div id="cdt-bids-content" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <span style="font-size:13px;font-weight:700">Bids &amp; payments</span>
+      <span style="font-size:13px;font-weight:700">Proposals &amp; payments</span>
       <div style="display:flex;gap:6px">
         <button class="btn btn-sm" onclick="openClientProposals(currentClientId)" style="font-size:12px"><span data-ico="📄" data-ico-size="14"></span> Proposals</button>
-        <button class="btn btn-p btn-sm" onclick="quickBid()">+ Add bid</button>
+        <button class="btn btn-p btn-sm" onclick="quickBid()">+ Add proposal</button>
       </div>
     </div>
     <div id="cd-overdue-alerts"></div>
@@ -1666,9 +1666,9 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="tbar" id="gei-old-tbar">
     <div class="tbar-l">
       <button class="link-back" onclick="_geiToStylePicker()">← Pick a different type</button>
-      <div class="tbar-eyebrow" id="gei-tbar-eyebrow">General estimate</div>
+      <div class="tbar-eyebrow" id="gei-tbar-eyebrow">General proposal</div>
       <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
-        <span id="gei-trade-title">Estimate</span>
+        <span id="gei-trade-title">Proposal</span>
         <button onclick="_editScopeTitle()" id="scope-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)"><span data-ico="✏" data-ico-size="16"></span></button>
       </div>
     </div>
@@ -1869,7 +1869,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <option>Industrial / equipment work</option>
             <option>Ongoing / open-ended</option>
             <option>Client preference</option>
-            <option>Supplemental to fixed bid</option>
+            <option>Supplemental to fixed proposal</option>
             <option>Other</option>
           </select>
         </div>
@@ -2038,7 +2038,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center"><span data-ico="✉" data-ico-size="16"></span> Email</button>
     </div>
     <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>
-    <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Proposal saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
   </div>
 </div>
 
@@ -2064,11 +2064,11 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   
   <div class="sf-seg">
-    <button type="button" class="sf-seg-btn active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Estimate</button>
+    <button type="button" class="sf-seg-btn active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Proposal</button>
     <button type="button" class="sf-seg-btn" id="sched-tab-job" onclick="setSchedType('job',this)">Job</button>
   </div>
 
-  <div id="sched-tip" class="tip" style="margin-bottom:12px">Pick a client and date for the estimate walkthrough.</div>
+  <div id="sched-tip" class="tip" style="margin-bottom:12px">Pick a client and date for the proposal walkthrough.</div>
 
   <div class="sf-card">
     <div class="sf-cap">Job</div>
@@ -2079,8 +2079,8 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
       </div>
       <div class="sf-row" id="sched-job-fields" style="display:none">
-        <div class="sf-body"><span class="sf-lbl">Won bid</span>
-          <select id="s-bid-sel" onchange="pullBid()"><option value="">Select a won bid</option></select>
+        <div class="sf-body"><span class="sf-lbl">Won proposal</span>
+          <select id="s-bid-sel" onchange="pullBid()"><option value="">Select a won proposal</option></select>
         </div>
       </div>
       <div class="sf-row" id="s-crew-row" style="display:none">
@@ -2110,7 +2110,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="sf-cap">Timing</div>
     <div class="sf-list">
       <div class="sf-row">
-        <div class="sf-body"><span class="sf-lbl" id="s-time-label">Estimate visits</span>
+        <div class="sf-body"><span class="sf-lbl" id="s-time-label">Proposal visits</span>
           <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
         </div>
       </div>
@@ -2324,7 +2324,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="tr-bid-detail" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;overflow-y:auto;-webkit-overflow-scrolling:touch">
       <div style="background:var(--bg);min-height:100%;padding:16px;max-width:600px;margin:0 auto">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div style="font-size:16px;font-weight:800">Bid details</div>
+          <div style="font-size:16px;font-weight:800">Proposal details</div>
           <button onclick="closeBidHistoryDetail()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">&#10005;</button>
         </div>
         <div id="tr-bid-detail-content"></div>
@@ -2652,7 +2652,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl"><input type="number" id="set-since-year" min="1900" max="2100" placeholder="e.g. 2013"></div>
         </div>
         <div class="set-form-row">
-          <div><div class="set-form-lbl">Sales tax rate</div><div class="set-form-hint">Default rate charged on taxable materials. ZIP lookup available from any estimate.</div></div>
+          <div><div class="set-form-lbl">Sales tax rate</div><div class="set-form-hint">Default rate charged on taxable materials. ZIP lookup available from any proposal.</div></div>
           <div class="set-form-ctrl">
             <div style="display:flex;align-items:center;gap:8px">
               <input type="number" id="set-sales-tax-rate" step="0.001" min="0" max="20" placeholder="e.g. 9.350" style="flex:1">
@@ -2783,7 +2783,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="f"><label>Monthly revenue goal ($)</label><input type="number" id="set-goal-monthly" placeholder="e.g. 8000" min="0" step="500"><div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div></div>
         <div class="f"><label>Default labor rate ($/hr)</label><input id="set-labor-rate" type="number" placeholder="45" min="0" step="5"></div>
         <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
-        <div class="f"><label>Default deposit (%)</label><input type="number" id="set-deposit-pct" min="0" max="100" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Applied to every new estimate (0 = no deposit)</div></div>
+        <div class="f"><label>Default deposit (%)</label><input type="number" id="set-deposit-pct" min="0" max="100" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Applied to every new proposal (0 = no deposit)</div></div>
         <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
         <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
         <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.40"></div>
@@ -2792,7 +2792,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div id="set-rates-lg" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px" id="set-rates-lg-title">Labor rates</div>
         <div class="fg fg2">
-          <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="number" placeholder="75" min="0" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item estimates for this trade.</div></div>
+          <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="number" placeholder="75" min="0" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item proposals for this trade.</div></div>
         </div>
       </div>
       <!-- Workmanship warranty period -->
@@ -2879,7 +2879,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="set-form-card">
         <div class="set-form-card-hd">
           <div style="font-size:24px;line-height:1"><span data-ico="📋" data-ico-size="24"></span></div>
-          <div><div style="font-size:15px;font-weight:800">Proposal terms</div><div style="font-size:11px;color:var(--text3)">Shown at the bottom of every estimate before signing</div></div>
+          <div><div style="font-size:15px;font-weight:800">Proposal terms</div><div style="font-size:11px;color:var(--text3)">Shown at the bottom of every proposal before signing</div></div>
         </div>
         <div style="padding:14px 16px">
           <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Custom terms</div>
@@ -3084,7 +3084,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">
           <div>
-            <div style="font-size:14px;font-weight:700">Clients &amp; bids</div>
+            <div style="font-size:14px;font-weight:700">Clients &amp; proposals</div>
             <div style="font-size:11px;color:var(--text3);margin-top:2px">All leads, proposals, jobs, and payments</div>
           </div>
           <button class="btn btn-sm" onclick="clearClientsOnly()" style="color:var(--c-red);border-color:var(--c-red);flex-shrink:0;white-space:nowrap">Delete</button>
@@ -3112,7 +3112,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--c-red);margin-bottom:10px">Danger zone</div>
       <div style="background:var(--bg-card);border-radius:var(--r);border:1px solid var(--c-red);padding:16px">
         <div style="font-size:13px;font-weight:700;color:var(--c-red);margin-bottom:4px">Factory reset</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Wipes everything, clients, bids, mileage, expenses, fleet, settings. Cannot be undone.</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Wipes everything, clients, proposals, mileage, expenses, fleet, settings. Cannot be undone.</div>
         <button class="btn btn-r" onclick="clearAllData()" style="width:100%;padding:12px;font-size:13px"><span data-ico="🗑" data-ico-size="14"></span> Clear ALL data, start fresh</button>
       </div>
 
@@ -3226,7 +3226,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb"        id="lft-new"        onclick="setLeadFilter('new',this)">Ready</button>
     <button type="button" class="fb"        id="lft-estimate"   onclick="setLeadFilter('estimate',this)">Proposal sent</button>
     <button type="button" class="fb"        id="lft-follow_up"  onclick="setLeadFilter('follow_up',this)">Follow-up</button>
-    <button type="button" class="fb"        id="lft-pending"    onclick="setLeadFilter('pending',this)">Pending bid</button>
+    <button type="button" class="fb"        id="lft-pending"    onclick="setLeadFilter('pending',this)">Proposal (pending)</button>
   </div>
   <div id="leads-list"></div>
 </div>

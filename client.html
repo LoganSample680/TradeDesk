@@ -1645,7 +1645,7 @@ function renderPayments(){
     html+='<div onclick="_togglePay('+bid_id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer;position:relative">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px">'+esc(bid.type||'Estimate')+(isPaid?' · Paid '+svgIcon('✓'):' · Balance due')+'</div>';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:4px">'+esc(bid.type||'Proposal')+(isPaid?' · Paid '+svgIcon('✓'):' · Balance due')+'</div>';
     html+='<div style="display:flex;align-items:baseline;gap:7px">';
     html+='<span style="font-size:28px;font-weight:900;font-family:var(--font-display);color:#fff;letter-spacing:-1.5px;line-height:1">'+fmt(isPaid?total:balance)+'</span>';
     html+='<span style="font-size:12px;color:rgba(255,255,255,.4);font-weight:500">'+(isPaid?'paid in full':'remaining')+'</span>';
@@ -2150,7 +2150,7 @@ function renderDocuments(){
     html+='<div onclick="_toggleDoc('+bid.id+')" style="background:'+hdrBg+';padding:14px 16px;cursor:pointer">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Estimate')+(_isCancelled?' · Cancelled '+svgIcon('🚫'):(isPaid?' · Paid '+svgIcon('✓'):' · Balance due'))+'</div>';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.35);margin-bottom:3px">'+esc(bid.type||'Proposal')+(_isCancelled?' · Cancelled '+svgIcon('🚫'):(isPaid?' · Paid '+svgIcon('✓'):' · Balance due'))+'</div>';
     html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
     html+='<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:3px">Signed '+fmtDate(bid.signedAt||bid.bid_date)+' · '+fmt(bid.amount||0)+' · '+docCount+' doc'+(docCount!==1?'s':'')+'</div>';
     html+='</div>';
@@ -2232,7 +2232,7 @@ function renderDocuments(){
     html+='<div onclick="_toggleDoc('+bid.id+')" style="background:linear-gradient(135deg,#374151,#4B5563);padding:14px 16px;cursor:pointer">';
     html+='<div style="display:flex;align-items:center;gap:10px">';
     html+='<div style="flex:1;min-width:0">';
-    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.4);margin-bottom:3px">'+esc(bid.type||'Estimate')+' · Declined</div>';
+    html+='<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;color:rgba(255,255,255,.4);margin-bottom:3px">'+esc(bid.type||'Proposal')+' · Declined</div>';
     html+='<div style="font-size:16px;font-weight:800;color:#fff;line-height:1.2">'+esc(bid.type||'Project')+'</div>';
     html+='<div style="font-size:11px;color:rgba(255,255,255,.45);margin-top:3px">Declined '+fmtDate(bid.lostAt||bid.bid_date)+' · '+fmt(bid.amount||0)+'</div>';
     html+='</div>';
@@ -2533,7 +2533,7 @@ function openInvoice(bidId){
   if(h.clientPhone)html+='<div class="inv-detail">'+esc(h.clientPhone)+'</div>';
   html+='</div><div><div class="inv-section-label">Job details</div>';
   html+='<div class="inv-detail"><strong>Type:</strong> '+esc(bid.type||'Services')+'</div>';
-  if(bid.bid_date)html+='<div class="inv-detail"><strong>Bid date:</strong> '+esc(bid.bid_date)+'</div>';
+  if(bid.bid_date)html+='<div class="inv-detail"><strong>Proposal date:</strong> '+esc(bid.bid_date)+'</div>';
   if(job&&job.completion_date)html+='<div class="inv-detail"><strong>Completed:</strong> '+fmtDate(job.completion_date)+'</div>';
   html+='</div></div>';
   html+='<table class="inv-table"><thead><tr><th>Description</th><th style="text-align:right">Amount</th></tr></thead><tbody>';
