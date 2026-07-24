@@ -967,7 +967,7 @@ async function _clearCrewTrackingCloud(){
   }
 }
 function clearAllData(){
-  zConfirm('This will permanently delete ALL clients, bids, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
+  zConfirm('This will permanently delete ALL clients, proposals, jobs, income, expenses, and mileage. This cannot be undone.',()=>{
     zConfirm('Last chance, are you absolutely sure you want to delete everything?',async()=>{
       // Deliberate wipe, bypass supaSaveToCloud's accidental-wipe sanity guard so the
       // soft-delete actually reaches the cloud (otherwise the cleared rows, e.g. the
@@ -1008,7 +1008,7 @@ function clearMileageOnly(){
 }
 
 function clearClientsOnly(){
-  zConfirm('Delete all clients, bids, jobs, and payments? This cannot be undone.',async()=>{
+  zConfirm('Delete all clients, proposals, jobs, and payments? This cannot be undone.',async()=>{
     if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(true);
     _userDelete(()=>{
       clients=[];bids=[];jobs=[];income=[];payments=[];liens=[];
@@ -1178,7 +1178,7 @@ function renderSettingsTrades(){
   const available=allTrades.filter(t=>!lines.includes(t));
   el.innerHTML=
     (isLifetimeAccount()?'<div style="display:inline-flex;align-items:center;gap:6px;background:#D1FAE5;border:1px solid var(--green-mid);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:700;color:var(--green-mid);margin-bottom:12px">⭐ Lifetime access, no subscription ever</div><br>':'')+
-    '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">Your active trade lines. Each gets its own estimate form and pipeline view.</div>'+
+    '<div style="font-size:12px;color:var(--text2);margin-bottom:12px;line-height:1.5">Your active trade lines. Each gets its own proposal form and pipeline view.</div>'+
     '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">'+
     lines.map(t=>{
       const m=TRADE_META[t]||{icon:'🔧',label:t};
@@ -1420,7 +1420,7 @@ function obStepAccount(el){
     '<div style="font-size:11px;color:var(--text3);line-height:1.6;margin-bottom:12px">By continuing you agree to our <a href="#" onclick="_obShowTos(event)" style="color:var(--blue);text-decoration:underline">Terms of Service</a>, a summary of what TradeDesk is and isn\'t (not tax, legal, or financial advice).</div>'+
     obBtn('Continue','obNextAccount()');
 }
-function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAlert('TradeDesk is an organizational tool for running your trade business, estimates, jobs, payments, mileage, and tax summaries. It is NOT tax, legal, or financial advice: consult a qualified professional for those. You are responsible for authorization to store client data. Data is stored securely via Supabase; keep your own backups of critical records. Provided "as is" with no warranty.',{title:'Terms of Service'});}
+function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAlert('TradeDesk is an organizational tool for running your trade business, proposals, jobs, payments, mileage, and tax summaries. It is NOT tax, legal, or financial advice: consult a qualified professional for those. You are responsible for authorization to store client data. Data is stored securely via Supabase; keep your own backups of critical records. Provided "as is" with no warranty.',{title:'Terms of Service'});}
 function _obOAuth(provider){
   try{
     if(typeof _supa==='undefined'||!_supa||!_supa.auth||!_supa.auth.signInWithOAuth){if(typeof showToast==='function')showToast(provider.charAt(0).toUpperCase()+provider.slice(1)+' sign-in isn\'t available yet','⚠️');return;}
@@ -1705,7 +1705,7 @@ function openSearch(){
     '<div class="search-box">'+
       '<div class="search-input-wrap">'+
         '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>'+
-        '<input id="global-search-input" placeholder="Search clients, bids, expenses, jobs…" autocomplete="off" oninput="runSearch(this.value)">'+
+        '<input id="global-search-input" placeholder="Search clients, proposals, expenses, jobs…" autocomplete="off" oninput="runSearch(this.value)">'+
         '<button onclick="closeSearch()" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:20px;padding:0;line-height:1">×</button>'+
       '</div>'+
       '<div class="search-results" id="search-results"><div class="search-empty">Start typing to search...</div></div>'+
@@ -1734,7 +1734,7 @@ function runSearch(q){
   // Bids
   (bids||[]).forEach(b=>{
     if([b.client_name,b.name,b.notes,b.addr,b.type].some(f=>f?.toLowerCase().includes(q))){
-      results.push({type:'bid',icon:'📋',bg:'var(--amber-lt)',name:b.client_name||b.name,meta:'Bid · '+fmt(b.amount||0),sub:b.status||'Pending',action:()=>{closeSearch();goPg('pg-leads');}});
+      results.push({type:'bid',icon:'📋',bg:'var(--amber-lt)',name:b.client_name||b.name,meta:'Proposal · '+fmt(b.amount||0),sub:b.status||'Pending',action:()=>{closeSearch();goPg('pg-leads');}});
     }
   });
 
@@ -1782,7 +1782,7 @@ function runSearch(q){
 
   // Group by type with section headers
   const TYPE_ORDER=['client','bid','expense','job','income','mileage'];
-  const TYPE_LABEL={client:'Clients',bid:'Bids',expense:'Expenses',job:'Jobs',income:'Payments',mileage:'Mileage'};
+  const TYPE_LABEL={client:'Clients',bid:'Proposals',expense:'Expenses',job:'Jobs',income:'Payments',mileage:'Mileage'};
   const MAX_PER=10;
   const byType={};
   results.forEach(r=>{(byType[r.type]=byType[r.type]||[]).push(r);});

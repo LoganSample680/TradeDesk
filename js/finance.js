@@ -843,32 +843,32 @@ function quickAction(type){
     todayEstimates.forEach(j=>{
       const c=getClientById(j.client_id);
       if(c&&!options.find(o=>o.clientId===j.client_id))
-        options.push({label:c.name,sub:'Estimate today'+(j.time?' @ '+fmtTime(j.time):''),clientId:j.client_id,icon:'📅'});
+        options.push({label:c.name,sub:'Proposal today'+(j.time?' @ '+fmtTime(j.time):''),clientId:j.client_id,icon:'📅'});
     });
     if(!options.length){
       const week=addDays(tk,7);
       jobs.filter(j=>j.eventType==='estimate'&&j.start>=tk&&j.start<=week).forEach(j=>{
         const c=getClientById(j.client_id);
         if(c&&!options.find(o=>o.clientId===j.client_id))
-          options.push({label:c.name,sub:'Estimate '+j.start+(j.time?' @ '+fmtTime(j.time):''),clientId:j.client_id,icon:'📅'});
+          options.push({label:c.name,sub:'Proposal '+j.start+(j.time?' @ '+fmtTime(j.time):''),clientId:j.client_id,icon:'📅'});
       });
     }
     clients.filter(c=>!getClientBids(c.id).length).slice(0,4).forEach(c=>{
       if(!options.find(o=>o.clientId===c.id))
         options.push({label:c.name,sub:(c.addr||'').split(',')[0]||'New lead',clientId:c.id,icon:'🆕'});
     });
-    showQuickPicker('Start Estimate','Which client?',options,'estimate',true);
+    showQuickPicker('Start Proposal','Which client?',options,'estimate',true);
   } else if(type==='schedule'){
     if(!wonUnscheduled.length){
       if(!bids.some(b=>b.status==='Closed Won')){
-        showWorkflowGate('No signed jobs to schedule. Close an estimate first.','Start Estimate','function(){quickAction(\'estimate\');}');return;
+        showWorkflowGate('No signed jobs to schedule. Close a proposal first.','Start Proposal','function(){quickAction(\'estimate\');}');return;
       }
       showWorkflowGate('All signed jobs are already scheduled. Check your calendar.','View Calendar','function(){goPg(\'pg-cal\');}');return;
     }
     const options=[];
     wonUnscheduled.slice(0,8).forEach(b=>{
       const c=getClientById(b.client_id);
-      if(c)options.push({label:c.name,sub:fmt(b.amount)+', won bid',clientId:b.client_id,bidId:b.id,icon:'✓'});
+      if(c)options.push({label:c.name,sub:fmt(b.amount)+', won proposal',clientId:b.client_id,bidId:b.id,icon:'✓'});
     });
     showQuickPicker('Schedule Job','Which job to schedule?',options,'schedule',false);
   } else if(type==='complete'){
@@ -1046,7 +1046,7 @@ function executeQuickAction(actionType,clientId,bidId,jobId){
     const tk=todayKey();
     const hasEst=jobs.some(j=>j.client_id===clientId&&j.eventType==='estimate'&&j.start===tk);
     const hasWon=bids.some(b=>b.client_id===clientId&&b.status==='Closed Won');
-    const purpose=hasWon?'Job site':hasEst?'Estimate':'Estimate';
+    const purpose=hasWon?'Job site':hasEst?'Proposal':'Proposal';
     openLogTripModal({clientId,toAddress:c?c.addr:'',purpose,clientName:c?c.name:''});
   } else if(actionType==='expense'){
     showQuickExpenseModal(clientId,bidId);
@@ -1216,7 +1216,7 @@ function populateSchedSelect(){
   const scheduledIds=new Set(jobs.filter(j=>j.bid_id).map(j=>j.bid_id));
   const won=bids.filter(b=>b.status==='Closed Won');
   const bSel=document.getElementById('s-bid-sel');
-  if(bSel)bSel.innerHTML='<option value="">- Select a won bid -</option>'+won.map(b=>'<option value="'+b.id+'"'+(scheduledIds.has(b.id)?' disabled':'')+'>'+escHtml(b.client_name||b.name)+', '+fmt(b.amount)+(scheduledIds.has(b.id)?' (scheduled)':'')+' </option>').join('');
+  if(bSel)bSel.innerHTML='<option value="">- Select a won proposal -</option>'+won.map(b=>'<option value="'+b.id+'"'+(scheduledIds.has(b.id)?' disabled':'')+'>'+escHtml(b.client_name||b.name)+', '+fmt(b.amount)+(scheduledIds.has(b.id)?' (scheduled)':'')+' </option>').join('');
   const crewSel=document.getElementById('s-crew-sel');
   if(crewSel){
     const emps=(S.employees||[]).filter(e=>e.name);
@@ -1240,7 +1240,7 @@ function setSchedType(type,btn){
   // the label and default differ, estimates default to a real time + the
   // past-now bump (validateEstimateTime), jobs start blank/optional.
   const timeLbl=document.getElementById('s-time-label');
-  if(timeLbl)timeLbl.innerHTML=isEst?'Estimate visits':'Start time <span style="font-weight:600">(optional)</span>';
+  if(timeLbl)timeLbl.innerHTML=isEst?'Proposal visits':'Start time <span style="font-weight:600">(optional)</span>';
   const timeInput=document.getElementById('s-time');if(timeInput)timeInput.value=isEst?'09:00':'';
   // Crew picker shows in BOTH estimate and job mode once a second person
   // exists (an estimate visit is still someone's appointment). It's ONE shared
@@ -1251,7 +1251,7 @@ function setSchedType(type,btn){
   if(crewRow)crewRow.style.display=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length)?'':'none';
   selectedColor=isEst?'#7F77DD':'#185FA5';
   const tip=document.getElementById('sched-tip');
-  if(tip){tip.innerHTML=isEst?'Pick a client, date and time. <strong>Evenings (after 5pm) and weekends</strong> are always open, they never block your paint days.':'Pull from a won bid and pick a start date.';tip.className=isEst?'tip':'tip tip-s';}
+  if(tip){tip.innerHTML=isEst?'Pick a client, date and time. <strong>Evenings (after 5pm) and weekends</strong> are always open, they never block your paint days.':'Pull from a won proposal and pick a start date.';tip.className=isEst?'tip':'tip tip-s';}
   const days=document.getElementById('s-days');if(days)days.value=isEst?1:2;
   const buf=document.getElementById('s-buf');if(buf)buf.value=isEst?'0':'1';
   const daysRow=document.getElementById('s-dur-days-row');
@@ -1284,7 +1284,7 @@ function _schedSiteNote(clientId){
 function pullClient(){
   const cid=parseInt(v('s-client-sel'));if(!cid)return;
   const c=getClientById(cid);if(!c)return;
-  document.getElementById('s-name').value=c.name+', estimate';
+  document.getElementById('s-name').value=c.name+', proposal';
   document.getElementById('s-addr').value=c.addr||'';
   _schedSiteNote(cid);
   document.getElementById('s-days').value=1;
@@ -1306,7 +1306,7 @@ function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.
   const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
   const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=(b.amount>0)?'none':'';
   _schedSiteNote(b.client_id);
-  document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from the won bid below.</strong> Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
+  document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from the won proposal below.</strong> Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
 function avPrev(){
   const nowY=new Date().getFullYear(),nowM=new Date().getMonth();
   if(availYear===nowY&&availMonth===nowM)return; // already at current month
@@ -1455,7 +1455,7 @@ function scheduleJob(){
   const _hasCrew=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length&&typeof getBookedDaysForCrew==='function');
   const{booked}=_hasCrew?getBookedDaysForCrew(_crewId):getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i))){_schedErr(_hasCrew?'This crew already has a job on one or more of those days, pick a different start date or crew.':'One or more days already booked, pick a different start date.','s-start');return;}}
   const bidId=parseInt(v('s-bid-sel'))||null,bid=bidId?bids.find(b=>b.id===bidId):null;
-  if(bid&&bid.status==='Pending'){_schedErr('The estimate must be signed (Closed Won) before scheduling.','s-bid-sel');return;}
+  if(bid&&bid.status==='Pending'){_schedErr('The proposal must be signed (Closed Won) before scheduling.','s-bid-sel');return;}
   // Rain block: pressure wash can't start on a rainy day
   if(schedType==='job'&&bid&&bid.scope&&bid.scope.pwash){
     const wx=_weatherCache&&_weatherCache[start];
@@ -1710,11 +1710,11 @@ async function openExportPanel(){
         '</select>'+
       '</div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Choose format</div>'+
-      exportOptionHTML('exportAllDataCSV()','📦','Everything: one CSV','Every client, lead, bid, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, bids, jobs, payments, income, expenses, mileage, all labeled sections.')+
+      exportOptionHTML('exportAllDataCSV()','📦','Everything: one CSV','Every client, lead, proposal, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, proposals, jobs, payments, income, expenses, mileage, all labeled sections.')+
       exportOptionHTML('exportAllXLSX()','📊','Income · Expenses · Mileage, Excel','One workbook, three sheets. All years of income, expenses, and mileage, dollar columns formatted, SUM totals at the bottom of each sheet.')+
       exportOptionHTML('exportPLCSV()','📈','Profit & Loss CSV','Income vs expenses vs mileage deduction, net profit at the bottom. Hand straight to your accountant.')+
       exportOptionHTML('exportTaxPDF()','📄','Full tax report, PDF','Schedule C summary, income, expenses by IRS category, mileage log. Print or save, IRS audit ready.')+
-      exportOptionHTML('exportFullBackup()','💾','Full data backup','All clients, jobs, bids, income, expenses, mileage. JSON: restore or migrate anytime.')+
+      exportOptionHTML('exportFullBackup()','💾','Full data backup','All clients, jobs, proposals, income, expenses, mileage. JSON: restore or migrate anytime.')+
       exportOptionHTML('exportReceiptImages()','📄','Receipt PDF','All receipt photos in one PDF, sorted by date with vendor, amount and category. Print or send to your CPA.')+
     '</div>';
   document.body.appendChild(ov);
@@ -2046,7 +2046,7 @@ function exportAllDataCSV(){
   );
 
   // Bids / Estimates
-  sec('BIDS & ESTIMATES',
+  sec('PROPOSALS',
     ['Client','Trade','Amount','Status','Created','Signed Date','Deposit'],
     bids.filter(b=>!b.draft||(b.amount||0)>0).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).map(b=>[
       q(clients.find(c=>c.id===b.client_id)?.name),q(b.trade_type||b.tradeType),
@@ -2528,7 +2528,7 @@ function renderJobsHistory(){
       const paid=getBidPaid(b.id);
       const balance=getBidBalance(b);
       const isPaidFull=balance<=0.01;
-      return '<div onclick="openBidHistoryDetail('+b.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(b.client_name||b.name||'bid')+'" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
+      return '<div onclick="openBidHistoryDetail('+b.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(b.client_name||b.name||'proposal')+'" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.client_name||b.name||'Unknown')+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+fmtDateShort(b.bid_date)+(b.addr?' · '+b.addr:'')+'</div>'+
@@ -2822,7 +2822,7 @@ function getTopScope(scope){
 function closeBidHistoryDetail(){const el=document.getElementById('tr-bid-detail');if(el)el.style.display='none';}
 function viewSavedProposal(bidId){
   const b=bids.find(x=>x.id===bidId);
-  if(!b||!b.proposalHtml){zAlert('No saved proposal found for this bid. Proposals are saved starting from this update, older bids won\'t have one stored.',{title:'Not available'});return;}
+  if(!b||!b.proposalHtml){zAlert('No saved proposal found for this proposal. Proposals are saved starting from this update, older proposals won\'t have one stored.',{title:'Not available'});return;}
   const ov=document.createElement('div');
   ov.setAttribute('data-pov','1');
   ov.style.cssText='position:fixed;inset:0;background:#f0f4f8;z-index:10000;overflow-y:auto;-webkit-overflow-scrolling:touch';
@@ -2891,7 +2891,7 @@ function openBidHistoryDetail(bidId){
 
     '<div class="card" style="margin-bottom:10px">'+
       '<div class="card-hd">Financials</div>'+
-      '<div class="tax-row"><span>Bid total</span><span style="font-weight:700;font-size:15px">'+fmt(b.amount)+'</span></div>'+
+      '<div class="tax-row"><span>Proposal total</span><span style="font-weight:700;font-size:15px">'+fmt(b.amount)+'</span></div>'+
       '<div class="tax-row"><span>Collected</span><span style="color:var(--green-mid);font-weight:700">'+fmt(totalPaid)+'</span></div>'+
       (getBidBalance(b)>0.01?'<div class="tax-row"><span>Outstanding</span><span style="color:#A32D2D;font-weight:700">'+fmt(getBidBalance(b))+'</span></div>':'')+
       (pays.length?
@@ -2951,7 +2951,7 @@ function renderJobSummary(){
       '<div class="meta-xs">'+(b.addr||'')+(exp>0?' · '+fmt(exp)+' expenses':'')+' '+(miles>0?' · '+miles.toFixed(1)+'mi':'')+'</div></div>'+
       '<div style="text-align:right">'+
         '<div style="font-size:13px;font-weight:700;color:'+(net>0?'var(--green-mid)':'#A32D2D')+'">'+fmt(net)+'</div>'+
-        '<div class="meta-xs">of '+fmt(b.amount)+' bid</div>'+
+        '<div class="meta-xs">of '+fmt(b.amount)+' proposal</div>'+
       '</div>'+
     '</div>';
   }).join('');

@@ -534,7 +534,7 @@ function shareProposalLink(){
   _commitProposalSent();
   pwaShare({
     title:d.bname+' Proposal',
-    text:'Hi '+d.cname.split(' ')[0]+', '+d.bname+' sent your estimate. Tap to review and approve.',
+    text:'Hi '+d.cname.split(' ')[0]+', '+d.bname+' sent your proposal. Tap to review and approve.',
     url:d.url
   });
 }
@@ -552,7 +552,7 @@ function _showGeiSendOverlay(){
         '<button onclick="_doGeiSend(\'email\')" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center">'+svgIcon('✉')+' Email</button>'+
       '</div>'+
       '<button onclick="_doGeiSend(\'other\')" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">'+svgIcon('⬆️')+' Other app (WhatsApp, AirDrop…)</button>'+
-      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">Bid saved as Pending. You\'ll get a follow-up reminder in 3 days if no response.</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-top:10px;text-align:center">Proposal saved as Pending. You\'ll get a follow-up reminder in 3 days if no response.</div>'+
     '</div>';
   document.body.appendChild(ov);
 }
@@ -946,7 +946,7 @@ function expandCalDay(key){
           return '<div style="border-left:4px solid '+job.color+';background:var(--bg2);border-radius:0 var(--r) var(--r) 0;padding:10px 12px;margin-bottom:6px">'+
             '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">'+
               '<div style="flex:1;min-width:0">'+
-                '<div style="font-size:10px;font-weight:700;color:'+job.color+';text-transform:uppercase;margin-bottom:2px">'+(isEst?'Estimate':'Paint job · '+job.days+' day'+(job.days>1?'s':''))+'</div>'+
+                '<div style="font-size:10px;font-weight:700;color:'+job.color+';text-transform:uppercase;margin-bottom:2px">'+(isEst?'Proposal':'Paint job · '+job.days+' day'+(job.days>1?'s':''))+'</div>'+
                 '<div style="font-size:14px;font-weight:700">'+job.name+'</div>'+
                 (job.addr?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+job.addr+'</div>':'')+
                 (!isEst&&job.value?'<div style="font-size:12px;color:var(--green-mid);font-weight:700;margin-top:3px">'+fmt(job.value)+'</div>':'')+
@@ -966,7 +966,7 @@ function expandCalDay(key){
         '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text3)">Schedule</div>'+
         '<div style="display:flex;gap:6px">'+
           '<button onclick="calTaskModal(\''+key+'\')" style="border:none;background:#6366F1;color:#fff;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Task</button>'+
-          '<button onclick="closeCalDay();schedFromDate(\''+key+'\')" style="border:none;background:var(--blue);color:#fff;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Estimate</button>'+
+          '<button onclick="closeCalDay();schedFromDate(\''+key+'\')" style="border:none;background:var(--blue);color:#fff;border-radius:20px;padding:4px 12px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit">+ Proposal</button>'+
         '</div>'+
       '</div>'+
       slots.map(s=>{
@@ -978,7 +978,7 @@ function expandCalDay(key){
               const c=job.client_id?getClientById(job.client_id):null;
               const isEst=job.eventType==='estimate';
               return '<div style="background:'+job.color+';border-radius:var(--r);padding:8px 10px;margin-bottom:4px;color:#fff">'+
-                '<div style="font-size:11px;font-weight:800;text-transform:uppercase;opacity:.85;margin-bottom:2px">'+(isEst?svgIcon('📋')+' Estimate':svgIcon('🎨')+' Paint job')+'</div>'+
+                '<div style="font-size:11px;font-weight:800;text-transform:uppercase;opacity:.85;margin-bottom:2px">'+(isEst?svgIcon('📋')+' Proposal':svgIcon('🎨')+' Paint job')+'</div>'+
                 '<div style="font-size:13px;font-weight:700">'+job.name+'</div>'+
                 '<div style="font-size:10px;opacity:.9;margin-top:1px">'+(job.hours?job.hours+'hr':'')+(job.addr?' · '+job.addr:'')+'</div>'+
                 '<div style="display:flex;gap:6px;margin-top:6px">'+
@@ -1091,7 +1091,7 @@ function showKpiChart(type){
     months.push({key,label,val});
   }
 
-  const titles={profit:'Net Profit by Month',close:'Closing Ratio by Month (%)',estimates:'Estimates by Month',revenue:'Revenue by Month'};
+  const titles={profit:'Net Profit by Month',close:'Closing Ratio by Month (%)',estimates:'Proposals by Month',revenue:'Revenue by Month'};
   const isNeg=type==='profit';
   const maxVal=Math.max(...months.map(m=>Math.abs(m.val)),1);
 
