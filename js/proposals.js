@@ -880,7 +880,7 @@ function expandCalDay(key){
   el.dataset.openKey=String(key);
   const dj=getJobsOnDay(key).filter(x=>!x.isBuf);
   const d=parseD(key);
-  const label=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const label=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const isToday=key===todayKey();
   el.style.display='block';
   const slots=[];
@@ -998,7 +998,7 @@ function expandCalDay(key){
 
 function calTaskModal(dateKey){
   const d=parseD(dateKey);
-  const label=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  const label=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const ov=document.createElement('div');
   ov.className='zmodal-overlay';
   ov.innerHTML=
@@ -1314,7 +1314,7 @@ function _reviewCO(bidId,clientId){
 function _showCOSignDocument(b,c,coData,clientId){
   const {desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
   const biz=S.bname||'TradeDesk';
-  const dateStr=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   // Build scope summary from original bid
   const surfLines=(b.surfaces||[]).filter(s=>s.qty>0).map(s=>{
     const t=SURF_TYPES.find(x=>x.v===s.type);

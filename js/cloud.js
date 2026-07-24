@@ -483,7 +483,7 @@ function _devRenderSnapshots(key){
     if(!snaps.length)return '';
     const rows=snaps.map((s,i)=>{
       const d=new Date(s.ts);
-      const label=d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+      const label=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)">
         <span style="font-size:11px;color:var(--text2)">${label}</span>
         <button onclick="_devRestoreSnapshot('${key}',${i})" style="font-size:10px;padding:3px 8px;border:1px solid var(--red);border-radius:4px;background:none;color:var(--red);cursor:pointer;font-family:inherit">Restore</button>
@@ -499,7 +499,7 @@ async function _devRestoreSnapshot(key,idx){
   const snaps=JSON.parse(localStorage.getItem('zp3_dev_snaps_'+key)||'[]');
   const snap=snaps[idx];if(!snap)return;
   const d=new Date(snap.ts);
-  const label=d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' at '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  const label=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' at '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
   zConfirm('Restore Zach\'s data to the snapshot from '+label+'? This overwrites his current Supabase data.',async()=>{
     const u=_DEV_SUPPORT_USERS[key];if(!u)return;
     const{error}=await _supa.from('zj_data').update(snap.data).eq('user_id',u.userId);
@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.23.26.20';
+const APP_VERSION='07.23.26.21';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5450,7 +5450,7 @@ function showScheduleSuggestion(clientId,bidId,clientNameFallback){
 
   const startKey=getNextAvailForBid(bid);
   const endKey=_jobEndDate(startKey,days,allowWknd);
-  const fmtD=k=>parseD(k).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  const fmtD=k=>parseD(k).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const startLabel=fmtD(startKey);
   const endLabel=startKey===endKey?'':' – '+fmtD(endKey);
   const rangeLabel=startLabel+endLabel+(days>1?' ('+days+' days)':'');
@@ -5499,11 +5499,11 @@ function quickScheduleJob(bidId,startKey,clientId){
   saveAll();renderDash();renderJobsPage&&renderJobsPage();
   window._currentScheduleAlert=null;
   document.getElementById('sched-suggest-overlay')?.remove();
-  showToast(name+' scheduled for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}),'📅');
+  showToast(name+' scheduled for '+parseD(startKey).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}),'📅');
   const _nextAlerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
   const _moreStr=_nextAlerts.length?' · '+_nextAlerts.length+' more client'+(_nextAlerts.length>1?'s':'')+' to schedule':'';
   // Offer to go to calendar, then chain to next alert either way
-  setTimeout(()=>zConfirm('Job locked in for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'.'+_moreStr+'\n\nView on calendar?',
+  setTimeout(()=>zConfirm('Job locked in for '+parseD(startKey).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'.'+_moreStr+'\n\nView on calendar?',
     ()=>{goPg('pg-cal');setTimeout(showScheduleAlerts,600);},
     {title:svgIcon('✓')+' Scheduled!',yes:'View calendar',no:_nextAlerts.length?'Next client ('+_nextAlerts.length+')':'Done',danger:false,
     onNo:()=>setTimeout(showScheduleAlerts,300)}),400);
@@ -6801,7 +6801,7 @@ function showDailyBriefing(){
 
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
-  const todayFmt=new Date(tk+'T12:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  const todayFmt=new Date(tk+'T12:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
       '<div>'+

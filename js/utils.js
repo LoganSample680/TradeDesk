@@ -83,7 +83,22 @@ function adaBrand(hex){
 }
 function barChart(label,val,total,color){const pct=Math.round(val/total*100);return`<div style="margin-bottom:8px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span>${escHtml(String(label))}</span><span style="font-weight:700">${fmt(val)}</span></div><div class="prog-bar"><div class="prog-fill" style="width:${pct}%;background:${color}"></div></div></div>`;}
 function calcBrackets(inc,brackets){let tax=0,prev=0;for(const[lim,rate]of brackets){if(inc<=prev)break;tax+=Math.max(0,Math.min(inc,lim)-prev)*rate;prev=lim;if(lim===Infinity||inc<=lim)break;}return tax;}
-function fmtDateShort(d){if(!d)return'';try{const dt=new Date(d+'T12:00');return dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return d;}}
+// Canonical date stamp for the whole app: MM/DD/YYYY (e.g. 01/01/1900), zero-padded.
+// Accepts a Date, an ISO timestamp, or a plain 'YYYY-MM-DD' string. Date-only strings
+// are pinned to local noon so a timezone offset can't roll them back a day.
+function fmtDateMDY(d){
+  if(!d)return'';
+  try{
+    let dt;
+    if(d instanceof Date){dt=d;}
+    else{const s=String(d);dt=/^\d{4}-\d{2}-\d{2}$/.test(s)?new Date(s+'T12:00'):new Date(s);}
+    if(isNaN(dt.getTime()))return String(d);
+    const mm=String(dt.getMonth()+1).padStart(2,'0');
+    const dd=String(dt.getDate()).padStart(2,'0');
+    return mm+'/'+dd+'/'+dt.getFullYear();
+  }catch(e){return String(d);}
+}
+function fmtDateShort(d){return fmtDateMDY(d);}
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 function closeTopModal(){const o=document.querySelector('.zmodal-overlay');if(o&&typeof o.remove==='function')o.remove();else if(o&&o.parentNode)o.parentNode.removeChild(o);}
 function zConfirm(msg, onYes, opts={}){

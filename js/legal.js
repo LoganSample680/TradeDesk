@@ -435,7 +435,7 @@ function renderLegalInspector(){
       else{count++;steps.push({date:ymd,skip:false,reason:'Business day '+count});}
     }
     d.setHours(23,59,59,999);
-    deadlineTxt=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})+' at midnight';
+    deadlineTxt=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' at midnight';
     el.querySelector('#dev-legal-steps').innerHTML=steps.map(s=>'<div style="font-size:10px;padding:2px 0;color:'+(s.skip?'#94a3b8':'var(--text)')+'">'+s.date+', '+(s.skip?'<em>skipped ('+s.reason+')</em>':s.reason)+'</div>').join('');
   }
 

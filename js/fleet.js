@@ -526,7 +526,7 @@ function _fleetDetailServiceHtml(v, maint) {
       ${maint.map((m,i)=>{
         const parts=_svcParts(m);
         const icon=svgIcon(MAINT_TYPES[m.type]?MAINT_TYPES[m.type].icon:'🔧',{size:12});
-        const dateShort=m.date?new Date(m.date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'-';
+        const dateShort=m.date?new Date(m.date+'T12:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
         const nextInfo=m.nextOilMiles?`<div style="font-size:10px;color:var(--text3);margin-top:1px">Next: ${m.nextOilMiles.toLocaleString()} mi</div>`:'';
         const notesInfo=m.notes?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:1px">${escHtml(m.notes)}</div>`:'';
         return `<div style="display:grid;grid-template-columns:72px 1fr 64px 44px;gap:0;padding:8px 10px;border-bottom:1px solid var(--border);align-items:start;${i%2===1?'background:var(--bg2)':''}">
@@ -1399,6 +1399,6 @@ function _showMaintPhoto(id) {
 function _fleetFmtDate(d) {
   if(!d) return '';
   try {
-    return new Date(d+'T12:00:00').toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+    return new Date(d+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   } catch(e) { return d; }
 }

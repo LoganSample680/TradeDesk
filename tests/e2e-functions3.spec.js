@@ -586,7 +586,7 @@ test.describe('Utility and formatting functions', () => {
     const result = await page.evaluate(() => {
       if (typeof fmtDateShort !== 'function') return { skip: true };
       const r = fmtDateShort('2026-01-15');
-      return { ok: typeof r === 'string' && r.includes('Jan') };
+      return { ok: typeof r === 'string' && r.includes('01/15/2026') };
     });
     if (!result.skip) expect(result.ok).toBe(true);
   });

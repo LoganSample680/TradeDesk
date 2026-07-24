@@ -88,7 +88,7 @@ function renderCDEstimatesUpcoming(){
   const upcoming=getClientJobs(currentClientId).filter(j=>j.eventType==='estimate'&&j.status!=='canceled'&&j.start>=tk);
   if(!upcoming.length){el.innerHTML='';return;}
   el.innerHTML=upcoming.map(j=>{
-    const dt=parseD(j.start).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+    const dt=parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
     return '<div style="background:#F0EEFF;border:2px solid #7F77DD;border-radius:var(--rl);padding:14px;margin-bottom:10px">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div>'+
@@ -551,8 +551,8 @@ function sendBidEmail(bidId){
   const firstName=(b.client_name||b.name||'').split(' ')[0]||'there';
   const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
-  const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  const expD=b.bid_date?new Date(new Date(b.bid_date+'T12:00:00').getTime()+30*86400000).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'30 days from now';
+  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const expD=b.bid_date?new Date(new Date(b.bid_date+'T12:00:00').getTime()+30*86400000).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'30 days from now';
   const PAINT={'std':'Standard (Behr/Valspar)','prem':'Sherwin-Williams Premium','ultra':'SW Emerald Ultra'};
   const paintL=(b.paint?PAINT[b.paint]:null)||'Premium Sherwin-Williams';
   const surfs=b.surfaces||[];
@@ -690,7 +690,7 @@ function printInvoice(bidId){
   const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
   const blic=S.blic||'';
-  const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const invoiceNum='INV-'+String(bidId).slice(-6);
 
   const html=`<!DOCTYPE html>
@@ -1597,7 +1597,7 @@ function _doCollSMS(phone,encodedMsg,bid,newStage,label){
 }
 function _markCollSMSSent(bid,newStage,label){
   if(!bid)return;
-  setBidCollStage(bid,newStage,label+' SMS sent, '+new Date().toLocaleDateString());
+  setBidCollStage(bid,newStage,label+' SMS sent, '+new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}));
   if(!bid.collHistory)bid.collHistory=[];
   bid.collHistory.push({stage:newStage,note:label+' sent',ts:new Date().toISOString(),method:'sms'});
   autoLogContact(bid.client_id,'collection_sms');

@@ -6523,8 +6523,8 @@ test.describe('Crew labor cost in profit gauge', () => {
       return wrap ? wrap.innerHTML : null;
     });
     if (r === null) return;
-    // chip should contain the month/day of the booked date
-    expect(r).toContain('Mar 15');
+    // chip should contain the booked date (MM/DD/YYYY)
+    expect(r).toContain('03/15/2026');
   });
 
   test('crew chip shows no booked badge for free employee', async () => {

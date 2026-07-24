@@ -656,7 +656,7 @@ function _setBootName(name){
 // exist before the first render or Review & Sign links miss the preview param.
 let _hub=null,_activeView='overview',_isContractorPreview=new URLSearchParams(location.search).get('preview')==='1';
 const fmt=n=>'$'+Number(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return '';}};
+const fmtDate=s=>{if(!s)return'';try{const d=s.includes('T')?new Date(s):new Date(s+'T12:00:00');if(isNaN(d.getTime()))return'';return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(e){return '';}};
 const esc=s=>String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 // Egress fix: route public gallery images through the Cloudflare edge cache
 // (/img/<path>) when served from Cloudflare, repeat hub views hit Cloudflare,
@@ -1812,7 +1812,7 @@ function _showCancelForm(bidId){
   if(bid.cancelledAt){_cancelShowConfirmed(bid);return;}
   if(!open){
     _cancelSetContent(_cancelHdr('Notice of Cancellation')+
-      '<div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#64748b;font-weight:700">'+svgIcon('🔒')+' Cancellation window closed '+dl.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</div>'+
+      '<div style="background:#f1f5f9;border:1px solid #cbd5e1;border-radius:8px;padding:10px 12px;margin-bottom:14px;font-size:11px;color:#64748b;font-weight:700">'+svgIcon('🔒')+' Cancellation window closed '+dl.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'</div>'+
       '<p style="margin:0;font-size:12px;color:#64748b">The cancellation window for this agreement has closed.</p>');
     return;
   }
@@ -1823,7 +1823,7 @@ function _cancelShowStep1(dl){
   const contractorName=esc((_hub&&_hub.contractorName)||'your contractor');
   const reasons=['Price concerns','Schedule conflict','Found another contractor','Changed my mind','Other'];
   let h=_cancelHdr('Notice of Cancellation');
-  h+='<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:#92400E;font-weight:700">'+svgIcon('⏳',{size:12})+' Cancellation window open, expires '+dl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+' at midnight</div>';
+  h+='<div style="background:#FEF3C7;border:1px solid #92400E;border-radius:8px;padding:10px 12px;margin-bottom:16px;font-size:11px;color:#92400E;font-weight:700">'+svgIcon('⏳',{size:12})+' Cancellation window open, expires '+dl.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' at midnight</div>';
   h+='<div style="font-size:15px;font-weight:800;color:#1a1a18;margin-bottom:6px">Why are you considering cancelling?</div>';
   h+='<div style="font-size:13px;color:#64748b;margin-bottom:14px">Helps '+contractorName+' improve their service.</div>';
   reasons.forEach(r=>{h+='<button class="cancel-reason-opt" data-reason="'+r+'" onclick="_cancelPickReason(this)" style="display:block;width:100%;text-align:left;padding:11px 14px;margin-bottom:8px;border:1.5px solid #e2e8f0;border-radius:10px;background:#fff;font-size:14px;cursor:pointer;font-family:inherit;color:#1a1a18;transition:border-color .15s,background .15s">'+r+'</button>';});
@@ -1870,7 +1870,7 @@ function _cancelShowStep3(){
   const cancelDays=(_hub&&_hub.cancelDays)||3;
   const cancelStatute=(_hub&&_hub.cancelStatute)||'16 CFR Part 429';
   const dl=_cancelDeadline(bid.signedAt||bid.bid_date,cancelDays);
-  const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}):bid.bid_date||'';
+  const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
   const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
   const refundDue=_bidRefundDue(bid);
   const isStripe=bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check';
@@ -1892,7 +1892,7 @@ function _cancelShowStep3(){
   h+='<div style="border-top:1px solid #e2e8f0;padding-top:14px">';
   h+='<div style="font-size:11px;font-weight:700;color:#475569;margin-bottom:6px">Buyer\'s Signature (type your full legal name)</div>';
   h+='<input id="cancel-sig-name" type="text" placeholder="Your full name" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid #cbd5e1;border-radius:8px;font-size:15px;font-family:inherit;margin-bottom:8px">';
-  h+='<div style="font-size:11px;color:#64748b;margin-bottom:12px">Date: '+new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+'</div>';
+  h+='<div style="font-size:11px;color:#64748b;margin-bottom:12px">Date: '+new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'</div>';
   h+='<div id="cancel-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:4px"></div>';
   h+='<button id="cancel-submit-btn" disabled onclick="_submitCancellation('+bid.id+')" style="width:100%;padding:13px;border:none;border-radius:10px;background:#991B1B;color:#fff;font-size:14px;font-weight:800;cursor:default;font-family:inherit;opacity:.5;transition:opacity .2s">Submitting in 5…</button>';
   h+='</div>';
@@ -1911,7 +1911,7 @@ function _cancelShowConfirmed(bid){
   const dt=bid.cancelledAt?new Date(bid.cancelledAt).toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
   const cancelDays=(_hub&&_hub.cancelDays)||3;
   const cancelStatute=(_hub&&_hub.cancelStatute)||'16 CFR Part 429';
-  const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'}):bid.bid_date||'';
+  const txDate=bid.signedAt?new Date(bid.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):bid.bid_date||'';
   const daysWord=cancelDays===3?'THREE':cancelDays===5?'FIVE':String(cancelDays).toUpperCase();
   const refundDue=_bidRefundDue(bid);
   const isStripe=bid.paymentMethod&&bid.paymentMethod!=='cash'&&bid.paymentMethod!=='check';
@@ -2204,7 +2204,7 @@ function renderDocuments(){
       const _cancelDl=_cancelDeadline(bid.signedAt||bid.bid_date,_cd);
       const _cancelMeta=_isCancelled
         ?'Submitted '+fmtDate(bid.cancelledAt)+(bid.cancelledName?' by '+esc(bid.cancelledName):'')
-        :'Window open, expires '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'');
+        :'Window open, expires '+(_cancelDl?_cancelDl.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'');
       const _cancelTag=_isCancelled
         ?'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEE2E2;color:#991B1B">Cancelled</span>'
         :'<span style="margin-left:6px;display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:#FEF3C7;color:#92400E">Active</span>';
@@ -2493,7 +2493,7 @@ function showPaymentSuccess(bidId){
 function openDiagnosticDoc(bidId){
   const bid=_hub&&_hub.bids.find(b=>b.id===bidId);if(!bid)return;
   document.getElementById('diag-doc-ov')?.remove();
-  const dts=bid.bid_date?new Date(bid.bid_date+'T12:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'';
+  const dts=bid.bid_date?new Date(bid.bid_date+'T12:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
   let h='<div style="background:#fff;border-radius:14px;max-width:520px;width:100%;margin:auto;padding:22px 20px 26px;box-sizing:border-box;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch">';
   h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">';
   h+='<div style="font-size:13px;font-weight:800;color:#1a365d">'+svgIcon('📄',{size:13})+' Diagnostic Charge</div>';
@@ -2522,7 +2522,7 @@ function openInvoice(bidId){
   const totalPaid=bidPayments.filter(p=>p.amount>0).reduce((s,p)=>s+p.amount,0);
   const balance=Math.max(0,(bid.amount||0)-totalPaid),isPaid=balance<0.01;
   const invNum='INV-'+String(bidId).slice(-6).toUpperCase();
-  const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const tl={deposit:'Deposit',final:'Final payment',stripe:'Online payment',card:'Card payment',check:'Check',cash:'Cash',ach:'Bank transfer'};
   const bdBg=isPaid?'#F0FBF0':'#FFF8F0',bdBrd=isPaid?'#63B841':'#E89A3C',bdClr=isPaid?'#3B8C2A':'#B8600A';
   let html='<div class="inv-header"><div><div class="inv-co-name">'+esc(h.contractorName)+'</div>';
@@ -2614,14 +2614,14 @@ async function openProposal(bidId){
     if(!propData.signatureDataUrl&&bid.signatureData)propData.signatureDataUrl=bid.signatureData;
     let sigBlock='';
     if(_isDeclined){
-      const decDate=(propData.declinedAt||bid.declinedAt)?new Date(propData.declinedAt||bid.declinedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'';
+      const decDate=(propData.declinedAt||bid.declinedAt)?new Date(propData.declinedAt||bid.declinedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
       sigBlock='<div style="margin-top:32px;border-top:2px solid #e0e0dc;padding-top:20px">'+
         '<div style="display:inline-flex;align-items:center;gap:8px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:20px;padding:8px 16px;font-size:12px;font-weight:800;color:#475569">Declined'+(decDate?', '+escHtml(decDate):'')+'</div>'+
         '<div style="font-size:12px;color:#94a3b8;margin-top:10px;line-height:1.6">This proposal was declined and is not a signed agreement. If you’ve changed your mind, reach out, we’d love to revisit it.</div>'+
       '</div>';
     }
     else if(propData.status==='signed'&&propData.signerName){
-      const sigDate=propData.signedAt?new Date(propData.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'}):'';
+      const sigDate=propData.signedAt?new Date(propData.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit',hour:'numeric',minute:'2-digit'}):'';
       const payLabel=(propData.paymentMethod||'').replace(/_/g,' ').replace(/\b\w/g,c=>c.toUpperCase());
       // Shared signed-doc block (esign.js): same component as COs + the
       // owner's record. Update once, updates everywhere.
@@ -2762,7 +2762,7 @@ async function _uploadClientDoc(){
       if(error)throw error;
       const{data:{publicUrl}}=_supa.storage.from('proposals').getPublicUrl(path);
       if(!_hub._clientDocs)_hub._clientDocs=[];
-      _hub._clientDocs.push({name:file.name,url:publicUrl,meta:'Uploaded by you · '+new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})});
+      _hub._clientDocs.push({name:file.name,url:publicUrl,meta:'Uploaded by you · '+new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})});
       renderDocuments();
     }catch(e){alert('Upload failed, please try again or contact us.');}
   };

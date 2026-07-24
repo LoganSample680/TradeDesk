@@ -114,7 +114,7 @@ let sigCanvas,sigCtx,signing=false,hasInk=false;
 
 function show(id){document.querySelectorAll('.pg').forEach(p=>p.classList.remove('active'));const el=document.getElementById(id);if(el)el.classList.add('active');}
 function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function fmtDate(iso){if(!iso)return'';try{const d=iso.length<=10?new Date(iso+'T00:00:00'):new Date(iso);return d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});}catch(e){return iso;}}
+function fmtDate(iso){if(!iso)return'';try{const d=iso.length<=10?new Date(iso+'T00:00:00'):new Date(iso);return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(e){return iso;}}
 
 // Public-URL-first fetch with cache-buster, .download() fallback (mirrors sign.html).
 async function _fetchStorageJson(key){

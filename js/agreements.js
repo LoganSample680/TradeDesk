@@ -18,7 +18,7 @@ const AGREEMENT_TYPES=[
 function _agTypeLabel(id){return(AGREEMENT_TYPES.find(t=>t.id===id)||{label:'Contract'}).label;}
 function _agTypeEmoji(id){return(AGREEMENT_TYPES.find(t=>t.id===id)||{emoji:'📄'}).emoji;}
 
-function _agFmtDate(iso){if(!iso)return'';try{const d=iso.length<=10?new Date(iso+'T00:00:00'):new Date(iso);return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});}catch(e){return iso;}}
+function _agFmtDate(iso){if(!iso)return'';try{const d=iso.length<=10?new Date(iso+'T00:00:00'):new Date(iso);return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(e){return iso;}}
 
 function _agStatusChip(a){
   if(a.status==='signed'){

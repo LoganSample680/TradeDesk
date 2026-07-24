@@ -665,7 +665,7 @@ function getBookedDaysForCrew(empId){
   });
   return{booked,buf};
 }
-function getNextAvail(){const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;let d=todayKey();for(let i=0;i<180;i++){const dow=parseD(d).getDay();const isWknd=dow===0||dow===6;if(!all.has(d)&&(allowWknd||!isWknd)){const dt=parseD(d);return{key:d,label:dt.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})};}d=addDays(d,1);}return{key:todayKey(),label:'Check calendar'};}
+function getNextAvail(){const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);const allowWknd=document.getElementById('s-allow-weekend')?.checked||false;let d=todayKey();for(let i=0;i<180;i++){const dow=parseD(d).getDay();const isWknd=dow===0||dow===6;if(!all.has(d)&&(allowWknd||!isWknd)){const dt=parseD(d);return{key:d,label:dt.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})};}d=addDays(d,1);}return{key:todayKey(),label:'Check calendar'};}
 // Standalone next-avail that doesn't need DOM, used for scheduling suggestions
 function getNextAvailForBid(bid){
   const{booked,buf}=getBookedDays();const all=new Set([...booked,...buf]);
@@ -1749,7 +1749,7 @@ function runSearch(q){
   // Jobs
   (jobs||[]).filter(j=>j.eventType!=='task').forEach(j=>{
     if([j.name,j.addr,j.notes].some(f=>f?.toLowerCase().includes(q))){
-      const dateStr=j.start?new Date(j.start+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+      const dateStr=j.start?new Date(j.start+'T12:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
       results.push({type:'job',icon:'🔨',bg:'var(--green-lt)',name:j.name,meta:fmt(j.value||0)+(dateStr?' · '+dateStr:''),sub:j.status||'',action:()=>{closeSearch();goPg('pg-jobs');}});
     }
   });

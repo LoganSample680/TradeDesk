@@ -838,12 +838,11 @@ test.describe('sign.html: proposal signing page', () => {
       return el ? (el.textContent || '') : '';
     });
     if (noticeText && noticeText.includes('deadline:')) {
-      // Deadline must fall on Tuesday June 2 (Sunday May 31 is skipped)
-      expect(noticeText).toContain('Tuesday');
-      expect(noticeText).toContain('June 2');
-      // Must not be Sunday or Monday (those would mean the loop didn't skip Sunday)
-      expect(noticeText).not.toContain('Sunday');
-      expect(noticeText).not.toContain('Monday, June');
+      // Deadline must fall on Tuesday June 2 (Sunday May 31 is skipped); dates render MM/DD/YYYY
+      expect(noticeText).toContain('06/02/2026');
+      // Must not be Sunday May 31 or Monday June 1 (those would mean the loop didn't skip Sunday)
+      expect(noticeText).not.toContain('05/31/2026');
+      expect(noticeText).not.toContain('06/01/2026');
     }
     assertNoErrors(bdPage, 'sign.html FTC business day');
     await bdPage.close();

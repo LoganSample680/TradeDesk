@@ -1572,16 +1572,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="cd-estimates-upcoming"></div>
     <div class="card" id="cd-opp-card" style="display:none"><div id="cd-opportunities"></div></div>
     <div class="card" id="cd-client-mets"></div>
-    <div class="card" id="cd-notes-card">
-      <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Notes<span style="font-size:10px;color:var(--text3);font-weight:400">Private · not sent to client</span></div>
-      <div id="cd-notes-list" style="margin-bottom:10px"></div>
-      <div style="display:flex;gap:8px;align-items:flex-end">
-        <textarea id="cd-note-input" rows="2" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addClientNote();}"></textarea>
-        <button class="btn btn-p btn-sm" onclick="addClientNote()">Add</button>
-      </div>
-    </div>
-    <div class="card"><div class="card-hd">Activity timeline</div><div id="cd-timeline"></div></div>
-    <div class="card" id="cd-risk-card"><div class="card-hd">Client risk</div><div id="cd-risk-content"></div></div>
+    <div id="cd-notes-mount" style="margin-bottom:14px"></div>
+    <div id="cd-timeline-mount" style="margin-bottom:14px"></div>
+    <div id="cd-risk-mount" style="margin-bottom:14px"></div>
   </div>
   <div id="cdt-mileage-content" style="display:none">
     <div id="cd-today-legs" style="margin-bottom:8px"></div>

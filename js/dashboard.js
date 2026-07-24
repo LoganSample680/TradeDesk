@@ -41,7 +41,7 @@ function _showNewLeadsPicker(){
     // the relative label for older/fixture ids that predate this or aren't real timestamps.
     const _cts=Number(c.id);
     const hasRealTs=_cts>1e12;
-    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+new Date(_cts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
+    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' · '+new Date(_cts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
     const subLabel=stamp?ageLabel+' · '+stamp:ageLabel;
     const initial=escHtml((c.name||'?').trim().charAt(0).toUpperCase()||'?');
     return '<button onclick="_pickLeadForEstimate('+c.id+')" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'none\'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 8px;border:none;border-radius:var(--r);background:none;cursor:pointer;font-family:inherit;margin-bottom:4px;transition:background .12s ease">'+
@@ -237,9 +237,9 @@ function renderDash(){
   _renderDashRunning=true;
   try{
   document.getElementById('dash-greet').textContent=getDashGreeting();
-  document.getElementById('dash-date').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  document.getElementById('dash-date').textContent=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const _calDateEl=document.getElementById('dash-cal-date');
-  if(_calDateEl)_calDateEl.textContent=new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  if(_calDateEl)_calDateEl.textContent=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const tk=todayKey();
 
   const yr=dashYear||new Date().getFullYear();
@@ -1709,7 +1709,7 @@ function renderTodayFeed(){
       const yest=new Date(today-86400000);
       if(d>=today)return'Today at '+t;
       if(d>=yest)return'Yesterday at '+t;
-      return d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'})+' at '+t;
+      return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' at '+t;
     };
     let viewedBadge='';
     if(_hubTs){
@@ -2160,9 +2160,9 @@ function renderPipeline(){
     action='You need <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay booked. Best days: Tuesday + Thursday evening.';
   }
 
-  const w1label=parseD(thisMonday).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-  const w2label=parseD(nextMonday).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-  const w3label=parseD(weekAfterMonday).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const w1label=parseD(thisMonday).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const w2label=parseD(nextMonday).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const w3label=parseD(weekAfterMonday).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
 
   el.innerHTML=
     '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:14px;margin-bottom:10px">'+
@@ -2299,7 +2299,7 @@ function openBidDetail(bidId,view){
   ov.setAttribute('data-bdov','1');
   ov.style.cssText='position:fixed;inset:0;background:var(--bg);z-index:10001;overflow-y:auto;-webkit-overflow-scrolling:touch';
   const c=getClientById(b.client_id)||{name:b.client_name||b.name||''};
-  const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):(b.bid_date||'');
+  const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):(b.bid_date||'');
   function _tabBtn(v,label,active){return '<button id="bdd-tab-'+v+'" onclick="_bddView(\''+v+'\')" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1.5px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue-lt)':'var(--bg)')+';color:'+(active?'var(--blue-dk)':'var(--text2)')+'">'+label+'</button>';}
   ov.innerHTML=
     '<div style="position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;z-index:2">'+
@@ -2369,7 +2369,7 @@ function openBidDetail(bidId,view){
   const _isLost=b.status==='Closed Lost'||b.status==='Abandoned';
   const _isWon=b.status==='Closed Won';
   if(_isLost){
-    const _lostDate=b.lostAt?new Date(b.lostAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+    const _lostDate=b.lostAt?new Date(b.lostAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
     bidHTML+='<div class="card" style="margin-bottom:12px;border:1px solid #F0C9C9;background:#FEF2F2">'+
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:6px">Closed: lost</div>'+
       '<div style="font-size:13px;color:var(--text2);line-height:1.6">'+escHtml(b.lostReason||'Marked lost')+(_lostDate?' · '+_lostDate:'')+'</div>'+
@@ -2391,12 +2391,12 @@ function openBidDetail(bidId,view){
   const storageKey=b.signingKey||b.proposalKey||null;
   function _sigBadge(){
     if(!b.signedAt)return '';
-    return '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓',{size:16,color:'#065F46'})+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>';
+    return '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓',{size:16,color:'#065F46'})+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>';
   }
   function _sigFooter(sigUrl){
     if(!b.signedAt||!sigUrl)return '';
     const sigDate=new Date(b.signedAt);
-    const dateStr=sigDate.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+    const dateStr=sigDate.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
     const timeStr=sigDate.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
     return '<div style="margin-top:20px;padding:16px 18px;border-top:2px solid #e2e8f0;background:#f8fafc">'+
       '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:10px">Client Signature</div>'+
@@ -2516,7 +2516,7 @@ function renderProposalsPage(){
     }
     function _pfCard(b){
       const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
-      const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):(b._dk||'');
+      const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):(b._dk||'');
       const proj=b.addr||b.type||b.trade_type||'Proposal';
       return '<div class="card" style="margin:0 0 10px;border-radius:12px">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'+

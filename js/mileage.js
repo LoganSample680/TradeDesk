@@ -1345,7 +1345,7 @@ function _milRenderClassifyCard(unclassified){
   const next=unclassified[0];
   const fromShort=(next.from_name||next.from||'').split(',')[0].trim()||'Start';
   const toShort=(next.to_name||next.to||'').split(',')[0].trim()||'Destination';
-  const dateStr=next.date?new Date(next.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+  const dateStr=next.date?new Date(next.date+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
   el.innerHTML=
     '<div class="mil-classify-card">'+
       '<div class="mil-classify-left">'+
@@ -1448,7 +1448,7 @@ function _milRenderTripList(shown,yr){
             '<div class="mil-day-month">'+monthShort+'</div>'+
           '</div>'+
           '<div>'+
-            '<div class="mil-day-title">'+dateObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'</div>'+
+            '<div class="mil-day-title">'+dateObj.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'</div>'+
             '<div class="mil-day-sub">'+trips.length+' trip'+(trips.length!==1?'s':'')+' · '+dayMi.toFixed(1)+' mi total'+(needsCount?' · <span style="color:#F59E0B;font-weight:800">'+needsCount+' need'+(needsCount===1?'':'s')+' a purpose</span>':'')+'</div>'+
           '</div>'+
         '</div>'+

@@ -1428,7 +1428,7 @@ function _empNextJob(emp){
 }
 function _shortDate(d){
   if(!d)return'';
-  try{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return d;}
+  try{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(e){return d;}
 }
 // Loaded hourly rate (wage × payroll burden) for one employee email, from the pay-rate cache.
 function _empLoadedFor(email){
@@ -2791,7 +2791,7 @@ function _panelPrint(){
   const circuits=_panelSched.circuits||[];
   const client=document.getElementById('gei-client')?.value||'';
   const addr=document.getElementById('gei-addr')?.value||'';
-  const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const biz=S.bname||getBusinessName()||'';
   const imbalTxt=imbalance>0.10?`<span style="color:#dc2626;font-weight:700">${svgIcon('⚠',{size:13,color:'#dc2626'})} ${(imbalance*100).toFixed(0)}% imbalance, rebalance recommended</span>`:`<span style="color:#16a34a;font-weight:700">${svgIcon('✓',{size:13,color:'#16a34a'})} Balanced (${(imbalance*100).toFixed(0)}% difference)</span>`;
   const rows=circuits.map((c,i)=>`<tr>
@@ -3125,8 +3125,8 @@ async function sendGenericProposal(previewOnly){
   const tradeName=(_tradeM&&_tradeM.label)||'Service';
   const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'-';
   const _geiNow=new Date();
-  const dateStr=_geiNow.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  const _geiExpD=new Date(_geiNow.getTime()+30*86400000).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'});
+  const dateStr=_geiNow.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const _geiExpD=new Date(_geiNow.getTime()+30*86400000).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const _tmDepPct=_geiDepositPct();
   // Deposit is a % of the client-facing TOTAL (incl. tax): the label says "(N%)" next
@@ -3615,7 +3615,7 @@ async function _sendIndProposal(){
   const bname=escHtml(S.bname||getBusinessName()||'');
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
   const clientName=escHtml(c?.name||'');const clientAddr=escHtml(c?.addr||'');
-  const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const estNum=String(_indBidId).slice(-6);
   const midPrice=Math.round((r.totalLow+r.totalHigh)/2);
   const totalFmt='$'+midPrice.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});

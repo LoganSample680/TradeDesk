@@ -2840,6 +2840,91 @@ test.describe('clients.js: exhaustive coverage', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // Client-record section accordions: Notes, Activity timeline, Client risk each
+  // render a collapsible bar styled exactly like the Properties/Overview selector.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('client-record accordions', () => {
+    test('each section mounts a titled bar with a chevron', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = undefined; window._cdTimelineOpen = undefined; window._cdRiskOpen = undefined;
+        renderClientNotes(); renderCDTimeline(); renderCDRisk();
+        const notes = document.getElementById('cd-notes-mount').innerHTML;
+        const tl = document.getElementById('cd-timeline-mount').innerHTML;
+        const risk = document.getElementById('cd-risk-mount').innerHTML;
+        const svgCount = s => (s.match(/M6 9l6 6 6-6/g) || []).length; // the shared down-chevron path
+        return {
+          notesTitle: notes.includes('Notes'), notesChev: svgCount(notes),
+          tlTitle: tl.includes('Activity timeline'), tlChev: svgCount(tl),
+          riskTitle: risk.includes('Client risk'), riskChev: svgCount(risk),
+        };
+      });
+      expect(r.notesTitle).toBe(true);
+      expect(r.tlTitle).toBe(true);
+      expect(r.riskTitle).toBe(true);
+      // exactly one accordion chevron per bar
+      expect(r.notesChev).toBe(1);
+      expect(r.tlChev).toBe(1);
+      expect(r.riskChev).toBe(1);
+    });
+
+    test('collapsing a section hides its body, leaving only the bar', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = true; renderClientNotes();
+        const openHasInput = !!document.getElementById('cd-note-input');
+        window._cdNotesOpen = false; renderClientNotes();
+        const closedHasInput = !!document.getElementById('cd-note-input');
+        const barStillThere = document.getElementById('cd-notes-mount').innerHTML.includes('Notes');
+        return { openHasInput, closedHasInput, barStillThere };
+      });
+      expect(r.openHasInput).toBe(true);    // open: the note entry textarea is present
+      expect(r.closedHasInput).toBe(false); // collapsed: body (and its textarea) gone
+      expect(r.barStillThere).toBe(true);   // bar remains
+    });
+
+    test('the three bars share the Properties/Overview bar style verbatim', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = false; window._cdRiskOpen = false; window._cdPropsOpen = false;
+        renderClientNotes(); renderCDRisk(); renderCDAddresses();
+        const key = 'width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-size:15px;font-weight:800;box-shadow:var(--shadow-card)';
+        const has = id => document.getElementById(id).innerHTML.includes(key);
+        return { props: has('cd-addresses-list'), notes: has('cd-notes-mount'), risk: has('cd-risk-mount') };
+      });
+      expect(r.props).toBe(true);
+      expect(r.notes).toBe(true);
+      expect(r.risk).toBe(true);
+    });
+
+    test('Notes stores an array, so the Overview intake-notes line never prints [object Object]', async () => {
+      const r = await page.evaluate(() => {
+        const c = getClientById(77701);
+        c.notes = [{ id: 'x1', text: 'structured note', ts: '2026-07-10T12:00:00Z' }];
+        saveAll();
+        openClientDetail(77701, 'clients');
+        const ov = document.getElementById('cdt-overview-content').innerHTML;
+        return { hasObjObj: ov.includes('[object Object]') };
+      });
+      expect(r.hasObjObj).toBe(false);
+    });
+
+    test('every rendered date stamp in the client record is MM/DD/YYYY, no month names', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = true; window._cdTimelineOpen = true;
+        renderClientNotes(); renderCDTimeline();
+        const blob = document.getElementById('cd-timeline-mount').innerHTML +
+                     document.getElementById('cd-notes-mount').innerHTML;
+        const monthName = /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/;
+        return { hasMonthName: monthName.test(blob), hasMDY: /\d{2}\/\d{2}\/\d{4}/.test(blob) };
+      });
+      expect(r.hasMonthName).toBe(false);
+      expect(r.hasMDY).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // no console errors
   // ═══════════════════════════════════════════════════════════════════════════
   test('no console errors, clients.js', async () => {

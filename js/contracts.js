@@ -208,7 +208,7 @@ function renderClientContracts(clientId){
           '<div style="background:var(--bg);border-radius:6px;padding:7px;text-align:center">'+
             '<div style="font-size:9px;color:var(--text3);font-weight:700;text-transform:uppercase;margin-bottom:2px">Next</div>'+
             '<div style="font-size:12px;font-weight:800;color:'+(ct.nextDate&&ct.nextDate<tk?'#A32D2D':'var(--blue)')+'">'+
-              (ct.nextDate?new Date(ct.nextDate+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'-')+
+              (ct.nextDate?new Date(ct.nextDate+'T12:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'-')+
             '</div>'+
           '</div>'+
           '<div style="background:var(--bg);border-radius:6px;padding:7px;text-align:center">'+

@@ -10702,8 +10702,7 @@ test.describe('utils.js: exhaustive coverage', () => {
     });
     test('valid date string, returns human-readable date', async () => {
       const r = await page.evaluate(() => fmtDateShort('2026-06-15'));
-      expect(r).toContain('Jun');
-      expect(r).toContain('2026');
+      expect(r).toContain('06/15/2026');
     });
     test('invalid date string, returns input or fallback', async () => {
       const r = await page.evaluate(() => {

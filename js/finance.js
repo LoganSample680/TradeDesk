@@ -668,7 +668,7 @@ function _confirmReceiptDate(aiDate,statusEl){
   div.id='rcpt-date-confirm';
   div.style.cssText='background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-top:8px';
   let displayDate=aiDate||'(no date found)';
-  try{if(aiDate){const d=new Date(aiDate+'T12:00:00');displayDate=d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});}}catch(e){}
+  try{if(aiDate){const d=new Date(aiDate+'T12:00:00');displayDate=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}}catch(e){}
   div.innerHTML=
     '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">'+svgIcon('📅',{size:12})+' AI read date as: <strong>'+displayDate+'</strong>, correct?</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'+
@@ -1208,7 +1208,7 @@ function renderCalConflicts(){
   if(el)el.innerHTML=conflicts.map(c=>'<div class="tip tip-d" style="margin-bottom:6px">Scheduling conflict: '+c+'</div>').join('');
 }
 function renderCalWeek(){const t=new Date(),dow=t.getDay(),DNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],tk=todayKey();const days=[];for(let i=0;i<7;i++){const d=new Date(t);d.setDate(t.getDate()-dow+i);days.push(d);}document.getElementById('cal-week').innerHTML=days.map((d,i)=>{const key=dateKey(d),dj=getJobsOnDay(key).filter(x=>!x.isBuf),isToday=key===tk;return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)"><div style="width:30px;text-align:center;flex-shrink:0"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:${isToday?'var(--blue)':'var(--text3)'}">${DNAMES[i]}</div><div style="font-size:13px;font-weight:${isToday?'700':'400'};color:${isToday?'var(--blue)':'var(--text2)'}">${d.getDate()}</div></div><div style="flex:1;min-width:0">${dj.length?dj.map(({job})=>`<div style="font-size:10px;padding:2px 5px;border-radius:3px;background:${job.color};color:#fff;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(job.name)}</div>`).join(''):'<div style="font-size:11px;color:var(--text3)">Open</div>'}</div></div>`;}).join('');}
-function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>addDays(j.start,(parseInt(j.days)||1)-1)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name)}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${j.days}d${j.value?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
+function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>addDays(j.start,(parseInt(j.days)||1)-1)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name)}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})} · ${j.days}d${j.value?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
 
 function populateSchedSelect(){
   const cSel=document.getElementById('s-client-sel');
@@ -1432,7 +1432,7 @@ function validateEstimateTime(){
     setTimeout(()=>timeEl.style.borderColor='',2000);
   }
 }
-function updateSchedPreview(){const start=v('s-start'),days=parseInt(v('s-days'))||1,buf=parseInt(v('s-buf'))||0;const el=document.getElementById('sched-preview');if(!start){el.style.display='none';return;}const sf=parseD(start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});const ef=parseD(addDays(start,days-1)).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});el.style.display='block';el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:12px"><span><span style="color:var(--text2)">Start:</span> <strong>${sf}</strong></span><span><span style="color:var(--text2)">Finish:</span> <strong>${ef}</strong></span><span><span style="color:var(--text2)">Duration:</span> <strong>${days} day${days>1?'s':''}</strong></span>${buf>0?`<span><span style="color:var(--text2)">Buffer ends:</span> <strong>${parseD(addDays(start,days+buf-1)).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</strong></span>`:''}</div>`;}
+function updateSchedPreview(){const start=v('s-start'),days=parseInt(v('s-days'))||1,buf=parseInt(v('s-buf'))||0;const el=document.getElementById('sched-preview');if(!start){el.style.display='none';return;}const sf=parseD(start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});const ef=parseD(addDays(start,days-1)).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});el.style.display='block';el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:12px"><span><span style="color:var(--text2)">Start:</span> <strong>${sf}</strong></span><span><span style="color:var(--text2)">Finish:</span> <strong>${ef}</strong></span><span><span style="color:var(--text2)">Duration:</span> <strong>${days} day${days>1?'s':''}</strong></span>${buf>0?`<span><span style="color:var(--text2)">Buffer ends:</span> <strong>${parseD(addDays(start,days+buf-1)).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})}</strong></span>`:''}</div>`;}
 function _schedErr(msg,focusId){
   const e=document.getElementById('sched-err');
   if(e){e.textContent=msg;e.style.display='block';e.scrollIntoView&&e.scrollIntoView({behavior:'smooth',block:'nearest'});}
@@ -2004,7 +2004,7 @@ function exportMileageCSV(){
 
 function exportAllDataCSV(){
   const biz=S.bname||'TradeDesk';
-  const now=new Date().toLocaleDateString('en-US');
+  const now=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const q=s=>'"'+(s||'').toString().replace(/"/g,'""')+'"';
   const sections=[];
   const sec=(title,headers,rows)=>{
@@ -2239,7 +2239,7 @@ function exportTaxPDF(){
     if(!byCat[cat.label])byCat[cat.label]={label:cat.label,icon:cat.icon||'',line:cat.line||'',total:0};
     byCat[cat.label].total+=e.amount;
   });
-  const d=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const d=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const statusLabel={single:'Single',mfj:'Married Filing Jointly',hoh:'Head of Household'}[status]||status;
   // Build HTML using string concat, no template literals to avoid parser issues
   let h='<!DOCTYPE html><html><head><meta charset="utf-8">';
@@ -2418,7 +2418,7 @@ async function exportReceiptImages(){
   const bname=S.bname||'TradeDesk';
   const pages=filtered.map((e,i)=>{
     const cat=e.catLabel||e.cat||'';
-    const d=e.date?new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):e.date||'';
+    const d=e.date?new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):e.date||'';
     const sz=_sizeMap[e.id];
     const imgStyle=sz&&!sz.fallback
       ?`display:block;margin:0 auto;border:1px solid #ddd;border-radius:6px;width:${sz.w}px;height:${sz.h}px;max-width:100%`
@@ -2829,7 +2829,7 @@ function viewSavedProposal(bidId){
   const signedBadge=b.signedAt?
     '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:16px">'+svgIcon('✓',{size:16})+'</span>'+
-      '<span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span>'+
+      '<span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span>'+
     '</div>':'';
   ov.innerHTML=
     '<div style="position:sticky;top:0;background:#1a365d;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;z-index:1">'+
@@ -3075,7 +3075,7 @@ function _bkTogDay(tab,mo,day){
 function _bkDayLabel(d){
   const p=(d||'').split('-').map(Number);
   if(p.length<3||!p[0]||!p[1]||!p[2])return d||'-';
-  try{return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(_e){return d;}
+  try{return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(_e){return d;}
 }
 // Render a month's rows grouped into per-day accordions (each day its own dropdown,
 // default open). rowFn is the month's local row renderer (_incRow / _expRow).

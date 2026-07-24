@@ -768,7 +768,7 @@ function getClientStage(cid){
 
   const hasAnyBid=cbids.length>0;
   const upcomingEst=estJobs.find(j=>j.status!=='canceled'&&j.start>=tk);
-  if(upcomingEst&&!hasAnyBid)return{stage:'est_scheduled',label:'Proposal '+parseD(upcomingEst.start).toLocaleDateString('en-US',{month:'short',day:'numeric'})+(upcomingEst.time?' @ '+upcomingEst.time:''),color:'#7F77DD',priority:7};
+  if(upcomingEst&&!hasAnyBid)return{stage:'est_scheduled',label:'Proposal '+parseD(upcomingEst.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(upcomingEst.time?' @ '+upcomingEst.time:''),color:'#7F77DD',priority:7};
 
   const hasActiveBid=cbids.some(b=>b.status==='Pending'||b.status==='Closed Won');
   if(hasAnyBid&&!hasActiveBid)return{stage:'abandoned',label:'Abandoned',color:'#999',priority:9};
@@ -1417,7 +1417,12 @@ function renderClientDetail(){
       <button onclick="showFileLienDirect(${_lienBid.id})" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:#A32D2D;color:#FFB3B3;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${svgIcon('📋')} Prepare Lien Document</button>
     </div>`;
   }
-  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📞')} Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📋')} Intake notes:</span> ${escHtml(c.notes)}</div>`:''}</div>`:'';
+  // Intake notes is the free-text string captured on the lead-intake form. The
+  // separate Notes accordion stores structured notes on c.notes as an ARRAY, so
+  // only render this line when c.notes is an actual non-empty string (never
+  // stringify an array here, which printed "[object Object]").
+  const _intakeNote=(typeof c.notes==='string')?c.notes.trim():'';
+  const intakeInfoHTML=(c.callTime||_intakeNote)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📞')} Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${_intakeNote?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📋')} Intake notes:</span> ${escHtml(_intakeNote)}</div>`:''}</div>`:'';
   // Pre-1978/EPA is already flagged on the property card, so it's not repeated here.
   const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML;
   const _metsEl=document.getElementById('cd-client-mets');
@@ -1467,15 +1472,27 @@ function _cdSavePropNote(idx){
   saveAll();
   if(typeof showToast==='function')showToast('Site access saved','✓');
 }
+// Shared accordion bar, styled IDENTICALLY to the Properties bar and the Overview
+// section selector (#cd-tab-select): same width, padding, border, radius, shadow,
+// 15px/800 type, and the same right-aligned down-chevron that rotates when open.
+// Used by Notes, Activity timeline, and Client risk so all four read the same.
+function _cdSectionBar(title,open,toggleJs,countHtml){
+  const _barStyle='width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-size:15px;font-weight:800;box-shadow:var(--shadow-card);display:flex;align-items:center;justify-content:space-between;cursor:pointer';
+  const _chev='<span style="display:inline-flex;color:#888;flex-shrink:0;transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>';
+  return '<div onclick="'+toggleJs+'" style="'+_barStyle+'"><span>'+title+(countHtml||'')+'</span>'+_chev+'</div>';
+}
 function renderCDRisk(){
-  const el=document.getElementById('cd-risk-content');if(!el)return;
+  const el=document.getElementById('cd-risk-mount');if(!el)return;
   const c=getClientById(currentClientId);if(!c)return;
+  const open=(window._cdRiskOpen!==false);
+  const bar=_cdSectionBar('Client risk',open,"window._cdRiskOpen=(window._cdRiskOpen===false);renderCDRisk()");
+  if(!open){el.innerHTML=bar;return;}
   const r=c.riskLevel||'normal';
   const flags=c.riskFlags||[];
   const LEVELS=['normal','watch','high_risk','blacklisted'];
   const LABELS={normal:'Normal',watch:'Watch',high_risk:'High risk',blacklisted:'Blacklisted'};
   const COLORS={normal:'var(--text3)',watch:'var(--amber)',high_risk:'#A32D2D',blacklisted:'#000'};
-  el.innerHTML=
+  el.innerHTML=bar+'<div class="card" style="margin-top:8px">'+
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
       '<div>'+
         '<div style="font-size:14px;font-weight:700;color:'+COLORS[r]+'">'+LABELS[r]+'</div>'+
@@ -1493,15 +1510,19 @@ function renderCDRisk(){
       ).join('')+
     '</div>'+
     (r==='blacklisted'?'<div style="font-size:11px;color:#A32D2D;margin-top:8px;font-weight:700">Proposals and scheduling are blocked for this client.</div>':'')+
-    (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">'+svgIcon('⚠️')+' Previous lien filed. Require full payment before scheduling.</div>':'');
+    (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">'+svgIcon('⚠️')+' Previous lien filed. Require full payment before scheduling.</div>':'')+
+    '</div>';
 }
 function renderClientNotes(){
   const c=getClientById(currentClientId);if(!c)return;
-  const el=document.getElementById('cd-notes-list');if(!el)return;
+  const el=document.getElementById('cd-notes-mount');if(!el)return;
   const notes=(Array.isArray(c.notes)?c.notes:[]).slice().sort((a,b)=>(a.ts||'').localeCompare(b.ts||''));
-  if(!notes.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No notes yet.</div>';return;}
-  el.innerHTML=notes.map(n=>{
-    const dt=new Date(n.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const open=(window._cdNotesOpen!==false);
+  const count=notes.length?' <span style="color:var(--text3);font-weight:700">· '+notes.length+'</span>':'';
+  const bar=_cdSectionBar('Notes',open,"window._cdNotesOpen=(window._cdNotesOpen===false);renderClientNotes()",count);
+  if(!open){el.innerHTML=bar;return;}
+  const listHtml=notes.length?notes.map(n=>{
+    const dt=fmtDateMDY(n.ts);
     return '<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;color:var(--text);line-height:1.4;white-space:pre-wrap;word-break:break-word">'+escHtml(n.text)+'</div>'+
@@ -1509,7 +1530,14 @@ function renderClientNotes(){
       '</div>'+
       '<button onclick="editClientNote(\''+n.id+'\')" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);flex-shrink:0;touch-action:manipulation">Edit</button>'+
     '</div>';
-  }).join('');
+  }).join(''):'<div style="font-size:12px;color:var(--text3);padding:4px 0">No notes yet.</div>';
+  el.innerHTML=bar+'<div class="card" style="margin-top:8px">'+
+    '<div style="font-size:10px;color:var(--text3);font-weight:400;margin-bottom:8px">Private · not sent to client</div>'+
+    '<div id="cd-notes-list" style="margin-bottom:10px">'+listHtml+'</div>'+
+    '<div style="display:flex;gap:8px;align-items:flex-end">'+
+      '<textarea id="cd-note-input" rows="2" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();addClientNote();}"></textarea>'+
+      '<button class="btn btn-p btn-sm" onclick="addClientNote()">Add</button>'+
+    '</div></div>';
 }
 function addClientNote(){
   const inp=document.getElementById('cd-note-input');if(!inp)return;
@@ -1581,7 +1609,7 @@ function renderCDTimeline(){
         date:j.cancelDate||j.start||'',
         type:'estimate',
         label:isCanceled?'Proposal '+escHtml(j.cancelReason):'Proposal visit'+(j.time?' @ '+fmtTime(j.time):''),
-        meta:isCanceled?'Canceled '+j.cancelDate:(j.start+(j.addr?' · '+escHtml(j.addr):'')),
+        meta:isCanceled?'Canceled '+fmtDateMDY(j.cancelDate):(fmtDateMDY(j.start)+(j.addr?' · '+escHtml(j.addr):'')),
         color:isCanceled?'canceled':'estimate'
       });
     } else {
@@ -1590,18 +1618,22 @@ function renderCDTimeline(){
   });
   cmiles.forEach(m=>events.push({date:m.date||'',type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
   events.sort((a,b)=>b.date.localeCompare(a.date));
-  const el=document.getElementById('cd-timeline');
-  if(!events.length){el.innerHTML='<div class="empty">No activity yet. Add a proposal or drive to this client.</div>';return;}
+  const el=document.getElementById('cd-timeline-mount');if(!el)return;
+  const open=(window._cdTimelineOpen!==false);
+  const count=events.length?' <span style="color:var(--text3);font-weight:700">· '+events.length+'</span>':'';
+  const bar=_cdSectionBar('Activity timeline',open,"window._cdTimelineOpen=(window._cdTimelineOpen===false);renderCDTimeline()",count);
+  if(!open){el.innerHTML=bar;return;}
+  if(!events.length){el.innerHTML=bar+'<div class="card" style="margin-top:8px"><div class="empty">No activity yet. Add a proposal or drive to this client.</div></div>';return;}
   const byDate={};
   [...events].sort((a,b)=>b.date.localeCompare(a.date)).forEach(e=>{
     if(!byDate[e.date])byDate[e.date]=[];
     byDate[e.date].push(e);
   });
   const tk=todayKey();
-  el.innerHTML='<div class="timeline">'+
+  el.innerHTML=bar+'<div class="card" style="margin-top:8px"><div class="timeline">'+
     Object.entries(byDate).map(([date,evts],groupIdx)=>{
       const isToday=date===tk;
-      const dayLabel=isToday?'Today':parseD(date).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+      const dayLabel=isToday?'Today':fmtDateMDY(date);
       const domId='tl-group-'+groupIdx;
       const items=evts.map(e=>{
         const isBid=e.type==='bid';
@@ -1839,7 +1871,7 @@ function renderCDBids(){
                 const yest=new Date(today-86400000);
                 if(d>=today)return'Today at '+t;
                 if(d>=yest)return'Yesterday at '+t;
-                return d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'})+' at '+t;
+                return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' at '+t;
               };
               let badge='';
               if(hubTs){
@@ -1913,7 +1945,7 @@ function openClientProposals(clientId){
 
   function _bidCard(b){
     const dateStr=b.signedAt
-      ?new Date(b.signedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+      ?new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})
       :(b._dk||'Unknown date');
     const signedLine=b.signedAt
       ?'<span style="color:var(--green-mid);font-size:11px;font-weight:600">'+svgIcon('✓')+' Signed '+dateStr+(b.signedName?' · '+escHtml(b.signedName):'')+'</span>'
@@ -2023,7 +2055,7 @@ function _cpOpen(bidId,view){
   const surfs=b.surfaces||[];
   const scope=b.scope?Object.entries(b.scope).filter(([,v])=>v).map(([k])=>{const s=SCOPE_ITEMS?.find(x=>x.id===k);return s?s.label:k;}):[];
   const SURF={'walls':'Walls','ceiling':'Ceiling','trim':'Trim','doors':'Doors','windows':'Windows','cabinets':'Cabinets','ext_walls':'Siding','ext_trim':'Ext trim','deck':'Deck','fence':'Fence','epoxy':'Epoxy floor'};
-  const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):(b.bid_date||'');
+  const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):(b.bid_date||'');
 
   let bidHTML=
     '<div style="background:var(--blue-lt);border-radius:12px;padding:16px;margin-bottom:16px">'+
@@ -2060,7 +2092,7 @@ function _cpOpen(bidId,view){
   // Build proposal pane (client view)
   const propPane=document.getElementById('cp-prop-pane');
   const _cpStorageKey=b.signingKey||b.proposalKey||null;
-  const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓')+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
+  const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓')+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
   // Signature block pinned at the bottom of the client view, image from the stored
   // proposal JSON when available, falling back to the name/timestamp on the bid so the
   // block still shows when the storage write was missed at signing time.
@@ -2174,7 +2206,7 @@ function renderCDJobs(){
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:14px;font-weight:700">'+escHtml(j.name||'')+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+parseD(j.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+(j.time?' @ '+fmtTime(j.time):'')+' · '+(j.eventType==='estimate'?(j.hours?j.hours+'hr proposal':'Proposal visit'):j.days+' day'+(j.days>1?'s':''))+(j.addr?' · '+escHtml(j.addr):'')+' </div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(j.time?' @ '+fmtTime(j.time):'')+' · '+(j.eventType==='estimate'?(j.hours?j.hours+'hr proposal':'Proposal visit'):j.days+' day'+(j.days>1?'s':''))+(j.addr?' · '+escHtml(j.addr):'')+' </div>'+
           milesHTML+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+
@@ -2242,7 +2274,7 @@ function _mapsPickAddr(idx){
 }
 let _cdAddrList=[];
 function _cdMapAddr(i){const a=_cdAddrList[i];if(a)window.open('https://maps.apple.com/?daddr='+encodeURIComponent(a),'_blank');}
-function _cdDShort(s){if(!s)return '';const d=new Date(s);return isNaN(d)?String(s):d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'2-digit'});}
+function _cdDShort(s){if(!s)return '';const d=new Date(s);return isNaN(d)?String(s):d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}
 // Compact money for the property value header: $385K, $1.2M (no cents on a home value).
 function _cdCompactMoney(n){n=Number(n)||0;if(n>=1e6)return '$'+(n/1e6).toFixed(n%1e6?1:0).replace(/\.0$/,'')+'M';if(n>=1e3)return '$'+Math.round(n/1e3)+'K';return '$'+Math.round(n);}
 // One property card = one address: Zillow facts + pre-1978 lead trigger + the
