@@ -56,7 +56,7 @@ function _showNewLeadsPicker(){
   const countLabel=leads.length===1?'1 lead':leads.length+' leads';
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">'+
-      '<div style="font-size:16px;font-weight:800">Leads waiting on an estimate</div>'+
+      '<div style="font-size:16px;font-weight:800">Leads waiting on a proposal</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:20})+'</button>'+
     '</div>'+
     (leads.length?'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+countLabel+'</div>':'')+
@@ -133,7 +133,7 @@ function _renderDashSetupTodo(){
     {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
-      sub:'Estimates that look like a real company, not a text message.',cta:'Add logo'},
+      sub:'Proposals that look like a real company, not a text message.',cta:'Add logo'},
     {id:'team',done:false,icon:'👥',title:'Add your crew',
       sub:'W-2 employees clock in so you stop chasing hours on paper, or invite 1099 subs. Solo? Say so and this goes away.',cta:'Set up'},
   ];
@@ -271,7 +271,7 @@ function renderDash(){
   const closeRatio=totalDecided>0?Math.round(wonBidsAll/totalDecided*100):null;
   const closeColor=closeRatio===null?'var(--text3)':closeRatio>=40?'var(--green-mid)':closeRatio>=25?'var(--amber)':'#A32D2D';
   const closeLabel=closeRatio===null?'-':closeRatio+'%';
-  const closeSub=closeRatio===null?'No decided bids yet':closeRatio>=40?'Above avg '+svgIcon('✓',{size:12}):closeRatio>=25?'Near avg (~33%)':'Below avg, follow up more';
+  const closeSub=closeRatio===null?'No decided proposals yet':closeRatio>=40?'Above avg '+svgIcon('✓',{size:12}):closeRatio>=25?'Near avg (~33%)':'Below avg, follow up more';
   const wonBidAmts=bids.filter(b=>b.status==='Closed Won').map(b=>b.amount||0);
   const avgJobVal=wonBidAmts.length?Math.round(wonBidAmts.reduce((s,a)=>s+a,0)/wonBidAmts.length):null;
 
@@ -298,7 +298,7 @@ function renderDash(){
       if(_collectOwed>0)_biggestNote='The biggest one is '+fmt(_collectOwed)+' in outstanding balances.';
       else if(_wonNeedAction>0)_biggestNote=_wonNeedAction+' signed job'+(+_wonNeedAction>1?'s':'')+' need scheduling or a deposit.';
       else if(_urgFu>0)_biggestNote=_urgFu+' follow-up'+(+_urgFu>1?'s':'')+' are overdue.';
-      else if(_pendingBids>0)_biggestNote=_pendingBids+' pending bid'+(+_pendingBids>1?'s':'')+' need attention.';
+      else if(_pendingBids>0)_biggestNote=_pendingBids+' pending proposal'+(+_pendingBids>1?'s':'')+' need attention.';
       _subEl.textContent=_attnItems+' thing'+(_attnItems>1?'s':'')+' need'+(_attnItems===1?'s':'')+' your attention today. '+_biggestNote;
     }else{
       _subEl.textContent='You\'re all caught up, nothing urgent.';
@@ -519,7 +519,7 @@ function renderDash(){
         const _extra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_onClock.startTime)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span id="dash-onsite-time">'+_fmtDur(_onClock.startTime)+'</span> on site</div>';
         const ocBtns=[];
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
-        if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Estimate</button>');
+        if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
         _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
       } else {
         // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
@@ -532,7 +532,7 @@ function renderDash(){
         const _nbNoteBlock=_nbNoteHtml?'<div style="padding:0 14px 2px">'+_nbNoteHtml+'</div>':'';
         const nbBtns=[];
         nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:linear-gradient(160deg,#22c55e,#12894a);color:#fff;box-shadow:0 6px 16px -6px rgba(14,107,57,.6);display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><path d="M7 5v14l11-7z"/></svg>Clock in</button>');
-        nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Estimate</button>');
+        nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
         if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#0E6B39;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px">'+svgIcon('💰',{size:13,color:'#fff'})+'Collect</button>');
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
         _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
@@ -1664,7 +1664,7 @@ function renderTodayFeed(){
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
     const stage=b.followupStage||1;
-    const msgs=['Hey '+fn+', just checking in, did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the estimate I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled, let me know!'];
+    const msgs=['Hey '+fn+', just checking in, did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the proposal I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled, let me know!'];
     const smsBody=encodeURIComponent(msgs[Math.min(stage-1,msgs.length-1)]);
     const daysOut=Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000);
     pendingItems.push(
@@ -1797,7 +1797,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">'+svgIcon('🙋',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+(newLeads.length===1?'1 new lead ready':newLeads.length+' new leads ready')+'</div>'+
-          '<div class="tf-sub" style="color:var(--blue)">Build estimates to move them forward</div>'+
+          '<div class="tf-sub" style="color:var(--blue)">Build proposals to move them forward</div>'+
         '</div>'+
         '<div class="tf-acts"><button onclick="_showNewLeadsPicker()" class="btn btn-sm btn-p" style="font-size:11px">View leads →</button></div>'+
       '</div>'
@@ -1888,7 +1888,7 @@ function checkGoalPrompt(){
     box.innerHTML=
       '<div style="font-size:22px;text-align:center;margin-bottom:8px">'+svgIcon('🎯',{size:22})+'</div>'+
       '<div class="zmodal-title" style="text-align:center">5 paid jobs, milestone!</div>'+
-      '<div class="zmodal-msg" style="text-align:center">Your average job is '+fmt(avgVal)+'. Set a monthly revenue goal and the app will track your progress and tell you exactly how many estimates you need.</div>'+
+      '<div class="zmodal-msg" style="text-align:center">Your average job is '+fmt(avgVal)+'. Set a monthly revenue goal and the app will track your progress and tell you exactly how many proposals you need.</div>'+
       '<div class="zmodal-btns" style="flex-direction:column;gap:8px">'+
         '<input type="number" id="goal-prompt-input" placeholder="Monthly goal e.g. 8000" min="0" step="500" '+
           'style="font-size:18px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center">'+
@@ -1968,12 +1968,12 @@ function renderGoal(){
       '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">'+
         '<div><div style="font-size:18px;font-weight:800;color:var(--blue)">'+fmt(remaining)+'</div><div style="font-size:10px;color:var(--text3)">Still needed</div></div>'+
         '<div><div style="font-size:18px;font-weight:800">'+jobsNeeded+'</div><div style="font-size:10px;color:var(--text3)">Jobs to close</div></div>'+
-        '<div><div style="font-size:18px;font-weight:800;color:var(--amber)">'+estsNeeded+'</div><div style="font-size:10px;color:var(--text3)">Estimates needed</div></div>'+
+        '<div><div style="font-size:18px;font-weight:800;color:var(--amber)">'+estsNeeded+'</div><div style="font-size:10px;color:var(--text3)">Proposals needed</div></div>'+
       '</div>'+
       '<div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:center">Based on '+fmt(avgJobVal)+' avg job · '+(Math.round(closeRate*100))+'% close rate</div>';
   } else if(remaining>0&&decidedAll.length<5){
     html+=
-      '<div style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center">Need '+Math.max(0,5-decidedAll.length)+' more decided bids to calculate estimates needed</div>';
+      '<div style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center">Need '+Math.max(0,5-decidedAll.length)+' more decided proposals to calculate proposals needed</div>';
   }
 
   html+='</div>';
@@ -2096,7 +2096,7 @@ function showSourceDetail(src){
       '<div><div style="font-size:20px;font-weight:800;color:var(--green-mid)">'+(revenue>0?fmt(revenue):'-')+'</div><div style="font-size:10px;color:var(--text3)">Revenue</div></div>'+
       '<div><div style="font-size:20px;font-weight:800">'+avgVal+'</div><div style="font-size:10px;color:var(--text3)">Avg job</div></div>'+
     '</div>'+
-    (pending>0?'<div style="font-size:11px;color:var(--amber);margin-top:8px;text-align:center">'+pending+' pending bid'+(pending>1?'s':'')+', not yet counted in close rate</div>':'');
+    (pending>0?'<div style="font-size:11px;color:var(--amber);margin-top:8px;text-align:center">'+pending+' pending proposal'+(pending>1?'s':'')+', not yet counted in close rate</div>':'');
 }
 const CLOSE_RATE = 0.60; // 60% industry avg for professional solo painter in Kansas
 
@@ -2249,8 +2249,8 @@ function renderLeadsPage(){
     incomplete:    {cls:'sf-pending', label:'NEEDS SETUP'},
     new:           {cls:'sf-new',     label:'NEW LEAD'},
     est_scheduled: {cls:'sf-upcoming',label:'EST BOOKED'},
-    est_ready:     {cls:'sf-deposit', label:'EST READY'},
-    bid_out:       {cls:'sf-pending', label:'BID OUT'},
+    est_ready:     {cls:'sf-deposit', label:'PROPOSAL READY'},
+    bid_out:       {cls:'sf-pending', label:'PROPOSAL OUT'},
     bid_urgent:    {cls:'sf-overdue', label:'FOLLOW UP'},
     abandoned:     {cls:'sf-done',    label:'COLD'},
   };
@@ -2304,7 +2304,7 @@ function openBidDetail(bidId,view){
   ov.innerHTML=
     '<div style="position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;z-index:2">'+
       '<button onclick="document.querySelector(\'[data-bdov]\').remove()" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);white-space:nowrap">'+svgIcon('✕',{size:13})+' Close</button>'+
-      '<div id="bdd-tabs" style="display:flex;gap:6px;flex:1;justify-content:center">'+_tabBtn('bid',svgIcon('📋',{size:12})+' Our bid',view==='bid')+_tabBtn('proposal',svgIcon('📄',{size:12})+' Client view',view==='proposal')+'</div>'+
+      '<div id="bdd-tabs" style="display:flex;gap:6px;flex:1;justify-content:center">'+_tabBtn('bid',svgIcon('📋',{size:12})+' Our proposal',view==='bid')+_tabBtn('proposal',svgIcon('📄',{size:12})+' Client view',view==='proposal')+'</div>'+
       '<div style="width:70px"></div>'+
     '</div>'+
     '<div style="padding:14px 16px;background:#1a365d;color:#fff">'+
@@ -2338,7 +2338,7 @@ function openBidDetail(bidId,view){
     if(b.paint||b.condition)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text2);margin-bottom:6px"><strong>Paint:</strong> '+(PAINT[b.paint]||b.paint||'-')+'</div><div style="font-size:12px;color:var(--text2)"><strong>Condition:</strong> '+(COND[b.condition]||b.condition||'-')+'</div></div>';
     if(scope.length)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Scope of work</div>'+scope.map(s=>'<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">'+escHtml(s)+'</div>').join('')+'</div>';
   }else{
-    bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:13px;color:var(--text3);text-align:center;padding:12px 0;font-style:italic">No line items or surfaces stored for this bid.</div></div>';
+    bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:13px;color:var(--text3);text-align:center;padding:12px 0;font-style:italic">No line items or surfaces stored for this proposal.</div></div>';
   }
   if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Notes</div><button onclick="openBidNotes('+b.id+')" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px;color:var(--blue);font-weight:700">Edit</button></div><div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap">'+escHtml(b.notes)+'</div></div>';
   if(pays.length){
@@ -2374,12 +2374,12 @@ function openBidDetail(bidId,view){
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:6px">Closed: lost</div>'+
       '<div style="font-size:13px;color:var(--text2);line-height:1.6">'+escHtml(b.lostReason||'Marked lost')+(_lostDate?' · '+_lostDate:'')+'</div>'+
       (b.lostNote?'<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-top:4px;font-style:italic">“'+escHtml(b.lostNote)+'”</div>':'')+
-      '<button onclick="reopenEstimate('+bidId+')" class="btn btn-sm" style="margin-top:10px;font-size:12px;font-weight:700">↩ Reopen estimate</button>'+
+      '<button onclick="reopenEstimate('+bidId+')" class="btn btn-sm" style="margin-top:10px;font-size:12px;font-weight:700">↩ Reopen proposal</button>'+
     '</div>';
   }else if(b.signingToken&&!_isWon&&!b.clientCancelled){
     bidHTML+='<div class="card" style="margin-bottom:12px">'+
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Didn’t close?</div>'+
-      '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:10px">If this estimate won’t move forward, close it out so it stops sitting in “Awaiting signature.”</div>'+
+      '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:10px">If this proposal won’t move forward, close it out so it stops sitting in “Awaiting signature.”</div>'+
       '<button onclick="openCloseOutEstimate('+bidId+')" class="btn btn-sm" style="font-size:12px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2">Close out, mark as lost</button>'+
     '</div>';
   }
@@ -2487,7 +2487,7 @@ function renderProposalsPage(){
   const list=document.getElementById('proposals-list');
   if(!list)return;
   if(!filtered.length){
-    list.innerHTML='<div class="empty"><div class="em-emoji">'+svgIcon('📨',{size:44})+'</div><h3>Nothing here</h3><p>Try a different filter, or start a new estimate from a client card.</p></div>';
+    list.innerHTML='<div class="empty"><div class="em-emoji">'+svgIcon('📨',{size:44})+'</div><h3>Nothing here</h3><p>Try a different filter, or start a new proposal from a client card.</p></div>';
     return;
   }
 
@@ -2528,7 +2528,7 @@ function renderProposalsPage(){
           '<div style="font-size:18px;font-weight:800;color:var(--green-mid);margin-left:12px;flex-shrink:0">'+fmt(b.amount)+'</div>'+
         '</div>'+
         '<div style="display:flex;gap:8px">'+
-          '<button onclick="openBidDetail('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋',{size:12})+' Our bid</button>'+
+          '<button onclick="openBidDetail('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋',{size:12})+' Our proposal</button>'+
           (b.proposalHtml?'<button onclick="openBidDetail('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('📄',{size:12})+' Client view</button>':'<span style="flex:1;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-style:italic">No proposal saved</span>')+
         '</div>'+
       '</div>';

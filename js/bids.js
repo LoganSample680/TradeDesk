@@ -34,7 +34,7 @@ function renderCDOpportunities(){
           '<div style="font-size:11px;color:var(--text3)">'+m.label+(o.notes?' · '+escHtml((o.notes||'').substring(0,40)):'')+'</div></div>'+
         '</div>'+
         '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">'+
-          '<button class="btn btn-sm btn-p" onclick="convertOpportunityToEstimate('+o.id+')" style="font-size:11px">→ Estimate</button>'+
+          '<button class="btn btn-sm btn-p" onclick="convertOpportunityToEstimate('+o.id+')" style="font-size:11px">→ Proposal</button>'+
           ''+
         '</div>'+
       '</div>';
@@ -560,7 +560,7 @@ function sendBidEmail(bidId){
     const item=SCOPE_ITEMS.find(s=>s.id===k);return item?item.label:k;
   }).join(', '):'Sanding, Spackle/patching, Two-coat finish';
   const NL='\n';
-  const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+(s.qty||0).toLocaleString()+' sf').join(NL):'  See attached estimate';
+  const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+(s.qty||0).toLocaleString()+' sf').join(NL):'  See attached proposal';
   // Use plain ASCII dashes, Unicode box-drawing chars trigger corporate spam filters
   const SEP='-------------------------------------'+NL;
   // Build signing link if this bid has already been sent as a proposal
@@ -669,7 +669,7 @@ function toggleBidSummary(bidId){
     return html;
   })();
   panel.innerHTML=
-    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Bid details</div>'+
+    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Proposal details</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">'+
       (b.paint?'<div><div style="font-size:10px;text-transform:uppercase;color:var(--text3)">Paint</div><div style="font-size:12px;font-weight:700">'+(PAINT[b.paint]||b.paint)+'</div></div>':'')+
       (b.cond?'<div><div style="font-size:10px;text-transform:uppercase;color:var(--text3)">Condition</div><div style="font-size:12px;font-weight:700">'+(COND[b.cond]||b.cond)+'</div></div>':'')+
@@ -745,7 +745,7 @@ function printInvoice(bidId){
   <div>
     <div class="section-label">Job details</div>
     <div class="client-detail"><strong>Type:</strong> ${escHtml(b.type||'Painting job')}</div>
-    <div class="client-detail"><strong>Bid date:</strong> ${b.bid_date||''}</div>
+    <div class="client-detail"><strong>Proposal date:</strong> ${b.bid_date||''}</div>
     ${b.completion_date?`<div class="client-detail"><strong>Completed:</strong> ${b.completion_date}</div>`:''}
   </div>
 </div>
@@ -860,7 +860,7 @@ function openPayPanel(bidId, autoType){
   const overpaidBanner=overpaidAmt>0.01
     ?'<div style="background:#FFF3CD;border:1px solid #FFC107;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'+
         '<div><div style="font-size:13px;font-weight:700;color:#856404">'+svgIcon('⚠',{size:13})+' Refund owed</div>'+
-        '<div style="font-size:11px;color:#856404">Client paid '+fmt(rawPaid)+' but bid is now '+fmt(total)+'. Refund: <strong>'+fmt(overpaidAmt)+'</strong></div></div>'+
+        '<div style="font-size:11px;color:#856404">Client paid '+fmt(rawPaid)+' but proposal is now '+fmt(total)+'. Refund: <strong>'+fmt(overpaidAmt)+'</strong></div></div>'+
       '</div>'
     :'';
   const showFinalOnly=autoType==='final';
@@ -1095,7 +1095,7 @@ function openCloseOutEstimate(bidId){
   box.style.cssText='animation:td-modal-enter .22s cubic-bezier(.22,1,.36,1) both';
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
-      '<div style="font-size:16px;font-weight:800">Close out estimate</div>'+
+      '<div style="font-size:16px;font-weight:800">Close out proposal</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">×</button>'+
     '</div>'+
     '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:14px">Mark <strong>'+escHtml(c.name)+'</strong>’s '+fmt(b.amount||0)+' proposal as lost. It moves to the Declined tab and stops counting against your close rate as pending.</div>'+
@@ -1104,7 +1104,7 @@ function openCloseOutEstimate(bidId){
       LOST_REASONS.map(r=>'<option value="'+escHtml(r)+'">'+escHtml(r)+'</option>').join('')+
     '</select>'+
     '<label style="display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Note (optional)</label>'+
-    '<textarea id="_co-note" rows="2" placeholder="e.g. went with a cheaper bid from a friend" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:16px"></textarea>'+
+    '<textarea id="_co-note" rows="2" placeholder="e.g. went with a cheaper proposal from a friend" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:16px"></textarea>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
       '<button onclick="_submitCloseOutEstimate('+bidId+')" style="flex:2;padding:12px;border-radius:var(--r);border:none;background:#A32D2D;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Mark as lost</button>'+
