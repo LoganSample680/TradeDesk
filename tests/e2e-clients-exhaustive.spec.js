@@ -3018,6 +3018,44 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.captured).toContain('not legal advice');
     });
 
+    // Regression (owner-reported): the rail was a border on the whole list, so it
+    // poked out above the first dot and trailed below the last one. It's now drawn
+    // per item from dot-center to next-dot-center, and the last item draws none.
+    test('timeline rail connects dot-center to dot-center, with no stub past the last dot', async () => {
+      const r = await page.evaluate(() => {
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const groups = [...document.querySelectorAll('#cd-timeline-mount .timeline')];
+        if (!groups.length) return { skip: true };
+        return groups.map(g => {
+          const items = [...g.querySelectorAll('.tl-item')];
+          return items.map((it, i) => {
+            const dot = it.querySelector('.tl-dot');
+            const ds = getComputedStyle(dot);
+            const bs = getComputedStyle(it, '::before');
+            // dot center X and rail center X, both relative to the item's box
+            const dotCenter = parseFloat(ds.left) + parseFloat(ds.width) / 2 + parseFloat(ds.borderLeftWidth);
+            const railCenter = parseFloat(bs.left) + parseFloat(bs.width) / 2;
+            return {
+              isLast: i === items.length - 1,
+              railHidden: bs.display === 'none',
+              centerDelta: Math.abs(dotCenter - railCenter),
+            };
+          });
+        });
+      });
+      if (r.skip) return;
+      const flat = r.flat();
+      expect(flat.length).toBeGreaterThan(0);
+      // every LAST item in a day group draws no rail (nothing dangling below it)
+      flat.filter(x => x.isLast).forEach(x => expect(x.railHidden).toBe(true));
+      // every non-last item draws a rail, centered on its dot (within a pixel)
+      flat.filter(x => !x.isLast).forEach(x => {
+        expect(x.railHidden).toBe(false);
+        expect(x.centerDelta).toBeLessThanOrEqual(1);
+      });
+    });
+
     test('exportAuditReport on a missing bid does not throw', async () => {
       const ok = await page.evaluate(() => {
         try { exportAuditReport(99999999); return true; } catch (e) { return false; }

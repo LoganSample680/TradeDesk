@@ -585,8 +585,17 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .sf-legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
 
 /* ── Timeline ── */
-.timeline{padding-left:20px;border-left:2px solid var(--line)}
+/* The rail is drawn PER ITEM (dot-center to next dot-center), not as one
+   border down the whole list. A container border ran the full block height, so
+   it poked out above the first dot and trailed below the last one instead of
+   connecting them. Each item now draws its own segment starting at its dot's
+   center (top:7px = half the 14px dot) and ending at the next dot's center
+   (bottom:-7px), and the last item draws none, so the line begins and ends
+   exactly on a dot. left:-19px centers the 2px rail on the dot's center. */
+.timeline{padding-left:22px}
 .tl-item{position:relative;padding:0 0 14px 16px}
+.tl-item::before{content:'';position:absolute;left:-19px;top:7px;bottom:-7px;width:2px;background:var(--line)}
+.tl-item:last-child::before{display:none}
 .tl-item:last-child{padding-bottom:0}
 .tl-dot{position:absolute;left:-25px;top:0;width:14px;height:14px;border-radius:50%;background:var(--bg-card);border:2px solid var(--line)}
 .tl-dot.active{border-color:var(--c-green);background:var(--c-green-soft)}
