@@ -1654,35 +1654,33 @@ function renderCDTimeline(){
   const bar=_cdSectionBar('Activity timeline',open,"window._cdTimelineOpen=(window._cdTimelineOpen===false);window._cdAccAnim='timeline';renderCDTimeline()",count);
   if(!open){el.innerHTML=bar;return;}
   if(!events.length){el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner"><div class="empty">No activity yet. Add a proposal or drive to this client.</div></div></div>';return;}
-  const byDate={};
-  [...events].sort((a,b)=>_tkey(b).localeCompare(_tkey(a))).forEach(e=>{
-    if(!byDate[e.date])byDate[e.date]=[];
-    byDate[e.date].push(e);
-  });
-  const tk=todayKey();
-  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner"><div class="timeline">'+
-    Object.entries(byDate).map(([date,evts],groupIdx)=>{
-      const isToday=date===tk;
-      const dayLabel=isToday?'Today':fmtDateMDY(date);
-      const domId='tl-group-'+groupIdx;
-      const items=evts.map(e=>{
-        const isBid=e.type==='bid';
-        const tstr=(e.ts&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.ts)))?new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
-        const metaFull=(tstr?'<span style="color:var(--text3);font-weight:700">'+tstr+'</span>'+(e.meta?' · ':''):'')+(e.meta||'');
-        const inner='<div class="tl-dot '+e.color+'"></div><div class="tl-label">'+e.label+'</div><div class="tl-meta">'+metaFull+(isBid?' · <span style="font-size:10px;color:var(--blue)">tap to edit</span>':'')+' </div>';
-        if(isBid)return '<div class="tl-item" onclick="viewBidFromTimeline('+e.id+')" style="cursor:pointer">'+inner+'</div>';
-        return '<div class="tl-item">'+inner+'</div>';
-      }).join('');
-      return '<div style="margin-bottom:8px">'+
-        '<div data-tlgroup="'+domId+'" onclick="toggleTlGroup(this.dataset.tlgroup)" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;user-select:none">'+
-          '<span id="'+domId+'-arrow" style="font-size:10px;color:var(--text3);transition:transform .2s;display:inline-block">'+svgIcon('▶')+'</span>'+
-          '<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:'+(isToday?'var(--blue)':'var(--text3)')+'">'+dayLabel+'</span>'+
-          '<span style="font-size:10px;color:var(--text3)">('+evts.length+')</span>'+
-        '</div>'+
-        '<div id="'+domId+'" style="display:none;padding-left:4px">'+items+'</div>'+
-      '</div>';
-    }).join('')+
-  '</div></div></div>';
+  // Grouped month -> day using the SAME accordion components Books' Income and
+  // Expenses use (_bkMonthAcc + _bkRenderDays), so every month-grouped history in
+  // the app has identical structure and right-hand chevrons. The day body is the
+  // vertical timeline (dots + rail) rather than a table, passed via opts.bodyFn.
+  const sorted=[...events].sort((a,b)=>_tkey(b).localeCompare(_tkey(a)));
+  const byMonth={};
+  sorted.forEach(e=>{const mo=String(e.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(e);});
+  const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
+  const _tlItems=evts=>'<div class="timeline">'+evts.map(e=>{
+    const isBid=e.type==='bid';
+    const tstr=(e.ts&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.ts)))?new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
+    const metaFull=(tstr?'<span style="color:var(--text3);font-weight:700">'+tstr+'</span>'+(e.meta?' · ':''):'')+(e.meta||'');
+    const inner='<div class="tl-dot '+e.color+'"></div><div class="tl-label">'+e.label+'</div><div class="tl-meta">'+metaFull+(isBid?' · <span style="font-size:10px;color:var(--blue)">tap to edit</span>':'')+' </div>';
+    if(isBid)return '<div class="tl-item" onclick="viewBidFromTimeline('+e.id+')" style="cursor:pointer">'+inner+'</div>';
+    return '<div class="tl-item">'+inner+'</div>';
+  }).join('')+'</div>';
+  const monthsHtml='<div class="bk-months">'+months.map((mo,i)=>_bkMonthAcc(
+    'cdtl',mo,_bkMonthLabel(mo),
+    byMonth[mo].length+' event'+(byMonth[mo].length!==1?'s':''),
+    '',
+    _bkRenderDays('cdtl',mo,byMonth[mo],[],null,0,'var(--text3)',null,null,{
+      bodyFn:_tlItems,
+      metaFn:dr=>dr.length+' event'+(dr.length!==1?'s':''),
+    }),
+    i===0 // newest month open, older months collapsed
+  )).join('')+'</div>';
+  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner">'+monthsHtml+'</div></div>';
 }
 // Court-ready audit certificate for one signed proposal: the created -> sent ->
 // opened (IP) -> signed (IP) chain with timestamps and device, exportable via the
@@ -1745,14 +1743,6 @@ function exportAuditReport(bidId){
     w.document.open();w.document.write(html);w.document.close();
     setTimeout(()=>{try{w.focus();w.print();}catch(e){}},350);
   }catch(e){if(typeof showToast==='function')showToast('Could not open the audit report','⚠️');}
-}
-function toggleTlGroup(id){
-  const el=document.getElementById(id);
-  const arrow=document.getElementById(id+'-arrow');
-  if(!el)return;
-  const open=el.style.display!=='none';
-  el.style.display=open?'none':'block';
-  if(arrow)arrow.style.transform=open?'':'rotate(90deg)';
 }
 function renderCDExpenses(){
   const el=document.getElementById('cdt-expenses-list');if(!el)return;

@@ -2923,18 +2923,29 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.hasObjObj).toBe(false);
     });
 
-    test('every rendered date stamp in the client record is MM/DD/YYYY, no month names', async () => {
+    // Date stamps are MM/DD/YYYY everywhere. The ONE intentional exception is the
+    // month-bucket header ("July 2026"), which names a month rather than stamping a
+    // date, and matches the Books month accordions this timeline now shares. So the
+    // assertion strips .bk-month-title and requires no month name anywhere else.
+    test('every rendered date stamp in the client record is MM/DD/YYYY, month names only in month headers', async () => {
       const r = await page.evaluate(() => {
         openClientDetail(77701, 'clients');
         window._cdNotesOpen = true; window._cdTimelineOpen = true;
         renderClientNotes(); renderCDTimeline();
-        const blob = document.getElementById('cd-timeline-mount').innerHTML +
-                     document.getElementById('cd-notes-mount').innerHTML;
+        const tlEl = document.getElementById('cd-timeline-mount');
+        const clone = tlEl.cloneNode(true);
+        clone.querySelectorAll('.bk-month-title').forEach(n => n.remove());
+        const blob = clone.innerHTML + document.getElementById('cd-notes-mount').innerHTML;
         const monthName = /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/;
-        return { hasMonthName: monthName.test(blob), hasMDY: /\d{2}\/\d{2}\/\d{4}/.test(blob) };
+        return {
+          hasMonthName: monthName.test(blob),
+          hasMDY: /\d{2}\/\d{2}\/\d{4}/.test(tlEl.innerHTML),
+          monthHeaders: tlEl.querySelectorAll('.bk-month-title').length,
+        };
       });
       expect(r.hasMonthName).toBe(false);
       expect(r.hasMDY).toBe(true);
+      expect(r.monthHeaders).toBeGreaterThan(0); // months are grouped, Books-style
     });
   });
 

@@ -1926,13 +1926,19 @@ test.describe('Client detail tab and notes functions', () => {
     expect(result.modalGoneAfterSave).toBe(true);
   });
 
-  test('toggleTlGroup: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof toggleTlGroup !== 'function') return { skip: true };
-      try { toggleTlGroup('tl-2025'); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
+  // The Activity timeline now uses the shared Books month/day accordion
+  // (_bkMonthAcc + _bkRenderDays + _bkTogMonth/_bkTogDay), so the old bespoke
+  // day-group toggle is gone. Assert the removal so nobody reintroduces a second
+  // accordion implementation.
+  test('toggleTlGroup: removed, the timeline uses the shared Books accordion', async () => {
+    const r = await page.evaluate(() => ({
+      gone: typeof toggleTlGroup === 'undefined',
+      sharedMonth: typeof _bkMonthAcc === 'function',
+      sharedDay: typeof _bkRenderDays === 'function',
+    }));
+    expect(r.gone).toBe(true);
+    expect(r.sharedMonth).toBe(true);
+    expect(r.sharedDay).toBe(true);
   });
 
   test('renderCDExpenses: calls without throwing', async () => {

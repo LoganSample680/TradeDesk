@@ -3063,6 +3063,31 @@ function _bkTogMonth(tab,mo){
   el.classList.toggle('open');
   if(body)body.style.display=opening?'block':'none';
 }
+// THE month accordion shell, one definition used by Income, Expenses, and the
+// client-record Activity timeline. Chevron on the right, title + sub on the left,
+// a total/count slot, body collapses. Any new month-grouped view reuses this
+// instead of hand-rolling the markup, so a change here updates every spot at once.
+// `inner` is whatever goes inside (normally _bkRenderDays output).
+function _bkMonthAcc(tab,mo,moLabel,subLabel,totalHtml,inner,isOpen){
+  return '<div id="bk-'+tab+'-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
+    '<button class="bk-month-hd" onclick="_bkTogMonth(\''+tab+'\',\''+mo+'\')">'+
+      '<div style="flex:1;text-align:left">'+
+        '<div class="bk-month-title">'+moLabel+'</div>'+
+        '<div class="bk-month-sub">'+subLabel+'</div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        (totalHtml||'')+
+        '<div class="bk-month-chev">▸</div>'+
+      '</div>'+
+    '</button>'+
+    '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+inner+'</div>'+
+  '</div>';
+}
+// Month label for a 'YYYY-MM' key, e.g. "July 2026".
+function _bkMonthLabel(mo){
+  const[y,m]=String(mo||'').split('-');
+  return(y&&m)?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):String(mo||'');
+}
 // Day-level accordion inside a month (owner: "break it down by month AND day").
 function _bkTogDay(tab,mo,day){
   const el=document.getElementById('bk-'+tab+'-day-'+mo+'-'+day);
@@ -3082,8 +3107,12 @@ function _bkDayLabel(d){
 // sumFn/fmtFn are optional, default to the original $-amount behavior so Income
 // and Expenses (the only callers before Time Log) are unaffected; Time Log passes
 // a minutes-sum + duration formatter instead of $ since it isn't a money view.
-function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn){
-  sumFn=sumFn||(r=>r.amount||0);fmtFn=fmtFn||fmt;
+// opts (all optional) let a non-ledger caller reuse the SAME day accordion without
+// forking it: opts.bodyFn(dayRows) renders a custom body instead of the table, and
+// opts.metaFn(dayRows) replaces the "count · $total" header meta. The client-record
+// Activity timeline uses both; Books passes neither and is unchanged.
+function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn,opts){
+  sumFn=sumFn||(r=>r.amount||0);fmtFn=fmtFn||fmt;opts=opts||{};
   const byDay={};
   rows.forEach(r=>{const d=(r.date||'').slice(0,10)||'unknown';(byDay[d]||(byDay[d]=[])).push(r);});
   const days=Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
@@ -3094,14 +3123,15 @@ function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn
     return '<div class="bk-day open" id="bk-'+tab+'-day-'+mo+'-'+safe+'">'+
       '<button class="bk-day-hd" onclick="_bkTogDay(\''+tab+'\',\''+mo+'\',\''+safe+'\')">'+
         '<span class="bk-day-title">'+_bkDayLabel(day)+'</span>'+
-        '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+dr.length+' · '+fmtFn(dayTotal)+'</span>'+
+        '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+(opts.metaFn?opts.metaFn(dr):(dr.length+' · '+fmtFn(dayTotal)))+'</span>'+
         '<span class="bk-day-chev">▾</span>'+
       '</button>'+
       '<div class="bk-day-body">'+
+        (opts.bodyFn?opts.bodyFn(dr):
         '<div class="bk-tbl-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl bk-tbl" style="min-width:'+minWidth+'px"><thead><tr>'+
           headers.map(h=>'<th>'+h+'</th>').join('')+((tab==='exp'||tab==='tl')?'<th></th>':'')+'</tr></thead><tbody>'+
           dr.map(rowFn).join('')+
-        '</tbody></table></div>'+
+        '</tbody></table></div>')+
       '</div>'+
     '</div>';
   }).join('');
@@ -3151,24 +3181,12 @@ function renderIncome(){
     html+='<div class="bk-months">'+months.map(mo=>{
       const rows=byMonth[mo];
       const moTotal=rows.reduce((s,r)=>s+r.amount,0);
-      const[y,m]=mo.split('-');
-      const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
       const isOpen=mo.match(/^\d{4}-\d{2}$/)&&mo>=curMo;
-      return '<div id="bk-inc-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
-        '<button class="bk-month-hd" onclick="_bkTogMonth(\'inc\',\''+mo+'\')">'+
-          '<div style="flex:1;text-align:left">'+
-            '<div class="bk-month-title">'+moLabel+'</div>'+
-            '<div class="bk-month-sub">'+rows.length+' record'+(rows.length!==1?'s':'')+'</div>'+
-          '</div>'+
-          '<div style="display:flex;align-items:center;gap:10px">'+
-            '<div style="font-size:15px;font-weight:900;color:var(--green-mid);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(moTotal)+'</div>'+
-            '<div class="bk-month-chev">▸</div>'+
-          '</div>'+
-        '</button>'+
-        '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
-          _bkRenderDays('inc',mo,rows,['Client','Amount','Date','Type','Method'],_incRow,480,'var(--green-mid)')+
-        '</div>'+
-      '</div>';
+      return _bkMonthAcc('inc',mo,_bkMonthLabel(mo),
+        rows.length+' record'+(rows.length!==1?'s':''),
+        '<div style="font-size:15px;font-weight:900;color:var(--green-mid);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(moTotal)+'</div>',
+        _bkRenderDays('inc',mo,rows,['Client','Amount','Date','Type','Method'],_incRow,480,'var(--green-mid)'),
+        isOpen);
     }).join('')+'</div>';
   }catch(err){
     console.error('renderIncome error:',err);
@@ -3269,24 +3287,12 @@ function renderExpenses(){
     html+='<div class="bk-months">'+months.map(mo=>{
       const rows=byMonth[mo];
       const moTotal=rows.reduce((s,r)=>s+r.amount,0);
-      const[y,m]=mo.split('-');
-      const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
       const isOpen=mo.match(/^\d{4}-\d{2}$/)&&mo>=curMo;
-      return '<div id="bk-exp-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
-        '<button class="bk-month-hd" onclick="_bkTogMonth(\'exp\',\''+mo+'\')">'+
-          '<div style="flex:1;text-align:left">'+
-            '<div class="bk-month-title">'+moLabel+'</div>'+
-            '<div class="bk-month-sub">'+rows.length+' expense'+(rows.length!==1?'s':'')+'</div>'+
-          '</div>'+
-          '<div style="display:flex;align-items:center;gap:10px">'+
-            '<div style="font-size:15px;font-weight:900;color:#A32D2D;font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">('+fmt(moTotal)+')</div>'+
-            '<div class="bk-month-chev">▸</div>'+
-          '</div>'+
-        '</button>'+
-        '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
-          _bkRenderDays('exp',mo,rows,['Vendor','Amount','Date','Category','Receipt'],_expRow,560,'#A32D2D')+
-        '</div>'+
-      '</div>';
+      return _bkMonthAcc('exp',mo,_bkMonthLabel(mo),
+        rows.length+' expense'+(rows.length!==1?'s':''),
+        '<div style="font-size:15px;font-weight:900;color:#A32D2D;font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">('+fmt(moTotal)+')</div>',
+        _bkRenderDays('exp',mo,rows,['Vendor','Amount','Date','Category','Receipt'],_expRow,560,'#A32D2D'),
+        isOpen);
     }).join('')+'</div>';
   }catch(err){
     console.error('renderExpenses error:',err);
