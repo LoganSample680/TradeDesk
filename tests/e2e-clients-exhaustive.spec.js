@@ -3099,6 +3099,53 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.cert).toContain('No e-signature captured'); // the certificate says so plainly
     });
 
+    // Regression (owner-reported): a new lead's row showed no time, because
+    // c.created is only a YYYY-MM-DD day key. The client id is Date.now() at
+    // creation, so the real time is recovered from it.
+    test('Lead created shows a real clock time even when only a day key was saved', async () => {
+      const r = await page.evaluate(() => {
+        const ms = new Date('2026-07-23T14:37:00').getTime();
+        clients = clients.filter(c => c.id !== ms).concat([
+          { id: ms, name: 'Yard Sign Lead', source: 'Yard sign', created: '2026-07-23' }]);
+        bids = bids.filter(b => b.client_id !== ms);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = ms;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return {
+          html: document.getElementById('cd-timeline-mount').innerHTML,
+          derived: _cdLeadCreatedTs({ id: ms, created: '2026-07-23' }),
+          prefersCreatedAt: _cdLeadCreatedTs({ id: ms, createdAt: '2026-01-02T03:04:00Z', created: '2026-07-23' }),
+          legacyFallback: _cdLeadCreatedTs({ id: 7, created: '2026-07-23' }),
+        };
+      });
+      expect(r.html).toContain('Lead created');
+      expect(r.html).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/);          // a real clock time
+      expect(r.derived).toContain('2026-07-23');                   // recovered from the id
+      expect(r.prefersCreatedAt).toBe('2026-01-02T03:04:00Z');     // explicit stamp wins
+      expect(r.legacyFallback).toBe('2026-07-23');                 // non-epoch id -> day key
+    });
+
+    // The month layer is chrome when a client's whole history sits in one month.
+    test('month accordions appear only when history spans more than one month', async () => {
+      const r = await page.evaluate(() => {
+        const one = new Date('2026-07-23T14:37:00').getTime();
+        clients = clients.filter(c => c.id !== one).concat([{ id: one, name: 'One Month', source: 'Yard sign', created: '2026-07-23' }]);
+        bids = bids.filter(b => b.client_id !== one);
+        window.currentClientId = one; window._cdTimelineOpen = true; renderCDTimeline();
+        const single = document.getElementById('cd-timeline-mount').querySelectorAll('.bk-month').length;
+
+        const two = new Date('2026-06-08T09:12:00').getTime();
+        clients = clients.filter(c => c.id !== two).concat([{ id: two, name: 'Two Months', source: 'Referral', created: '2026-06-08' }]);
+        bids = bids.filter(b => b.client_id !== two).concat([{ id: two + 1, client_id: two, client_name: 'Two Months', status: 'Closed Won', amount: 100, bid_date: '2026-07-10', signedAt: '2026-07-12T16:41:00Z' }]);
+        window.currentClientId = two; renderCDTimeline();
+        const multi = document.getElementById('cd-timeline-mount').querySelectorAll('.bk-month').length;
+        return { single, multi };
+      });
+      expect(r.single).toBe(0);            // one month, no redundant month header
+      expect(r.multi).toBeGreaterThan(1);  // spans months, months grouped Books-style
+    });
+
     test('exportAuditReport on a missing bid does not throw', async () => {
       const ok = await page.evaluate(() => {
         try { exportAuditReport(99999999); return true; } catch (e) { return false; }

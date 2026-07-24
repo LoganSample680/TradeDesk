@@ -1054,6 +1054,8 @@ function saveClient(){
   const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),
     addr,street,city,state,zip,
     ptype:v('cf-ptype'),partyType,source,ref,notes:v('cf-notes'),created:todayKey(),
+    // Exact creation moment for the audit trail; `created` is only a day key.
+    createdAt:_existingClient?.createdAt||new Date().toISOString(),
     yearBuilt:_ybRaw||_existingClient?.yearBuilt||null,
     sqft:_existingClient?.sqft||null,estimatedValue:_existingClient?.estimatedValue||null,
     propertyType:_existingClient?.propertyType||null,stories:_existingClient?.stories||null,
@@ -1588,12 +1590,25 @@ function _saveEditedClientNote(noteId){
 function _cdViewMeta(map,bidId){try{const m=(typeof map!=='undefined'&&map)?map[String(bidId)]:null;return m||null;}catch(e){return null;}}
 // Human labels for each logged audit event (the sign-flow funnel + opens).
 const CD_AUDIT_LABELS={hub_opened:'Client opened hub',proposal_opened:'Client opened proposal',approved:'Tapped Approve & Sign',signature_ready:'Entered signature',payment_viewed:'Reached payment step',method_selected:'Chose payment method',signed:'Signed'};
+// When the lead was created, to the minute. c.created is only a YYYY-MM-DD day
+// key, so prefer c.createdAt (stamped on new leads); for leads saved before that
+// existed, the id IS Date.now() at creation (~13-digit epoch ms), which recovers
+// the real time, the same trick the dashboard's new-leads picker uses. Falls back
+// to the date-only key for imported rows that have neither.
+function _cdLeadCreatedTs(c){
+  if(!c)return'';
+  if(c.createdAt)return c.createdAt;
+  const ms=Number(c.id);
+  if(ms>1e12)return new Date(ms).toISOString();
+  return c.created||'';
+}
 function renderCDTimeline(){
   const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId),cmiles=getClientMileage(currentClientId);
   const _c=getClientById(currentClientId);
   const events=[];
   // Lead created, the top of the audit trail.
-  if(_c&&_c.created)events.push({date:String(_c.created).slice(0,10),ts:_c.created,type:'lead',label:'Lead created',meta:escHtml(_c.source||_c.leadSource||''),color:'note'});
+  const _leadTs=_cdLeadCreatedTs(_c);
+  if(_leadTs)events.push({date:String(_leadTs).slice(0,10),ts:_leadTs,type:'lead',label:'Lead created',meta:escHtml(_c.source||_c.leadSource||''),color:'note'});
   cbids.forEach(b=>{
     // This row is the proposal being CREATED, so it shows the state at creation.
     // It used to print b.status (the CURRENT status) on the creation date, which
@@ -1684,16 +1699,22 @@ function renderCDTimeline(){
     if(isBid)return '<div class="tl-item" onclick="viewBidFromTimeline('+e.id+')" style="cursor:pointer">'+inner+'</div>';
     return '<div class="tl-item">'+inner+'</div>';
   }).join('')+'</div>';
-  const monthsHtml='<div class="bk-months">'+months.map((mo,i)=>_bkMonthAcc(
-    'cdtl',mo,_bkMonthLabel(mo),
-    byMonth[mo].length+' event'+(byMonth[mo].length!==1?'s':''),
-    '',
-    _bkRenderDays('cdtl',mo,byMonth[mo],[],null,0,'var(--text3)',null,null,{
-      bodyFn:_tlItems,
-      metaFn:dr=>dr.length+' event'+(dr.length!==1?'s':''),
-    }),
-    i===0 // newest month open, older months collapsed
-  )).join('')+'</div>';
+  const _days=mo=>_bkRenderDays('cdtl',mo,byMonth[mo],[],null,0,'var(--text3)',null,null,{
+    bodyFn:_tlItems,
+    metaFn:dr=>dr.length+' event'+(dr.length!==1?'s':''),
+  });
+  // The month layer only earns its keep once the history actually spans months.
+  // A young client with everything in one month was showing three stacked headers
+  // (section, month, day) above a single row, which just reads as chrome.
+  const monthsHtml=months.length<2
+    ?_days(months[0])
+    :'<div class="bk-months">'+months.map((mo,i)=>_bkMonthAcc(
+      'cdtl',mo,_bkMonthLabel(mo),
+      byMonth[mo].length+' event'+(byMonth[mo].length!==1?'s':''),
+      '',
+      _days(mo),
+      i===0 // newest month open, older months collapsed
+    )).join('')+'</div>';
   el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner">'+monthsHtml+'</div></div>';
 }
 // Court-ready audit certificate for one signed proposal: the created -> sent ->
