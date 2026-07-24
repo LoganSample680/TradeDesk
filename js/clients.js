@@ -1390,8 +1390,8 @@ function renderClientDetail(){
   // actions (log a payment, jump to bids), not a second big balance readout.
   const balanceHTML=totalOwed>0.01?
     `<div style="display:flex;gap:8px;margin-bottom:10px">
-      <button onclick="openQuickPayFromOverview()" class="btn btn-g" style="flex:1;font-size:14px;padding:12px 14px">+ Log payment</button>
       <button onclick="setCDTab('bids',document.getElementById('cdt-bids'))" class="btn" style="flex:1;font-size:14px;padding:12px 14px">View bids</button>
+      <button onclick="openQuickPayFromOverview()" class="btn btn-g" style="flex:1;font-size:14px;padding:12px 14px">+ Log payment</button>
     </div>`
     :'';
   // Lien alert, any won bid with balance overdue 30+ days
@@ -1448,7 +1448,6 @@ function renderClientDetail(){
   }
   renderCDTimeline();
   renderClientNotes();
-  renderCDSiteNote();
   renderCDRisk();
   renderCDEstimatesUpcoming();
   renderCDOpportunities();
@@ -1456,22 +1455,17 @@ function renderClientDetail(){
   renderTodayLegs();
   setCDTab('overview',document.getElementById('cdt-overview'));
 }
-// Site access note on the client record (gate code, dog, parking). Internal
-// only, the same per-property note captured at the estimate and shown on the
-// crew's job cards / geofence, never on the client-facing proposal or hub. The
-// client record edits the note for this client's PRIMARY address; per-property
-// notes for other addresses are captured/edited from that job or estimate.
-function renderCDSiteNote(){
+// Site-access note (gate code, dog, parking), saved PER PROPERTY from inside that
+// property's accordion row. Internal only: the crew sees it on this address's job
+// card / geofence, never on the client-facing proposal or hub. Keyed by the
+// property's own address, so each site keeps its own access note.
+function _cdSavePropNote(idx){
   const c=getClientById(currentClientId);if(!c)return;
-  const el=document.getElementById('cd-sitenote-input');if(!el)return;
-  el.value=getSiteNote(c,c.addr);
-}
-function saveCDSiteNote(){
-  const c=getClientById(currentClientId);if(!c)return;
-  const el=document.getElementById('cd-sitenote-input');
-  setSiteNote(c,c.addr,(el?el.value:'').trim());
+  const addr=(_cdAddrList&&_cdAddrList[idx])||c.addr;
+  const el=document.getElementById('cd-propnote-'+idx);
+  setSiteNote(c,addr,(el?el.value:'').trim());
   saveAll();
-  if(typeof showToast==='function')showToast('Site notes saved','✓');
+  if(typeof showToast==='function')showToast('Site access saved','✓');
 }
 function renderCDRisk(){
   const el=document.getElementById('cd-risk-content');if(!el)return;
@@ -2328,7 +2322,14 @@ function _cdPropCardHtml(c,a,idx,total){
   let body='';
   if(isOpen){
     const leadRow=pre78?`<div style="display:flex;gap:9px;align-items:flex-start;padding:10px 12px;background:rgba(163,45,45,.06);border-radius:12px;margin-bottom:12px;color:#A32D2D;font-size:12px;line-height:1.4"><span style="flex-shrink:0">${svgIcon('⚠️')}</span><span><strong>Pre-1978 home.</strong> Federal lead-paint (EPA RRP) disclosure required before disturbing paint.</span></div>`:'';
-    const noteRow=note?`<div style="display:flex;gap:9px;padding:10px 12px;background:var(--bg2);border-left:3px solid var(--amber,#8A4E00);border-radius:10px;margin-bottom:12px;font-size:12px;color:var(--text2);line-height:1.45;white-space:pre-wrap"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);flex-shrink:0;padding-top:2px">Access</span><span style="min-width:0">${escHtml(note)}</span></div>`:'';
+    // Site-access note lives here, PER PROPERTY (owner: "site access notes really
+    // need to roll under a property"). Editable inline; crew sees it on this
+    // address's job. Keyed by this property's address via _cdSavePropNote(idx).
+    const noteRow=`<div style="margin-bottom:12px;padding:11px 12px;background:var(--bg2);border-left:3px solid var(--amber,#8A4E00);border-radius:10px">
+      <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--amber,#8A4E00);margin-bottom:6px">Site access <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--text3)">· crew sees this on the job</span></div>
+      <textarea id="cd-propnote-${idx}" rows="2" placeholder="Gate code, dog, where to park, tricky access…" style="width:100%;font-size:12px;padding:8px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg-card,var(--bg));color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4;margin-bottom:8px">${escHtml(note||'')}</textarea>
+      <button onclick="event.stopPropagation();_cdSavePropNote(${idx})" class="btn btn-p btn-sm">Save site access</button>
+    </div>`;
     // Property facts (sqft/beds/last sale) now show inline on the collapsed card,
     // so the expanded body is just the lead flag, access note, and work history.
     // Work items, one clean chronological list with a type tag.

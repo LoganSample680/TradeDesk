@@ -1117,19 +1117,22 @@ test.describe('Schedule page, selects, type toggle, availability grid', () => {
     }
   });
 
-  test('client record: site note loads and saves on the client detail (internal)', async () => {
+  test('client record: per-property site access loads and saves from the property accordion', async () => {
     const r = await page.evaluate(() => {
-      if (typeof renderCDSiteNote !== 'function' || typeof saveCDSiteNote !== 'function') return { skip: true };
+      if (typeof _cdSavePropNote !== 'function' || typeof renderCDAddresses !== 'function') return { skip: true };
       const cid = 993002;
-      clients.push({ id: cid, name: 'Detail Client', siteNote: 'Dog in back' });
+      const c = { id: cid, name: 'Detail Client', addr: '12 Access Rd, Town, KS 60000', extraAddresses: [] };
+      clients.push(c);
       const origCur = (typeof currentClientId !== 'undefined') ? currentClientId : null;
       try {
         currentClientId = cid;
-        renderCDSiteNote();
-        const loaded = document.getElementById('cd-sitenote-input').value;
-        document.getElementById('cd-sitenote-input').value = 'New gate 9911';
-        saveCDSiteNote();
-        const saved = clients.find(c => c.id === cid).siteNote;
+        setSiteNote(c, c.addr, 'Dog in back');
+        renderCDAddresses();                       // single property renders expanded, so cd-propnote-0 is present
+        const ta = document.getElementById('cd-propnote-0');
+        const loaded = ta ? ta.value : '(no field)';
+        if (ta) ta.value = 'New gate 9911';
+        _cdSavePropNote(0);                          // saves against THIS property's address
+        const saved = getSiteNote(c, c.addr);
         return { skip: false, loaded, saved };
       } finally {
         currentClientId = origCur;
