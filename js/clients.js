@@ -26,11 +26,11 @@ function openEstimateForClient(){
   // request-access popup, never the estimator.
   if(!_canEstimate()){ _showEstimateRequestModal(); return; }
   const c=getClientById(currentClientId);
-  if(!c){showWorkflowGate('Select a client first before starting an estimate.','Choose Client','function(){goPg(\'pg-clients\');}');return;}
+  if(!c){showWorkflowGate('Select a client first before starting a proposal.','Choose Client','function(){goPg(\'pg-clients\');}');return;}
   const r=getClientRisk(c.id);
-  if(r==='blacklisted'){zAlert('This client is blacklisted. Estimates are blocked.',{title:svgIcon('🚫')+' Blocked'});return;}
+  if(r==='blacklisted'){zAlert('This client is blacklisted. Proposals are blocked.',{title:svgIcon('🚫')+' Blocked'});return;}
   if(r==='high_risk'){
-    zConfirm(svgIcon('⚠️')+' This client previously required a lien for payment. Continue with estimate?',
+    zConfirm(svgIcon('⚠️')+' This client previously required a lien for payment. Continue with proposal?',
       ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true});
     return;
   }
@@ -53,7 +53,7 @@ function _cdActionSheet(title,rows){
 function _cdMoreMenu(){
   const c=getClientById(currentClientId);if(!c)return;
   const rows=[];
-  rows.push({icon:'📅',label:'Schedule estimate',act:'schedForClient()'});
+  rows.push({icon:'📅',label:'Schedule proposal',act:'schedForClient()'});
   rows.push({icon:'🔧',label:'Diagnostic / trip charge',act:'openDiagnosticCharge('+c.id+')'});
   if(!(typeof gps!=='undefined'&&gps.active))rows.push({icon:'🚗',label:'Drive there',act:'startDriveToClient()'});
   rows.push({icon:'🔗',label:'Client hub',act:'showHubMenu('+c.id+')'});
@@ -83,10 +83,10 @@ function _nearbyStartWork(clientId){
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Start work for '+escHtml(c.name)+'</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">Quick invoice for something you just did, or a full estimate for a bigger job?</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">Quick invoice for something you just did, or a full proposal for a bigger job?</div>'+
     '<div style="display:flex;flex-direction:column;gap:8px">'+
       '<button onclick="closeTopModal();openDiagnosticCharge('+clientId+')" class="btn btn-p" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('🔧',{size:16})+' Quick invoice</button>'+
-      '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" class="btn" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('✏',{size:16})+' Start estimate</button>'+
+      '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" class="btn" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('✏',{size:16})+' Start proposal</button>'+
       '<button onclick="closeTopModal()" style="padding:10px;border:none;background:none;color:var(--text3);font-size:13px;font-family:inherit;cursor:pointer">Cancel</button>'+
     '</div>';
   overlay.appendChild(box);document.body.appendChild(overlay);
@@ -102,7 +102,7 @@ function _nearbyStartWork(clientId){
 function _diagChargeContext(){
   return '<div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:9px 11px;margin-bottom:14px">'+
     '<div style="flex:none">'+svgIcon('ℹ️',{size:14})+'</div>'+
-    '<div style="font-size:11px;color:var(--text2);line-height:1.45">Only for when you gave an estimate, the client <strong>declined</strong>, and you’re charging for the trip out + diagnosis. Doing actual work? Build a full estimate they sign instead.</div>'+
+    '<div style="font-size:11px;color:var(--text2);line-height:1.45">Only for when you gave a proposal, the client <strong>declined</strong>, and you’re charging for the trip out + diagnosis. Doing actual work? Build a full proposal they sign instead.</div>'+
   '</div>';
 }
 function openDiagnosticCharge(clientId){
@@ -128,7 +128,7 @@ function openDiagnosticCharge(clientId){
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
       '<button onclick="saveDiagnosticCharge('+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Continue to sign →</button>'+
     '</div>'+
-    '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" style="width:100%;margin-top:8px;padding:10px;border:none;background:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Doing actual work? Build a full estimate instead ›</button>';
+    '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" style="width:100%;margin-top:8px;padding:10px;border:none;background:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Doing actual work? Build a full proposal instead ›</button>';
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   setTimeout(()=>document.getElementById('diag-desc')?.focus(),60);
@@ -221,11 +221,11 @@ function _submitDiagnosticSign(bidId,clientId){
 // offer to request access from the owner/manager.
 function _showEstimateRequestModal(){
   if(typeof zConfirm==='function'){
-    zConfirm("You don't have permission to create estimates yet. Send a request to your manager for access?",
+    zConfirm("You don't have permission to create proposals yet. Send a request to your manager for access?",
       ()=>_submitEstimateRequest(),
-      {title:svgIcon('🔒')+' Estimate access',yes:'Request access'});
+      {title:svgIcon('🔒')+' Proposal access',yes:'Request access'});
   }else if(typeof zAlert==='function'){
-    zAlert('You do not have permission to create estimates. Ask your manager for access.',{title:'Permission needed'});
+    zAlert('You do not have permission to create proposals. Ask your manager for access.',{title:'Permission needed'});
   }
 }
 
@@ -305,7 +305,7 @@ function _showRrpModal(c,onProceed){
     msg.style.display='block';
     msg.innerHTML=
       '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:12px;margin-bottom:10px">'+
-        '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">RRP certification required before this estimate can proceed.</div>'+
+        '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">RRP certification required before this proposal can proceed.</div>'+
         '<div style="margin-top:8px">'+
           '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:6px">EPA RRP certification required</div>'+
           '<div style="font-size:12px;color:var(--text1);margin-bottom:6px;line-height:1.6">Pre-1978 homes: you need EPA RRP certification before disturbing any painted surfaces. Work without it and you\'re exposed to serious fines.</div>'+
@@ -326,12 +326,12 @@ function _gateAddressThenEstimate(c){
     const box=document.createElement('div');box.className='zmodal';
     box.innerHTML=
       '<div style="font-size:18px;margin-bottom:6px">'+svgIcon('📍')+' Address required</div>'+
-      '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+escHtml(c.name)+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+escHtml(c.name)+'\'s property address before starting a proposal. You can\'t measure or quote without it.</div>'+
       '<div style="position:relative;margin-bottom:14px">'+
 '<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
   'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
 '</div>'+
-      '<button id="_addr-gate-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save &amp; start estimate</button>'+
+      '<button id="_addr-gate-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save &amp; start proposal</button>'+
       '<button onclick="document.getElementById(\'_addr-gate-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
     ov.appendChild(box);document.body.appendChild(ov);
     const _agInp=document.getElementById('_addr-gate-inp');
@@ -369,21 +369,21 @@ function _checkMultiPropertyThenOpen(c){
   if(activeBids.length>0){
     const resumeTarget=activeBids[0];
     const addrHint=resumeTarget.addr?' ('+resumeTarget.addr+')':'';
-    zConfirm(c.name+' has an estimate in progress'+addrHint+'. Resume it or start one for a different property?',
+    zConfirm(c.name+' has a proposal in progress'+addrHint+'. Resume it or start one for a different property?',
       ()=>{
         if(activeBids.length===1){openGenericEstimate(c,resumeTarget.id,resumeTarget.trade_type||getActiveTrade());}
         else{
           // Multiple in-progress, show picker
           const ov=document.createElement('div');ov.className='zmodal-overlay';
           const box=document.createElement('div');box.className='zmodal';
-          box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">Choose estimate to resume</div>'+
-            activeBids.map(b=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||getActiveTrade())+'\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:13px;color:var(--text)">'+escHtml(b.addr||b.name||'Estimate')+'<span style="font-size:11px;color:var(--text3);display:block;margin-top:2px">'+escHtml(b.bid_date||'')+'</span></button>').join('')+
+          box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">Choose proposal to resume</div>'+
+            activeBids.map(b=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||getActiveTrade())+'\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:13px;color:var(--text)">'+escHtml(b.addr||b.name||'Proposal')+'<span style="font-size:11px;color:var(--text3);display:block;margin-top:2px">'+escHtml(b.bid_date||'')+'</span></button>').join('')+
             '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
           ov.appendChild(box);document.body.appendChild(ov);
           ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
         }
       },
-      {title:'Estimate in progress',yes:'Resume estimate',no:'Different property',danger:false,
+      {title:'Proposal in progress',yes:'Resume proposal',no:'Different property',danger:false,
        onNo:()=>_askNewPropertyAddress(c)});
     return;
   }
@@ -398,7 +398,7 @@ function _askNewPropertyAddress(c){
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Enter the address for this job</div>'+
     '<div style="position:relative;margin-bottom:14px"><input id="_new-prop-addr" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
       'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<button id="_new-prop-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Open estimate</button>'+
+    '<button id="_new-prop-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Open proposal</button>'+
     '<button onclick="document.getElementById(\'_new-prop-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   const inp=document.getElementById('_new-prop-addr');
@@ -472,7 +472,7 @@ function _showEstimateStylePicker(c,overrideAddr){
     '<div style="max-width:760px;margin:0 auto;padding:24px 20px 40px">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
         '<div>'+
-          '<div class="tbar-eyebrow">Pick estimate type</div>'+
+          '<div class="tbar-eyebrow">Pick proposal type</div>'+
           '<div class="tbar-title">How are you billing this job?</div>'+
         '</div>'+
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
@@ -692,7 +692,7 @@ function onClientSearch(inp){
     el.innerHTML=matched.map(c=>{
       const s=getClientStage(c.id);
       const pendBids=getClientBids(c.id).filter(b=>b.status==='Pending');
-      const pendBidSuffix=pendBids.length>1?' · '+pendBids.length+' bids out':pendBids.length===1?' · '+fmt(pendBids[0].amount):'';
+      const pendBidSuffix=pendBids.length>1?' · '+pendBids.length+' proposals out':pendBids.length===1?' · '+fmt(pendBids[0].amount):'';
       return '<div class="client-card" onclick="openClientDetail('+c.id+')" style="margin-bottom:4px">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
           '<div class="cc-avatar" style="width:36px;height:36px;font-size:12px;flex-shrink:0;'+stageAvatar(s.stage)+'">'+initials(c.name)+'</div>'+
@@ -756,19 +756,19 @@ function getClientStage(cid){
     const unsentBids=pendingBids.filter(b=>!b.signingToken);
     // Saved but never sent to client, show as 'est_ready' (distinct from sent bids)
     if(!sentBids.length&&unsentBids.length){
-      return{stage:'est_ready',label:'Estimate ready to send',color:'var(--blue)',priority:5};
+      return{stage:'est_ready',label:'Proposal ready to send',color:'var(--blue)',priority:5};
     }
     const activePending=sentBids.length?sentBids:unsentBids;
     const oldest=activePending.reduce((a,b)=>a.bid_date<b.bid_date?a:b);
     const days=oldest.bid_date?Math.floor((new Date(tk)-new Date(oldest.bid_date+'T12:00:00'))/(1000*60*60*24)):0;
-    if(days>=30)return{stage:'abandoned',label:'Bid abandoned ('+days+'d)',color:'#999',priority:9};
-    if(days>=14)return{stage:'bid_urgent',label:'Bid out '+days+'d: follow up',color:'var(--amber)',priority:5};
-    return{stage:'bid_out',label:'Bid out',color:'#D85A30',priority:6};
+    if(days>=30)return{stage:'abandoned',label:'Proposal abandoned ('+days+'d)',color:'#999',priority:9};
+    if(days>=14)return{stage:'bid_urgent',label:'Proposal out '+days+'d: follow up',color:'var(--amber)',priority:5};
+    return{stage:'bid_out',label:'Proposal out',color:'#D85A30',priority:6};
   }
 
   const hasAnyBid=cbids.length>0;
   const upcomingEst=estJobs.find(j=>j.status!=='canceled'&&j.start>=tk);
-  if(upcomingEst&&!hasAnyBid)return{stage:'est_scheduled',label:'Estimate '+parseD(upcomingEst.start).toLocaleDateString('en-US',{month:'short',day:'numeric'})+(upcomingEst.time?' @ '+upcomingEst.time:''),color:'#7F77DD',priority:7};
+  if(upcomingEst&&!hasAnyBid)return{stage:'est_scheduled',label:'Proposal '+parseD(upcomingEst.start).toLocaleDateString('en-US',{month:'short',day:'numeric'})+(upcomingEst.time?' @ '+upcomingEst.time:''),color:'#7F77DD',priority:7};
 
   const hasActiveBid=cbids.some(b=>b.status==='Pending'||b.status==='Closed Won');
   if(hasAnyBid&&!hasActiveBid)return{stage:'abandoned',label:'Abandoned',color:'#999',priority:9};
@@ -815,7 +815,7 @@ function renderClientList(){
     const emptyMsgs={
       won:'No signed jobs waiting to schedule.',active:'No active jobs today.',
       collect:'No outstanding balances.',closed:'No closed jobs yet.',
-      all:'No clients yet, contacts become clients once they sign an estimate.'
+      all:'No clients yet, contacts become clients once they sign a proposal.'
     };
     el.innerHTML='<div class="empty">'+(emptyMsgs[clientFilter]||'No clients here.')+'</div>';
     return;
@@ -876,7 +876,7 @@ function renderClientList(){
               (c.source?'<span class="cc-stat">'+escHtml(c.source)+'</span>':'')+
               (hasBal?'<span class="cc-stat" style="color:var(--c-red);background:var(--c-red-soft);border-color:var(--c-red-edge)">'+fmt(totalOwed)+' owed</span>':'')+
               (_overduebal?'<span class="cc-stat" style="color:#fff;background:#A32D2D;border-color:#A32D2D;font-weight:800">30+ days overdue</span>':'')+
-              (pendBids.length&&!hasBal?'<span class="cc-stat">'+pendBids.length+' bid'+(pendBids.length>1?'s':'')+' out</span>':'')+
+              (pendBids.length&&!hasBal?'<span class="cc-stat">'+pendBids.length+' proposal'+(pendBids.length>1?'s':'')+' out</span>':'')+
             '</div>'+
           '</div>'+
         '</div>'+
@@ -1089,7 +1089,7 @@ function saveClient(){
 }
 function deleteClient(){
   if(!editClientId)return;
-  zConfirm('Permanently delete this client and ALL their bids, jobs, expenses, and mileage?',()=>{
+  zConfirm('Permanently delete this client and ALL their proposals, jobs, expenses, and mileage?',()=>{
     const id=editClientId;
     _userDelete(()=>{
       clients=clients.filter(x=>x.id!==id);
@@ -1390,7 +1390,7 @@ function renderClientDetail(){
   // actions (log a payment, jump to bids), not a second big balance readout.
   const balanceHTML=totalOwed>0.01?
     `<div style="display:flex;gap:8px;margin-bottom:10px">
-      <button onclick="setCDTab('bids',document.getElementById('cdt-bids'))" class="btn" style="flex:1;font-size:14px;padding:12px 14px">View bids</button>
+      <button onclick="setCDTab('bids',document.getElementById('cdt-bids'))" class="btn" style="flex:1;font-size:14px;padding:12px 14px">View proposals</button>
       <button onclick="openQuickPayFromOverview()" class="btn btn-g" style="flex:1;font-size:14px;padding:12px 14px">+ Log payment</button>
     </div>`
     :'';
@@ -1442,7 +1442,7 @@ function renderClientDetail(){
       const _lock=!_canEstimate();
       _cdActions.innerHTML=
         '<button onclick="openEstimateForClient()" style="width:100%;padding:15px;border-radius:var(--r-lg);border:none;background:var(--denim);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:9px'+(_lock?';opacity:.55':'')+'">'+
-          svgIcon(_lock?'🔒':'📋',{size:18})+' New estimate'+
+          svgIcon(_lock?'🔒':'📋',{size:18})+' New proposal'+
         '</button>';
     }
   }
@@ -1492,7 +1492,7 @@ function renderCDRisk(){
         '</button>'
       ).join('')+
     '</div>'+
-    (r==='blacklisted'?'<div style="font-size:11px;color:#A32D2D;margin-top:8px;font-weight:700">Estimates and scheduling are blocked for this client.</div>':'')+
+    (r==='blacklisted'?'<div style="font-size:11px;color:#A32D2D;margin-top:8px;font-weight:700">Proposals and scheduling are blocked for this client.</div>':'')+
     (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">'+svgIcon('⚠️')+' Previous lien filed. Require full payment before scheduling.</div>':'');
 }
 function renderClientNotes(){
@@ -1557,7 +1557,7 @@ function renderCDTimeline(){
   const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId),cmiles=getClientMileage(currentClientId);
   const events=[];
   cbids.forEach(b=>{
-    events.push({date:b.bid_date||'',type:'bid',id:b.id,label:`Bid: ${fmt(b.amount)}`,meta:b.status,color:'bid'});
+    events.push({date:b.bid_date||'',type:'bid',id:b.id,label:`Proposal: ${fmt(b.amount)}`,meta:b.status,color:'bid'});
     (b.collHistory||[]).forEach(h=>{
       if(!h.ts)return;
       const dateStr=h.ts.slice(0,10);
@@ -1580,7 +1580,7 @@ function renderCDTimeline(){
       events.push({
         date:j.cancelDate||j.start||'',
         type:'estimate',
-        label:isCanceled?'Estimate '+escHtml(j.cancelReason):'Estimate visit'+(j.time?' @ '+fmtTime(j.time):''),
+        label:isCanceled?'Proposal '+escHtml(j.cancelReason):'Proposal visit'+(j.time?' @ '+fmtTime(j.time):''),
         meta:isCanceled?'Canceled '+j.cancelDate:(j.start+(j.addr?' · '+escHtml(j.addr):'')),
         color:isCanceled?'canceled':'estimate'
       });
@@ -1591,7 +1591,7 @@ function renderCDTimeline(){
   cmiles.forEach(m=>events.push({date:m.date||'',type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
   events.sort((a,b)=>b.date.localeCompare(a.date));
   const el=document.getElementById('cd-timeline');
-  if(!events.length){el.innerHTML='<div class="empty">No activity yet. Add a bid or drive to this client.</div>';return;}
+  if(!events.length){el.innerHTML='<div class="empty">No activity yet. Add a proposal or drive to this client.</div>';return;}
   const byDate={};
   [...events].sort((a,b)=>b.date.localeCompare(a.date)).forEach(e=>{
     if(!byDate[e.date])byDate[e.date]=[];
@@ -1719,7 +1719,7 @@ function renderCDBids(){
       return '';
     }).join('');
   }
-  if(!cbids.length){el.innerHTML='<div class="empty">No bids yet. Tap "+ Add bid" above.</div>';return;}
+  if(!cbids.length){el.innerHTML='<div class="empty">No proposals yet. Tap "+ Add proposal" above.</div>';return;}
   const latestBidId=cbids.length?cbids[0].id:null;
   const _rrpClient=getClientById(currentClientId);
   const _rrpRequired=!!(_rrpClient&&_rrpClient.yearBuilt&&_rrpClient.yearBuilt<1978);
@@ -1773,7 +1773,7 @@ function renderCDBids(){
       if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">'+svgIcon('💳')+' Send pay link</button>');
       if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">'+svgIcon('📲')+' Request pay</a>');}}
       if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">'+svgIcon('↩')+' Issue refund</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View proposal</button>');
       // "Final invoice" only for real jobs, a diagnostic charge is already a
       // one-line receipt (Print invoice below covers it fine, no reconciliation
       // to do: no change orders, nothing that could be pending).
@@ -1795,7 +1795,7 @@ function renderCDBids(){
       // Recordable release doc, reachable any time after release (re-file, lost copy).
       if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('📄')+' Release doc</button>');
       if(!isDiag){
-        actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
+        actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise proposal</button>');
         actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">'+svgIcon('📦')+' Supply list</button>');
       }
       actBtns.push('');
@@ -1803,7 +1803,7 @@ function renderCDBids(){
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
       const _reviseFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
-      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise proposal</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('📝')+' Notes</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">'+svgIcon('🤝')+' Handshake</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
@@ -1927,7 +1927,7 @@ function openClientProposals(clientId){
         '<div style="font-size:18px;font-weight:800;color:var(--green-mid);margin-left:12px;flex-shrink:0">'+fmt(b.amount)+'</div>'+
       '</div>'+
       '<div style="display:flex;gap:8px">'+
-        '<button onclick="_cpOpen('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋')+' Our bid</button>'+
+        '<button onclick="_cpOpen('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋')+' Our proposal</button>'+
         (b.proposalHtml
           ?'<button onclick="_cpOpen('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('📄')+' Client view</button>'
           :'<span style="flex:1;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-style:italic">No proposal saved</span>')+
@@ -2100,14 +2100,14 @@ function _cpOpen(bidId,view){
       }catch(e){propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Error parsing proposal.</div>';}});
     }).catch(()=>{propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Could not load proposal.</div>';});
   }else{
-    propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:14px;font-style:italic">No proposal on file for this bid.</div>';
+    propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:14px;font-style:italic">No proposal on file for this proposal.</div>';
   }
 
   // Render tabs
   function _tabBtn(v,label,active){
     return '<button id="cp-tab-'+v+'" onclick="_cpView(\''+v+'\')" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1.5px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue-lt)':'var(--bg)')+';color:'+(active?'var(--blue-dk)':'var(--text2)')+'">'+label+'</button>';
   }
-  document.getElementById('cp-tabs').innerHTML=_tabBtn('bid',svgIcon('📋')+' Our bid',view==='bid')+_tabBtn('proposal',svgIcon('📄')+' Client view',view==='proposal');
+  document.getElementById('cp-tabs').innerHTML=_tabBtn('bid',svgIcon('📋')+' Our proposal',view==='bid')+_tabBtn('proposal',svgIcon('📄')+' Client view',view==='proposal');
   _cpView(view);
 }
 function _cpView(v){
@@ -2174,7 +2174,7 @@ function renderCDJobs(){
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:14px;font-weight:700">'+escHtml(j.name||'')+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+parseD(j.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+(j.time?' @ '+fmtTime(j.time):'')+' · '+(j.eventType==='estimate'?(j.hours?j.hours+'hr estimate':'Estimate visit'):j.days+' day'+(j.days>1?'s':''))+(j.addr?' · '+escHtml(j.addr):'')+' </div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+parseD(j.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+(j.time?' @ '+fmtTime(j.time):'')+' · '+(j.eventType==='estimate'?(j.hours?j.hours+'hr proposal':'Proposal visit'):j.days+' day'+(j.days>1?'s':''))+(j.addr?' · '+escHtml(j.addr):'')+' </div>'+
           milesHTML+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+
