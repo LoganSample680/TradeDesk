@@ -2723,10 +2723,11 @@ test.describe('clients.js: exhaustive coverage', () => {
         clients = clients.filter(x => x.id !== cid).concat([c]);
         currentClientId = cid;
         renderCDAddresses();
-        const card = document.getElementById('cd-addresses-card');
-        return { title: card ? (card.querySelector('.card-hd')?.firstChild?.textContent || '') : '' };
+        const list = document.getElementById('cd-addresses-list');
+        return { html: list ? list.innerHTML : '' };
       });
-      expect(r.title).toBe('Job sites');       // not "Properties" for a GC who doesn't own them
+      expect(r.html).toContain('Job sites');    // not "Properties" for a GC who doesn't own them
+      expect(r.html).not.toContain('Properties');
     });
 
     test('homeowner account: section stays "Properties"', async () => {
@@ -2736,10 +2737,10 @@ test.describe('clients.js: exhaustive coverage', () => {
         clients = clients.filter(x => x.id !== cid).concat([c]);
         currentClientId = cid;
         renderCDAddresses();
-        const card = document.getElementById('cd-addresses-card');
-        return { title: card ? (card.querySelector('.card-hd')?.firstChild?.textContent || '') : '' };
+        const list = document.getElementById('cd-addresses-list');
+        return { html: list ? list.innerHTML : '' };
       });
-      expect(r.title).toBe('Properties');
+      expect(r.html).toContain('Properties');
     });
 
     test('accountOwnsSites: homeowner/business own; GC/builder/PM do not (drives the lien path)', async () => {

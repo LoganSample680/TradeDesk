@@ -2374,34 +2374,24 @@ function renderCDAddresses(){
   // sites," not "Properties" (which would imply they're theirs).
   const acctOwns=(typeof accountOwnsSites==='function')?accountOwnsSites(c):true;
   const title=acctOwns?'Properties':'Job sites';
-  const card=document.getElementById('cd-addresses-card');
-  const hd=card?card.querySelector('.card-hd'):null;
+  const _noun=acctOwns?'property':'job site';
   const addrs=clientAddresses(c);
   _cdAddrList=addrs.map(a=>a.addr);
-  const _noun=acctOwns?'property':'job site';
-  // Two-level accordion: with 2+ sites the whole group nests under a collapsible
-  // "Properties · N" parent bar (matching the section dropdown); each property
-  // inside is itself an accordion you tap for its details. A single site shows
-  // plainly (no parent to collapse). Parent defaults open so sites stay visible.
-  const multi=addrs.length>=2;
-  const open=multi?(window._cdPropsOpen!==false):true;
-  if(hd){
-    if(multi){
-      hd.style.cursor='pointer';
-      hd.onclick=function(){window._cdPropsOpen=(window._cdPropsOpen===false);renderCDAddresses();};
-      hd.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;width:100%">'+
-        '<span style="font-size:15px;font-weight:800;color:var(--text)">'+title+' <span style="color:var(--text3);font-weight:700">· '+addrs.length+'</span></span>'+
-        '<span style="display:inline-flex;color:var(--text3);transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>'+
-        '</div>';
-    }else{
-      hd.style.cursor='';hd.onclick=null;hd.textContent=title;
-    }
-  }
-  if(multi&&!open){el.innerHTML='';return;} // collapsed parent: only the "Properties · N" bar shows
-  // Always-present, full-width quick-add button (owner ask: "quickly add
-  // addresses"), so a new site is one tap from the bottom of the list.
-  const _addBtn='<button onclick="openAddAddressModal()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:'+(addrs.length?'10px':'2px')+';padding:13px;border:1.5px dashed var(--blue);border-radius:var(--r-lg);background:var(--blue-lt,rgba(37,99,235,.06));color:var(--blue-dk);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('➕',{size:15})+' Add '+_noun+'</button>';
-  el.innerHTML=addrs.map((a,i)=>_cdPropCardHtml(c,a,i,addrs.length)).join('')+_addBtn;
+  const open=(window._cdPropsOpen!==false);
+  // The parent bar is rendered as a plain element styled IDENTICALLY to the
+  // Overview section selector (#cd-tab-select): same width, padding, border,
+  // radius, shadow, 15px/800 type, and the same right-aligned down-chevron. No
+  // card wrapper, so the two controls are pixel-for-pixel the same.
+  const _barStyle='width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-size:15px;font-weight:800;box-shadow:var(--shadow-card);display:flex;align-items:center;justify-content:space-between;cursor:pointer';
+  const _chev='<span style="display:inline-flex;color:#888;flex-shrink:0;transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>';
+  const _count=addrs.length?' <span style="color:var(--text3);font-weight:700">· '+addrs.length+'</span>':'';
+  const bar='<div onclick="window._cdPropsOpen=(window._cdPropsOpen===false);renderCDAddresses()" style="'+_barStyle+'"><span>'+title+_count+'</span>'+_chev+'</div>';
+  if(!open){el.innerHTML=bar;return;} // collapsed: only the bar, exactly like a collapsed selector
+  const _addBtn='<button onclick="openAddAddressModal()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:8px;padding:13px;border:1.5px dashed var(--blue);border-radius:var(--r-lg);background:var(--blue-lt,rgba(37,99,235,.06));color:var(--blue-dk);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('➕',{size:15})+' Add '+_noun+'</button>';
+  const rows=addrs.length
+    ?'<div style="margin-top:8px">'+addrs.map((a,i)=>_cdPropCardHtml(c,a,i,addrs.length)).join('')+'</div>'
+    :'<div style="font-size:12px;color:var(--text3);padding:8px 2px">No '+_noun+' yet.</div>';
+  el.innerHTML=bar+rows+_addBtn;
 }
 function openAddAddressModal(){
   const inS='width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit';
