@@ -3293,6 +3293,40 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(idx('Lead created')).toBe(0);
     });
 
+    // Owner mandate: every event carries a date AND an exact time, no exceptions.
+    // Records store a user-chosen day, so the instant comes from loggedAt (stamped
+    // at save) or, for older rows, the record id. When the entry day differs from
+    // the event day the row says "logged <when>" rather than passing a data-entry
+    // time off as the moment the thing happened.
+    test('every row has an exact time; a back-dated record states when it was logged', async () => {
+      const r = await page.evaluate(() => {
+        const cid = new Date('2026-07-20T09:00:00').getTime();
+        const bidId = new Date('2026-07-20T09:05:00').getTime() * 1000 + 1;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Backdate', source: 'Referral', created: '2026-07-20' }]);
+        bids = bids.filter(b => b.client_id !== cid).concat([{
+          id: bidId, client_id: cid, client_name: 'Backdate', status: 'Closed Won',
+          draft: false, amount: 1000, bid_date: '2026-07-20' }]);
+        payments = payments.filter(p => p.bid_id !== bidId).concat([
+          { id: new Date('2026-07-20T14:30:00').getTime(), bid_id: bidId, client_id: cid, date: '2026-07-20', amount: 500, method: 'Cash' },
+          { id: new Date('2026-07-24T20:31:00').getTime(), bid_id: bidId, client_id: cid, date: '2026-07-18', amount: 250, method: 'Check' }]);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const rows = [...document.querySelectorAll('#cd-timeline-mount .tl-item')].map(n => n.innerText);
+        return {
+          rows,
+          sameDay: rows.find(x => x.includes('$500.00')),
+          backDated: rows.find(x => x.includes('$250.00')),
+        };
+      });
+      // no row anywhere is left without an exact time
+      r.rows.forEach(row => expect(row).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/));
+      expect(r.sameDay).toMatch(/2:30\s?PM/);            // entered same day: that IS the time
+      expect(r.backDated).toContain('logged 07/24/2026'); // back-dated: stated, not faked
+      expect(r.backDated).toMatch(/8:31\s?PM/);
+    });
+
     test('exportAuditReport on a missing bid does not throw', async () => {
       const ok = await page.evaluate(() => {
         try { exportAuditReport(99999999); return true; } catch (e) { return false; }

@@ -1417,6 +1417,7 @@ function markSubPaid(jobId,subIdx,clientId){
     const _spBid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
     expenses.push({
       id:Date.now(),date:sp.paidDate,cat:'subs',catLabel:'Subcontractors',
+      loggedAt:new Date().toISOString(),
       vendor:sp.subName||'Subcontractor',amount:sp.amount,
       notes:'Sub pay, '+(sp.desc||j.name||''),
       subId:sp.subId,subPayKey:_spKey,

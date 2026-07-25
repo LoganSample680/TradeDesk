@@ -1651,7 +1651,26 @@ function _cdEventTs(dayKey,opts){
     const d=new Date(ms);
     if(dateKey(d)===day)return _cdLocalIso(d);
   }
+  // When the record was entered on the day it happened, the entry instant IS the
+  // event's time. (On a back-dated entry it isn't, and _cdLoggedNote surfaces it
+  // separately rather than passing off a data-entry time as the event's time.)
+  if(opts.logged){
+    const l=new Date(opts.logged);
+    if(!isNaN(l.getTime())&&dateKey(l)===day)return _cdLocalIso(l);
+  }
   return day;
+}
+// For a BACK-DATED record (entered on a different day than it happened) we know
+// exactly when it was logged but not when it occurred. Rather than leave the row
+// without a time or invent one, state the logging moment plainly.
+function _cdLoggedNote(dayKey,logged,id){
+  let l=logged?new Date(logged):null;
+  // Records saved before loggedAt existed still know their creation instant: the
+  // id is Date.now() at save time. That recovers an exact stamp for old data too.
+  if((!l||isNaN(l.getTime()))&&id!=null){const ms=_cdEpochMs(id);if(ms)l=new Date(ms);}
+  if(!l||isNaN(l.getTime()))return '';
+  if(dateKey(l)===String(dayKey||'').slice(0,10))return '';
+  return ' · logged '+fmtDateTimeMDY(l);
 }
 function _cdLeadCreatedTs(c){
   if(!c)return'';
@@ -1715,14 +1734,14 @@ function renderCDTimeline(){
   allPays.forEach(p=>{
     if(!p.date)return;
     const isRefund=p.type==='refund';
-    events.push({date:p.date,ts:_cdEventTs(p.date,{iso:p.ts,id:p.id}),type:'payment',label:(isRefund?'Refund: ':'Payment: ')+fmt(Math.abs(p.amount)),meta:escHtml(p.method||'')+(p.ref?' #'+escHtml(p.ref):''),color:isRefund?'lost':'payment'});
+    events.push({date:p.date,ts:_cdEventTs(p.date,{iso:p.ts,id:p.id,logged:p.loggedAt}),type:'payment',label:(isRefund?'Refund: ':'Payment: ')+fmt(Math.abs(p.amount)),meta:escHtml(p.method||'')+(p.ref?' #'+escHtml(p.ref):'')+_cdLoggedNote(p.date,p.loggedAt,p.id),color:isRefund?'lost':'payment'});
   });
   cjobs.forEach(j=>{
     if(j.eventType==='estimate'){
       const isCanceled=j.status==='canceled';
       events.push({
         date:j.cancelDate||j.start||'',
-        ts:_cdEventTs(j.cancelDate||j.start,{time:j.cancelDate?null:j.time,id:j.id}),
+        ts:_cdEventTs(j.cancelDate||j.start,{time:j.cancelDate?null:j.time,id:j.id,logged:j.loggedAt}),
         type:'estimate',
         // The row's own stamp carries the time and the day header carries the date,
         // so the label and meta don't repeat either.
@@ -1731,17 +1750,17 @@ function renderCDTimeline(){
         color:isCanceled?'canceled':'estimate'
       });
     } else {
-      events.push({date:j.start||'',ts:_cdEventTs(j.start,{time:j.time,id:j.id}),type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0),color:'active'});
+      events.push({date:j.start||'',ts:_cdEventTs(j.start,{time:j.time,id:j.id,logged:j.loggedAt}),type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0)+_cdLoggedNote(j.start,j.loggedAt,j.id),color:'active'});
     }
   });
-  cmiles.forEach(m=>events.push({date:m.date||'',ts:_cdEventTs(m.date,{iso:m.ts,id:m.id}),type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
+  cmiles.forEach(m=>events.push({date:m.date||'',ts:_cdEventTs(m.date,{iso:m.ts,id:m.id,logged:m.loggedAt}),type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`+_cdLoggedNote(m.date,m.loggedAt,m.id),color:'mile'}));
   // Expenses logged against this client belong in the trail too: they're part of
   // what happened on the job, and they were the one activity type missing.
   (typeof getClientExpenses==='function'?getClientExpenses(currentClientId):[]).forEach(x=>{
     if(!x.date)return;
-    events.push({date:x.date,ts:_cdEventTs(x.date,{iso:x.ts,id:x.id}),type:'expense',
+    events.push({date:x.date,ts:_cdEventTs(x.date,{iso:x.ts,id:x.id,logged:x.loggedAt}),type:'expense',
       label:'Expense: '+fmt(x.amount||0),
-      meta:escHtml(x.vendor||x.catLabel||x.cat||'Expense'),color:'lost'});
+      meta:escHtml(x.vendor||x.catLabel||x.cat||'Expense')+_cdLoggedNote(x.date,x.loggedAt,x.id),color:'lost'});
   });
   // Every event is grouped by the LOCAL calendar day of its own timestamp.
   // Stamps arrive in mixed forms (server UTC ISO, local ISO, bare day keys), so

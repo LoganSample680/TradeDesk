@@ -1076,7 +1076,7 @@ function _submitCancellationRefund(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   if(refund>0){
     payments.push({id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
-      date:pdate,type:'refund',amount:-refund,method:'',ref:'Cancellation: materials: '+fmt(mat)});
+      date:pdate,loggedAt:new Date().toISOString(),type:'refund',amount:-refund,method:'',ref:'Cancellation: materials: '+fmt(mat)});
   }
   bid.status='Abandoned';bid.draft=false;
   saveAll();
@@ -1254,7 +1254,7 @@ async function _issueCardRefund(bidId,amount,bid){
     if(!res.ok||!d.refund)throw new Error(d.error||'Refund failed');
     const refAmt=d.refund.amount;
     if(!payments.some(p=>p.ref===d.refund.id)){
-      payments.push({id:Date.now(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:todayKey(),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
+      payments.push({id:Date.now(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:todayKey(),loggedAt:new Date().toISOString(),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
       saveAll();
     }
     renderCDBids&&renderCDBids();renderDash&&renderDash();renderMoneyPage&&renderMoneyPage();refreshCollectLabel&&refreshCollectLabel();
@@ -1315,7 +1315,7 @@ function logPayment(){
     }
   }
   const storedAmount=isRefund?-a:a;
-  payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,type:type,amount:storedAmount,method:pmethod,ref:pref});
+  payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,loggedAt:new Date().toISOString(),type:type,amount:storedAmount,method:pmethod,ref:pref});
   const _savedBidId=activePayBidId;
   saveAll();emitEvent('payment_received',bid.client_id,{bid_id:activePayBidId,amount:storedAmount});closePayPanel();renderCDBids();renderCDTimeline();
 

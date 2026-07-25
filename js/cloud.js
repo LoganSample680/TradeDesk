@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.24.26.15';
+const APP_VERSION='07.24.26.16';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -3602,6 +3602,9 @@ function _assignmentToJob(a,clientId){
     eventType:'job',time:'',hours:null,
     notes:'Assigned by '+(a.gc_business_name||'a linked contractor')+' on TradeDesk',
     status:'upcoming',
+    // Exact moment this job landed, so the client audit timeline always has a
+    // real time rather than only the assigned start day.
+    loggedAt:new Date().toISOString(),
     // Flags this as pipe-sourced so the Today widget can offer a one-tap
     // "Log mileage" shortcut: the whole reason the address crosses the
     // pipe in the first place is so the sub's drive gets tracked.
@@ -5189,7 +5192,7 @@ async function checkNewSignatures(_src){
             const _ctotal=_cpaid.reduce((t,p)=>t+p.amount,0);
             const _hasRefund=(typeof payments!=='undefined'?payments:[]).some(p=>p.bid_id===bid.id&&p._cancelRefund);
             if(_ctotal>0&&!_hasRefund){
-              payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund: client cancelled within rescission window'});
+              payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),loggedAt:new Date().toISOString(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund: client cancelled within rescission window'});
             }
             changed=true;
             const _isStripe=s.payment_method&&s.payment_method!=='cash'&&s.payment_method!=='check';
@@ -5526,7 +5529,8 @@ function quickScheduleJob(bidId,startKey,clientId){
     id:Date.now(),bid_id:bidId,client_id:clientId||bid.client_id,
     name,addr:bid.addr||'',start:startKey,days,buffer:1,
     value:bid.amount||0,color:'#185FA5',eventType:'job',
-    time:'',hours:null,notes:bid.notes||'',status:'upcoming'
+    time:'',hours:null,notes:bid.notes||'',status:'upcoming',
+    loggedAt:new Date().toISOString()
   });
   saveAll();renderDash();renderJobsPage&&renderJobsPage();
   window._currentScheduleAlert=null;

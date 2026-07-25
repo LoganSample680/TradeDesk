@@ -877,6 +877,7 @@ function saveFleetVehicle() {
     expenses.unshift({
       id: expId,
       date: newV.purchaseDate||todayKey(),
+      loggedAt:new Date().toISOString(),
       cat: 'vehicle_purchase',
       catLabel: 'Vehicle purchase',
       vendor: name,
@@ -1339,6 +1340,7 @@ function saveMaintRecord() {
     expenses.unshift({
       id: expId,
       date,
+      loggedAt:new Date().toISOString(),
       cat: 'vehicle',
       catLabel: 'Vehicle: maintenance',
       vendor: vendor||(v.nickname||v.name),

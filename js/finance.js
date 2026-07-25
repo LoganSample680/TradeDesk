@@ -796,6 +796,7 @@ async function expSave(){
   const receipt_img=_expState.imagePages.length&&!receipt_key?'data:image/jpeg;base64,'+_expState.imagePages[0].b64:null;
   expenses.push({
     id:expId,date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
+    loggedAt:new Date().toISOString(),
     vehicleName:(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):'')||undefined,
     lead_source:leadSource||undefined,
     meal_purpose:mealPurpose||undefined,meal_attendees:mealAttendees||undefined,
@@ -1142,6 +1143,7 @@ function saveQuickExpense(clientId){
   expenses.unshift({
     id:Date.now(),
     date:_qeDateVal,
+    loggedAt:new Date().toISOString(),
     cat,
     vehicleName:(cat.indexOf('Vehicle')===0&&_qeVeh?_qeVeh.value:'')||undefined,
     vendor,
@@ -1472,7 +1474,7 @@ function scheduleJob(){
   // Crew assignment applies to estimates too now (whoever does the visit), not
   // just jobs, so geofence/time-on-site tracking covers the walkthrough as well.
   const _asgnTo=_crewId||null;
-  jobs.push({id:Date.now(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
+  jobs.push({id:Date.now(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
   if(schedType==='estimate'&&clientId){
     const pendingBid=bids.find(b=>b.client_id===clientId&&b.status==='Pending'&&!b.followup);
     if(pendingBid)pendingBid.followup=addDays(start,3);
