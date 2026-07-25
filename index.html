@@ -2349,6 +2349,17 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
   </div>
   <div id="tr-summary" style="display:none">
+    <!-- The contractor's own funnel speed: how long each stage of their pipeline
+         actually takes. Coaching numbers, scoped to them by row-level security. -->
+    <div class="card">
+      <div class="card-hd">Your speed<span style="font-size:10px;color:var(--text3);font-weight:400">how long each stage takes</span></div>
+      <div id="lc-funnel-mine"></div>
+    </div>
+    <!-- Owner-only: the same stages measured across every TradeDesk account. -->
+    <div class="card" id="lc-funnel-all-card" style="display:none">
+      <div class="card-hd">All accounts<span style="font-size:10px;color:var(--text3);font-weight:400">TradeDesk-wide</span></div>
+      <div id="lc-funnel-all"></div>
+    </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <label style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap">Filing status</label>
       <select id="sum-tx-status" onchange="S.txStatus=this.value;saveAll();renderSummary()" style="flex:1;font-size:13px;font-weight:600;padding:7px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text)">

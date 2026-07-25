@@ -103,3 +103,75 @@ function lcProposalSaved(bidId,clientId){
   _lcDraftStartedAt=null;
   logLifecycle('proposal_saved',{bidId,clientId,meta:secs!=null?{draft_seconds:secs}:null});
 }
+
+// ── Funnel reporting ─────────────────────────────────────────────────────────
+// One renderer, two audiences. 'mine' is the contractor's own coaching numbers
+// and goes straight to the RPC, where row-level security keeps them to their own
+// rows. 'all' is the owner's cross-account view and CANNOT come from the RPC for
+// the same reason, so it goes through the lifecycle-funnel edge function, which
+// checks an owner allowlist before running with the service role.
+
+// Durations arrive in hours. A contractor thinks in minutes for a quick task and
+// days for a slow one, so pick the unit that reads naturally.
+function _lcDur(h){
+  const n=Number(h)||0;
+  if(n<=0)return '-';
+  if(n<1)return Math.max(1,Math.round(n*60))+' min';
+  if(n<48)return (n<10?n.toFixed(1):Math.round(n))+' hr';
+  return Math.round(n/24)+' days';
+}
+
+async function _lcFetchFunnel(scope,sinceIso){
+  if(typeof _supa==='undefined'||!_supa)return null;
+  if(scope==='all'){
+    const{data:{session}}=await _supa.auth.getSession();
+    const res=await fetch(SUPA_URL+'/functions/v1/lifecycle-funnel',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+(session?.access_token||SUPA_KEY)},
+      body:JSON.stringify({since:sinceIso||null})
+    });
+    if(!res.ok)return {error:res.status===403?'not-allowed':'failed'};
+    const j=await res.json();
+    return {stages:j.stages||[]};
+  }
+  const{data,error}=await _supa.rpc('lifecycle_funnel',{p_scope:'mine',p_since:sinceIso||null});
+  if(error)return {error:'failed'};
+  return {stages:data||[]};
+}
+
+// mountId - element to render into. scope - 'mine' | 'all'.
+async function renderLifecycleFunnel(mountId,scope){
+  const el=document.getElementById(mountId);if(!el)return;
+  const mine=scope!=='all';
+  el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">Loading timings…</div>';
+  let r=null;
+  try{r=await _lcFetchFunnel(scope);}catch(_e){r={error:'failed'};}
+  if(!r||r.error){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">'+
+      (r&&r.error==='not-allowed'?'Cross-account timings are restricted.':'Timings unavailable right now.')+'</div>';
+    return;
+  }
+  const rows=(r.stages||[]).filter(s=>Number(s.samples)>0);
+  if(!rows.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px;line-height:1.5">'+
+      'No completed stages yet. These fill in as leads move through '+
+      (mine?'your':'the')+' pipeline, so expect real numbers after a few weeks.</div>';
+    return;
+  }
+  el.innerHTML=
+    '<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:0 2px 6px">'+
+      '<span>Stage</span><span>Typical · average · n</span></div>'+
+    rows.map(s=>
+      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 2px;border-bottom:1px solid var(--border)">'+
+        '<span style="font-size:13px;font-weight:700;color:var(--text);min-width:0">'+escHtml(s.stage)+'</span>'+
+        '<span style="font-size:12px;white-space:nowrap">'+
+          '<b style="font-size:13px">'+_lcDur(s.median_hours)+'</b>'+
+          '<span style="color:var(--text3)"> · '+_lcDur(s.avg_hours)+' · '+s.samples+'</span>'+
+        '</span>'+
+      '</div>'
+    ).join('')+
+    // Median is listed first and bolded on purpose: one lead that sat for months
+    // drags the average badly, and the typical case is the useful number.
+    '<div style="font-size:10px;color:var(--text3);padding:8px 2px 0;line-height:1.5">'+
+      'Typical = median (half are faster). Average is shown alongside because a single stalled lead skews it. n = completed stages measured.</div>';
+}

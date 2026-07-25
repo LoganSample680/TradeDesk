@@ -3375,6 +3375,20 @@ function editExpense(id){
 }
 
 function renderSummary(){
+  // Funnel timings. Rendered async so a slow round-trip never delays the tax
+  // summary the contractor actually opened this tab for.
+  try{
+    if(typeof renderLifecycleFunnel==='function'){
+      renderLifecycleFunnel('lc-funnel-mine','mine');
+      // Cross-account numbers are developer-only; the edge function enforces the
+      // allowlist server-side, this just avoids showing a card that would 403.
+      const _allCard=document.getElementById('lc-funnel-all-card');
+      if(_allCard&&typeof _config!=='undefined'&&_config&&_config.is_dev){
+        _allCard.style.display='';
+        renderLifecycleFunnel('lc-funnel-all','all');
+      }
+    }
+  }catch(_e){}
   const yr=String(trackerYear||new Date().getFullYear());
   const sumSel=document.getElementById('sum-tx-status');
   if(sumSel&&S.txStatus)sumSel.value=S.txStatus;
