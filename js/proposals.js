@@ -581,6 +581,7 @@ function _commitProposalSent(){
     // which drives follow-up scheduling; the audit timeline and the exported
     // report need the time the client was actually sent the proposal.
     bid.sentAt=new Date().toISOString();
+    try{if(typeof logLifecycle==='function')logLifecycle('proposal_sent',{bidId:bid.id,clientId:bid.client_id});}catch(_e){}
     if(!bid.followupStage)bid.followupStage=1;
     bid.followup=addDays(todayKey(),3);
     // Snapshot the exact proposal HTML the client will sign, required for legal record

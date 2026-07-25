@@ -487,6 +487,8 @@ function _geiStartFreshDraft(){
 }
 
 function openGenericEstimate(c,bidId,_tradePick,opts){
+  // Start of the drafting clock, so "how long to write a proposal" is measurable.
+  try{if(typeof lcProposalStarted==='function')lcProposalStarted(c&&c.id!=null?c.id:_geiClientId);}catch(_e){}
   // Mode comes in explicitly (never inherited from whatever estimate was open
   // last): stale _geiIsTM/_geiIsFreeForm from a previous estimate was how a
   // Time & Materials resume could open with Build Your Own state mixed in.
@@ -3003,6 +3005,8 @@ function saveGenericEstimate(draft){
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
+    // Proposal exists: closes the drafting clock and starts the sent/signed funnel.
+    try{if(typeof lcProposalSaved==='function')lcProposalSaved(newBid.id,newBid.client_id);}catch(_e){}
   }
   // Site notes → per-property note on the CLIENT record (never the bid, so they
   // never reach the proposal). One shared save for every estimate type (T&M,

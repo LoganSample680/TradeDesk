@@ -1070,6 +1070,8 @@ function saveClient(){
   if(editClientId){const i=clients.findIndex(x=>x.id===editClientId);if(i>=0)clients[i]=c;}
   else{
     clients.push(c);
+    // Top of the funnel: every duration downstream is measured from here.
+    try{if(typeof logLifecycle==='function')logLifecycle('lead_created',{clientId:c.id,meta:{source:c.source||null}});}catch(_e){}
     _ensureClientToken(c.id);
     // Auto-generate hub immediately so onboarding link works on first send
     if(supaEnabled()&&_supaUser)_uploadClientHub(c.id).catch(()=>{});

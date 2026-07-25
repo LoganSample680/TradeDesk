@@ -177,6 +177,7 @@ function _markJobComplete(jobId){
     if(_activeTimer&&_activeTimer.jobId===jobId)clockOut(true,true);
     const j=jobs.find(x=>x.id===jobId);
     if(j){j.status='done';j.completion_date=todayKey();j.completedAt=new Date().toISOString();
+      try{if(typeof logLifecycle==='function')logLifecycle('job_completed',{jobId:j.id,bidId:j.bid_id,clientId:j.client_id});}catch(_e){}
       // mirror onto the bid so the client timeline can stamp the exact completion time
       if(j.bid_id){const _b=bids.find(x=>x.id===j.bid_id);if(_b)_b.completedAt=j.completedAt;}
       saveAll();}

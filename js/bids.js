@@ -1317,7 +1317,20 @@ function logPayment(){
   const storedAmount=isRefund?-a:a;
   payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,loggedAt:new Date().toISOString(),type:type,amount:storedAmount,method:pmethod,ref:pref});
   const _savedBidId=activePayBidId;
-  saveAll();emitEvent('payment_received',bid.client_id,{bid_id:activePayBidId,amount:storedAmount});closePayPanel();renderCDBids();renderCDTimeline();
+  saveAll();emitEvent('payment_received',bid.client_id,{bid_id:activePayBidId,amount:storedAmount});
+  // Payments repeat, so they are not deduped. balance_settled fires once, when
+  // this payment is the one that clears the job, which is the metric for "how
+  // long until clients settle up".
+  try{
+    if(typeof logLifecycle==='function'){
+      logLifecycle('payment_received',{bidId:activePayBidId,clientId:bid.client_id,once:false,meta:{amount:storedAmount}});
+      const _paid=(typeof payments!=='undefined'?payments:[]).filter(p=>p.bid_id===activePayBidId)
+        .reduce((t,p)=>t+(p.amount||0),0);
+      if((bid.amount||0)>0&&_paid>=(bid.amount||0)-0.01)
+        logLifecycle('balance_settled',{bidId:activePayBidId,clientId:bid.client_id});
+    }
+  }catch(_e){}
+  closePayPanel();renderCDBids();renderCDTimeline();
 
   if(isRefund){
     const banner=document.createElement('div');

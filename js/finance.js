@@ -1475,6 +1475,8 @@ function scheduleJob(){
   // just jobs, so geofence/time-on-site tracking covers the walkthrough as well.
   const _asgnTo=_crewId||null;
   jobs.push({id:Date.now(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
+  // Booked. Estimate VISITS are a different milestone than the job being booked.
+  try{if(typeof logLifecycle==='function')logLifecycle(schedType==='estimate'?'estimate_visit_booked':'job_scheduled',{bidId,clientId,jobId:jobs[jobs.length-1]&&jobs[jobs.length-1].id});}catch(_e){}
   if(schedType==='estimate'&&clientId){
     const pendingBid=bids.find(b=>b.client_id===clientId&&b.status==='Pending'&&!b.followup);
     if(pendingBid)pendingBid.followup=addDays(start,3);
