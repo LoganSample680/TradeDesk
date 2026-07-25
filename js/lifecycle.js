@@ -250,7 +250,6 @@ function _lcTradeLabel(id){
   return meta?meta.label:(id?id.charAt(0).toUpperCase()+id.slice(1):'');
 }
 
-// mountId - element to render into.
 //
 // ── How this reads, and why it is shaped this way ────────────────────────────
 // Research (Jul 2026) on how the field presents this:
@@ -264,14 +263,9 @@ function _lcTradeLabel(id){
 //   - Peer benchmarking is a real want (ProTradeHQ, Suparev, and Applause all sell
 //     benchmark reports separately), but nobody puts it inside the CRM where the
 //     data already lives. That is the gap this card takes.
-// So the card leads with ONE verdict, shows position instead of arithmetic, and
-// puts the long tail behind a tap rather than on screen by default.
-//
-// Colour is never the message. Green and amber sit at deltaE 7.5 under
-// deuteranopia (validated, not guessed), which is below the safe separation
-// floor. Every comparison therefore carries the meaning twice more: the marker's
-// POSITION left or right of the average tick, and the word "faster"/"slower".
-// Colour only reinforces what position and text already say.
+// So the card leads with ONE number, on the same gauge a contractor already reads
+// when pricing a job, shows position instead of arithmetic, and puts the long
+// tail behind a tap rather than on screen by default.
 
 // Where a value sits relative to the average, as -1..1. Clamped, because one lead
 // that sat for six months would otherwise push the marker off the rail and make
@@ -282,30 +276,103 @@ function _lcOffset(mine,bench,lowerIsBetter){
   return lowerIsBetter?-rel:rel;   // positive is always "you are doing better"
 }
 
-// One comparison row: label + your number, then a rail with the TradeDesk average
-// at the centre tick and your marker placed by _lcOffset.
+// ── The gauge, borrowed from the proposal builder ────────────────────────────
+// Same instrument as the profit gauge on an estimate: a hard-stop colour track, a
+// white dot ringed in the colour of the band it landed on, and a big number under
+// it. Contractors already read that control every time they price a job, so there
+// is nothing new to learn here.
+//
+// One thing is deliberately different. The profit gauge measures against fixed
+// break points (22/35/55%), because a margin is good or bad on its own. A
+// benchmark has no fixed good, only "compared to everyone else", so this track is
+// DIVERGING: the centre is the TradeDesk average, worse runs left, better runs
+// right. Same instrument, honest about what it measures.
+//
+// Palette is the app's status set, validated rather than eyeballed: #EF4444 /
+// #F59E0B / #1f9d57 clears the CVD separation floor in light mode (worst adjacent
+// pair deltaE 9.5). The dot's POSITION and the words beside it still carry the
+// whole meaning on their own, so the rail reads correctly with no colour at all.
+const LC_RED='#EF4444',LC_AMBER='#F59E0B',LC_GREEN='#1f9d57',LC_NEUTRAL='#94A3B8';
+
+// Hard stops, no blend zone, so the dot always sits on a band whose colour
+// matches its own ring. Offsets -1..1 map across 0..100%:
+//   worse than -25% red | -25 to -5% amber | within 5% neutral | better green
+function _lcTrackCss(stops){
+  return 'linear-gradient(to right,'+
+    stops.red+' 0%,'+stops.red+' 37.5%,'+
+    stops.amber+' 37.5%,'+stops.amber+' 47.5%,'+
+    stops.neutral+' 47.5%,'+stops.neutral+' 52.5%,'+
+    stops.green+' 52.5%,'+stops.green+' 100%)';
+}
+// The headline gauge is fully saturated because it is the one thing on the card
+// meant to catch the eye. A dozen row rails at that strength would compete with
+// it and turn the list into stripes, so the small track is a wash of the same
+// bands and the saturated dot is the only loud mark on the row. Same instrument,
+// correct hierarchy.
+const LC_TRACK=_lcTrackCss({red:LC_RED,amber:LC_AMBER,neutral:LC_NEUTRAL,green:LC_GREEN});
+const LC_TRACK_SOFT=_lcTrackCss({
+  red:'rgba(239,68,68,.22)',amber:'rgba(245,158,11,.28)',
+  neutral:'rgba(148,163,184,.34)',green:'rgba(31,157,87,.22)'});
+
+function _lcBandColor(offset){
+  if(offset==null)return LC_NEUTRAL;
+  if(offset<-0.25)return LC_RED;
+  if(offset<-0.05)return LC_AMBER;
+  if(offset<=0.05)return LC_NEUTRAL;
+  return LC_GREEN;
+}
+// 46 rather than 50 so a clamped marker still sits fully on the rail.
+function _lcDotPct(offset){return offset==null?50:50+offset*46;}
+
+// The instrument. size 'lg' is the headline gauge, 'sm' the row rail.
+function _lcGauge(offset,size){
+  const lg=size==='lg';
+  const h=lg?7:6, dot=lg?18:13, ring=lg?3:2.5;
+  const color=_lcBandColor(offset);
+  if(offset==null){
+    return '<div style="position:relative;height:'+h+'px;border-radius:5px;background:var(--border);'+
+      (lg?'margin:16px 10px 20px':'')+'"></div>';
+  }
+  return '<div style="position:relative;height:'+h+'px;border-radius:5px;background:'+(lg?LC_TRACK:LC_TRACK_SOFT)+';'+
+    (lg?'margin:16px 10px 20px':'')+'">'+
+    // The average is the reference the whole rail is built around, so it gets its
+    // own mark rather than being implied by the middle of a gradient.
+    '<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:'+(h+6)+'px;border-radius:1px;background:'+(lg?'rgba(255,255,255,.85)':'var(--text3)')+';opacity:'+(lg?1:.55)+'"></div>'+
+    '<div style="position:absolute;top:50%;transform:translate(-50%,-50%);width:'+dot+'px;height:'+dot+'px;border-radius:50%;background:#fff;'+
+      'box-shadow:0 0 0 '+ring+'px '+color+',0 2px 8px rgba(0,0,0,.25);left:'+_lcDotPct(offset).toFixed(1)+'%;'+
+      'transition:left .55s cubic-bezier(.22,1,.36,1),box-shadow .4s ease"></div>'+
+  '</div>';
+}
+
+// The headline: big gauge, big number, laid out the way the profit gauge reads.
+function _lcHeroGauge(pctStr,label,offset,benchStr,subStr){
+  const color=_lcBandColor(offset);
+  return '<div style="padding:2px 0 4px">'+
+    _lcGauge(offset,'lg')+
+    '<div style="text-align:center;padding-bottom:10px">'+
+      '<div style="font-size:30px;font-weight:900;line-height:1.1;color:'+(offset==null?'var(--text)':color)+';transition:color .4s ease">'+escHtml(pctStr)+'</div>'+
+      '<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text3);margin:2px 0">'+escHtml(label)+'</div>'+
+      (benchStr?'<div style="font-size:15px;font-weight:700;color:var(--text2);margin:0 0 5px">'+escHtml(benchStr)+'</div>':'')+
+      '<div style="font-size:11.5px;color:var(--text3);min-height:16px">'+escHtml(subStr||'')+'</div>'+
+    '</div>'+
+  '</div>';
+}
+
+// One comparison row: label + your number, then the small gauge with the verdict
+// and the sample count beside it.
 function _lcRow(label,mineStr,offset,verdictText,sampleStr){
-  const good=offset!=null&&offset>0.05, bad=offset!=null&&offset<-0.05;
-  const color=good?'#1f9d57':bad?'#B45309':'var(--text3)';
-  const pos=offset==null?50:50+offset*46;   // 46 not 50, so a clamped marker stays on the rail
-  const rail=offset==null
-    ?'<div style="font-size:11px;color:var(--text3)">No TradeDesk average yet</div>'
-    :'<div style="position:relative;height:14px;flex:1;min-width:70px">'+
-       '<div style="position:absolute;top:6px;left:0;right:0;height:2px;border-radius:2px;background:var(--border)"></div>'+
-       '<div style="position:absolute;top:2px;left:50%;width:2px;height:10px;margin-left:-1px;border-radius:1px;background:var(--border2)"></div>'+
-       '<div style="position:absolute;top:2px;left:'+pos.toFixed(1)+'%;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:'+color+';box-shadow:0 0 0 2px var(--bg-card,var(--bg))"></div>'+
-     '</div>';
+  const meta=[verdictText,sampleStr].filter(Boolean).join('  ·  ');
   return '<div style="padding:11px 2px;border-bottom:1px solid var(--border)">'+
     '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'+
       '<span style="font-size:13px;font-weight:700;color:var(--text);min-width:0">'+escHtml(label)+'</span>'+
       '<span style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">'+escHtml(mineStr)+'</span>'+
     '</div>'+
-    '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">'+
-      rail+
+    '<div style="display:flex;align-items:center;gap:10px;margin-top:9px">'+
+      '<div style="flex:1;min-width:64px">'+_lcGauge(offset,'sm')+'</div>'+
       // Verdict AND sample, always. "33% worse" from three leads is not a fact
       // about the business, and hiding the count would let it read like one.
       '<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+
-        escHtml([verdictText,sampleStr].filter(Boolean).join('  ·  '))+'</span>'+
+        escHtml(offset==null?('No TradeDesk average yet'+(sampleStr?'  ·  '+sampleStr:'')):meta)+'</span>'+
     '</div>'+
   '</div>';
 }
@@ -342,27 +409,18 @@ function _lcTogSection(key){
   if(typeof renderLifecycleFunnel==='function')renderLifecycleFunnel('lc-funnel-mine');
 }
 
-// The one number the card leads with. A contractor should be able to read this
-// and stop, and only open a section when it tells them something is off.
-function _lcHero(beat,total,worst){
-  if(!total){
-    return '<div style="padding:4px 2px 2px">'+
-      '<div style="font-size:13px;color:var(--text2);line-height:1.5">Your own numbers are below. '+
-      'The TradeDesk comparison switches on by itself once enough businesses are on the platform.</div></div>';
+// The one thing to fix, named. A contractor should be able to read the gauge,
+// read this, and stop.
+function _lcGapCallout(worst,beat,total){
+  if(!total)return '';
+  if(!worst){
+    return '<div style="margin-top:2px;padding:9px 11px;background:rgba(31,157,87,.08);border-left:3px solid '+LC_GREEN+';border-radius:8px">'+
+      '<div style="font-size:13px;color:var(--text);line-height:1.4">You beat the TradeDesk average on all '+total+' steps.</div></div>';
   }
-  const allGood=beat===total;
-  return '<div style="padding:2px 2px 10px;border-bottom:1px solid var(--border)">'+
-    '<div style="display:flex;align-items:baseline;gap:8px">'+
-      '<span style="font-size:34px;font-weight:800;color:var(--text);line-height:1.1">'+beat+' of '+total+'</span>'+
-    '</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-top:2px">steps where you beat the TradeDesk average</div>'+
-    (worst&&!allGood
-      ?'<div style="margin-top:10px;padding:9px 11px;background:rgba(180,83,9,.08);border-left:3px solid #B45309;border-radius:8px">'+
-         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#B45309">Biggest gap</div>'+
-         '<div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.4">'+escHtml(worst.label)+'</div>'+
-         '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(worst.verdict)+'</div>'+
-       '</div>'
-      :'')+
+  return '<div style="margin-top:2px;padding:9px 11px;background:rgba(180,83,9,.08);border-left:3px solid '+LC_AMBER+';border-radius:8px">'+
+    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#B45309">Biggest gap</div>'+
+    '<div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.4">'+escHtml(worst.label)+'</div>'+
+    '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(worst.verdict)+'  ·  you beat the average on '+beat+' of '+total+' steps</div>'+
   '</div>';
 }
 
@@ -413,18 +471,24 @@ async function renderLifecycleFunnel(mountId){
   const beat=compared.filter(x=>x.off>0).length;
   const worst=compared.slice().sort((a,b)=>a.off-b.off)[0];
 
-  let html=_lcHero(beat,compared.length,worst&&worst.off<-0.05?worst:null);
-
-  // Close rate first: it is the money metric, and the one with real published
-  // benchmarks in the trades. Speed is diagnostic, so it sits below and closed.
+  // The headline is close rate on the big gauge: it is the money metric, the one a
+  // contractor already thinks in, and the one they would quote to another
+  // contractor. Everything else on the card exists to explain it.
+  let html='';
   if(myRate!==null&&myLeads>0){
     const tb=tradeBench?Number(tradeBench.value):NaN;
     const off=_lcOffset(myRate,tb,false);
-    const rows=_lcRow(trade?('You vs other '+_lcTradeLabel(trade)+' businesses'):'Your business',
-      Math.round(myRate)+'%',off,_lcVerdict(off,false),myWon+' of '+myLeads+' leads');
-    html+=_lcSection('rate','Close rate','Leads that turned into signed work.',rows,
-      window._lcSecOpen_rate!==false);
+    // Short enough to stay on one line at 390px: a two-line benchmark caption
+    // competes with the number above it for the same glance.
+    const peer=trade?_lcTradeLabel(trade):'TradeDesk';
+    html+=_lcHeroGauge(
+      Math.round(myRate)+'%','Close rate',off,
+      isFinite(tb)?(peer+' average '+Math.round(tb)+'%'):'',
+      isFinite(tb)
+        ?(_lcVerdict(off,false)+'  ·  '+myWon+' of '+myLeads+' leads became work')
+        :(myWon+' of '+myLeads+' leads became work  ·  no average yet'));
   }
+  html+=_lcGapCallout(worst&&worst.off<-0.05?worst:null,beat,compared.length);
 
   if(srcRows.length){
     const rows=srcRows.map(s=>{

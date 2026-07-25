@@ -294,6 +294,86 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
     });
   });
 
+  // ── The gauge, same instrument as the profit gauge on an estimate ────────
+  test.describe('gauge bands', () => {
+    test('the dot ring colour matches the band it lands on, with no blend zone', async () => {
+      // The profit gauge uses hard stops for exactly this reason: a dot must never
+      // render amber while sitting on a still-green stretch of track.
+      const r = await page.evaluate(() => ({
+        farWorse: _lcBandColor(-0.6), slightlyWorse: _lcBandColor(-0.15),
+        even: _lcBandColor(0), slightlyBetter: _lcBandColor(0.02), better: _lcBandColor(0.4),
+        none: _lcBandColor(null),
+      }));
+      expect(r.farWorse).toBe('#EF4444');
+      expect(r.slightlyWorse).toBe('#F59E0B');
+      expect(r.even).toBe('#94A3B8');
+      expect(r.slightlyBetter).toBe('#94A3B8');   // inside the 5% dead band
+      expect(r.better).toBe('#1f9d57');
+      expect(r.none).toBe('#94A3B8');
+    });
+
+    test('the band boundaries line up with the track gradient stops', async () => {
+      // The colour a dot gets and the colour under it come from two places, so
+      // they have to be checked against each other or they silently drift.
+      const r = await page.evaluate(() => ({
+        track: LC_TRACK,
+        atRedEdge: _lcDotPct(-0.25), atAmberEdge: _lcDotPct(-0.05),
+        atNeutralEdge: _lcDotPct(0.05),
+      }));
+      expect(r.track).toContain('37.5%');   // red gives way to amber at offset -0.25
+      expect(r.track).toContain('47.5%');   // amber to neutral at -0.05
+      expect(r.track).toContain('52.5%');   // neutral to green at +0.05
+      expect(r.atRedEdge).toBeCloseTo(38.5, 0);
+      expect(r.atAmberEdge).toBeCloseTo(47.7, 0);
+      expect(r.atNeutralEdge).toBeCloseTo(52.3, 0);
+    });
+
+    test('a marker never leaves the rail, even fully clamped', async () => {
+      const r = await page.evaluate(() => [_lcDotPct(-1), _lcDotPct(1), _lcDotPct(null)]);
+      expect(r[0]).toBe(4);
+      expect(r[1]).toBe(96);
+      expect(r[2]).toBe(50);
+    });
+
+    test('the small rail is a wash so the headline gauge stays the loud one', async () => {
+      // A dozen fully-saturated rails would compete with the hero and turn the
+      // list into stripes. Same bands, lower strength, saturated dot on top.
+      const r = await page.evaluate(() => ({
+        lg: _lcGauge(0.4, 'lg'), sm: _lcGauge(0.4, 'sm'),
+      }));
+      expect(r.lg).toContain('#EF4444');
+      expect(r.sm).toContain('rgba(239,68,68,.22)');
+      expect(r.sm).not.toContain('#EF4444');
+      // The dot itself is full strength in both.
+      expect(r.lg).toContain('#1f9d57');
+      expect(r.sm).toContain('#1f9d57');
+    });
+
+    test('no benchmark renders a plain rail with no marker to misread', async () => {
+      const r = await page.evaluate(() => _lcGauge(null, 'sm'));
+      expect(r).toContain('var(--border)');
+      expect(r).not.toContain('box-shadow');
+    });
+
+    test('the headline gauge carries the number, the label and the count', async () => {
+      const r = await page.evaluate(() =>
+        _lcHeroGauge('35%', 'Close rate', -0.07, 'Painting average 38%', '7% worse'));
+      expect(r).toContain('35%');
+      expect(r).toContain('Close rate');
+      expect(r).toContain('Painting average 38%');
+      expect(r).toContain('7% worse');
+    });
+  });
+
+  test.describe('the pre-gauge hero is gone', () => {
+    test('_lcHero no longer exists', async () => {
+      // Replaced by _lcHeroGauge. Keeping it would leave a second, divergent way
+      // to render the headline that no longer matches the estimate builder.
+      const t = await page.evaluate(() => typeof _lcHero);
+      expect(t).toBe('undefined');
+    });
+  });
+
   // ── Trade comes from the picker that already exists ───────────────────────
   test.describe('_lcMyTrade', () => {
     test('reads the same field the onboarding and Settings trade pickers write', async () => {
