@@ -151,30 +151,76 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
     });
   });
 
-  // ── Better / worse cue ────────────────────────────────────────────────────
-  test.describe('_lcCompare', () => {
-    test('lower is better: faster than average reads better', async () => {
-      const r = await page.evaluate(() => _lcCompare(5, 10, true));
-      expect(r.text).toBe('50% better');
+  // ── Position encoding: the rail replaces the arithmetic ──────────────────
+  test.describe('_lcOffset', () => {
+    test('right of centre always means better, for BOTH kinds of metric', async () => {
+      const r = await page.evaluate(() => ({
+        // A duration: lower is better, so being faster must push the marker right.
+        fastDuration: _lcOffset(5, 10, true),
+        slowDuration: _lcOffset(20, 10, true),
+        // A rate: higher is better, so a bigger rate must ALSO push it right.
+        highRate: _lcOffset(60, 40, false),
+        lowRate: _lcOffset(20, 40, false),
+      }));
+      expect(r.fastDuration).toBeGreaterThan(0);
+      expect(r.slowDuration).toBeLessThan(0);
+      expect(r.highRate).toBeGreaterThan(0);
+      expect(r.lowRate).toBeLessThan(0);
     });
-    test('lower is better: slower than average reads worse', async () => {
-      const r = await page.evaluate(() => _lcCompare(20, 10, true));
-      expect(r.text).toBe('100% worse');
+
+    test('an outlier is clamped so it cannot push the marker off the rail', async () => {
+      // One lead that sat for six months would otherwise blow out the scale and
+      // make every other row on the card unreadable.
+      const r = await page.evaluate(() => [_lcOffset(10000, 10, true), _lcOffset(1, 10000, false)]);
+      expect(r[0]).toBe(-1);                  // hits the clamp exactly
+      expect(r[1]).toBeLessThan(-0.99);       // approaches it without a divide-by-zero
+      r.forEach(v => { expect(v).toBeGreaterThanOrEqual(-1); expect(v).toBeLessThanOrEqual(1); });
     });
-    test('higher is better: a bigger close rate reads better', async () => {
-      const r = await page.evaluate(() => _lcCompare(60, 40, false));
-      expect(r.text).toBe('50% better');
-    });
-    test('within 5% reads as about average, not a false win', async () => {
-      const r = await page.evaluate(() => _lcCompare(102, 100, false));
-      expect(r.text).toBe('about average');
-    });
-    test('missing or zero benchmark yields no cue at all', async () => {
+
+    test('missing or zero inputs yield no marker at all', async () => {
       const r = await page.evaluate(() => [
-        _lcCompare(5, NaN, true), _lcCompare(5, 0, true),
-        _lcCompare(0, 10, true), _lcCompare(null, 10, true), _lcCompare(5, undefined, false),
+        _lcOffset(5, NaN, true), _lcOffset(5, 0, true), _lcOffset(0, 10, true),
+        _lcOffset(null, 10, true), _lcOffset(5, undefined, false),
       ]);
       r.forEach(v => expect(v).toBeNull());
+    });
+  });
+
+  test.describe('_lcVerdict', () => {
+    test('a duration says faster or slower; a rate says better or worse', async () => {
+      const r = await page.evaluate(() => ({
+        dur: _lcVerdict(_lcOffset(5, 10, true), true),
+        rate: _lcVerdict(_lcOffset(60, 40, false), false),
+      }));
+      expect(r.dur).toBe('50% faster');
+      expect(r.rate).toBe('50% better');
+    });
+    test('within 5% reads as about average, not a false win', async () => {
+      const r = await page.evaluate(() => _lcVerdict(_lcOffset(102, 100, false), false));
+      expect(r).toBe('about average');
+    });
+    test('no offset means no words, so nothing is implied', async () => {
+      const r = await page.evaluate(() => _lcVerdict(null, true));
+      expect(r).toBe('');
+    });
+    test('the meaning survives without colour: every verdict carries a word', async () => {
+      // Green and amber sit at deltaE 7.5 under deuteranopia, below the safe
+      // separation floor, so colour can never be the only carrier.
+      const r = await page.evaluate(() => [
+        _lcVerdict(0.5, true), _lcVerdict(-0.5, true), _lcVerdict(0.01, true),
+      ]);
+      expect(r[0]).toContain('faster');
+      expect(r[1]).toContain('slower');
+      expect(r[2]).toBe('about average');
+    });
+  });
+
+  test.describe('the old text-only comparison helper is gone', () => {
+    test('_lcCompare no longer exists', async () => {
+      // Replaced by _lcOffset (position) + _lcVerdict (words). Leaving it would
+      // let a row go back to colour-and-percentage with no positional encoding.
+      const t = await page.evaluate(() => typeof _lcCompare);
+      expect(t).toBe('undefined');
     });
   });
 
@@ -338,6 +384,7 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
     test('stages render in pipeline order, not alphabetically', async () => {
       const r = await page.evaluate(async (mine) => {
         window.__install(mine, []);
+        window._lcSecOpen_speed = true;       // the step detail is collapsed by default
         await renderLifecycleFunnel('lc-funnel-mine');
         const html = document.getElementById('lc-funnel-mine').innerHTML;
         return {
@@ -355,10 +402,11 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
     test('with no benchmark rows the card says so instead of showing a hole', async () => {
       const html = await page.evaluate(async (mine) => {
         window.__install(mine, []);
+        window._lcSecOpen_speed = true;
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('no TradeDesk average yet');
+      expect(html).toContain('No TradeDesk average yet');
       expect(html).not.toContain('NaN');
       expect(html).not.toContain('undefined');
     });
@@ -368,12 +416,14 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         window.__install(mine, [
           { metric: 'bench_stage_hours', scope: 'stage:proposal_sent>signed', n: 40, median: 20, avg: 30, value: null, day: '2026-07-24' },
         ]);
+        window._lcSecOpen_speed = true;
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
       expect(html).toContain('TradeDesk');
-      // Their 10 hr against a platform 20 hr is twice as fast.
-      expect(html).toContain('50% better');
+      // Their 10 hr against a platform 20 hr is twice as fast. A duration says
+      // "faster", not "better", because that is how a contractor says it.
+      expect(html).toContain('50% faster');
     });
 
     test('the newest day wins when several days are present', async () => {
@@ -382,10 +432,11 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
           { metric: 'bench_stage_hours', scope: 'stage:proposal_sent>signed', n: 40, median: 20, avg: 30, value: null, day: '2026-07-24' },
           { metric: 'bench_stage_hours', scope: 'stage:proposal_sent>signed', n: 9, median: 500, avg: 500, value: null, day: '2026-01-01' },
         ]);
+        window._lcSecOpen_speed = true;
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('50% better');   // from the 20 hr row, not the stale 500 hr one
+      expect(html).toContain('50% faster');   // the 20 hr row, not the stale 500 hr one
       expect(html).not.toContain('21 days');
     });
 
@@ -394,11 +445,15 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         window.__install(mine, [
           { metric: 'bench_close_rate_source', scope: 'source:Referral', n: 30, median: null, avg: null, value: 50, day: '2026-07-24' },
         ]);
+        window._lcSecOpen_src = true;
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('Close rate by lead source');
+      expect(html).toContain('Where your work comes from');
       expect(html).toContain('Referral');
+      // The sample count survives ALONGSIDE the verdict. "33% worse" drawn from
+      // three leads must never read as a settled fact about the business.
+      expect(html).toContain('33% worse');
       expect(html).toContain('1 of 3 leads');
     });
 

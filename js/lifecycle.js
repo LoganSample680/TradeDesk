@@ -211,43 +211,6 @@ async function _lcFetchBench(){
   return out;
 }
 
-// Faster/slower cue. Durations are better when lower; close rates are better
-// when higher, hence the flip.
-function _lcCompare(mine,bench,lowerIsBetter){
-  if(!isFinite(mine)||!isFinite(bench)||bench<=0||mine<=0)return null;
-  const better=lowerIsBetter?mine<bench:mine>bench;
-  const pct=Math.round(Math.abs(mine-bench)/bench*100);
-  if(pct<5)return {color:'var(--text3)',text:'about average'};
-  return {color:better?'#1f9d57':'#B45309',text:pct+'% '+(better?'better':'worse')};
-}
-
-// One row: the contractor's own figure as the headline, the TradeDesk figure
-// beside it in smaller type, and a plain-word verdict.
-function _lcRow(label,mineStr,benchStr,sampleStr,cmp){
-  return '<div style="padding:10px 2px;border-bottom:1px solid var(--border)">'+
-    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'+
-      '<span style="font-size:13px;font-weight:700;color:var(--text);min-width:0">'+escHtml(label)+'</span>'+
-      '<span style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">'+escHtml(mineStr)+'</span>'+
-    '</div>'+
-    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:3px">'+
-      '<span style="font-size:11px;color:var(--text3)">'+escHtml(sampleStr)+'</span>'+
-      '<span style="font-size:11px;white-space:nowrap">'+
-        (benchStr
-          ?'<span style="color:var(--text3)">TradeDesk '+escHtml(benchStr)+'</span>'+
-           (cmp?'<span style="color:'+cmp.color+';font-weight:700"> · '+cmp.text+'</span>':'')
-          :'<span style="color:var(--text3)">no TradeDesk average yet</span>')+
-      '</span>'+
-    '</div>'+
-  '</div>';
-}
-
-function _lcSectionHd(title,sub){
-  return '<div style="padding:14px 2px 6px">'+
-    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">'+escHtml(title)+'</div>'+
-    (sub?'<div style="font-size:11px;color:var(--text3);margin-top:3px;line-height:1.45">'+escHtml(sub)+'</div>':'')+
-  '</div>';
-}
-
 // Close rate per lead source, computed from the same arrays the dashboard's Lead
 // sources card uses, so the two can never disagree. Won over TOTAL leads from
 // that source, not won over decided: counting only decided leads ignores the
@@ -288,9 +251,125 @@ function _lcTradeLabel(id){
 }
 
 // mountId - element to render into.
+//
+// ── How this reads, and why it is shaped this way ────────────────────────────
+// Research (Jul 2026) on how the field presents this:
+//   - ServiceTitan has the deepest reporting in the category and its OWN guidance
+//     tells customers "you don't need a million KPIs, just pick the ones that are
+//     important for you." Overwhelming reporting is one of its standing
+//     complaints. Depth is not the win.
+//   - Roundups comparing Jobber and Housecall Pro land on the same point: a report
+//     nobody checks is decoration, and simpler reporting is the smarter choice
+//     because it actually gets used. Jobber's edge is that it feels straightforward.
+//   - Peer benchmarking is a real want (ProTradeHQ, Suparev, and Applause all sell
+//     benchmark reports separately), but nobody puts it inside the CRM where the
+//     data already lives. That is the gap this card takes.
+// So the card leads with ONE verdict, shows position instead of arithmetic, and
+// puts the long tail behind a tap rather than on screen by default.
+//
+// Colour is never the message. Green and amber sit at deltaE 7.5 under
+// deuteranopia (validated, not guessed), which is below the safe separation
+// floor. Every comparison therefore carries the meaning twice more: the marker's
+// POSITION left or right of the average tick, and the word "faster"/"slower".
+// Colour only reinforces what position and text already say.
+
+// Where a value sits relative to the average, as -1..1. Clamped, because one lead
+// that sat for six months would otherwise push the marker off the rail and make
+// every other row unreadable.
+function _lcOffset(mine,bench,lowerIsBetter){
+  if(!isFinite(mine)||!isFinite(bench)||bench<=0||mine<=0)return null;
+  const rel=Math.max(-1,Math.min(1,(mine-bench)/bench));
+  return lowerIsBetter?-rel:rel;   // positive is always "you are doing better"
+}
+
+// One comparison row: label + your number, then a rail with the TradeDesk average
+// at the centre tick and your marker placed by _lcOffset.
+function _lcRow(label,mineStr,offset,verdictText,sampleStr){
+  const good=offset!=null&&offset>0.05, bad=offset!=null&&offset<-0.05;
+  const color=good?'#1f9d57':bad?'#B45309':'var(--text3)';
+  const pos=offset==null?50:50+offset*46;   // 46 not 50, so a clamped marker stays on the rail
+  const rail=offset==null
+    ?'<div style="font-size:11px;color:var(--text3)">No TradeDesk average yet</div>'
+    :'<div style="position:relative;height:14px;flex:1;min-width:70px">'+
+       '<div style="position:absolute;top:6px;left:0;right:0;height:2px;border-radius:2px;background:var(--border)"></div>'+
+       '<div style="position:absolute;top:2px;left:50%;width:2px;height:10px;margin-left:-1px;border-radius:1px;background:var(--border2)"></div>'+
+       '<div style="position:absolute;top:2px;left:'+pos.toFixed(1)+'%;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:'+color+';box-shadow:0 0 0 2px var(--bg-card,var(--bg))"></div>'+
+     '</div>';
+  return '<div style="padding:11px 2px;border-bottom:1px solid var(--border)">'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'+
+      '<span style="font-size:13px;font-weight:700;color:var(--text);min-width:0">'+escHtml(label)+'</span>'+
+      '<span style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">'+escHtml(mineStr)+'</span>'+
+    '</div>'+
+    '<div style="display:flex;align-items:center;gap:10px;margin-top:6px">'+
+      rail+
+      // Verdict AND sample, always. "33% worse" from three leads is not a fact
+      // about the business, and hiding the count would let it read like one.
+      '<span style="font-size:11px;color:var(--text3);white-space:nowrap">'+
+        escHtml([verdictText,sampleStr].filter(Boolean).join('  ·  '))+'</span>'+
+    '</div>'+
+  '</div>';
+}
+
+// Plain words for the marker's position. The word carries the meaning so the
+// colour never has to.
+function _lcVerdict(offset,lowerIsBetter){
+  if(offset==null)return '';
+  const pct=Math.round(Math.abs(offset)*100);
+  if(pct<5)return 'about average';
+  const better=offset>0;
+  const fastSlow=lowerIsBetter?(better?'faster':'slower'):(better?'better':'worse');
+  // No "than average" tail: the rail's centre tick already IS the average, and on
+  // a 390px screen the tail crowds out the sample count, which matters more.
+  return pct+'% '+fastSlow;
+}
+
+// A collapsible block, using the app-wide accordion animation constant so this
+// opens exactly like every other accordion in the product.
+function _lcSection(key,title,sub,inner,open){
+  const chev='<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>';
+  return '<div style="margin-top:14px">'+
+    '<div onclick="_lcTogSection(\''+key+'\')" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 2px">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">'+escHtml(title)+'</div>'+
+        (sub?'<div style="font-size:11px;color:var(--text3);margin-top:3px;line-height:1.45">'+escHtml(sub)+'</div>':'')+
+      '</div>'+chev+
+    '</div>'+
+    (open?'<div class="td-acc-body td-acc-in"><div class="td-acc-inner">'+inner+'</div></div>':'')+
+  '</div>';
+}
+function _lcTogSection(key){
+  window['_lcSecOpen_'+key]=!window['_lcSecOpen_'+key];
+  if(typeof renderLifecycleFunnel==='function')renderLifecycleFunnel('lc-funnel-mine');
+}
+
+// The one number the card leads with. A contractor should be able to read this
+// and stop, and only open a section when it tells them something is off.
+function _lcHero(beat,total,worst){
+  if(!total){
+    return '<div style="padding:4px 2px 2px">'+
+      '<div style="font-size:13px;color:var(--text2);line-height:1.5">Your own numbers are below. '+
+      'The TradeDesk comparison switches on by itself once enough businesses are on the platform.</div></div>';
+  }
+  const allGood=beat===total;
+  return '<div style="padding:2px 2px 10px;border-bottom:1px solid var(--border)">'+
+    '<div style="display:flex;align-items:baseline;gap:8px">'+
+      '<span style="font-size:34px;font-weight:800;color:var(--text);line-height:1.1">'+beat+' of '+total+'</span>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-top:2px">steps where you beat the TradeDesk average</div>'+
+    (worst&&!allGood
+      ?'<div style="margin-top:10px;padding:9px 11px;background:rgba(180,83,9,.08);border-left:3px solid #B45309;border-radius:8px">'+
+         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:#B45309">Biggest gap</div>'+
+         '<div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.4">'+escHtml(worst.label)+'</div>'+
+         '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(worst.verdict)+'</div>'+
+       '</div>'
+      :'')+
+  '</div>';
+}
+
+// mountId - element to render into.
 async function renderLifecycleFunnel(mountId){
   const el=document.getElementById(mountId);if(!el)return;
-  el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">Loading your numbers…</div>';
+  if(!el.innerHTML)el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">Loading your numbers…</div>';
   let mine=null,bench={stage:{},source:{},trade:{}};
   try{
     const r=await Promise.all([_lcFetchMine(),_lcFetchBench()]);
@@ -322,42 +401,56 @@ async function renderLifecycleFunnel(mountId){
     return;
   }
 
-  let html='';
+  // Score every comparison once, so the hero and the rows agree by construction
+  // rather than by two separate calculations that could drift.
+  const scored=stageRows.map(x=>{
+    const mineH=Number(x.row.median_hours)||0;
+    const benchH=x.b?Number(x.b.median):NaN;
+    const off=_lcOffset(mineH,benchH,true);
+    return {...x,mineH,benchH,off,label:LC_STAGE_LABEL[x.key]||x.row.stage,verdict:_lcVerdict(off,true)};
+  });
+  const compared=scored.filter(x=>x.off!=null);
+  const beat=compared.filter(x=>x.off>0).length;
+  const worst=compared.slice().sort((a,b)=>a.off-b.off)[0];
 
-  if(stageRows.length){
-    html+=_lcSectionHd('How long each step takes you',
-      'Your typical time is the headline. Typical means half your jobs were faster, which beats an average that one stalled lead can wreck.');
-    html+=stageRows.map(x=>{
-      const label=LC_STAGE_LABEL[x.key]||x.row.stage;
-      const mineH=Number(x.row.median_hours)||0;
-      const benchH=x.b?Number(x.b.median):NaN;
-      const unit=_lcUnitFor(mineH,benchH);
-      return _lcRow(label,_lcDurIn(mineH,unit),isFinite(benchH)&&benchH>0?_lcDurIn(benchH,unit):'',
-        _lcSample(x.row.samples),_lcCompare(mineH,benchH,true));
-    }).join('');
-  }
+  let html=_lcHero(beat,compared.length,worst&&worst.off<-0.05?worst:null);
 
+  // Close rate first: it is the money metric, and the one with real published
+  // benchmarks in the trades. Speed is diagnostic, so it sits below and closed.
   if(myRate!==null&&myLeads>0){
-    html+=_lcSectionHd('Close rate','Leads that turned into signed work.');
     const tb=tradeBench?Number(tradeBench.value):NaN;
-    html+=_lcRow(trade?('Your business vs other '+_lcTradeLabel(trade)+' businesses'):'Your business',
-      Math.round(myRate)+'%',isFinite(tb)?Math.round(tb)+'%':'',
-      myWon+' of '+myLeads+' leads',_lcCompare(myRate,tb,false));
+    const off=_lcOffset(myRate,tb,false);
+    const rows=_lcRow(trade?('You vs other '+_lcTradeLabel(trade)+' businesses'):'Your business',
+      Math.round(myRate)+'%',off,_lcVerdict(off,false),myWon+' of '+myLeads+' leads');
+    html+=_lcSection('rate','Close rate','Leads that turned into signed work.',rows,
+      window._lcSecOpen_rate!==false);
   }
 
   if(srcRows.length){
-    html+=_lcSectionHd('Close rate by lead source','Where your work actually comes from, against how that source performs platform-wide.');
-    html+=srcRows.map(s=>{
+    const rows=srcRows.map(s=>{
       const b=bench.source[s.src];
-      const bv=b?Number(b.value):NaN;
-      return _lcRow(s.src,Math.round(s.rate)+'%',isFinite(bv)?Math.round(bv)+'%':'',
-        s.won+' of '+s.leads+' leads',_lcCompare(s.rate,bv,false));
+      const off=_lcOffset(s.rate,b?Number(b.value):NaN,false);
+      return _lcRow(s.src,Math.round(s.rate)+'%',off,
+        _lcVerdict(off,false),s.won+' of '+s.leads+' leads');
     }).join('');
+    html+=_lcSection('src','Where your work comes from','Close rate per lead source.',rows,
+      !!window._lcSecOpen_src);
   }
 
-  html+='<div style="font-size:10px;color:var(--text3);padding:10px 2px 0;line-height:1.5">'+
-    'TradeDesk averages are anonymous and only shown once at least five separate businesses are behind the number, '+
-    'so no one can read another contractor\'s figures off this page. They refresh nightly.</div>';
+  if(stageRows.length){
+    const rows=scored.map(x=>{
+      const unit=_lcUnitFor(x.mineH,x.benchH);
+      return _lcRow(x.label,_lcDurIn(x.mineH,unit),x.off,x.verdict,_lcSample(x.row.samples));
+    }).join('');
+    html+=_lcSection('speed','How long each step takes you',
+      'Your typical time. Typical means half your jobs were faster, which beats an average one stalled lead can wreck.',
+      rows,!!window._lcSecOpen_speed);
+  }
+
+  html+='<div style="font-size:10px;color:var(--text3);padding:12px 2px 0;line-height:1.5">'+
+    'The centre tick on each rail is the TradeDesk average. Averages are anonymous and only appear once at least '+
+    'five separate businesses are behind the number, so no one can read another contractor\'s figures off this page. '+
+    'They refresh nightly.</div>';
 
   el.innerHTML=html;
 }
