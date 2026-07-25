@@ -128,4 +128,31 @@ test.describe('observability error-capture policy (Node sandbox on real source)'
     expect(invocations.length).toBe(1);
     expect(invocations[0].body.errors[0].message).toContain('real app failure on pg-est');
   });
+
+  // Hotfix (error_log 64,65): "ResizeObserver loop completed with undelivered
+  // notifications" is a well-documented browser-internal race in the
+  // ResizeObserver spec itself (fires whenever an observed element's own
+  // resize handler triggers another resize within the same frame), not an
+  // application bug. There is no app-code fix, every ResizeObserver user sees
+  // it. Filtered at the shared _logError sink (same one both the console.error
+  // wrapper and window's 'error'/'unhandledrejection' listeners call), so this
+  // single test proves the filter for every capture path at once.
+  test('regression #64/65: ResizeObserver loop noise is NOT reported to error_log', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('ResizeObserver loop completed with undelivered notifications.');
+    expect(invocations.length).toBe(0);
+  });
+
+  test('the older "ResizeObserver loop limit exceeded" wording is also filtered', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('ResizeObserver loop limit exceeded');
+    expect(invocations.length).toBe(0);
+  });
+
+  test('the ResizeObserver filter is narrow: unrelated messages mentioning it still report', () => {
+    const { consoleObj, invocations } = loadSandbox();
+    consoleObj.error('Failed to construct ResizeObserver: callback is not a function');
+    expect(invocations.length).toBe(1);
+    expect(invocations[0].body.errors[0].message).toContain('Failed to construct ResizeObserver');
+  });
 });

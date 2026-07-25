@@ -42,10 +42,21 @@
   // error (401/invalid) still reports, because THAT one is ours to fix.
   var _EXTERNAL_TRANSIENT = /^\[MapKit\].*(50[0-9]|Network Unavailable)/i;
   function _isExternalTransient(msg) { try { return _EXTERNAL_TRANSIENT.test(String(msg || '')); } catch (_e) { return false; } }
+  // Hotfix (error_log 64,65): "ResizeObserver loop completed with undelivered
+  // notifications" (and the older "...loop limit exceeded" wording) is a
+  // well-documented Chromium/WebKit-internal race in the ResizeObserver spec
+  // itself, not an application bug, it fires whenever an observed element's
+  // own resize handler causes another resize within the same frame. There is
+  // no app-code fix: every site using ResizeObserver (directly or via a
+  // library) sees it. Filtered at capture, same as the MapKit outage filter
+  // above, so it never re-pages the hot lane.
+  var _BENIGN_BROWSER_NOISE = /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/i;
+  function _isBenignBrowserNoise(msg) { try { return _BENIGN_BROWSER_NOISE.test(String(msg || '')); } catch (_e) { return false; } }
   function _logError(kind, message, stack, ctx) {
     try {
       if (!_ready()) return;
       if (_isExternalTransient(message)) return;
+      if (_isBenignBrowserNoise(message)) return;
       var key = kind + '|' + String(message || '').slice(0, 120);
       if (_seen[key]) return; _seen[key] = 1;
       _send({ session_id: _sid, app_version: _ver(), errors: [{
