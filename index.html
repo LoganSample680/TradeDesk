@@ -2292,14 +2292,14 @@ body.dark .cal-cell.other{background:var(--cream)}
     <select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%"></select>
   </div>
   <div class="fbar">
-    <button type="button" class="fb active" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
+    <button type="button" class="fb active" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
+    <button type="button" class="fb" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
     <button type="button" class="fb" id="tr-t-expenses" onclick="setTrTab('expenses',this)">Expenses</button>
     <button type="button" class="fb" id="tr-t-mileage" onclick="setTrTab('mileage',this)">Mileage</button>
     <button type="button" class="fb" id="tr-t-jobs" onclick="setTrTab('jobs',this)">Jobs</button>
-    <button type="button" class="fb" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
     <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)"><span data-ico="👥" data-ico-size="14"></span> Hiring</button>
   </div>
-  <div id="tr-income">
+  <div id="tr-income" style="display:none">
     <input type="hidden" id="inc-date"><input type="hidden" id="inc-client-sel">
     <input type="hidden" id="inc-type"><input type="hidden" id="inc-amount">
     <input type="hidden" id="inc-pay"><input type="hidden" id="inc-inv">
@@ -2348,17 +2348,14 @@ body.dark .cal-cell.other{background:var(--cream)}
       </div>
     </div>
   </div>
-  <div id="tr-summary" style="display:none">
-    <!-- The contractor's own funnel speed: how long each stage of their pipeline
-         actually takes. Coaching numbers, scoped to them by row-level security. -->
+  <div id="tr-summary">
+    <!-- The contractor's own pipeline speed and close rates, each paired with the
+         TradeDesk-wide figure. Their own numbers come from an RPC that row-level
+         security pins to their rows; the platform averages are pre-aggregated
+         nightly and only published once five businesses stand behind them. -->
     <div class="card">
-      <div class="card-hd">Your speed<span style="font-size:10px;color:var(--text3);font-weight:400">how long each stage takes</span></div>
+      <div class="card-hd">How you're running<span style="font-size:10px;color:var(--text3);font-weight:400">you vs TradeDesk</span></div>
       <div id="lc-funnel-mine"></div>
-    </div>
-    <!-- Owner-only: the same stages measured across every TradeDesk account. -->
-    <div class="card" id="lc-funnel-all-card" style="display:none">
-      <div class="card-hd">All accounts<span style="font-size:10px;color:var(--text3);font-weight:400">TradeDesk-wide</span></div>
-      <div id="lc-funnel-all"></div>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <label style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap">Filing status</label>

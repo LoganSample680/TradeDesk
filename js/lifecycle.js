@@ -104,74 +104,249 @@ function lcProposalSaved(bidId,clientId){
   logLifecycle('proposal_saved',{bidId,clientId,meta:secs!=null?{draft_seconds:secs}:null});
 }
 
-// ── Funnel reporting ─────────────────────────────────────────────────────────
-// One renderer, two audiences. 'mine' is the contractor's own coaching numbers
-// and goes straight to the RPC, where row-level security keeps them to their own
-// rows. 'all' is the owner's cross-account view and CANNOT come from the RPC for
-// the same reason, so it goes through the lifecycle-funnel edge function, which
-// checks an owner allowlist before running with the service role.
+// ── Funnel reporting + TradeDesk benchmarks ──────────────────────────────────
+// One card, two numbers per row: what THIS contractor's pipeline actually does,
+// and what the same stage looks like across every TradeDesk account.
+//
+// The two halves come from deliberately different places, and that split is the
+// privacy design, not an accident:
+//
+//   Their own numbers  → lifecycle_funnel RPC, SECURITY INVOKER. Row-level
+//                        security means the query can only ever see their rows,
+//                        no matter what the client asks for.
+//   The TradeDesk-wide → analytics_metrics_daily, written nightly by the
+//   numbers              rollup-analytics worker running as the service role.
+//                        The app never runs a cross-account query at all, so
+//                        there is no endpoint to abuse and no owner allowlist to
+//                        keep in sync. A contractor can read only rows the
+//                        rollup marked publishable, and only once at least five
+//                        separate businesses stand behind the number (enforced
+//                        in the RLS policy, migration 20260807).
 
-// Durations arrive in hours. A contractor thinks in minutes for a quick task and
-// days for a slow one, so pick the unit that reads naturally.
-function _lcDur(h){
+// Two figures on the SAME row must share a unit, or the row stops being a
+// comparison: "33 hr" beside "2 days" makes a contractor do arithmetic to find
+// out who is faster. Pick one unit from the larger of the pair and render both
+// in it. The unit is chosen from the bigger number so the smaller one never has
+// to round to zero.
+function _lcUnitFor(){
+  const vals=[].slice.call(arguments).map(Number).filter(n=>isFinite(n)&&n>0);
+  if(!vals.length)return 'hr';
+  const max=Math.max.apply(null,vals);
+  return max<1?'min':max<48?'hr':'day';
+}
+function _lcDurIn(h,unit){
   const n=Number(h)||0;
   if(n<=0)return '-';
-  if(n<1)return Math.max(1,Math.round(n*60))+' min';
-  if(n<48)return (n<10?n.toFixed(1):Math.round(n))+' hr';
-  return Math.round(n/24)+' days';
+  if(unit==='min')return Math.max(1,Math.round(n*60))+' min';
+  if(unit==='day'){const d=n/24;return (d<10?Math.round(d*10)/10:Math.round(d))+' days';}
+  return (n<10?Math.round(n*10)/10:Math.round(n))+' hr';
 }
 
-async function _lcFetchFunnel(scope,sinceIso){
+// Pipeline order. The RPC returns stages alphabetically, which reads as noise;
+// a contractor wants to follow the money from lead to paid off. Keyed on the
+// event pair, never the label, so re-wording a stage cannot reorder the card or
+// pair a row with the wrong benchmark.
+const LC_STAGE_ORDER=[
+  'lead_created>proposal_saved',
+  'proposal_started>proposal_saved',
+  'proposal_saved>proposal_sent',
+  'proposal_sent>proposal_opened',
+  'proposal_opened>signed',
+  'proposal_sent>signed',
+  'signed>job_scheduled',
+  'job_scheduled>job_completed',
+  'job_completed>balance_settled',
+];
+// Said the way a contractor would say it, not the way the database stores it.
+const LC_STAGE_LABEL={
+  'lead_created>proposal_saved':'Lead comes in, proposal written',
+  'proposal_started>proposal_saved':'Time spent writing one proposal',
+  'proposal_saved>proposal_sent':'Proposal written, sent out',
+  'proposal_sent>proposal_opened':'Sent, client opens it',
+  'proposal_opened>signed':'Client opens it, signs',
+  'proposal_sent>signed':'Sent, signed',
+  'signed>job_scheduled':'Signed, job on the calendar',
+  'job_scheduled>job_completed':'Job booked, job finished',
+  'job_completed>balance_settled':'Job finished, paid in full',
+};
+function _lcStageKey(r){return String(r.from_event||'')+'>'+String(r.to_event||'');}
+
+// Sample size in English. "n = 12" means nothing to someone running a crew.
+function _lcSample(n){
+  n=Number(n)||0;
+  return n===1?'1 so far':n+' so far';
+}
+
+async function _lcFetchMine(sinceIso){
   if(typeof _supa==='undefined'||!_supa)return null;
-  if(scope==='all'){
-    const{data:{session}}=await _supa.auth.getSession();
-    const res=await fetch(SUPA_URL+'/functions/v1/lifecycle-funnel',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','apikey':SUPA_KEY,'Authorization':'Bearer '+(session?.access_token||SUPA_KEY)},
-      body:JSON.stringify({since:sinceIso||null})
-    });
-    if(!res.ok)return {error:res.status===403?'not-allowed':'failed'};
-    const j=await res.json();
-    return {stages:j.stages||[]};
-  }
   const{data,error}=await _supa.rpc('lifecycle_funnel',{p_scope:'mine',p_since:sinceIso||null});
-  if(error)return {error:'failed'};
-  return {stages:data||[]};
+  if(error)return null;
+  return data||[];
 }
 
-// mountId - element to render into. scope - 'mine' | 'all'.
-async function renderLifecycleFunnel(mountId,scope){
+// The published benchmark rows, newest day available. Thin buckets never arrive
+// here: the RLS policy filters them out server-side, so an empty result means
+// "not enough businesses yet," which the card says out loud rather than showing
+// a hole.
+async function _lcFetchBench(){
+  if(typeof _supa==='undefined'||!_supa)return {stage:{},source:{},trade:{}};
+  const out={stage:{},source:{},trade:{}};
+  try{
+    const{data,error}=await _supa.from('analytics_metrics_daily')
+      .select('metric,scope,n,median,avg,value,day')
+      .order('day',{ascending:false}).limit(400);
+    if(error||!data)return out;
+    // Newest day wins: the same metric+scope is rewritten every night, and rows
+    // arrive newest-first, so the first one seen is the current one.
+    data.forEach(r=>{
+      const scope=String(r.scope||'');
+      const bucket=r.metric==='bench_stage_hours'?out.stage
+        :r.metric==='bench_close_rate_source'?out.source
+        :r.metric==='bench_close_rate_trade'?out.trade:null;
+      if(!bucket)return;
+      const key=scope.replace(/^(stage|source|trade):/,'');
+      if(!(key in bucket))bucket[key]=r;
+    });
+  }catch(_e){}
+  return out;
+}
+
+// Faster/slower cue. Durations are better when lower; close rates are better
+// when higher, hence the flip.
+function _lcCompare(mine,bench,lowerIsBetter){
+  if(!isFinite(mine)||!isFinite(bench)||bench<=0||mine<=0)return null;
+  const better=lowerIsBetter?mine<bench:mine>bench;
+  const pct=Math.round(Math.abs(mine-bench)/bench*100);
+  if(pct<5)return {color:'var(--text3)',text:'about average'};
+  return {color:better?'#1f9d57':'#B45309',text:pct+'% '+(better?'better':'worse')};
+}
+
+// One row: the contractor's own figure as the headline, the TradeDesk figure
+// beside it in smaller type, and a plain-word verdict.
+function _lcRow(label,mineStr,benchStr,sampleStr,cmp){
+  return '<div style="padding:10px 2px;border-bottom:1px solid var(--border)">'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'+
+      '<span style="font-size:13px;font-weight:700;color:var(--text);min-width:0">'+escHtml(label)+'</span>'+
+      '<span style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">'+escHtml(mineStr)+'</span>'+
+    '</div>'+
+    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-top:3px">'+
+      '<span style="font-size:11px;color:var(--text3)">'+escHtml(sampleStr)+'</span>'+
+      '<span style="font-size:11px;white-space:nowrap">'+
+        (benchStr
+          ?'<span style="color:var(--text3)">TradeDesk '+escHtml(benchStr)+'</span>'+
+           (cmp?'<span style="color:'+cmp.color+';font-weight:700"> · '+cmp.text+'</span>':'')
+          :'<span style="color:var(--text3)">no TradeDesk average yet</span>')+
+      '</span>'+
+    '</div>'+
+  '</div>';
+}
+
+function _lcSectionHd(title,sub){
+  return '<div style="padding:14px 2px 6px">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">'+escHtml(title)+'</div>'+
+    (sub?'<div style="font-size:11px;color:var(--text3);margin-top:3px;line-height:1.45">'+escHtml(sub)+'</div>':'')+
+  '</div>';
+}
+
+// Close rate per lead source, computed from the same arrays the dashboard's Lead
+// sources card uses, so the two can never disagree. Won over TOTAL leads from
+// that source, not won over decided: counting only decided leads ignores the
+// ones still sitting there and flatters the rate.
+function _lcCloseRateBySource(){
+  if(typeof clients==='undefined'||!Array.isArray(clients))return [];
+  const by={};
+  clients.forEach(c=>{
+    const src=(c.source||'').trim();
+    if(!src)return;
+    if(!by[src])by[src]={leads:0,won:0};
+    by[src].leads++;
+    const cb=(typeof getClientBids==='function')?getClientBids(c.id):[];
+    if(cb.some(b=>b.status==='Closed Won'))by[src].won++;
+  });
+  return Object.entries(by)
+    .map(([src,d])=>({src,leads:d.leads,won:d.won,rate:d.leads?d.won/d.leads*100:0}))
+    .sort((a,b)=>b.leads-a.leads);
+}
+
+function _lcMyTrade(){
+  try{
+    const t=(typeof S!=='undefined'&&S&&(S.businessType||S.trade))||
+            (typeof _config!=='undefined'&&_config&&_config.business_type)||'';
+    return String(t||'').trim().toLowerCase();
+  }catch(_e){return '';}
+}
+
+// mountId - element to render into.
+async function renderLifecycleFunnel(mountId){
   const el=document.getElementById(mountId);if(!el)return;
-  const mine=scope!=='all';
-  el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">Loading timings…</div>';
-  let r=null;
-  try{r=await _lcFetchFunnel(scope);}catch(_e){r={error:'failed'};}
-  if(!r||r.error){
-    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">'+
-      (r&&r.error==='not-allowed'?'Cross-account timings are restricted.':'Timings unavailable right now.')+'</div>';
+  el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">Loading your numbers…</div>';
+  let mine=null,bench={stage:{},source:{},trade:{}};
+  try{
+    const r=await Promise.all([_lcFetchMine(),_lcFetchBench()]);
+    mine=r[0];bench=r[1]||bench;
+  }catch(_e){}
+  if(!mine){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">Your timings are unavailable right now.</div>';
     return;
   }
-  const rows=(r.stages||[]).filter(s=>Number(s.samples)>0);
-  if(!rows.length){
+
+  const byKey={};
+  mine.forEach(r=>{byKey[_lcStageKey(r)]=r;});
+  const stageRows=LC_STAGE_ORDER
+    .map(k=>({key:k,row:byKey[k],b:bench.stage[k]}))
+    .filter(x=>x.row&&Number(x.row.samples)>0);
+
+  const srcRows=_lcCloseRateBySource();
+  const trade=_lcMyTrade();
+  const tradeBench=trade?bench.trade[trade]:null;
+  const myLeads=(typeof clients!=='undefined'&&Array.isArray(clients))?clients.length:0;
+  const myWon=(typeof clients!=='undefined'&&Array.isArray(clients)&&typeof getClientBids==='function')
+    ?clients.filter(c=>getClientBids(c.id).some(b=>b.status==='Closed Won')).length:0;
+  const myRate=myLeads?myWon/myLeads*100:null;
+
+  if(!stageRows.length&&!srcRows.length){
     el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px;line-height:1.5">'+
-      'No completed stages yet. These fill in as leads move through '+
-      (mine?'your':'the')+' pipeline, so expect real numbers after a few weeks.</div>';
+      'Nothing to measure yet. These fill in on their own as leads move through your pipeline, '+
+      'so expect real numbers after a few weeks of normal work.</div>';
     return;
   }
-  el.innerHTML=
-    '<div style="display:flex;justify-content:space-between;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:0 2px 6px">'+
-      '<span>Stage</span><span>Typical · average · n</span></div>'+
-    rows.map(s=>
-      '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 2px;border-bottom:1px solid var(--border)">'+
-        '<span style="font-size:13px;font-weight:700;color:var(--text);min-width:0">'+escHtml(s.stage)+'</span>'+
-        '<span style="font-size:12px;white-space:nowrap">'+
-          '<b style="font-size:13px">'+_lcDur(s.median_hours)+'</b>'+
-          '<span style="color:var(--text3)"> · '+_lcDur(s.avg_hours)+' · '+s.samples+'</span>'+
-        '</span>'+
-      '</div>'
-    ).join('')+
-    // Median is listed first and bolded on purpose: one lead that sat for months
-    // drags the average badly, and the typical case is the useful number.
-    '<div style="font-size:10px;color:var(--text3);padding:8px 2px 0;line-height:1.5">'+
-      'Typical = median (half are faster). Average is shown alongside because a single stalled lead skews it. n = completed stages measured.</div>';
+
+  let html='';
+
+  if(stageRows.length){
+    html+=_lcSectionHd('How long each step takes you',
+      'Your typical time is the headline. Typical means half your jobs were faster, which beats an average that one stalled lead can wreck.');
+    html+=stageRows.map(x=>{
+      const label=LC_STAGE_LABEL[x.key]||x.row.stage;
+      const mineH=Number(x.row.median_hours)||0;
+      const benchH=x.b?Number(x.b.median):NaN;
+      const unit=_lcUnitFor(mineH,benchH);
+      return _lcRow(label,_lcDurIn(mineH,unit),isFinite(benchH)&&benchH>0?_lcDurIn(benchH,unit):'',
+        _lcSample(x.row.samples),_lcCompare(mineH,benchH,true));
+    }).join('');
+  }
+
+  if(myRate!==null&&myLeads>0){
+    html+=_lcSectionHd('Close rate','Leads that turned into signed work.');
+    const tb=tradeBench?Number(tradeBench.value):NaN;
+    html+=_lcRow(trade?('Your business vs other '+trade+' businesses'):'Your business',
+      Math.round(myRate)+'%',isFinite(tb)?Math.round(tb)+'%':'',
+      myWon+' of '+myLeads+' leads',_lcCompare(myRate,tb,false));
+  }
+
+  if(srcRows.length){
+    html+=_lcSectionHd('Close rate by lead source','Where your work actually comes from, against how that source performs platform-wide.');
+    html+=srcRows.map(s=>{
+      const b=bench.source[s.src];
+      const bv=b?Number(b.value):NaN;
+      return _lcRow(s.src,Math.round(s.rate)+'%',isFinite(bv)?Math.round(bv)+'%':'',
+        s.won+' of '+s.leads+' leads',_lcCompare(s.rate,bv,false));
+    }).join('');
+  }
+
+  html+='<div style="font-size:10px;color:var(--text3);padding:10px 2px 0;line-height:1.5">'+
+    'TradeDesk averages are anonymous and only shown once at least five separate businesses are behind the number, '+
+    'so no one can read another contractor\'s figures off this page. They refresh nightly.</div>';
+
+  el.innerHTML=html;
 }
