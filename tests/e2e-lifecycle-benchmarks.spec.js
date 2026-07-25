@@ -203,13 +203,17 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
   });
 
   test.describe('_lcVerdict', () => {
-    test('a duration says faster or slower; a rate says better or worse', async () => {
+    test('a duration says faster or slower; a rate borrows the scale\'s own words', async () => {
+      // The gauge prints BEHIND and AHEAD at its ends, so a rate says the same
+      // thing rather than making a reader map "worse" onto "behind".
       const r = await page.evaluate(() => ({
         dur: _lcVerdict(_lcOffset(5, 10, true), true),
-        rate: _lcVerdict(_lcOffset(60, 40, false), false),
+        rateUp: _lcVerdict(_lcOffset(60, 40, false), false),
+        rateDown: _lcVerdict(_lcOffset(20, 40, false), false),
       }));
       expect(r.dur).toBe('50% faster');
-      expect(r.rate).toBe('50% better');
+      expect(r.rateUp).toBe('50% ahead of');
+      expect(r.rateDown).toBe('50% behind');
     });
     test('within 5% reads as about average, not a false win', async () => {
       const r = await page.evaluate(() => _lcVerdict(_lcOffset(102, 100, false), false));
@@ -475,6 +479,20 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
       }, MINE2);
       expect(html).toContain('painting businesses');
       expect(html).toContain('40% average');
+    });
+  });
+
+  test.describe('the headline says what actually happened', () => {
+    test('leads are described as signing, not as "becoming work"', async () => {
+      const html = await page.evaluate(async () => {
+        window.__install([{ stage:'s', from_event:'proposal_sent', to_event:'signed', samples:5, median_hours:10, avg_hours:12 }], []);
+        await renderLifecycleFunnel('lc-funnel-mine');
+        const h = document.getElementById('lc-funnel-mine').innerHTML;
+        if (window.__supaSave !== undefined) window._supa = window.__supaSave;
+        return h;
+      });
+      expect(html).toMatch(/of your \d+ leads signed/);
+      expect(html).not.toContain('became work');
     });
   });
 

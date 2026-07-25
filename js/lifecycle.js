@@ -404,7 +404,11 @@ function _lcVerdict(offset,lowerIsBetter){
   const pct=Math.round(Math.abs(offset)*100);
   if(pct<5)return 'about average';
   const better=offset>0;
-  const fastSlow=lowerIsBetter?(better?'faster':'slower'):(better?'better':'worse');
+  // A rate says "ahead"/"behind" to match the words printed at the ends of the
+  // scale itself. "7% worse" made a contractor map a second vocabulary onto a
+  // gauge already labelled BEHIND and AHEAD. A duration keeps faster/slower,
+  // because that is what a length of time is.
+  const fastSlow=lowerIsBetter?(better?'faster':'slower'):(better?'ahead of':'behind');
   // No "than average" tail: the rail's centre tick already IS the average, and on
   // a 390px screen the tail crowds out the sample count, which matters more.
   return pct+'% '+fastSlow;
@@ -512,8 +516,10 @@ async function renderLifecycleFunnel(mountId){
       Math.round(myRate)+'%','Your close rate',off,
       isFinite(tb)?(Math.round(tb)+'% average'):'',
       isFinite(tb)
-        ?(_lcVerdict(off,false)+' than '+peer+'  ·  '+myWon+' of '+myLeads+' leads became work')
-        :(myWon+' of '+myLeads+' leads became work  ·  not enough businesses yet for an average'));
+        // "6 of 17 leads became work" made a reader stop and ask what "work"
+        // meant. Say the thing that actually happened: they signed.
+        ?(myWon+' of your '+myLeads+' leads signed  ·  '+_lcVerdict(off,false)+' '+peer)
+        :(myWon+' of your '+myLeads+' leads signed  ·  no TradeDesk average yet'));
   }
   html+=_lcGapCallout(worst&&worst.off<-0.05?worst:null,beat,compared.length);
 
