@@ -22,6 +22,22 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // Stand in for Supabase so the card can be driven without a backend. Defined
+    // once at the top so every describe can use it, and with page.evaluate rather
+    // than addInitScript on purpose: a boot helper that also sets _supa would
+    // overwrite an init script and silently undo this.
+    await page.evaluate(() => {
+      window.__install = (mine, benchRows) => {
+        window.__lcMine = mine; window.__lcBench = benchRows;
+        if (window.__supaSave === undefined) window.__supaSave = window._supa;
+        window._supa = {
+          rpc: async () => ({ data: window.__lcMine, error: null }),
+          from: () => ({
+            select: () => ({ order: () => ({ limit: async () => ({ data: window.__lcBench, error: null }) }) }),
+          }),
+        };
+      };
+    });
   });
 
   test.afterAll(async () => { await page.close(); });
@@ -298,18 +314,34 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
   test.describe('gauge bands', () => {
     test('the dot ring colour matches the band it lands on, with no blend zone', async () => {
       // The profit gauge uses hard stops for exactly this reason: a dot must never
-      // render amber while sitting on a still-green stretch of track.
+      // render one colour while sitting on a stretch of track of another.
       const r = await page.evaluate(() => ({
-        farWorse: _lcBandColor(-0.6), slightlyWorse: _lcBandColor(-0.15),
-        even: _lcBandColor(0), slightlyBetter: _lcBandColor(0.02), better: _lcBandColor(0.4),
+        farBehind: _lcBandColor(-0.6), behind: _lcBandColor(-0.15),
+        even: _lcBandColor(0), justAbove: _lcBandColor(0.02), ahead: _lcBandColor(0.4),
         none: _lcBandColor(null),
       }));
-      expect(r.farWorse).toBe('#EF4444');
-      expect(r.slightlyWorse).toBe('#F59E0B');
-      expect(r.even).toBe('#94A3B8');
-      expect(r.slightlyBetter).toBe('#94A3B8');   // inside the 5% dead band
-      expect(r.better).toBe('#1f9d57');
-      expect(r.none).toBe('#94A3B8');
+      // Colours come from tokens, so light and dark each get a validated value
+      // instead of one hardcoded hex washing out on the other surface.
+      expect(r.farBehind).toBe('var(--lc-behind)');
+      expect(r.behind).toBe('var(--lc-behind)');
+      expect(r.even).toBe('var(--lc-mid)');
+      expect(r.justAbove).toBe('var(--lc-mid)');   // inside the 5% dead band
+      expect(r.ahead).toBe('var(--lc-ahead)');
+      expect(r.none).toBe('var(--lc-mid)');
+    });
+
+    test('both poles are declared for light AND dark, not just light', async () => {
+      const r = await page.evaluate(() => {
+        const css = Array.from(document.styleSheets)
+          .flatMap(sh => { try { return Array.from(sh.cssRules); } catch (e) { return []; } })
+          .map(rule => rule.cssText).join('\n');
+        return {
+          behind: (css.match(/--lc-behind:/g) || []).length,
+          ahead: (css.match(/--lc-ahead:/g) || []).length,
+        };
+      });
+      expect(r.behind).toBeGreaterThanOrEqual(2);
+      expect(r.ahead).toBeGreaterThanOrEqual(2);
     });
 
     test('the band boundaries line up with the track gradient stops', async () => {
@@ -317,15 +349,12 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
       // they have to be checked against each other or they silently drift.
       const r = await page.evaluate(() => ({
         track: LC_TRACK,
-        atRedEdge: _lcDotPct(-0.25), atAmberEdge: _lcDotPct(-0.05),
-        atNeutralEdge: _lcDotPct(0.05),
+        atBehindEdge: _lcDotPct(-0.05), atAheadEdge: _lcDotPct(0.05),
       }));
-      expect(r.track).toContain('37.5%');   // red gives way to amber at offset -0.25
-      expect(r.track).toContain('47.5%');   // amber to neutral at -0.05
-      expect(r.track).toContain('52.5%');   // neutral to green at +0.05
-      expect(r.atRedEdge).toBeCloseTo(38.5, 0);
-      expect(r.atAmberEdge).toBeCloseTo(47.7, 0);
-      expect(r.atNeutralEdge).toBeCloseTo(52.3, 0);
+      expect(r.track).toContain('47.5%');   // behind gives way to neutral at -0.05
+      expect(r.track).toContain('52.5%');   // neutral to ahead at +0.05
+      expect(r.atBehindEdge).toBeCloseTo(47.7, 0);
+      expect(r.atAheadEdge).toBeCloseTo(52.3, 0);
     });
 
     test('a marker never leaves the rail, even fully clamped', async () => {
@@ -341,12 +370,12 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
       const r = await page.evaluate(() => ({
         lg: _lcGauge(0.4, 'lg'), sm: _lcGauge(0.4, 'sm'),
       }));
-      expect(r.lg).toContain('#EF4444');
-      expect(r.sm).toContain('rgba(239,68,68,.22)');
-      expect(r.sm).not.toContain('#EF4444');
+      expect(r.lg).toContain('var(--lc-behind)');
+      expect(r.sm).toContain('color-mix');           // the row track is the same scale, diluted
+      expect(r.lg).not.toContain('color-mix');
       // The dot itself is full strength in both.
-      expect(r.lg).toContain('#1f9d57');
-      expect(r.sm).toContain('#1f9d57');
+      expect(r.lg).toContain('var(--lc-ahead)');
+      expect(r.sm).toContain('var(--lc-ahead)');
     });
 
     test('no benchmark renders a plain rail with no marker to misread', async () => {
@@ -362,6 +391,102 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
       expect(r).toContain('Close rate');
       expect(r).toContain('Painting average 38%');
       expect(r).toContain('7% worse');
+    });
+  });
+
+  // ── The card must SAY what the average is, never just imply it ───────────
+  test.describe('the comparison is stated, not inferred', () => {
+    const MINE2 = [
+      { stage: 's', from_event: 'proposal_sent', to_event: 'signed', samples: 5, median_hours: 10, avg_hours: 12 },
+    ];
+
+    // Self-contained: this block runs before the lead-source seeding below, and a
+    // leaked _supa mock would poison whichever describe happened to run next.
+    test.beforeAll(async () => {
+      await page.evaluate(() => {
+        clients = clients.filter(c => c.id < 993000 || c.id > 993999);
+        bids = bids.filter(b => b.id < 994000 || b.id > 994999);
+        clients.push({ id: 993001, name: 'Stated A', source: 'Referral' },
+                     { id: 993002, name: 'Stated B', source: 'Referral' });
+        bids.push({ id: 994001, client_id: 993001, status: 'Closed Won', amount: 100 });
+      });
+    });
+    test.afterEach(async () => {
+      await page.evaluate(() => { if (window.__supaSave !== undefined) window._supa = window.__supaSave; });
+    });
+    test.afterAll(async () => {
+      await page.evaluate(() => {
+        clients = clients.filter(c => c.id < 993000 || c.id > 993999);
+        bids = bids.filter(b => b.id < 994000 || b.id > 994999);
+      });
+    });
+
+    test('the scale names both ends and its midpoint', async () => {
+      const r = await page.evaluate(() =>
+        _lcScaleEnds('38% average'));
+      expect(r).toContain('Behind');
+      expect(r).toContain('Ahead');
+      expect(r).toContain('38% average');
+    });
+
+    test('every row prints the average it is measured against', async () => {
+      const r = await page.evaluate(() =>
+        _lcRow('From sent to signed', '10 hr', 0.5, '20 hr', '50% faster', '5 so far'));
+      expect(r).toContain('vs 20 hr');      // the comparison value, on the row
+      expect(r).toContain('50% faster');
+      expect(r).toContain('5 so far');
+    });
+
+    test('a row with no benchmark says so rather than showing a bare bar', async () => {
+      const r = await page.evaluate(() =>
+        _lcRow('Getting paid in full', '4 days', null, '', '', '4 so far'));
+      expect(r).toContain('No TradeDesk average yet');
+      expect(r).toContain('4 so far');
+      expect(r).not.toContain('vs ');
+    });
+
+    test('the footnote spells out what every average is measured across', async () => {
+      const html = await page.evaluate(async (mine) => {
+        window.__install(mine, []);
+        await renderLifecycleFunnel('lc-funnel-mine');
+        return document.getElementById('lc-funnel-mine').innerHTML;
+      }, MINE2);
+      expect(html).toContain('across all TradeDesk businesses');
+    });
+
+    test('the headline names the peer group, not just a bare percentage', async () => {
+      const html = await page.evaluate(async (mine) => {
+        window.__install(mine, [
+          { metric: 'bench_close_rate_trade', scope: 'trade:painting', n: 40, median: null, avg: null, value: 40, day: '2026-07-24' },
+        ]);
+        const save = window._config;
+        window._config = { business_type: 'painting' };
+        await renderLifecycleFunnel('lc-funnel-mine');
+        const h = document.getElementById('lc-funnel-mine').innerHTML;
+        window._config = save;
+        return h;
+      }, MINE2);
+      expect(html).toContain('painting businesses');
+      expect(html).toContain('40% average');
+    });
+  });
+
+  // ── Wording a contractor would actually use ───────────────────────────────
+  test.describe('stage labels read like speech', () => {
+    test('no database words leak into the labels', async () => {
+      const labels = await page.evaluate(() => Object.values(LC_STAGE_LABEL));
+      labels.forEach(l => {
+        expect(l).not.toMatch(/_/);              // no lead_created
+        expect(l).not.toMatch(/\bevent\b/i);
+        expect(l).not.toMatch(/^\w+ to \w+$/);   // no bare "Lead to proposal"
+      });
+    });
+    test('the renamed noun holds: proposal, never estimate', async () => {
+      // The owner picked "proposal" over "estimate" after checking what
+      // contractors call it. These labels must not reintroduce the old word.
+      const labels = await page.evaluate(() => Object.values(LC_STAGE_LABEL).join(' '));
+      expect(labels.toLowerCase()).not.toContain('estimate');
+      expect(labels.toLowerCase()).toContain('proposal');
     });
   });
 
@@ -439,24 +564,6 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
       { stage: 'Lead to proposal', from_event: 'lead_created', to_event: 'proposal_saved', samples: 6, median_hours: 2, avg_hours: 5 },
     ];
 
-    // Stand in for Supabase so the card can be driven without a backend. Defined
-    // with page.evaluate rather than addInitScript on purpose: a boot helper that
-    // also sets _supa would overwrite an init script and silently undo this.
-    test.beforeAll(async () => {
-      await page.evaluate(() => {
-        window.__install = (mine, benchRows) => {
-          window.__lcMine = mine; window.__lcBench = benchRows;
-          window.__supaSave = window._supa;
-          window._supa = {
-            rpc: async () => ({ data: window.__lcMine, error: null }),
-            from: () => ({
-              select: () => ({ order: () => ({ limit: async () => ({ data: window.__lcBench, error: null }) }) }),
-            }),
-          };
-        };
-      });
-    });
-
     test.afterEach(async () => {
       await page.evaluate(() => { if (window.__supaSave !== undefined) window._supa = window.__supaSave; });
     });
@@ -468,8 +575,8 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         await renderLifecycleFunnel('lc-funnel-mine');
         const html = document.getElementById('lc-funnel-mine').innerHTML;
         return {
-          leadIdx: html.indexOf('Lead comes in, proposal written'),
-          sentIdx: html.indexOf('Sent, signed'),
+          leadIdx: html.indexOf('Getting a proposal written'),
+          sentIdx: html.indexOf('From sent to signed'),
         };
       }, MINE);
       // "Lead comes in" precedes "Sent, signed" in the pipeline; alphabetically
@@ -529,7 +636,7 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('Where your work comes from');
+      expect(html).toContain('Close rate by lead source');
       expect(html).toContain('Referral');
       // The sample count survives ALONGSIDE the verdict. "33% worse" drawn from
       // three leads must never read as a settled fact about the business.

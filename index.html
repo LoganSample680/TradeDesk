@@ -40,6 +40,13 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
   --ink:#1B1612;--ink-soft:#3A3128;
   --ink-line:rgba(255,238,210,.08);--ink-line-2:rgba(255,238,210,.14);
   --paper:#F4F5F7;--cream:#ECEEF2;--bg-card:#FFFFFF;
+  /* Benchmark gauge poles (Books Summary). A two-hue diverging scale: behind on
+     one side, ahead on the other, neutral in the middle. Both poles clear WCAG
+     1.4.11 (3:1 for non-text graphics) against this surface, and clear the
+     colour-blind separation floor from each other, checked with the palette
+     validator rather than by eye. Dark mode restates them below rather than
+     letting the browser wash them out. */
+  --lc-behind:#B45309;--lc-ahead:#1f9d57;--lc-mid:#94A3B8;
   --line:#E2E5EB;--line-2:#CFD4DC;
   --denim:#2D5DA8;--denim-deep:#1B3F7A;--denim-soft:#DCE8FA;
   --denim-edge:#B7CDED;--denim-glow:rgba(45,93,168,.32);
@@ -841,6 +848,7 @@ body.dark{
   --bg:#221C16;--bg2:#14110E;--bg3:#1C1814;
   --text2:#C8BFB0;--text3:#9E9588;
   --border:#2E2620;--border2:#3A302A;
+  --lc-behind:#CE7524;--lc-ahead:#34A96A;--lc-mid:#8A94A6;
 }
 body.dark input,body.dark select,body.dark textarea{background:var(--bg-card);color:var(--text);border-color:var(--line-2)}
 body.dark .btn{background:var(--bg-card);color:var(--text);border-color:var(--line-2)}
