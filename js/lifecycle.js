@@ -386,27 +386,44 @@ function _lcHeroGauge(pctStr,label,offset,midLabel,subStr){
 // three leads is not a fact about a business; printing "14 so far" beside a
 // number built from fourteen jobs is just clutter.
 const LC_THIN_SAMPLE=5;
+const LC_COL=66;   // wide enough for the longest value ('1.4 days' at 14px bold)
+const LC_HD_TYPE='font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);';
+// Tabular figures: proportional digits make a column of numbers look ragged even
+// when it is right aligned, which was half of why this read as a spreadsheet.
+const LC_NUM='font-variant-numeric:tabular-nums;white-space:nowrap;';
 
 function _lcTableHead(){
-  return '<div style="display:flex;align-items:flex-end;gap:8px;padding:0 2px 6px;border-bottom:1px solid var(--border2)">'+
-    '<span style="flex:1;min-width:0;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Metric</span>'+
-    '<span style="flex:0 0 62px;text-align:right;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">TradeDesk</span>'+
-    '<span style="flex:0 0 62px;text-align:right;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text2)">You</span>'+
+  return '<div style="display:flex;align-items:flex-end;gap:8px;padding:0 10px 7px 2px;border-bottom:1px solid var(--border2)">'+
+    '<span style="flex:1;min-width:0;'+LC_HD_TYPE+'">Metric</span>'+
+    '<span style="flex:0 0 '+LC_COL+'px;text-align:right;'+LC_HD_TYPE+'">TradeDesk</span>'+
+    '<span style="flex:0 0 '+LC_COL+'px;text-align:right;'+LC_HD_TYPE+'color:var(--text)">You</span>'+
   '</div>';
 }
 
 function _lcGroupHd(title){
-  return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:14px 2px 5px">'+escHtml(title)+'</div>';
+  return '<div style="'+LC_HD_TYPE+'padding:16px 2px 6px;border-top:1px solid var(--border);margin-top:6px">'+escHtml(title)+'</div>';
 }
 
 // label | TradeDesk average | their number
 function _lcRow(label,benchStr,mineStr,sampleN){
   const thin=Number(sampleN)>0&&Number(sampleN)<LC_THIN_SAMPLE;
-  return '<div style="display:flex;align-items:baseline;gap:8px;padding:9px 2px;border-bottom:1px solid var(--border)">'+
-    '<span style="flex:1;min-width:0;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(label)+
+  return '<div style="display:flex;align-items:baseline;gap:8px;padding:10px 10px 10px 2px;border-bottom:1px solid var(--border)">'+
+    '<span style="flex:1;min-width:0;font-size:13px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(label)+
       (thin?'<span style="color:var(--text3);font-size:11px"> ('+sampleN+')</span>':'')+'</span>'+
-    '<span style="flex:0 0 62px;text-align:right;font-size:13px;color:var(--text3);white-space:nowrap">'+escHtml(benchStr||'-')+'</span>'+
-    '<span style="flex:0 0 62px;text-align:right;font-size:13px;font-weight:800;color:var(--text);white-space:nowrap">'+escHtml(mineStr)+'</span>'+
+    '<span style="flex:0 0 '+LC_COL+'px;text-align:right;font-size:13px;color:var(--text3);'+LC_NUM+'">'+escHtml(benchStr||'-')+'</span>'+
+    '<span style="flex:0 0 '+LC_COL+'px;text-align:right;font-size:14px;font-weight:800;color:var(--text);'+LC_NUM+'">'+escHtml(mineStr)+'</span>'+
+  '</div>';
+}
+
+// The table, with a tinted band running behind the You column. That band is what
+// stops this reading as a spreadsheet: the eye tracks one column down the page
+// instead of scanning a grid of equal cells, and it costs no extra ink per row.
+function _lcTable(inner){
+  return '<div style="position:relative;margin-top:2px">'+
+    // Rows carry 10px of right padding, so the band sits 4px in from the edge to
+    // centre itself on the You column with 6px of breathing room each side.
+    '<div style="position:absolute;top:0;bottom:0;right:4px;width:'+(LC_COL+12)+'px;background:var(--bg2);border-radius:10px;pointer-events:none"></div>'+
+    '<div style="position:relative">'+inner+'</div>'+
   '</div>';
 }
 
@@ -446,18 +463,21 @@ function _lcTogSection(key){
   window['_lcSecOpen_'+key]=!window['_lcSecOpen_'+key];
   if(typeof renderLifecycleFunnel==='function')renderLifecycleFunnel('lc-funnel-mine');
 }
-// The one thing to fix, named. A contractor should be able to read the gauge,
-// read this, and stop.
-function _lcGapCallout(worst,beat,total){
-  if(!total)return '';
-  if(!worst){
-    return '<div style="margin-top:2px;padding:9px 11px;background:rgba(31,157,87,.08);border-left:3px solid '+LC_AHEAD+';border-radius:8px">'+
-      '<div style="font-size:13px;color:var(--text);line-height:1.4">You beat the TradeDesk average on all '+total+' steps.</div></div>';
-  }
-  return '<div style="margin-top:2px;padding:9px 11px;background:rgba(180,83,9,.08);border-left:3px solid '+LC_BEHIND+';border-radius:8px">'+
-    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--lc-behind)">Biggest gap</div>'+
-    '<div style="font-size:13px;color:var(--text);margin-top:3px;line-height:1.4">'+escHtml(worst.label)+'</div>'+
-    '<div style="font-size:11px;color:var(--text3);margin-top:2px">'+escHtml(worst.verdict)+'  ·  you beat the average on '+beat+' of '+total+' steps</div>'+
+// The one thing to fix, named with the two numbers that make it concrete.
+//
+// This used to read "29% slower · you beat the average on 5 of 8 steps", which
+// jammed two unrelated facts together and left the reader to work out what the
+// percentage was against. Now it names the step and shows both sides: "You take
+// 3.1 hr. Other businesses take 2.4 hr." Nothing to compute, nothing implied.
+function _lcGapCallout(worst){
+  if(!worst)return '';
+  const unit=_lcUnitFor(worst.mineH,worst.benchH);
+  return '<div style="margin-top:2px;padding:11px 13px;background:var(--bg2);border-left:3px solid var(--lc-behind);border-radius:0 10px 10px 0">'+
+    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--lc-behind)">Slowest step vs everyone else</div>'+
+    '<div style="font-size:14px;font-weight:700;color:var(--text);margin-top:4px">'+escHtml(worst.label)+'</div>'+
+    '<div style="font-size:12px;color:var(--text2);margin-top:3px;line-height:1.45">'+
+      'You take <strong style="color:var(--text)">'+escHtml(_lcDurIn(worst.mineH,unit))+'</strong>. '+
+      'Other businesses take <strong style="color:var(--text)">'+escHtml(_lcDurIn(worst.benchH,unit))+'</strong>.</div>'+
   '</div>';
 }
 
@@ -505,7 +525,6 @@ async function renderLifecycleFunnel(mountId){
     return {...x,mineH,benchH,off,label:LC_STAGE_LABEL[x.key]||x.row.stage,verdict:_lcVerdict(off,true)};
   });
   const compared=scored.filter(x=>x.off!=null);
-  const beat=compared.filter(x=>x.off>0).length;
   const worst=compared.slice().sort((a,b)=>a.off-b.off)[0];
 
   // The headline is close rate on the big gauge: it is the money metric, the one a
@@ -524,12 +543,12 @@ async function renderLifecycleFunnel(mountId){
       Math.round(myRate)+'%','Your close rate',off,
       isFinite(tb)?(Math.round(tb)+'% average'):'',
       isFinite(tb)
-        // "6 of 17 leads became work" made a reader stop and ask what "work"
-        // meant. Say the thing that actually happened: they signed.
-        ?(myWon+' of your '+myLeads+' leads signed  ·  '+_lcVerdict(off,false)+' '+peer)
-        :(myWon+' of your '+myLeads+' leads signed  ·  no TradeDesk average yet'));
+        // The lead tally was filler: the percentage above already says it, and the
+        // raw counts live in the table. Only the comparison earns the line.
+        ?(_lcVerdict(off,false)+' '+peer)
+        :('No '+peer+' average yet'));
   }
-  html+=_lcGapCallout(worst&&worst.off<-0.05?worst:null,beat,compared.length);
+  html+=_lcGapCallout(worst&&worst.off<-0.05&&isFinite(worst.benchH)?worst:null);
 
   // One table, read straight across. Close rate leads because it is the money
   // metric, then the pipeline in the order a job actually moves, then lead
@@ -555,7 +574,7 @@ async function renderLifecycleFunnel(mountId){
   }
   html+=_lcSection('all','All your numbers',
     'TradeDesk is the average across every business on the platform.',
-    rows,!!window._lcSecOpen_all);
+    _lcTable(rows),!!window._lcSecOpen_all);
 
   html+='<div style="font-size:10px;color:var(--text3);padding:10px 2px 0;line-height:1.5">'+
     'Averages refresh nightly and stay hidden until five businesses are behind a number. '+
