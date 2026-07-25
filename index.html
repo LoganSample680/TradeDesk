@@ -592,18 +592,24 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
    center (top:7px = half the 14px dot) and ending at the next dot's center
    (bottom:-7px), and the last item draws none, so the line begins and ends
    exactly on a dot. left:-19px centers the 2px rail on the dot's center. */
-.timeline{padding-left:22px}
-.tl-item{position:relative;padding:0 0 14px 16px}
-.tl-item::before{content:'';position:absolute;left:-19px;top:7px;bottom:-7px;width:2px;background:var(--line)}
+/* Timeline nodes carry an ICON of what happened (bill, pen, eye, truck…), not a
+   bare colored ring. A ring encodes its meaning only in colour, which nobody can
+   read without a legend; the icon says "payment" or "signed" at a glance. The
+   colour classes below are unchanged, so tone stays mapped in one place: the
+   soft shade fills the circle and the strong shade inks the icon via
+   currentColor. The rail runs between circles and is painted over by them. */
+.timeline{padding-left:34px;padding-top:6px}
+.tl-item{position:relative;padding:0 0 14px 10px}
+.tl-item::before{content:'';position:absolute;left:-23px;top:24px;bottom:-12px;width:2px;background:var(--line)}
 .tl-item:last-child::before{display:none}
 .tl-item:last-child{padding-bottom:0}
-.tl-dot{position:absolute;left:-25px;top:0;width:14px;height:14px;border-radius:50%;background:var(--bg-card);border:2px solid var(--line)}
-.tl-dot.active{border-color:var(--c-green);background:var(--c-green-soft)}
-.tl-dot.bid,.tl-dot.estimate{border-color:var(--denim);background:var(--denim-soft)}
-.tl-dot.payment,.tl-dot.complete{border-color:var(--c-green);background:var(--c-green-soft)}
-.tl-dot.canceled,.tl-dot.lost{border-color:var(--c-red);background:var(--c-red-soft)}
-.tl-dot.coll{border-color:var(--c-amber);background:var(--c-amber-soft)}
-.tl-dot.mile,.tl-dot.note{border-color:var(--text-3);background:var(--cream)}
+.tl-dot{position:absolute;left:-34px;top:-5px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--cream);color:var(--text-3)}
+.tl-dot.active{background:var(--c-green-soft);color:var(--c-green)}
+.tl-dot.bid,.tl-dot.estimate{background:var(--denim-soft);color:var(--denim)}
+.tl-dot.payment,.tl-dot.complete{background:var(--c-green-soft);color:var(--c-green)}
+.tl-dot.canceled,.tl-dot.lost{background:var(--c-red-soft);color:var(--c-red)}
+.tl-dot.coll{background:var(--c-amber-soft);color:var(--c-amber)}
+.tl-dot.mile,.tl-dot.note{background:var(--cream);color:var(--text-3)}
 .tl-label{font-size:12px;font-weight:700;color:var(--text)}
 .tl-meta{font-size:10px;color:var(--text-3);margin-top:2px;font-weight:500}
 

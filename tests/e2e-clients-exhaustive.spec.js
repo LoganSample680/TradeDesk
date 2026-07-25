@@ -3030,16 +3030,17 @@ test.describe('clients.js: exhaustive coverage', () => {
         return groups.map(g => {
           const items = [...g.querySelectorAll('.tl-item')];
           return items.map((it, i) => {
-            const dot = it.querySelector('.tl-dot');
-            const ds = getComputedStyle(dot);
+            const dotRect = it.querySelector('.tl-dot').getBoundingClientRect();
+            const itemRect = it.getBoundingClientRect();
             const bs = getComputedStyle(it, '::before');
-            // dot center X and rail center X, both relative to the item's box
-            const dotCenter = parseFloat(ds.left) + parseFloat(ds.width) / 2 + parseFloat(ds.borderLeftWidth);
-            const railCenter = parseFloat(bs.left) + parseFloat(bs.width) / 2;
+            // Measure in page coordinates so the check holds regardless of box-sizing.
+            const dotCenter = dotRect.left + dotRect.width / 2;
+            const railCenter = itemRect.left + parseFloat(bs.left) + parseFloat(bs.width) / 2;
             return {
               isLast: i === items.length - 1,
               railHidden: bs.display === 'none',
               centerDelta: Math.abs(dotCenter - railCenter),
+              hasIcon: !!it.querySelector('.tl-dot svg'),
             };
           });
         });
@@ -3049,11 +3050,13 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(flat.length).toBeGreaterThan(0);
       // every LAST item in a day group draws no rail (nothing dangling below it)
       flat.filter(x => x.isLast).forEach(x => expect(x.railHidden).toBe(true));
-      // every non-last item draws a rail, centered on its dot (within a pixel)
+      // every non-last item draws a rail, centered on its node (within a pixel)
       flat.filter(x => !x.isLast).forEach(x => {
         expect(x.railHidden).toBe(false);
         expect(x.centerDelta).toBeLessThanOrEqual(1);
       });
+      // and every node renders an icon, not a bare ring
+      flat.forEach(x => expect(x.hasIcon).toBe(true));
     });
 
     // Regression (owner-reported): the timeline printed a bid's CURRENT status on

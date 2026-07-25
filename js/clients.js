@@ -1595,6 +1595,17 @@ const CD_AUDIT_LABELS={hub_opened:'Client opened hub',proposal_opened:'Client op
 // existed, the id IS Date.now() at creation (~13-digit epoch ms), which recovers
 // the real time, the same trick the dashboard's new-leads picker uses. Falls back
 // to the date-only key for imported rows that have neither.
+// Icon per timeline event type, so a node says WHAT happened without a legend.
+// Every glyph here must exist in the shared icon set (js/icons.js); svgIcon falls
+// back to rendering the raw character, which would look broken.
+const CD_TL_ICON={lead:'👤',bid:'📋',started:'📝',sent:'📤',audit:'👁',signed:'✍',
+  won:'🤝',declined:'❌',lost:'❌',coll:'🔔',complete:'🏁',payment:'💵',
+  estimate:'📅',job:'🔨',mile:'🚗'};
+function _cdEventIcon(e){
+  // A refund is money going the other way, so it must not wear the payment icon.
+  if(e.type==='payment'&&e.color==='lost')return '💸';
+  return CD_TL_ICON[e.type]||'●';
+}
 // Most precise timestamp available for a timeline event, in priority order:
 // an explicit ISO stamp, then a HH:MM field on the record (a job's start time),
 // then the record's id, which is Date.now() at creation across this app.
@@ -1721,7 +1732,7 @@ function renderCDTimeline(){
     const isBid=e.type==='bid';
     const tstr=(e.ts&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.ts)))?new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
     const metaFull=(tstr?'<span style="color:var(--text3);font-weight:700">'+tstr+'</span>'+(e.meta?' · ':''):'')+(e.meta||'');
-    const inner='<div class="tl-dot '+e.color+'"></div><div class="tl-label">'+e.label+'</div><div class="tl-meta">'+metaFull+(isBid?' · <span style="font-size:10px;color:var(--blue)">tap to edit</span>':'')+' </div>';
+    const inner='<div class="tl-dot '+e.color+'">'+svgIcon(_cdEventIcon(e),{size:13})+'</div><div class="tl-label">'+e.label+'</div><div class="tl-meta">'+metaFull+(isBid?' · <span style="font-size:10px;color:var(--blue)">tap to edit</span>':'')+' </div>';
     if(isBid)return '<div class="tl-item" onclick="viewBidFromTimeline('+e.id+')" style="cursor:pointer">'+inner+'</div>';
     return '<div class="tl-item">'+inner+'</div>';
   }).join('')+'</div>';
