@@ -268,12 +268,23 @@ function _lcCloseRateBySource(){
     .sort((a,b)=>b.leads-a.leads);
 }
 
+// The trade the contractor already picked. There is exactly one source for this
+// in the app: account_config.business_type, written by the onboarding trade step
+// and by the Settings trade picker, and held in memory as _config.business_type.
+// Multi-trade accounts also carry _config.trade_lines, but business_type is
+// already the PRIMARY of that list (settings.js sets it from tradeLines[0]), so
+// the primary trade is what a benchmark should group on. Nothing new to fill in.
 function _lcMyTrade(){
   try{
-    const t=(typeof S!=='undefined'&&S&&(S.businessType||S.trade))||
-            (typeof _config!=='undefined'&&_config&&_config.business_type)||'';
-    return String(t||'').trim().toLowerCase();
+    const t=(typeof _config!=='undefined'&&_config&&_config.business_type)||'';
+    return String(t).trim().toLowerCase();
   }catch(_e){return '';}
+}
+// Display name for a trade id, from the same map the estimate pages use, so the
+// benchmark row says "Painting" exactly like every other trade label in the app.
+function _lcTradeLabel(id){
+  const meta=(typeof TRADE_META!=='undefined'&&TRADE_META)?TRADE_META[id]:null;
+  return meta?meta.label:(id?id.charAt(0).toUpperCase()+id.slice(1):'');
 }
 
 // mountId - element to render into.
@@ -329,7 +340,7 @@ async function renderLifecycleFunnel(mountId){
   if(myRate!==null&&myLeads>0){
     html+=_lcSectionHd('Close rate','Leads that turned into signed work.');
     const tb=tradeBench?Number(tradeBench.value):NaN;
-    html+=_lcRow(trade?('Your business vs other '+trade+' businesses'):'Your business',
+    html+=_lcRow(trade?('Your business vs other '+_lcTradeLabel(trade)+' businesses'):'Your business',
       Math.round(myRate)+'%',isFinite(tb)?Math.round(tb)+'%':'',
       myWon+' of '+myLeads+' leads',_lcCompare(myRate,tb,false));
   }

@@ -193,7 +193,20 @@ Deno.serve(async (req) => {
   // No account id, business name, client name, or dollar figure is published:
   // a count, a median, quartiles, an average.
   // ═══════════════════════════════════════════════════════════════════════════
-  const MIN_ACCOUNTS = 5
+  // Two independent floors, because the owner and a contractor are not the same
+  // audience and should not share a threshold:
+  //
+  //   This one (BENCHMARK_MIN_ACCOUNTS, default 5) decides what gets WRITTEN, so
+  //   it controls what the ops dashboard can see. The dashboard reads with the
+  //   service role, which bypasses RLS, so anything written is visible there.
+  //   On a young platform set it to 1: the owner looking at their own customers'
+  //   aggregate is not a privacy problem.
+  //
+  //   The RLS policy (migration 20260807) independently refuses to serve any row
+  //   with n < 5 to a contractor. Lowering the env var therefore gives the owner
+  //   more visibility without ever putting a thin, re-identifiable average in
+  //   front of a customer.
+  const MIN_ACCOUNTS = Math.max(1, Number(Deno.env.get('BENCHMARK_MIN_ACCOUNTS') || 5) || 5)
   const held: string[] = []   // buckets withheld for being too thin, reported in the response
 
   // Publish a bucket only if enough distinct accounts stand behind it.

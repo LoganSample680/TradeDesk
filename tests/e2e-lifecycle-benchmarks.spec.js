@@ -248,6 +248,64 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
     });
   });
 
+  // ── Trade comes from the picker that already exists ───────────────────────
+  test.describe('_lcMyTrade', () => {
+    test('reads the same field the onboarding and Settings trade pickers write', async () => {
+      const r = await page.evaluate(() => {
+        const save = window._config;
+        try {
+          window._config = { business_type: 'HVAC' };
+          const a = _lcMyTrade();
+          window._config = { business_type: 'painting', trade_lines: 'painting,roofing' };
+          const b = _lcMyTrade();
+          return { a, b };
+        } finally { window._config = save; }
+      });
+      expect(r.a).toBe('hvac');            // normalized, so it matches the benchmark scope key
+      // A multi-trade account groups on its PRIMARY trade, which is what
+      // business_type already holds; trade_lines must not override it.
+      expect(r.b).toBe('painting');
+    });
+
+    test('an account with no trade set yields empty, never a guess', async () => {
+      const r = await page.evaluate(() => {
+        const save = window._config;
+        try {
+          window._config = {};
+          const a = _lcMyTrade();
+          window._config = null;
+          const b = _lcMyTrade();
+          return [a, b];
+        } finally { window._config = save; }
+      });
+      expect(r).toEqual(['', '']);
+    });
+
+    test('no invented field: setting S.businessType alone does not fake a trade', async () => {
+      // The first cut of this read S.businessType, which the app never writes.
+      // Guarding it stops the lookup drifting off the real picker again.
+      const r = await page.evaluate(() => {
+        const saveC = window._config, saveS = S.businessType;
+        try { window._config = {}; S.businessType = 'plumbing'; return _lcMyTrade(); }
+        finally { window._config = saveC; S.businessType = saveS; }
+      });
+      expect(r).toBe('');
+    });
+  });
+
+  test.describe('_lcTradeLabel', () => {
+    test('uses the app-wide trade labels, not a second copy', async () => {
+      const r = await page.evaluate(() => [
+        _lcTradeLabel('painting'), _lcTradeLabel('hvac'), _lcTradeLabel('landscaping'),
+      ]);
+      expect(r).toEqual(['Painting', 'HVAC', 'Landscaping']);
+    });
+    test('an unknown or empty trade degrades instead of printing undefined', async () => {
+      const r = await page.evaluate(() => [_lcTradeLabel('welding'), _lcTradeLabel('')]);
+      expect(r).toEqual(['Welding', '']);
+    });
+  });
+
   // ── Rendering ─────────────────────────────────────────────────────────────
   test.describe('renderLifecycleFunnel', () => {
     const MINE = [
