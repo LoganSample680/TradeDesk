@@ -3227,6 +3227,36 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.epochJunk).toBe(0);
     });
 
+    // The send is a load-bearing audit event (it proves the client was given the
+    // proposal before signing). Nothing used to stamp bid.sentAt, so the row never
+    // rendered; _commitProposalSent now records it. Proposals sent before that
+    // still show the row from the proposalSentDate day key, without a clock time.
+    test('Proposal sent renders with a time when stamped, and from the legacy date otherwise', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 1750000100000, bidMs = new Date('2026-07-24T14:22:00').getTime();
+        const seed = extra => {
+          clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Sent Check', source: 'Referral', created: '2026-07-24' }]);
+          bids = bids.filter(b => b.client_id !== cid).concat([Object.assign({
+            id: bidMs * 1000 + 7, client_id: cid, client_name: 'Sent Check', status: 'Sent', draft: false,
+            amount: 900, bid_date: '2026-07-24', notifyEmail: 'c@example.com' }, extra)]);
+          window._proposalAuditEventsByBid = {};
+          window.currentClientId = cid;
+          window._cdTimelineOpen = true;
+          renderCDTimeline();
+          const row = [...document.querySelectorAll('#cd-timeline-mount .tl-item')]
+            .find(n => n.innerText.startsWith('Proposal sent'));
+          return row ? row.innerText : 'MISSING';
+        };
+        return {
+          stamped: seed({ sentAt: new Date('2026-07-24T14:22:00').toISOString() }),
+          legacy: seed({ proposalSentDate: '2026-07-24' }),
+        };
+      });
+      expect(r.stamped).toContain('Proposal sent');
+      expect(r.stamped).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/);   // exact send time
+      expect(r.legacy).toContain('Proposal sent');            // still shown for older data
+    });
+
     test('exportAuditReport on a missing bid does not throw', async () => {
       const ok = await page.evaluate(() => {
         try { exportAuditReport(99999999); return true; } catch (e) { return false; }

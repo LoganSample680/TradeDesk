@@ -577,6 +577,10 @@ function _commitProposalSent(){
     if(bid.status==='Draft'||!bid.status)bid.status='Pending';
     bid.draft=false;
     bid.proposalSentDate=todayKey();
+    // Exact send moment for the audit trail. proposalSentDate is a day key only,
+    // which drives follow-up scheduling; the audit timeline and the exported
+    // report need the time the client was actually sent the proposal.
+    bid.sentAt=new Date().toISOString();
     if(!bid.followupStage)bid.followupStage=1;
     bid.followup=addDays(todayKey(),3);
     // Snapshot the exact proposal HTML the client will sign, required for legal record

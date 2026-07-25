@@ -1598,7 +1598,7 @@ const CD_AUDIT_LABELS={hub_opened:'Client opened hub',proposal_opened:'Client op
 // Icon per timeline event type, so a node says WHAT happened without a legend.
 // Every glyph here must exist in the shared icon set (js/icons.js); svgIcon falls
 // back to rendering the raw character, which would look broken.
-const CD_TL_ICON={lead:'👤',bid:'📋',started:'📝',sent:'📤',audit:'👁',signed:'✍',
+const CD_TL_ICON={lead:'👤',bid:'📋',sent:'📤',audit:'👁',signed:'✍',
   won:'🤝',declined:'❌',lost:'❌',coll:'🔔',complete:'🏁',payment:'💵',
   estimate:'📅',job:'🔨',mile:'🚗'};
 function _cdEventIcon(e){
@@ -1667,9 +1667,9 @@ function renderCDTimeline(){
     // dated the day the proposal was written). Status changes are their own dated
     // events below.
     events.push({date:b.bid_date||'',ts:_cdEventTs(b.bid_date,{iso:b.createdAt,id:b.id}),type:'bid',id:b.id,label:`Proposal: ${fmt(b.amount)}`,meta:b.draft?'Draft created':'Created',color:'bid'});
-    // Audit lifecycle: started -> sent -> opened(IP) -> hub opened(IP) -> signed(IP).
-    if(b.createdAt&&String(b.createdAt).slice(0,10)!==String(b.bid_date))events.push({date:String(b.createdAt).slice(0,10),ts:b.createdAt,type:'started',label:'Proposal started',meta:fmt(b.amount),color:'bid'});
-    if(b.sentAt)events.push({date:String(b.sentAt).slice(0,10),ts:b.sentAt,type:'sent',label:'Proposal sent',meta:escHtml(b.notifyEmail||b.sentTo||'to client'),color:'estimate'});
+    // Audit lifecycle: sent -> opened(IP) -> hub opened(IP) -> signed(IP).
+    const _sent=b.sentAt||b.proposalSentDate;
+    if(_sent)events.push({date:String(_sent).slice(0,10),ts:_cdEventTs(String(_sent).slice(0,10),{iso:b.sentAt}),type:'sent',label:'Proposal sent',meta:escHtml(b.notifyEmail||b.sentTo||'to client'),color:'estimate'});
     // Per-event audit log (each open + every sign-flow step, own timestamp + IP).
     // Prefer the granular log; fall back to the aggregate open events when absent.
     const _alog=(typeof _proposalAuditEventsByBid!=='undefined'&&_proposalAuditEventsByBid)?_proposalAuditEventsByBid[String(b.id)]:null;
@@ -1822,7 +1822,7 @@ function exportAuditReport(bidId){
     :[];
   const rows=[
     ['Proposal created', b.createdAt||b.bid_date, '', ''],
-    ['Proposal sent', b.sentAt, '', b.notifyEmail||b.sentTo||''],
+    ['Proposal sent', b.sentAt||b.proposalSentDate, '', b.notifyEmail||b.sentTo||''],
     ..._mid,
     ..._unsignedWin,
     ['Signed'+(b.signedName?' by '+b.signedName:''), b.signedAt, b.signIp, b.signUa],
