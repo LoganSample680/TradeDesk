@@ -1598,9 +1598,16 @@ const CD_AUDIT_LABELS={hub_opened:'Client opened hub',proposal_opened:'Client op
 // Icon per timeline event type, so a node says WHAT happened without a legend.
 // Every glyph here must exist in the shared icon set (js/icons.js); svgIcon falls
 // back to rendering the raw character, which would look broken.
-const CD_TL_ICON={lead:'👤',bid:'📋',sent:'📤',audit:'👁',signed:'✍',
+const CD_TL_ICON={lead:'👤',bid:'📋',sent:'📤',audit:'👁',signed:'✍',expense:'🧾',
   won:'🤝',declined:'❌',lost:'❌',coll:'🔔',complete:'🏁',payment:'💵',
   estimate:'📅',job:'🔨',mile:'🚗'};
+// The job lifecycle, in the order it actually happens. Used only to place events
+// that carry a date but no clock time, so they land beside the stage they belong
+// to rather than defaulting to midday. Drives and expenses sit mid-job because
+// that is when they occur.
+const CD_TL_STAGE={lead:10,estimate:20,bid:30,sent:40,hub:50,opened:60,audit:70,
+  signed:80,won:85,payment:90,mile:95,expense:96,job:100,complete:110,coll:120,
+  declined:130,lost:130,_default:75};
 function _cdEventIcon(e){
   // A refund is money going the other way, so it must not wear the payment icon.
   if(e.type==='payment'&&e.color==='lost')return '💸';
@@ -1728,15 +1735,17 @@ function renderCDTimeline(){
     }
   });
   cmiles.forEach(m=>events.push({date:m.date||'',ts:_cdEventTs(m.date,{iso:m.ts,id:m.id}),type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
+  // Expenses logged against this client belong in the trail too: they're part of
+  // what happened on the job, and they were the one activity type missing.
+  (typeof getClientExpenses==='function'?getClientExpenses(currentClientId):[]).forEach(x=>{
+    if(!x.date)return;
+    events.push({date:x.date,ts:_cdEventTs(x.date,{iso:x.ts,id:x.id}),type:'expense',
+      label:'Expense: '+fmt(x.amount||0),
+      meta:escHtml(x.vendor||x.catLabel||x.cat||'Expense'),color:'lost'});
+  });
   // Every event is grouped by the LOCAL calendar day of its own timestamp.
   // Stamps arrive in mixed forms (server UTC ISO, local ISO, bare day keys), so
   // slicing the string put late-evening events on tomorrow's date.
-  const _tms=e=>{
-    const t=e.ts||e.date;
-    if(!t)return 0;
-    const d=/^\d{4}-\d{2}-\d{2}$/.test(String(t))?new Date(String(t)+'T12:00:00'):new Date(t);
-    return isNaN(d.getTime())?0:d.getTime();
-  };
   events.forEach(e=>{
     const t=String(e.ts||'');
     if(t&&!/^\d{4}-\d{2}-\d{2}$/.test(t)){
@@ -1744,6 +1753,30 @@ function renderCDTimeline(){
       if(!isNaN(d.getTime()))e.date=dateKey(d);
     }
   });
+  // Ordering within a day. Real clock times always win. An event that only has a
+  // DATE (older records, a job's start day) used to be anchored at noon, which
+  // dropped it below everything logged that evening: a proposal sent at 8:32 PM
+  // sorted to the bottom of the day. Instead, an undated-time event is slotted by
+  // its position in the job lifecycle, immediately after the latest timed event
+  // that precedes it in that sequence. The synthetic value is used for SORTING
+  // only; nothing fabricated is ever displayed.
+  const _hasClock=e=>{const t=String(e.ts||'');return !!t&&!/^\d{4}-\d{2}-\d{2}$/.test(t);};
+  const _ms=e=>{const d=new Date(e.ts);return isNaN(d.getTime())?0:d.getTime();};
+  const _rank=e=>CD_TL_STAGE[e.type]!=null?CD_TL_STAGE[e.type]:CD_TL_STAGE._default;
+  const _byDay={};
+  events.forEach(e=>{(_byDay[e.date]||(_byDay[e.date]=[])).push(e);});
+  Object.keys(_byDay).forEach(day=>{
+    const list=_byDay[day];
+    const timed=list.filter(_hasClock);
+    const dayStart=new Date(String(day)+'T00:00:00').getTime()||0;
+    list.forEach(e=>{
+      if(_hasClock(e)){e._ord=_ms(e);return;}
+      let at=dayStart;
+      timed.forEach(t=>{if(_rank(t)<=_rank(e))at=Math.max(at,_ms(t));});
+      e._ord=at+1; // just after the stage it follows
+    });
+  });
+  const _tms=e=>e._ord||0;
   events.sort((a,b)=>_tms(b)-_tms(a));
   const el=document.getElementById('cd-timeline-mount');if(!el)return;
   const open=(window._cdTimelineOpen!==false);

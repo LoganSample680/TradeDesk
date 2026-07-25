@@ -3257,6 +3257,42 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.legacy).toContain('Proposal sent');            // still shown for older data
     });
 
+    // Owner-specified job lifecycle. An event carrying only a date (older records,
+    // a job's start day) used to anchor at noon and fall below everything logged
+    // that evening, which is how a sent proposal ended up at the bottom of its day.
+    test('the day reads in job-lifecycle order, and a date-only event slots correctly', async () => {
+      const r = await page.evaluate(() => {
+        const at = (hh, m) => new Date(`2026-07-16T${String(hh).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`).getTime();
+        const day = '2026-07-16', cid = at(7, 5), bidId = at(8, 0) * 1000 + 3;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Full Life', source: 'Referral', created: day }]);
+        bids = bids.filter(b => b.client_id !== cid).concat([{
+          id: bidId, client_id: cid, client_name: 'Full Life', status: 'Closed Won', draft: false, amount: 5000,
+          bid_date: day, proposalSentDate: day,                       // date only, no clock time
+          signedAt: new Date(at(11, 0)).toISOString(), signedName: 'FL',
+          completion_date: day, completedAt: new Date(at(16, 5)).toISOString() }]);
+        payments = payments.filter(p => p.bid_id !== bidId).concat([
+          { id: at(11, 5), bid_id: bidId, client_id: cid, date: day, amount: 2500, method: 'Card' }]);
+        if (typeof expenses !== 'undefined') expenses = expenses.filter(x => x.client_id !== cid)
+          .concat([{ id: at(14, 15), client_id: cid, date: day, amount: 212.4, vendor: 'SW', cat: 'materials' }]);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        // oldest-first, so it reads as the job's story
+        return [...document.querySelectorAll('#cd-timeline-mount .tl-item')]
+          .map(n => n.innerText.split('\n')[0]).reverse();
+      });
+      const idx = label => r.findIndex(x => x.startsWith(label));
+      expect(idx('Lead created')).toBeGreaterThanOrEqual(0);
+      // the date-only send sits after the proposal was created, not at the bottom
+      expect(idx('Proposal:')).toBeLessThan(idx('Proposal sent'));
+      expect(idx('Proposal sent')).toBeLessThan(idx('Signed'));
+      expect(idx('Signed')).toBeLessThan(idx('Payment:'));
+      expect(idx('Payment:')).toBeLessThan(idx('Expense:'));
+      expect(idx('Expense:')).toBeLessThan(idx('Job completed'));
+      expect(idx('Lead created')).toBe(0);
+    });
+
     test('exportAuditReport on a missing bid does not throw', async () => {
       const ok = await page.evaluate(() => {
         try { exportAuditReport(99999999); return true; } catch (e) { return false; }
