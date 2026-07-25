@@ -2025,7 +2025,9 @@ test.describe('sign.html: close-rate UX pass', () => {
     // the expected date from the SAME timestamp the page actually used instead of
     // an independent clock read, deterministic regardless of run length or when
     // midnight falls.
-    const expected = new Date(new Date(MOCK_PROPOSAL.createdAt).getTime() + 30 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    // Owner-approved global format: every date stamp in the product reads
+    // MM/DD/YYYY, so the chip does too.
+    const expected = new Date(new Date(MOCK_PROPOSAL.createdAt).getTime() + 30 * 86400000).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
     expect(text).toContain(expected);
   });
 

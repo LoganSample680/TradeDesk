@@ -45,11 +45,11 @@ BEGIN
   -- history. ts is not settable here, the column default supplies it.
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='lifecycle_events' AND policyname='Contractor reads own lifecycle events') THEN
     EXECUTE $p$ CREATE POLICY "Contractor reads own lifecycle events"
-      ON lifecycle_events FOR SELECT USING (contractor_user_id = auth.uid()) $p$;
+      ON lifecycle_events FOR SELECT USING (contractor_user_id::text = auth.uid()::text) $p$;
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='lifecycle_events' AND policyname='Contractor writes own lifecycle events') THEN
     EXECUTE $p$ CREATE POLICY "Contractor writes own lifecycle events"
-      ON lifecycle_events FOR INSERT TO authenticated WITH CHECK (contractor_user_id = auth.uid()) $p$;
+      ON lifecycle_events FOR INSERT TO authenticated WITH CHECK (contractor_user_id::text = auth.uid()::text) $p$;
   END IF;
 END $$;
 
@@ -76,13 +76,13 @@ AS $$
     SELECT e.contractor_user_id, e.bid_id, e.client_id, e.event, e.ts
       FROM public.lifecycle_events e
      WHERE (p_since IS NULL OR e.ts >= p_since)
-       AND (p_scope = 'all' OR e.contractor_user_id = auth.uid())
+       AND (p_scope = 'all' OR e.contractor_user_id::text = auth.uid()::text)
     UNION ALL
     -- The client-facing half of the funnel already lives here.
     SELECT a.contractor_user_id, a.bid_id, a.client_id, a.event, a.ts
       FROM public.proposal_audit_events a
      WHERE (p_since IS NULL OR a.ts >= p_since)
-       AND (p_scope = 'all' OR a.contractor_user_id = auth.uid())
+       AND (p_scope = 'all' OR a.contractor_user_id::text = auth.uid()::text)
   ),
   -- First occurrence of each event per entity: a proposal can be opened many
   -- times, but "time to first open" is the meaningful number.

@@ -2099,7 +2099,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.hasOverlay).toBe(true);
   });
 
-  test('_showNewLeadsPicker title reads "Leads waiting on an estimate" and shows a lead count', async () => {
+  test('_showNewLeadsPicker title reads "Leads waiting on a proposal" and shows a lead count', async () => {
     const r = await page.evaluate(() => {
       const cid = 780450;
       clients.unshift({ id: cid, name: 'Count Label Lead', addr: '1 Count St', created: todayKey() });
@@ -2111,13 +2111,17 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       clients = clients.filter(c => c.id !== cid);
       return {
         err,
-        hasTitle: html.includes('Leads waiting on an estimate'),
+        // Owner-approved rename: the app says "proposal" everywhere a client sees
+        // it, so the old "estimate" wording must not come back.
+        hasTitle: html.includes('Leads waiting on a proposal'),
+        hasEstimateWord: /waiting on an estimate/i.test(html),
         hasOldTitle: html.includes('oldest first'),
         hasCount: /1\s*lead\b/.test(html),
       };
     });
     expect(r.err).toBe('');
     expect(r.hasTitle).toBe(true);
+    expect(r.hasEstimateWord).toBe(false);
     expect(r.hasOldTitle).toBe(false);
     expect(r.hasCount).toBe(true);
   });

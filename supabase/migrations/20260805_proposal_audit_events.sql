@@ -35,7 +35,7 @@ BEGIN
   ) THEN
     EXECUTE $p$ CREATE POLICY "Contractor reads own audit events"
       ON proposal_audit_events FOR SELECT
-      USING (contractor_user_id = auth.uid()) $p$;
+      USING (contractor_user_id::text = auth.uid()::text) $p$;
   END IF;
 END $$;
 

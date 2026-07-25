@@ -2568,16 +2568,23 @@ function _cdPropCardHtml(c,a,idx,total){
   const meta2=noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap to look up property details</span>`:`${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}`;
   // All the property facts inline on the card, so the owner sees them without
   // having to expand every address (owner ask: "see all property data").
+  // Open balance is computed up here because it decides whether the header stat
+  // slot is spoken for, which in turn decides whether est. value has to ride in
+  // the facts line instead.
+  const openBal=money?Math.max(0,(hist.billed||0)-(hist.paid||0)):0;
   const _facts=[];
   if(p.sqft)_facts.push(`${Number(p.sqft).toLocaleString()} sqft`);
   if(p.bedrooms||p.bathrooms)_facts.push(`${p.bedrooms||'?'} bd / ${p.bathrooms||'?'} ba`);
   if(p.lotSize)_facts.push(`${escHtml(String(p.lotSize))} lot`);
   if(p.lastSalePrice||p.lastSaleDate)_facts.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${money&&p.lastSalePrice?' for '+_cdCompactMoney(p.lastSalePrice):''}`.trim());
+  // Est. value normally sits in the header stat, but money owed at this address
+  // takes that slot. Without this, the value silently vanishes from the card the
+  // moment a proposal is outstanding, which is exactly when it's worth knowing.
+  if(value&&openBal>0.01)_facts.push(`${value} est. value`);
   const factsLine=_facts.length?`<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.45">${_facts.join('  ·  ')}</div>`:'';
   // Collapsed row identifier: single shows the full meta, multi shows just the city.
   const metaShown=single?meta2:(noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap for details</span>`:escHtml(cityLine||''));
   // One decision-relevant stat on the row: open balance if owed here, else est. value.
-  const openBal=money?Math.max(0,(hist.billed||0)-(hist.paid||0)):0;
   const statBlock=openBal>0.01
     ?`<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:#ff6b6b;white-space:nowrap">${fmt(openBal)}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Owed</div></div>`
     :(value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'');
@@ -2611,8 +2618,9 @@ function _cdPropCardHtml(c,a,idx,total){
       <textarea id="cd-propnote-${idx}" rows="2" placeholder="Gate code, dog, where to park, tricky access…" style="width:100%;font-size:12px;padding:8px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg-card,var(--bg));color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4;margin-bottom:8px">${escHtml(note||'')}</textarea>
       <button onclick="event.stopPropagation();_cdSavePropNote(${idx})" class="btn btn-p btn-sm">Save site access</button>
     </div>`;
-    // Property facts (sqft/beds/last sale) now show inline on the collapsed card,
-    // so the expanded body is just the lead flag, access note, and work history.
+    // Property facts (sqft/beds/last sale) show in the header for a single
+    // property and in this body for multi, so the expanded body adds only the
+    // lead flag, access note, and work history.
     // Work items, one clean chronological list with a type tag.
     const items=[
       ...hist.proposals.map(b=>({kind:'Proposal',accent:'var(--blue)',name:b.type||b.name||'Proposal',date:b.bid_date||(b.created?String(b.created).slice(0,10):''),amount:b.amount||0,meta:b.status||''})),

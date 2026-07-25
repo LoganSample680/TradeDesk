@@ -2823,6 +2823,10 @@ test.describe('clients.js: exhaustive coverage', () => {
             crewHasDollar: /\$\d/.test(crew), crewHasProperty: crew.includes('Money Rd') && crew.includes('Repaint') && crew.includes('1970'),
             crewHasLead: crew.includes('EPA RRP'),
             mgrHasValue: mgr.includes('$250K'), mgrHasAmount: /\$4,200/.test(mgr), mgrHasPaidTotal: mgr.includes('paid'),
+            // Regression guard: this address has an unpaid $4,200 proposal, so the
+            // header stat slot shows "Owed". Est. value must still appear (in the
+            // facts line) rather than being silently pushed off the card.
+            mgrHasOwed: mgr.includes('Owed'),
           };
         } finally {
           window._isEmployee = _origEmp; window._employeeRecord = _origRec;
@@ -2836,6 +2840,8 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.mgrHasValue).toBe(true);
       expect(r.mgrHasAmount).toBe(true);
       expect(r.mgrHasPaidTotal).toBe(true);
+      // Owed and est. value coexist: one does not evict the other.
+      expect(r.mgrHasOwed).toBe(true);
     });
   });
 
