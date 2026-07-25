@@ -3185,6 +3185,48 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.sameDay).toContain('2026-07-16');   // same day, real time used
     });
 
+    // Regression (owner-reported): a lead and its proposal, created two minutes
+    // apart in the evening, showed on two DIFFERENT dates, and the proposal had no
+    // time. Two causes: id-derived stamps used toISOString() (UTC), so an 8:31 PM
+    // Central event sliced to the next day's key while day keys elsewhere are
+    // local; and bid ids are Date.now()*1000, not epoch ms, so their time never
+    // resolved.
+    test('events created moments apart stay on one local day, with times', async () => {
+      const r = await page.evaluate(() => {
+        const leadMs = new Date('2026-07-24T20:31:00').getTime();
+        const bidMs = new Date('2026-07-24T20:33:00').getTime();
+        clients = clients.filter(c => c.id !== leadMs).concat([
+          { id: leadMs, name: 'Evening Lead', source: 'Unknown', created: '2026-07-24' }]);
+        bids = bids.filter(b => b.client_id !== leadMs).concat([{
+          id: bidMs * 1000 + 123,            // _newBidId() scale
+          client_id: leadMs, client_name: 'Evening Lead', status: 'Sent', draft: false,
+          amount: 154.58, bid_date: '2026-07-24',
+          signedAt: new Date('2026-07-24T20:40:00').toISOString() }]);  // server UTC stamp
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = leadMs;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const el = document.getElementById('cd-timeline-mount');
+        return {
+          dayHeaders: [...el.querySelectorAll('.bk-day-title')].map(n => n.textContent),
+          rows: [...el.querySelectorAll('.tl-item')].map(n => n.innerText),
+          epochPlain: _cdEpochMs(bidMs),          // Date.now() scale
+          epochBid: _cdEpochMs(bidMs * 1000 + 123), // _newBidId scale
+          epochJunk: _cdEpochMs(7),
+        };
+      });
+      // one local day, not split across two
+      expect(new Set(r.dayHeaders).size).toBe(1);
+      expect(r.dayHeaders[0]).toBe('07/24/2026');
+      // and every row carries a time, including the UTC-stamped signature
+      expect(r.rows.length).toBe(3);
+      r.rows.forEach(row => expect(row).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/));
+      // both id scales normalise to the same moment; junk ids are rejected
+      expect(r.epochPlain).toBe(new Date('2026-07-24T20:33:00').getTime());
+      expect(Math.abs(r.epochBid - r.epochPlain)).toBeLessThan(1000);
+      expect(r.epochJunk).toBe(0);
+    });
+
     test('exportAuditReport on a missing bid does not throw', async () => {
       const ok = await page.evaluate(() => {
         try { exportAuditReport(99999999); return true; } catch (e) { return false; }

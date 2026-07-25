@@ -1606,6 +1606,24 @@ function _cdEventIcon(e){
   if(e.type==='payment'&&e.color==='lost')return '💸';
   return CD_TL_ICON[e.type]||'●';
 }
+// Local 'YYYY-MM-DDTHH:MM:SS' (no Z). Timestamps derived from an id MUST be local:
+// toISOString() renders UTC, so an 8:31 PM Central event sliced to a 07/25 date key
+// while its own clock read 8:31 PM on the 24th, splitting same-moment events across
+// two day groups. Every day key in this app (dateKey/todayKey) is local, so these
+// must match.
+function _cdLocalIso(d){
+  const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+}
+// Record ids are creation timestamps, but in two different scales: most are
+// Date.now() (~1.7e12), while bid ids are _newBidId() = Date.now()*1000 + random
+// (~1.7e15). Normalise both to real epoch ms; anything else isn't a timestamp.
+function _cdEpochMs(id){
+  const n=Number(id);
+  if(!isFinite(n)||n<=0)return 0;
+  if(n>1e14)return Math.floor(n/1000);
+  return n>1e12?n:0;
+}
 // Most precise timestamp available for a timeline event, in priority order:
 // an explicit ISO stamp, then a HH:MM field on the record (a job's start time),
 // then the record's id, which is Date.now() at creation across this app.
@@ -1621,19 +1639,18 @@ function _cdEventTs(dayKey,opts){
     const t=String(opts.time).length===4?'0'+opts.time:String(opts.time);
     return day+'T'+t.slice(0,5);
   }
-  const ms=Number(opts.id);
-  if(ms>1e12){
+  const ms=_cdEpochMs(opts.id);
+  if(ms){
     const d=new Date(ms);
-    const local=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    if(local===day)return d.toISOString();
+    if(dateKey(d)===day)return _cdLocalIso(d);
   }
   return day;
 }
 function _cdLeadCreatedTs(c){
   if(!c)return'';
   if(c.createdAt)return c.createdAt;
-  const ms=Number(c.id);
-  if(ms>1e12)return new Date(ms).toISOString();
+  const ms=_cdEpochMs(c.id);
+  if(ms)return _cdLocalIso(new Date(ms));
   return c.created||'';
 }
 function renderCDTimeline(){
@@ -1711,8 +1728,23 @@ function renderCDTimeline(){
     }
   });
   cmiles.forEach(m=>events.push({date:m.date||'',ts:_cdEventTs(m.date,{iso:m.ts,id:m.id}),type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
-  const _tkey=e=>String(e.ts||e.date||'');
-  events.sort((a,b)=>_tkey(b).localeCompare(_tkey(a)));
+  // Every event is grouped by the LOCAL calendar day of its own timestamp.
+  // Stamps arrive in mixed forms (server UTC ISO, local ISO, bare day keys), so
+  // slicing the string put late-evening events on tomorrow's date.
+  const _tms=e=>{
+    const t=e.ts||e.date;
+    if(!t)return 0;
+    const d=/^\d{4}-\d{2}-\d{2}$/.test(String(t))?new Date(String(t)+'T12:00:00'):new Date(t);
+    return isNaN(d.getTime())?0:d.getTime();
+  };
+  events.forEach(e=>{
+    const t=String(e.ts||'');
+    if(t&&!/^\d{4}-\d{2}-\d{2}$/.test(t)){
+      const d=new Date(t);
+      if(!isNaN(d.getTime()))e.date=dateKey(d);
+    }
+  });
+  events.sort((a,b)=>_tms(b)-_tms(a));
   const el=document.getElementById('cd-timeline-mount');if(!el)return;
   const open=(window._cdTimelineOpen!==false);
   const count=events.length?' <span style="color:var(--text3);font-weight:700">· '+events.length+'</span>':'';
@@ -1724,7 +1756,7 @@ function renderCDTimeline(){
   // Expenses use (_bkMonthAcc + _bkRenderDays), so every month-grouped history in
   // the app has identical structure and right-hand chevrons. The day body is the
   // vertical timeline (dots + rail) rather than a table, passed via opts.bodyFn.
-  const sorted=[...events].sort((a,b)=>_tkey(b).localeCompare(_tkey(a)));
+  const sorted=[...events].sort((a,b)=>_tms(b)-_tms(a));
   const byMonth={};
   sorted.forEach(e=>{const mo=String(e.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(e);});
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
