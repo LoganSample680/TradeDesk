@@ -430,19 +430,26 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
     });
 
     test('every row prints the average it is measured against', async () => {
-      const r = await page.evaluate(() =>
-        _lcRow('From sent to signed', '10 hr', 0.5, '20 hr', '50% faster', '5 so far'));
+      const r = await page.evaluate(() => _lcRow('From sent to signed', '10 hr', '20 hr', 9));
       expect(r).toContain('vs 20 hr');      // the comparison value, on the row
-      expect(r).toContain('50% faster');
-      expect(r).toContain('5 so far');
+      expect(r).toContain('10 hr');
     });
 
-    test('a row with no benchmark says so rather than showing a bare bar', async () => {
-      const r = await page.evaluate(() =>
-        _lcRow('Getting paid in full', '4 days', null, '', '', '4 so far'));
-      expect(r).toContain('No TradeDesk average yet');
-      expect(r).toContain('4 so far');
+    test('a row with no benchmark says so rather than showing a bare number', async () => {
+      const r = await page.evaluate(() => _lcRow('Getting paid in full', '4 days', '', 9));
+      expect(r).toContain('no average yet');
       expect(r).not.toContain('vs ');
+    });
+
+    test('a thin sample is flagged; a healthy one is not', async () => {
+      // "31% worse" off three leads is not a fact about a business. Printing the
+      // count next to a number built from fourteen jobs is just clutter.
+      const r = await page.evaluate(() => ({
+        thin: _lcRow('Door to door', '25%', '18%', 3),
+        healthy: _lcRow('Referral', '50%', '52%', 40),
+      }));
+      expect(r.thin).toContain('(3 so far)');
+      expect(r.healthy).not.toContain('so far');
     });
 
     test('the footnote spells out what every average is measured across', async () => {
@@ -451,7 +458,7 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE2);
-      expect(html).toContain('across all TradeDesk businesses');
+      expect(html).toContain('Averages cover every TradeDesk business');
     });
 
     test('the headline names the peer group, not just a bare percentage', async () => {
@@ -571,7 +578,7 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
     test('stages render in pipeline order, not alphabetically', async () => {
       const r = await page.evaluate(async (mine) => {
         window.__install(mine, []);
-        window._lcSecOpen_speed = true;       // the step detail is collapsed by default
+        window._lcSecOpen_all = true;       // the step detail is collapsed by default
         await renderLifecycleFunnel('lc-funnel-mine');
         const html = document.getElementById('lc-funnel-mine').innerHTML;
         return {
@@ -589,11 +596,11 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
     test('with no benchmark rows the card says so instead of showing a hole', async () => {
       const html = await page.evaluate(async (mine) => {
         window.__install(mine, []);
-        window._lcSecOpen_speed = true;
+        window._lcSecOpen_all = true;
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('No TradeDesk average yet');
+      expect(html).toContain('no average yet');
       expect(html).not.toContain('NaN');
       expect(html).not.toContain('undefined');
     });
@@ -603,14 +610,13 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         window.__install(mine, [
           { metric: 'bench_stage_hours', scope: 'stage:proposal_sent>signed', n: 40, median: 20, avg: 30, value: null, day: '2026-07-24' },
         ]);
-        window._lcSecOpen_speed = true;
+        window._lcSecOpen_all = true;
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('TradeDesk');
-      // Their 10 hr against a platform 20 hr is twice as fast. A duration says
-      // "faster", not "better", because that is how a contractor says it.
-      expect(html).toContain('50% faster');
+      // The row now states the comparison value rather than a computed verdict:
+      // "10 hr vs 20 hr" is the same fact with nothing to parse.
+      expect(html).toContain('vs 20 hr');
     });
 
     test('the newest day wins when several days are present', async () => {
@@ -619,12 +625,12 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
           { metric: 'bench_stage_hours', scope: 'stage:proposal_sent>signed', n: 40, median: 20, avg: 30, value: null, day: '2026-07-24' },
           { metric: 'bench_stage_hours', scope: 'stage:proposal_sent>signed', n: 9, median: 500, avg: 500, value: null, day: '2026-01-01' },
         ]);
-        window._lcSecOpen_speed = true;
+        window._lcSecOpen_all = true;
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('50% faster');   // the 20 hr row, not the stale 500 hr one
-      expect(html).not.toContain('21 days');
+      expect(html).toContain('vs 20 hr');     // the newest day's row, not the stale 500 hr one
+      expect(html).not.toContain('vs 21 days');
     });
 
     test('close rate by lead source renders with its own benchmark', async () => {
@@ -632,16 +638,16 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         window.__install(mine, [
           { metric: 'bench_close_rate_source', scope: 'source:Referral', n: 30, median: null, avg: null, value: 50, day: '2026-07-24' },
         ]);
-        window._lcSecOpen_src = true;
+        window._lcSecOpen_all = true;
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
       expect(html).toContain('Close rate by lead source');
       expect(html).toContain('Referral');
-      // The sample count survives ALONGSIDE the verdict. "33% worse" drawn from
-      // three leads must never read as a settled fact about the business.
-      expect(html).toContain('33% worse');
-      expect(html).toContain('1 of 3 leads');
+      // No computed verdict on the row any more, just the two numbers side by
+      // side, and the count only where the sample is thin enough to mislead.
+      expect(html).toContain('vs 50%');
+      expect(html).toContain('(3 so far)');
     });
 
     test('the privacy floor is stated on the card', async () => {
@@ -650,7 +656,7 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('five separate businesses');
+      expect(html).toContain('five businesses are behind a number');
     });
 
     test('an RPC failure degrades to a message, never a broken card', async () => {

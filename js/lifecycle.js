@@ -161,9 +161,9 @@ const LC_STAGE_ORDER=[
 const LC_STAGE_LABEL={
   'lead_created>proposal_saved':'Getting a proposal written',
   'proposal_started>proposal_saved':'Time to write one proposal',
-  'proposal_saved>proposal_sent':'Getting it sent once it is written',
+  'proposal_saved>proposal_sent':'Getting it sent out',
   'proposal_sent>proposal_opened':'Waiting on them to open it',
-  'proposal_opened>signed':'From their first look to signing',
+  'proposal_opened>signed':'First look to signing',
   'proposal_sent>signed':'From sent to signed',
   'signed>job_scheduled':'Getting them on the schedule',
   'job_scheduled>job_completed':'How long the job takes',
@@ -373,24 +373,27 @@ function _lcHeroGauge(pctStr,label,offset,midLabel,subStr){
   '</div>';
 }
 
-// One comparison row. The rail shows WHERE they sit; the text beside it names
-// WHAT they are sitting against, because a tick on a bar does not tell anyone
-// what the comparison actually is.
-function _lcRow(label,mineStr,offset,benchStr,verdictText,sampleStr){
-  const meta=offset==null
-    ?['No TradeDesk average yet',sampleStr].filter(Boolean).join('  ·  ')
-    :[benchStr?('vs '+benchStr):'',verdictText,sampleStr].filter(Boolean).join('  ·  ');
-  return '<div style="padding:11px 2px;border-bottom:1px solid var(--border)">'+
-    '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px">'+
-      '<span style="font-size:13px;font-weight:700;color:var(--text);min-width:0">'+escHtml(label)+'</span>'+
-      '<span style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">'+escHtml(mineStr)+'</span>'+
-    '</div>'+
-    '<div style="display:flex;align-items:center;gap:10px;margin-top:9px">'+
-      '<div style="flex:0 0 72px">'+_lcGauge(offset,'sm')+'</div>'+
-      // The average AND the sample count, always. "33% worse" from three leads is
-      // not a fact about the business, and hiding either would let it read as one.
-      '<span style="font-size:11px;color:var(--text3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(meta)+'</span>'+
-    '</div>'+
+// One line per number, and that is the whole row.
+//
+// This started as a bar plus an average plus a verdict plus a sample count on
+// every row. Each of those was defensible on its own and together they made
+// thirteen rows of noise, which is the exact failure the research warned about:
+// a report nobody checks is decoration. Only ONE thing on this card gets a gauge
+// now, the headline, and everything else is a list you can scan in one pass.
+//
+// A count rides along only when it is small enough to mislead. "31% worse" off
+// three leads is not a fact about a business, but printing "14 so far" next to a
+// number built from fourteen jobs is just clutter.
+const LC_THIN_SAMPLE=5;
+function _lcRow(label,mineStr,benchStr,sampleN){
+  const thin=Number(sampleN)>0&&Number(sampleN)<LC_THIN_SAMPLE;
+  const right=benchStr
+    ?'<span style="color:var(--text3);font-weight:600"> vs '+escHtml(benchStr)+'</span>'
+    :'<span style="color:var(--text3);font-weight:600"> no average yet</span>';
+  return '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 2px;border-bottom:1px solid var(--border)">'+
+    '<span style="font-size:13px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(label)+
+      (thin?'<span style="color:var(--text3);font-size:11px"> ('+sampleN+' so far)</span>':'')+'</span>'+
+    '<span style="font-size:13px;font-weight:800;color:var(--text);white-space:nowrap">'+escHtml(mineStr)+right+'</span>'+
   '</div>';
 }
 
@@ -407,15 +410,16 @@ function _lcVerdict(offset,lowerIsBetter){
   return pct+'% '+fastSlow;
 }
 
-// A collapsible block, using the app-wide accordion animation constant so this
-// opens exactly like every other accordion in the product.
+// ONE drawer for every number, closed by default. Two open sections meant the
+// card was still a wall on arrival; the point of the headline gauge is that a
+// contractor can read it and stop.
 function _lcSection(key,title,sub,inner,open){
   const chev='<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>';
-  return '<div style="margin-top:14px">'+
+  return '<div style="margin-top:10px">'+
     '<div onclick="_lcTogSection(\''+key+'\')" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:8px 2px">'+
       '<div style="flex:1;min-width:0">'+
-        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">'+escHtml(title)+'</div>'+
-        (sub?'<div style="font-size:11px;color:var(--text3);margin-top:3px;line-height:1.45">'+escHtml(sub)+'</div>':'')+
+        '<div style="font-size:12px;font-weight:700;color:var(--text2)">'+escHtml(title)+'</div>'+
+        (sub?'<div style="font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4">'+escHtml(sub)+'</div>':'')+
       '</div>'+chev+
     '</div>'+
     (open?'<div class="td-acc-body td-acc-in"><div class="td-acc-inner">'+inner+'</div></div>':'')+
@@ -424,6 +428,10 @@ function _lcSection(key,title,sub,inner,open){
 function _lcTogSection(key){
   window['_lcSecOpen_'+key]=!window['_lcSecOpen_'+key];
   if(typeof renderLifecycleFunnel==='function')renderLifecycleFunnel('lc-funnel-mine');
+}
+// A quiet heading INSIDE the drawer, so one drawer can hold both lists.
+function _lcGroupHd(title){
+  return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:14px 2px 4px">'+escHtml(title)+'</div>';
 }
 
 // The one thing to fix, named. A contractor should be able to read the gauge,
@@ -509,35 +517,29 @@ async function renderLifecycleFunnel(mountId){
   }
   html+=_lcGapCallout(worst&&worst.off<-0.05?worst:null,beat,compared.length);
 
-  if(srcRows.length){
-    const rows=srcRows.map(s=>{
-      const b=bench.source[s.src];
-      const bv=b?Number(b.value):NaN;
-      const off=_lcOffset(s.rate,bv,false);
-      return _lcRow(s.src,Math.round(s.rate)+'%',off,
-        isFinite(bv)?(Math.round(bv)+'% avg'):'',_lcVerdict(off,false),s.won+' of '+s.leads+' leads');
-    }).join('');
-    html+=_lcSection('src','Close rate by lead source',
-      'Every TradeDesk business that logs the same source, averaged.',rows,
-      !!window._lcSecOpen_src);
+  // Everything else in ONE drawer, closed. Two open sections still landed as a
+  // wall of numbers; the gauge and the one gap line above are the card.
+  const srcInner=srcRows.length?(_lcGroupHd('Close rate by lead source')+srcRows.map(x=>{
+    const b=bench.source[x.src];
+    const bv=b?Number(b.value):NaN;
+    return _lcRow(x.src,Math.round(x.rate)+'%',isFinite(bv)?(Math.round(bv)+'%'):'',x.leads);
+  }).join('')):'';
+  const stageInner=scored.length?(_lcGroupHd('How long each step takes')+scored.map(x=>{
+    const unit=_lcUnitFor(x.mineH,x.benchH);
+    return _lcRow(x.label,_lcDurIn(x.mineH,unit),
+      isFinite(x.benchH)&&x.benchH>0?_lcDurIn(x.benchH,unit):'',x.row.samples);
+  }).join('')):'';
+
+  if(srcInner||stageInner){
+    html+=_lcSection('all','All your numbers',
+      'Yours against the average across every TradeDesk business.',
+      srcInner+stageInner,!!window._lcSecOpen_all);
   }
 
-  if(stageRows.length){
-    const rows=scored.map(x=>{
-      const unit=_lcUnitFor(x.mineH,x.benchH);
-      return _lcRow(x.label,_lcDurIn(x.mineH,unit),x.off,
-        isFinite(x.benchH)&&x.benchH>0?_lcDurIn(x.benchH,unit):'',x.verdict,_lcSample(x.row.samples));
-    }).join('');
-    html+=_lcSection('speed','How long each step takes you',
-      'Your typical time against every TradeDesk business. Typical means half your jobs were faster, which beats an average one stalled lead can wreck.',
-      rows,!!window._lcSecOpen_speed);
-  }
-
-  html+='<div style="font-size:10px;color:var(--text3);padding:12px 2px 0;line-height:1.5">'+
-    'Every average on this page is the same figure measured across all TradeDesk businesses, and the tick in the '+
-    'middle of each bar is where that average sits. Averages are anonymous and only appear once at least five '+
-    'separate businesses are behind the number, so no one can read another contractor\'s figures off this page. '+
-    'They refresh nightly.</div>';
+  // One sentence. The longer privacy explanation belonged here when the card was
+  // a wall of numbers; on a card this short it was the biggest block of text on it.
+  html+='<div style="font-size:10px;color:var(--text3);padding:10px 2px 0;line-height:1.5">'+
+    'Averages cover every TradeDesk business, refresh nightly, and stay hidden until five businesses are behind a number.</div>';
 
   el.innerHTML=html;
 }
