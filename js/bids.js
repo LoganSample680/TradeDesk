@@ -806,7 +806,7 @@ function openFinalInvoice(bidId){
   if(!b.completion_date){
     const linkedJob=jobs.find(j=>j.bid_id===b.id);
     if(linkedJob){markJobDone(linkedJob.id);return;} // existing close-job flow (handles the price-adjustment+signature gate)
-    b.completion_date=todayKey();saveAll();
+    b.completion_date=todayKey();b.completedAt=new Date().toISOString();saveAll();
   }
   printInvoice(bidId);
   setTimeout(()=>openPayPanel(bidId,'final'),400);

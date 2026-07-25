@@ -1595,6 +1595,29 @@ const CD_AUDIT_LABELS={hub_opened:'Client opened hub',proposal_opened:'Client op
 // existed, the id IS Date.now() at creation (~13-digit epoch ms), which recovers
 // the real time, the same trick the dashboard's new-leads picker uses. Falls back
 // to the date-only key for imported rows that have neither.
+// Most precise timestamp available for a timeline event, in priority order:
+// an explicit ISO stamp, then a HH:MM field on the record (a job's start time),
+// then the record's id, which is Date.now() at creation across this app.
+// The id is only trusted when it lands on the SAME calendar day as the event, so
+// a back-dated entry never borrows the clock time it happened to be typed in,
+// which would be a lie in an audit trail. Falls back to the day key.
+function _cdEventTs(dayKey,opts){
+  opts=opts||{};
+  if(opts.iso&&/T/.test(String(opts.iso)))return String(opts.iso);
+  const day=String(dayKey||'').slice(0,10);
+  if(!day)return '';
+  if(opts.time&&/^\d{1,2}:\d{2}/.test(String(opts.time))){
+    const t=String(opts.time).length===4?'0'+opts.time:String(opts.time);
+    return day+'T'+t.slice(0,5);
+  }
+  const ms=Number(opts.id);
+  if(ms>1e12){
+    const d=new Date(ms);
+    const local=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    if(local===day)return d.toISOString();
+  }
+  return day;
+}
 function _cdLeadCreatedTs(c){
   if(!c)return'';
   if(c.createdAt)return c.createdAt;
@@ -1615,7 +1638,7 @@ function renderCDTimeline(){
     // made a later win read as if it happened before the signature ("Closed Won"
     // dated the day the proposal was written). Status changes are their own dated
     // events below.
-    events.push({date:b.bid_date||'',type:'bid',id:b.id,label:`Proposal: ${fmt(b.amount)}`,meta:b.draft?'Draft created':'Created',color:'bid'});
+    events.push({date:b.bid_date||'',ts:_cdEventTs(b.bid_date,{iso:b.createdAt,id:b.id}),type:'bid',id:b.id,label:`Proposal: ${fmt(b.amount)}`,meta:b.draft?'Draft created':'Created',color:'bid'});
     // Audit lifecycle: started -> sent -> opened(IP) -> hub opened(IP) -> signed(IP).
     if(b.createdAt&&String(b.createdAt).slice(0,10)!==String(b.bid_date))events.push({date:String(b.createdAt).slice(0,10),ts:b.createdAt,type:'started',label:'Proposal started',meta:fmt(b.amount),color:'bid'});
     if(b.sentAt)events.push({date:String(b.sentAt).slice(0,10),ts:b.sentAt,type:'sent',label:'Proposal sent',meta:escHtml(b.notifyEmail||b.sentTo||'to client'),color:'estimate'});
@@ -1649,31 +1672,34 @@ function renderCDTimeline(){
       const stageInfo=COLL_STAGES[h.stage]||{};
       const stageLabel=stageInfo.label||h.stage;
       const noteText=h.note&&h.note!==stageLabel?h.note:'';
-      events.push({date:dateStr,type:'coll',label:'Collection: '+stageLabel,meta:escHtml(noteText)+(noteText?' · ':'')+fmt(b.amount)+' job',color:'coll'});
+      events.push({date:dateStr,ts:h.ts,type:'coll',label:'Collection: '+stageLabel,meta:escHtml(noteText)+(noteText?' · ':'')+fmt(b.amount)+' job',color:'coll'});
     });
-    if(b.completion_date)events.push({date:b.completion_date,type:'complete',label:(b.kind==='diagnostic'?'Diagnostic charge, ':'Job completed, ')+fmt(b.amount),meta:b.kind==='diagnostic'?escHtml(b.desc||'Diagnostic visit'):escHtml(b.type||'Painting job'),color:'active'});
+    if(b.completion_date)events.push({date:b.completion_date,ts:_cdEventTs(b.completion_date,{iso:b.completedAt}),type:'complete',label:(b.kind==='diagnostic'?'Diagnostic charge, ':'Job completed, ')+fmt(b.amount),meta:b.kind==='diagnostic'?escHtml(b.desc||'Diagnostic visit'):escHtml(b.type||'Painting job'),color:'active'});
   });
   const allPays=payments.filter(p=>cbids.some(b=>b.id===p.bid_id));
   allPays.forEach(p=>{
     if(!p.date)return;
     const isRefund=p.type==='refund';
-    events.push({date:p.date,type:'payment',label:(isRefund?'Refund: ':'Payment: ')+fmt(Math.abs(p.amount)),meta:escHtml(p.method||'')+(p.ref?' #'+escHtml(p.ref):''),color:isRefund?'lost':'payment'});
+    events.push({date:p.date,ts:_cdEventTs(p.date,{iso:p.ts,id:p.id}),type:'payment',label:(isRefund?'Refund: ':'Payment: ')+fmt(Math.abs(p.amount)),meta:escHtml(p.method||'')+(p.ref?' #'+escHtml(p.ref):''),color:isRefund?'lost':'payment'});
   });
   cjobs.forEach(j=>{
     if(j.eventType==='estimate'){
       const isCanceled=j.status==='canceled';
       events.push({
         date:j.cancelDate||j.start||'',
+        ts:_cdEventTs(j.cancelDate||j.start,{time:j.cancelDate?null:j.time,id:j.id}),
         type:'estimate',
-        label:isCanceled?'Proposal '+escHtml(j.cancelReason):'Proposal visit'+(j.time?' @ '+fmtTime(j.time):''),
-        meta:isCanceled?'Canceled '+fmtDateMDY(j.cancelDate):(fmtDateMDY(j.start)+(j.addr?' · '+escHtml(j.addr):'')),
+        // The row's own stamp carries the time and the day header carries the date,
+        // so the label and meta don't repeat either.
+        label:isCanceled?'Proposal '+escHtml(j.cancelReason):'Proposal visit',
+        meta:isCanceled?'Canceled':escHtml(j.addr||''),
         color:isCanceled?'canceled':'estimate'
       });
     } else {
-      events.push({date:j.start||'',type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0),color:'active'});
+      events.push({date:j.start||'',ts:_cdEventTs(j.start,{time:j.time,id:j.id}),type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0),color:'active'});
     }
   });
-  cmiles.forEach(m=>events.push({date:m.date||'',ts:m.ts||m.date,type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
+  cmiles.forEach(m=>events.push({date:m.date||'',ts:_cdEventTs(m.date,{iso:m.ts,id:m.id}),type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
   const _tkey=e=>String(e.ts||e.date||'');
   events.sort((a,b)=>_tkey(b).localeCompare(_tkey(a)));
   const el=document.getElementById('cd-timeline-mount');if(!el)return;

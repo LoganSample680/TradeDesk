@@ -176,7 +176,10 @@ function _markJobComplete(jobId){
   zConfirm('Clock out the current task and mark this job as complete?',()=>{
     if(_activeTimer&&_activeTimer.jobId===jobId)clockOut(true,true);
     const j=jobs.find(x=>x.id===jobId);
-    if(j){j.status='done';j.completion_date=todayKey();saveAll();}
+    if(j){j.status='done';j.completion_date=todayKey();j.completedAt=new Date().toISOString();
+      // mirror onto the bid so the client timeline can stamp the exact completion time
+      if(j.bid_id){const _b=bids.find(x=>x.id===j.bid_id);if(_b)_b.completedAt=j.completedAt;}
+      saveAll();}
     document.getElementById('_cks-ov')?.remove();
     showToast('Job marked complete 🏁','✅');
     renderJobsPage&&renderJobsPage();

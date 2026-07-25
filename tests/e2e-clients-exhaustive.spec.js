@@ -3146,6 +3146,42 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.multi).toBeGreaterThan(1);  // spans months, months grouped Books-style
     });
 
+    // Owner mandate: every timeline event carries a timestamp, not just a date.
+    // Records store day keys, so the time is resolved from an explicit ISO stamp,
+    // a HH:MM field, or the record id (Date.now() at creation).
+    test('every event type renders a clock time', async () => {
+      const r = await page.evaluate(() => {
+        const day = '2026-07-16';
+        const at = (h, m) => new Date(`2026-07-16T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`).getTime();
+        const cid = at(8, 5), bidId = at(9, 12);
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Every Event', source: 'Referral', created: day }]);
+        bids = bids.filter(b => b.client_id !== cid).concat([{
+          id: bidId, client_id: cid, client_name: 'Every Event', status: 'Closed Won', amount: 5000,
+          bid_date: day, completion_date: day, completedAt: new Date(at(16, 5)).toISOString(),
+          collHistory: [{ stage: 'reminder', ts: new Date(at(15, 40)).toISOString(), note: '' }] }]);
+        payments = payments.filter(p => p.bid_id !== bidId).concat([
+          { id: at(17, 22), bid_id: bidId, client_id: cid, date: day, amount: 2500, method: 'Card' }]);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: at(10, 30), client_id: cid, bid_id: bidId, name: 'Work', start: day, days: 2, value: 5000, time: '13:00' },
+          { id: at(10, 45), client_id: cid, bid_id: bidId, name: 'Visit', eventType: 'estimate', start: day, time: '11:30' }]);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const rows = [...document.querySelectorAll('#cd-timeline-mount .tl-item')].map(el => el.innerText);
+        return {
+          rows,
+          // a back-dated record must NOT borrow the clock time it was entered at
+          backDated: _cdEventTs('2026-01-05', { id: at(17, 22) }),
+          sameDay: _cdEventTs(day, { id: at(17, 22) }),
+        };
+      });
+      expect(r.rows.length).toBeGreaterThanOrEqual(7);
+      r.rows.forEach(row => expect(row).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/));
+      expect(r.backDated).toBe('2026-01-05');      // date only, no borrowed time
+      expect(r.sameDay).toContain('2026-07-16');   // same day, real time used
+    });
+
     test('exportAuditReport on a missing bid does not throw', async () => {
       const ok = await page.evaluate(() => {
         try { exportAuditReport(99999999); return true; } catch (e) { return false; }
