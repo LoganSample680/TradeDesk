@@ -159,15 +159,15 @@ const LC_STAGE_ORDER=[
 ];
 // Said the way a contractor would say it, not the way the database stores it.
 const LC_STAGE_LABEL={
-  'lead_created>proposal_saved':'Getting a proposal written',
-  'proposal_started>proposal_saved':'Time to write one proposal',
-  'proposal_saved>proposal_sent':'Getting it sent out',
-  'proposal_sent>proposal_opened':'Waiting on them to open it',
-  'proposal_opened>signed':'First look to signing',
-  'proposal_sent>signed':'From sent to signed',
-  'signed>job_scheduled':'Getting them on the schedule',
-  'job_scheduled>job_completed':'How long the job takes',
-  'job_completed>balance_settled':'Getting paid in full',
+  'lead_created>proposal_saved':'New lead to proposal',
+  'proposal_started>proposal_saved':'Time to write a proposal',
+  'proposal_saved>proposal_sent':'Proposal to sent',
+  'proposal_sent>proposal_opened':'Sent to opened',
+  'proposal_opened>signed':'Opened to signed',
+  'proposal_sent>signed':'Sent to signed',
+  'signed>job_scheduled':'Signed to scheduled',
+  'job_scheduled>job_completed':'Job start to finish',
+  'job_completed>balance_settled':'Finished to paid in full',
 };
 function _lcStageKey(r){return String(r.from_event||'')+'>'+String(r.to_event||'');}
 
@@ -373,27 +373,40 @@ function _lcHeroGauge(pctStr,label,offset,midLabel,subStr){
   '</div>';
 }
 
-// One line per number, and that is the whole row.
+// ── The table ────────────────────────────────────────────────────────────────
+// Owner's layout, and it is the right one: name on the left, the TradeDesk
+// average in the middle, their own number on the right. Three columns, read
+// straight across, no bar to decode and no verdict to trust. The comparison
+// happens in the reader's eyes, which is the whole job of a table.
 //
-// This started as a bar plus an average plus a verdict plus a sample count on
-// every row. Each of those was defensible on its own and together they made
-// thirteen rows of noise, which is the exact failure the research warned about:
-// a report nobody checks is decoration. Only ONE thing on this card gets a gauge
-// now, the headline, and everything else is a list you can scan in one pass.
+// The numeric columns are fixed width and right aligned so the digits line up
+// down the page. Ragged numbers are what made the earlier list feel like noise.
 //
-// A count rides along only when it is small enough to mislead. "31% worse" off
-// three leads is not a fact about a business, but printing "14 so far" next to a
+// A count rides along only when the sample is small enough to mislead. "25%" off
+// three leads is not a fact about a business; printing "14 so far" beside a
 // number built from fourteen jobs is just clutter.
 const LC_THIN_SAMPLE=5;
-function _lcRow(label,mineStr,benchStr,sampleN){
+
+function _lcTableHead(){
+  return '<div style="display:flex;align-items:flex-end;gap:8px;padding:0 2px 6px;border-bottom:1px solid var(--border2)">'+
+    '<span style="flex:1;min-width:0;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">Metric</span>'+
+    '<span style="flex:0 0 62px;text-align:right;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">TradeDesk</span>'+
+    '<span style="flex:0 0 62px;text-align:right;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text2)">You</span>'+
+  '</div>';
+}
+
+function _lcGroupHd(title){
+  return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:14px 2px 5px">'+escHtml(title)+'</div>';
+}
+
+// label | TradeDesk average | their number
+function _lcRow(label,benchStr,mineStr,sampleN){
   const thin=Number(sampleN)>0&&Number(sampleN)<LC_THIN_SAMPLE;
-  const right=benchStr
-    ?'<span style="color:var(--text3);font-weight:600"> vs '+escHtml(benchStr)+'</span>'
-    :'<span style="color:var(--text3);font-weight:600"> no average yet</span>';
-  return '<div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 2px;border-bottom:1px solid var(--border)">'+
-    '<span style="font-size:13px;color:var(--text);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(label)+
-      (thin?'<span style="color:var(--text3);font-size:11px"> ('+sampleN+' so far)</span>':'')+'</span>'+
-    '<span style="font-size:13px;font-weight:800;color:var(--text);white-space:nowrap">'+escHtml(mineStr)+right+'</span>'+
+  return '<div style="display:flex;align-items:baseline;gap:8px;padding:9px 2px;border-bottom:1px solid var(--border)">'+
+    '<span style="flex:1;min-width:0;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(label)+
+      (thin?'<span style="color:var(--text3);font-size:11px"> ('+sampleN+')</span>':'')+'</span>'+
+    '<span style="flex:0 0 62px;text-align:right;font-size:13px;color:var(--text3);white-space:nowrap">'+escHtml(benchStr||'-')+'</span>'+
+    '<span style="flex:0 0 62px;text-align:right;font-size:13px;font-weight:800;color:var(--text);white-space:nowrap">'+escHtml(mineStr)+'</span>'+
   '</div>';
 }
 
@@ -433,11 +446,6 @@ function _lcTogSection(key){
   window['_lcSecOpen_'+key]=!window['_lcSecOpen_'+key];
   if(typeof renderLifecycleFunnel==='function')renderLifecycleFunnel('lc-funnel-mine');
 }
-// A quiet heading INSIDE the drawer, so one drawer can hold both lists.
-function _lcGroupHd(title){
-  return '<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:14px 2px 4px">'+escHtml(title)+'</div>';
-}
-
 // The one thing to fix, named. A contractor should be able to read the gauge,
 // read this, and stop.
 function _lcGapCallout(worst,beat,total){
@@ -523,29 +531,35 @@ async function renderLifecycleFunnel(mountId){
   }
   html+=_lcGapCallout(worst&&worst.off<-0.05?worst:null,beat,compared.length);
 
-  // Everything else in ONE drawer, closed. Two open sections still landed as a
-  // wall of numbers; the gauge and the one gap line above are the card.
-  const srcInner=srcRows.length?(_lcGroupHd('Close rate by lead source')+srcRows.map(x=>{
-    const b=bench.source[x.src];
-    const bv=b?Number(b.value):NaN;
-    return _lcRow(x.src,Math.round(x.rate)+'%',isFinite(bv)?(Math.round(bv)+'%'):'',x.leads);
-  }).join('')):'';
-  const stageInner=scored.length?(_lcGroupHd('How long each step takes')+scored.map(x=>{
-    const unit=_lcUnitFor(x.mineH,x.benchH);
-    return _lcRow(x.label,_lcDurIn(x.mineH,unit),
-      isFinite(x.benchH)&&x.benchH>0?_lcDurIn(x.benchH,unit):'',x.row.samples);
-  }).join('')):'';
-
-  if(srcInner||stageInner){
-    html+=_lcSection('all','All your numbers',
-      'Yours against the average across every TradeDesk business.',
-      srcInner+stageInner,!!window._lcSecOpen_all);
+  // One table, read straight across. Close rate leads because it is the money
+  // metric, then the pipeline in the order a job actually moves, then lead
+  // sources. Same three columns throughout so nothing has to be re-learned.
+  const tbTrade=tradeBench?Number(tradeBench.value):NaN;
+  let rows=_lcTableHead();
+  if(myRate!==null&&myLeads>0){
+    rows+=_lcRow('Close rate',isFinite(tbTrade)?(Math.round(tbTrade)+'%'):'',
+      Math.round(myRate)+'%',myLeads);
   }
+  rows+=scored.map(x=>{
+    const unit=_lcUnitFor(x.mineH,x.benchH);
+    return _lcRow(x.label,
+      isFinite(x.benchH)&&x.benchH>0?_lcDurIn(x.benchH,unit):'',
+      _lcDurIn(x.mineH,unit),x.row.samples);
+  }).join('');
+  if(srcRows.length){
+    rows+=_lcGroupHd('Close rate by lead source')+srcRows.map(x=>{
+      const b=bench.source[x.src];
+      const bv=b?Number(b.value):NaN;
+      return _lcRow(x.src,isFinite(bv)?(Math.round(bv)+'%'):'',Math.round(x.rate)+'%',x.leads);
+    }).join('');
+  }
+  html+=_lcSection('all','All your numbers',
+    'TradeDesk is the average across every business on the platform.',
+    rows,!!window._lcSecOpen_all);
 
-  // One sentence. The longer privacy explanation belonged here when the card was
-  // a wall of numbers; on a card this short it was the biggest block of text on it.
   html+='<div style="font-size:10px;color:var(--text3);padding:10px 2px 0;line-height:1.5">'+
-    'Averages cover every TradeDesk business, refresh nightly, and stay hidden until five businesses are behind a number.</div>';
+    'Averages refresh nightly and stay hidden until five businesses are behind a number. '+
+    'A number in brackets means that few jobs so far.</div>';
 
   el.innerHTML=html;
 }

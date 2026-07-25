@@ -433,27 +433,41 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
       expect(r).toContain('38% average');
     });
 
-    test('every row prints the average it is measured against', async () => {
-      const r = await page.evaluate(() => _lcRow('From sent to signed', '10 hr', '20 hr', 9));
-      expect(r).toContain('vs 20 hr');      // the comparison value, on the row
-      expect(r).toContain('10 hr');
+    test('a row carries the name, the TradeDesk average, then their number', async () => {
+      // Column order is the contract: name | TradeDesk | You. Swapping the two
+      // numeric columns would silently invert every comparison on the page.
+      const r = await page.evaluate(() => _lcRow('Sent to signed', '20 hr', '10 hr', 9));
+      const nameAt = r.indexOf('Sent to signed');
+      const benchAt = r.indexOf('20 hr');
+      const mineAt = r.indexOf('10 hr');
+      expect(nameAt).toBeGreaterThan(-1);
+      expect(benchAt).toBeGreaterThan(nameAt);
+      expect(mineAt).toBeGreaterThan(benchAt);
     });
 
-    test('a row with no benchmark says so rather than showing a bare number', async () => {
-      const r = await page.evaluate(() => _lcRow('Getting paid in full', '4 days', '', 9));
-      expect(r).toContain('no average yet');
-      expect(r).not.toContain('vs ');
+    test('the header names all three columns', async () => {
+      const r = await page.evaluate(() => _lcTableHead());
+      expect(r).toContain('Metric');
+      expect(r).toContain('TradeDesk');
+      expect(r).toContain('You');
+    });
+
+    test('a missing average shows a dash, not a blank or a zero', async () => {
+      const r = await page.evaluate(() => _lcRow('Finished to paid in full', '', '4 days', 9));
+      expect(r).toContain('-');
+      expect(r).toContain('4 days');
+      expect(r).not.toContain('0%');
     });
 
     test('a thin sample is flagged; a healthy one is not', async () => {
-      // "31% worse" off three leads is not a fact about a business. Printing the
-      // count next to a number built from fourteen jobs is just clutter.
+      // "25%" off three leads is not a fact about a business. Printing a count
+      // beside a number built from forty is just clutter.
       const r = await page.evaluate(() => ({
-        thin: _lcRow('Door to door', '25%', '18%', 3),
-        healthy: _lcRow('Referral', '50%', '52%', 40),
+        thin: _lcRow('Door to door', '18%', '25%', 3),
+        healthy: _lcRow('Referral', '52%', '50%', 40),
       }));
-      expect(r.thin).toContain('(3 so far)');
-      expect(r.healthy).not.toContain('so far');
+      expect(r.thin).toContain('(3)');
+      expect(r.healthy).not.toContain('(40)');
     });
 
     test('the footnote spells out what every average is measured across', async () => {
@@ -462,7 +476,7 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE2);
-      expect(html).toContain('Averages cover every TradeDesk business');
+      expect(html).toContain('TradeDesk is the average across every business');
     });
 
     test('the headline names the peer group, not just a bare percentage', async () => {
@@ -503,7 +517,7 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
       labels.forEach(l => {
         expect(l).not.toMatch(/_/);              // no lead_created
         expect(l).not.toMatch(/\bevent\b/i);
-        expect(l).not.toMatch(/^\w+ to \w+$/);   // no bare "Lead to proposal"
+        expect(l).not.toMatch(/proposal_|lead_|job_/);   // no raw event names
       });
     });
     test('the renamed noun holds: proposal, never estimate', async () => {
@@ -600,8 +614,8 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         await renderLifecycleFunnel('lc-funnel-mine');
         const html = document.getElementById('lc-funnel-mine').innerHTML;
         return {
-          leadIdx: html.indexOf('Getting a proposal written'),
-          sentIdx: html.indexOf('From sent to signed'),
+          leadIdx: html.indexOf('New lead to proposal'),
+          sentIdx: html.indexOf('Sent to signed'),
         };
       }, MINE);
       // "Lead comes in" precedes "Sent, signed" in the pipeline; alphabetically
@@ -618,7 +632,8 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('no average yet');
+      // A stage with no platform average shows a dash in the TradeDesk column.
+      expect(html).toContain('New lead to proposal');
       expect(html).not.toContain('NaN');
       expect(html).not.toContain('undefined');
     });
@@ -632,9 +647,9 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      // The row now states the comparison value rather than a computed verdict:
-      // "10 hr vs 20 hr" is the same fact with nothing to parse.
-      expect(html).toContain('vs 20 hr');
+      // The TradeDesk column carries the platform figure; the You column theirs.
+      expect(html).toContain('20 hr');
+      expect(html).toContain('10 hr');
     });
 
     test('the newest day wins when several days are present', async () => {
@@ -647,8 +662,8 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
         await renderLifecycleFunnel('lc-funnel-mine');
         return document.getElementById('lc-funnel-mine').innerHTML;
       }, MINE);
-      expect(html).toContain('vs 20 hr');     // the newest day's row, not the stale 500 hr one
-      expect(html).not.toContain('vs 21 days');
+      expect(html).toContain('20 hr');        // the newest day's row...
+      expect(html).not.toContain('21 days');  // ...not the stale 500 hr one
     });
 
     test('close rate by lead source renders with its own benchmark', async () => {
@@ -662,10 +677,11 @@ test.describe('lifecycle.js: your numbers vs TradeDesk', () => {
       }, MINE);
       expect(html).toContain('Close rate by lead source');
       expect(html).toContain('Referral');
-      // No computed verdict on the row any more, just the two numbers side by
-      // side, and the count only where the sample is thin enough to mislead.
-      expect(html).toContain('vs 50%');
-      expect(html).toContain('(3 so far)');
+      // The platform figure sits in the TradeDesk column, theirs in the You
+      // column, and the count only where the sample is thin enough to mislead.
+      expect(html).toContain('50%');
+      expect(html).toContain('33%');
+      expect(html).toContain('(3)');
     });
 
     test('the privacy floor is stated on the card', async () => {
