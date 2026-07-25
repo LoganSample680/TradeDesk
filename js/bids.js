@@ -812,7 +812,11 @@ function openFinalInvoice(bidId){
   setTimeout(()=>openPayPanel(bidId,'final'),400);
 }
 function getBidLien(bidId){return liens.find(l=>l.bid_id===bidId);}
-function daysSince(dateStr){if(!dateStr)return 0;const d=new Date(dateStr+'T00:00:00Z');if(isNaN(d.getTime()))return 0;const now=new Date();const todayUTC=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate());return Math.round((todayUTC-d.getTime())/86400000);}
+function daysSince(dateStr){if(!dateStr)return 0;const d=parseD(dateStr);if(isNaN(d.getTime()))return 0;
+  // Both sides local, anchored at noon (parseD) so a DST shift can't round to an
+  // off-by-one day. Comparing a local day key against UTC today read a day late
+  // every evening west of UTC.
+  return Math.round((parseD(todayKey()).getTime()-d.getTime())/86400000);}
 function payStatus(bid){
   const paid=getBidPaid(bid.id),total=bid.amount||0,balance=total-paid;
   if(!total)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
@@ -1250,7 +1254,7 @@ async function _issueCardRefund(bidId,amount,bid){
     if(!res.ok||!d.refund)throw new Error(d.error||'Refund failed');
     const refAmt=d.refund.amount;
     if(!payments.some(p=>p.ref===d.refund.id)){
-      payments.push({id:Date.now(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:new Date().toISOString().slice(0,10),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
+      payments.push({id:Date.now(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:todayKey(),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
       saveAll();
     }
     renderCDBids&&renderCDBids();renderDash&&renderDash();renderMoneyPage&&renderMoneyPage();refreshCollectLabel&&refreshCollectLabel();

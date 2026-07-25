@@ -18,7 +18,7 @@ function _paySummaryPeriodsPerYear(type){
 function _paySummaryDefaultRange(type,anchorISO){
   const d=anchorISO?new Date(anchorISO+'T00:00:00'):new Date();
   if(isNaN(d.getTime()))return _paySummaryDefaultRange(type,null);
-  const ds=x=>x.toISOString().slice(0,10);
+  const ds=x=>dateKey(x);
   if(type==='monthly'){
     return{start:ds(new Date(d.getFullYear(),d.getMonth(),1)),end:ds(new Date(d.getFullYear(),d.getMonth()+1,0))};
   }

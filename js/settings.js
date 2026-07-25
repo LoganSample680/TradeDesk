@@ -1258,7 +1258,7 @@ function _renderDevTradeCard(){
   const _lsEl=document.getElementById('dev-legal-state');
   const _ldEl=document.getElementById('dev-legal-date');
   if(_lsEl){_lsEl.value=S?.state||'KS';}
-  if(_ldEl&&!_ldEl.value){_ldEl.value=new Date().toISOString().slice(0,10);}
+  if(_ldEl&&!_ldEl.value){_ldEl.value=todayKey();}
   if(typeof renderLegalInspector==='function')renderLegalInspector();
 }
 async function devSwitchTrade(type){

@@ -14,7 +14,7 @@ function openExpenseFlow(){
   const catOpts=IRS_EXPENSE_CATS.map(c=>'<option value="'+c.id+'">'+c.icon+' '+c.label+'</option>').join('');
   const jobOpts='<option value="">- Not tied to a specific job -</option>'+
     bids.filter(b=>b.status==='Closed Won').map(b=>'<option value="'+b.id+'">'+escHtml(b.client_name||b.name)+(b.addr?' · '+escHtml((b.addr||'').split(',')[0]):'')+'</option>').join('');
-  const today=new Date().toISOString().slice(0,10);
+  const today=todayKey();
   ov.innerHTML=
     '<div style="background:var(--bg);border-radius:20px;width:100%;max-width:600px;max-height:92vh;overflow-y:auto;padding:20px 20px 28px">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
@@ -2362,7 +2362,7 @@ function exportTaxPDF(){
 
 function exportFullBackup(){
   const biz=(S.bname||'TradeDesk').replace(/\s+/g,'_');
-  const ts=new Date().toISOString().slice(0,10);
+  const ts=todayKey();
   const backup={version:3,exported:new Date().toISOString(),business:S.bname||'',
     data:{clients,bids,jobs,income,expenses,mileage,payments,liens},settings:S,
     meta:{clients:clients.length,bids:bids.length,expenses:expenses.length,income:income.length,mileage:mileage.length}};
@@ -2650,7 +2650,7 @@ async function _openJobProfit(){
 // ── Crew labor cost, per-employee rollup + dashboard tile ────────────────────
 function _ctDateStr(d){
   try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
-  catch(_e){return d.toISOString().slice(0,10);}
+  catch(_e){return dateKey(d);}
 }
 // Fetch pay rates (loaded + wage) and tracked time entries since an ISO instant.
 async function _fetchCrewLabor(sinceISO){
@@ -3153,7 +3153,7 @@ function renderIncome(){
   const byMonth={};
   sorted.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
-  const curMo=new Date().toISOString().slice(0,7);
+  const curMo=todayKey().slice(0,7);
   const _methodBadge=m=>{
     const v=(m||'').toLowerCase();
     if(!m||m==='-')return '<span style="color:var(--text3)">-</span>';
@@ -3263,7 +3263,7 @@ function renderExpenses(){
   const byMonth={};
   sorted.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
-  const curMo=new Date().toISOString().slice(0,7);
+  const curMo=todayKey().slice(0,7);
   const _expRow=r=>{
     const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
     const pageCount=(r.receipt_keys?.length||0)+(r.receipt_key&&!r.receipt_keys?1:0);

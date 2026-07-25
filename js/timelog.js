@@ -85,7 +85,7 @@ function _tlWeekKey(dateStr){
   const d=new Date(dateStr+'T00:00:00');
   if(isNaN(d.getTime()))return '';
   d.setDate(d.getDate()-d.getDay());
-  return d.toISOString().slice(0,10);
+  return dateKey(d);
 }
 // Overtime: federal (FLSA) is per-person, per-week, over 40 hours, the one
 // rule that's true everywhere. Daily OT (e.g. CA/AK/NV/CO over 8hrs/day) is
@@ -288,7 +288,7 @@ async function renderTimeLog(){
   if(weekEl){
     const wkStart=new Date();wkStart.setHours(0,0,0,0);wkStart.setDate(wkStart.getDate()-wkStart.getDay());
     const wkEnd=new Date(wkStart);wkEnd.setDate(wkEnd.getDate()+6);
-    const wkStartStr=wkStart.toISOString().slice(0,10),wkEndStr=wkEnd.toISOString().slice(0,10);
+    const wkStartStr=dateKey(wkStart),wkEndStr=dateKey(wkEnd);
     const wkMin=visible.filter(r=>r.date>=wkStartStr&&r.date<=wkEndStr).reduce((s,r)=>s+(r.minutes||0),0);
     weekEl.textContent=(typeof _fmtMin==='function'?_fmtMin(wkMin):wkMin+'m')+' This week (Sun–Sat)';
   }
@@ -310,7 +310,7 @@ async function renderTimeLog(){
   const byMonth={};
   rows.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(r);});
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
-  const curMo=new Date().toISOString().slice(0,7);
+  const curMo=todayKey().slice(0,7);
   el.innerHTML='<div class="bk-months">'+months.map(mo=>{
     const moRows=byMonth[mo];
     const moMin=moRows.reduce((s,r)=>s+(r.minutes||0),0);

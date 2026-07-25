@@ -427,7 +427,7 @@ function renderLegalInspector(){
     let count=0;const steps=[];
     while(count<cancel.days){
       d.setDate(d.getDate()+1);
-      const ymd=d.toISOString().slice(0,10);
+      const ymd=dateKey(d);
       const isSun=d.getDay()===0;
       const isFed=holidays.includes(ymd);
       if(isSun)steps.push({date:ymd,skip:true,reason:'Sunday'});

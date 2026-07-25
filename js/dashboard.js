@@ -2497,7 +2497,7 @@ function renderProposalsPage(){
     const SHORT_MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const byYear={};
     const sortedSigned=[...filtered].map(b=>{
-      const dk=b.signedAt?new Date(b.signedAt).toISOString().slice(0,10):(b.completion_date||b.bid_date||'');
+      const dk=b.signedAt?dateKey(new Date(b.signedAt)):(b.completion_date||b.bid_date||'');
       return {...b,_dk:dk};
     }).sort((a,b)=>b._dk.localeCompare(a._dk));
     sortedSigned.forEach(b=>{

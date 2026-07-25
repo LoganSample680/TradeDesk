@@ -3753,7 +3753,7 @@ if(supaEnabled()){
   if(localStorage.getItem('zp3_seeded_v3'))return;
   if(clients.length>0)return;
 
-  const d=(n)=>{const dt=new Date();dt.setDate(dt.getDate()-n);return dt.toISOString().slice(0,10);};
+  const d=(n)=>{const dt=new Date();dt.setDate(dt.getDate()-n);return dateKey(dt);};
   const n=Date.now();
 
   const C=[

@@ -182,7 +182,7 @@ function _fleetAddMonths(dateStr, months) {
   try {
     const d = new Date(dateStr+'T12:00:00');
     d.setMonth(d.getMonth() + months);
-    return d.toISOString().slice(0,10);
+    return dateKey(d);
   } catch(e) { return ''; }
 }
 

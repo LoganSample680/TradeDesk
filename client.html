@@ -1755,7 +1755,9 @@ function _docRow(icon,label,meta,tagHtml,onclick,href){
 
 // FTC 16 CFR Part 429: business day = any day except Sunday + federal holidays
 function _fedHolidays(yr){
-  const iso=d=>d.toISOString().slice(0,10);
+  // LOCAL day key. toISOString() renders UTC, which shifts an evening date to the
+  // next day and would move a legally meaningful cancellation deadline.
+  const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   const obs=d=>{const w=d.getDay();if(w===0)d.setDate(d.getDate()+1);else if(w===6)d.setDate(d.getDate()-1);return iso(d);};
   const nth=(m,n,wd)=>{const d=new Date(yr,m,1);d.setDate(1+((wd-d.getDay()+7)%7)+(n-1)*7);return iso(d);};
   const last=(m,wd)=>{const d=new Date(yr,m+1,0);d.setDate(d.getDate()-((d.getDay()-wd+7)%7));return iso(d);};
@@ -1768,7 +1770,7 @@ function _cancelDeadline(signedAt,days){
   const yr=d.getFullYear();
   const holidays=[..._fedHolidays(yr),..._fedHolidays(yr+1)];
   let count=0;
-  while(count<cancelDays){d.setDate(d.getDate()+1);const ymd=d.toISOString().slice(0,10);if(d.getDay()!==0&&!holidays.includes(ymd))count++;}
+  while(count<cancelDays){d.setDate(d.getDate()+1);const ymd=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');if(d.getDay()!==0&&!holidays.includes(ymd))count++;}
   d.setHours(23,59,59,999);return d;
 }
 function _cancelWindowOpen(signedAt,days){

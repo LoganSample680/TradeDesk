@@ -1091,6 +1091,28 @@ test.describe('utils.js: exhaustive coverage', () => {
     });
   });
 
+  // Owner mandate: dates and times shown to a user are ALWAYS the device's local
+  // time, never UTC. `toISOString().slice(0,10)` (or (0,7)) yields the UTC
+  // calendar day/month, so west of UTC every evening action lands on tomorrow.
+  // The app's local day key is dateKey()/todayKey(); this guards the whole
+  // source tree so the pattern can't creep back in.
+  test('no UTC-derived day or month keys anywhere in app source', () => {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+    const files = [
+      ...fs.readdirSync(path.join(root, 'js')).filter(f => f.endsWith('.js')).map(f => 'js/' + f),
+      'index.html', 'client.html', 'sign.html', 'contract-sign.html', 'landing.html',
+    ].filter(f => fs.existsSync(path.join(root, f)));
+    const offenders = [];
+    files.forEach(rel => {
+      const src = fs.readFileSync(path.join(root, rel), 'utf8');
+      src.split('\n').forEach((line, i) => {
+        if (/toISOString\(\)\.slice\(0,\s*(?:10|7)\)/.test(line)) offenders.push(`${rel}:${i + 1}`);
+      });
+    });
+    expect(offenders, 'use dateKey(d) / todayKey() for LOCAL day keys, not toISOString().slice()').toEqual([]);
+  });
+
   test.describe('fmtDateTimeMDY', () => {
     test('null / empty, returns empty string', async () => {
       const r = await page.evaluate(() => [fmtDateTimeMDY(null), fmtDateTimeMDY('')]);

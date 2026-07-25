@@ -15,7 +15,7 @@ function _ctNextDate(today,freqId){
   const f=CONTRACT_FREQ.find(x=>x.id===freqId)||{months:12};
   const d=new Date(today+'T12:00');
   d.setMonth(d.getMonth()+f.months);
-  return d.toISOString().slice(0,10);
+  return dateKey(d);
 }
 
 function _ctStatusBadge(ct){
@@ -235,7 +235,7 @@ function renderContractsDash(){
   const el=document.getElementById('dash-contracts');if(!el)return;
   const tk=todayKey();
   const cutoff=new Date();cutoff.setDate(cutoff.getDate()+14);
-  const cutoffStr=cutoff.toISOString().slice(0,10);
+  const cutoffStr=dateKey(cutoff);
   const due=contracts.filter(c=>c.active&&c.nextDate&&c.nextDate<=cutoffStr);
   if(!due.length){el.style.display='none';el.innerHTML='';return;}
   el.style.display='';

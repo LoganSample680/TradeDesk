@@ -2114,7 +2114,7 @@ function openClientProposals(clientId){
   const wonBids=getClientBids(clientId)
     .filter(b=>b.status==='Closed Won')
     .map(b=>{
-      const dk=b.signedAt?new Date(b.signedAt).toISOString().slice(0,10):(b.completion_date||b.bid_date||'');
+      const dk=b.signedAt?dateKey(new Date(b.signedAt)):(b.completion_date||b.bid_date||'');
       return {...b,_dk:dk};
     })
     .sort((a,b)=>b._dk.localeCompare(a._dk));
