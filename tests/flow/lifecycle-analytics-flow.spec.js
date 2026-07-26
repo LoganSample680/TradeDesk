@@ -208,7 +208,7 @@ test.describe('lifecycle events reach the real backend and the Books Summary fun
           }
           localStorage.setItem('zp3_schedule_alerts', '[]');
           document.getElementById('_sched-alert-overlay')?.remove();
-          window._showingScheduleAlert = false;
+          window._showingScheduleAlert = true;   // keep the queue parked (§12.7 seed data), not re-armed
           const t0 = Date.now();
           while (typeof _sigFeedReady !== 'undefined' && !_sigFeedReady && Date.now() - t0 < 15000) await wait(200);
           if (typeof _flushLifecycle === 'function') await _flushLifecycle();
@@ -286,11 +286,17 @@ test.describe('lifecycle events reach the real backend and the Books Summary fun
         // other flow sees (full-lifecycle-flow.spec.js, multi-property-flow.spec.js
         // both dismiss it as part of driving the real scheduling UI). This step
         // seeds the rest of the funnel directly instead of through that UI, so
-        // nothing else ever taps the buttons that would otherwise clear it. Clear
-        // it here or it's left covering the nav bar for step 6.
+        // nothing else ever taps the buttons that would otherwise clear it.
+        // Setting the flag to FALSE (not true) was the actual bug here: cloud.js's
+        // own poll loop (checkNewSignatures, every 1.5s) only calls
+        // showScheduleAlerts() again when _showingScheduleAlert is falsy, so
+        // clearing it to false re-armed the exact popup we were trying to
+        // suppress, it came right back on the next tick. `true` PARKS the queue,
+        // same as every other flow that never drives this modal.
         await p.evaluate(() => {
           document.getElementById('_sched-alert-overlay')?.remove();
-          window._showingScheduleAlert = false;
+          window._showingScheduleAlert = true;
+          localStorage.setItem('zp3_schedule_alerts', '[]');
           document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         });
         await p.evaluate(async ({ cid, bid }) => {
@@ -325,13 +331,13 @@ test.describe('lifecycle events reach the real backend and the Books Summary fun
       ruleText: 'the RPC reads YOUR rows live: at least one real stage pair from this run must render with samples > 0',
       expected: '#lc-funnel-mine lists lead_created→proposal_saved (or another pair this run created) with a real duration',
       act: async (p) => {
-        // The realtime "New signature!" popup from step 4's sign can (re)appear
-        // asynchronously via the contractor's live subscription; step 5's dismiss
-        // only covers what existed at that moment, so clear it again right before
-        // navigating, whatever's covering the nav controls gets removed here.
+        // Belt-and-suspenders: step 5 already parks the alert queue (flag=true),
+        // but clear any overlay that's still in the DOM from before that took
+        // effect, without flipping the flag back to false (that's what re-armed
+        // cloud.js's poll loop and caused the original failure here).
         await p.evaluate(() => {
           document.getElementById('_sched-alert-overlay')?.remove();
-          window._showingScheduleAlert = false;
+          window._showingScheduleAlert = true;
           document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
         });
         let n = await navTracker(p);
