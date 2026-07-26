@@ -223,11 +223,28 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
           // Direct, AWAITED call: bypasses checkNewSignatures' fire-and-forget
           // invocation entirely, isolates whether the reconcile logic itself
           // works when actually waited on.
-          if (typeof _reconcilePendingSigStatuses === 'function') await _reconcilePendingSigStatuses();
+          const reconcileFnType = typeof _reconcilePendingSigStatuses;
+          if (reconcileFnType === 'function') await _reconcilePendingSigStatuses();
           const afterDirectAwaitedCall = snap();
           await new Promise(r => setTimeout(r, 2500));
           const after2500ms = snap();
-          return { afterCheckNewSignatures, afterDirectAwaitedCall, after2500ms };
+          // One level deeper: call _applySigStatusToBid myself, bypassing
+          // _reconcilePendingSigStatuses' own query/matching entirely, on the
+          // exact bid object + row this run already confirmed exist and match.
+          let manualApply = 'not-run';
+          try {
+            const bidObj = bids.find(x => String(x.id) === String(a));
+            const { data } = await _supa.from('signed_proposals').select('*')
+              .eq('contractor_user_id', _supaUser.id).eq('bid_id', String(a)).limit(1);
+            const row = data && data[0];
+            if (bidObj && row && typeof _applySigStatusToBid === 'function') {
+              manualApply = { applyFnType: typeof _applySigStatusToBid, returned: _applySigStatusToBid(bidObj, row) };
+            } else {
+              manualApply = { bidObjFound: !!bidObj, rowFound: !!row, applyFnType: typeof _applySigStatusToBid };
+            }
+          } catch (e) { manualApply = { threw: e.message }; }
+          const afterManualApply = snap();
+          return { afterCheckNewSignatures, reconcileFnType, afterDirectAwaitedCall, after2500ms, manualApply, afterManualApply };
         }, { a: bidA });
         ctx_timeline = timeline;
         // eslint-disable-next-line no-console
