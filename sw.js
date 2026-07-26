@@ -1,4 +1,4 @@
-const CACHE = 'tradedesk-07.26.26.29';
+const CACHE = 'tradedesk-07.26.26.30';
 
 // Safari WebKit rejects any cached response with redirected:true when the SW
 // tries to serve it for a navigation. new Response() always has redirected:false.
@@ -77,6 +77,17 @@ self.addEventListener('fetch', e => {
   // JSON is rewritten at signing). Cache-first here serves stale documents and can
   // pin failures. Let the network handle all of it.
   if (url.hostname.endsWith('supabase.co')) return;
+
+  // The SAME Supabase traffic arrives SAME-ORIGIN when the app runs behind the
+  // /api reverse proxy (the self-healing fallback for carriers that cannot
+  // resolve supabase.co, and every flow-test environment). The hostname check
+  // above cannot see it, so /api REST GETs were falling into the cache-first
+  // branch below: the first response for a URL got pinned, and every repeat
+  // was answered from that stale copy instead of the live database. Observed
+  // live: a signature-status query kept returning an empty result cached from
+  // before the row existed, so a declined proposal could stay counted as
+  // "awaiting signature" no matter how many times the app re-checked.
+  if (url.pathname.startsWith('/api/')) return;
 
   // Static assets (JS, CSS, images), cache-first, update in background
   e.respondWith(
