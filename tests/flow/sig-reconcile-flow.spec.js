@@ -230,10 +230,20 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
       ruleText: 'a fresh full poll must clear the stale decline: bid A flips to Closed Lost with the client\'s reason, bid B is untouched, and the awaiting-signature count drops by exactly one',
       expected: 'A=Closed Lost (+lostReason), B=Pending, A gone from the feed, count = before-1',
       act: async (p) => {
-        await p.evaluate(async () => {
+        await p.evaluate(async ({ a }) => {
+          // 100ms status sampler: settles "never applied" vs "applied then
+          // reverted" definitively, the final snapshot cannot tell them apart.
+          window._bidATimeline = [];
+          window._bidATimelineTimer = setInterval(() => {
+            const b = bids.find(x => String(x.id) === String(a));
+            const t = window._bidATimeline;
+            const s = b ? b.status : 'GONE';
+            if (!t.length || t[t.length - 1].s !== s) t.push({ t: Date.now() % 1000000, s });
+          }, 100);
+          window._reconcileTrace = [];
           _sigPollWatermark = null;       // fresh load → full poll → reconcile fires
           await checkNewSignatures('boot');
-        });
+        }, { a: bidA });
         // checkNewSignatures fires the reconcile fire-and-forget, and the
         // reconcile itself awaits one query per stuck bid before applying.
         // Give that chain room to finish before reading the result.
@@ -265,10 +275,16 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
             queryResult = {
               error: error ? (error.message || JSON.stringify(error)) : null,
               rowCount: data ? data.length : null,
-              rowForA: data ? data.find(s => String(s.bid_id) === String(a)) : null,
+              rowForA: (() => { const s = data && data.find(x => String(x.bid_id) === String(a)); return s ? { status: s.payment_status, reason: s.decline_reason } : null; })(),
             };
           } catch (e) { queryResult = { threw: e.message }; }
-          return { pendingCount: pending.length, pendingIds: pending.map(x => x.id), uid, queryResult };
+          // The two instruments that settle this: the 100ms status timeline
+          // (compressed to transitions) and the reconcile's own internal trace.
+          return {
+            pendingCount: pending.length, queryResult,
+            timeline: window._bidATimeline || null,
+            trace: window._reconcileTrace || null,
+          };
         }, { a: bidA });
         return {
           ok: r.aStatus === 'Closed Lost' && r.aReason === DECLINE_REASON &&

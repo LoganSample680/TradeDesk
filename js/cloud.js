@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.28';
+const APP_VERSION='07.26.26.29';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5101,10 +5101,15 @@ function _applySigStatusToBid(bid,s){
 // of total signature volume), so drift like that gets corrected for good.
 let _reconcileReassertTimer=null;
 async function _reconcilePendingSigStatuses(_attempt){
-  if(!_supa||!_supaUser)return;
+  // TEMP TRACE (remove once the live stuck-Pending investigation closes): a
+  // ring of one-line events on window so a test or console can read exactly
+  // what each pass saw and did. Costs nothing in production.
+  const _tr=m=>{try{(window._reconcileTrace=window._reconcileTrace||[]).push((Date.now()%1000000)+' a'+(_attempt||0)+' '+m);if(window._reconcileTrace.length>80)window._reconcileTrace.shift();}catch(_e){}};
+  if(!_supa||!_supaUser){_tr('skip:no-supa');return;}
   const pendingIds=(typeof bids!=='undefined'?bids:[])
     .filter(b=>b.signingToken&&b.status==='Pending'&&b.id).map(b=>String(b.id));
-  if(!pendingIds.length)return;
+  if(!pendingIds.length){_tr('skip:no-pending');return;}
+  _tr('start pending='+pendingIds.length);
   try{
     // Fetch in SMALL SEQUENTIAL CHUNKS, and never swallow a failure silently.
     // Two things were wrong before. Fanning out one request per pending bid
@@ -5132,10 +5137,12 @@ async function _reconcilePendingSigStatuses(_attempt){
           if(error)throw error;
           got=data||[];
         }catch(e){
+          _tr('chunk-fail attempt'+attempt+' '+(e&&e.message||e));
           if(attempt)console.warn('reconcile: chunk failed after retry',ids.length,'ids:',e&&e.message||e);
           else await new Promise(r=>setTimeout(r,300));
         }
       }
+      _tr('chunk['+i+'] ids='+ids.length+' rows='+(got?got.length:'FAIL'));
       if(got)rows.push(...got);
     }
     let changed=false;
@@ -5153,7 +5160,9 @@ async function _reconcilePendingSigStatuses(_attempt){
       // was the actual bug: the query and the apply logic were both already
       // correct, the bid reference just went stale underneath them.
       const bid=(typeof bids!=='undefined'?bids:[]).find(b=>String(b.id)===String(s.bid_id)&&b.status==='Pending');
-      if(bid&&_applySigStatusToBid(bid,s))changed=true;
+      const applied=bid?_applySigStatusToBid(bid,s):false;
+      _tr('row '+s.bid_id+' status='+s.payment_status+' bidFound='+!!bid+' applied='+applied);
+      if(applied)changed=true;
     });
     if(changed){
       saveAll();
@@ -5188,7 +5197,8 @@ async function _reconcilePendingSigStatuses(_attempt){
       clearTimeout(_reconcileReassertTimer);
       if(_n<3)_reconcileReassertTimer=setTimeout(()=>{_reconcilePendingSigStatuses(_n+1);},2500);
     }
-  }catch(e){console.warn('reconcilePendingSigStatuses:',e);}
+    _tr('done changed='+changed);
+  }catch(e){_tr('threw '+(e&&e.message||e));console.warn('reconcilePendingSigStatuses:',e);}
 }
 let _checkSigsPending=false;
 // Set when a caller arrives asking for a FRESH pass (no watermark yet), which
@@ -5336,6 +5346,7 @@ async function checkNewSignatures(_src){
     // still stuck "Pending" that this poll's own 100-row/watermark window can't
     // reach. Fire-and-forget, it has its own error handling and never blocks
     // _checkSigsBusy.
+    try{(window._reconcileTrace=window._reconcileTrace||[]).push((Date.now()%1000000)+' gate full='+_wasFullPoll+' req='+_reconcileRequested);}catch(_e){}
     if(_wasFullPoll||_reconcileRequested){_reconcileRequested=false;_reconcilePendingSigStatuses();}
   }catch(e){console.warn('checkNewSignatures:',e);}finally{
     _checkSigsBusy=false;
