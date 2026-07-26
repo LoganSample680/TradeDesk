@@ -237,13 +237,23 @@ test.describe('egress: signature-poll watermark', () => {
       );
     });
     const r = await page.evaluate(async () => {
-      let queriedIds = null;
+      // One .from('signed_proposals') call per pending bid now (not a single
+      // .in(bid_id,[...]) call): a captured bid object reference could go
+      // stale mid-flight if a cloud-delta load rebuilt the bids array while
+      // a bulk query was in transit, so the fix looks each bid up fresh at
+      // apply time and queries per id. Each concurrent call gets its own
+      // fresh query object here, closing over the bid_id its own .eq() saw.
+      const queriedIds = [];
       const mkQuery = () => {
+        let bidId = null;
         const q = {};
-        q.select = () => q; q.eq = () => q;
-        q.in = (col, ids) => { queriedIds = ids; return q; };
+        q.select = () => q;
+        q.eq = (col, val) => { if (col === 'bid_id') { bidId = val; queriedIds.push(val); } return q; };
+        q.limit = () => q;
         q.then = (resolve) => resolve({
-          data: [{ bid_id: '990010', payment_status: 'declined', decline_reason: 'Price was too high', signed_at: '2026-07-16T00:00:00+00:00' }],
+          data: bidId === '990010'
+            ? [{ bid_id: '990010', payment_status: 'declined', decline_reason: 'Price was too high', signed_at: '2026-07-16T00:00:00+00:00' }]
+            : [],
           error: null,
         });
         return q;
