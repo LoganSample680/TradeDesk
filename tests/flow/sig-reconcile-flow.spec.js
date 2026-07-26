@@ -229,6 +229,22 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
           // What did the real function's OWN internal query actually see? (TEMP
           // instrumentation in cloud.js: window._reconcileDebugLast)
           const reconcileInternal = window._reconcileDebugLast || null;
+          // Bisect: is .in() broken with a single value, or only with the full
+          // multi-id list the real function actually used? Run both RIGHT NOW,
+          // before manualApply changes anything, using the identical uid/ids
+          // the real call just used.
+          let inSingle = 'not-run', inFullList = 'not-run';
+          try {
+            const { data: d1, error: e1 } = await _supa.from('signed_proposals')
+              .select('bid_id,payment_status').eq('contractor_user_id', _supaUser.id).in('bid_id', [String(a)]);
+            inSingle = { rowCount: d1 ? d1.length : null, error: e1 ? e1.message : null };
+          } catch (e) { inSingle = { threw: e.message }; }
+          try {
+            const ids = (reconcileInternal && reconcileInternal.pendingIds) || [String(a)];
+            const { data: d2, error: e2 } = await _supa.from('signed_proposals')
+              .select('bid_id,payment_status').eq('contractor_user_id', _supaUser.id).in('bid_id', ids);
+            inFullList = { rowCount: d2 ? d2.length : null, error: e2 ? e2.message : null, idsUsed: ids.length };
+          } catch (e) { inFullList = { threw: e.message }; }
           await new Promise(r => setTimeout(r, 2500));
           const after2500ms = snap();
           // One level deeper: call _applySigStatusToBid myself, bypassing
@@ -247,7 +263,7 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
             }
           } catch (e) { manualApply = { threw: e.message }; }
           const afterManualApply = snap();
-          return { afterCheckNewSignatures, reconcileFnType, reconcileInternal, afterDirectAwaitedCall, after2500ms, manualApply, afterManualApply };
+          return { afterCheckNewSignatures, reconcileFnType, reconcileInternal, inSingle, inFullList, afterDirectAwaitedCall, after2500ms, manualApply, afterManualApply };
         }, { a: bidA });
         ctx_timeline = timeline;
         // eslint-disable-next-line no-console
