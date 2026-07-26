@@ -1287,6 +1287,13 @@ function _byoAutosave(){
   if(!_geiEditBidId)return;
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(!b)return;
+  // openGenericEstimate always pre-creates an empty draft stub before any save
+  // happens (autosave/resume resilience), and THIS function, not the Save
+  // button, is what actually writes a new estimate's first real content onto
+  // it, every item/field handler below calls _byoAutosave, for both BYO and
+  // T&M. So the empty-stub-to-real-content transition happens here, capture it
+  // before mutating.
+  const _wasEmpty=_geiDraftIsEmpty(b);
   // "Name your proposal" (#gei-desc) used to only get captured by the explicit Save
   // button (saveGenericEstimate): every autosave silently dropped a name edit until
   // the user hit Save, so backing out mid-edit lost the new name.
@@ -1329,6 +1336,11 @@ function _byoAutosave(){
   }
   saveAll();
   _geiMarkActive(); // keep the auto-resume marker fresh on every save
+  // The "wrote a proposal" moment: fires exactly once, the first time this
+  // draft actually holds real content, regardless of which field triggered it.
+  if(_wasEmpty&&!_geiDraftIsEmpty(b)){
+    try{if(typeof lcProposalSaved==='function')lcProposalSaved(b.id,b.client_id);}catch(_e){}
+  }
 }
 function _injectRrpItems(){
   const _rrpC=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
