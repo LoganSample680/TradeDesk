@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.20';
+const APP_VERSION='07.26.26.21';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1659,12 +1659,13 @@ async function supaInit(){
       // → the save's finally clears the pending promise → the retry path takes over.
       // Callers that pass their own AbortSignal keep it (realtime uses WebSocket, unaffected).
       // cache:'no-store' on every call: this REST API serves live, mutable
-      // account data, the browser's default HTTP cache has been observed
-      // serving a stale response for a byte-identical GET issued again
-      // shortly after (cloud.js _reconcilePendingSigStatuses, a repeated
-      // .in(bid_id,[...]) request came back empty for a row a differently-
-      // shaped query found moments later). A GET to this API is never safe
-      // to cache, opts.cache already set by a caller wins.
+      // account data, a GET here is never safe for the browser's default
+      // HTTP cache to reuse. (Investigated as a candidate cause of the
+      // _reconcilePendingSigStatuses stuck-Pending bug; the actual cause
+      // there turned out to be a stale bid object reference, see that
+      // function's own comment. Keeping this regardless: it's the correct
+      // default for a live-data API either way.) opts.cache from a caller
+      // still wins.
       global:{fetch:(url,opts={})=>{
         const _opts={cache:'no-store',...opts};
         if(_opts.signal)return fetch(url,_opts);
@@ -5109,29 +5110,34 @@ function _applySigStatusToBid(bid,s){
 // of total signature volume), so drift like that gets corrected for good.
 async function _reconcilePendingSigStatuses(){
   if(!_supa||!_supaUser)return;
-  const pending=(typeof bids!=='undefined'?bids:[]).filter(b=>b.signingToken&&b.status==='Pending'&&b.id);
-  if(!pending.length)return;
+  const pendingIds=(typeof bids!=='undefined'?bids:[])
+    .filter(b=>b.signingToken&&b.status==='Pending'&&b.id).map(b=>String(b.id));
+  if(!pendingIds.length)return;
   try{
-    // One request per bid, not a single .in(bid_id, [...]) call: a repeated
-    // IDENTICAL .in() request against the live account was observed coming
-    // back empty for a row a differently-shaped query found moments later,
-    // consistent with the browser's default HTTP cache serving a stale
-    // response for the byte-identical URL (the shared _supa fetch wrapper,
-    // cloud.js ~line 1661, doesn't set cache:'no-store'). Per-bid .eq()
-    // requests are naturally distinct URLs, so there's nothing to cache
-    // around, and this list is small by design (only the bids still stuck
-    // "Pending" survive this filter, regardless of total account volume).
-    const rows=await Promise.all(pending.map(async b=>{
+    // One request per bid: the ids are all this needs to carry across the
+    // await, never bid object references (see below for why that matters).
+    const rows=await Promise.all(pendingIds.map(async id=>{
       try{
         const{data,error}=await _supa.from('signed_proposals').select('*')
-          .eq('contractor_user_id',_supaUser.id).eq('bid_id',String(b.id)).limit(1);
+          .eq('contractor_user_id',_supaUser.id).eq('bid_id',id).limit(1);
         return(!error&&data&&data[0])?data[0]:null;
       }catch(_e){return null;}
     }));
     let changed=false;
     rows.forEach(s=>{
       if(!s)return;
-      const bid=pending.find(b=>String(b.id)===String(s.bid_id));
+      // Look the bid up FRESH in the live array, right before applying, don't
+      // reuse an object captured before the awaits above. An incremental
+      // cloud-delta load can land mid-flight and rebuild this exact array
+      // (the td_bids set() at ~line 1207: bids.length=0, then re-push fresh
+      // row objects from the server), same array reference, but every bid is
+      // now a DIFFERENT object instance. A reference captured before that
+      // reload would still get mutated to Closed Lost successfully, just on
+      // an object no longer reachable from `bids`, so nothing else, including
+      // this same account's other tabs/renders, would ever see the fix. This
+      // was the actual bug: the query and the apply logic were both already
+      // correct, the bid reference just went stale underneath them.
+      const bid=(typeof bids!=='undefined'?bids:[]).find(b=>String(b.id)===String(s.bid_id)&&b.status==='Pending');
       if(bid&&_applySigStatusToBid(bid,s))changed=true;
     });
     if(changed){
