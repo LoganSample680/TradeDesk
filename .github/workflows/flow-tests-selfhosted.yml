@@ -33,12 +33,27 @@ jobs:
       (github.event_name == 'pull_request' &&
        github.event.label.name == 'run-flow-local' &&
        github.event.pull_request.head.repo.full_name == github.repository)
-    # SPLIT BY BROWSER: one job per Playwright project. With two self-hosted
-    # runners online, GitHub schedules them in parallel (one browser per box) —
-    # the suite's wall-clock halves (~20min → ~10min). Each job resets ITS OWN
-    # local stack (127.0.0.1), so the two halves can't contaminate each other.
+    # SPLIT BY BROWSER: one job per Playwright project. In LOCAL-STACK mode each
+    # job resets ITS OWN stack (127.0.0.1) and gets per-worker accounts, so the
+    # two halves are genuinely isolated and running them in parallel just halves
+    # wall-clock (~20min → ~10min).
+    #
+    # In CLOUD mode they are NOT isolated: both browsers sign into the SAME Dev A
+    # account (E2E_DEV_*) at the same moment. Two concurrent sessions on one
+    # account interleave their delta-loads, so a change one browser has applied
+    # locally but not yet flushed can be overwritten by the other's sync pulling
+    # the still-stale server row. That made sig-reconcile-flow fail 100% of the
+    # time in cloud mode while passing clean on local-stack, a collision between
+    # the two jobs, not a defect in what the test asserts.
+    #
+    # max-parallel: 1 serialises the matrix so the two browsers never share the
+    # live account concurrently. Local-stack runs pay a wall-clock cost for this;
+    # that is the accepted trade for cloud runs that mean something. (An
+    # expression here would let local-stack stay parallel, but max-parallel does
+    # not evaluate `inputs`, so this is deliberately unconditional.)
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         project: [chromium, webkit]
     runs-on: [self-hosted, tradedesk]

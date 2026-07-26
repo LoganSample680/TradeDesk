@@ -215,25 +215,14 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
       ruleText: 'a fresh full poll must clear the stale decline: bid A flips to Closed Lost with the client\'s reason, bid B is untouched, and the awaiting-signature count drops by exactly one',
       expected: 'A=Closed Lost (+lostReason), B=Pending, A gone from the feed, count = before-1',
       act: async (p) => {
-        const diag = await p.evaluate(async () => {
-          const busyBefore = typeof _checkSigsBusy !== 'undefined' ? _checkSigsBusy : null;
+        await p.evaluate(async () => {
           _sigPollWatermark = null;       // fresh load → full poll → reconcile fires
           await checkNewSignatures('boot');
-          const watermarkAfter = typeof _sigPollWatermark !== 'undefined' ? _sigPollWatermark : null;
-          // checkNewSignatures has a busy-guard: a concurrent call already in
-          // flight (this account has heavy realtime signature traffic right
-          // after seeding 100 filler rows) makes our call short-circuit and
-          // mark itself pending instead of ever reaching the reconcile line.
-          // Bypass that guard entirely with a direct, awaited call, which has
-          // no such guard of its own, to tell that apart from a real bug in
-          // the reconcile logic itself.
-          let directCallThrew = null;
-          try { await _reconcilePendingSigStatuses(); } catch (e) { directCallThrew = e.message; }
-          return { busyBefore, watermarkAfter, directCallThrew };
         });
-        // eslint-disable-next-line no-console
-        console.log('RECONCILE ACT DIAG:', JSON.stringify(diag));
-        await p.waitForTimeout(1200);
+        // checkNewSignatures fires the reconcile fire-and-forget, and the
+        // reconcile itself awaits one query per stuck bid before applying.
+        // Give that chain room to finish before reading the result.
+        await p.waitForTimeout(1500);
         return 1; // reopening the app
       },
       rule: async (p) => {

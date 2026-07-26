@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.23';
+const APP_VERSION='07.26.26.24';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5142,6 +5142,15 @@ async function _reconcilePendingSigStatuses(){
     });
     if(changed){
       saveAll();
+      // saveAll() is DEBOUNCED (_syncTimer). Until it fires, the healed status
+      // lives only in memory, and any delta-load landing in that window pulls
+      // the server's still-stale "Pending" row straight back over it, silently
+      // undoing the heal. That window is wide open precisely here: this runs on
+      // a fresh load, exactly when sync traffic is heaviest. Flush immediately
+      // so the correction reaches the server before anything can revert it.
+      // Fire-and-forget: a failed flush leaves the debounced save to retry, and
+      // the next fresh load reconciles again anyway.
+      try{if(typeof _flushSaveNow==='function')_flushSaveNow();}catch(_e){}
       renderDash();
       if(typeof renderProposalsPage==='function')renderProposalsPage();
     }
