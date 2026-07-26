@@ -2973,6 +2973,13 @@ function saveGenericEstimate(draft){
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
     if(b){
+      // openGenericEstimate always pre-creates an empty draft stub and sets
+      // _geiEditBidId before any save happens (autosave/resume resilience), so
+      // this branch, not the "new bid" one below, is what a NEW estimate's
+      // first-ever save actually runs through. Capture emptiness BEFORE
+      // mutating: the transition from stub to real content is the "wrote a
+      // proposal" moment the "new bid" branch's lcProposalSaved can never fire.
+      const _wasEmpty=_geiDraftIsEmpty(b);
       b.amount=total;b.type=v('gei-desc')||_typeLabel;b.geiDesc=v('gei-desc')||'';
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
       b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=parseFloat(S.salesTaxRate)||0;b.status=draft?'Draft':'Pending';b.draft=!!draft;
@@ -2985,6 +2992,9 @@ function saveGenericEstimate(draft){
       if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
       Object.assign(b,_tmFields);
       saveAll();
+      if(_wasEmpty&&!_geiDraftIsEmpty(b)){
+        try{if(typeof lcProposalSaved==='function')lcProposalSaved(b.id,b.client_id);}catch(_e){}
+      }
     }
   } else {
     const newBid={
