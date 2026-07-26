@@ -226,6 +226,9 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
           const reconcileFnType = typeof _reconcilePendingSigStatuses;
           if (reconcileFnType === 'function') await _reconcilePendingSigStatuses();
           const afterDirectAwaitedCall = snap();
+          // What did the real function's OWN internal query actually see? (TEMP
+          // instrumentation in cloud.js: window._reconcileDebugLast)
+          const reconcileInternal = window._reconcileDebugLast || null;
           await new Promise(r => setTimeout(r, 2500));
           const after2500ms = snap();
           // One level deeper: call _applySigStatusToBid myself, bypassing
@@ -244,7 +247,7 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
             }
           } catch (e) { manualApply = { threw: e.message }; }
           const afterManualApply = snap();
-          return { afterCheckNewSignatures, reconcileFnType, afterDirectAwaitedCall, after2500ms, manualApply, afterManualApply };
+          return { afterCheckNewSignatures, reconcileFnType, reconcileInternal, afterDirectAwaitedCall, after2500ms, manualApply, afterManualApply };
         }, { a: bidA });
         ctx_timeline = timeline;
         // eslint-disable-next-line no-console

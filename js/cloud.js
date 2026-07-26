@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.16';
+const APP_VERSION='07.26.26.17';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5100,26 +5100,31 @@ function _applySigStatusToBid(bid,s){
 // still showing "Pending" with a signingToken (however few that is, regardless
 // of total signature volume), so drift like that gets corrected for good.
 async function _reconcilePendingSigStatuses(){
-  if(!_supa||!_supaUser)return;
+  if(!_supa||!_supaUser){window._reconcileDebugLast={skipped:'no _supa/_supaUser'};return;}
   const pending=(typeof bids!=='undefined'?bids:[]).filter(b=>b.signingToken&&b.status==='Pending'&&b.id);
-  if(!pending.length)return;
+  if(!pending.length){window._reconcileDebugLast={skipped:'no pending bids',pendingLen:0};return;}
   try{
     const{data,error}=await _supa.from('signed_proposals')
       .select('*')
       .eq('contractor_user_id',_supaUser.id)
       .in('bid_id',pending.map(b=>String(b.id)));
+    // TEMP diagnostic (removed once root-caused): capture this call's own raw
+    // query result, not a parallel reimplementation, so a test can see exactly
+    // what this function itself saw.
+    window._reconcileDebugLast={pendingLen:pending.length,pendingIds:pending.map(b=>String(b.id)),dataLen:data?data.length:null,error:error?(error.message||JSON.stringify(error)):null};
     if(error||!data||!data.length)return;
     let changed=false;
     data.forEach(s=>{
       const bid=pending.find(b=>String(b.id)===String(s.bid_id));
       if(bid&&_applySigStatusToBid(bid,s))changed=true;
     });
+    window._reconcileDebugLast.changed=changed;
     if(changed){
       saveAll();
       renderDash();
       if(typeof renderProposalsPage==='function')renderProposalsPage();
     }
-  }catch(e){console.warn('reconcilePendingSigStatuses:',e);}
+  }catch(e){window._reconcileDebugLast={threw:e.message};console.warn('reconcilePendingSigStatuses:',e);}
 }
 let _checkSigsPending=false;
 async function checkNewSignatures(_src){
