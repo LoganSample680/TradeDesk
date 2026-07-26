@@ -86,7 +86,7 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
     const base = Date.now() * 1000 + (process.pid % 1000);
     const clientA = base, bidA = base + 1;        // this one gets declined
     const clientB = base + 2, bidB = base + 3;    // this one stays genuinely pending
-    let seedA = {}, seedB = {}, before = {}, ctx_timeline = {};
+    let seedA = {}, seedB = {}, before = {};
 
     // ── STEP 1: two real proposals go out ─────────────────────────────────────
     await step(page, {
@@ -215,60 +215,15 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
       ruleText: 'a fresh full poll must clear the stale decline: bid A flips to Closed Lost with the client\'s reason, bid B is untouched, and the awaiting-signature count drops by exactly one',
       expected: 'A=Closed Lost (+lostReason), B=Pending, A gone from the feed, count = before-1',
       act: async (p) => {
-        const timeline = await p.evaluate(async ({ a }) => {
-          const snap = () => { const ba = bids.find(x => String(x.id) === String(a)); return ba ? ba.status : null; };
+        await p.evaluate(async () => {
           _sigPollWatermark = null;       // fresh load → full poll → reconcile fires
           await checkNewSignatures('boot');
-          const afterCheckNewSignatures = snap();
-          // Direct, AWAITED call: bypasses checkNewSignatures' fire-and-forget
-          // invocation entirely, isolates whether the reconcile logic itself
-          // works when actually waited on.
-          const reconcileFnType = typeof _reconcilePendingSigStatuses;
-          if (reconcileFnType === 'function') await _reconcilePendingSigStatuses();
-          const afterDirectAwaitedCall = snap();
-          // What did the real function's OWN internal query actually see? (TEMP
-          // instrumentation in cloud.js: window._reconcileDebugLast)
-          const reconcileInternal = window._reconcileDebugLast || null;
-          // Bisect: is .in() broken with a single value, or only with the full
-          // multi-id list the real function actually used? Run both RIGHT NOW,
-          // before manualApply changes anything, using the identical uid/ids
-          // the real call just used.
-          let inSingle = 'not-run', inFullList = 'not-run';
-          try {
-            const { data: d1, error: e1 } = await _supa.from('signed_proposals')
-              .select('bid_id,payment_status').eq('contractor_user_id', _supaUser.id).in('bid_id', [String(a)]);
-            inSingle = { rowCount: d1 ? d1.length : null, error: e1 ? e1.message : null };
-          } catch (e) { inSingle = { threw: e.message }; }
-          try {
-            const ids = (reconcileInternal && reconcileInternal.pendingIds) || [String(a)];
-            const { data: d2, error: e2 } = await _supa.from('signed_proposals')
-              .select('bid_id,payment_status').eq('contractor_user_id', _supaUser.id).in('bid_id', ids);
-            inFullList = { rowCount: d2 ? d2.length : null, error: e2 ? e2.message : null, idsUsed: ids.length };
-          } catch (e) { inFullList = { threw: e.message }; }
-          await new Promise(r => setTimeout(r, 2500));
-          const after2500ms = snap();
-          // One level deeper: call _applySigStatusToBid myself, bypassing
-          // _reconcilePendingSigStatuses' own query/matching entirely, on the
-          // exact bid object + row this run already confirmed exist and match.
-          let manualApply = 'not-run';
-          try {
-            const bidObj = bids.find(x => String(x.id) === String(a));
-            const { data } = await _supa.from('signed_proposals').select('*')
-              .eq('contractor_user_id', _supaUser.id).eq('bid_id', String(a)).limit(1);
-            const row = data && data[0];
-            if (bidObj && row && typeof _applySigStatusToBid === 'function') {
-              manualApply = { applyFnType: typeof _applySigStatusToBid, returned: _applySigStatusToBid(bidObj, row) };
-            } else {
-              manualApply = { bidObjFound: !!bidObj, rowFound: !!row, applyFnType: typeof _applySigStatusToBid };
-            }
-          } catch (e) { manualApply = { threw: e.message }; }
-          const afterManualApply = snap();
-          return { afterCheckNewSignatures, reconcileFnType, reconcileInternal, inSingle, inFullList, afterDirectAwaitedCall, after2500ms, manualApply, afterManualApply };
-        }, { a: bidA });
-        ctx_timeline = timeline;
-        // eslint-disable-next-line no-console
-        console.log('RECONCILE TIMELINE (bidA):', JSON.stringify(timeline));
-        await p.waitForTimeout(800);
+        });
+        // The reconcile's own query has been observed to come back empty on a
+        // first attempt against the live account, then succeed moments later
+        // (cloud.js retries once internally now). Give that retry room to land
+        // before checking.
+        await p.waitForTimeout(1200);
         return 1; // reopening the app
       },
       rule: async (p) => {
@@ -307,7 +262,7 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
               v.shown[bidA] === false && v.shown[bidB] === true &&
               v.model === before.model - 1,
           got: JSON.stringify(r) + ' view=' + JSON.stringify(v) + ' before=' + JSON.stringify(before) +
-               ' diag=' + JSON.stringify(diag) + ' timeline=' + JSON.stringify(ctx_timeline),
+               ' diag=' + JSON.stringify(diag),
         };
       },
       // Adversarial: a second reconcile pass must be idempotent, it must not walk
