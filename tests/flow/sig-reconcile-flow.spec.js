@@ -232,12 +232,33 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
           };
         }, { a: bidA, b: bidB });
         const v = await pendingView(p, [bidA, bidB]);
+        // Diagnostic (kept regardless of pass/fail): replicate
+        // _reconcilePendingSigStatuses's own query by hand, so a failure shows
+        // exactly what it saw, error, empty, wrong row, instead of just "didn't work".
+        const diag = await p.evaluate(async ({ a }) => {
+          const pending = (typeof bids !== 'undefined' ? bids : [])
+            .filter(x => x.signingToken && x.status === 'Pending' && x.id);
+          const uid = _supaUser ? _supaUser.id : null;
+          let queryResult = null;
+          try {
+            const { data, error } = await _supa.from('signed_proposals')
+              .select('*').eq('contractor_user_id', uid)
+              .in('bid_id', pending.map(x => String(x.id)));
+            queryResult = {
+              error: error ? (error.message || JSON.stringify(error)) : null,
+              rowCount: data ? data.length : null,
+              rowForA: data ? data.find(s => String(s.bid_id) === String(a)) : null,
+            };
+          } catch (e) { queryResult = { threw: e.message }; }
+          return { pendingCount: pending.length, pendingIds: pending.map(x => x.id), uid, queryResult };
+        }, { a: bidA });
         return {
           ok: r.aStatus === 'Closed Lost' && r.aReason === DECLINE_REASON &&
               r.bStatus === 'Pending' && r.bTok &&
               v.shown[bidA] === false && v.shown[bidB] === true &&
               v.model === before.model - 1,
-          got: JSON.stringify(r) + ' view=' + JSON.stringify(v) + ' before=' + JSON.stringify(before),
+          got: JSON.stringify(r) + ' view=' + JSON.stringify(v) + ' before=' + JSON.stringify(before) +
+               ' diag=' + JSON.stringify(diag),
         };
       },
       // Adversarial: a second reconcile pass must be idempotent, it must not walk
