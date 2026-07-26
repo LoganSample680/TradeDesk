@@ -153,9 +153,16 @@ test.describe('lifecycle events reach the real backend and the Books Summary fun
         }, { cid: ctx.clientId });
         const started = r.rows.find(x => x.event === 'proposal_started');
         const saved = r.rows.find(x => x.event === 'proposal_saved');
+        // Diagnostic: if proposal_saved never lands, this pins down WHY, did the
+        // bid actually get real content (a lcProposalSaved logic bug) or did it
+        // stay an empty stub (an item-adding bug in this test, not the app)?
+        const bidState = await p.evaluate((bid) => {
+          const b = (typeof bids !== 'undefined' ? bids : []).find(x => x.id === bid);
+          return b ? { amount: b.amount, byoLen: (b.byoItems || []).length, isFreeForm: b.isFreeForm, editBidId: (typeof _geiEditBidId !== 'undefined') ? _geiEditBidId : null } : { found: false };
+        }, ctx.bidId);
         return {
           ok: !r.error && !!started && !!saved && started.ts <= saved.ts,
-          got: JSON.stringify(r),
+          got: JSON.stringify(r) + ' bidState=' + JSON.stringify(bidState),
         };
       },
     });
