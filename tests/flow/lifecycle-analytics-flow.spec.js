@@ -267,6 +267,17 @@ test.describe('lifecycle events reach the real backend and the Books Summary fun
       ruleText: 'three more real, ordered milestones must land for the same bid',
       expected: 'lifecycle_events has job_scheduled, job_completed, balance_settled, all after signed',
       act: async (p) => {
+        // Step 4's real sign fires the same realtime "New signature!" push every
+        // other flow sees (full-lifecycle-flow.spec.js, multi-property-flow.spec.js
+        // both dismiss it as part of driving the real scheduling UI). This step
+        // seeds the rest of the funnel directly instead of through that UI, so
+        // nothing else ever taps the buttons that would otherwise clear it. Clear
+        // it here or it's left covering the nav bar for step 6.
+        await p.evaluate(() => {
+          document.getElementById('_sched-alert-overlay')?.remove();
+          window._showingScheduleAlert = false;
+          document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        });
         await p.evaluate(async ({ cid, bid }) => {
           logLifecycle('job_scheduled', { bidId: bid, clientId: cid, jobId: bid });
           await new Promise(r => setTimeout(r, 250));
