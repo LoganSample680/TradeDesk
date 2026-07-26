@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.24';
+const APP_VERSION='07.26.26.25';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5114,15 +5114,38 @@ async function _reconcilePendingSigStatuses(){
     .filter(b=>b.signingToken&&b.status==='Pending'&&b.id).map(b=>String(b.id));
   if(!pendingIds.length)return;
   try{
-    // One request per bid: the ids are all this needs to carry across the
-    // await, never bid object references (see below for why that matters).
-    const rows=await Promise.all(pendingIds.map(async id=>{
-      try{
-        const{data,error}=await _supa.from('signed_proposals').select('*')
-          .eq('contractor_user_id',_supaUser.id).eq('bid_id',id).limit(1);
-        return(!error&&data&&data[0])?data[0]:null;
-      }catch(_e){return null;}
-    }));
+    // Fetch in SMALL SEQUENTIAL CHUNKS, and never swallow a failure silently.
+    // Two things were wrong before. Fanning out one request per pending bid
+    // meant N concurrent fetches (N grows without bound as an account ages,
+    // every proposal still awaiting signature is one more), which queues
+    // behind the browser's per-host connection limit alongside all the other
+    // sync traffic; and every failure was swallowed (`catch → null`,
+    // `error → null`), so a dropped request was indistinguishable from "no
+    // decline exists" and the stuck bid just silently stayed stuck. A single
+    // huge .in(...) had the mirror problem: one oversized request that fails
+    // as a unit takes every bid down with it.
+    //
+    // Chunks of 10 keep each URL small and the request count low, the retry
+    // covers a transient miss, and a chunk that still fails is WARNED about
+    // rather than quietly treated as "nothing to reconcile".
+    const CHUNK=10;
+    const rows=[];
+    for(let i=0;i<pendingIds.length;i+=CHUNK){
+      const ids=pendingIds.slice(i,i+CHUNK);
+      let got=null;
+      for(let attempt=0;attempt<2&&!got;attempt++){
+        try{
+          const{data,error}=await _supa.from('signed_proposals').select('*')
+            .eq('contractor_user_id',_supaUser.id).in('bid_id',ids);
+          if(error)throw error;
+          got=data||[];
+        }catch(e){
+          if(attempt)console.warn('reconcile: chunk failed after retry',ids.length,'ids:',e&&e.message||e);
+          else await new Promise(r=>setTimeout(r,300));
+        }
+      }
+      if(got)rows.push(...got);
+    }
     let changed=false;
     rows.forEach(s=>{
       if(!s)return;
