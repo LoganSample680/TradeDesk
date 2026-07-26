@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.19';
+const APP_VERSION='07.26.26.20';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1658,11 +1658,19 @@ async function supaInit(){
       // live: the wedged A→B delete + the sibling sign-in hang). An aborted request rejects
       // → the save's finally clears the pending promise → the retry path takes over.
       // Callers that pass their own AbortSignal keep it (realtime uses WebSocket, unaffected).
+      // cache:'no-store' on every call: this REST API serves live, mutable
+      // account data, the browser's default HTTP cache has been observed
+      // serving a stale response for a byte-identical GET issued again
+      // shortly after (cloud.js _reconcilePendingSigStatuses, a repeated
+      // .in(bid_id,[...]) request came back empty for a row a differently-
+      // shaped query found moments later). A GET to this API is never safe
+      // to cache, opts.cache already set by a caller wins.
       global:{fetch:(url,opts={})=>{
-        if(opts.signal)return fetch(url,opts);
+        const _opts={cache:'no-store',...opts};
+        if(_opts.signal)return fetch(url,_opts);
         const _ac=new AbortController();
         const _tt=setTimeout(()=>{try{_ac.abort();}catch(_e){}},30000);
-        return fetch(url,{...opts,signal:_ac.signal}).finally(()=>clearTimeout(_tt));
+        return fetch(url,{..._opts,signal:_ac.signal}).finally(()=>clearTimeout(_tt));
       }}
     });
     // Realtime connects straight to Supabase, WebSocket proxying through
@@ -5104,22 +5112,25 @@ async function _reconcilePendingSigStatuses(){
   const pending=(typeof bids!=='undefined'?bids:[]).filter(b=>b.signingToken&&b.status==='Pending'&&b.id);
   if(!pending.length)return;
   try{
-    const ids=pending.map(b=>String(b.id));
-    const _q=()=>_supa.from('signed_proposals').select('*').eq('contractor_user_id',_supaUser.id).in('bid_id',ids);
-    let{data,error}=await _q();
-    // Observed against the live account: this exact query can come back empty
-    // on its first attempt for a row that a byte-identical query finds moments
-    // later (no ordering/limit here, so it isn't a windowing issue like the
-    // poll above), then succeeds on retry. One short-delayed retry before
-    // giving up costs nothing on the normal case (this only runs once per
-    // fresh load) and turns an intermittent miss into a reliable fix.
-    if(!error&&(!data||!data.length)){
-      await new Promise(r=>setTimeout(r,500));
-      ({data,error}=await _q());
-    }
-    if(error||!data||!data.length)return;
+    // One request per bid, not a single .in(bid_id, [...]) call: a repeated
+    // IDENTICAL .in() request against the live account was observed coming
+    // back empty for a row a differently-shaped query found moments later,
+    // consistent with the browser's default HTTP cache serving a stale
+    // response for the byte-identical URL (the shared _supa fetch wrapper,
+    // cloud.js ~line 1661, doesn't set cache:'no-store'). Per-bid .eq()
+    // requests are naturally distinct URLs, so there's nothing to cache
+    // around, and this list is small by design (only the bids still stuck
+    // "Pending" survive this filter, regardless of total account volume).
+    const rows=await Promise.all(pending.map(async b=>{
+      try{
+        const{data,error}=await _supa.from('signed_proposals').select('*')
+          .eq('contractor_user_id',_supaUser.id).eq('bid_id',String(b.id)).limit(1);
+        return(!error&&data&&data[0])?data[0]:null;
+      }catch(_e){return null;}
+    }));
     let changed=false;
-    data.forEach(s=>{
+    rows.forEach(s=>{
+      if(!s)return;
       const bid=pending.find(b=>String(b.id)===String(s.bid_id));
       if(bid&&_applySigStatusToBid(bid,s))changed=true;
     });
