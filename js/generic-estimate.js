@@ -3336,6 +3336,12 @@ async function sendGenericProposal(previewOnly){
     if(b.status==='Draft'||!b.status)b.status='Pending';
     b.draft=false;
     if(!b.proposalSentDate)b.proposalSentDate=todayKey();
+    // THIS is the real send moment: proposals.js _commitProposalSent (Text/Email
+    // share) also logs proposal_sent, but that only fires if the contractor taps
+    // one of those specific share options. A contractor who just copies the link
+    // (or the hub URL above) never hits that path, so the milestone belongs here,
+    // once=true dedupes if _commitProposalSent also fires later for the same bid.
+    try{if(typeof logLifecycle==='function')logLifecycle('proposal_sent',{bidId:b.id,clientId:b.client_id});}catch(_e){}
     saveAll();
     // saveAll() only SCHEDULES a debounced cloud write (2s timer), force + await it
     // now so the bid's signingToken/proposalKey/status are confirmed in td_bids
