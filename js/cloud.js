@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.26';
+const APP_VERSION='07.26.26.27';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1658,20 +1658,11 @@ async function supaInit(){
       // live: the wedged A→B delete + the sibling sign-in hang). An aborted request rejects
       // → the save's finally clears the pending promise → the retry path takes over.
       // Callers that pass their own AbortSignal keep it (realtime uses WebSocket, unaffected).
-      // cache:'no-store' on every call: this REST API serves live, mutable
-      // account data, a GET here is never safe for the browser's default
-      // HTTP cache to reuse. (Investigated as a candidate cause of the
-      // _reconcilePendingSigStatuses stuck-Pending bug; the actual cause
-      // there turned out to be a stale bid object reference, see that
-      // function's own comment. Keeping this regardless: it's the correct
-      // default for a live-data API either way.) opts.cache from a caller
-      // still wins.
       global:{fetch:(url,opts={})=>{
-        const _opts={cache:'no-store',...opts};
-        if(_opts.signal)return fetch(url,_opts);
+        if(opts.signal)return fetch(url,opts);
         const _ac=new AbortController();
         const _tt=setTimeout(()=>{try{_ac.abort();}catch(_e){}},30000);
-        return fetch(url,{..._opts,signal:_ac.signal}).finally(()=>clearTimeout(_tt));
+        return fetch(url,{...opts,signal:_ac.signal}).finally(()=>clearTimeout(_tt));
       }}
     });
     // Realtime connects straight to Supabase, WebSocket proxying through

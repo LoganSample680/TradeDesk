@@ -171,6 +171,21 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
             });
           }
           await _supa.from('signed_proposals').upsert(rows, { onConflict: 'bid_id' });
+          // WAIT until the decline is actually READABLE before going on. The
+          // reconcile under test is deliberately a ONE-SHOT (once per fresh
+          // load): if it reads before this write is visible it finds nothing,
+          // gives up, and never runs again. Racing the seed that way is what
+          // made this fail every time against the live cloud DB while passing
+          // on local-stack, where a write reads back instantly. Every
+          // hand-written diagnostic query "found" the row only because it ran
+          // seconds later, after step()'s 8s rule polling had already begun.
+          for (let i = 0; i < 40; i++) {
+            const { data } = await _supa.from('signed_proposals')
+              .select('bid_id,payment_status').eq('contractor_user_id', uid)
+              .in('bid_id', [String(bidA)]);
+            if (data && data.length && data[0].payment_status === 'declined') break;
+            await new Promise(r => setTimeout(r, 250));
+          }
         }, { bidA, reason: DECLINE_REASON, filler: FILLER_ROWS });
 
         await p.evaluate(async ({ bidA }) => {
