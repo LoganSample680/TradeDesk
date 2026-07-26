@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.25';
+const APP_VERSION='07.26.26.26';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5180,7 +5180,18 @@ async function _reconcilePendingSigStatuses(){
   }catch(e){console.warn('reconcilePendingSigStatuses:',e);}
 }
 let _checkSigsPending=false;
+// Set when a caller arrives asking for a FRESH pass (no watermark yet), which
+// is the condition that fires the stuck-bid reconcile. It has to be recorded
+// BEFORE the busy-guard below can drop the call, and it has to survive into
+// whichever run actually executes: the coalesced re-run recomputes
+// _wasFullPoll from the watermark, which the in-flight run has ALREADY set by
+// then, so it reads false and silently skips the reconcile. On an account with
+// steady traffic (realtime push + the 30s tick) a poll is often in flight, so a
+// genuinely stuck bid could survive load after load without ever being
+// reconciled, the reconcile wasn't failing, it was never being reached.
+let _reconcileRequested=false;
 async function checkNewSignatures(_src){
+  if(!_sigPollWatermark)_reconcileRequested=true;
   // Coalescing guard: a call landing while another run is in flight must NOT be
   // dropped: with the sig-feed push handler firing on every account-wide insert,
   // a push-triggered run can hold the busy flag at the exact moment the 30s tick
@@ -5314,7 +5325,7 @@ async function checkNewSignatures(_src){
     // still stuck "Pending" that this poll's own 100-row/watermark window can't
     // reach. Fire-and-forget, it has its own error handling and never blocks
     // _checkSigsBusy.
-    if(_wasFullPoll)_reconcilePendingSigStatuses();
+    if(_wasFullPoll||_reconcileRequested){_reconcileRequested=false;_reconcilePendingSigStatuses();}
   }catch(e){console.warn('checkNewSignatures:',e);}finally{
     _checkSigsBusy=false;
     if(_checkSigsPending){_checkSigsPending=false;checkNewSignatures(_src);}
