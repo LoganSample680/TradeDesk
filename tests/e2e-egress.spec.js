@@ -259,6 +259,10 @@ test.describe('egress: signature-poll watermark', () => {
       window.__origSupa = window.__origSupa || _supa;
       _supa = { ...window.__origSupa, from: (tbl) => tbl === 'signed_proposals' ? mkQuery() : window.__origSupa.from(tbl) };
       await _reconcilePendingSigStatuses();
+      // A changed pass schedules a delayed re-assert (the live revert fix).
+      // Cancel it: firing 2.5s from now, it would hit whatever mock the NEXT
+      // test has installed by then and trip its call-count assertions.
+      clearTimeout(_reconcileReassertTimer);
       const stuck = bids.find(x => String(x.id) === '990010');
       const real = bids.find(x => String(x.id) === '990011');
       return {

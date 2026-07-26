@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.27';
+const APP_VERSION='07.26.26.28';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -5099,7 +5099,8 @@ function _applySigStatusToBid(bid,s){
 // through either path. This runs a direct lookup on the small set of bids
 // still showing "Pending" with a signingToken (however few that is, regardless
 // of total signature volume), so drift like that gets corrected for good.
-async function _reconcilePendingSigStatuses(){
+let _reconcileReassertTimer=null;
+async function _reconcilePendingSigStatuses(_attempt){
   if(!_supa||!_supaUser)return;
   const pendingIds=(typeof bids!=='undefined'?bids:[])
     .filter(b=>b.signingToken&&b.status==='Pending'&&b.id).map(b=>String(b.id));
@@ -5167,6 +5168,25 @@ async function _reconcilePendingSigStatuses(){
       try{if(typeof _flushSaveNow==='function')_flushSaveNow();}catch(_e){}
       renderDash();
       if(typeof renderProposalsPage==='function')renderProposalsPage();
+      // RE-ASSERT UNTIL IT STICKS. Observed live (instrumented run, not
+      // theory): the heal applied, the bid showed Closed Lost, and within
+      // 400ms the model showed Pending again and stayed there. The delta
+      // sync's td_bids merge rebuilds the bids array from the cloud
+      // (bids.length=0, re-push server rows), and the cloud row still says
+      // Pending until our flush lands, so a delta pull racing that flush
+      // restores the stale status, and the flush then uploads the REVERTED
+      // state. The normal signature poll never has this problem because it
+      // re-applies every 30s tick and converges through repetition; this
+      // reconcile was a one-shot, so one lost race meant stuck until the
+      // next app load. Give it the same convergence: after a pass that
+      // changed something, run again shortly. If the heal held, the next
+      // pass finds nothing to change and the chain stops (one cheap query).
+      // If it was reverted, re-apply and re-flush; by then the earlier
+      // flush has usually landed, the cloud row agrees, and it sticks.
+      // Bounded at 3 re-passes so a pathological loop cannot run forever.
+      const _n=_attempt||0;
+      clearTimeout(_reconcileReassertTimer);
+      if(_n<3)_reconcileReassertTimer=setTimeout(()=>{_reconcilePendingSigStatuses(_n+1);},2500);
     }
   }catch(e){console.warn('reconcilePendingSigStatuses:',e);}
 }
