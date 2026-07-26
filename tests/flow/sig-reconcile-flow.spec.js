@@ -230,6 +230,8 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
           return { afterCheckNewSignatures, afterDirectAwaitedCall, after2500ms };
         }, { a: bidA });
         ctx_timeline = timeline;
+        // eslint-disable-next-line no-console
+        console.log('RECONCILE TIMELINE (bidA):', JSON.stringify(timeline));
         await p.waitForTimeout(800);
         return 1; // reopening the app
       },
