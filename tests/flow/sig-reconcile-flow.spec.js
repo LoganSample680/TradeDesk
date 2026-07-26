@@ -86,7 +86,7 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
     const base = Date.now() * 1000 + (process.pid % 1000);
     const clientA = base, bidA = base + 1;        // this one gets declined
     const clientB = base + 2, bidB = base + 3;    // this one stays genuinely pending
-    let seedA = {}, seedB = {}, before = {};
+    let seedA = {}, seedB = {}, before = {}, ctx_timeline = {};
 
     // ── STEP 1: two real proposals go out ─────────────────────────────────────
     await step(page, {
@@ -215,10 +215,21 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
       ruleText: 'a fresh full poll must clear the stale decline: bid A flips to Closed Lost with the client\'s reason, bid B is untouched, and the awaiting-signature count drops by exactly one',
       expected: 'A=Closed Lost (+lostReason), B=Pending, A gone from the feed, count = before-1',
       act: async (p) => {
-        await p.evaluate(async () => {
+        const timeline = await p.evaluate(async ({ a }) => {
+          const snap = () => { const ba = bids.find(x => String(x.id) === String(a)); return ba ? ba.status : null; };
           _sigPollWatermark = null;       // fresh load → full poll → reconcile fires
           await checkNewSignatures('boot');
-        });
+          const afterCheckNewSignatures = snap();
+          // Direct, AWAITED call: bypasses checkNewSignatures' fire-and-forget
+          // invocation entirely, isolates whether the reconcile logic itself
+          // works when actually waited on.
+          if (typeof _reconcilePendingSigStatuses === 'function') await _reconcilePendingSigStatuses();
+          const afterDirectAwaitedCall = snap();
+          await new Promise(r => setTimeout(r, 2500));
+          const after2500ms = snap();
+          return { afterCheckNewSignatures, afterDirectAwaitedCall, after2500ms };
+        }, { a: bidA });
+        ctx_timeline = timeline;
         await p.waitForTimeout(800);
         return 1; // reopening the app
       },
@@ -258,7 +269,7 @@ test.describe('awaiting-signature count self-heals (UI-driven, real backend)', (
               v.shown[bidA] === false && v.shown[bidB] === true &&
               v.model === before.model - 1,
           got: JSON.stringify(r) + ' view=' + JSON.stringify(v) + ' before=' + JSON.stringify(before) +
-               ' diag=' + JSON.stringify(diag),
+               ' diag=' + JSON.stringify(diag) + ' timeline=' + JSON.stringify(ctx_timeline),
         };
       },
       // Adversarial: a second reconcile pass must be idempotent, it must not walk
