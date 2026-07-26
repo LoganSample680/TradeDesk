@@ -298,6 +298,12 @@ test.describe('lifecycle events reach the real backend and the Books Summary fun
           window._showingScheduleAlert = true;
           localStorage.setItem('zp3_schedule_alerts', '[]');
           document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+          // Step 3's real sendGenericProposal() call left its own share/send
+          // overlay open (_showGeiSendOverlay(), generic-estimate.js): a plain
+          // div with no zmodal-overlay class, so the sweep above never caught
+          // it. Nothing in this flow drives that share UI (Text/Email/Copy
+          // link), so it's still sitting on top of pg-est-generic, remove it too.
+          document.getElementById('_gei-send-overlay')?.remove();
         });
         await p.evaluate(async ({ cid, bid }) => {
           logLifecycle('job_scheduled', { bidId: bid, clientId: cid, jobId: bid });
@@ -339,6 +345,7 @@ test.describe('lifecycle events reach the real backend and the Books Summary fun
           document.getElementById('_sched-alert-overlay')?.remove();
           window._showingScheduleAlert = true;
           document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+          document.getElementById('_gei-send-overlay')?.remove();
         });
         let n = await navTracker(p);
         await p.waitForSelector('#pg-tracker.active', { state: 'attached', timeout: 8000 });
