@@ -48,6 +48,21 @@ const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'analytics/lifecycle-to-benchmarks';
 
+// Books lives behind different real controls per viewport: the desktop side nav
+// exposes #nb-tracker directly, but the mobile tab bar has no tracker slot of its
+// own, it's tucked under "More" (#mtb-more → #mmi-tracker popup item). Tapping
+// #nb-tracker unconditionally is what made this fail on mobile/tablet: the
+// element exists in the DOM but renders at zero size, sig-reconcile-flow.spec.js's
+// navDash() established this same per-viewport pattern for the dashboard link.
+async function navTracker(p) {
+  const desktop = p.locator('#nb-tracker').first();
+  if (await desktop.isVisible().catch(() => false)) return await tap(p, '#nb-tracker');
+  let n = await tap(p, '#mtb-more');
+  await p.waitForSelector('#mmi-tracker', { state: 'visible', timeout: 5000 });
+  n += await tap(p, '#mmi-tracker');
+  return n;
+}
+
 test.describe('lifecycle events reach the real backend and the Books Summary funnel (UI-driven)', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
@@ -310,7 +325,16 @@ test.describe('lifecycle events reach the real backend and the Books Summary fun
       ruleText: 'the RPC reads YOUR rows live: at least one real stage pair from this run must render with samples > 0',
       expected: '#lc-funnel-mine lists lead_created→proposal_saved (or another pair this run created) with a real duration',
       act: async (p) => {
-        let n = await tap(p, '#nb-tracker');
+        // The realtime "New signature!" popup from step 4's sign can (re)appear
+        // asynchronously via the contractor's live subscription; step 5's dismiss
+        // only covers what existed at that moment, so clear it again right before
+        // navigating, whatever's covering the nav controls gets removed here.
+        await p.evaluate(() => {
+          document.getElementById('_sched-alert-overlay')?.remove();
+          window._showingScheduleAlert = false;
+          document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        });
+        let n = await navTracker(p);
         await p.waitForSelector('#pg-tracker.active', { state: 'attached', timeout: 8000 });
         // Summary is the default tab (owner mandate, 2026-07-14); tap it anyway
         // for a real, honest interaction rather than assuming it's already active.
