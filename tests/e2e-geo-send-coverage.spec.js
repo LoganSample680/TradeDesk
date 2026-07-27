@@ -1014,7 +1014,16 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
   test.afterAll(async () => { await page.context().close(); });
 
   // Fresh geo state + a scriptable _supa recorder for every test.
-  const geoReset = () => page.evaluate(() => {
+  // _geoEnqueue fires _geoDrainQueue() without awaiting it (by design, a real
+  // caller never blocks on the network write). A straggler from the PREVIOUS
+  // test can still be mid-flight when this runs; waiting out _geoDrainBusy
+  // here, before the mock is swapped, keeps that write off the NEXT test's
+  // recorder instead of leaking a stale row into an unrelated assertion.
+  const geoReset = () => page.evaluate(async () => {
+    const settleStart = Date.now();
+    while (typeof _geoDrainBusy !== 'undefined' && _geoDrainBusy && Date.now() - settleStart < 2000) {
+      await new Promise(res => setTimeout(res, 10));
+    }
     localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_open');
     localStorage.removeItem('zp3_geo_manual'); localStorage.removeItem('zp3_geo_prune_day');
     _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
@@ -1106,7 +1115,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       // First post-gap ping lands far OUTSIDE the fence → gap-close.
       await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } });
       await new Promise(res => setTimeout(res, 50));
-      const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries') || {}).row || null;
+      const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
       return { persisted: !!persisted, hiddenAt: persisted && persisted.hiddenAt, restored, row, cur: _geoCurrentJob };
     });
@@ -1131,7 +1140,8 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       const arrived = new Date(Date.now() - 30 * 60000).toISOString();
       _geoCurrentJob = jobId; _geoArrivedAt = arrived; _geoGapHiddenAt = new Date(Date.now() - 10 * 60000).toISOString();
       await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8 } });
-      const out = { rows: window.__rec.upserts.length, cur: _geoCurrentJob, arrivedKept: _geoArrivedAt === arrived, gap: _geoGapHiddenAt };
+      const rows = window.__rec.upserts.filter(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)).length;
+      const out = { rows, cur: _geoCurrentJob, arrivedKept: _geoArrivedAt === arrived, gap: _geoGapHiddenAt };
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
       return out;
     });
