@@ -613,6 +613,248 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.count).toBe(1);
   });
 
+  // ─────────────────────────────────────────────────────────────────────────────
+  // _jobFieldNote, composite: site note + this-job note + hazard flag, editable.
+  // Takes the JOB OBJECT now (not a string).
+  // ─────────────────────────────────────────────────────────────────────────────
+  test('_jobFieldNote: empty job / null / no note return empty string when not editable', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      return { skip: false, nul: _jobFieldNote(null), undef: _jobFieldNote(undefined), noNote: _jobFieldNote({ id: 1, client_id: null }), ws: _jobFieldNote({ id: 1, notes: '   ', client_id: null }) };
+    });
+    if (r.skip) return;
+    expect(r.nul).toBe('');
+    expect(r.undef).toBe('');
+    expect(r.noNote).toBe('');
+    expect(r.ws).toBe('');
+  });
+
+  test('_jobFieldNote: a job note renders the text under a "Field note" label', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const html = _jobFieldNote({ id: 1, notes: 'Bring the 24ft ladder', client_id: null });
+      return { skip: false, hasText: html.includes('Bring the 24ft ladder'), hasLabel: html.toLowerCase().includes('field note') };
+    });
+    if (r.skip) return;
+    expect(r.hasText).toBe(true);
+    expect(r.hasLabel).toBe(true);
+  });
+
+  test('_jobFieldNote: escapes HTML (no injection from a note)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const html = _jobFieldNote({ id: 1, notes: '<img src=x onerror=alert(1)>', client_id: null });
+      return { skip: false, rawTagAbsent: !html.includes('<img'), escaped: html.includes('&lt;img') };
+    });
+    if (r.skip) return;
+    expect(r.rawTagAbsent).toBe(true);
+    expect(r.escaped).toBe(true);
+  });
+
+  test('_jobFieldNote: pulls the client site note (persistent) alongside the job note', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const cid = 555001;
+      clients.push({ id: cid, name: 'Site Client', siteNote: 'Gate code 4412' });
+      try {
+        const html = _jobFieldNote({ id: 1, notes: 'Bring ladder', client_id: cid });
+        return { skip: false, hasSite: html.includes('Gate code 4412'), hasJob: html.includes('Bring ladder'), hasSiteLabel: html.includes('Site') };
+      } finally { clients.splice(clients.findIndex(c => c.id === cid), 1); }
+    });
+    if (r.skip) return;
+    expect(r.hasSite).toBe(true);
+    expect(r.hasJob).toBe(true);
+    expect(r.hasSiteLabel).toBe(true);
+  });
+
+  test('_jobFieldNote: noteAlert flags a hazard (red "Heads up", even with no text)', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const html = _jobFieldNote({ id: 1, noteAlert: true, notes: 'Aggressive dog', client_id: null });
+      return { skip: false, notEmpty: html.length > 0, hasHeadsUp: html.toLowerCase().includes('heads up'), red: html.includes('--c-red') };
+    });
+    if (r.skip) return;
+    expect(r.notEmpty).toBe(true);
+    expect(r.hasHeadsUp).toBe(true);
+    expect(r.red).toBe(true);
+  });
+
+  test('_jobFieldNote: editable + no note renders an "Add a field note" button; non-editable renders nothing', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const editable = _jobFieldNote({ id: 7, client_id: null }, { editable: true });
+      const readonly = _jobFieldNote({ id: 7, client_id: null });
+      return { skip: false, editableHasAdd: editable.includes('_openJobNoteEditor(7)'), readonlyEmpty: readonly === '' };
+    });
+    if (r.skip) return;
+    expect(r.editableHasAdd).toBe(true);
+    expect(r.readonlyEmpty).toBe(true);
+  });
+
+  test('_openJobNoteEditor / _saveJobNote: edits the job note, hazard flag, and client site note', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _openJobNoteEditor !== 'function' || typeof _saveJobNote !== 'function') return { skip: true };
+      const cid = 555002, jid = 555003;
+      clients.push({ id: cid, name: 'Editor Client' });
+      jobs.push({ id: jid, name: 'Editor Job', client_id: cid, start: todayKey(), days: 1, eventType: 'job', status: 'upcoming' });
+      try {
+        _openJobNoteEditor(jid);
+        const sheet = !!document.getElementById('_jobnote-ov');
+        document.getElementById('_jn-note-ta').value = 'Bring the sprayer';
+        document.getElementById('_jn-alert').checked = true;
+        document.getElementById('_jn-site-ta').value = 'Side gate, code 9911';
+        _saveJobNote(jid);
+        const j = jobs.find(x => x.id === jid);
+        const c = clients.find(x => x.id === cid);
+        const closed = !document.getElementById('_jobnote-ov');
+        return { skip: false, sheet, jobNote: j.notes, alert: j.noteAlert === true, siteNote: c.siteNote, closed };
+      } finally {
+        jobs.splice(jobs.findIndex(j => j.id === jid), 1);
+        clients.splice(clients.findIndex(c => c.id === cid), 1);
+        document.getElementById('_jobnote-ov')?.remove();
+      }
+    });
+    if (r.skip) return;
+    expect(r.sheet).toBe(true);
+    expect(r.jobNote).toBe('Bring the sprayer');
+    expect(r.alert).toBe(true);
+    expect(r.siteNote).toBe('Side gate, code 9911');
+    expect(r.closed).toBe(true);
+  });
+
+  test('_openJobNoteEditor: missing job id, no throw', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _openJobNoteEditor !== 'function') return { skip: true };
+      try { _openJobNoteEditor(99999999); return { skip: false, ok: true }; }
+      catch (e) { return { skip: false, ok: false, err: e.message }; }
+      finally { document.getElementById('_jobnote-ov')?.remove(); }
+    });
+    if (r.skip) return;
+    expect(r.ok).toBe(true);
+  });
+
+  test('_openJobNoteEditor: header shows the job address so the crew knows which site', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _openJobNoteEditor !== 'function') return { skip: true };
+      const jid = 555020;
+      jobs.push({ id: jid, name: 'Repaint', client_id: null, addr: '88 Birch Ln', start: todayKey(), days: 1, eventType: 'job', status: 'upcoming' });
+      try {
+        _openJobNoteEditor(jid);
+        return { skip: false, hasAddr: document.getElementById('_jobnote-ov').innerHTML.includes('88 Birch Ln') };
+      } finally {
+        jobs.splice(jobs.findIndex(j => j.id === jid), 1);
+        document.getElementById('_jobnote-ov')?.remove();
+      }
+    });
+    if (r.skip) return;
+    expect(r.hasAddr).toBe(true);
+  });
+
+  test('_notephotos / _notePhotoSrc: filter to note-type photos and resolve a src', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _notephotos !== 'function' || typeof _notePhotoSrc !== 'function') return { skip: true };
+      const j = { photos: [{ type: 'before', data: 'b' }, { type: 'note', data: 'data:image/png;base64,AAA' }, { type: 'note', url: 'https://x/y.jpg' }] };
+      const n = _notephotos(j);
+      return { skip: false, count: n.length, src0: _notePhotoSrc(n[0]), src1: _notePhotoSrc(n[1]), noneJob: _notephotos(null).length };
+    });
+    if (r.skip) return;
+    expect(r.count).toBe(2);
+    expect(r.src0).toBe('data:image/png;base64,AAA');
+    expect(r.src1).toBe('https://x/y.jpg');
+    expect(r.noneJob).toBe(0);
+  });
+
+  test('_jobFieldNote: a note photo renders a thumbnail even with no text', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _jobFieldNote !== 'function') return { skip: true };
+      const html = _jobFieldNote({ id: 1, client_id: null, photos: [{ type: 'note', data: 'data:image/png;base64,AAA' }] });
+      return { skip: false, notEmpty: html.length > 0, hasImg: html.includes('<img'), hasSrc: html.includes('data:image/png;base64,AAA') };
+    });
+    if (r.skip) return;
+    expect(r.notEmpty).toBe(true);
+    expect(r.hasImg).toBe(true);
+    expect(r.hasSrc).toBe(true);
+  });
+
+  test('_viewNotePhoto: opens a fullscreen overlay with the image and dismisses on click', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _viewNotePhoto !== 'function') return { skip: true };
+      _viewNotePhoto('data:image/png;base64,AAA');
+      const ov = document.getElementById('_notephoto-ov');
+      const hasImg = !!(ov && ov.querySelector('img'));
+      ov && ov.click();
+      const gone = !document.getElementById('_notephoto-ov');
+      const emptyNoop = (_viewNotePhoto(''), !document.getElementById('_notephoto-ov'));
+      return { skip: false, opened: !!ov, hasImg, gone, emptyNoop };
+    });
+    if (r.skip) return;
+    expect(r.opened).toBe(true);
+    expect(r.hasImg).toBe(true);
+    expect(r.gone).toBe(true);
+    expect(r.emptyNoop).toBe(true);
+  });
+
+  test('_openJobNoteEditor: renders existing note photos with a remove control', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _openJobNoteEditor !== 'function') return { skip: true };
+      const jid = 555010;
+      jobs.push({ id: jid, name: 'Photo Job', client_id: null, start: todayKey(), days: 1, eventType: 'job', status: 'upcoming', photos: [{ type: 'note', data: 'data:image/png;base64,AAA' }] });
+      try {
+        _openJobNoteEditor(jid);
+        const html = document.getElementById('_jobnote-ov').innerHTML;
+        return { skip: false, hasThumb: html.includes('data:image/png;base64,AAA'), hasDel: html.includes('_jnDelPhoto('+jid+',0)'), hasAdd: html.includes('_jnAddPhoto('+jid+',this)') };
+      } finally {
+        jobs.splice(jobs.findIndex(j => j.id === jid), 1);
+        document.getElementById('_jobnote-ov')?.remove();
+      }
+    });
+    if (r.skip) return;
+    expect(r.hasThumb).toBe(true);
+    expect(r.hasDel).toBe(true);
+    expect(r.hasAdd).toBe(true);
+  });
+
+  test('renderDashToday: a job with notes surfaces the field note on the owner card', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof renderDashToday !== 'function') return { skip: true };
+      const tk = todayKey();
+      const fakeJob = { id: 88871, name: 'Note Job', client_id: null, start: tk, days: 1, color: 'blue', eventType: 'job', notes: 'Park in the alley' };
+      jobs.unshift(fakeJob);
+      try {
+        renderDashToday();
+        const el = document.getElementById('dash-today');
+        return { skip: false, shows: el ? el.innerHTML.includes('Park in the alley') : false };
+      } finally {
+        const idx = jobs.findIndex(j => j.id === 88871); if (idx !== -1) jobs.splice(idx, 1);
+      }
+    });
+    if (r.skip) return;
+    expect(r.shows).toBe(true);
+  });
+
+  test('geofence on-site card: surfaces the field note when arriving at a job', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof renderDash !== 'function') return { skip: true };
+      const tk = todayKey();
+      const cid = 78611, jid = 786110;
+      clients.push({ id: cid, name: 'Onsite Note Client', addr: '9 Fence Rd', phone: '' });
+      jobs.push({ id: jid, name: 'Fence Job', client_id: cid, addr: '9 Fence Rd', start: tk, days: 1, eventType: 'job', status: 'upcoming', notes: 'Side gate is unlocked' });
+      // Simulate the geofence "you're nearby, not yet clocked in" state.
+      _nearbyJob = { clientId: cid, clientName: 'Onsite Note Client', addr: '9 Fence Rd', jobId: jid, fallbackJobId: jid, balance: 0, bidId: null };
+      try {
+        renderDash();
+        const el = document.getElementById('dash-nearby');
+        return { skip: false, shows: el ? el.innerHTML.includes('Side gate is unlocked') : false };
+      } finally {
+        _nearbyJob = null;
+        jobs.splice(jobs.findIndex(j => j.id === jid), 1);
+        clients.splice(clients.findIndex(c => c.id === cid), 1);
+      }
+    });
+    if (r.skip) return;
+    expect(r.shows).toBe(true);
+  });
+
   test('renderDashToday: 5 concurrent calls, no crash', async () => {
     const r = await page.evaluate(() => {
       try {
@@ -1122,7 +1364,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.html).toContain('_nearbyClockIn(555001,555011)');
       expect(r.html).toContain('Clock in');
       expect(r.html).toContain("_nearbyStartWork(555001)");
-      expect(r.html).toContain('Estimate');   // on-site card redesign: "Estimate" (was "Estimate/Invoice")
+      expect(r.html).toContain('Proposal');   // on-site card: "Proposal" (renamed from Estimate)
       // No dead controls: nothing owed means no Collect button at all, not a
       // disabled ghost, a permanently-inert button reads as broken.
       expect(r.html).not.toContain('Collect');
@@ -1225,7 +1467,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.html).toContain('_nearbyStartWork(555005)');
-      expect(r.html).toContain('Estimate');   // on-site card redesign: "Estimate" (was "Estimate/Invoice")
+      expect(r.html).toContain('Proposal');   // on-site card: "Proposal" (renamed from Estimate)
     });
 
     test('the pulse/entrance keyframes are injected once, not duplicated across renders', async () => {
@@ -1329,6 +1571,85 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       finally { localStorage.removeItem('td_bids'); }
     });
     expect(r.ok).toBe(true);
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // printNoticeOfIntent, the relationship-safe "get paid" demand document
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  test('printNoticeOfIntent: names owner of record AND the GC separately on a GC job', async () => {
+    const r = await page.evaluate(() => {
+      S.bname = "ZJ Paint Co"; S.bphone = '3165550100'; S.blic = 'KS-1';
+      clients = clients.filter(c => c.id !== 95500);
+      bids = bids.filter(b => b.id !== 955001);
+      clients.push({ id: 95500, name: 'Summit Build Group', phone: '3165557788', partyType: 'gc',
+        addr: '2015 SW Randolph Ave, Topeka, KS 66604',
+        properties: { '2015 sw randolph ave': { ownerName: 'Dana Whitfield', ownedByAccount: false } } });
+      bids.push({ id: 955001, client_id: 95500, addr: '2015 SW Randolph Ave, Topeka, KS 66604',
+        amount: 8400, deposit: 0, status: 'Closed Won', completion_date: '2026-05-20', type: 'Exterior repaint', geiLines: [] });
+      let html = '';
+      const orig = window.open;
+      window.open = () => ({ document: { write: h => { html = h; }, close: () => {} }, focus: () => {} });
+      let err = '';
+      try { printNoticeOfIntent(955001); } catch (e) { err = e.message; }
+      window.open = orig;
+      return { err, html };
+    });
+    expect(r.err).toBe('');
+    expect(r.html).toContain('Notice of Intent to File a Mechanic'); // the intent notice, not a filed lien
+    expect(r.html).toContain('Dana Whitfield');   // owner of record = who the lien would target
+    expect(r.html).toContain('Summit Build Group'); // GC = who hired/owes, named separately
+    expect(r.html).toContain('$8,400');            // amount past due
+    expect(r.html).toContain('DEMAND');            // pay-by demand
+    expect(r.html.toLowerCase()).toContain('not legal advice'); // disclaimer present
+  });
+
+  test('printNoticeOfIntent: homeowner job leaves the owner line as the client, no GC block', async () => {
+    const r = await page.evaluate(() => {
+      S.bname = "ZJ Paint Co";
+      clients = clients.filter(c => c.id !== 95501);
+      bids = bids.filter(b => b.id !== 955011);
+      clients.push({ id: 95501, name: 'Rita Alvarez', phone: '3165551234', addr: '5 Elm St, Wichita, KS 67206' });
+      bids.push({ id: 955011, client_id: 95501, addr: '5 Elm St, Wichita, KS 67206', amount: 2200, deposit: 0, status: 'Closed Won', completion_date: '2026-05-01', type: 'Interior', geiLines: [] });
+      let html = '';
+      const orig = window.open;
+      window.open = () => ({ document: { write: h => { html = h; }, close: () => {} }, focus: () => {} });
+      try { printNoticeOfIntent(955011); } catch (e) {}
+      window.open = orig;
+      return { html };
+    });
+    expect(r.html).toContain('Rita Alvarez');                       // homeowner is the owner
+    expect(r.html).not.toContain('General Contractor / Hiring Party'); // no GC block for a homeowner
+  });
+
+  test('collect card: the lien path shows for a true client but NOT for a GC', async () => {
+    const r = await page.evaluate(() => {
+      window._mmtCol_collect = false; // expand the Collect section so cards render into innerHTML
+      const mk = (cid, name, partyType) => {
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name, partyType, phone: '3165550000', addr: '1 Test St, Wichita, KS' }]);
+        const bid = { id: cid * 10 + 1, client_id: cid, client_name: name, amount: 5000, deposit: 0, status: 'Closed Won', completion_date: '2026-04-01', addr: '1 Test St, Wichita, KS', geiLines: [] };
+        bids = bids.filter(b => b.client_id !== cid).concat([bid]);
+        if (typeof liens !== 'undefined') liens = liens.filter(l => l.bid_id !== bid.id).concat([{ id: cid, bid_id: bid.id, client_id: cid, status: 'intent', amount: 5000 }]);
+        return bid.id;
+      };
+      const hoBid = mk(94001, 'Homeowner Client', 'homeowner');
+      const gcBid = mk(94002, 'GC Client', 'gc');
+      renderTodayFeed();
+      const feed = (document.getElementById('dash-money-feed') || {}).innerHTML || '';
+      const cleanup = () => { [94001, 94002].forEach(cid => { bids = bids.filter(b => b.client_id !== cid); clients = clients.filter(c => c.id !== cid); if (typeof liens !== 'undefined') liens = liens.filter(l => l.client_id !== cid); }); delete window._mmtCol_collect; };
+      const res = {
+        homeownerHasNOI: feed.includes('printNoticeOfIntent(' + hoBid + ')'),
+        gcHasNOI: feed.includes('printNoticeOfIntent(' + gcBid + ')'),
+        gcHasFileLien: feed.includes('showFileLienDirect(' + gcBid + ')'),
+        gcHasCollect: feed.includes('openPayPanel(' + gcBid + ')'),
+      };
+      cleanup();
+      return res;
+    });
+    expect(r.homeownerHasNOI).toBe(true);   // true client (owns the property) → lien path offered
+    expect(r.gcHasNOI).toBe(false);         // GC → no Notice of Intent
+    expect(r.gcHasFileLien).toBe(false);    // GC → no File Lien
+    expect(r.gcHasCollect).toBe(true);      // GC still gets normal collection (Collect)
   });
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1647,6 +1968,29 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.count).toBe(1); // one card, not two
   });
 
+  test('MMT build cards show each bid\'s street address so same-client bids at different properties are told apart', async () => {
+    const r = await page.evaluate(() => {
+      window._mmtCol_build = false; // expand BUILD so cards render into innerHTML
+      clients.unshift({ id: 77120, name: 'Addr Feed Co', addr: '482 Oak Ridge Ln, Wichita, KS 67206' });
+      bids.unshift({ id: 771201, client_id: 77120, client_name: 'Addr Feed Co', status: 'Draft', draft: true, amount: 4200, isTM: true, geiLines: [], bid_date: todayKey(), addr: '482 Oak Ridge Ln, Wichita, KS 67206' });
+      bids.unshift({ id: 771202, client_id: 77120, client_name: 'Addr Feed Co', status: 'Draft', draft: true, amount: 1800, isFreeForm: true, geiLines: [], bid_date: todayKey(), addr: '119 Baker St, Wichita, KS 67211' });
+      let err = '';
+      try { renderTodayFeed(); } catch (e) { err = e.message; }
+      const html = (document.getElementById('dash-money-feed') || {}).innerHTML || '';
+      const cleanup = () => {
+        [771201, 771202].forEach(id => { const i = bids.findIndex(b => b.id === id); if (i !== -1) bids.splice(i, 1); });
+        const ci = clients.findIndex(c => c.id === 77120); if (ci !== -1) clients.splice(ci, 1);
+        delete window._mmtCol_build;
+      };
+      const res = { err, hasPrimary: html.includes('482 Oak Ridge Ln'), hasRental: html.includes('119 Baker St') };
+      cleanup();
+      return res;
+    });
+    expect(r.err).toBe('');
+    expect(r.hasPrimary).toBe(true); // first bid's property
+    expect(r.hasRental).toBe(true);  // second bid's DIFFERENT property, both visible
+  });
+
   test('MMT pending follow-up card has a Close out button using the same close-out framework', async () => {
     const r = await page.evaluate(() => {
       window._mmtCol_pending = false; // expand the Pending section so its cards render into innerHTML (§11.6)
@@ -1755,7 +2099,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.hasOverlay).toBe(true);
   });
 
-  test('_showNewLeadsPicker title reads "Leads waiting on an estimate" and shows a lead count', async () => {
+  test('_showNewLeadsPicker title reads "Leads waiting on a proposal" and shows a lead count', async () => {
     const r = await page.evaluate(() => {
       const cid = 780450;
       clients.unshift({ id: cid, name: 'Count Label Lead', addr: '1 Count St', created: todayKey() });
@@ -1767,13 +2111,17 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       clients = clients.filter(c => c.id !== cid);
       return {
         err,
-        hasTitle: html.includes('Leads waiting on an estimate'),
+        // Owner-approved rename: the app says "proposal" everywhere a client sees
+        // it, so the old "estimate" wording must not come back.
+        hasTitle: html.includes('Leads waiting on a proposal'),
+        hasEstimateWord: /waiting on an estimate/i.test(html),
         hasOldTitle: html.includes('oldest first'),
         hasCount: /1\s*lead\b/.test(html),
       };
     });
     expect(r.err).toBe('');
     expect(r.hasTitle).toBe(true);
+    expect(r.hasEstimateWord).toBe(false);
     expect(r.hasOldTitle).toBe(false);
     expect(r.hasCount).toBe(true);
   });
@@ -1790,7 +2138,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       const html = ov ? ov.innerHTML : '';
       ov?.remove();
       clients = clients.filter(c => c.id !== knownMs);
-      return { err, hasDate: html.includes('Mar 15, 2026'), hasTime: /2:30\s*PM/i.test(html) };
+      return { err, hasDate: html.includes('03/15/2026'), hasTime: /2:30\s*PM/i.test(html) };
     });
     expect(r.err).toBe('');
     expect(r.hasDate).toBe(true);

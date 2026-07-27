@@ -182,7 +182,7 @@ function _fleetAddMonths(dateStr, months) {
   try {
     const d = new Date(dateStr+'T12:00:00');
     d.setMonth(d.getMonth() + months);
-    return d.toISOString().slice(0,10);
+    return dateKey(d);
   } catch(e) { return ''; }
 }
 
@@ -526,7 +526,7 @@ function _fleetDetailServiceHtml(v, maint) {
       ${maint.map((m,i)=>{
         const parts=_svcParts(m);
         const icon=svgIcon(MAINT_TYPES[m.type]?MAINT_TYPES[m.type].icon:'🔧',{size:12});
-        const dateShort=m.date?new Date(m.date+'T12:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'-';
+        const dateShort=m.date?new Date(m.date+'T12:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
         const nextInfo=m.nextOilMiles?`<div style="font-size:10px;color:var(--text3);margin-top:1px">Next: ${m.nextOilMiles.toLocaleString()} mi</div>`:'';
         const notesInfo=m.notes?`<div style="font-size:10px;color:var(--text3);font-style:italic;margin-top:1px">${escHtml(m.notes)}</div>`:'';
         return `<div style="display:grid;grid-template-columns:72px 1fr 64px 44px;gap:0;padding:8px 10px;border-bottom:1px solid var(--border);align-items:start;${i%2===1?'background:var(--bg2)':''}">
@@ -877,6 +877,7 @@ function saveFleetVehicle() {
     expenses.unshift({
       id: expId,
       date: newV.purchaseDate||todayKey(),
+      loggedAt:new Date().toISOString(),
       cat: 'vehicle_purchase',
       catLabel: 'Vehicle purchase',
       vendor: name,
@@ -1339,6 +1340,7 @@ function saveMaintRecord() {
     expenses.unshift({
       id: expId,
       date,
+      loggedAt:new Date().toISOString(),
       cat: 'vehicle',
       catLabel: 'Vehicle: maintenance',
       vendor: vendor||(v.nickname||v.name),
@@ -1399,6 +1401,6 @@ function _showMaintPhoto(id) {
 function _fleetFmtDate(d) {
   if(!d) return '';
   try {
-    return new Date(d+'T12:00:00').toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+    return new Date(d+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   } catch(e) { return d; }
 }

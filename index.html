@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en" style="background:#1B1612">
 <head>
-<!-- deploy-marker: OAuth return now surfaces the real failure reason (toast + console) instead of silent not-synced -->
+<!-- deploy-marker: multi-crew scheduler + structural schedule redesign + field notes (editable, recurring site note, hazard, photos) -->
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -40,6 +40,13 @@ input[type=checkbox],input[type=radio]{appearance:auto;-webkit-appearance:auto}
   --ink:#1B1612;--ink-soft:#3A3128;
   --ink-line:rgba(255,238,210,.08);--ink-line-2:rgba(255,238,210,.14);
   --paper:#F4F5F7;--cream:#ECEEF2;--bg-card:#FFFFFF;
+  /* Benchmark gauge poles (Books Summary). A two-hue diverging scale: behind on
+     one side, ahead on the other, neutral in the middle. Both poles clear WCAG
+     1.4.11 (3:1 for non-text graphics) against this surface, and clear the
+     colour-blind separation floor from each other, checked with the palette
+     validator rather than by eye. Dark mode restates them below rather than
+     letting the browser wash them out. */
+  --lc-behind:#B45309;--lc-ahead:#1f9d57;--lc-mid:#94A3B8;
   --line:#E2E5EB;--line-2:#CFD4DC;
   --denim:#2D5DA8;--denim-deep:#1B3F7A;--denim-soft:#DCE8FA;
   --denim-edge:#B7CDED;--denim-glow:rgba(45,93,168,.32);
@@ -87,6 +94,15 @@ body{font-family:var(--font-ui);background:var(--grad-warm-mesh);color:var(--tex
 @keyframes td-bar{from{width:0}to{width:68%}}
 @keyframes td-pg-enter{from{opacity:0;transform:translateY(7px)}to{opacity:1}}
 @keyframes td-dash-enter{from{opacity:0;transform:scale(.988)}to{opacity:1}}
+/* THE accordion reveal, one constant for EVERY collapsible section (Properties,
+   Notes, Activity timeline, Client risk, and any future accordion). When a bar is
+   expanded, wrap its revealed body in class="td-acc-body" so it eases open the same
+   way everywhere. House easing/timing per CSS standard section 8.4 (entrance
+   .18s, spring cubic-bezier). Do not hand-roll a per-accordion animation, reuse this. */
+@keyframes td-acc-reveal{from{grid-template-rows:0fr;opacity:0}to{grid-template-rows:1fr;opacity:1}}
+.td-acc-body{display:grid;grid-template-rows:1fr}
+.td-acc-body>.td-acc-inner{min-height:0;overflow:hidden}
+.td-acc-body.td-acc-in{animation:td-acc-reveal .3s cubic-bezier(.4,0,.2,1) both}
 /* Authentic iOS springboard wiggle: two desynced animations (rotation +
    position) at ~0.25s, asymmetric -1deg→1.5deg, ~1px translate, no scale. */
 @keyframes td-jiggle-a{0%{transform:rotate(-1deg) translate(-.4px,-.4px);animation-timing-function:ease-in}50%{transform:rotate(1.5deg) translate(.4px,.4px);animation-timing-function:ease-out}100%{transform:rotate(-1deg) translate(-.4px,-.4px)}}
@@ -236,6 +252,9 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .btn-full{width:100%;justify-content:center}
 .btn-icon{width:36px;height:36px;padding:0}
 .btn-del{background:none;border:none;color:var(--text-3);cursor:pointer;font-size:13px;font-family:inherit;padding:3px 7px}
+.td-setup-cta{transition:transform .08s,box-shadow .12s,opacity .12s}
+.td-setup-cta:hover{opacity:.92}
+.td-setup-cta:active{transform:scale(.94)}
 .btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 /* ── Badges ── */
@@ -365,6 +384,21 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
    equal flex share (flex:1 1 0), centered text, no wrap. "Collect →", "📱 Send",
    "Snooze 2d", "Won ✓" all render to identical width within their row. */
 .tf-acts>.btn,.tf-acts>.btn-sm,.tf-acts>a{flex:1 1 0;min-width:0;justify-content:center;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Feed-card content (evidence-aligned): client NAME is the anchor, the dollar
+   AMOUNT is a strong secondary beside it, one muted locator line below. On sent
+   quotes the AGE/urgency line is the loud, color-coded element (the #1 unmet
+   contractor need: which quotes have gone quiet). Left accent bar = state. */
+.tf-hd{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.tf-hd .tf-name{min-width:0}
+.tf-amt{font-size:14px;font-weight:800;color:var(--text);white-space:nowrap;letter-spacing:-.3px;flex-shrink:0}
+.tf-1line{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf-addr{font-size:11px;margin-top:2px;color:var(--text-3);font-weight:600;display:flex;align-items:center;gap:4px;min-width:0}
+.tf-addr>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tf-tag{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:1px 6px;border-radius:4px;background:var(--c-amber-soft);color:#8A5A00;border:1px solid var(--c-amber-edge);flex-shrink:0;margin-left:6px}
+.tf-when{font-size:12px;font-weight:800;margin-top:4px;letter-spacing:-.1px}
+/* Left state accent bar: amber=build, blue=pending, red/green=collect. */
+.tf-card.tf-b-build{box-shadow:inset 3px 0 0 var(--c-amber-edge)}
+.tf-card.tf-b-pending{box-shadow:inset 3px 0 0 var(--denim)}
 
 /* ── Make Money Today sections ── */
 .mmt-sec{border-top:1px solid var(--line)}
@@ -519,18 +553,70 @@ input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;ba
 .av-sel{background:var(--denim);color:#fff;border-color:var(--denim)}
 .av-other{opacity:.2;pointer-events:none}
 .av-past{opacity:.3;cursor:not-allowed;background:var(--cream)}
+.av-open:hover{border-color:var(--denim-edge);background:var(--bg-card)}
+.av-sel{box-shadow:0 2px 6px var(--denim-glow)}
+
+/* ── Schedule page: native-app grouped form (structural redesign 2026-07-18) ──
+   Moves the schedule flow off a stacked-label web form onto icon-led grouped
+   list rows (mirrors .mil-action / .cc-avatar leading-chip language) inside
+   elevated cards, a real segmented type toggle, and an iOS-style switch. Every
+   existing field ID + handler is preserved; only the presentation changed. */
+.sf-seg{display:flex;background:var(--cream);border-radius:var(--r-pill);padding:4px;box-shadow:inset 0 0 0 1px var(--line);margin-bottom:14px;gap:0}
+.sf-seg-btn{flex:1;padding:10px 12px;font-family:var(--font-ui);font-size:13.5px;font-weight:700;letter-spacing:-.1px;color:var(--text-2);border:0;background:none;cursor:pointer;border-radius:var(--r-pill);display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:color .18s,background .18s,box-shadow .18s;white-space:nowrap;font-family:inherit}
+.sf-seg-btn:active{transform:scale(.98)}
+.sf-seg-btn.active{background:var(--bg-card);color:var(--text);box-shadow:0 1px 3px rgba(27,22,18,.14),0 0 0 1px var(--line)}
+.sf-card{background:var(--bg-card);border-radius:var(--r-lg);margin-bottom:12px;box-shadow:var(--shadow-card);overflow:hidden}
+.sf-cap{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;color:var(--text-3);padding:15px 16px 3px}
+.sf-list{padding:0 16px}
+.sf-row{display:flex;align-items:center;gap:14px;padding:13px 2px;border-bottom:1px solid var(--line);min-height:46px}
+.sf-list>.sf-row:last-child{border-bottom:none}
+.sf-body{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.sf-lbl{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text-3)}
+.sf-row input,.sf-row select,.sf-row textarea{border:none;background:transparent;padding:0;font-size:15px;font-weight:600;color:var(--text);height:auto;min-height:0;border-radius:0;-webkit-appearance:none;appearance:none;width:100%}
+.sf-row input:focus,.sf-row select:focus,.sf-row textarea:focus{outline:none;box-shadow:none}
+.sf-row select{padding-right:22px;background-position:right 2px center;font-weight:700;cursor:pointer}
+.sf-row input::placeholder{color:var(--text-3);font-weight:500}
+.sf-row textarea{min-height:38px;line-height:1.45;font-weight:500;font-size:14px}
+/* iOS-style switch, reuses the s-allow-weekend checkbox untouched underneath */
+.sf-switch{position:relative;width:46px;height:28px;flex-shrink:0;cursor:pointer;display:inline-block}
+.sf-switch input{position:absolute;inset:0;opacity:0;margin:0;width:100%;height:100%;cursor:pointer;z-index:2;-webkit-appearance:none;appearance:none}
+.sf-switch .sf-track{position:absolute;inset:0;background:var(--line-2);border-radius:var(--r-pill);transition:background .2s}
+.sf-switch .sf-knob{position:absolute;top:3px;left:3px;width:22px;height:22px;background:#fff;border-radius:50%;box-shadow:0 1px 3px rgba(0,0,0,.28);transition:transform .22s cubic-bezier(.22,1,.36,1)}
+.sf-switch input:checked~.sf-track{background:var(--denim)}
+.sf-switch input:checked~.sf-knob{transform:translateX(18px)}
+.sf-foot{padding:4px 16px 16px}
+.sf-cta{width:100%;height:52px;font-size:15.5px;font-weight:800;border-radius:var(--r-lg);letter-spacing:-.1px}
+.sf-clear{width:100%;background:none;border:none;color:var(--text-3);font-size:13px;font-weight:600;margin-top:8px;height:32px;cursor:pointer;font-family:inherit}
+.sf-legend{display:flex;gap:13px;flex-wrap:wrap;margin-top:9px;padding:0 2px}
+.sf-legend span{font-size:10px;color:var(--text-3);font-weight:600;display:inline-flex;align-items:center;gap:4px}
+.sf-legend i{width:9px;height:9px;border-radius:50%;display:inline-block}
 
 /* ── Timeline ── */
-.timeline{padding-left:20px;border-left:2px solid var(--line)}
-.tl-item{position:relative;padding:0 0 14px 16px}
+/* The rail is drawn PER ITEM (dot-center to next dot-center), not as one
+   border down the whole list. A container border ran the full block height, so
+   it poked out above the first dot and trailed below the last one instead of
+   connecting them. Each item now draws its own segment starting at its dot's
+   center (top:7px = half the 14px dot) and ending at the next dot's center
+   (bottom:-7px), and the last item draws none, so the line begins and ends
+   exactly on a dot. left:-19px centers the 2px rail on the dot's center. */
+/* Timeline nodes carry an ICON of what happened (bill, pen, eye, truck…), not a
+   bare colored ring. A ring encodes its meaning only in colour, which nobody can
+   read without a legend; the icon says "payment" or "signed" at a glance. The
+   colour classes below are unchanged, so tone stays mapped in one place: the
+   soft shade fills the circle and the strong shade inks the icon via
+   currentColor. The rail runs between circles and is painted over by them. */
+.timeline{padding-left:34px;padding-top:6px}
+.tl-item{position:relative;padding:0 0 14px 10px}
+.tl-item::before{content:'';position:absolute;left:-23px;top:24px;bottom:-12px;width:2px;background:var(--line)}
+.tl-item:last-child::before{display:none}
 .tl-item:last-child{padding-bottom:0}
-.tl-dot{position:absolute;left:-25px;top:0;width:14px;height:14px;border-radius:50%;background:var(--bg-card);border:2px solid var(--line)}
-.tl-dot.active{border-color:var(--c-green);background:var(--c-green-soft)}
-.tl-dot.bid,.tl-dot.estimate{border-color:var(--denim);background:var(--denim-soft)}
-.tl-dot.payment,.tl-dot.complete{border-color:var(--c-green);background:var(--c-green-soft)}
-.tl-dot.canceled,.tl-dot.lost{border-color:var(--c-red);background:var(--c-red-soft)}
-.tl-dot.coll{border-color:var(--c-amber);background:var(--c-amber-soft)}
-.tl-dot.mile,.tl-dot.note{border-color:var(--text-3);background:var(--cream)}
+.tl-dot{position:absolute;left:-34px;top:-5px;width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--cream);color:var(--text-3)}
+.tl-dot.active{background:var(--c-green-soft);color:var(--c-green)}
+.tl-dot.bid,.tl-dot.estimate{background:var(--denim-soft);color:var(--denim)}
+.tl-dot.payment,.tl-dot.complete{background:var(--c-green-soft);color:var(--c-green)}
+.tl-dot.canceled,.tl-dot.lost{background:var(--c-red-soft);color:var(--c-red)}
+.tl-dot.coll{background:var(--c-amber-soft);color:var(--c-amber)}
+.tl-dot.mile,.tl-dot.note{background:var(--cream);color:var(--text-3)}
 .tl-label{font-size:12px;font-weight:700;color:var(--text)}
 .tl-meta{font-size:10px;color:var(--text-3);margin-top:2px;font-weight:500}
 
@@ -762,6 +848,7 @@ body.dark{
   --bg:#221C16;--bg2:#14110E;--bg3:#1C1814;
   --text2:#C8BFB0;--text3:#9E9588;
   --border:#2E2620;--border2:#3A302A;
+  --lc-behind:#CE7524;--lc-ahead:#34A96A;--lc-mid:#8A94A6;
 }
 body.dark input,body.dark select,body.dark textarea{background:var(--bg-card);color:var(--text);border-color:var(--line-2)}
 body.dark .btn{background:var(--bg-card);color:var(--text);border-color:var(--line-2)}
@@ -1268,7 +1355,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <span class="qa-ico"><span data-ico="🚗" data-ico-size="24"></span></span><span>Drive</span>
           </button>
           <button class="qa" id="qa-estimate-btn" style="--qa-tint:linear-gradient(155deg,#8B5CF6 0%,#6D28D9 100%);--qa-glow:rgba(109,40,217,.35)" onclick="quickAction('estimate')">
-            <span class="qa-ico"><span data-ico="📋" data-ico-size="24"></span></span><span>Estimate</span>
+            <span class="qa-ico"><span data-ico="📋" data-ico-size="24"></span></span><span>Proposal</span>
           </button>
           <button class="qa" style="--qa-tint:linear-gradient(155deg,#DE8514 0%,#B45309 100%);--qa-glow:rgba(180,83,9,.35)" onclick="quickAction('schedule')">
             <span class="qa-ico"><span data-ico="📅" data-ico-size="24"></span></span><span>Schedule</span>
@@ -1352,6 +1439,18 @@ body.dark .cal-cell.other{background:var(--cream)}
         </div>
         <div class="f"><label>Phone</label><input id="cf-phone" type="tel" placeholder="XXX-XXX-XXXX" maxlength="12" oninput="fmtPhone(this);clearFErr('cf-phone');_allowPhoneDupe=false;">
           <div id="err-cf-phone" style="display:none;font-size:11px;color:var(--c-red);margin-top:3px"></div>
+        </div>
+        <div class="f" style="grid-column:1/-1">
+          <label>Who are you working for? <span style="color:var(--c-red)">*</span></label>
+          <select id="cf-partytype" onchange="clearFErr('cf-partytype')">
+            <option value="">- Select who you're working for -</option>
+            <option value="homeowner">Homeowner</option>
+            <option value="gc">General contractor</option>
+            <option value="builder">Builder / developer</option>
+            <option value="pm">Property manager</option>
+            <option value="business">Business / other</option>
+          </select>
+          <div id="err-cf-partytype" style="display:none;font-size:11px;color:var(--c-red);margin-top:3px"></div>
         </div>
         <div class="f" style="grid-column:1/-1">
           <label>Lead source</label>
@@ -1468,10 +1567,11 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   
   <div class="detail-hdr" id="cd-hdr"></div>
-  <div class="split-3-eq" id="cd-hero-mets" style="margin-bottom:14px"></div>
+  <div id="cd-hero-mets" style="margin-bottom:12px"></div>
 
+  <div id="cd-estimate-actions" style="margin-bottom:12px"></div>
 
-  <div id="cd-estimate-actions" style="margin-bottom:10px"></div>
+  <div id="cd-addresses-list" style="margin-bottom:14px"></div>
 
   
   <div id="cd-drive-section">
@@ -1492,29 +1592,21 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="cd-drive-end" style="display:none"></div>
   </div>
   
-  <div class="fbar">
-    <button type="button" class="fb active" id="cdt-overview" onclick="setCDTab('overview',this)">Overview</button>
-    <button type="button" class="fb" id="cdt-bids" onclick="setCDTab('bids',this)">Bids</button>
-    <button type="button" class="fb" id="cdt-jobs" onclick="setCDTab('jobs',this)">Jobs</button>
-    <button type="button" class="fb" id="cdt-mileage" onclick="setCDTab('mileage',this)">Mileage</button>
-    <button type="button" class="fb" id="cdt-expenses" onclick="setCDTab('expenses',this)">Expenses</button>
-    <button type="button" class="fb" id="cdt-contracts" onclick="setCDTab('contracts',this)">Contracts</button>
-  </div>
+  <select id="cd-tab-select" onchange="setCDTab(this.value)" aria-label="Client record section" style="width:100%;margin-bottom:14px;padding:13px 40px 13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-family:inherit;font-size:15px;font-weight:800;cursor:pointer;-webkit-appearance:none;appearance:none;box-shadow:var(--shadow-card);background-image:url(&quot;data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><path d='M6 9l6 6 6-6'/></svg>&quot;);background-repeat:no-repeat;background-position:right 14px center">
+    <option value="overview">Overview</option>
+    <option value="bids">Proposals</option>
+    <option value="jobs">Jobs</option>
+    <option value="contracts">Contracts</option>
+    <option value="mileage">Mileage</option>
+    <option value="expenses">Expenses</option>
+  </select>
   <div id="cdt-overview-content">
     <div id="cd-estimates-upcoming"></div>
     <div class="card" id="cd-opp-card" style="display:none"><div id="cd-opportunities"></div></div>
     <div class="card" id="cd-client-mets"></div>
-    <div class="card" id="cd-addresses-card"><div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Properties<button class="btn btn-sm btn-p" onclick="openAddAddressModal()" style="font-size:11px">+ Add address</button></div><div id="cd-addresses-list"></div></div>
-    <div class="card" id="cd-notes-card">
-      <div class="card-hd" style="display:flex;justify-content:space-between;align-items:center">Notes<span style="font-size:10px;color:var(--text3);font-weight:400">Private · not sent to client</span></div>
-      <div id="cd-notes-list" style="margin-bottom:10px"></div>
-      <div style="display:flex;gap:8px;align-items:flex-end">
-        <textarea id="cd-note-input" rows="2" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();addClientNote();}"></textarea>
-        <button class="btn btn-p btn-sm" onclick="addClientNote()">Add</button>
-      </div>
-    </div>
-    <div class="card"><div class="card-hd">Activity timeline</div><div id="cd-timeline"></div></div>
-    <div class="card" id="cd-risk-card"><div class="card-hd">Client risk</div><div id="cd-risk-content"></div></div>
+    <div id="cd-notes-mount" style="margin-bottom:14px"></div>
+    <div id="cd-timeline-mount" style="margin-bottom:14px"></div>
+    <div id="cd-risk-mount" style="margin-bottom:14px"></div>
   </div>
   <div id="cdt-mileage-content" style="display:none">
     <div id="cd-today-legs" style="margin-bottom:8px"></div>
@@ -1523,10 +1615,10 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
   <div id="cdt-bids-content" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <span style="font-size:13px;font-weight:700">Bids &amp; payments</span>
+      <span style="font-size:13px;font-weight:700">Proposals &amp; payments</span>
       <div style="display:flex;gap:6px">
         <button class="btn btn-sm" onclick="openClientProposals(currentClientId)" style="font-size:12px"><span data-ico="📄" data-ico-size="14"></span> Proposals</button>
-        <button class="btn btn-p btn-sm" onclick="quickBid()">+ Add bid</button>
+        <button class="btn btn-p btn-sm" onclick="quickBid()">+ Add proposal</button>
       </div>
     </div>
     <div id="cd-overdue-alerts"></div>
@@ -1599,9 +1691,9 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="tbar" id="gei-old-tbar">
     <div class="tbar-l">
       <button class="link-back" onclick="_geiToStylePicker()">← Pick a different type</button>
-      <div class="tbar-eyebrow" id="gei-tbar-eyebrow">General estimate</div>
+      <div class="tbar-eyebrow" id="gei-tbar-eyebrow">General proposal</div>
       <div class="tbar-title" style="display:flex;align-items:center;gap:8px;line-height:1">
-        <span id="gei-trade-title">Estimate</span>
+        <span id="gei-trade-title">Proposal</span>
         <button onclick="_editScopeTitle()" id="scope-edit-title-btn" title="Rename proposal" style="background:none;border:none;padding:0 3px;cursor:pointer;font-size:16px;line-height:1;touch-action:manipulation;flex-shrink:0;opacity:.45;color:var(--text)"><span data-ico="✏" data-ico-size="16"></span></button>
       </div>
     </div>
@@ -1619,6 +1711,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div class="split-est">
       <div>
+        <!-- Property access notes (crew only, never on the proposal): sits directly under the address -->
+        <div id="tm-sitenote-wrap"></div>
         <!-- Scope of work chips -->
         <div class="card card-pad-0" style="margin-bottom:12px" id="tm-scopecard-wrap"></div>
         <!-- Rates & crew -->
@@ -1729,6 +1823,8 @@ body.dark .cal-cell.other{background:var(--cream)}
 
     <div class="split-est">
       <div>
+        <!-- Property access notes (crew only, never on the proposal): sits directly under the address -->
+        <div id="byo-sitenote-wrap"></div>
         <!-- Scope of work chips -->
         <div class="card card-pad-0" style="margin-bottom:12px" id="byo-scopecard-wrap"></div>
         <div id="byo-sections"></div>
@@ -1771,6 +1867,8 @@ body.dark .cal-cell.other{background:var(--cream)}
         <button id="gei-emrg-btn" onclick="_geiToggleEmergency()" class="btn btn-sm" style="flex:1;font-size:12px;border:2px solid var(--border2);background:var(--bg2);color:var(--text2)"><span data-ico="🚨" data-ico-size="14"></span> Emergency / after-hours</button>
       </div>
     </div>
+    <!-- Property access notes (crew only, never on the proposal): near the property/address context -->
+    <div id="gen-sitenote-wrap"></div>
     <div class="card" style="margin-bottom:12px">
       <!-- T&M chip (shown in T&M mode) -->
       <div id="gei-tm-chip" style="display:none;margin-bottom:12px">
@@ -1796,7 +1894,7 @@ body.dark .cal-cell.other{background:var(--cream)}
             <option>Industrial / equipment work</option>
             <option>Ongoing / open-ended</option>
             <option>Client preference</option>
-            <option>Supplemental to fixed bid</option>
+            <option>Supplemental to fixed proposal</option>
             <option>Other</option>
           </select>
         </div>
@@ -1965,7 +2063,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <button onclick="sendProposalViaEmail()" class="btn" style="padding:14px;font-size:15px;font-weight:700;background:var(--blue);color:#fff;border-color:var(--blue);text-align:center;justify-content:center"><span data-ico="✉" data-ico-size="16"></span> Email</button>
     </div>
     <button onclick="shareProposalLink()" class="btn" style="width:100%;padding:11px;font-size:14px;font-weight:600;background:var(--bg2);color:var(--text2);border-color:var(--border2);text-align:center;justify-content:center;box-sizing:border-box">⬆️ Other app (WhatsApp, AirDrop…)</button>
-    <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Bid saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
+    <div style="font-size:11px;color:var(--text3);margin-top:8px;text-align:center">Proposal saved as Pending. You'll get a follow-up reminder in 3 days if no response.</div>
   </div>
 </div>
 
@@ -1990,105 +2088,140 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="tbar"><div class="tbar-title">Schedule</div><button class="btn btn-sm" onclick="openTimeOffModal()" style="background:var(--amber-lt);border-color:#D97706;color:#92400E;font-weight:700"><span data-ico="🏖" data-ico-size="14"></span> Time off</button></div>
 
   
-  <div class="fbar" style="margin-bottom:12px">
-    <button type="button" class="fb active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Schedule estimate</button>
-    <button type="button" class="fb" id="sched-tab-job" onclick="setSchedType('job',this)">Schedule job</button>
+  <div class="sf-seg">
+    <button type="button" class="sf-seg-btn active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Proposal</button>
+    <button type="button" class="sf-seg-btn" id="sched-tab-job" onclick="setSchedType('job',this)">Job</button>
   </div>
 
-  <div class="card">
-    <div id="sched-tip" class="tip">Pick a client and date for the estimate walkthrough.</div>
+  <div id="sched-tip" class="tip" style="margin-bottom:12px">Pick a client and date for the proposal walkthrough.</div>
 
-    
-    <div id="sched-est-fields">
-      <div class="f" style="margin-bottom:10px">
-        <label>Client</label>
-        <select id="s-client-sel" onchange="pullClient()"><option value="">- Select a client -</option></select>
+  <div class="sf-card">
+    <div class="sf-cap">Job</div>
+    <div class="sf-list">
+      <div class="sf-row" id="sched-est-fields">
+        <div class="sf-body"><span class="sf-lbl">Client</span>
+          <select id="s-client-sel" onchange="pullClient()"><option value="">Select a client</option></select>
+        </div>
+      </div>
+      <div class="sf-row" id="sched-job-fields" style="display:none">
+        <div class="sf-body"><span class="sf-lbl">Won proposal</span>
+          <select id="s-bid-sel" onchange="pullBid()"><option value="">Select a won proposal</option></select>
+        </div>
+      </div>
+      <div class="sf-row" id="s-crew-row" style="display:none">
+        <div class="sf-body"><span class="sf-lbl">Crew</span>
+          <select id="s-crew-sel" onchange="refreshAvail()"><option value="">Unassigned (I'll do it)</option></select>
+        </div>
+      </div>
+      <div class="sf-row">
+        <div class="sf-body"><span class="sf-lbl">Job name</span>
+          <input id="s-name" autocapitalize="words" placeholder="Smith residence">
+        </div>
+      </div>
+      <div class="sf-row" id="s-addr-row" style="position:relative">
+        <div class="sf-body"><span class="sf-lbl">Address</span>
+          <input id="s-addr" autocomplete="off" placeholder="Job site address">
+        </div>
+      </div>
+      <div class="sf-row" id="s-value-row" style="display:none">
+        <div class="sf-body"><span class="sf-lbl">Job value</span>
+          <input id="s-value" type="number" placeholder="0" inputmode="decimal">
+        </div>
       </div>
     </div>
+  </div>
 
-    
-    <div id="sched-job-fields" style="display:none">
-      <div class="f" style="margin-bottom:10px">
-        <label>Won bid</label>
-        <select id="s-bid-sel" onchange="pullBid()"><option value="">- Select a won bid -</option></select>
+  <div class="sf-card">
+    <div class="sf-cap">Timing</div>
+    <div class="sf-list">
+      <div class="sf-row">
+        <div class="sf-body"><span class="sf-lbl" id="s-time-label">Proposal visits</span>
+          <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
+        </div>
+      </div>
+      <div class="sf-row" id="s-dur-days-row">
+        <div class="sf-body"><span class="sf-lbl">Duration (days)</span>
+          <input id="s-days" type="number" value="1" min="1" max="60" inputmode="numeric" oninput="refreshAvail()">
+        </div>
+      </div>
+      <div class="sf-row" id="s-dur-hours-row" style="display:none">
+        <div class="sf-body"><span class="sf-lbl">Duration</span>
+          <select id="s-hours">
+            <option value="1">1 hour</option>
+            <option value="1.5">1.5 hours</option>
+            <option value="2" selected>2 hours</option>
+            <option value="3">3 hours</option>
+          </select>
+        </div>
+      </div>
+      <div class="sf-row" id="s-buf-row">
+        <div class="sf-body"><span class="sf-lbl">Buffer days after</span>
+          <select id="s-buf" onchange="refreshAvail()">
+            <option value="0">No buffer</option>
+            <option value="1" selected>1 day</option>
+            <option value="2">2 days</option>
+            <option value="3">3 days</option>
+          </select>
+        </div>
+      </div>
+      <div class="sf-row">
+        <div class="sf-body" style="gap:0"><span style="font-size:15px;font-weight:700;color:var(--text)">Allow weekends</span>
+          <span style="font-size:11px;color:var(--text-3);font-weight:500">Let jobs land on Sat/Sun</span>
+        </div>
+        <label class="sf-switch">
+          <input type="checkbox" id="s-allow-weekend" onchange="refreshAvail()">
+          <span class="sf-track"></span><span class="sf-knob"></span>
+        </label>
       </div>
     </div>
+  </div>
 
-    <div class="fg fg2">
-      <div class="f"><label>Name</label><input id="s-name" autocapitalize="words" placeholder="Smith residence"></div>
-      <div class="f" style="position:relative"><label>Address</label><input id="s-addr" autocomplete="off"></div>
-      <div class="f" id="s-value-row" style="display:none"><label>Job value ($)</label><input id="s-value" type="number" placeholder="0"></div>
-      <div class="f"><label>Time <span style="font-size:10px;color:var(--text3)">(estimate visits)</span></label>
-        <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
-      </div>
-      <div class="f" id="s-dur-days-row"><label>Duration (days) <span id="s-days-src" style="font-size:10px;color:var(--blue)"></span></label>
-        <input id="s-days" type="number" value="1" min="1" max="60" oninput="refreshAvail()">
-      </div>
-      <div class="f" id="s-dur-hours-row" style="display:none"><label>Duration</label>
-        <select id="s-hours">
-          <option value="1">1 hour</option>
-          <option value="1.5">1.5 hours</option>
-          <option value="2" selected>2 hours</option>
-          <option value="3">3 hours</option>
-        </select>
-      </div>
-      <div class="f"><label>Buffer days after</label>
-        <select id="s-buf" onchange="refreshAvail()">
-          <option value="0">No buffer</option>
-          <option value="1" selected>1 day</option>
-          <option value="2">2 days</option>
-          <option value="3">3 days</option>
-        </select>
-      </div>
-    </div>
-
-    
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <div id="s-color-swatch" style="width:14px;height:14px;border-radius:3px;background:#7F77DD;flex-shrink:0"></div>
-      <span id="s-color-label" style="font-size:11px;color:var(--text3)">Shows as purple on the calendar</span>
-      <div style="display:none" id="s-color-row"></div>
-    </div>
-
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-      <input type="checkbox" id="s-allow-weekend" onchange="refreshAvail()" style="width:16px;height:16px;cursor:pointer;accent-color:var(--blue);appearance:auto;-webkit-appearance:checkbox;flex-shrink:0">
-      <label for="s-allow-weekend" style="font-size:12px;font-weight:600;cursor:pointer">Allow weekends</label>
-    </div>
-    <div class="f" style="margin-bottom:6px"><label>Date: tap a day below</label>
-      <input id="s-start" type="date" oninput="onStartChange()">
-    </div>
-    <div>
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-        <span style="font-size:11px;font-weight:700;color:var(--text2)" id="avail-month-lbl"></span>
-        <div style="display:flex;gap:4px">
+  <div class="sf-card">
+    <div class="sf-cap">Pick a date</div>
+    <div style="padding:12px 16px 0">
+      <input id="s-start" type="date" oninput="onStartChange()" style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px">
+        <span style="font-size:13px;font-weight:800;letter-spacing:-.2px;color:var(--text)" id="avail-month-lbl"></span>
+        <div style="display:flex;gap:5px">
           <button class="btn btn-sm" onclick="avPrev()">&#8249;</button>
           <button class="btn btn-sm" onclick="avNext()">&#8250;</button>
         </div>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:3px">
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">S</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">M</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">T</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">W</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">T</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">F</div>
-        <div style="text-align:center;font-size:10px;font-weight:700;color:var(--text3)">S</div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:4px">
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">S</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">M</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">T</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">W</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">T</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">F</div>
+        <div style="text-align:center;font-size:10px;font-weight:800;color:var(--text-3)">S</div>
       </div>
       <div class="av-grid" id="avail-grid"></div>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--bg2);border-radius:2px;margin-right:3px;border:1px solid var(--border)"></span>Open</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--red-lt);border-radius:2px;margin-right:3px"></span>Booked</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--amber-lt);border-radius:2px;margin-right:3px"></span>Buffer</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#FDE68A;border-radius:2px;margin-right:3px"></span>Time off</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:#7F77DD;border-radius:2px;margin-right:3px"></span>Estimate</span>
-        <span style="font-size:10px;color:var(--text3)"><span style="display:inline-block;width:8px;height:8px;background:var(--denim);border-radius:2px;margin-right:3px"></span>Job</span>
+      <div class="sf-legend">
+        <span><i style="background:var(--bg3);box-shadow:inset 0 0 0 1px var(--line)"></i>Open</span>
+        <span><i style="background:var(--c-red-soft)"></i>Booked</span>
+        <span><i style="background:var(--c-amber-soft)"></i>Buffer</span>
+        <span><i style="background:#FDE68A"></i>Time off</span>
+        <span><i style="background:var(--denim)"></i>Selected</span>
+      </div>
+      <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:12px 0 0;font-size:12px"></div>
+    </div>
+    <div class="sf-list" style="margin-top:8px">
+      <div class="sf-row" id="s-sitenote-row" style="display:none">
+        <div class="sf-body"><span class="sf-lbl">Site access <span style="font-weight:600;color:var(--text3)">· from the client</span></span>
+          <div id="s-sitenote" style="font-size:14px;color:var(--text2);line-height:1.4;white-space:pre-wrap;font-weight:600"></div>
+        </div>
+      </div>
+      <div class="sf-row">
+        <div class="sf-body"><span class="sf-lbl">Notes</span>
+          <textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea>
+        </div>
       </div>
     </div>
-    <div id="sched-preview" style="display:none;background:var(--bg2);border-radius:var(--r);padding:10px 12px;margin:10px 0;font-size:12px"></div>
-    <div class="f" style="margin-top:8px"><label>Notes</label><textarea id="s-notes" placeholder="Access info, what to bring, client preferences..."></textarea></div>
-    <div id="sched-err" style="display:none;font-size:12px;color:var(--c-red);background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>
-    <div class="brow">
-      <button class="btn btn-g" onclick="scheduleJob()">Add to calendar</button>
-      <button class="btn" onclick="resetSched()">Clear</button>
+    <div class="sf-foot">
+      <div id="sched-err" style="display:none;font-size:12px;color:var(--c-red);background:#FEE8E8;border-radius:var(--r);padding:8px 10px;margin-bottom:8px"></div>
+      <button class="btn btn-g sf-cta" onclick="scheduleJob()">Add to calendar</button>
+      <button class="sf-clear" onclick="resetSched()">Clear form</button>
     </div>
   </div>
 </div>
@@ -2142,8 +2275,9 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="tbar-title">Time Log</div>
     <div id="tl-total" style="font-size:12px;font-weight:700;color:var(--text3)"></div>
   </div>
+  <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Year</div>
   <div style="display:flex;gap:8px;align-items:center;margin-bottom:4px">
-    <select id="tl-year-sel" onchange="setTimeLogYear(parseInt(this.value))" style="flex:1;min-width:0;font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer"></select>
+    <select id="tl-year-sel" onchange="setTimeLogYear(parseInt(this.value))" class="btn btn-sm" style="flex:1;min-width:0;justify-content:flex-start;cursor:pointer"></select>
     <button class="btn btn-sm" onclick="_tlExportCSV()" style="flex-shrink:0">⬇ Export</button>
   </div>
   <div id="tl-week-total" style="font-size:11px;color:var(--text3);margin-bottom:14px"></div>
@@ -2166,14 +2300,14 @@ body.dark .cal-cell.other{background:var(--cream)}
     <select id="tracker-year-sel" onchange="setTrackerYear(parseInt(this.value))" style="font-size:13px;font-weight:700;padding:6px 10px;border-radius:var(--r);border:1px solid var(--line-2);background:var(--bg-card);color:var(--text);cursor:pointer;width:100%"></select>
   </div>
   <div class="fbar">
-    <button type="button" class="fb active" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
+    <button type="button" class="fb active" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
+    <button type="button" class="fb" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
     <button type="button" class="fb" id="tr-t-expenses" onclick="setTrTab('expenses',this)">Expenses</button>
     <button type="button" class="fb" id="tr-t-mileage" onclick="setTrTab('mileage',this)">Mileage</button>
     <button type="button" class="fb" id="tr-t-jobs" onclick="setTrTab('jobs',this)">Jobs</button>
-    <button type="button" class="fb" id="tr-t-summary" onclick="setTrTab('summary',this)">Summary</button>
     <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)"><span data-ico="👥" data-ico-size="14"></span> Hiring</button>
   </div>
-  <div id="tr-income">
+  <div id="tr-income" style="display:none">
     <input type="hidden" id="inc-date"><input type="hidden" id="inc-client-sel">
     <input type="hidden" id="inc-type"><input type="hidden" id="inc-amount">
     <input type="hidden" id="inc-pay"><input type="hidden" id="inc-inv">
@@ -2215,14 +2349,22 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="tr-bid-detail" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;overflow-y:auto;-webkit-overflow-scrolling:touch">
       <div style="background:var(--bg);min-height:100%;padding:16px;max-width:600px;margin:0 auto">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
-          <div style="font-size:16px;font-weight:800">Bid details</div>
+          <div style="font-size:16px;font-weight:800">Proposal details</div>
           <button onclick="closeBidHistoryDetail()" style="border:none;background:none;font-size:24px;cursor:pointer;color:var(--text3)">&#10005;</button>
         </div>
         <div id="tr-bid-detail-content"></div>
       </div>
     </div>
   </div>
-  <div id="tr-summary" style="display:none">
+  <div id="tr-summary">
+    <!-- The contractor's own pipeline speed and close rates, each paired with the
+         TradeDesk-wide figure. Their own numbers come from an RPC that row-level
+         security pins to their rows; the platform averages are pre-aggregated
+         nightly and only published once five businesses stand behind them. -->
+    <div class="card">
+      <div class="card-hd">How you're running<span style="font-size:10px;color:var(--text3);font-weight:400">you vs TradeDesk</span></div>
+      <div id="lc-funnel-mine"></div>
+    </div>
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <label style="font-size:11px;font-weight:700;color:var(--text3);white-space:nowrap">Filing status</label>
       <select id="sum-tx-status" onchange="S.txStatus=this.value;saveAll();renderSummary()" style="flex:1;font-size:13px;font-weight:600;padding:7px 10px;border-radius:var(--r);border:1.5px solid var(--border2);background:var(--bg);color:var(--text)">
@@ -2332,18 +2474,6 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div style="display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1.5px solid var(--border2);border-radius:12px;padding:10px 14px;margin:0 16px 14px;color:var(--text3)">
       <span data-ico="🔍" data-ico-size="16"></span>
       <input id="set-search-input" placeholder="Search settings…" oninput="_filterSetRows(this.value)" style="flex:1;border:0;background:transparent;outline:none;font-family:inherit;font-size:13px;color:var(--text);padding:0;width:auto">
-    </div>
-
-    <!-- TradeDesk Pro subscription card -->
-    <div style="background:linear-gradient(135deg,#1B1612 0%,#1F2230 100%);border-radius:14px;padding:16px;margin:0 0 14px;display:flex;align-items:center;justify-content:space-between;gap:12px">
-      <div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px">
-          <span style="font-family:Geist,sans-serif;font-size:16px;font-weight:900;color:#fff;letter-spacing:-.5px">TradeDesk</span>
-          <span style="font-size:10px;font-weight:800;color:#5C8FD4;background:rgba(45,93,168,.18);border:1px solid rgba(45,93,168,.36);padding:2px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.06em">Pro</span>
-        </div>
-        <div id="set-sub-line" style="font-size:11px;color:rgba(255,255,255,.4)">1 user</div>
-      </div>
-      <button onclick="_manageSubscription()" class="btn btn-sm" style="background:rgba(255,255,255,.1);color:#fff;border-color:rgba(255,255,255,.18);flex-shrink:0;font-size:12px">Manage plan</button>
     </div>
 
     <!-- dark mode toggle -->
@@ -2555,7 +2685,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl"><input type="number" id="set-since-year" min="1900" max="2100" placeholder="e.g. 2013"></div>
         </div>
         <div class="set-form-row">
-          <div><div class="set-form-lbl">Sales tax rate</div><div class="set-form-hint">Default rate charged on taxable materials. ZIP lookup available from any estimate.</div></div>
+          <div><div class="set-form-lbl">Sales tax rate</div><div class="set-form-hint">Default rate charged on taxable materials. ZIP lookup available from any proposal.</div></div>
           <div class="set-form-ctrl">
             <div style="display:flex;align-items:center;gap:8px">
               <input type="number" id="set-sales-tax-rate" step="0.001" min="0" max="20" placeholder="e.g. 9.350" style="flex:1">
@@ -2686,7 +2816,7 @@ body.dark .cal-cell.other{background:var(--cream)}
         <div class="f"><label>Monthly revenue goal ($)</label><input type="number" id="set-goal-monthly" placeholder="e.g. 8000" min="0" step="500"><div style="font-size:10px;color:var(--text3);margin-top:3px">What do you want to bring in each month?</div></div>
         <div class="f"><label>Default labor rate ($/hr)</label><input id="set-labor-rate" type="number" placeholder="45" min="0" step="5"></div>
         <div class="f"><label>Profit margin target (%)</label><input type="number" id="set-margin"></div>
-        <div class="f"><label>Default deposit (%)</label><input type="number" id="set-deposit-pct" min="0" max="100" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Applied to every new estimate (0 = no deposit)</div></div>
+        <div class="f"><label>Default deposit (%)</label><input type="number" id="set-deposit-pct" min="0" max="100" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Applied to every new proposal (0 = no deposit)</div></div>
         <div class="f"><label>Paint coverage (sq ft/gal)</label><input type="number" id="set-cov"></div>
         <div class="f"><label>Materials markup (%)</label><input type="number" id="set-mm"></div>
         <div class="f"><label>Supplies rate ($/sq ft)</label><input type="number" id="set-supplies-rate" step="0.01" placeholder="0.40"></div>
@@ -2695,7 +2825,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div id="set-rates-lg" style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border)">
         <div style="font-size:12px;font-weight:800;color:var(--text);margin-bottom:10px" id="set-rates-lg-title">Labor rates</div>
         <div class="fg fg2">
-          <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="number" placeholder="75" min="0" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item estimates for this trade.</div></div>
+          <div class="f"><label>Default hourly rate ($/hr)</label><input id="set-labor-rate-generic" type="number" placeholder="75" min="0" step="5"><div style="font-size:10px;color:var(--text3);margin-top:3px">Used as default rate in line-item proposals for this trade.</div></div>
         </div>
       </div>
       <!-- Workmanship warranty period -->
@@ -2782,7 +2912,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div class="set-form-card">
         <div class="set-form-card-hd">
           <div style="font-size:24px;line-height:1"><span data-ico="📋" data-ico-size="24"></span></div>
-          <div><div style="font-size:15px;font-weight:800">Proposal terms</div><div style="font-size:11px;color:var(--text3)">Shown at the bottom of every estimate before signing</div></div>
+          <div><div style="font-size:15px;font-weight:800">Proposal terms</div><div style="font-size:11px;color:var(--text3)">Shown at the bottom of every proposal before signing</div></div>
         </div>
         <div style="padding:14px 16px">
           <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Custom terms</div>
@@ -2987,7 +3117,7 @@ body.dark .cal-cell.other{background:var(--cream)}
 
         <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border)">
           <div>
-            <div style="font-size:14px;font-weight:700">Clients &amp; bids</div>
+            <div style="font-size:14px;font-weight:700">Clients &amp; proposals</div>
             <div style="font-size:11px;color:var(--text3);margin-top:2px">All leads, proposals, jobs, and payments</div>
           </div>
           <button class="btn btn-sm" onclick="clearClientsOnly()" style="color:var(--c-red);border-color:var(--c-red);flex-shrink:0;white-space:nowrap">Delete</button>
@@ -3015,7 +3145,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--c-red);margin-bottom:10px">Danger zone</div>
       <div style="background:var(--bg-card);border-radius:var(--r);border:1px solid var(--c-red);padding:16px">
         <div style="font-size:13px;font-weight:700;color:var(--c-red);margin-bottom:4px">Factory reset</div>
-        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Wipes everything, clients, bids, mileage, expenses, fleet, settings. Cannot be undone.</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:12px">Wipes everything, clients, proposals, mileage, expenses, fleet, settings. Cannot be undone.</div>
         <button class="btn btn-r" onclick="clearAllData()" style="width:100%;padding:12px;font-size:13px"><span data-ico="🗑" data-ico-size="14"></span> Clear ALL data, start fresh</button>
       </div>
 
@@ -3129,7 +3259,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb"        id="lft-new"        onclick="setLeadFilter('new',this)">Ready</button>
     <button type="button" class="fb"        id="lft-estimate"   onclick="setLeadFilter('estimate',this)">Proposal sent</button>
     <button type="button" class="fb"        id="lft-follow_up"  onclick="setLeadFilter('follow_up',this)">Follow-up</button>
-    <button type="button" class="fb"        id="lft-pending"    onclick="setLeadFilter('pending',this)">Pending bid</button>
+    <button type="button" class="fb"        id="lft-pending"    onclick="setLeadFilter('pending',this)">Proposal (pending)</button>
   </div>
   <div id="leads-list"></div>
 </div>
@@ -3489,6 +3619,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/payroll-onboarding.js"></script>
 <script src="js/finance.js"></script>
 <script src="js/timelog.js"></script>
+<script src="js/lifecycle.js"></script>
 <script src="js/payroll-summary.js"></script>
 <script src="js/generic-estimate.js"></script>
 <script src="js/contracts.js"></script>
@@ -3639,7 +3770,7 @@ if(supaEnabled()){
   if(localStorage.getItem('zp3_seeded_v3'))return;
   if(clients.length>0)return;
 
-  const d=(n)=>{const dt=new Date();dt.setDate(dt.getDate()-n);return dt.toISOString().slice(0,10);};
+  const d=(n)=>{const dt=new Date();dt.setDate(dt.getDate()-n);return dateKey(dt);};
   const n=Date.now();
 
   const C=[
@@ -3721,7 +3852,7 @@ if(supaEnabled()){
 <script>document.getElementById('app-version').textContent='v'+APP_VERSION;</script>
 
 <!-- ── Offline banner ── -->
-<div id="offline-banner" style="position:fixed;top:0;left:0;right:0;z-index:10001;padding:7px 16px;font-size:12px;font-weight:700;text-align:center;letter-spacing:.01em;opacity:0;transform:translateY(-100%);pointer-events:none;transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)"></div>
+<div id="offline-banner" style="position:fixed;top:0;left:0;right:0;z-index:10001;padding:7px 16px;font-size:12px;font-weight:700;text-align:center;letter-spacing:.01em;opacity:0;transform:translateY(-100%);pointer-events:none;transition:opacity .5s cubic-bezier(.16,1,.3,1),transform .5s cubic-bezier(.16,1,.3,1),background-color .35s ease,color .35s ease"></div>
 
 <!-- ── Import Contacts Modal ── -->
 <div id="import-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9998;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)closeImportModal()">

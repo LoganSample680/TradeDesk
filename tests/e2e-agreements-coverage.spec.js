@@ -34,7 +34,7 @@ test.describe('Agreements: pure helpers (_agFmtDate, _agType*, _agKeyTerm, _agSt
     });
     if (result.skip) return;
     expect(result.ok).toBe(true);
-    expect(result.dateOnly).toBe('Mar 15, 2026');
+    expect(result.dateOnly).toBe('03/15/2026');
     expect(result.iso).toContain('2026');
     expect(result.empty).toBe('');
     expect(result.nul).toBe('');
@@ -134,7 +134,7 @@ test.describe('Agreements: pure helpers (_agFmtDate, _agType*, _agKeyTerm, _agSt
     if (result.skip) return;
     expect(result.ok).toBe(true);
     expect(result.signed).toContain('Signed');
-    expect(result.signed).toContain('Mar 15, 2026');
+    expect(result.signed).toContain('03/15/2026');
     expect(result.signedNoDate).toContain('Signed');
     expect(result.sent).toContain('Sent');
     expect(result.draft).toContain('Draft');

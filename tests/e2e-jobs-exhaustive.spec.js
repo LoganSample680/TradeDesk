@@ -23,7 +23,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
   const SEED_FIXTURES_FN = () => {
     clients = clients.filter(c => c.id !== 79901 && c.id !== 79902);
     bids    = bids.filter(b => b.id !== 78801 && b.id !== 78802);
-    jobs    = jobs.filter(j => j.id !== 77701 && j.id !== 77702 && j.id !== 77703);
+    jobs    = jobs.filter(j => ![77701, 77702, 77703, 77704, 77705, 77706].includes(j.id));
     timeEntries = (timeEntries || []).filter(e => e.job_id !== 77701 && e.job_id !== 77702);
 
     clients.push(
@@ -47,7 +47,16 @@ test.describe('jobs.js: exhaustive coverage', () => {
       { id: 77702, client_id: 79902, bid_id: 78802, name: 'Beta exterior job',
         eventType: 'job', status: 'scheduled', start: '2099-07-01', actualHours: 0 },
       { id: 77703, client_id: 79901, bid_id: null, name: 'Orphan job no bid',
-        eventType: 'job', status: 'active', start: '2099-08-01', actualHours: 0 }
+        eventType: 'job', status: 'active', start: '2099-08-01', actualHours: 0 },
+      // Closed-to-clock-in fixtures (owner report 2026-07-18: nothing stopped
+      // clocking into a job already marked complete). One per condition
+      // _jobClosedToClockIn checks, matching _geoMyJobs' own exclusion.
+      { id: 77704, client_id: 79901, bid_id: null, name: 'Done job',
+        eventType: 'job', status: 'done', start: '2026-05-01', completion_date: '2026-05-03' },
+      { id: 77705, client_id: 79901, bid_id: null, name: 'Cancelled job',
+        eventType: 'job', status: 'scheduled', start: '2099-08-02', cancelled: true },
+      { id: 77706, client_id: 79901, bid_id: null, name: 'Has a completion_date but status lagged',
+        eventType: 'job', status: 'scheduled', start: '2026-05-01', completion_date: '2026-05-03' }
     );
     timeEntries.push(
       { id: 9990001, job_id: 77701, date: '2026-06-01', minutes: 90, scope_id: 'sand',   scope_label: 'Sanding' },
@@ -556,6 +565,42 @@ test.describe('jobs.js: exhaustive coverage', () => {
       });
       expect(r.ok).toBe(true);
       expect(r.count).toBe(1);
+    });
+
+    test('job already marked done: refuses to open, no overlay, shows a toast', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_cks-ov')?.remove();
+        const origToast = window.showToast; let toastMsg = null;
+        window.showToast = (m) => { toastMsg = m; };
+        try {
+          openClockInSheet(77704);
+          return { opened: !!document.getElementById('_cks-ov'), toastMsg };
+        } finally { window.showToast = origToast; document.getElementById('_cks-ov')?.remove(); }
+      });
+      expect(r.opened, 'a completed job must never open the clock-in sheet').toBe(false);
+      expect(r.toastMsg).toContain('complete');
+    });
+
+    test('cancelled job: refuses to open the sheet', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_cks-ov')?.remove();
+        const origToast = window.showToast;
+        window.showToast = () => {};
+        try { openClockInSheet(77705); return !!document.getElementById('_cks-ov'); }
+        finally { window.showToast = origToast; document.getElementById('_cks-ov')?.remove(); }
+      });
+      expect(r).toBe(false);
+    });
+
+    test('job with a completion_date set (even if status lagged): refuses to open the sheet', async () => {
+      const r = await page.evaluate(() => {
+        document.getElementById('_cks-ov')?.remove();
+        const origToast = window.showToast;
+        window.showToast = () => {};
+        try { openClockInSheet(77706); return !!document.getElementById('_cks-ov'); }
+        finally { window.showToast = origToast; document.getElementById('_cks-ov')?.remove(); }
+      });
+      expect(r).toBe(false);
     });
 
     test('job with no bid, uses job name as client name fallback', async () => {
@@ -1296,6 +1341,41 @@ test.describe('jobs.js: exhaustive coverage', () => {
         return ok;
       });
       expect(r).toBe(5);
+    });
+
+    test('CRITICAL: a job already marked done cannot accept a new time entry (owner report 2026-07-18)', async () => {
+      const r = await page.evaluate(() => {
+        const origToast = window.showToast; let toastMsg = null;
+        window.showToast = (m) => { toastMsg = m; };
+        try {
+          _activeTimer = null;
+          timeEntries = timeEntries.filter(e => e.job_id !== 77704);
+          clockIn(77704, 'sand', 'Sanding');
+          return {
+            timerSet: !!_activeTimer,
+            entryCreated: timeEntries.some(e => e.job_id === 77704),
+            toastMsg,
+          };
+        } finally { window.showToast = origToast; }
+      });
+      expect(r.timerSet, 'clocking into a completed job must never start a timer').toBe(false);
+      expect(r.entryCreated, 'clocking into a completed job must never write a timeEntries row').toBe(false);
+      expect(r.toastMsg).toContain('complete');
+    });
+
+    test('cancelled job cannot accept a new time entry either', async () => {
+      const r = await page.evaluate(() => {
+        const origToast = window.showToast;
+        window.showToast = () => {};
+        try {
+          _activeTimer = null;
+          timeEntries = timeEntries.filter(e => e.job_id !== 77705);
+          clockIn(77705, 'sand', 'Sanding');
+          return { timerSet: !!_activeTimer, entryCreated: timeEntries.some(e => e.job_id === 77705) };
+        } finally { window.showToast = origToast; }
+      });
+      expect(r.timerSet).toBe(false);
+      expect(r.entryCreated).toBe(false);
     });
   });
 

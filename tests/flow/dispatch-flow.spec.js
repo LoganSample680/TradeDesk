@@ -29,11 +29,15 @@ test.describe('dispatch board (UI-driven)', () => {
     const jobAddr = seedAddr();                 // a real address, not "No address"
     const today = new Date().toISOString().slice(0, 10);
 
+    // Owner spec 2026-07-18 ("merge but easy to shift whose on what jobs"):
+    // assignment now persists for the job's whole scheduled span rather than
+    // requiring a daily assignedDate reconfirmation, so _dispatchDoAssign no
+    // longer stamps assignedDate on assign.
     await step(page, {
       label: 'assign a job to a crew member from the Assign sheet', page: 'pg-dispatch', role: 'contractor',
       suspect: 'cloud.js _dispatchDoAssign (j.assignedTo + crewHistory + saveAll)',
       ruleText: 'tapping a crew member in the Assign sheet must assign the job and record crew history',
-      expected: `job.assignedTo=${empId}, crewHistory includes it, assignedDate=today`,
+      expected: `job.assignedTo=${empId}, crewHistory includes it, persists without a daily date stamp`,
       act: async (p) => {
         await p.evaluate(({ jobId, empId, empName, clientId, clientName, jobAddr, today }) => {
           // Seed a crew member + a realistic scheduled job (real client, real
@@ -55,14 +59,14 @@ test.describe('dispatch board (UI-driven)', () => {
       rule: async (p) => {
         const r = await p.evaluate(({ jobId, empId }) => {
           const j = jobs.find(x => x.id === jobId);
-          return j ? { assignedTo: String(j.assignedTo), inHistory: (j.crewHistory || []).map(String).includes(String(empId)), date: j.assignedDate } : null;
+          return j ? { assignedTo: String(j.assignedTo), inHistory: (j.crewHistory || []).map(String).includes(String(empId)), noDateStamp: j.assignedDate == null } : null;
         }, { jobId, empId });
         // TRUE end-to-end: the assignment must also be in the cloud (td_jobs), not
         // just the in-memory jobs[] array.
         const cloud = await cloudRows(p, 'td_jobs');
         const cj = cloud.find(j => String(j.id) === String(jobId));
         const cloudOk = !!cj && String(cj.assignedTo) === String(empId);
-        const memOk = !!r && r.assignedTo === empId && r.inHistory && r.date === today;
+        const memOk = !!r && r.assignedTo === empId && r.inHistory && r.noDateStamp;
         return { ok: memOk && cloudOk, got: `mem=${JSON.stringify(r)} cloudAssignedTo=${cj ? cj.assignedTo : 'ROW ABSENT'}` };
       },
     });

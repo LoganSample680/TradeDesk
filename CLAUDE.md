@@ -221,35 +221,22 @@ and what was changed. Nothing else.
 
 ---
 
-### 1.6 NEVER Push Over In-Flight Tests: Wait for the Full Result Set
+### 1.6 Pushing Over In-Flight Runs Is Allowed (owner decision, 2026-07-26)
 
-> One push, then **wait for the whole result set** before the next push. No exceptions.
+CI green is not a hard gate on when the next push can happen. Once a fix is
+ready, push it, don't sit waiting on a prior run's offline shards or flow-local
+job to finish first.
 
-After any push, **do not push, force-push, amend-and-force, or re-trigger anything**
-on the branch until BOTH of these have come back for the **current HEAD**:
+**Know the tradeoff, it's accepted now, not avoided:** this workflow's
+`concurrency: cancel-in-progress` means a new push cancels/orphans whatever
+offline-shard or flow-local run was still in progress on the branch. That run's
+result never lands, and the runner minutes it already burned are wasted. That
+used to be treated as a rule-breaking mistake; it's now just a known cost of
+moving faster.
 
-1. **All offline shards** (`test (1)`…`test (6)`): every one `completed / success`.
-   Not 5 of 6. Not "shard 4 passed." **All of them.**
-2. **A real flow run**, EITHER the self-hosted **flow-local** (local-stack) run OR the
-   **Supabase cloud** live flow run, `completed / success`.
-
-Both gates. Offline-green alone is **not** enough to push again. Flow-green alone is
-**not** enough either. Wait for both.
-
-**Why this rule exists (and cost a wasted run):** force-pushing a new commit while a
-prior flow run is still `in_progress` **cancels/orphans that run** (`concurrency:
-cancel-in-progress`): the result never lands, the self-hosted runner minutes are
-burned, and we learn nothing. Every rapid-fire push throws away the test we were
-waiting on.
-
-**The only thing allowed while a run is in flight is reading status.** Poll
-`get_check_runs`, read logs, investigate, draft the fix locally, but the fix **sits
-uncommitted/unpushed** until the in-flight runs report. If a failure is obvious mid-run,
-still wait for the run to finish before pushing the fix, so its result is recorded.
-
-**Bootstrapping note:** the first push of a change is what starts CI, that's fine.
-This rule bans the *second* push (and every push after) until the *first* one's full
-result set (both gates above) is in.
+Judgment call, not a rule: if a run is seconds from finishing and its result
+would be genuinely useful (e.g., confirming a fix just landed), it can be worth
+a quick check first. But this is never a reason to hold a ready push.
 
 ---
 

@@ -40,6 +40,7 @@ test.describe('Client management, CRUD and validation', () => {
       const n = document.getElementById('cf-name'); if (n) n.value = '';
       const p = document.getElementById('cf-phone'); if (p) p.value = '3165550101';
       const s = document.getElementById('cf-source'); if (s) s.value = 'Word of mouth';
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner'; // required field, set so the name check is reached
       if (typeof saveClient === 'function') saveClient();
     });
     await page.waitForTimeout(150);
@@ -58,6 +59,7 @@ test.describe('Client management, CRUD and validation', () => {
       const n = document.getElementById('cf-name'); if (n) n.value = 'Test Person';
       const p = document.getElementById('cf-phone'); if (p) p.value = '';
       const s = document.getElementById('cf-source'); if (s) s.value = 'Word of mouth';
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner';
     });
     await page.waitForTimeout(100);
     await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
@@ -77,6 +79,7 @@ test.describe('Client management, CRUD and validation', () => {
       const n = document.getElementById('cf-name'); if (n) n.value = 'Short Phone Test';
       const p = document.getElementById('cf-phone'); if (p) p.value = '555-123';
       const s = document.getElementById('cf-source'); if (s) s.value = 'Word of mouth';
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner';
     });
     await page.waitForTimeout(100);
     await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
@@ -99,6 +102,7 @@ test.describe('Client management, CRUD and validation', () => {
       const s = document.getElementById('cf-source');
       if (s && s.tagName === 'SELECT') s.selectedIndex = 0;
       else if (s) s.value = '';
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner'; // set so the source check is reached
     });
     await page.waitForTimeout(100);
     await page.evaluate(() => { _submitting = false; if (typeof saveClient === 'function') saveClient(); });
@@ -137,6 +141,7 @@ test.describe('Client management, CRUD and validation', () => {
           if (s.options[i].value) { s.selectedIndex = i; break; }
         }
       } else if (s) { s.value = 'Word of mouth'; }
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner';
       _submitting = false;
       if (typeof saveClient === 'function') saveClient();
       return { before, after: clients.length };
@@ -162,6 +167,7 @@ test.describe('Client management, CRUD and validation', () => {
           if (s.options[i].value) { s.selectedIndex = i; break; }
         }
       } else if (s) { s.value = 'Word of mouth'; }
+      const pt = document.getElementById('cf-partytype'); if (pt) pt.value = 'homeowner'; // required, so the dupe-name check is reached
     }, uid);
     await page.waitForTimeout(100);
     // Seed the duplicate IN THE SAME evaluate that calls saveClient, a late
@@ -963,6 +969,180 @@ test.describe('Schedule page, selects, type toggle, availability grid', () => {
 
     if (result.estHidden  !== null) expect(result.estHidden).toBe(true);
     if (result.jobVisible !== null) expect(result.jobVisible).toBe(true);
+  });
+
+  test('crew picker: hidden for a solo account (zero employees)', async () => {
+    const result = await page.evaluate(() => {
+      const row = document.getElementById('s-crew-row');
+      if (!row || typeof setSchedType !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      S.employees = [];
+      setSchedType('job');
+      const hidden = row.style.display === 'none';
+      S.employees = origEmps;
+      return { skip: false, hidden };
+    });
+    if (!result.skip) expect(result.hidden).toBe(true);
+  });
+
+  test('crew picker: visible and populated once a second person exists', async () => {
+    const result = await page.evaluate(() => {
+      const row = document.getElementById('s-crew-row');
+      const sel = document.getElementById('s-crew-sel');
+      if (!row || !sel || typeof setSchedType !== 'function' || typeof populateSchedSelect !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      S.employees = [{ id: 'crew-ui-1', name: 'Crew UI Tester', role: 'tech' }];
+      populateSchedSelect();
+      setSchedType('job');
+      const visible = row.style.display !== 'none';
+      const hasOption = [...sel.options].some(o => o.text.includes('Crew UI Tester'));
+      S.employees = origEmps;
+      return { skip: false, visible, hasOption };
+    });
+    if (!result.skip) {
+      expect(result.visible).toBe(true);
+      expect(result.hasOption).toBe(true);
+    }
+  });
+
+  // Owner spec 2026-07-18 (revised): crew is now shown in BOTH modes, an estimate
+  // visit is still someone's appointment. (Previous behavior hid it on estimates.)
+  test('crew picker: shown on the estimate tab too, when the account has a team', async () => {
+    const result = await page.evaluate(() => {
+      const row = document.getElementById('s-crew-row');
+      if (!row || typeof setSchedType !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      S.employees = [{ id: 'crew-ui-2', name: 'Crew UI Tester 2', role: 'tech' }];
+      setSchedType('estimate');
+      const shownEstimate = row.style.display !== 'none';
+      S.employees = origEmps;
+      setSchedType('job');
+      return { skip: false, shownEstimate };
+    });
+    if (!result.skip) expect(result.shownEstimate).toBe(true);
+  });
+
+  // The crew field is ONE shared constant: setting it in either mode carries to
+  // the other (mode switches must not wipe the selection).
+  test('crew picker: selection persists across estimate/job mode switches (shared constant)', async () => {
+    const result = await page.evaluate(() => {
+      const sel = document.getElementById('s-crew-sel');
+      if (!sel || typeof setSchedType !== 'function' || typeof populateSchedSelect !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      S.employees = [{ id: 'crew-const-1', name: 'Constant Crew', role: 'tech' }];
+      populateSchedSelect();
+      setSchedType('job');
+      sel.value = 'crew-const-1';                 // pick in job mode
+      setSchedType('estimate');
+      const heldInEstimate = sel.value === 'crew-const-1';
+      sel.value = '';                             // clear in estimate mode
+      setSchedType('job');
+      const clearedHeldInJob = sel.value === '';  // the change carried back
+      S.employees = origEmps;
+      return { skip: false, heldInEstimate, clearedHeldInJob };
+    });
+    if (!result.skip) {
+      expect(result.heldInEstimate).toBe(true);
+      expect(result.clearedHeldInJob).toBe(true);
+    }
+  });
+
+  test('scheduleJob: an estimate with a crew selected records assignedTo (crew does the visit)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof scheduleJob !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees, origJobs = jobs.slice();
+      try {
+        if (typeof _submitting !== 'undefined') _submitting = false; // clear any leftover submit lock
+        S.employees = [{ id: 'crew-est-1', name: 'Visit Crew', role: 'tech' }];
+        clients.push({ id: 991001, name: 'Estimate Crew Client', phone: '' });
+        populateSchedSelect();
+        setSchedType('estimate', document.getElementById('sched-tab-est'));
+        document.getElementById('s-client-sel').value = '991001';
+        document.getElementById('s-crew-sel').value = 'crew-est-1';
+        document.getElementById('s-name').value = 'Estimate Crew Visit';
+        document.getElementById('s-start').value = addDays(todayKey(), 30);
+        scheduleJob();
+        const j = jobs.find(x => x.client_id === 991001 && x.eventType === 'estimate');
+        return { skip: false, found: !!j, assignedTo: j ? String(j.assignedTo) : null };
+      } finally { S.employees = origEmps; jobs.length = 0; jobs.push(...origJobs); }
+    });
+    if (!result.skip) {
+      expect(result.found).toBe(true);
+      expect(result.assignedTo).toBe('crew-est-1');
+    }
+  });
+
+  test('scheduleJob: two different crews can book the same days without conflict', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof scheduleJob !== 'function' || typeof getBookedDaysForCrew !== 'function' || typeof S === 'undefined') return { skip: true };
+      const origEmps = S.employees;
+      const origJobs = jobs.slice();
+      try {
+        S.employees = [{ id: 'crew-conf-a', name: 'Crew A', role: 'tech' }, { id: 'crew-conf-b', name: 'Crew B', role: 'tech' }];
+        const start = addDays(todayKey(), 45); // a day unlikely to already be booked
+        // allowWeekend:true keeps this deterministic regardless of what day of
+        // the week `start` lands on (getJobWorkDays skips weekends otherwise).
+        jobs.push({ id: 990001, name: 'Crew A Job', start, days: 1, eventType: 'job', status: 'upcoming', allowWeekend: true, assignedTo: 'crew-conf-a', client_id: null });
+        const crewBFree = !getBookedDaysForCrew('crew-conf-b').booked.has(start);
+        const crewABooked = getBookedDaysForCrew('crew-conf-a').booked.has(start);
+        return { skip: false, crewBFree, crewABooked };
+      } finally { S.employees = origEmps; jobs.length = 0; jobs.push(...origJobs); }
+    });
+    if (!result.skip) {
+      expect(result.crewABooked).toBe(true);
+      expect(result.crewBFree).toBe(true);
+    }
+  });
+
+  test('scheduler: the client site note surfaces (read-only) and hides when the client has none', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _schedSiteNote !== 'function') return { skip: true };
+      const cid = 993001;
+      clients.push({ id: cid, name: 'Gate Client', siteNote: 'Gate code 4412, dog in back' });
+      try {
+        _schedSiteNote(cid);
+        const row = document.getElementById('s-sitenote-row');
+        const shown = row.style.display !== 'none' && document.getElementById('s-sitenote').textContent.includes('Gate code 4412');
+        _schedSiteNote(999999999); // unknown client
+        const hiddenUnknown = row.style.display === 'none';
+        _schedSiteNote(null);
+        const hiddenNull = row.style.display === 'none';
+        return { skip: false, shown, hiddenUnknown, hiddenNull };
+      } finally { clients.splice(clients.findIndex(c => c.id === cid), 1); }
+    });
+    if (!r.skip) {
+      expect(r.shown).toBe(true);
+      expect(r.hiddenUnknown).toBe(true);
+      expect(r.hiddenNull).toBe(true);
+    }
+  });
+
+  test('client record: per-property site access loads and saves from the property accordion', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _cdSavePropNote !== 'function' || typeof renderCDAddresses !== 'function') return { skip: true };
+      const cid = 993002;
+      const c = { id: cid, name: 'Detail Client', addr: '12 Access Rd, Town, KS 60000', extraAddresses: [] };
+      clients.push(c);
+      const origCur = (typeof currentClientId !== 'undefined') ? currentClientId : null;
+      try {
+        currentClientId = cid;
+        setSiteNote(c, c.addr, 'Dog in back');
+        renderCDAddresses();                       // single property renders expanded, so cd-propnote-0 is present
+        const ta = document.getElementById('cd-propnote-0');
+        const loaded = ta ? ta.value : '(no field)';
+        if (ta) ta.value = 'New gate 9911';
+        _cdSavePropNote(0);                          // saves against THIS property's address
+        const saved = getSiteNote(c, c.addr);
+        return { skip: false, loaded, saved };
+      } finally {
+        currentClientId = origCur;
+        clients.splice(clients.findIndex(c => c.id === cid), 1);
+      }
+    });
+    if (!r.skip) {
+      expect(r.loaded).toBe('Dog in back');
+      expect(r.saved).toBe('New gate 9911');
+    }
   });
 
   test('no console errors during schedule page tests', async () => {

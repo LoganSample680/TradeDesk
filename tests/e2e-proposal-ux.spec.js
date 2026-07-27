@@ -404,8 +404,17 @@ test.describe('Proposal view tracking, client vs contractor detection', () => {
     }));
     expect(boot.name).toBe('BOOT BRAND CO');
     expect(boot.hint).toContain('Loading your proposal');
-    // Still holding well before the ~1.5s dwell elapses.
-    await page.waitForTimeout(600);
+    // Still holding well before the ~1.5s dwell elapses. Anchored to the page's
+    // own window._bootStart rather than a flat wait stacked on top of the
+    // unbounded latency already spent on goto/toBeVisible/evaluate above: on a
+    // loaded CI runner that latency alone can eat several hundred ms, and a
+    // blind fixed wait then lands past the real dismiss threshold (root cause
+    // of an observed one-off webkit failure at the tail of a long shard run,
+    // nothing to do with the app's dwell timing, which is correct).
+    const bootStart = await page.evaluate(() => window._bootStart);
+    const alreadyElapsed = Date.now() - bootStart;
+    const targetElapsedMs = 300; // comfortably inside the ~1.45s real dismiss floor
+    if (alreadyElapsed < targetElapsedMs) await page.waitForTimeout(targetElapsedMs - alreadyElapsed);
     const held = await page.evaluate(() => {
       const ov = document.getElementById('sign-boot');
       return getComputedStyle(ov).display !== 'none' && ov.style.opacity !== '0';

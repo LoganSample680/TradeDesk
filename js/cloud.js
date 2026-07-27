@@ -297,7 +297,14 @@ async function loadAccountData(){
       _isEmployee=true;_contractorUserId=row.contractor_user_id;_employeeRecord=row;
       _user={id:_supaUser.id,email:_supaUser.email,name:row.name||'',role:row.role||'employee',account_id:null};
       applyPermissions();
+      // Owner report 2026-07-17: a returning already-linked crew member landed
+      // in a stale test account with zero indication anything had happened,
+      // just a silent redirect into someone else's business. Every crew
+      // auto-link now shows SOMETHING, first-join keeps its warmer welcome,
+      // a returning session gets a plain factual toast, so a wrong link is
+      // never silent, the signed-in person always has a signal to notice.
       if(welcome)showToast('Welcome to the team, '+escHtml(row.name||'there')+'! 👋','✅');
+      else showToast('Signed in as crew ('+escHtml(row.role||'employee')+'). Not expecting this? Contact the business that invited you.','👷',6000);
       try{localStorage.setItem('zp3_acct_'+_supaUser.id,JSON.stringify({user:_user,activeTrade:'painting',isEmployee:true,contractorUserId:_contractorUserId}));}catch(_e){}
       return true;
     };
@@ -476,7 +483,7 @@ function _devRenderSnapshots(key){
     if(!snaps.length)return '';
     const rows=snaps.map((s,i)=>{
       const d=new Date(s.ts);
-      const label=d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+      const label=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
       return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border)">
         <span style="font-size:11px;color:var(--text2)">${label}</span>
         <button onclick="_devRestoreSnapshot('${key}',${i})" style="font-size:10px;padding:3px 8px;border:1px solid var(--red);border-radius:4px;background:none;color:var(--red);cursor:pointer;font-family:inherit">Restore</button>
@@ -492,7 +499,7 @@ async function _devRestoreSnapshot(key,idx){
   const snaps=JSON.parse(localStorage.getItem('zp3_dev_snaps_'+key)||'[]');
   const snap=snaps[idx];if(!snap)return;
   const d=new Date(snap.ts);
-  const label=d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' at '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  const label=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' at '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
   zConfirm('Restore Zach\'s data to the snapshot from '+label+'? This overwrites his current Supabase data.',async()=>{
     const u=_DEV_SUPPORT_USERS[key];if(!u)return;
     const{error}=await _supa.from('zj_data').update(snap.data).eq('user_id',u.userId);
@@ -529,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.18.26.2';
+const APP_VERSION='07.26.26.31';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1397,6 +1404,13 @@ let _proposalViewsByBidClientCount={}; // number of proposal opens
 // Sign-flow funnel, furthest step the client reached inside sign.html
 let _proposalViewsByBidStep={};        // bid_id → 'approved'|'signature_ready'|'payment_viewed'|'method_selected'|'signed'
 let _proposalViewsByBidStepAt={};      // bid_id → timestamp that step was first reached
+// Audit-trail IP/device captured server-side when the client opened the proposal/hub
+let _proposalViewsByBidClientIp={};    // bid_id → {ip, ua} the proposal (sign.html) was opened from
+let _proposalViewsByBidHubIp={};       // bid_id → {ip, ua} the hub (client.html) was opened from
+// Full per-event audit log: bid_id → [{event, ts, ip, ua}, …] newest-first, every
+// open + sign-flow step (hub_opened, proposal_opened, approved, signature_ready,
+// payment_viewed, method_selected, signed) with its own timestamp + captured IP.
+let _proposalAuditEventsByBid={};
 // Expose on window so Playwright E2E tests can inject test data via page.evaluate()
 // (let declarations are not window properties in browser scripts)
 Object.defineProperty(window,'_proposalViewsByBidHubClient',{get:()=>_proposalViewsByBidHubClient,set:v=>{_proposalViewsByBidHubClient=v;},configurable:true});
@@ -1406,6 +1420,9 @@ Object.defineProperty(window,'_proposalViewsByBidHubCount',{get:()=>_proposalVie
 Object.defineProperty(window,'_proposalViewsByBidClientCount',{get:()=>_proposalViewsByBidClientCount,set:v=>{_proposalViewsByBidClientCount=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidStep',{get:()=>_proposalViewsByBidStep,set:v=>{_proposalViewsByBidStep=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidStepAt',{get:()=>_proposalViewsByBidStepAt,set:v=>{_proposalViewsByBidStepAt=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsByBidClientIp',{get:()=>_proposalViewsByBidClientIp,set:v=>{_proposalViewsByBidClientIp=v;},configurable:true});
+Object.defineProperty(window,'_proposalViewsByBidHubIp',{get:()=>_proposalViewsByBidHubIp,set:v=>{_proposalViewsByBidHubIp=v;},configurable:true});
+Object.defineProperty(window,'_proposalAuditEventsByBid',{get:()=>_proposalAuditEventsByBid,set:v=>{_proposalAuditEventsByBid=v;},configurable:true});
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
@@ -2218,7 +2235,9 @@ function renderDispatch(){
   function _jobCard(j,empId){
     const c=clients.find(x=>x.id===j.client_id)||{name:j.clientName||j.name||'Job'};
     const addr=escHtml(j.addr||c.addr||'');
-    const note=escHtml(j.notes||j.description||'');
+    // Composite field note (client site note + this job's note + hazard flag),
+    // read-only here, same helper the dashboard/on-site cards use.
+    const note=(typeof _jobFieldNote==='function')?_jobFieldNote(j):(j.notes?escHtml(j.notes):'');
     const empName=empId?(S.employees||[]).find(e=>e.id==empId)?.name||'':'';
     const assignBtn=empId
       ?'<button onclick="_dispatchUnassign('+j.id+')" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit;min-height:36px">Unassign</button>'
@@ -2230,7 +2249,7 @@ function renderDispatch(){
     return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
       '<div style="font-size:13px;font-weight:700;margin-bottom:3px">'+escHtml(c.name)+'</div>'+
       (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+addr+'</div>':'')+
-      (note?'<div style="font-size:11px;color:var(--text2);margin-bottom:6px;line-height:1.4">'+note+'</div>':'')+
+      (note?'<div style="margin-bottom:6px">'+note+'</div>':'')+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px">'+
         orderBtns+assignBtn+
       '</div>'+
@@ -2240,7 +2259,10 @@ function renderDispatch(){
     ?unassigned.map(j=>_jobCard(j,null)).join('')
     :'<div style="font-size:12px;color:var(--text3);padding:8px 0">No unassigned jobs today.</div>';
   const empCols=emps.map(emp=>{
-    const empJobs=todayJobs.filter(j=>String(j.assignedTo)===String(emp.id)&&j.assignedDate===tk)
+    // todayJobs is already date-range-filtered above, assignment now persists
+    // for a job's whole span (owner spec 2026-07-18), no separate "was this
+    // reconfirmed today" gate needed.
+    const empJobs=todayJobs.filter(j=>String(j.assignedTo)===String(emp.id))
       .sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
     const rc=ROLE_COLORS[emp.role]||'var(--text2)';
     const optBtn=empJobs.length>=2
@@ -2286,7 +2308,9 @@ function _dispatchAssign(jobId){
 }
 function _dispatchDoAssign(jobId,empId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
-  j.assignedTo=empId;j.assignedDate=todayKey();
+  // Owner spec 2026-07-18: assignment now persists for the job's whole span,
+  // no daily "assignedDate" reconfirmation stamp needed or read anywhere.
+  j.assignedTo=empId;
   // Durable record of everyone ever assigned, powers the crew trust ranking on estimates.
   if(!Array.isArray(j.crewHistory))j.crewHistory=[];
   if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
@@ -2314,7 +2338,7 @@ function _dispatchUnassign(jobId){
 }
 function _dispatchMoveUp(jobId,empId){
   const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
+  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk)).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
   const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<=0)return;
   // Normalize to 0..n-1 in current sorted order BEFORE swapping (mirrors _dispatchMoveDown).
   // Doing the forEach reindex AFTER the swap clobbered it, it overwrote dispatchOrder from
@@ -2327,7 +2351,7 @@ function _dispatchMoveUp(jobId,empId){
 }
 function _dispatchMoveDown(jobId,empId){
   const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
+  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk)).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
   const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<0||idx>=empJobs.length-1)return;
   empJobs.forEach((j,i)=>{j.dispatchOrder=i;});
   const temp=empJobs[idx+1].dispatchOrder;
@@ -2350,7 +2374,7 @@ async function _geoOfficeCoords(){
 }
 async function _dispatchOptimizeRoute(empId){
   const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk);
+  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk));
   if(empJobs.length<2){showToast('Need at least 2 jobs to optimize','📋');return;}
   showToast('Optimizing route…','⏳');
   const office=await _geoOfficeCoords();
@@ -3578,6 +3602,9 @@ function _assignmentToJob(a,clientId){
     eventType:'job',time:'',hours:null,
     notes:'Assigned by '+(a.gc_business_name||'a linked contractor')+' on TradeDesk',
     status:'upcoming',
+    // Exact moment this job landed, so the client audit timeline always has a
+    // real time rather than only the assigned start day.
+    loggedAt:new Date().toISOString(),
     // Flags this as pipe-sourced so the Today widget can offer a one-tap
     // "Log mileage" shortcut: the whole reason the address crosses the
     // pipe in the first place is so the sub's drive gets tracked.
@@ -5023,8 +5050,169 @@ function _sigFeedStatus(status){
     try{if(window._obs)_obs.track('sig_feed_down_'+String(status).toLowerCase());}catch(_e){}
   }
 }
+// Applies one signed_proposals row's decline/signed state to its local bid.
+// Shared by the live poll loop below and _reconcilePendingSigStatuses, so the
+// two paths can never drift apart on what "declined" vs "signed" means.
+// Returns true if it mutated the bid.
+function _applySigStatusToBid(bid,s){
+  let changed=false;
+  if(s.payment_status==='declined'){
+    // Client declined, mark as Closed Lost, not Closed Won
+    if(bid.status!=='Closed Lost'){
+      bid.status='Closed Lost';bid.draft=false;
+      bid.declinedAt=s.signed_at;
+      changed=true;
+    }
+    // Client-picked reason (sign.html's decline modal), same field a
+    // contractor's own manual "Mark Lost" action populates, so it shows
+    // up in the Declined tab / dashboard with no new UI needed.
+    if(s.decline_reason&&bid.lostReason!==s.decline_reason){
+      bid.lostReason=s.decline_reason;bid.lostAt=bid.lostAt||s.signed_at;
+      changed=true;
+    }
+  }else{
+    if(bid.status!=='Closed Won'){
+      // Always fix the status regardless of seenCache, data may have been reset
+      bid.status='Closed Won';bid.draft=false;
+      bid.signedAt=s.signed_at;
+      bid.signedName=s.client_signed_name||s.client_name;
+      bid.paymentMethod=s.payment_method;
+      changed=true;
+    }
+    // Refresh signature metadata even when already won, the signature image and
+    // EPA ack can land after the status flip (or the DB columns were added later).
+    if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
+    if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
+    if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
+    if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
+    // Audit: the signer's IP + device, stamped server-side by the log-proposal-view
+    // Edge Function at sign time. Feeds the exportable audit report.
+    if(s.ip_address&&bid.signIp!==s.ip_address){bid.signIp=s.ip_address;bid.signUa=s.user_agent||null;changed=true;}
+  }
+  return changed;
+}
+// Self-heals bids whose status is stuck out of sync with signed_proposals, e.g.
+// a decline landed while this contractor's account had already accumulated
+// 100+ more recent signed_proposals rows: checkNewSignatures' full poll only
+// ever looks at the most recent 100 (ordered by signed_at), and the delta poll
+// only looks past its watermark, so an old stale row can never resurface
+// through either path. This runs a direct lookup on the small set of bids
+// still showing "Pending" with a signingToken (however few that is, regardless
+// of total signature volume), so drift like that gets corrected for good.
+let _reconcileReassertTimer=null;
+async function _reconcilePendingSigStatuses(_attempt){
+  // TEMP TRACE (remove once the live stuck-Pending investigation closes): a
+  // ring of one-line events on window so a test or console can read exactly
+  // what each pass saw and did. Costs nothing in production.
+  const _tr=m=>{try{(window._reconcileTrace=window._reconcileTrace||[]).push((Date.now()%1000000)+' a'+(_attempt||0)+' '+m);if(window._reconcileTrace.length>80)window._reconcileTrace.shift();}catch(_e){}};
+  if(!_supa||!_supaUser){_tr('skip:no-supa');return;}
+  const pendingIds=(typeof bids!=='undefined'?bids:[])
+    .filter(b=>b.signingToken&&b.status==='Pending'&&b.id).map(b=>String(b.id));
+  if(!pendingIds.length){_tr('skip:no-pending');return;}
+  _tr('start pending='+pendingIds.length);
+  try{
+    // Fetch in SMALL SEQUENTIAL CHUNKS, and never swallow a failure silently.
+    // Two things were wrong before. Fanning out one request per pending bid
+    // meant N concurrent fetches (N grows without bound as an account ages,
+    // every proposal still awaiting signature is one more), which queues
+    // behind the browser's per-host connection limit alongside all the other
+    // sync traffic; and every failure was swallowed (`catch → null`,
+    // `error → null`), so a dropped request was indistinguishable from "no
+    // decline exists" and the stuck bid just silently stayed stuck. A single
+    // huge .in(...) had the mirror problem: one oversized request that fails
+    // as a unit takes every bid down with it.
+    //
+    // Chunks of 10 keep each URL small and the request count low, the retry
+    // covers a transient miss, and a chunk that still fails is WARNED about
+    // rather than quietly treated as "nothing to reconcile".
+    const CHUNK=10;
+    const rows=[];
+    for(let i=0;i<pendingIds.length;i+=CHUNK){
+      const ids=pendingIds.slice(i,i+CHUNK);
+      let got=null;
+      for(let attempt=0;attempt<2&&!got;attempt++){
+        try{
+          const{data,error}=await _supa.from('signed_proposals').select('*')
+            .eq('contractor_user_id',_supaUser.id).in('bid_id',ids);
+          if(error)throw error;
+          got=data||[];
+        }catch(e){
+          _tr('chunk-fail attempt'+attempt+' '+(e&&e.message||e));
+          if(attempt)console.warn('reconcile: chunk failed after retry',ids.length,'ids:',e&&e.message||e);
+          else await new Promise(r=>setTimeout(r,300));
+        }
+      }
+      _tr('chunk['+i+'] ids='+ids.length+' rows='+(got?got.length:'FAIL'));
+      if(got)rows.push(...got);
+    }
+    let changed=false;
+    rows.forEach(s=>{
+      if(!s)return;
+      // Look the bid up FRESH in the live array, right before applying, don't
+      // reuse an object captured before the awaits above. An incremental
+      // cloud-delta load can land mid-flight and rebuild this exact array
+      // (the td_bids set() at ~line 1207: bids.length=0, then re-push fresh
+      // row objects from the server), same array reference, but every bid is
+      // now a DIFFERENT object instance. A reference captured before that
+      // reload would still get mutated to Closed Lost successfully, just on
+      // an object no longer reachable from `bids`, so nothing else, including
+      // this same account's other tabs/renders, would ever see the fix. This
+      // was the actual bug: the query and the apply logic were both already
+      // correct, the bid reference just went stale underneath them.
+      const bid=(typeof bids!=='undefined'?bids:[]).find(b=>String(b.id)===String(s.bid_id)&&b.status==='Pending');
+      const applied=bid?_applySigStatusToBid(bid,s):false;
+      _tr('row '+s.bid_id+' status='+s.payment_status+' bidFound='+!!bid+' applied='+applied);
+      if(applied)changed=true;
+    });
+    if(changed){
+      saveAll();
+      // saveAll() is DEBOUNCED (_syncTimer). Until it fires, the healed status
+      // lives only in memory, and any delta-load landing in that window pulls
+      // the server's still-stale "Pending" row straight back over it, silently
+      // undoing the heal. That window is wide open precisely here: this runs on
+      // a fresh load, exactly when sync traffic is heaviest. Flush immediately
+      // so the correction reaches the server before anything can revert it.
+      // Fire-and-forget: a failed flush leaves the debounced save to retry, and
+      // the next fresh load reconciles again anyway.
+      try{if(typeof _flushSaveNow==='function')_flushSaveNow();}catch(_e){}
+      renderDash();
+      if(typeof renderProposalsPage==='function')renderProposalsPage();
+      // RE-ASSERT UNTIL IT STICKS. Observed live (instrumented run, not
+      // theory): the heal applied, the bid showed Closed Lost, and within
+      // 400ms the model showed Pending again and stayed there. The delta
+      // sync's td_bids merge rebuilds the bids array from the cloud
+      // (bids.length=0, re-push server rows), and the cloud row still says
+      // Pending until our flush lands, so a delta pull racing that flush
+      // restores the stale status, and the flush then uploads the REVERTED
+      // state. The normal signature poll never has this problem because it
+      // re-applies every 30s tick and converges through repetition; this
+      // reconcile was a one-shot, so one lost race meant stuck until the
+      // next app load. Give it the same convergence: after a pass that
+      // changed something, run again shortly. If the heal held, the next
+      // pass finds nothing to change and the chain stops (one cheap query).
+      // If it was reverted, re-apply and re-flush; by then the earlier
+      // flush has usually landed, the cloud row agrees, and it sticks.
+      // Bounded at 3 re-passes so a pathological loop cannot run forever.
+      const _n=_attempt||0;
+      clearTimeout(_reconcileReassertTimer);
+      if(_n<3)_reconcileReassertTimer=setTimeout(()=>{_reconcilePendingSigStatuses(_n+1);},2500);
+    }
+    _tr('done changed='+changed);
+  }catch(e){_tr('threw '+(e&&e.message||e));console.warn('reconcilePendingSigStatuses:',e);}
+}
 let _checkSigsPending=false;
+// Set when a caller arrives asking for a FRESH pass (no watermark yet), which
+// is the condition that fires the stuck-bid reconcile. It has to be recorded
+// BEFORE the busy-guard below can drop the call, and it has to survive into
+// whichever run actually executes: the coalesced re-run recomputes
+// _wasFullPoll from the watermark, which the in-flight run has ALREADY set by
+// then, so it reads false and silently skips the reconcile. On an account with
+// steady traffic (realtime push + the 30s tick) a poll is often in flight, so a
+// genuinely stuck bid could survive load after load without ever being
+// reconciled, the reconcile wasn't failing, it was never being reached.
+let _reconcileRequested=false;
 async function checkNewSignatures(_src){
+  if(!_sigPollWatermark)_reconcileRequested=true;
   // Coalescing guard: a call landing while another run is in flight must NOT be
   // dropped: with the sig-feed push handler firing on every account-wide insert,
   // a push-triggered run can hold the busy flag at the exact moment the 30s tick
@@ -5046,6 +5234,7 @@ async function checkNewSignatures(_src){
       .order('signed_at',{ascending:false})
       .limit(100);
     let data,error;
+    const _wasFullPoll=!_sigPollWatermark;
     if(_sigPollWatermark){
       // Delta poll: INSERTs land with updated_at=now(); every mutation the loop
       // below cares about (cancellation, remote CO signing, payment-status flip)
@@ -5093,7 +5282,7 @@ async function checkNewSignatures(_src){
             const _ctotal=_cpaid.reduce((t,p)=>t+p.amount,0);
             const _hasRefund=(typeof payments!=='undefined'?payments:[]).some(p=>p.bid_id===bid.id&&p._cancelRefund);
             if(_ctotal>0&&!_hasRefund){
-              payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund: client cancelled within rescission window'});
+              payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),loggedAt:new Date().toISOString(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund: client cancelled within rescission window'});
             }
             changed=true;
             const _isStripe=s.payment_method&&s.payment_method!=='cash'&&s.payment_method!=='check';
@@ -5125,38 +5314,10 @@ async function checkNewSignatures(_src){
             coSignedAlerts.push({client:s.client_name||'Client',coNum:lc.coNum,newTotal:bid.amount,clientId:bid.client_id});
           }
         }
-        if(s.payment_status==='declined'){
-          // Client declined, mark as Closed Lost, not Closed Won
-          if(bid.status!=='Closed Lost'){
-            bid.status='Closed Lost';bid.draft=false;
-            bid.declinedAt=s.signed_at;
-            changed=true;
-          }
-          // Client-picked reason (sign.html's decline modal), same field a
-          // contractor's own manual "Mark Lost" action populates, so it shows
-          // up in the Declined tab / dashboard with no new UI needed.
-          if(s.decline_reason&&bid.lostReason!==s.decline_reason){
-            bid.lostReason=s.decline_reason;bid.lostAt=bid.lostAt||s.signed_at;
-            changed=true;
-          }
-        } else {
-          if(bid.status!=='Closed Won'){
-            // Always fix the status regardless of seenCache, data may have been reset
-            bid.status='Closed Won';bid.draft=false;
-            bid.signedAt=s.signed_at;
-            bid.signedName=s.client_signed_name||s.client_name;
-            bid.paymentMethod=s.payment_method;
-            changed=true;
-            if(!alreadySeen){
-              alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
-            }
-          }
-          // Refresh signature metadata even when already won, the signature image and
-          // EPA ack can land after the status flip (or the DB columns were added later).
-          if(s.signature_data&&bid.signatureData!==s.signature_data){bid.signatureData=s.signature_data;changed=true;}
-          if(s.epa_ack_at&&bid.epaAckAt!==s.epa_ack_at){bid.epaAckAt=s.epa_ack_at;changed=true;}
-          if(s.client_signed_name&&!bid.signedName){bid.signedName=s.client_signed_name;changed=true;}
-          if(s.signed_at&&!bid.signedAt){bid.signedAt=s.signed_at;changed=true;}
+        const _wasWon=bid.status==='Closed Won';
+        if(_applySigStatusToBid(bid,s))changed=true;
+        if(s.payment_status!=='declined'&&!_wasWon&&bid.status==='Closed Won'&&!alreadySeen){
+          alerts.push({name:s.client_name||'Client',bidId:bid.id,clientId:bid.client_id,isPaid:s.payment_status==='paid'});
         }
         if(!alreadySeen)newSeen.push(key);
       }
@@ -5181,6 +5342,12 @@ async function checkNewSignatures(_src){
         if(!window._showingScheduleAlert)setTimeout(showScheduleAlerts,400);
       }
     }
+    // Once per fresh load only, piggybacking on the full poll: catches any bid
+    // still stuck "Pending" that this poll's own 100-row/watermark window can't
+    // reach. Fire-and-forget, it has its own error handling and never blocks
+    // _checkSigsBusy.
+    try{(window._reconcileTrace=window._reconcileTrace||[]).push((Date.now()%1000000)+' gate full='+_wasFullPoll+' req='+_reconcileRequested);}catch(_e){}
+    if(_wasFullPoll||_reconcileRequested){_reconcileRequested=false;_reconcilePendingSigStatuses();}
   }catch(e){console.warn('checkNewSignatures:',e);}finally{
     _checkSigsBusy=false;
     if(_checkSigsPending){_checkSigsPending=false;checkNewSignatures(_src);}
@@ -5236,7 +5403,7 @@ async function _fetchProposalViews(){
       data.forEach(v=>{if(v.updated_at&&(!_pvPollWatermark||v.updated_at>_pvPollWatermark))_pvPollWatermark=v.updated_at;});
       // Build into temporaries first, then swap atomically, prevents a renderDash()
       // mid-flight from seeing an empty dict during the rebuild window (flicker race).
-      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={};
+      const _pvBid={},_pvHub={},_pvClient={},_pvCon={},_pvHubCnt={},_pvCliCnt={},_pvStep={},_pvStepAt={},_pvCliIp={},_pvHubIp={};
       data.forEach(v=>{
         if(!v.bid_id)return;
         if(!_pvBid[v.bid_id])_pvBid[v.bid_id]=v.opened_at;
@@ -5246,6 +5413,9 @@ async function _fetchProposalViews(){
         if(v.hub_view_count)_pvHubCnt[v.bid_id]=(v.hub_view_count||0);
         if(v.client_view_count)_pvCliCnt[v.bid_id]=(v.client_view_count||0);
         if(v.furthest_step&&!_pvStep[v.bid_id]){_pvStep[v.bid_id]=v.furthest_step;_pvStepAt[v.bid_id]=v.furthest_step_at||null;}
+        // Audit: the IP/device the client opened from (proposal + hub), for the audit report.
+        if(v.client_ip&&!_pvCliIp[v.bid_id])_pvCliIp[v.bid_id]={ip:v.client_ip,ua:v.client_ua||null};
+        if(v.hub_ip&&!_pvHubIp[v.bid_id])_pvHubIp[v.bid_id]={ip:v.hub_ip,ua:v.hub_ua||null};
       });
       // Render ONLY when the view data actually changed. This fetch runs after every
       // load (setTimeout 1500) and on a 30s interval, an unconditional renderDash()
@@ -5263,8 +5433,24 @@ async function _fetchProposalViews(){
       _proposalViewsByBidClientCount=_pvCliCnt;
       _proposalViewsByBidStep=_pvStep;
       _proposalViewsByBidStepAt=_pvStepAt;
+      _proposalViewsByBidClientIp=_pvCliIp;
+      _proposalViewsByBidHubIp=_pvHubIp;
       if(_pvChanged)renderDash();
     }
+    // Per-event audit log (every open + sign-flow step, each with its own timestamp
+    // + captured IP) for the client-record audit timeline and exportable report.
+    try{
+      const{data:_ae}=await _supa.from('proposal_audit_events')
+        .select('bid_id,event,ip_address,user_agent,ts')
+        .eq('contractor_user_id',_supaUser.id)
+        .order('ts',{ascending:false})
+        .limit(1500);
+      if(_ae){
+        const _byBid={};
+        _ae.forEach(r=>{if(!r.bid_id)return;(_byBid[r.bid_id]||(_byBid[r.bid_id]=[])).push({event:r.event,ts:r.ts,ip:r.ip_address||null,ua:r.user_agent||null});});
+        _proposalAuditEventsByBid=_byBid;
+      }
+    }catch(_e){}
   }catch(e){}
 }
 // Sign-flow warmth badge, one line telling the contractor how far the client
@@ -5390,7 +5576,7 @@ function showScheduleSuggestion(clientId,bidId,clientNameFallback){
 
   const startKey=getNextAvailForBid(bid);
   const endKey=_jobEndDate(startKey,days,allowWknd);
-  const fmtD=k=>parseD(k).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  const fmtD=k=>parseD(k).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const startLabel=fmtD(startKey);
   const endLabel=startKey===endKey?'':' – '+fmtD(endKey);
   const rangeLabel=startLabel+endLabel+(days>1?' ('+days+' days)':'');
@@ -5434,16 +5620,17 @@ function quickScheduleJob(bidId,startKey,clientId){
     id:Date.now(),bid_id:bidId,client_id:clientId||bid.client_id,
     name,addr:bid.addr||'',start:startKey,days,buffer:1,
     value:bid.amount||0,color:'#185FA5',eventType:'job',
-    time:'',hours:null,notes:bid.notes||'',status:'upcoming'
+    time:'',hours:null,notes:bid.notes||'',status:'upcoming',
+    loggedAt:new Date().toISOString()
   });
   saveAll();renderDash();renderJobsPage&&renderJobsPage();
   window._currentScheduleAlert=null;
   document.getElementById('sched-suggest-overlay')?.remove();
-  showToast(name+' scheduled for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}),'📅');
+  showToast(name+' scheduled for '+parseD(startKey).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}),'📅');
   const _nextAlerts=JSON.parse(localStorage.getItem('zp3_schedule_alerts')||'[]');
   const _moreStr=_nextAlerts.length?' · '+_nextAlerts.length+' more client'+(_nextAlerts.length>1?'s':'')+' to schedule':'';
   // Offer to go to calendar, then chain to next alert either way
-  setTimeout(()=>zConfirm('Job locked in for '+parseD(startKey).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'.'+_moreStr+'\n\nView on calendar?',
+  setTimeout(()=>zConfirm('Job locked in for '+parseD(startKey).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'.'+_moreStr+'\n\nView on calendar?',
     ()=>{goPg('pg-cal');setTimeout(showScheduleAlerts,600);},
     {title:svgIcon('✓')+' Scheduled!',yes:'View calendar',no:_nextAlerts.length?'Next client ('+_nextAlerts.length+')':'Done',danger:false,
     onNo:()=>setTimeout(showScheduleAlerts,300)}),400);
@@ -5945,7 +6132,7 @@ async function supaLoadFromCloud({silent=false}={}){
       // deployed) = silent no-op. S.autoArchive===false opts out.
       if(!_isEmployee&&!_devSupportMode&&S.autoArchive!==false){
         setTimeout(()=>{try{
-          const _amKey='zp3_archive_month',_amCur=new Date().toISOString().slice(0,7);
+          const _amKey='zp3_archive_month',_amCur=todayKey().slice(0,7);
           if(localStorage.getItem(_amKey)!==_amCur){
             localStorage.setItem(_amKey,_amCur);
             _supa.rpc('archive_old_records').then(({data})=>{
@@ -6410,7 +6597,7 @@ function _inboundReviewHTML(){
 async function _promoteInbound(id){
   const row=_pendingInbound.find(x=>x.id===id);if(!row)return;
   // Create client record
-  const newClient={id:Date.now(),name:row.name||'Unknown',phone:row.phone||'',email:'',addr:row.addr||'',ptype:'Single family home',source:'QR form',ref:'',notes:row.notes||'',created:todayKey(),extraAddresses:[],clientToken:'',clientHubKey:''};
+  const newClient={id:Date.now(),name:row.name||'Unknown',phone:row.phone||'',email:'',addr:row.addr||'',ptype:'Single family home',source:'QR form',ref:'',notes:row.notes||'',created:todayKey(),createdAt:new Date().toISOString(),extraAddresses:[],clientToken:'',clientHubKey:''};
   clients.push(newClient);_ensureClientToken(newClient.id);
   saveAll();
   // Mark inbound as applied
@@ -6741,7 +6928,7 @@ function showDailyBriefing(){
 
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';
-  const todayFmt=new Date(tk+'T12:00').toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  const todayFmt=new Date(tk+'T12:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">'+
       '<div>'+

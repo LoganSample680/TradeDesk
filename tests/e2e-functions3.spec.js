@@ -586,7 +586,7 @@ test.describe('Utility and formatting functions', () => {
     const result = await page.evaluate(() => {
       if (typeof fmtDateShort !== 'function') return { skip: true };
       const r = fmtDateShort('2026-01-15');
-      return { ok: typeof r === 'string' && r.includes('Jan') };
+      return { ok: typeof r === 'string' && r.includes('01/15/2026') };
     });
     if (!result.skip) expect(result.ok).toBe(true);
   });
@@ -1926,13 +1926,19 @@ test.describe('Client detail tab and notes functions', () => {
     expect(result.modalGoneAfterSave).toBe(true);
   });
 
-  test('toggleTlGroup: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof toggleTlGroup !== 'function') return { skip: true };
-      try { toggleTlGroup('tl-2025'); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
+  // The Activity timeline now uses the shared Books month/day accordion
+  // (_bkMonthAcc + _bkRenderDays + _bkTogMonth/_bkTogDay), so the old bespoke
+  // day-group toggle is gone. Assert the removal so nobody reintroduces a second
+  // accordion implementation.
+  test('toggleTlGroup: removed, the timeline uses the shared Books accordion', async () => {
+    const r = await page.evaluate(() => ({
+      gone: typeof toggleTlGroup === 'undefined',
+      sharedMonth: typeof _bkMonthAcc === 'function',
+      sharedDay: typeof _bkRenderDays === 'function',
+    }));
+    expect(r.gone).toBe(true);
+    expect(r.sharedMonth).toBe(true);
+    expect(r.sharedDay).toBe(true);
   });
 
   test('renderCDExpenses: calls without throwing', async () => {
@@ -2545,6 +2551,132 @@ test.describe('Settings license, schedule, contract, and vehicle functions', () 
         const r = getBookedDays();
         return { ok: typeof r === 'object' };
       } catch (e) { return { ok: true, note: e.message }; }
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  // ── _jobActiveOn: real-date-range "is this job happening on this day" check ──
+  test('_jobActiveOn: null/undefined job returns false', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _jobActiveOn !== 'function') return { skip: true };
+      const tk = todayKey();
+      return { ok: _jobActiveOn(null, tk) === false && _jobActiveOn(undefined, tk) === false };
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_jobActiveOn: job with no start date returns false', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _jobActiveOn !== 'function') return { skip: true };
+      const tk = todayKey();
+      return { ok: _jobActiveOn({ id: 1, days: 1 }, tk) === false };
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_jobActiveOn: completed/cancelled jobs are never active regardless of date range', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _jobActiveOn !== 'function') return { skip: true };
+      const tk = todayKey();
+      const done = _jobActiveOn({ start: tk, days: 1, status: 'done' }, tk);
+      const cancelled = _jobActiveOn({ start: tk, days: 1, cancelled: true }, tk);
+      const completionDate = _jobActiveOn({ start: tk, days: 1, completion_date: tk }, tk);
+      return { ok: !done && !cancelled && !completionDate };
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_jobActiveOn: single-day job is active only on that exact day (boundary)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _jobActiveOn !== 'function' || typeof addDays !== 'function') return { skip: true };
+      const tk = todayKey();
+      const yesterday = addDays(tk, -1);
+      const tomorrow = addDays(tk, 1);
+      const j = { start: tk, days: 1 };
+      return {
+        ok: _jobActiveOn(j, tk) === true &&
+            _jobActiveOn(j, yesterday) === false &&
+            _jobActiveOn(j, tomorrow) === false,
+      };
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_jobActiveOn: multi-day job is active across its whole span, not just the start day', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _jobActiveOn !== 'function' || typeof addDays !== 'function') return { skip: true };
+      const tk = todayKey();
+      const j = { start: tk, days: 5 };
+      const midSpan = addDays(tk, 2);
+      const lastDay = addDays(tk, 4);
+      const pastEnd = addDays(tk, 5);
+      return {
+        ok: _jobActiveOn(j, tk) === true &&
+            _jobActiveOn(j, midSpan) === true &&
+            _jobActiveOn(j, lastDay) === true &&
+            _jobActiveOn(j, pastEnd) === false,
+      };
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  test('_jobActiveOn: missing days field defaults to a 1-day job', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof _jobActiveOn !== 'function') return { skip: true };
+      const tk = todayKey();
+      return { ok: _jobActiveOn({ start: tk }, tk) === true };
+    });
+    if (!result.skip) expect(result.ok).toBe(true);
+  });
+
+  // ── getBookedDaysForCrew: per-crew booking, the multi-crew scheduling gate ──
+  test('getBookedDaysForCrew: falsy empId only counts unassigned jobs (the owner/solo pool)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof getBookedDaysForCrew !== 'function') return { skip: true };
+      const tk = todayKey();
+      const origJobs = jobs.slice();
+      try {
+        jobs.length = 0;
+        // allowWeekend:true keeps this deterministic regardless of what day of
+        // the week the suite happens to run on (getJobWorkDays skips weekends
+        // otherwise, which would silently shift the booked day off `tk`).
+        jobs.push({ id: 88801, start: tk, days: 1, status: 'upcoming', allowWeekend: true }); // unassigned
+        jobs.push({ id: 88802, start: tk, days: 1, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-x' }); // assigned to someone else
+        const { booked } = getBookedDaysForCrew(null);
+        return { ok: true, hasUnassigned: booked.has(tk) };
+      } finally { jobs.length = 0; jobs.push(...origJobs); }
+    });
+    if (!result.skip) expect(result.hasUnassigned).toBe(true);
+  });
+
+  test('getBookedDaysForCrew: two crews on the same day do not block each other (the whole point of per-crew booking)', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof getBookedDaysForCrew !== 'function') return { skip: true };
+      const tk = todayKey();
+      const origJobs = jobs.slice();
+      try {
+        jobs.length = 0;
+        jobs.push({ id: 88803, start: tk, days: 1, status: 'upcoming', allowWeekend: true, assignedTo: 'crew-a' });
+        const crewA = getBookedDaysForCrew('crew-a');
+        const crewB = getBookedDaysForCrew('crew-b');
+        return { ok: true, crewABooked: crewA.booked.has(tk), crewBFree: !crewB.booked.has(tk) };
+      } finally { jobs.length = 0; jobs.push(...origJobs); }
+    });
+    if (!result.skip) {
+      expect(result.crewABooked).toBe(true);
+      expect(result.crewBFree).toBe(true);
+    }
+  });
+
+  test('getBookedDaysForCrew: empty jobs array returns empty booked/buf sets', async () => {
+    const result = await page.evaluate(() => {
+      if (typeof getBookedDaysForCrew !== 'function') return { skip: true };
+      const origJobs = jobs.slice();
+      try {
+        jobs.length = 0;
+        const { booked, buf } = getBookedDaysForCrew('crew-empty');
+        return { ok: booked.size === 0 && buf.size === 0 };
+      } finally { jobs.length = 0; jobs.push(...origJobs); }
     });
     if (!result.skip) expect(result.ok).toBe(true);
   });
@@ -4139,24 +4271,15 @@ test.describe('Finance tracker, export, and calendar functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
-  test('buildColorRow: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof buildColorRow !== 'function') return { skip: true };
-      try {
-        const r = buildColorRow('painting', '#3a7bd5', 5000);
-        return { ok: typeof r === 'string' || r === undefined };
-      } catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
-  });
-
-  test('selColor: calls without throwing', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof selColor !== 'function') return { skip: true };
-      try { selColor('#ff0000'); return { ok: true }; }
-      catch (e) { return { ok: true, note: e.message }; }
-    });
-    if (!result.skip) expect(result.ok).toBe(true);
+  test('buildColorRow / selColor: removed, the custom job-color picker they built was permanently display:none and unreachable by any click path', async () => {
+    const result = await page.evaluate(() => ({
+      buildColorRow: typeof buildColorRow === 'function',
+      selColor: typeof selColor === 'function',
+      colorRowEl: !!document.getElementById('s-color-row'),
+    }));
+    expect(result.buildColorRow).toBe(false);
+    expect(result.selColor).toBe(false);
+    expect(result.colorRowEl).toBe(false);
   });
 
   test('avPrev: calls without throwing', async () => {

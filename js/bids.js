@@ -34,7 +34,7 @@ function renderCDOpportunities(){
           '<div style="font-size:11px;color:var(--text3)">'+m.label+(o.notes?' · '+escHtml((o.notes||'').substring(0,40)):'')+'</div></div>'+
         '</div>'+
         '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:8px">'+
-          '<button class="btn btn-sm btn-p" onclick="convertOpportunityToEstimate('+o.id+')" style="font-size:11px">→ Estimate</button>'+
+          '<button class="btn btn-sm btn-p" onclick="convertOpportunityToEstimate('+o.id+')" style="font-size:11px">→ Proposal</button>'+
           ''+
         '</div>'+
       '</div>';
@@ -88,7 +88,7 @@ function renderCDEstimatesUpcoming(){
   const upcoming=getClientJobs(currentClientId).filter(j=>j.eventType==='estimate'&&j.status!=='canceled'&&j.start>=tk);
   if(!upcoming.length){el.innerHTML='';return;}
   el.innerHTML=upcoming.map(j=>{
-    const dt=parseD(j.start).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+    const dt=parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
     return '<div style="background:#F0EEFF;border:2px solid #7F77DD;border-radius:var(--rl);padding:14px;margin-bottom:10px">'+
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div>'+
@@ -551,8 +551,8 @@ function sendBidEmail(bidId){
   const firstName=(b.client_name||b.name||'').split(' ')[0]||'there';
   const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
-  const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
-  const expD=b.bid_date?new Date(new Date(b.bid_date+'T12:00:00').getTime()+30*86400000).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'30 days from now';
+  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const expD=b.bid_date?new Date(new Date(b.bid_date+'T12:00:00').getTime()+30*86400000).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'30 days from now';
   const PAINT={'std':'Standard (Behr/Valspar)','prem':'Sherwin-Williams Premium','ultra':'SW Emerald Ultra'};
   const paintL=(b.paint?PAINT[b.paint]:null)||'Premium Sherwin-Williams';
   const surfs=b.surfaces||[];
@@ -560,7 +560,7 @@ function sendBidEmail(bidId){
     const item=SCOPE_ITEMS.find(s=>s.id===k);return item?item.label:k;
   }).join(', '):'Sanding, Spackle/patching, Two-coat finish';
   const NL='\n';
-  const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+(s.qty||0).toLocaleString()+' sf').join(NL):'  See attached estimate';
+  const lineItems=surfs.length?surfs.map(s=>'  - '+s.room+': '+(s.qty||0).toLocaleString()+' sf').join(NL):'  See attached proposal';
   // Use plain ASCII dashes, Unicode box-drawing chars trigger corporate spam filters
   const SEP='-------------------------------------'+NL;
   // Build signing link if this bid has already been sent as a proposal
@@ -669,7 +669,7 @@ function toggleBidSummary(bidId){
     return html;
   })();
   panel.innerHTML=
-    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Bid details</div>'+
+    '<div style="font-size:10px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Proposal details</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">'+
       (b.paint?'<div><div style="font-size:10px;text-transform:uppercase;color:var(--text3)">Paint</div><div style="font-size:12px;font-weight:700">'+(PAINT[b.paint]||b.paint)+'</div></div>':'')+
       (b.cond?'<div><div style="font-size:10px;text-transform:uppercase;color:var(--text3)">Condition</div><div style="font-size:12px;font-weight:700">'+(COND[b.cond]||b.cond)+'</div></div>':'')+
@@ -690,7 +690,7 @@ function printInvoice(bidId){
   const bname=S.bname||'TradeDesk';
   const bphone=S.bphone||'';
   const blic=S.blic||'';
-  const today=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const today=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const invoiceNum='INV-'+String(bidId).slice(-6);
 
   const html=`<!DOCTYPE html>
@@ -745,7 +745,7 @@ function printInvoice(bidId){
   <div>
     <div class="section-label">Job details</div>
     <div class="client-detail"><strong>Type:</strong> ${escHtml(b.type||'Painting job')}</div>
-    <div class="client-detail"><strong>Bid date:</strong> ${b.bid_date||''}</div>
+    <div class="client-detail"><strong>Proposal date:</strong> ${b.bid_date||''}</div>
     ${b.completion_date?`<div class="client-detail"><strong>Completed:</strong> ${b.completion_date}</div>`:''}
   </div>
 </div>
@@ -806,13 +806,17 @@ function openFinalInvoice(bidId){
   if(!b.completion_date){
     const linkedJob=jobs.find(j=>j.bid_id===b.id);
     if(linkedJob){markJobDone(linkedJob.id);return;} // existing close-job flow (handles the price-adjustment+signature gate)
-    b.completion_date=todayKey();saveAll();
+    b.completion_date=todayKey();b.completedAt=new Date().toISOString();saveAll();
   }
   printInvoice(bidId);
   setTimeout(()=>openPayPanel(bidId,'final'),400);
 }
 function getBidLien(bidId){return liens.find(l=>l.bid_id===bidId);}
-function daysSince(dateStr){if(!dateStr)return 0;const d=new Date(dateStr+'T00:00:00Z');if(isNaN(d.getTime()))return 0;const now=new Date();const todayUTC=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),now.getUTCDate());return Math.round((todayUTC-d.getTime())/86400000);}
+function daysSince(dateStr){if(!dateStr)return 0;const d=parseD(dateStr);if(isNaN(d.getTime()))return 0;
+  // Both sides local, anchored at noon (parseD) so a DST shift can't round to an
+  // off-by-one day. Comparing a local day key against UTC today read a day late
+  // every evening west of UTC.
+  return Math.round((parseD(todayKey()).getTime()-d.getTime())/86400000);}
 function payStatus(bid){
   const paid=getBidPaid(bid.id),total=bid.amount||0,balance=total-paid;
   if(!total)return{label:'Paid in full',cls:'bdg-paid',color:'var(--green)'};
@@ -860,7 +864,7 @@ function openPayPanel(bidId, autoType){
   const overpaidBanner=overpaidAmt>0.01
     ?'<div style="background:#FFF3CD;border:1px solid #FFC107;border-radius:var(--r);padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">'+
         '<div><div style="font-size:13px;font-weight:700;color:#856404">'+svgIcon('⚠',{size:13})+' Refund owed</div>'+
-        '<div style="font-size:11px;color:#856404">Client paid '+fmt(rawPaid)+' but bid is now '+fmt(total)+'. Refund: <strong>'+fmt(overpaidAmt)+'</strong></div></div>'+
+        '<div style="font-size:11px;color:#856404">Client paid '+fmt(rawPaid)+' but proposal is now '+fmt(total)+'. Refund: <strong>'+fmt(overpaidAmt)+'</strong></div></div>'+
       '</div>'
     :'';
   const showFinalOnly=autoType==='final';
@@ -1072,7 +1076,7 @@ function _submitCancellationRefund(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   if(refund>0){
     payments.push({id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
-      date:pdate,type:'refund',amount:-refund,method:'',ref:'Cancellation: materials: '+fmt(mat)});
+      date:pdate,loggedAt:new Date().toISOString(),type:'refund',amount:-refund,method:'',ref:'Cancellation: materials: '+fmt(mat)});
   }
   bid.status='Abandoned';bid.draft=false;
   saveAll();
@@ -1095,7 +1099,7 @@ function openCloseOutEstimate(bidId){
   box.style.cssText='animation:td-modal-enter .22s cubic-bezier(.22,1,.36,1) both';
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'+
-      '<div style="font-size:16px;font-weight:800">Close out estimate</div>'+
+      '<div style="font-size:16px;font-weight:800">Close out proposal</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3)">×</button>'+
     '</div>'+
     '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:14px">Mark <strong>'+escHtml(c.name)+'</strong>’s '+fmt(b.amount||0)+' proposal as lost. It moves to the Declined tab and stops counting against your close rate as pending.</div>'+
@@ -1104,7 +1108,7 @@ function openCloseOutEstimate(bidId){
       LOST_REASONS.map(r=>'<option value="'+escHtml(r)+'">'+escHtml(r)+'</option>').join('')+
     '</select>'+
     '<label style="display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Note (optional)</label>'+
-    '<textarea id="_co-note" rows="2" placeholder="e.g. went with a cheaper bid from a friend" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:16px"></textarea>'+
+    '<textarea id="_co-note" rows="2" placeholder="e.g. went with a cheaper proposal from a friend" style="width:100%;box-sizing:border-box;padding:10px 12px;font-size:13px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:16px"></textarea>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
       '<button onclick="_submitCloseOutEstimate('+bidId+')" style="flex:2;padding:12px;border-radius:var(--r);border:none;background:#A32D2D;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Mark as lost</button>'+
@@ -1128,7 +1132,7 @@ function _submitCloseOutEstimate(bidId){
   if(typeof renderDash==='function')renderDash();
   if(typeof renderCDBids==='function')try{renderCDBids();}catch(e){}
   if(typeof renderClientDetail==='function')try{renderClientDetail();}catch(e){}
-  showToast('Estimate closed out, marked lost','✓');
+  showToast('Proposal closed out, marked lost','✓');
 }
 function reopenEstimate(bidId){
   const b=bids.find(x=>x.id===bidId);if(!b)return;
@@ -1140,7 +1144,7 @@ function reopenEstimate(bidId){
   document.querySelector('[data-bdov]')?.remove();
   if(typeof renderProposalsPage==='function')renderProposalsPage();
   if(typeof renderDash==='function')renderDash();
-  showToast('Estimate reopened, back to awaiting signature','↩');
+  showToast('Proposal reopened, back to awaiting signature','↩');
 }
 function selectPayType(btn, bidId){
   // Deselect all, keep collect button green but dimmed
@@ -1250,7 +1254,7 @@ async function _issueCardRefund(bidId,amount,bid){
     if(!res.ok||!d.refund)throw new Error(d.error||'Refund failed');
     const refAmt=d.refund.amount;
     if(!payments.some(p=>p.ref===d.refund.id)){
-      payments.push({id:Date.now(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:new Date().toISOString().slice(0,10),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
+      payments.push({id:Date.now(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:todayKey(),loggedAt:new Date().toISOString(),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
       saveAll();
     }
     renderCDBids&&renderCDBids();renderDash&&renderDash();renderMoneyPage&&renderMoneyPage();refreshCollectLabel&&refreshCollectLabel();
@@ -1311,9 +1315,22 @@ function logPayment(){
     }
   }
   const storedAmount=isRefund?-a:a;
-  payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,type:type,amount:storedAmount,method:pmethod,ref:pref});
+  payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,loggedAt:new Date().toISOString(),type:type,amount:storedAmount,method:pmethod,ref:pref});
   const _savedBidId=activePayBidId;
-  saveAll();emitEvent('payment_received',bid.client_id,{bid_id:activePayBidId,amount:storedAmount});closePayPanel();renderCDBids();renderCDTimeline();
+  saveAll();emitEvent('payment_received',bid.client_id,{bid_id:activePayBidId,amount:storedAmount});
+  // Payments repeat, so they are not deduped. balance_settled fires once, when
+  // this payment is the one that clears the job, which is the metric for "how
+  // long until clients settle up".
+  try{
+    if(typeof logLifecycle==='function'){
+      logLifecycle('payment_received',{bidId:activePayBidId,clientId:bid.client_id,once:false,meta:{amount:storedAmount}});
+      const _paid=(typeof payments!=='undefined'?payments:[]).filter(p=>p.bid_id===activePayBidId)
+        .reduce((t,p)=>t+(p.amount||0),0);
+      if((bid.amount||0)>0&&_paid>=(bid.amount||0)-0.01)
+        logLifecycle('balance_settled',{bidId:activePayBidId,clientId:bid.client_id});
+    }
+  }catch(_e){}
+  closePayPanel();renderCDBids();renderCDTimeline();
 
   if(isRefund){
     const banner=document.createElement('div');
@@ -1472,7 +1489,7 @@ function viewBidFromTimeline(bidId){
 
 function deleteBid(bidId){
   const b=bids.find(x=>x.id===bidId);
-  zConfirm('Delete this bid'+(b?' ('+fmt(b.amount)+')':'')+' permanently? Payment records and any lien will also be removed.',()=>{
+  zConfirm('Delete this proposal'+(b?' ('+fmt(b.amount)+')':'')+' permanently? Payment records and any lien will also be removed.',()=>{
     const _cid=b?.client_id;
     _userDelete(()=>{
       bids=bids.filter(x=>x.id!==bidId);
@@ -1482,7 +1499,7 @@ function deleteBid(bidId){
     });
     renderClientDetail();
     if(_cid)_uploadClientHub(_cid).catch(e=>console.error('[hub upload]',e));
-  },{title:'Delete bid',yes:'Delete permanently',danger:true});
+  },{title:'Delete proposal',yes:'Delete permanently',danger:true});
 }
 async function saveLien(){
   if(!activeLienBidId)return;
@@ -1597,7 +1614,7 @@ function _doCollSMS(phone,encodedMsg,bid,newStage,label){
 }
 function _markCollSMSSent(bid,newStage,label){
   if(!bid)return;
-  setBidCollStage(bid,newStage,label+' SMS sent, '+new Date().toLocaleDateString());
+  setBidCollStage(bid,newStage,label+' SMS sent, '+new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}));
   if(!bid.collHistory)bid.collHistory=[];
   bid.collHistory.push({stage:newStage,note:label+' sent',ts:new Date().toISOString(),method:'sms'});
   autoLogContact(bid.client_id,'collection_sms');

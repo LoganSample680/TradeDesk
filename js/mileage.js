@@ -324,6 +324,7 @@ function saveEndDriveModal(){
   const c=getClientById(gps.clientId);
   mileage.unshift({
     id:Date.now(),date:todayKey(),vehicle:gps.vehicle,purpose:gps.purpose,
+    loggedAt:new Date().toISOString(),
     miles:Math.round(miles*10)/10,
     client_id:gps.clientId,client_name:c?c.name:'',
     start_coords:gps.startCoords||null,
@@ -774,18 +775,29 @@ function _tripDestSearch(val){
 }
 async function _selectTripClient(clientId){
   const c=clients.find(x=>x.id===clientId);if(!c)return;
-  const inp=document.getElementById('lm-to');if(inp)inp.value=c.addr||'';
   const box=document.getElementById('lm-to-sugg');if(box)box.style.display='none';
+  const h=document.getElementById('lm-client');if(h)h.value=c.id;
+  // Client has 2+ properties: open the SHARED address picker (same component the
+  // estimate uses) so the drive lands on the right one, then fill. One address:
+  // fill straight through, no extra tap.
+  const addrs=(typeof clientAddresses==='function')?clientAddresses(c):[];
+  if(addrs.length>1&&typeof pickClientAddress==='function'){
+    pickClientAddress(clientId,addr=>_tripFillDest(c,addr));
+    return;
+  }
+  _tripFillDest(c,c.addr||'');
+}
+async function _tripFillDest(c,addr){
+  const inp=document.getElementById('lm-to');if(inp)inp.value=addr||'';
   _lmCoords.to=null;
   const chip=document.getElementById('lm-to-chip');const chipTxt=document.getElementById('lm-to-chip-txt');
-  if(chip&&chipTxt){chipTxt.textContent=c.name+(c.addr?' · '+c.addr:'');chip.style.display='inline-flex';}
-  const h=document.getElementById('lm-client');if(h)h.value=c.id;
+  if(chip&&chipTxt){chipTxt.textContent=c.name+(addr?' · '+addr:'');chip.style.display='inline-flex';}
   const mv=document.getElementById('lm-miles-val');if(mv)mv.value='0';
   const rr=document.getElementById('lm-route-result');if(rr)rr.style.display='none';
   // Geocode address now so calculateAndShowRoute has coordinates ready
-  if(c.addr){
+  if(addr){
     try{
-      const results=await _geocodeAddress(c.addr,1);
+      const results=await _geocodeAddress(addr,1);
       if(results.length)_lmCoords.to={lat:results[0].lat,lng:results[0].lon};
     }catch(e){}
   }
@@ -1089,7 +1101,7 @@ function saveLoggedTrip(){
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
   // Save immediately with 0 miles, background route calc will update
-  const rec={id:Date.now(),date,vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,created_at:new Date().toISOString(),calc_method:'pending'};
+  const rec={id:Date.now(),date,loggedAt:new Date().toISOString(),vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,created_at:new Date().toISOString(),calc_method:'pending'};
   if(_isEmployee){rec.logged_by_id=_supaUser.id;rec.logged_by_name=_employeeRecord?.name||_supaUser.email;}
   mileage.unshift(rec);
   if(cid)autoLogContact(cid,'drive');
@@ -1334,7 +1346,7 @@ function _milRenderClassifyCard(unclassified){
   const next=unclassified[0];
   const fromShort=(next.from_name||next.from||'').split(',')[0].trim()||'Start';
   const toShort=(next.to_name||next.to||'').split(',')[0].trim()||'Destination';
-  const dateStr=next.date?new Date(next.date+'T12:00:00').toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+  const dateStr=next.date?new Date(next.date+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
   el.innerHTML=
     '<div class="mil-classify-card">'+
       '<div class="mil-classify-left">'+
@@ -1437,7 +1449,7 @@ function _milRenderTripList(shown,yr){
             '<div class="mil-day-month">'+monthShort+'</div>'+
           '</div>'+
           '<div>'+
-            '<div class="mil-day-title">'+dateObj.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})+'</div>'+
+            '<div class="mil-day-title">'+dateObj.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'</div>'+
             '<div class="mil-day-sub">'+trips.length+' trip'+(trips.length!==1?'s':'')+' · '+dayMi.toFixed(1)+' mi total'+(needsCount?' · <span style="color:#F59E0B;font-weight:800">'+needsCount+' need'+(needsCount===1?'':'s')+' a purpose</span>':'')+'</div>'+
           '</div>'+
         '</div>'+

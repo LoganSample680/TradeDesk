@@ -202,16 +202,16 @@ function _geoCid(){ return _isEmployee ? _contractorUserId : (_supaUser && _supa
 // since the owner isn't dispatch-assigned but can be on any site.
 function _geoMyJobs(){
   const tk=todayKey();
+  // Owner spec 2026-07-18: crew assignment persists for a job's whole span
+  // (set once at scheduling time), so "is this today's work" is a real date-
+  // range check now (_jobActiveOn, js/settings.js), not "was this employee
+  // freshly reconfirmed for today." A multi-day job assigned once on day 1
+  // now correctly still fences on day 2 and 3 without anyone re-touching it.
   if(_isEmployee){
     const eid=_employeeRecord?.id;
-    return jobs.filter(j=>String(j.assignedTo)===String(eid)&&j.assignedDate===tk&&!j.cancelled&&j.status!=='done');
+    return jobs.filter(j=>String(j.assignedTo)===String(eid)&&_jobActiveOn(j,tk));
   }
-  return jobs.filter(j=>{
-    if(j.cancelled||j.status==='done'||j.completion_date)return false;
-    const start=j.start||j.date||'';if(!start)return false;
-    const end=addDays(start,(parseInt(j.days)||1)-1);
-    return start<=tk&&end>=tk;
-  });
+  return jobs.filter(j=>_jobActiveOn(j,tk));
 }
 async function _geoJobLatLng(j){
   if(_geoJobCoords[j.id])return _geoJobCoords[j.id];

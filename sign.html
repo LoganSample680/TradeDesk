@@ -730,7 +730,7 @@ async function _fetchStorageJson(key){
 // can also reach it from its background signed-status verify.
 function _renderAlreadySigned(_sigRecord){
   const confNum='#CONF-'+String(_prop.id).slice(-6).toUpperCase();
-  const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):'-';
+  const signedDate=_sigRecord?.signed_at?new Date(_sigRecord.signed_at).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'-';
   const payMethod=_sigRecord?.payment_method;
   const payLabel=payMethod==='card'?'Card charged':payMethod==='ach'?'Bank transfer':payMethod==='cash'?'Cash on arrival':payMethod==='check'?'Check':'-';
   document.getElementById('done-title').textContent='Already signed';
@@ -862,7 +862,7 @@ async function init(){
     document.getElementById('hero-client-name').textContent=_prop.clientName||'';
     if(_prop.clientAddr)document.getElementById('hero-client-addr').textContent=_prop.clientAddr;
     document.getElementById('hero-prop-num').textContent='PROP-'+String(_prop.id).slice(-6).toUpperCase();
-    document.getElementById('hero-prop-date').textContent=new Date(_prop.createdAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+    document.getElementById('hero-prop-date').textContent=new Date(_prop.createdAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
     // Sticky bar total
     const stickyTotal=document.getElementById('sticky-total');
     if(stickyTotal)stickyTotal.textContent=fmt(_prop.amount);
@@ -883,7 +883,7 @@ async function init(){
     if(_phc&&_prop.createdAt){
       const _exp=new Date(new Date(_prop.createdAt).getTime()+30*86400000);
       if(_exp>new Date()){
-        _phc.innerHTML=svgIcon('⏳',{size:13})+' This price is held for you until <strong style="color:var(--ink)">&nbsp;'+_exp.toLocaleDateString('en-US',{month:'short',day:'numeric'})+'</strong>';
+        _phc.innerHTML=svgIcon('⏳',{size:13})+' This price is held for you until <strong style="color:var(--ink)">&nbsp;'+_exp.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+'</strong>';
         _phc.style.display='flex';
       }
     }
@@ -1072,7 +1072,7 @@ async function init(){
         const _liso=d=>{const y=d.getFullYear(),mo=String(d.getMonth()+1).padStart(2,'0'),dy=String(d.getDate()).padStart(2,'0');return y+'-'+mo+'-'+dy;};
         const _signFedHols=yr=>{const obs=d=>{const w=d.getDay();if(w===0)d.setDate(d.getDate()+1);else if(w===6)d.setDate(d.getDate()-1);return _liso(d);};const nth=(m,n,wd)=>{const d=new Date(yr,m,1);d.setDate(1+((wd-d.getDay()+7)%7)+(n-1)*7);return _liso(d);};const last=(m,wd)=>{const d=new Date(yr,m+1,0);d.setDate(d.getDate()-((d.getDay()-wd+7)%7));return _liso(d);};return[obs(new Date(yr,0,1)),nth(0,3,1),nth(1,3,1),last(4,1),obs(new Date(yr,5,19)),obs(new Date(yr,6,4)),nth(8,1,1),nth(9,2,1),obs(new Date(yr,10,11)),nth(10,4,4),obs(new Date(yr,11,25))];};
         const _now=new Date();_now.setHours(0,0,0,0);const _dl=new Date(_now);const _hols=[..._signFedHols(_now.getFullYear()),..._signFedHols(_now.getFullYear()+1)];let _bc=0;while(_bc<_cd){_dl.setDate(_dl.getDate()+1);const _ymd=_liso(_dl);if(_dl.getDay()!==0&&!_hols.includes(_ymd))_bc++;}
-        const _deadlineStr=_dl.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+        const _deadlineStr=_dl.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
         _cancelNoticeBody.innerHTML=
           '<strong>Right to cancel:</strong> You may cancel this contract within '+_cd+' business days of signing (deadline: '+_deadlineStr+'). To cancel, send written notice to '+escHtmlN(_bizName)+((_bizPhone)?' at '+escHtmlN(_bizPhone):'')+'. ('+escHtmlN(_cs)+')';
         if(_cancelNotice)_cancelNotice.style.display='block';

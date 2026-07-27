@@ -2264,6 +2264,165 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
     });
   });
 
+  test.describe('Site notes (internal): captured on the estimate, saved to the client, never on the proposal', () => {
+    test('gei-sitenote saves to the CLIENT record, not the bid, and stays out of the client-facing bid.notes', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88820, name: 'Site Note Client', addr: '5 Gate Rd' };
+        clients = clients.filter(x => x.id !== 88820).concat([c]);
+        bids = bids.filter(x => x.client_id !== 88820);
+        openGenericEstimate(c, null, 'general');
+        _geiIsFreeForm = true; _geiIsTM = false;
+        goGeiStep(2); // render the BYO page so the shared #gei-sitenote field mounts
+        document.getElementById('gei-notes').value = 'Client-facing scope + warranty';
+        document.getElementById('gei-sitenote').value = 'Gate code 4412, dog in back';
+        _geiLines = [{ desc: 'Work', qty: 1, rate: 500, total: 500 }];
+        saveGenericEstimate(true);
+        const bid = bids.find(x => x.client_id === 88820);
+        const cl = clients.find(x => x.id === 88820);
+        return {
+          fieldExists: !!document.getElementById('gei-sitenote'),
+          siteOnClient: cl && cl.siteNote,
+          bidNotes: bid && bid.notes,
+          siteLeakedToBid: !!(bid && (bid.notes || '').includes('Gate code')),
+        };
+      });
+      expect(r.fieldExists).toBe(true);
+      expect(r.siteOnClient).toBe('Gate code 4412, dog in back');
+      expect(r.bidNotes).toBe('Client-facing scope + warranty');
+      expect(r.siteLeakedToBid).toBe(false);
+    });
+
+    test('reopening an estimate for that client reloads the site note into the shared field', async () => {
+      const r = await page.evaluate(() => {
+        const c = clients.find(x => x.id === 88820);
+        openGenericEstimate(c, null, 'general');
+        goGeiStep(1); // generic wizard: field lives in step 1 (by the property context)
+        return { loaded: document.getElementById('gei-sitenote').value };
+      });
+      expect(r.loaded).toBe('Gate code 4412, dog in back');
+    });
+
+    test('PRIVACY: the client-facing proposal builder never reads the site note', async () => {
+      const r = await page.evaluate(() => {
+        const proposalSrc = typeof sendGenericProposal === 'function' ? sendGenericProposal.toString() : '';
+        // The compare/preview card the client sees is built from bid.notes only.
+        return {
+          proposalTouchesSite: proposalSrc.includes('gei-sitenote') || proposalSrc.includes('siteNote'),
+        };
+      });
+      expect(r.proposalTouchesSite).toBe(false);
+    });
+
+    test('one code path: the shared site-note field mounts in T&M AND BYO AND the generic wizard', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88821, name: 'Shared Field Client', addr: '9 One Path Rd' };
+        clients = clients.filter(x => x.id !== 88821).concat([c]);
+        const vis = () => { const e = document.getElementById('gei-sitenote'); return !!(e && e.offsetParent !== null); };
+        const ids = () => document.querySelectorAll('#gei-sitenote').length; // exactly one id, never duplicated
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        const tm = { vis: vis(), count: ids() };
+        openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
+        const byo = { vis: vis(), count: ids() };
+        openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = false; goGeiStep(1);
+        const gen = { vis: vis(), count: ids() };
+        return { tm, byo, gen };
+      });
+      for (const mode of ['tm', 'byo', 'gen']) {
+        expect(r[mode].vis, `${mode} field visible`).toBe(true);
+        expect(r[mode].count, `${mode} single id`).toBe(1);
+      }
+    });
+
+    test('typing persists live to the client record (no explicit save needed)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88822, name: 'Live Save Client', addr: '3 Live Rd' };
+        clients = clients.filter(x => x.id !== 88822).concat([c]);
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        _geiSiteNoteInput('Park in the alley, side gate'); // what oninput fires
+        return { onClient: clients.find(x => x.id === 88822).siteNote };
+      });
+      expect(r.onClient).toBe('Park in the alley, side gate');
+    });
+
+    test('placement: the note sits at the TOP of the estimate (before the scope card), by the address', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88823, name: 'Order Client', addr: '7 Order Rd' };
+        clients = clients.filter(x => x.id !== 88823).concat([c]);
+        const precedes = (a, b) => !!(a && b && (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING));
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        const tm = precedes(document.getElementById('gei-sitenote'), document.getElementById('tm-scopecard-wrap'));
+        openGenericEstimate(c, null, 'general'); _geiIsTM = false; _geiIsFreeForm = true; goGeiStep(2);
+        const byo = precedes(document.getElementById('gei-sitenote'), document.getElementById('byo-scopecard-wrap'));
+        return { tm, byo };
+      });
+      expect(r.tm, 'T&M note precedes scope card').toBe(true);
+      expect(r.byo, 'BYO note precedes scope card').toBe(true);
+    });
+
+    test('per-property: two addresses on one client keep separate notes; each auto-loads by address', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88824, name: 'Two Homes LLC', addr: '100 First St' };
+        clients = clients.filter(x => x.id !== 88824).concat([c]);
+        // Note for the primary address, captured on an estimate for it.
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        _geiSiteNoteInput('Lockbox 5590, front porch');
+        // Note for a SECOND property (a bid carrying its own address).
+        const b = { id: 771001, client_id: 88824, client_name: 'Two Homes LLC', addr: '200 Second Ave', amount: 1000 };
+        bids = bids.filter(x => x.id !== 771001).concat([b]);
+        openGenericEstimate(c, b.id, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        const loadedSecondBlank = document.getElementById('gei-sitenote').value; // no note yet for 200 Second Ave
+        _geiSiteNoteInput('Side gate, beware of dog');
+        const cl = clients.find(x => x.id === 88824);
+        // Reopen the FIRST (primary) estimate: should still show the first note, not the second.
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        const reloadedFirst = document.getElementById('gei-sitenote').value;
+        return {
+          loadedSecondBlank,
+          reloadedFirst,
+          first: getSiteNote(cl, '100 First St'),
+          second: getSiteNote(cl, '200 Second Ave'),
+        };
+      });
+      expect(r.loadedSecondBlank).toBe('');                       // second property started blank
+      expect(r.first).toBe('Lockbox 5590, front porch');
+      expect(r.second).toBe('Side gate, beware of dog');
+      expect(r.reloadedFirst).toBe('Lockbox 5590, front porch');  // no cross-property bleed
+    });
+
+    test('edge: a client with NO address still stores/reads a note (legacy single-note fallback)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 88825, name: 'No Address Client' }; // no addr
+        clients = clients.filter(x => x.id !== 88825).concat([c]);
+        setSiteNote(c, undefined, 'Call before arriving');
+        return { read: getSiteNote(c, undefined), legacy: c.siteNote };
+      });
+      expect(r.read).toBe('Call before arriving');
+      expect(r.legacy).toBe('Call before arriving');
+    });
+
+    test('EPA/1978 trigger is per-property: the estimate resolves year built for THIS address', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 88826;
+        const c = { id: cid, name: 'Lead Estimate Co', addr: '1 Modern Ln, Town, KS 60000' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '1 Modern Ln', { yearBuilt: 2008 });       // primary: post-1978
+        setPropertyData(c, '9 Historic Ave', { yearBuilt: 1959 });    // extra: pre-1978
+        const b = { id: 883001, client_id: cid, client_name: 'Lead Estimate Co', addr: '9 Historic Ave, Town, KS 60000', amount: 5000 };
+        bids = bids.filter(x => x.id !== 883001).concat([b]);
+        const pre78ForOpenEstimate = () => { const y = getProperty(c, _geiSiteAddr()).yearBuilt; return !!(y && y < 1978); };
+        // New estimate → primary address (2008): not pre-1978.
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false;
+        const newEstPre78 = pre78ForOpenEstimate();
+        // Editing the bid at the historic address (1959): pre-1978 fires.
+        openGenericEstimate(c, b.id, 'general'); _geiIsTM = true; _geiIsFreeForm = false;
+        const bidEstPre78 = pre78ForOpenEstimate();
+        return { newEstPre78, bidEstPre78, siteAddr: _geiSiteAddr() };
+      });
+      expect(r.newEstPre78).toBe(false);   // primary property is a new build
+      expect(r.bidEstPre78).toBe(true);    // the historic-address estimate triggers the disclosure
+    });
+  });
+
   test.describe('_GEI_MODES / _geiShowSharedChrome: one code path for both estimate pages', () => {
     test('_GEI_MODES registry has tm and byo entries with all keys the shared chrome needs', async () => {
       const r = await page.evaluate(() => {
@@ -3362,6 +3521,247 @@ test.describe('generic-estimate.js: exhaustive coverage', () => {
       // A real .zmodal participates in the overlay's flexbox centering (static
       // position): the old bottom-sheet hardcoded position:fixed to escape it.
       expect(r.sheetPosition).not.toBe('fixed');
+    });
+  });
+
+  test.describe('Address picker: pick the right property at the point of action', () => {
+    test('single-address client: header shows plain address, no picker chip', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96101, name: 'Solo Client', addr: '1 Only St, Town, KS 60000' };
+        clients = clients.filter(x => x.id !== 96101).concat([c]);
+        openGenericEstimate(c, null, 'general'); _geiIsTM = true; _geiIsFreeForm = false; goGeiStep(2);
+        const sub = document.getElementById('tm-page-sub');
+        return { html: sub ? sub.innerHTML : '', addr: _geiSiteAddr() };
+      });
+      expect(r.html.includes('pickClientAddress')).toBe(false); // no chip
+      expect(r.addr).toBe('1 Only St, Town, KS 60000');
+    });
+
+    test('multi-address: choosing T&M opens the picker FIRST, then the estimate stamps the picked property', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96102, name: 'Two Prop', addr: '10 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 Side Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96102).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96102); // no stray drafts → gate opens the builder directly after the pick
+        _geiEditBidId = null;
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'tm');
+        const pickerFirst = !!document.getElementById('_addrpick-ov'); // gate appears before the builder
+        _addrPickChoose(1); // pick the rental
+        return { pickerFirst, addr: _geiSiteAddr(), tmMode: _geiIsTM };
+      });
+      expect(r.pickerFirst).toBe(true);
+      expect(r.addr).toBe('22 Side Ave, Town, KS 60000'); // estimate opens stamped with the pick
+      expect(r.tmMode).toBe(true);                        // and it's the T&M builder
+    });
+
+    test('adding a NEW address at the gate starts a fresh estimate there, never the primary-address draft', async () => {
+      // Owner-reported: with an in-progress estimate under the primary address,
+      // adding a new address at the gate started the estimate under primary. A
+      // draft belongs to one property, so a different/new address must open fresh.
+      const r = await page.evaluate(() => {
+        const c = { id: 96110, name: 'Multi Draft', addr: '10 Primary St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 Rental Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96110).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96110);
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        // Build a NON-EMPTY T&M draft under the primary address.
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(0); goGeiStep(2);
+        const primaryBid = bids.find(b => b.client_id === 96110);
+        primaryBid.amount = 1500; primaryBid.addr = c.addr; saveAll();
+        // Reopen the gate, add a brand-new address, use it.
+        _geiOpenModeEstimate(c, null, 'tm');
+        _addrPickAddNew();
+        document.getElementById('_addrpick-new').value = '77 New Ct, Town, KS 60000';
+        _addrPickSaveNew();
+        const openedBid = bids.find(b => b.id === _geiEditBidId);
+        return { chooser: !!document.getElementById('_gei-draft-chooser'), addr: _geiSiteAddr(),
+          startedFresh: _geiEditBidId !== primaryBid.id, openedBidAddr: openedBid ? openedBid.addr : null,
+          primaryUntouched: primaryBid.amount === 1500 };
+      });
+      expect(r.chooser).toBe(false);                       // no cross-property draft offered
+      expect(r.addr).toBe('77 New Ct, Town, KS 60000');    // estimate is under the NEW address
+      expect(r.startedFresh).toBe(true);                   // a new bid, not the primary draft
+      expect(r.openedBidAddr).toBe('77 New Ct, Town, KS 60000'); // stamped on the bid
+      expect(r.primaryUntouched).toBe(true);               // the primary draft is left intact
+    });
+
+    test('picking an OTHER existing address with a primary draft opens fresh there (no chooser)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96111, name: 'Two Addr Draft', addr: '10 A St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 B St, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96111).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96111);
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(0); goGeiStep(2);
+        const pb = bids.find(b => b.client_id === 96111); pb.amount = 900; pb.addr = c.addr; saveAll();
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(1); // pick the rental
+        return { chooser: !!document.getElementById('_gei-draft-chooser'), addr: _geiSiteAddr() };
+      });
+      expect(r.chooser).toBe(false);
+      expect(r.addr).toBe('22 B St, Town, KS 60000');
+    });
+
+    test('picking the SAME address that has a draft still offers to resume it', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96112, name: 'Same Addr Draft', addr: '10 C St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 D St, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96112).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96112);
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(0); goGeiStep(2);
+        const pb = bids.find(b => b.client_id === 96112); pb.amount = 700; pb.addr = c.addr; saveAll();
+        _geiOpenModeEstimate(c, null, 'tm'); _addrPickChoose(0); // pick the SAME (primary) address
+        const chooser = !!document.getElementById('_gei-draft-chooser');
+        if (chooser) _geiResumeChosenDraft(String(pb.id));
+        return { chooser, addr: _geiSiteAddr() };
+      });
+      expect(r.chooser).toBe(true);                        // same-property draft is offered
+      expect(r.addr).toBe('10 C St, Town, KS 60000');      // resumes under that address
+    });
+
+    test('estimate-type screen stays as the backdrop behind the address gate, then retires when the builder opens', async () => {
+      // Owner: the address picker should sit over the "pick estimate type" screen,
+      // not flash to the dashboard behind it.
+      const r = await page.evaluate(() => {
+        const c = { id: 96115, name: 'Backdrop Co', addr: '10 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 Side Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96115).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96115);
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser, #_style-pick-ov').forEach(e => e.remove());
+        _showEstimateStylePicker(c);
+        const styleUp = !!document.getElementById('_style-pick-ov');
+        _pickEstStyle('tm');                                     // tap T&M -> address gate
+        const gateUp = !!document.getElementById('_addrpick-ov');
+        const backdropStill = !!document.getElementById('_style-pick-ov'); // stays behind the gate
+        _addrPickChoose(1);                                      // pick -> builder opens
+        const sp = document.getElementById('_style-pick-ov');
+        const retired = !sp || sp.style.opacity === '0';         // fading out / gone
+        return { styleUp, gateUp, backdropStill, retired, addr: _geiSiteAddr() };
+      });
+      expect(r.styleUp).toBe(true);
+      expect(r.gateUp).toBe(true);
+      expect(r.backdropStill).toBe(true);   // the estimate-type screen remained as backdrop
+      expect(r.retired).toBe(true);         // and retires once the builder is up
+      expect(r.addr).toBe('22 Side Ave, Town, KS 60000');
+    });
+
+    test('single-address: choosing T&M opens the estimate directly, no picker', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96108, name: 'One Prop', addr: '3 Solo Ln, Town, KS 60000' };
+        clients = clients.filter(x => x.id !== 96108).concat([c]);
+        _geiEditBidId = null;
+        document.querySelectorAll('#_addrpick-ov').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'byo');
+        return { picker: !!document.getElementById('_addrpick-ov'), addr: _geiSiteAddr(), byoMode: _geiIsFreeForm };
+      });
+      expect(r.picker).toBe(false);                      // no gate for a single-address client
+      expect(r.addr).toBe('3 Solo Ln, Town, KS 60000');
+      expect(r.byoMode).toBe(true);
+    });
+
+    test('the property picked at the gate flows to the site note AND the pre-1978 lead trigger', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96103, name: 'Flow Co', addr: '1 New Way, Town, KS 60000',
+          extraAddresses: [{ label: 'Old', addr: '2 Old Way, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96103).concat([c]);
+        bids = bids.filter(b => b.client_id !== 96103);
+        setPropertyData(c, '1 New Way', { yearBuilt: 2005 });
+        setPropertyData(c, '2 Old Way', { yearBuilt: 1948 });
+        _geiEditBidId = null;
+        document.querySelectorAll('#_addrpick-ov, #_gei-draft-chooser').forEach(e => e.remove());
+        _geiOpenModeEstimate(c, null, 'tm');
+        _addrPickChoose(1); // pick the historic property at the gate
+        const y = getProperty(c, _geiSiteAddr()).yearBuilt;
+        return { addr: _geiSiteAddr(), pre78: !!(y && y < 1978) };
+      });
+      expect(r.addr).toBe('2 Old Way, Town, KS 60000');
+      expect(r.pre78).toBe(true); // the pre-1978 property drives the lead disclosure
+    });
+
+    test('pickClientAddress: lists every address + a New-address row; choosing fires the callback', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96104, name: 'Picker Co', addr: '5 First St, Town, KS 60000',
+          extraAddresses: [{ label: 'Two', addr: '6 Second St, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96104).concat([c]);
+        let picked = null;
+        pickClientAddress(96104, a => { picked = a; });
+        const sheet = document.getElementById('_addrpick-sheet');
+        const html = sheet ? sheet.innerHTML : '';
+        const rows = (html.match(/_addrPickChoose\(/g) || []).length;
+        const hasNew = html.includes('New address for this client');
+        _addrPickChoose(1); // choose the second address
+        return { rows, hasNew, picked, sheetGone: !document.getElementById('_addrpick-ov') };
+      });
+      expect(r.rows).toBe(2);
+      expect(r.hasNew).toBe(true);
+      expect(r.picked).toBe('6 Second St, Town, KS 60000');
+      expect(r.sheetGone).toBe(true); // picking closes the sheet
+    });
+
+    test('picker sheet is horizontally centered at mobile, tablet and desktop', async () => {
+      // Left/right gaps must be equal on every form factor. (Vertical centering is
+      // asserted below via the overlay's CSS contract: measuring the sheet's top/
+      // bottom gap after setViewportSize is unreliable in headless chromium, the
+      // resize leaves a ~16px phantom offset that a fresh page load does not show.)
+      for (const vp of [{ w: 390, h: 844 }, { w: 820, h: 1180 }, { w: 1280, h: 800 }]) {
+        await page.setViewportSize({ width: vp.w, height: vp.h });
+        const m = await page.evaluate(() => {
+          document.getElementById('_addrpick-ov')?.remove();
+          const c = { id: 96106, name: 'Center Co', addr: '1 A St, Town, KS 60000',
+            extraAddresses: [{ label: 'B', addr: '2 B St, Town, KS 60000' }] };
+          clients = clients.filter(x => x.id !== 96106).concat([c]);
+          pickClientAddress(96106, () => {});
+          const r = document.getElementById('_addrpick-sheet').getBoundingClientRect();
+          return { gapLeft: r.left, gapRight: window.innerWidth - r.right };
+        });
+        expect(Math.abs(m.gapLeft - m.gapRight)).toBeLessThanOrEqual(1.5);
+      }
+    });
+
+    test('picker overlay is a full-screen flex box that centers its content both axes', async () => {
+      // The vertical-centering guarantee: a fixed inset:0 overlay, flex-centered,
+      // with symmetric top/bottom padding and a single child (the sheet). If any of
+      // these regress, the sheet stops being centered.
+      const cs = await page.evaluate(() => {
+        document.getElementById('_addrpick-ov')?.remove();
+        const c = { id: 96107, name: 'CSS Co', addr: '3 C St, Town, KS 60000',
+          extraAddresses: [{ label: 'D', addr: '4 D St, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96107).concat([c]);
+        pickClientAddress(96107, () => {});
+        const ov = document.getElementById('_addrpick-ov');
+        const s = getComputedStyle(ov);
+        return { position: s.position, display: s.display, alignItems: s.alignItems,
+          justifyContent: s.justifyContent, padTop: parseFloat(s.paddingTop),
+          padBottom: parseFloat(s.paddingBottom), children: ov.children.length,
+          top: ov.getBoundingClientRect().top, bottom: Math.round(ov.getBoundingClientRect().bottom),
+          vh: window.innerHeight };
+      });
+      expect(cs.position).toBe('fixed');
+      expect(cs.display).toBe('flex');
+      expect(cs.alignItems).toBe('center');
+      expect(cs.justifyContent).toBe('center');
+      expect(cs.padTop).toBe(cs.padBottom);            // symmetric vertical padding
+      expect(cs.children).toBe(1);                     // only the sheet, nothing skewing the cross-axis
+      expect(cs.top).toBe(0);                           // overlay fills the viewport top-to-bottom
+      expect(cs.bottom).toBe(cs.vh);
+    });
+
+    test('New address inside the picker: adds it to the client and fires the callback with it', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 96105, name: 'Add Co', addr: '9 Home Rd, Town, KS 60000',
+          extraAddresses: [{ label: 'B', addr: '8 B Rd, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 96105).concat([c]);
+        let picked = null;
+        pickClientAddress(96105, a => { picked = a; });
+        _addrPickAddNew();
+        document.getElementById('_addrpick-new').value = '77 Brand New Ct, Town, KS 60000';
+        _addrPickSaveNew();
+        const cl = clients.find(x => x.id === 96105);
+        return { picked, onClient: (cl.extraAddresses || []).some(a => a.addr === '77 Brand New Ct, Town, KS 60000') };
+      });
+      expect(r.picked).toBe('77 Brand New Ct, Town, KS 60000');
+      expect(r.onClient).toBe(true);
     });
   });
 

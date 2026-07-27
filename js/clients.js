@@ -13,6 +13,12 @@ function openClientDetail(cid,origin){
 // `estimate` team permission. The estimate entry points are greyed for employees
 // without it, and any attempt routes through the request-access popup instead.
 function _canEstimate(){ return !_isEmployee || !!(_employeeRecord&&_employeeRecord.permissions&&_employeeRecord.permissions.estimate); }
+// True for contractors/owners always, and for employees only with the `financials`
+// permission. Gates every dollar figure in the property record (est. value,
+// billed/paid, proposal/job amounts). Mirrors the data-level redaction in
+// _employeeRedactedTables (cloud.js): this is the render-time twin so job values
+// (td_jobs is never redacted) and the property value can't leak to field crew.
+function _canSeeFinancials(){ return !_isEmployee || !!(_employeeRecord&&_employeeRecord.permissions&&_employeeRecord.permissions.financials); }
 
 function openEstimateForClient(){
   // Permission gate FIRST, covers both entry points (dashboard quick action and
@@ -20,15 +26,40 @@ function openEstimateForClient(){
   // request-access popup, never the estimator.
   if(!_canEstimate()){ _showEstimateRequestModal(); return; }
   const c=getClientById(currentClientId);
-  if(!c){showWorkflowGate('Select a client first before starting an estimate.','Choose Client','function(){goPg(\'pg-clients\');}');return;}
+  if(!c){showWorkflowGate('Select a client first before starting a proposal.','Choose Client','function(){goPg(\'pg-clients\');}');return;}
   const r=getClientRisk(c.id);
-  if(r==='blacklisted'){zAlert('This client is blacklisted. Estimates are blocked.',{title:svgIcon('🚫')+' Blocked'});return;}
+  if(r==='blacklisted'){zAlert('This client is blacklisted. Proposals are blocked.',{title:svgIcon('🚫')+' Blocked'});return;}
   if(r==='high_risk'){
-    zConfirm(svgIcon('⚠️')+' This client previously required a lien for payment. Continue with estimate?',
+    zConfirm(svgIcon('⚠️')+' This client previously required a lien for payment. Continue with proposal?',
       ()=>_rrpGateThenEstimate(c),{title:'High risk client',yes:'Proceed',danger:true});
     return;
   }
   _rrpGateThenEstimate(c);
+}
+
+// Client-record action menus. The header keeps only Call/Text/+New/More; these
+// action sheets hold the rest so the top isn't a wall of competing buttons.
+function _cdActionSheet(title,rows){
+  const c=getClientById(currentClientId);if(!c)return;
+  document.querySelectorAll('.zmodal-overlay').forEach(e=>e.remove());
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='340px';
+  const row=r=>'<button onclick="document.querySelector(\'.zmodal-overlay\')?.remove();'+r.act+'" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;padding:14px;border:1px solid var(--border2);border-radius:12px;background:var(--bg2);cursor:pointer;font-family:inherit;font-size:15px;font-weight:700;color:var(--text);margin-bottom:8px">'+svgIcon(r.icon,{size:20})+'<span>'+r.label+'</span></button>';
+  box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">'+escHtml(title)+' · '+escHtml(c.name)+'</div>'+
+    rows.map(row).join('')+
+    '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="width:100%;margin-top:2px">Cancel</button>';
+  ov.appendChild(box);document.body.appendChild(ov);
+}
+function _cdMoreMenu(){
+  const c=getClientById(currentClientId);if(!c)return;
+  const rows=[];
+  rows.push({icon:'📅',label:'Schedule proposal',act:'schedForClient()'});
+  rows.push({icon:'🔧',label:'Diagnostic / trip charge',act:'openDiagnosticCharge('+c.id+')'});
+  if(!(typeof gps!=='undefined'&&gps.active))rows.push({icon:'🚗',label:'Drive there',act:'startDriveToClient()'});
+  rows.push({icon:'🔗',label:'Client hub',act:'showHubMenu('+c.id+')'});
+  if(c.email)rows.push({icon:'✉️',label:'Email',act:'emailClient()'});
+  rows.push({icon:'✏️',label:'Edit client',act:'openEditClient()'});
+  _cdActionSheet('More',rows);
 }
 
 // ── Diagnostic charge, fast on-site "I came, I diagnosed X, the fee is $Y" ──
@@ -52,10 +83,10 @@ function _nearbyStartWork(clientId){
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML=
     '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Start work for '+escHtml(c.name)+'</div>'+
-    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">Quick invoice for something you just did, or a full estimate for a bigger job?</div>'+
+    '<div style="font-size:13px;color:var(--text3);margin-bottom:16px">Quick invoice for something you just did, or a full proposal for a bigger job?</div>'+
     '<div style="display:flex;flex-direction:column;gap:8px">'+
       '<button onclick="closeTopModal();openDiagnosticCharge('+clientId+')" class="btn btn-p" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('🔧',{size:16})+' Quick invoice</button>'+
-      '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" class="btn" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('✏',{size:16})+' Start estimate</button>'+
+      '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" class="btn" style="padding:12px;font-size:14px;font-weight:700;justify-content:center">'+svgIcon('✏',{size:16})+' Start proposal</button>'+
       '<button onclick="closeTopModal()" style="padding:10px;border:none;background:none;color:var(--text3);font-size:13px;font-family:inherit;cursor:pointer">Cancel</button>'+
     '</div>';
   overlay.appendChild(box);document.body.appendChild(overlay);
@@ -71,7 +102,7 @@ function _nearbyStartWork(clientId){
 function _diagChargeContext(){
   return '<div style="display:flex;gap:8px;align-items:flex-start;background:var(--bg2);border:1px solid var(--border2);border-radius:var(--r);padding:9px 11px;margin-bottom:14px">'+
     '<div style="flex:none">'+svgIcon('ℹ️',{size:14})+'</div>'+
-    '<div style="font-size:11px;color:var(--text2);line-height:1.45">Only for when you gave an estimate, the client <strong>declined</strong>, and you’re charging for the trip out + diagnosis. Doing actual work? Build a full estimate they sign instead.</div>'+
+    '<div style="font-size:11px;color:var(--text2);line-height:1.45">Only for when you gave a proposal, the client <strong>declined</strong>, and you’re charging for the trip out + diagnosis. Doing actual work? Build a full proposal they sign instead.</div>'+
   '</div>';
 }
 function openDiagnosticCharge(clientId){
@@ -97,7 +128,7 @@ function openDiagnosticCharge(clientId){
       '<button onclick="closeTopModal()" style="padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;color:var(--text)">Cancel</button>'+
       '<button onclick="saveDiagnosticCharge('+clientId+')" style="padding:12px;border-radius:var(--r);border:none;background:var(--green);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit">Continue to sign →</button>'+
     '</div>'+
-    '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" style="width:100%;margin-top:8px;padding:10px;border:none;background:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Doing actual work? Build a full estimate instead ›</button>';
+    '<button onclick="closeTopModal();currentClientId='+clientId+';openEstimateForClient()" style="width:100%;margin-top:8px;padding:10px;border:none;background:none;color:var(--blue);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Doing actual work? Build a full proposal instead ›</button>';
   overlay.appendChild(box);document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
   setTimeout(()=>document.getElementById('diag-desc')?.focus(),60);
@@ -190,11 +221,11 @@ function _submitDiagnosticSign(bidId,clientId){
 // offer to request access from the owner/manager.
 function _showEstimateRequestModal(){
   if(typeof zConfirm==='function'){
-    zConfirm("You don't have permission to create estimates yet. Send a request to your manager for access?",
+    zConfirm("You don't have permission to create proposals yet. Send a request to your manager for access?",
       ()=>_submitEstimateRequest(),
-      {title:svgIcon('🔒')+' Estimate access',yes:'Request access'});
+      {title:svgIcon('🔒')+' Proposal access',yes:'Request access'});
   }else if(typeof zAlert==='function'){
-    zAlert('You do not have permission to create estimates. Ask your manager for access.',{title:'Permission needed'});
+    zAlert('You do not have permission to create proposals. Ask your manager for access.',{title:'Permission needed'});
   }
 }
 
@@ -274,7 +305,7 @@ function _showRrpModal(c,onProceed){
     msg.style.display='block';
     msg.innerHTML=
       '<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:var(--r);padding:12px;margin-bottom:10px">'+
-        '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">RRP certification required before this estimate can proceed.</div>'+
+        '<div style="font-size:13px;font-weight:800;color:#a32d2d;margin-bottom:6px">RRP certification required before this proposal can proceed.</div>'+
         '<div style="margin-top:8px">'+
           '<div style="font-size:12px;font-weight:800;color:#92400e;margin-bottom:6px">EPA RRP certification required</div>'+
           '<div style="font-size:12px;color:var(--text1);margin-bottom:6px;line-height:1.6">Pre-1978 homes: you need EPA RRP certification before disturbing any painted surfaces. Work without it and you\'re exposed to serious fines.</div>'+
@@ -295,12 +326,12 @@ function _gateAddressThenEstimate(c){
     const box=document.createElement('div');box.className='zmodal';
     box.innerHTML=
       '<div style="font-size:18px;margin-bottom:6px">'+svgIcon('📍')+' Address required</div>'+
-      '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+escHtml(c.name)+'\'s property address before starting an estimate. You can\'t measure or quote without it.</div>'+
+      '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Add '+escHtml(c.name)+'\'s property address before starting a proposal. You can\'t measure or quote without it.</div>'+
       '<div style="position:relative;margin-bottom:14px">'+
 '<input id="_addr-gate-inp" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
   'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
 '</div>'+
-      '<button id="_addr-gate-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save &amp; start estimate</button>'+
+      '<button id="_addr-gate-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save &amp; start proposal</button>'+
       '<button onclick="document.getElementById(\'_addr-gate-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
     ov.appendChild(box);document.body.appendChild(ov);
     const _agInp=document.getElementById('_addr-gate-inp');
@@ -338,21 +369,21 @@ function _checkMultiPropertyThenOpen(c){
   if(activeBids.length>0){
     const resumeTarget=activeBids[0];
     const addrHint=resumeTarget.addr?' ('+resumeTarget.addr+')':'';
-    zConfirm(c.name+' has an estimate in progress'+addrHint+'. Resume it or start one for a different property?',
+    zConfirm(c.name+' has a proposal in progress'+addrHint+'. Resume it or start one for a different property?',
       ()=>{
         if(activeBids.length===1){openGenericEstimate(c,resumeTarget.id,resumeTarget.trade_type||getActiveTrade());}
         else{
           // Multiple in-progress, show picker
           const ov=document.createElement('div');ov.className='zmodal-overlay';
           const box=document.createElement('div');box.className='zmodal';
-          box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">Choose estimate to resume</div>'+
-            activeBids.map(b=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||getActiveTrade())+'\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:13px;color:var(--text)">'+escHtml(b.addr||b.name||'Estimate')+'<span style="font-size:11px;color:var(--text3);display:block;margin-top:2px">'+escHtml(b.bid_date||'')+'</span></button>').join('')+
+          box.innerHTML='<div style="font-size:16px;font-weight:800;margin-bottom:12px">Choose proposal to resume</div>'+
+            activeBids.map(b=>'<button onclick="this.closest(\'.zmodal-overlay\').remove();openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||getActiveTrade())+'\')" style="width:100%;padding:11px 14px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;text-align:left;margin-bottom:8px;font-size:13px;color:var(--text)">'+escHtml(b.addr||b.name||'Proposal')+'<span style="font-size:11px;color:var(--text3);display:block;margin-top:2px">'+escHtml(b.bid_date||'')+'</span></button>').join('')+
             '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Cancel</button>';
           ov.appendChild(box);document.body.appendChild(ov);
           ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
         }
       },
-      {title:'Estimate in progress',yes:'Resume estimate',no:'Different property',danger:false,
+      {title:'Proposal in progress',yes:'Resume proposal',no:'Different property',danger:false,
        onNo:()=>_askNewPropertyAddress(c)});
     return;
   }
@@ -367,7 +398,7 @@ function _askNewPropertyAddress(c){
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">Enter the address for this job</div>'+
     '<div style="position:relative;margin-bottom:14px"><input id="_new-prop-addr" type="text" placeholder="123 Main St, City, ST" autocomplete="off" '+
       'style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:15px;font-family:inherit;background:var(--bg2);color:var(--text)"></div>'+
-    '<button id="_new-prop-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Open estimate</button>'+
+    '<button id="_new-prop-ok" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Open proposal</button>'+
     '<button onclick="document.getElementById(\'_new-prop-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:1px solid var(--border2);background:none;color:var(--text3);font-size:14px;cursor:pointer;font-family:inherit">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   const inp=document.getElementById('_new-prop-addr');
@@ -441,7 +472,7 @@ function _showEstimateStylePicker(c,overrideAddr){
     '<div style="max-width:760px;margin:0 auto;padding:24px 20px 40px">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">'+
         '<div>'+
-          '<div class="tbar-eyebrow">Pick estimate type</div>'+
+          '<div class="tbar-eyebrow">Pick proposal type</div>'+
           '<div class="tbar-title">How are you billing this job?</div>'+
         '</div>'+
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
@@ -457,16 +488,14 @@ function _showEstimateStylePicker(c,overrideAddr){
   requestAnimationFrame(()=>requestAnimationFrame(()=>{ov.style.opacity='1';ov.style.transform='translateY(0)';}));
 }
 function _pickEstStyle(style){
-  const ov=document.getElementById('_style-pick-ov');
-  const doIt=()=>{
-    const {c,overrideAddr}=_stylePickState||{};
-    if(!c)return;
-    _stylePickState=null;
-    if(style==='tm'){openTMEstimate(c);}
-    else if(style==='freeform'){openFreeFormEstimate(c);}
-  };
-  if(ov){doIt();ov.style.opacity='0';ov.style.transform='translateY(10px)';setTimeout(()=>ov.remove(),220);}
-  else{doIt();}
+  const {c}=_stylePickState||{};
+  if(!c)return;
+  // Open the chosen estimate type. The "pick estimate type" screen stays up as the
+  // backdrop (openGenericEstimate retires it when the builder actually opens), so
+  // the address gate for a multi-property client sits over the estimate-type screen
+  // instead of flashing to the dashboard behind it.
+  if(style==='tm'){openTMEstimate(c);}
+  else if(style==='freeform'){openFreeFormEstimate(c);}
 }
 
 function _doOpenEstimate(c,_overrideAddr,_forceTrade){
@@ -663,7 +692,7 @@ function onClientSearch(inp){
     el.innerHTML=matched.map(c=>{
       const s=getClientStage(c.id);
       const pendBids=getClientBids(c.id).filter(b=>b.status==='Pending');
-      const pendBidSuffix=pendBids.length>1?' · '+pendBids.length+' bids out':pendBids.length===1?' · '+fmt(pendBids[0].amount):'';
+      const pendBidSuffix=pendBids.length>1?' · '+pendBids.length+' proposals out':pendBids.length===1?' · '+fmt(pendBids[0].amount):'';
       return '<div class="client-card" onclick="openClientDetail('+c.id+')" style="margin-bottom:4px">'+
         '<div style="display:flex;align-items:center;gap:10px">'+
           '<div class="cc-avatar" style="width:36px;height:36px;font-size:12px;flex-shrink:0;'+stageAvatar(s.stage)+'">'+initials(c.name)+'</div>'+
@@ -727,19 +756,19 @@ function getClientStage(cid){
     const unsentBids=pendingBids.filter(b=>!b.signingToken);
     // Saved but never sent to client, show as 'est_ready' (distinct from sent bids)
     if(!sentBids.length&&unsentBids.length){
-      return{stage:'est_ready',label:'Estimate ready to send',color:'var(--blue)',priority:5};
+      return{stage:'est_ready',label:'Proposal ready to send',color:'var(--blue)',priority:5};
     }
     const activePending=sentBids.length?sentBids:unsentBids;
     const oldest=activePending.reduce((a,b)=>a.bid_date<b.bid_date?a:b);
     const days=oldest.bid_date?Math.floor((new Date(tk)-new Date(oldest.bid_date+'T12:00:00'))/(1000*60*60*24)):0;
-    if(days>=30)return{stage:'abandoned',label:'Bid abandoned ('+days+'d)',color:'#999',priority:9};
-    if(days>=14)return{stage:'bid_urgent',label:'Bid out '+days+'d: follow up',color:'var(--amber)',priority:5};
-    return{stage:'bid_out',label:'Bid out',color:'#D85A30',priority:6};
+    if(days>=30)return{stage:'abandoned',label:'Proposal abandoned ('+days+'d)',color:'#999',priority:9};
+    if(days>=14)return{stage:'bid_urgent',label:'Proposal out '+days+'d: follow up',color:'var(--amber)',priority:5};
+    return{stage:'bid_out',label:'Proposal out',color:'#D85A30',priority:6};
   }
 
   const hasAnyBid=cbids.length>0;
   const upcomingEst=estJobs.find(j=>j.status!=='canceled'&&j.start>=tk);
-  if(upcomingEst&&!hasAnyBid)return{stage:'est_scheduled',label:'Estimate '+parseD(upcomingEst.start).toLocaleDateString('en-US',{month:'short',day:'numeric'})+(upcomingEst.time?' @ '+upcomingEst.time:''),color:'#7F77DD',priority:7};
+  if(upcomingEst&&!hasAnyBid)return{stage:'est_scheduled',label:'Proposal '+parseD(upcomingEst.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(upcomingEst.time?' @ '+upcomingEst.time:''),color:'#7F77DD',priority:7};
 
   const hasActiveBid=cbids.some(b=>b.status==='Pending'||b.status==='Closed Won');
   if(hasAnyBid&&!hasActiveBid)return{stage:'abandoned',label:'Abandoned',color:'#999',priority:9};
@@ -786,7 +815,7 @@ function renderClientList(){
     const emptyMsgs={
       won:'No signed jobs waiting to schedule.',active:'No active jobs today.',
       collect:'No outstanding balances.',closed:'No closed jobs yet.',
-      all:'No clients yet, contacts become clients once they sign an estimate.'
+      all:'No clients yet, contacts become clients once they sign a proposal.'
     };
     el.innerHTML='<div class="empty">'+(emptyMsgs[clientFilter]||'No clients here.')+'</div>';
     return;
@@ -847,7 +876,7 @@ function renderClientList(){
               (c.source?'<span class="cc-stat">'+escHtml(c.source)+'</span>':'')+
               (hasBal?'<span class="cc-stat" style="color:var(--c-red);background:var(--c-red-soft);border-color:var(--c-red-edge)">'+fmt(totalOwed)+' owed</span>':'')+
               (_overduebal?'<span class="cc-stat" style="color:#fff;background:#A32D2D;border-color:#A32D2D;font-weight:800">30+ days overdue</span>':'')+
-              (pendBids.length&&!hasBal?'<span class="cc-stat">'+pendBids.length+' bid'+(pendBids.length>1?'s':'')+' out</span>':'')+
+              (pendBids.length&&!hasBal?'<span class="cc-stat">'+pendBids.length+' proposal'+(pendBids.length>1?'s':'')+' out</span>':'')+
             '</div>'+
           '</div>'+
         '</div>'+
@@ -893,6 +922,7 @@ function openNewClient(){
   const csrc=document.getElementById('cf-source');if(csrc)csrc.value='';
   const crw=document.getElementById('cf-ref-wrap');if(crw)crw.style.display='none';
   document.getElementById('cf-ptype').value='Single family home';
+  {const _pt=document.getElementById('cf-partytype');if(_pt)_pt.value='';} // force an explicit pick on every new lead
   document.getElementById('client-list').style.display='none';
   const sw=document.getElementById('cf-search-wrap');if(sw)sw.style.display='none';
   document.getElementById('client-form-wrap').style.display='block';
@@ -937,6 +967,7 @@ function openEditClient(){
   document.getElementById('cf-state').value=c.state||_ep.state||'';
   document.getElementById('cf-zip').value=c.zip||_ep.zip||'';
   document.getElementById('cf-ptype').value=c.ptype||'Single family home';
+  {const _pt=document.getElementById('cf-partytype');if(_pt)_pt.value=c.partyType||'homeowner';} // legacy clients predate the field, treat as homeowner
   document.getElementById('cf-email').value=c.email||'';
   document.getElementById('cf-ref').value=c.ref||'';
   const csrc2=document.getElementById('cf-source');if(csrc2)csrc2.value=c.source||'';
@@ -967,7 +998,11 @@ function saveClient(){
   if(_submitting)return;
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
   // Clear all field errors first
-  ['cf-name','cf-phone','cf-street','cf-source'].forEach(clearFErr);
+  ['cf-name','cf-phone','cf-street','cf-source','cf-partytype'].forEach(clearFErr);
+  // Who is this? drives whether the property is shown as theirs (homeowner) or as a
+  // job site they don't own (GC/PM/builder), and how getting-paid tools behave.
+  const partyType=v('cf-partytype')||'';
+  if(!partyType){_submitting=false;showFErr('cf-partytype','err-cf-partytype','Tell us who this is, it changes how we handle the property and getting paid.');return;}
   const name=v('cf-name').trim();
   if(!name){_submitting=false;showFErr('cf-name','err-cf-name','Enter a name.');return;}
   const phone=v('cf-phone').trim();
@@ -1018,7 +1053,9 @@ function saveClient(){
   const _ybRaw=parseInt(document.getElementById('cf-year-built')?.value||'');
   const c={id:editClientId||Date.now(),name,phone:v('cf-phone'),email:v('cf-email'),
     addr,street,city,state,zip,
-    ptype:v('cf-ptype'),source,ref,notes:v('cf-notes'),created:todayKey(),
+    ptype:v('cf-ptype'),partyType,source,ref,notes:v('cf-notes'),created:todayKey(),
+    // Exact creation moment for the audit trail; `created` is only a day key.
+    createdAt:_existingClient?.createdAt||new Date().toISOString(),
     yearBuilt:_ybRaw||_existingClient?.yearBuilt||null,
     sqft:_existingClient?.sqft||null,estimatedValue:_existingClient?.estimatedValue||null,
     propertyType:_existingClient?.propertyType||null,stories:_existingClient?.stories||null,
@@ -1033,6 +1070,8 @@ function saveClient(){
   if(editClientId){const i=clients.findIndex(x=>x.id===editClientId);if(i>=0)clients[i]=c;}
   else{
     clients.push(c);
+    // Top of the funnel: every duration downstream is measured from here.
+    try{if(typeof logLifecycle==='function')logLifecycle('lead_created',{clientId:c.id,meta:{source:c.source||null}});}catch(_e){}
     _ensureClientToken(c.id);
     // Auto-generate hub immediately so onboarding link works on first send
     if(supaEnabled()&&_supaUser)_uploadClientHub(c.id).catch(()=>{});
@@ -1054,7 +1093,7 @@ function saveClient(){
 }
 function deleteClient(){
   if(!editClientId)return;
-  zConfirm('Permanently delete this client and ALL their bids, jobs, expenses, and mileage?',()=>{
+  zConfirm('Permanently delete this client and ALL their proposals, jobs, expenses, and mileage?',()=>{
     const id=editClientId;
     _userDelete(()=>{
       clients=clients.filter(x=>x.id!==id);
@@ -1244,10 +1283,13 @@ function _doImport(){
 
 function setCDTab(tab,btn){
   cdTab=tab;
-  ['overview','mileage','bids','jobs','expenses','contracts'].forEach(t=>{
+  // Section nav is a single dropdown selector (owner preference) instead of a
+  // pill row, so it never clutters regardless of how many views exist.
+  ['overview','bids','jobs','contracts','mileage','expenses'].forEach(t=>{
     const el=document.getElementById('cdt-'+t+'-content');if(el)el.style.display=t===tab?'block':'none';
-    const b=document.getElementById('cdt-'+t);if(b)b.classList.toggle('active',t===tab);
   });
+  const _sel=document.getElementById('cd-tab-select');
+  if(_sel&&_sel.value!==tab)_sel.value=tab;
   if(tab==='mileage')renderCDMileage();
   if(tab==='bids')renderCDBids();
   if(tab==='jobs')renderCDJobs();
@@ -1275,52 +1317,56 @@ function renderClientDetail(){
     if(days<1)return 'Today';if(days===1)return '1d ago';if(days<30)return days+'d ago';
     if(days<365)return Math.round(days/30)+'mo ago';return Math.round(days/365)+'y ago';
   })();
-  const _eyebrow='TIER '+_tier+(c.source?' · '+escHtml(c.source):'')+(_ltv>0?' · LTV '+fmt(_ltv):'');
+  // TIER as a small filled pill + source, reads more finished than plain text.
+  const _eyebrowHtml='<span style="display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16)">TIER '+_tier+'</span>'+(c.source?'<span style="margin-left:8px;opacity:.72;font-weight:700">'+escHtml(c.source)+'</span>':'');
+  // Monogram avatar (first + last initial) gives the card an identity/anchor.
+  const _words=(c.name||'?').trim().split(/\s+/).filter(Boolean);
+  const _initials=(((_words[0]||'?')[0]||'?')+(_words.length>1?((_words[_words.length-1]||'')[0]||''):'')).toUpperCase();
+  const _avatar='<div style="width:52px;height:52px;border-radius:15px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(255,255,255,.22),rgba(255,255,255,.05));border:1px solid rgba(255,255,255,.16);font-family:var(--font-display);font-size:19px;font-weight:900;letter-spacing:.5px;color:var(--text-cream);box-shadow:0 2px 8px rgba(0,0,0,.18)">'+escHtml(_initials)+'</div>';
+  const _balanceLine=(_totalOwed>0.01
+    ? '<div style="font-size:22px;font-weight:800;color:#ff6b6b;letter-spacing:-.4px;margin-top:3px">'+fmt(_totalOwed)+' <span style="font-size:12px;font-weight:700;opacity:.85">owed</span></div>'
+    : (_totalPaidAll>0
+        ? '<div style="font-size:13px;font-weight:700;color:rgba(255,255,255,.72);margin-top:4px">'+svgIcon('✓',{size:12})+' Paid in full · '+fmt(_totalPaidAll)+'</div>'
+        : '<div style="font-size:13px;font-weight:600;color:rgba(255,255,255,.6);margin-top:4px">No balance · last contact '+_lastContactStr+'</div>'));
   document.getElementById('cd-hdr').innerHTML=
     '<div class="detail-eyebrow">'+
-      '<span>'+_eyebrow+'</span>'+
+      '<span>'+_eyebrowHtml+'</span>'+
       '<button class="btn btn-sm" onclick="openEditClient()" style="background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.2);color:#fff">Edit</button>'+
     '</div>'+
-    '<div class="detail-name">'+escHtml(c.name)+' '+riskBadge(c.id)+'</div>'+
-    '<div class="detail-addr">'+
-      escHtml(c.addr||'No address')+(c.ptype?' · '+escHtml(c.ptype):'')+(c.yearBuilt?' · Built '+c.yearBuilt:'')+
-      (getActiveTrade()==='painting'&&!c.yearBuilt?'<span onclick="openEditClient()" style="color:#fbbf24;font-weight:700;cursor:pointer;margin-left:6px">'+svgIcon('⚠️')+' Add year built</span>':'')+
+    '<div style="display:flex;align-items:center;gap:14px">'+
+      _avatar+
+      '<div style="flex:1;min-width:0">'+
+        '<div class="detail-name" style="margin-bottom:0;word-break:break-word">'+escHtml(c.name)+' '+riskBadge(c.id)+'</div>'+
+        _balanceLine+
+      '</div>'+
     '</div>'+
-    '<div class="detail-actions">'+
+    // Three coherent actions + overflow. Everything else (Client hub, Drive,
+    // Email, Diagnostic charge) lives in a menu instead of a flat button wall.
+    '<div class="detail-actions" style="margin-top:16px">'+
       (c.phone?'<button class="btn" onclick="callClient()">'+svgIcon('📞')+' Call</button>':'')+
-      (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">'+svgIcon('💬')+' SMS</button>':'')+
-      (c.email?'<button class="btn" onclick="emailClient()">'+svgIcon('✉️')+' Email</button>':'')+
-      (!gps.active?'<button class="btn" onclick="startDriveToClient()">'+svgIcon('🚗')+' Drive there</button>':'')+
-      '<button class="btn" onclick="showHubMenu('+c.id+')">'+svgIcon('🔗')+' Client hub</button>'+
-      '<button class="btn" onclick="openDiagnosticCharge('+c.id+')">'+svgIcon('🔧')+' Diagnostic charge</button>'+
-      '<button class="btn btn-p"'+(_canEstimate()?'':' style="opacity:.55"')+' onclick="openEstimateForClient()">'+(_canEstimate()?'':svgIcon('🔒')+' ')+'+ New estimate</button>'+
+      (c.phone?'<button class="btn" onclick="textClient();event.stopPropagation()">'+svgIcon('💬')+' Text</button>':'')+
+      '<button class="btn" onclick="_cdMoreMenu()">More</button>'+
     '</div>'+
     '';
   // Metric tiles, outside hero in split-3-eq grid
   const _heroMets=document.getElementById('cd-hero-mets');
   if(_heroMets){
-    const _met=(label,val,sub,color)=>
-      '<div class="met">'+
-        '<div class="met-l">'+label+'</div>'+
-        '<div class="met-v"'+(color?' style="color:'+color+'"':'')+'>'+(val||'-')+'</div>'+
-        (sub?'<div class="met-s">'+sub+'</div>':'')+
+    // Compact single-row stat strip (Workiz/ServiceTitan pattern), not the tall
+    // stacked tiles the mobile leaders avoid. Balance is the hero above, so the
+    // strip carries the supporting glance: lifetime value, jobs, last contact.
+    const _cell=(label,val)=>
+      '<div style="flex:1;min-width:0;padding:0 10px">'+
+        '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+label+'</div>'+
+        '<div style="font-family:var(--font-display);font-size:17px;font-weight:900;letter-spacing:-.4px;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:3px">'+(val||'-')+'</div>'+
       '</div>';
-    _heroMets.innerHTML=
-      _met('Lifetime value',_ltv>0?fmt(_ltv):null,_wonBids.length+' job'+(  _wonBids.length!==1?'s':''))||
-      _met('Lifetime value','-','No completed jobs')+
-      _met('Open balance',_totalOwed>0.01?fmt(_totalOwed):(_totalPaidAll>0?'$0':null),
-        _totalOwed>0.01?_totalPaidAll>0?fmt(_totalPaidAll)+' paid · '+fmt(_totalOwed+_totalPaidAll)+' total':'Balance due':
-        _totalPaidAll>0?'Paid in full':null,
-        _totalOwed>0.01?'var(--c-red)':_totalPaidAll>0?'var(--c-green)':null)+
-      _met('Last contact',_lastContactStr,c.last_contact_date||'');
-    // Fix: render all 3 tiles properly
-    _heroMets.innerHTML=
-      _met('Lifetime value',_ltv>0?fmt(_ltv):'-',_wonBids.length+' job'+(_wonBids.length!==1?'s':'') ,null)+
-      _met('Open balance',_totalOwed>0.01?fmt(_totalOwed):'$0',
-        _totalOwed>0.01?(_totalPaidAll>0?fmt(_totalPaidAll)+' paid · '+fmt(_totalOwed+_totalPaidAll)+' total':'Balance due'):
-        _totalPaidAll>0?'Paid in full':'-',
-        _totalOwed>0.01?'var(--c-red)':null)+
-      _met('Last contact',_lastContactStr,'',null);
+    const _div='<div style="width:1px;background:var(--border2);margin:3px 0;flex:0 0 auto"></div>';
+    _heroMets.innerHTML='<div style="display:flex;align-items:stretch;background:var(--bg-card);border-radius:var(--r-lg);box-shadow:var(--shadow-card);padding:12px 4px">'+
+      _cell('Lifetime value',_ltv>0?fmt(_ltv):'-')+_div+
+      _cell('Jobs',_wonBids.length?String(_wonBids.length):'-')+_div+
+      _cell('Last contact',_lastContactStr)+
+    '</div>';
+    // The full Properties / Job-sites section sits right below the hero (moved out
+    // of the Overview tab), so every address is visible without a drill-down.
   }
   if(gps.active&&gps.clientId===currentClientId){
     document.getElementById('cd-drive-idle').style.display='none';
@@ -1344,23 +1390,14 @@ function renderClientDetail(){
   const wonBids=_wonBids;
   const totalOwed=_totalOwed;
   const totalPaidAll=_totalPaidAll;
+  // The owed / paid-in-full amount already leads the hero, so this is just the
+  // actions (log a payment, jump to bids), not a second big balance readout.
   const balanceHTML=totalOwed>0.01?
-    `<div style="background:#FFF0F0;border:2px solid #A32D2D;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
-      <div>
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:3px">Balance due</div>
-        <div style="font-size:22px;font-weight:800;color:#A32D2D">${fmt(totalOwed)}</div>
-        ${totalPaidAll>0?`<div style="font-size:11px;color:var(--text3);margin-top:2px">${fmt(totalPaidAll)} paid · ${fmt(totalPaidAll+totalOwed)} total</div>`:''}
-      </div>
-      <div style="display:flex;flex-direction:column;gap:6px;flex-shrink:0">
-        <button onclick="openQuickPayFromOverview()" class="btn btn-g" style="font-size:13px;padding:10px 14px">+ Log payment</button>
-        <button onclick="setCDTab('bids',document.getElementById('cdt-bids'))" class="btn btn-sm" style="font-size:11px">View bids</button>
-      </div>
+    `<div style="display:flex;gap:8px;margin-bottom:10px">
+      <button onclick="setCDTab('bids',document.getElementById('cdt-bids'))" class="btn" style="flex:1;font-size:14px;padding:12px 14px">View proposals</button>
+      <button onclick="openQuickPayFromOverview()" class="btn btn-g" style="flex:1;font-size:14px;padding:12px 14px">+ Log payment</button>
     </div>`
-    :totalPaidAll>0?
-    `<div style="background:var(--green-lt);border:1px solid #97C459;border-radius:var(--rl);padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
-      <div style="font-size:12px;font-weight:700;color:var(--green-mid)">${svgIcon('✓')} Paid in full</div>
-      <div style="font-size:14px;font-weight:700;color:var(--green-mid)">${fmt(totalPaidAll)}</div>
-    </div>`:'';
+    :'';
   // Lien alert, any won bid with balance overdue 30+ days
   const _lienBid=_wonBids.find(b=>{
     const bal=getBidBalance(b);if(bal<0.01)return false;
@@ -1384,9 +1421,14 @@ function renderClientDetail(){
       <button onclick="showFileLienDirect(${_lienBid.id})" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:#A32D2D;color:#FFB3B3;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">${svgIcon('📋')} Prepare Lien Document</button>
     </div>`;
   }
-  const intakeInfoHTML=(c.callTime||c.notes)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📞')} Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${c.notes?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📋')} Intake notes:</span> ${escHtml(c.notes)}</div>`:''}</div>`:'';
-  const epaHTML=(c.yearBuilt&&c.yearBuilt<1978)?`<div style="background:var(--amber-lt);border:1px solid var(--amber);border-radius:var(--r);padding:8px 12px;${balanceHTML||intakeInfoHTML?'margin-top:10px;':''}font-size:12px;font-weight:700;color:#856404">${svgIcon('⚠️')} Pre-1978, EPA RRP applies if &gt;6 sq ft interior or &gt;20 sq ft exterior paint disturbed</div>`:'';
-  const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML+epaHTML;
+  // Intake notes is the free-text string captured on the lead-intake form. The
+  // separate Notes accordion stores structured notes on c.notes as an ARRAY, so
+  // only render this line when c.notes is an actual non-empty string (never
+  // stringify an array here, which printed "[object Object]").
+  const _intakeNote=(typeof c.notes==='string')?c.notes.trim():'';
+  const intakeInfoHTML=(c.callTime||_intakeNote)?`<div style="padding-top:10px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:6px">${c.callTime?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📞')} Best time to call:</span> ${escHtml(c.callTime)}</div>`:''}${_intakeNote?`<div style="font-size:12px;color:var(--text2)"><span style="font-weight:700">${svgIcon('📋')} Intake notes:</span> ${escHtml(_intakeNote)}</div>`:''}</div>`:'';
+  // Pre-1978/EPA is already flagged on the property card, so it's not repeated here.
+  const _metsContent=balanceHTML+lienAlertHTML+intakeInfoHTML;
   const _metsEl=document.getElementById('cd-client-mets');
   _metsEl.innerHTML=_metsContent;
   _metsEl.style.display=_metsContent?'':'none';
@@ -1403,17 +1445,14 @@ function renderClientDetail(){
           (_onbSent?'<div style="font-size:11px;color:#856404;margin-top:8px;text-align:center">'+_onbSent+'</div>':'')+
         '</div>';
     }else{
+      // ONE clear estimate action. The old Schedule-vs-Start-now pair confused
+      // people; scheduling a visit now lives in the More menu, and this is the
+      // single obvious "make a quote" button.
+      const _lock=!_canEstimate();
       _cdActions.innerHTML=
-        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
-          '<button onclick="schedForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--border2);background:var(--bg);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px">'+
-            '<span style="font-size:18px">'+svgIcon('📅')+'</span><span>Schedule estimate</span>'+
-            '<span style="font-size:10px;color:var(--text3);font-weight:400">Pick a date &amp; time</span>'+
-          '</button>'+
-          '<button onclick="openEstimateForClient()" style="padding:12px;border-radius:var(--rl);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue-dk);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:4px'+(_canEstimate()?'':';opacity:.55')+'">'+
-            '<span style="font-size:18px">'+(_canEstimate()?svgIcon('📋'):svgIcon('🔒'))+'</span><span>Start estimate now</span>'+
-            '<span style="font-size:10px;color:var(--blue);font-weight:400">I\'m already here</span>'+
-          '</button>'+
-        '</div>';
+        '<button onclick="openEstimateForClient()" style="width:100%;padding:15px;border-radius:var(--r-lg);border:none;background:var(--denim);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:9px'+(_lock?';opacity:.55':'')+'">'+
+          svgIcon(_lock?'🔒':'📋',{size:18})+' New proposal'+
+        '</button>';
     }
   }
   renderCDTimeline();
@@ -1425,15 +1464,40 @@ function renderClientDetail(){
   renderTodayLegs();
   setCDTab('overview',document.getElementById('cdt-overview'));
 }
-function renderCDRisk(){
-  const el=document.getElementById('cd-risk-content');if(!el)return;
+// Site-access note (gate code, dog, parking), saved PER PROPERTY from inside that
+// property's accordion row. Internal only: the crew sees it on this address's job
+// card / geofence, never on the client-facing proposal or hub. Keyed by the
+// property's own address, so each site keeps its own access note.
+function _cdSavePropNote(idx){
   const c=getClientById(currentClientId);if(!c)return;
+  const addr=(_cdAddrList&&_cdAddrList[idx])||c.addr;
+  const el=document.getElementById('cd-propnote-'+idx);
+  setSiteNote(c,addr,(el?el.value:'').trim());
+  saveAll();
+  if(typeof showToast==='function')showToast('Site access saved','✓');
+}
+// Shared accordion bar, styled IDENTICALLY to the Properties bar and the Overview
+// section selector (#cd-tab-select): same width, padding, border, radius, shadow,
+// 15px/800 type, and the same right-aligned down-chevron that rotates when open.
+// Used by Notes, Activity timeline, and Client risk so all four read the same.
+function _cdSectionBar(title,open,toggleJs,countHtml){
+  const _barStyle='width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-size:15px;font-weight:800;box-shadow:var(--shadow-card);display:flex;align-items:center;justify-content:space-between;cursor:pointer';
+  const _chev='<span style="display:inline-flex;color:#888;flex-shrink:0;transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>';
+  return '<div onclick="'+toggleJs+'" style="'+_barStyle+'"><span>'+title+(countHtml||'')+'</span>'+_chev+'</div>';
+}
+function renderCDRisk(){
+  const el=document.getElementById('cd-risk-mount');if(!el)return;
+  const c=getClientById(currentClientId);if(!c)return;
+  const open=(window._cdRiskOpen!==false);
+  const _anim=(window._cdAccAnim==='risk');window._cdAccAnim=null;
+  const bar=_cdSectionBar('Client risk',open,"window._cdRiskOpen=(window._cdRiskOpen===false);window._cdAccAnim='risk';renderCDRisk()");
+  if(!open){el.innerHTML=bar;return;}
   const r=c.riskLevel||'normal';
   const flags=c.riskFlags||[];
   const LEVELS=['normal','watch','high_risk','blacklisted'];
   const LABELS={normal:'Normal',watch:'Watch',high_risk:'High risk',blacklisted:'Blacklisted'};
   const COLORS={normal:'var(--text3)',watch:'var(--amber)',high_risk:'#A32D2D',blacklisted:'#000'};
-  el.innerHTML=
+  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner">'+
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
       '<div>'+
         '<div style="font-size:14px;font-weight:700;color:'+COLORS[r]+'">'+LABELS[r]+'</div>'+
@@ -1450,16 +1514,21 @@ function renderCDRisk(){
         '</button>'
       ).join('')+
     '</div>'+
-    (r==='blacklisted'?'<div style="font-size:11px;color:#A32D2D;margin-top:8px;font-weight:700">Estimates and scheduling are blocked for this client.</div>':'')+
-    (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">'+svgIcon('⚠️')+' Previous lien filed. Require full payment before scheduling.</div>':'');
+    (r==='blacklisted'?'<div style="font-size:11px;color:#A32D2D;margin-top:8px;font-weight:700">Proposals and scheduling are blocked for this client.</div>':'')+
+    (r==='high_risk'?'<div style="font-size:11px;color:var(--amber);margin-top:8px">'+svgIcon('⚠️')+' Previous lien filed. Require full payment before scheduling.</div>':'')+
+    '</div></div>';
 }
 function renderClientNotes(){
   const c=getClientById(currentClientId);if(!c)return;
-  const el=document.getElementById('cd-notes-list');if(!el)return;
+  const el=document.getElementById('cd-notes-mount');if(!el)return;
   const notes=(Array.isArray(c.notes)?c.notes:[]).slice().sort((a,b)=>(a.ts||'').localeCompare(b.ts||''));
-  if(!notes.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:4px 0">No notes yet.</div>';return;}
-  el.innerHTML=notes.map(n=>{
-    const dt=new Date(n.ts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const open=(window._cdNotesOpen!==false);
+  const count=notes.length?' <span style="color:var(--text3);font-weight:700">· '+notes.length+'</span>':'';
+  const _anim=(window._cdAccAnim==='notes');window._cdAccAnim=null;
+  const bar=_cdSectionBar('Notes',open,"window._cdNotesOpen=(window._cdNotesOpen===false);window._cdAccAnim='notes';renderClientNotes()",count);
+  if(!open){el.innerHTML=bar;return;}
+  const listHtml=notes.length?notes.map(n=>{
+    const dt=fmtDateMDY(n.ts);
     return '<div style="display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid var(--border)">'+
       '<div style="flex:1;min-width:0">'+
         '<div style="font-size:13px;color:var(--text);line-height:1.4;white-space:pre-wrap;word-break:break-word">'+escHtml(n.text)+'</div>'+
@@ -1467,7 +1536,14 @@ function renderClientNotes(){
       '</div>'+
       '<button onclick="editClientNote(\''+n.id+'\')" title="Edit" style="background:none;border:1px solid var(--border2);border-radius:6px;padding:4px 8px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--blue);flex-shrink:0;touch-action:manipulation">Edit</button>'+
     '</div>';
-  }).join('');
+  }).join(''):'<div style="font-size:12px;color:var(--text3);padding:4px 0">No notes yet.</div>';
+  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner">'+
+    '<div style="font-size:10px;color:var(--text3);font-weight:400;margin-bottom:8px">Private · not sent to client</div>'+
+    '<div id="cd-notes-list" style="margin-bottom:10px">'+listHtml+'</div>'+
+    '<div style="display:flex;gap:8px;align-items:flex-end">'+
+      '<textarea id="cd-note-input" rows="2" placeholder="Add a note about this client…" style="flex:1;font-size:13px;padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();addClientNote();}"></textarea>'+
+      '<button class="btn btn-p btn-sm" onclick="addClientNote()">Add</button>'+
+    '</div></div></div>';
 }
 function addClientNote(){
   const inp=document.getElementById('cd-note-input');if(!inp)return;
@@ -1511,80 +1587,327 @@ function _saveEditedClientNote(noteId){
   if(!text){deleteClientNote(noteId);}else{n.text=text;saveAll();renderClientNotes();}
   document.getElementById('_cnote-edit-ov')?.remove();
 }
+// Pull the audit maps (IP/device the client opened from), tolerating their absence
+// in offline/test contexts where cloud.js hasn't populated them.
+function _cdViewMeta(map,bidId){try{const m=(typeof map!=='undefined'&&map)?map[String(bidId)]:null;return m||null;}catch(e){return null;}}
+// Human labels for each logged audit event (the sign-flow funnel + opens).
+const CD_AUDIT_LABELS={hub_opened:'Client opened hub',proposal_opened:'Client opened proposal',approved:'Tapped Approve & Sign',signature_ready:'Entered signature',payment_viewed:'Reached payment step',method_selected:'Chose payment method',signed:'Signed'};
+// When the lead was created, to the minute. c.created is only a YYYY-MM-DD day
+// key, so prefer c.createdAt (stamped on new leads); for leads saved before that
+// existed, the id IS Date.now() at creation (~13-digit epoch ms), which recovers
+// the real time, the same trick the dashboard's new-leads picker uses. Falls back
+// to the date-only key for imported rows that have neither.
+// Icon per timeline event type, so a node says WHAT happened without a legend.
+// Every glyph here must exist in the shared icon set (js/icons.js); svgIcon falls
+// back to rendering the raw character, which would look broken.
+const CD_TL_ICON={lead:'👤',bid:'📋',sent:'📤',audit:'👁',signed:'✍',expense:'🧾',
+  won:'🤝',declined:'❌',lost:'❌',coll:'🔔',complete:'🏁',payment:'💵',
+  estimate:'📅',job:'🔨',mile:'🚗'};
+// The job lifecycle, in the order it actually happens. Used only to place events
+// that carry a date but no clock time, so they land beside the stage they belong
+// to rather than defaulting to midday. Drives and expenses sit mid-job because
+// that is when they occur.
+const CD_TL_STAGE={lead:10,estimate:20,bid:30,sent:40,hub:50,opened:60,audit:70,
+  signed:80,won:85,payment:90,mile:95,expense:96,job:100,complete:110,coll:120,
+  declined:130,lost:130,_default:75};
+function _cdEventIcon(e){
+  // A refund is money going the other way, so it must not wear the payment icon.
+  if(e.type==='payment'&&e.color==='lost')return '💸';
+  return CD_TL_ICON[e.type]||'●';
+}
+// Local 'YYYY-MM-DDTHH:MM:SS' (no Z). Timestamps derived from an id MUST be local:
+// toISOString() renders UTC, so an 8:31 PM Central event sliced to a 07/25 date key
+// while its own clock read 8:31 PM on the 24th, splitting same-moment events across
+// two day groups. Every day key in this app (dateKey/todayKey) is local, so these
+// must match.
+function _cdLocalIso(d){
+  const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+'T'+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+}
+// Record ids are creation timestamps, but in two different scales: most are
+// Date.now() (~1.7e12), while bid ids are _newBidId() = Date.now()*1000 + random
+// (~1.7e15). Normalise both to real epoch ms; anything else isn't a timestamp.
+function _cdEpochMs(id){
+  const n=Number(id);
+  if(!isFinite(n)||n<=0)return 0;
+  if(n>1e14)return Math.floor(n/1000);
+  return n>1e12?n:0;
+}
+// Most precise timestamp available for a timeline event, in priority order:
+// an explicit ISO stamp, then a HH:MM field on the record (a job's start time),
+// then the record's id, which is Date.now() at creation across this app.
+// The id is only trusted when it lands on the SAME calendar day as the event, so
+// a back-dated entry never borrows the clock time it happened to be typed in,
+// which would be a lie in an audit trail. Falls back to the day key.
+function _cdEventTs(dayKey,opts){
+  opts=opts||{};
+  if(opts.iso&&/T/.test(String(opts.iso)))return String(opts.iso);
+  const day=String(dayKey||'').slice(0,10);
+  if(!day)return '';
+  if(opts.time&&/^\d{1,2}:\d{2}/.test(String(opts.time))){
+    const t=String(opts.time).length===4?'0'+opts.time:String(opts.time);
+    return day+'T'+t.slice(0,5);
+  }
+  const ms=_cdEpochMs(opts.id);
+  if(ms){
+    const d=new Date(ms);
+    if(dateKey(d)===day)return _cdLocalIso(d);
+  }
+  // When the record was entered on the day it happened, the entry instant IS the
+  // event's time. (On a back-dated entry it isn't, and _cdLoggedNote surfaces it
+  // separately rather than passing off a data-entry time as the event's time.)
+  if(opts.logged){
+    const l=new Date(opts.logged);
+    if(!isNaN(l.getTime())&&dateKey(l)===day)return _cdLocalIso(l);
+  }
+  return day;
+}
+// For a BACK-DATED record (entered on a different day than it happened) we know
+// exactly when it was logged but not when it occurred. Rather than leave the row
+// without a time or invent one, state the logging moment plainly.
+function _cdLoggedNote(dayKey,logged,id){
+  let l=logged?new Date(logged):null;
+  // Records saved before loggedAt existed still know their creation instant: the
+  // id is Date.now() at save time. That recovers an exact stamp for old data too.
+  if((!l||isNaN(l.getTime()))&&id!=null){const ms=_cdEpochMs(id);if(ms)l=new Date(ms);}
+  if(!l||isNaN(l.getTime()))return '';
+  if(dateKey(l)===String(dayKey||'').slice(0,10))return '';
+  return ' · logged '+fmtDateTimeMDY(l);
+}
+function _cdLeadCreatedTs(c){
+  if(!c)return'';
+  if(c.createdAt)return c.createdAt;
+  const ms=_cdEpochMs(c.id);
+  if(ms)return _cdLocalIso(new Date(ms));
+  return c.created||'';
+}
 function renderCDTimeline(){
   const cbids=getClientBids(currentClientId),cjobs=getClientJobs(currentClientId),cmiles=getClientMileage(currentClientId);
+  const _c=getClientById(currentClientId);
   const events=[];
+  // Lead created, the top of the audit trail.
+  const _leadTs=_cdLeadCreatedTs(_c);
+  if(_leadTs)events.push({date:String(_leadTs).slice(0,10),ts:_leadTs,type:'lead',label:'Lead created',meta:escHtml(_c.source||_c.leadSource||''),color:'note'});
   cbids.forEach(b=>{
-    events.push({date:b.bid_date||'',type:'bid',id:b.id,label:`Bid: ${fmt(b.amount)}`,meta:b.status,color:'bid'});
+    // This row is the proposal being CREATED, so it shows the state at creation.
+    // It used to print b.status (the CURRENT status) on the creation date, which
+    // made a later win read as if it happened before the signature ("Closed Won"
+    // dated the day the proposal was written). Status changes are their own dated
+    // events below.
+    events.push({date:b.bid_date||'',ts:_cdEventTs(b.bid_date,{iso:b.createdAt,id:b.id}),type:'bid',id:b.id,label:`Proposal: ${fmt(b.amount)}`,meta:b.draft?'Draft created':'Created',color:'bid'});
+    // Audit lifecycle: sent -> opened(IP) -> hub opened(IP) -> signed(IP).
+    const _sent=b.sentAt||b.proposalSentDate;
+    if(_sent)events.push({date:String(_sent).slice(0,10),ts:_cdEventTs(String(_sent).slice(0,10),{iso:b.sentAt}),type:'sent',label:'Proposal sent',meta:escHtml(b.notifyEmail||b.sentTo||'to client'),color:'estimate'});
+    // Per-event audit log (each open + every sign-flow step, own timestamp + IP).
+    // Prefer the granular log; fall back to the aggregate open events when absent.
+    const _alog=(typeof _proposalAuditEventsByBid!=='undefined'&&_proposalAuditEventsByBid)?_proposalAuditEventsByBid[String(b.id)]:null;
+    if(_alog&&_alog.length){
+      _alog.forEach(ev=>{
+        if(ev.event==='signed')return; // authoritative signed event comes from bid.signedAt below
+        events.push({date:String(ev.ts).slice(0,10),ts:ev.ts,type:'audit',label:CD_AUDIT_LABELS[ev.event]||ev.event,meta:ev.ip?'IP '+escHtml(ev.ip):'',color:'estimate'});
+      });
+    }else{
+      const _op=(typeof _proposalViewsByBidClient!=='undefined'&&_proposalViewsByBidClient)?_proposalViewsByBidClient[String(b.id)]:null;
+      if(_op){const ipm=_cdViewMeta(typeof _proposalViewsByBidClientIp!=='undefined'?_proposalViewsByBidClientIp:null,b.id);events.push({date:String(_op).slice(0,10),ts:_op,type:'opened',label:'Client opened proposal',meta:ipm&&ipm.ip?'IP '+escHtml(ipm.ip):'viewed',color:'estimate'});}
+      const _hub=(typeof _proposalViewsByBidHubClient!=='undefined'&&_proposalViewsByBidHubClient)?_proposalViewsByBidHubClient[String(b.id)]:null;
+      if(_hub){const ipm=_cdViewMeta(typeof _proposalViewsByBidHubIp!=='undefined'?_proposalViewsByBidHubIp:null,b.id);events.push({date:String(_hub).slice(0,10),ts:_hub,type:'hub',label:'Client opened hub',meta:ipm&&ipm.ip?'IP '+escHtml(ipm.ip):'viewed',color:'estimate'});}
+    }
+    if(b.signedAt)events.push({date:String(b.signedAt).slice(0,10),ts:b.signedAt,type:'signed',label:'Signed'+(b.signedName?' by '+escHtml(b.signedName):''),meta:(b.signIp?'IP '+escHtml(b.signIp):'e-signed')+(b.paymentMethod?' · '+escHtml(b.paymentMethod):'')+' · <span onclick="event.stopPropagation();exportAuditReport('+b.id+')" style="color:var(--blue);cursor:pointer;font-weight:700">Audit report</span>',color:'payment'});
+    // Won WITHOUT an e-signature (handshake deal or a manual "mark won"). Dated at
+    // the moment it was marked, and flagged as unsigned since that's the fact that
+    // matters if the client later disputes the job.
+    const _wonAt=b.handshake_date||b.wonAt;
+    if(!b.signedAt&&b.status==='Closed Won'&&_wonAt)
+      events.push({date:String(_wonAt).slice(0,10),ts:_wonAt,type:'won',label:b.handshake?'Marked won, handshake deal':'Marked won',meta:'No signature on file',color:'active'});
+    // Terminal states get their own dated rows too, never the creation date.
+    if(b.declinedAt)events.push({date:String(b.declinedAt).slice(0,10),ts:b.declinedAt,type:'declined',label:'Client declined',meta:escHtml(b.lostReason||''),color:'lost'});
+    else if(b.lostAt)events.push({date:String(b.lostAt).slice(0,10),ts:b.lostAt,type:'lost',label:'Marked lost',meta:escHtml(b.lostReason||''),color:'lost'});
     (b.collHistory||[]).forEach(h=>{
       if(!h.ts)return;
       const dateStr=h.ts.slice(0,10);
       const stageInfo=COLL_STAGES[h.stage]||{};
       const stageLabel=stageInfo.label||h.stage;
       const noteText=h.note&&h.note!==stageLabel?h.note:'';
-      events.push({date:dateStr,type:'coll',label:'Collection: '+stageLabel,meta:escHtml(noteText)+(noteText?' · ':'')+fmt(b.amount)+' job',color:'coll'});
+      events.push({date:dateStr,ts:h.ts,type:'coll',label:'Collection: '+stageLabel,meta:escHtml(noteText)+(noteText?' · ':'')+fmt(b.amount)+' job',color:'coll'});
     });
-    if(b.completion_date)events.push({date:b.completion_date,type:'complete',label:(b.kind==='diagnostic'?'Diagnostic charge, ':'Job completed, ')+fmt(b.amount),meta:b.kind==='diagnostic'?escHtml(b.desc||'Diagnostic visit'):escHtml(b.type||'Painting job'),color:'active'});
+    if(b.completion_date)events.push({date:b.completion_date,ts:_cdEventTs(b.completion_date,{iso:b.completedAt}),type:'complete',label:(b.kind==='diagnostic'?'Diagnostic charge, ':'Job completed, ')+fmt(b.amount),meta:b.kind==='diagnostic'?escHtml(b.desc||'Diagnostic visit'):escHtml(b.type||'Painting job'),color:'active'});
   });
   const allPays=payments.filter(p=>cbids.some(b=>b.id===p.bid_id));
   allPays.forEach(p=>{
     if(!p.date)return;
     const isRefund=p.type==='refund';
-    events.push({date:p.date,type:'payment',label:(isRefund?'Refund: ':'Payment: ')+fmt(Math.abs(p.amount)),meta:escHtml(p.method||'')+(p.ref?' #'+escHtml(p.ref):''),color:isRefund?'lost':'payment'});
+    events.push({date:p.date,ts:_cdEventTs(p.date,{iso:p.ts,id:p.id,logged:p.loggedAt}),type:'payment',label:(isRefund?'Refund: ':'Payment: ')+fmt(Math.abs(p.amount)),meta:escHtml(p.method||'')+(p.ref?' #'+escHtml(p.ref):'')+_cdLoggedNote(p.date,p.loggedAt,p.id),color:isRefund?'lost':'payment'});
   });
   cjobs.forEach(j=>{
     if(j.eventType==='estimate'){
       const isCanceled=j.status==='canceled';
       events.push({
         date:j.cancelDate||j.start||'',
+        ts:_cdEventTs(j.cancelDate||j.start,{time:j.cancelDate?null:j.time,id:j.id,logged:j.loggedAt}),
         type:'estimate',
-        label:isCanceled?'Estimate '+escHtml(j.cancelReason):'Estimate visit'+(j.time?' @ '+fmtTime(j.time):''),
-        meta:isCanceled?'Canceled '+j.cancelDate:(j.start+(j.addr?' · '+escHtml(j.addr):'')),
+        // The row's own stamp carries the time and the day header carries the date,
+        // so the label and meta don't repeat either.
+        label:isCanceled?'Proposal '+escHtml(j.cancelReason):'Proposal visit',
+        meta:isCanceled?'Canceled':escHtml(j.addr||''),
         color:isCanceled?'canceled':'estimate'
       });
     } else {
-      events.push({date:j.start||'',type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0),color:'active'});
+      events.push({date:j.start||'',ts:_cdEventTs(j.start,{time:j.time,id:j.id,logged:j.loggedAt}),type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0)+_cdLoggedNote(j.start,j.loggedAt,j.id),color:'active'});
     }
   });
-  cmiles.forEach(m=>events.push({date:m.date||'',type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`,color:'mile'}));
-  events.sort((a,b)=>b.date.localeCompare(a.date));
-  const el=document.getElementById('cd-timeline');
-  if(!events.length){el.innerHTML='<div class="empty">No activity yet. Add a bid or drive to this client.</div>';return;}
-  const byDate={};
-  [...events].sort((a,b)=>b.date.localeCompare(a.date)).forEach(e=>{
-    if(!byDate[e.date])byDate[e.date]=[];
-    byDate[e.date].push(e);
+  cmiles.forEach(m=>events.push({date:m.date||'',ts:_cdEventTs(m.date,{iso:m.ts,id:m.id,logged:m.loggedAt}),type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`+_cdLoggedNote(m.date,m.loggedAt,m.id),color:'mile'}));
+  // Expenses logged against this client belong in the trail too: they're part of
+  // what happened on the job, and they were the one activity type missing.
+  (typeof getClientExpenses==='function'?getClientExpenses(currentClientId):[]).forEach(x=>{
+    if(!x.date)return;
+    events.push({date:x.date,ts:_cdEventTs(x.date,{iso:x.ts,id:x.id,logged:x.loggedAt}),type:'expense',
+      label:'Expense: '+fmt(x.amount||0),
+      meta:escHtml(x.vendor||x.catLabel||x.cat||'Expense')+_cdLoggedNote(x.date,x.loggedAt,x.id),color:'lost'});
   });
-  const tk=todayKey();
-  el.innerHTML='<div class="timeline">'+
-    Object.entries(byDate).map(([date,evts],groupIdx)=>{
-      const isToday=date===tk;
-      const dayLabel=isToday?'Today':parseD(date).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
-      const domId='tl-group-'+groupIdx;
-      const items=evts.map(e=>{
-        const isBid=e.type==='bid';
-        const inner='<div class="tl-dot '+e.color+'"></div><div class="tl-label">'+e.label+'</div><div class="tl-meta">'+(e.meta||'')+(isBid?' · <span style="font-size:10px;color:var(--blue)">tap to edit</span>':'')+' </div>';
-        if(isBid)return '<div class="tl-item" onclick="viewBidFromTimeline('+e.id+')" style="cursor:pointer">'+inner+'</div>';
-        return '<div class="tl-item">'+inner+'</div>';
-      }).join('');
-      return '<div style="margin-bottom:8px">'+
-        '<div data-tlgroup="'+domId+'" onclick="toggleTlGroup(this.dataset.tlgroup)" style="display:flex;align-items:center;gap:8px;padding:5px 0;cursor:pointer;user-select:none">'+
-          '<span id="'+domId+'-arrow" style="font-size:10px;color:var(--text3);transition:transform .2s;display:inline-block">'+svgIcon('▶')+'</span>'+
-          '<span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:'+(isToday?'var(--blue)':'var(--text3)')+'">'+dayLabel+'</span>'+
-          '<span style="font-size:10px;color:var(--text3)">('+evts.length+')</span>'+
-        '</div>'+
-        '<div id="'+domId+'" style="display:none;padding-left:4px">'+items+'</div>'+
-      '</div>';
-    }).join('')+
-  '</div>';
+  // Every event is grouped by the LOCAL calendar day of its own timestamp.
+  // Stamps arrive in mixed forms (server UTC ISO, local ISO, bare day keys), so
+  // slicing the string put late-evening events on tomorrow's date.
+  events.forEach(e=>{
+    const t=String(e.ts||'');
+    if(t&&!/^\d{4}-\d{2}-\d{2}$/.test(t)){
+      const d=new Date(t);
+      if(!isNaN(d.getTime()))e.date=dateKey(d);
+    }
+  });
+  // Ordering within a day. Real clock times always win. An event that only has a
+  // DATE (older records, a job's start day) used to be anchored at noon, which
+  // dropped it below everything logged that evening: a proposal sent at 8:32 PM
+  // sorted to the bottom of the day. Instead, an undated-time event is slotted by
+  // its position in the job lifecycle, immediately after the latest timed event
+  // that precedes it in that sequence. The synthetic value is used for SORTING
+  // only; nothing fabricated is ever displayed.
+  const _hasClock=e=>{const t=String(e.ts||'');return !!t&&!/^\d{4}-\d{2}-\d{2}$/.test(t);};
+  const _ms=e=>{const d=new Date(e.ts);return isNaN(d.getTime())?0:d.getTime();};
+  const _rank=e=>CD_TL_STAGE[e.type]!=null?CD_TL_STAGE[e.type]:CD_TL_STAGE._default;
+  const _byDay={};
+  events.forEach(e=>{(_byDay[e.date]||(_byDay[e.date]=[])).push(e);});
+  Object.keys(_byDay).forEach(day=>{
+    const list=_byDay[day];
+    const timed=list.filter(_hasClock);
+    const dayStart=new Date(String(day)+'T00:00:00').getTime()||0;
+    list.forEach(e=>{
+      if(_hasClock(e)){e._ord=_ms(e);return;}
+      let at=dayStart;
+      timed.forEach(t=>{if(_rank(t)<=_rank(e))at=Math.max(at,_ms(t));});
+      e._ord=at+1; // just after the stage it follows
+    });
+  });
+  const _tms=e=>e._ord||0;
+  events.sort((a,b)=>_tms(b)-_tms(a));
+  const el=document.getElementById('cd-timeline-mount');if(!el)return;
+  const open=(window._cdTimelineOpen!==false);
+  const count=events.length?' <span style="color:var(--text3);font-weight:700">· '+events.length+'</span>':'';
+  const _anim=(window._cdAccAnim==='timeline');window._cdAccAnim=null;
+  const bar=_cdSectionBar('Activity timeline',open,"window._cdTimelineOpen=(window._cdTimelineOpen===false);window._cdAccAnim='timeline';renderCDTimeline()",count);
+  if(!open){el.innerHTML=bar;return;}
+  if(!events.length){el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner"><div class="empty">No activity yet. Add a proposal or drive to this client.</div></div></div>';return;}
+  // Grouped month -> day using the SAME accordion components Books' Income and
+  // Expenses use (_bkMonthAcc + _bkRenderDays), so every month-grouped history in
+  // the app has identical structure and right-hand chevrons. The day body is the
+  // vertical timeline (dots + rail) rather than a table, passed via opts.bodyFn.
+  const sorted=[...events].sort((a,b)=>_tms(b)-_tms(a));
+  const byMonth={};
+  sorted.forEach(e=>{const mo=String(e.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(e);});
+  const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
+  const _tlItems=evts=>'<div class="timeline">'+evts.map(e=>{
+    const isBid=e.type==='bid';
+    const tstr=(e.ts&&!/^\d{4}-\d{2}-\d{2}$/.test(String(e.ts)))?new Date(e.ts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}):'';
+    const metaFull=(tstr?'<span style="color:var(--text3);font-weight:700">'+tstr+'</span>'+(e.meta?' · ':''):'')+(e.meta||'');
+    const inner='<div class="tl-dot '+e.color+'">'+svgIcon(_cdEventIcon(e),{size:13})+'</div><div class="tl-label">'+e.label+'</div><div class="tl-meta">'+metaFull+(isBid?' · <span style="font-size:10px;color:var(--blue)">tap to edit</span>':'')+' </div>';
+    if(isBid)return '<div class="tl-item" onclick="viewBidFromTimeline('+e.id+')" style="cursor:pointer">'+inner+'</div>';
+    return '<div class="tl-item">'+inner+'</div>';
+  }).join('')+'</div>';
+  const _days=mo=>_bkRenderDays('cdtl',mo,byMonth[mo],[],null,0,'var(--text3)',null,null,{
+    bodyFn:_tlItems,
+    metaFn:dr=>dr.length+' event'+(dr.length!==1?'s':''),
+  });
+  // The month layer only earns its keep once the history actually spans months.
+  // A young client with everything in one month was showing three stacked headers
+  // (section, month, day) above a single row, which just reads as chrome.
+  const monthsHtml=months.length<2
+    ?_days(months[0])
+    :'<div class="bk-months">'+months.map((mo,i)=>_bkMonthAcc(
+      'cdtl',mo,_bkMonthLabel(mo),
+      byMonth[mo].length+' event'+(byMonth[mo].length!==1?'s':''),
+      '',
+      _days(mo),
+      i===0 // newest month open, older months collapsed
+    )).join('')+'</div>';
+  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'" style="margin-top:8px"><div class="card td-acc-inner">'+monthsHtml+'</div></div>';
 }
-function toggleTlGroup(id){
-  const el=document.getElementById(id);
-  const arrow=document.getElementById(id+'-arrow');
-  if(!el)return;
-  const open=el.style.display!=='none';
-  el.style.display=open?'none':'block';
-  if(arrow)arrow.style.transform=open?'':'rotate(90deg)';
+// Court-ready audit certificate for one signed proposal: the created -> sent ->
+// opened (IP) -> signed (IP) chain with timestamps and device, exportable via the
+// browser's print-to-PDF. This is the contractor's evidence in a chargeback or
+// contract dispute. IP/device are captured server-side; historical rows before the
+// audit feature show "not recorded".
+function exportAuditReport(bidId){
+  const b=(typeof bids!=='undefined'?bids:[]).find(x=>String(x.id)===String(bidId));
+  if(!b){if(typeof zAlert==='function')zAlert('Proposal not found.');return;}
+  const c=getClientById(b.client_id)||getClientById(currentClientId)||{};
+  const biz=(typeof S!=='undefined'&&(S.bname||S.businessName))||'TradeDesk';
+  const _cliIp=_cdViewMeta(typeof _proposalViewsByBidClientIp!=='undefined'?_proposalViewsByBidClientIp:null,b.id);
+  const _hubIp=_cdViewMeta(typeof _proposalViewsByBidHubIp!=='undefined'?_proposalViewsByBidHubIp:null,b.id);
+  const _openAt=(typeof _proposalViewsByBidClient!=='undefined'&&_proposalViewsByBidClient)?_proposalViewsByBidClient[String(b.id)]:null;
+  const _hubAt=(typeof _proposalViewsByBidHubClient!=='undefined'&&_proposalViewsByBidHubClient)?_proposalViewsByBidHubClient[String(b.id)]:null;
+  const NR='<span style="color:#999">not recorded</span>';
+  // Prefer the full per-event audit log (each step, own timestamp + IP); fall back
+  // to the two aggregate open events when the granular log isn't present.
+  const _alog=(typeof _proposalAuditEventsByBid!=='undefined'&&_proposalAuditEventsByBid)?_proposalAuditEventsByBid[String(b.id)]:null;
+  let _mid;
+  if(_alog&&_alog.length){
+    _mid=_alog.slice().filter(ev=>ev.event!=='signed').sort((x,y)=>String(x.ts).localeCompare(String(y.ts)))
+      .map(ev=>[CD_AUDIT_LABELS[ev.event]||ev.event, ev.ts, ev.ip, ev.ua]);
+  }else{
+    _mid=[
+      ['Client opened hub', _hubAt, _hubIp&&_hubIp.ip, _hubIp&&_hubIp.ua],
+      ['Client opened proposal', _openAt, _cliIp&&_cliIp.ip, _cliIp&&_cliIp.ua],
+    ];
+  }
+  // A job won without an e-signature (handshake / manually marked won) is stated
+  // outright: the Signed row will read "not recorded", and this row says why.
+  const _wonAt=b.handshake_date||b.wonAt;
+  const _unsignedWin=(!b.signedAt&&b.status==='Closed Won')
+    ?[[(b.handshake?'Marked won, handshake deal':'Marked won by contractor'),_wonAt,'','No e-signature captured']]
+    :[];
+  const rows=[
+    ['Proposal created', b.createdAt||b.bid_date, '', ''],
+    ['Proposal sent', b.sentAt||b.proposalSentDate, '', b.notifyEmail||b.sentTo||''],
+    ..._mid,
+    ..._unsignedWin,
+    ['Signed'+(b.signedName?' by '+b.signedName:''), b.signedAt, b.signIp, b.signUa],
+  ];
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const fmtTs=t=>t?fmtDateTimeMDY(t):NR;
+  const body=rows.filter(r=>r[1]||r[0].indexOf('Signed')===0||r[0].indexOf('created')>0).map(r=>
+    '<tr><td style="font-weight:700">'+esc(r[0])+'</td><td>'+fmtTs(r[1])+'</td><td>'+(r[2]?esc(r[2]):NR)+'</td><td style="font-size:11px;color:#555;word-break:break-all">'+(r[3]?esc(r[3]):NR)+'</td></tr>'
+  ).join('');
+  const html='<!doctype html><html><head><meta charset="utf-8"><title>Audit report, proposal '+esc(b.id)+'</title>'+
+    '<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;color:#111;max-width:760px;margin:24px auto;padding:0 18px}'+
+    'h1{font-size:20px;margin:0 0 2px}.sub{color:#555;font-size:13px;margin-bottom:18px}'+
+    'table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}th,td{text-align:left;padding:9px 10px;border-bottom:1px solid #e2e2e2;vertical-align:top}'+
+    'th{background:#f5f5f5;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#555}'+
+    '.meta{font-size:13px;margin-bottom:6px}.meta b{display:inline-block;min-width:120px;color:#555;font-weight:600}'+
+    '.disc{margin-top:22px;font-size:11px;color:#777;border-top:1px solid #e2e2e2;padding-top:12px}'+
+    '@media print{body{margin:0}}</style></head><body>'+
+    '<h1>'+esc(biz)+'</h1><div class="sub">Proposal Audit Certificate</div>'+
+    '<div class="meta"><b>Proposal #</b> '+esc(b.id)+'</div>'+
+    '<div class="meta"><b>Client</b> '+esc(c.name||b.client_name||'')+'</div>'+
+    '<div class="meta"><b>Amount</b> '+(typeof fmt==='function'?fmt(b.amount):('$'+b.amount))+'</div>'+
+    '<div class="meta"><b>Generated</b> '+fmtDateTimeMDY(new Date())+'</div>'+
+    '<table><thead><tr><th>Event</th><th>Timestamp</th><th>IP address</th><th>Device</th></tr></thead><tbody>'+body+'</tbody></table>'+
+    '<div class="disc">Timestamps, IP addresses, and device details are captured automatically by '+esc(biz)+' at the moment each action occurred; IP and device are recorded server-side from the request and cannot be set by the recipient. Events marked "not recorded" predate audit capture or were not performed. This report is provided as a record of engagement and is not legal advice.</div>'+
+    '</body></html>';
+  try{
+    const w=window.open('','_blank');
+    if(!w){if(typeof zAlert==='function')zAlert('Allow pop-ups to download the audit report, then tap Audit report again.');return;}
+    w.document.open();w.document.write(html);w.document.close();
+    setTimeout(()=>{try{w.focus();w.print();}catch(e){}},350);
+  }catch(e){if(typeof showToast==='function')showToast('Could not open the audit report','⚠️');}
 }
 function renderCDExpenses(){
   const el=document.getElementById('cdt-expenses-list');if(!el)return;
@@ -1677,7 +2000,7 @@ function renderCDBids(){
       return '';
     }).join('');
   }
-  if(!cbids.length){el.innerHTML='<div class="empty">No bids yet. Tap "+ Add bid" above.</div>';return;}
+  if(!cbids.length){el.innerHTML='<div class="empty">No proposals yet. Tap "+ Add proposal" above.</div>';return;}
   const latestBidId=cbids.length?cbids[0].id:null;
   const _rrpClient=getClientById(currentClientId);
   const _rrpRequired=!!(_rrpClient&&_rrpClient.yearBuilt&&_rrpClient.yearBuilt<1978);
@@ -1731,7 +2054,7 @@ function renderCDBids(){
       if(balance>0.01&&_stripeConnectStatus?.charges_enabled)actBtns.push('<button class="btn btn-sm" onclick="sendPaymentLink('+b.id+')" style="background:#635BFF;color:#fff;border-color:#635BFF;font-size:11px">'+svgIcon('💳')+' Send pay link</button>');
       if(balance>0.01&&b.completion_date){const _c=getClientById(b.client_id);if(_c&&_c.phone){const _msg=encodeURIComponent('Hi '+(_c.name||'').split(' ')[0]+', this is '+(S.bname||'your contractor')+'. Just a friendly reminder that a balance of '+fmt(balance)+' is outstanding for your job at '+(b.addr||_c.addr||'your property')+'. Please let us know when you can take care of this. Thank you!');actBtns.push('<a href="sms:'+_c.phone.replace(/\D/g,'')+'&body='+_msg+'" onclick="autoLogContact('+b.client_id+',\'payment_request\')" class="btn btn-sm" style="background:var(--green-lt);color:var(--green-mid);border-color:var(--green-mid);text-decoration:none">'+svgIcon('📲')+' Request pay</a>');}}
       if(getBidPaid(b.id)>(b.amount||0)+0.01)actBtns.push('<button class="btn btn-sm" onclick="openPayPanel('+b.id+')" style="background:#FFF0F0;color:#A32D2D;border-color:#A32D2D">'+svgIcon('↩')+' Issue refund</button>');
-      actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="toggleBidSummary('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#128196; View proposal</button>');
       // "Final invoice" only for real jobs, a diagnostic charge is already a
       // one-line receipt (Print invoice below covers it fine, no reconciliation
       // to do: no change orders, nothing that could be pending).
@@ -1753,7 +2076,7 @@ function renderCDBids(){
       // Recordable release doc, reachable any time after release (re-file, lost copy).
       if(lien&&lien.status==='resolved')actBtns.push('<button class="btn btn-sm" onclick="printKansasLienRelease('+b.id+')" style="background:var(--green-lt);color:var(--green);border-color:var(--green)">'+svgIcon('📄')+' Release doc</button>');
       if(!isDiag){
-        actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
+        actBtns.push('<button class="btn btn-sm" onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise proposal</button>');
         actBtns.push('<button class="btn btn-sm" onclick="showSupplyList('+b.id+')" style="background:#FFF0E8;color:#854F0B;border-color:#E89B50">'+svgIcon('📦')+' Supply list</button>');
       }
       actBtns.push('');
@@ -1761,7 +2084,7 @@ function renderCDBids(){
     if(!isWon){
       actBtns.push('<button class="btn btn-sm" onclick="sendBidEmail('+b.id+')" style="background:var(--bg2);border-color:var(--border2)">&#9993; Send email</button>');
       const _reviseFn='openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')';
-      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise bid</button>');
+      actBtns.push('<button class="btn btn-sm" onclick="'+_reviseFn+'" style="background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('✎')+' Revise proposal</button>');
       actBtns.push('<button class="btn btn-sm" onclick="openBidNotes('+b.id+')" style="background:var(--amber-lt);color:#856404;border-color:var(--amber)">'+svgIcon('📝')+' Notes</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidHandshake('+b.id+')" style="background:#FFF8E8;color:#856404;border-color:var(--amber);font-size:11px">'+svgIcon('🤝')+' Handshake</button>');
       actBtns.push('<button class="btn btn-sm" onclick="markBidAbandoned('+b.id+')" style="background:#FFF8F0;color:#A32D2D;border-color:#A32D2D">No response</button>');
@@ -1797,7 +2120,7 @@ function renderCDBids(){
                 const yest=new Date(today-86400000);
                 if(d>=today)return'Today at '+t;
                 if(d>=yest)return'Yesterday at '+t;
-                return d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'})+' at '+t;
+                return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' at '+t;
               };
               let badge='';
               if(hubTs){
@@ -1845,7 +2168,7 @@ function openClientProposals(clientId){
   const wonBids=getClientBids(clientId)
     .filter(b=>b.status==='Closed Won')
     .map(b=>{
-      const dk=b.signedAt?new Date(b.signedAt).toISOString().slice(0,10):(b.completion_date||b.bid_date||'');
+      const dk=b.signedAt?dateKey(new Date(b.signedAt)):(b.completion_date||b.bid_date||'');
       return {...b,_dk:dk};
     })
     .sort((a,b)=>b._dk.localeCompare(a._dk));
@@ -1871,7 +2194,7 @@ function openClientProposals(clientId){
 
   function _bidCard(b){
     const dateStr=b.signedAt
-      ?new Date(b.signedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})
+      ?new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})
       :(b._dk||'Unknown date');
     const signedLine=b.signedAt
       ?'<span style="color:var(--green-mid);font-size:11px;font-weight:600">'+svgIcon('✓')+' Signed '+dateStr+(b.signedName?' · '+escHtml(b.signedName):'')+'</span>'
@@ -1885,7 +2208,7 @@ function openClientProposals(clientId){
         '<div style="font-size:18px;font-weight:800;color:var(--green-mid);margin-left:12px;flex-shrink:0">'+fmt(b.amount)+'</div>'+
       '</div>'+
       '<div style="display:flex;gap:8px">'+
-        '<button onclick="_cpOpen('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋')+' Our bid</button>'+
+        '<button onclick="_cpOpen('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋')+' Our proposal</button>'+
         (b.proposalHtml
           ?'<button onclick="_cpOpen('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('📄')+' Client view</button>'
           :'<span style="flex:1;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-style:italic">No proposal saved</span>')+
@@ -1981,7 +2304,7 @@ function _cpOpen(bidId,view){
   const surfs=b.surfaces||[];
   const scope=b.scope?Object.entries(b.scope).filter(([,v])=>v).map(([k])=>{const s=SCOPE_ITEMS?.find(x=>x.id===k);return s?s.label:k;}):[];
   const SURF={'walls':'Walls','ceiling':'Ceiling','trim':'Trim','doors':'Doors','windows':'Windows','cabinets':'Cabinets','ext_walls':'Siding','ext_trim':'Ext trim','deck':'Deck','fence':'Fence','epoxy':'Epoxy floor'};
-  const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):(b.bid_date||'');
+  const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):(b.bid_date||'');
 
   let bidHTML=
     '<div style="background:var(--blue-lt);border-radius:12px;padding:16px;margin-bottom:16px">'+
@@ -2018,7 +2341,7 @@ function _cpOpen(bidId,view){
   // Build proposal pane (client view)
   const propPane=document.getElementById('cp-prop-pane');
   const _cpStorageKey=b.signingKey||b.proposalKey||null;
-  const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓')+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
+  const _cpSignedBadge=b.signedAt?'<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓')+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>':'';
   // Signature block pinned at the bottom of the client view, image from the stored
   // proposal JSON when available, falling back to the name/timestamp on the bid so the
   // block still shows when the storage write was missed at signing time.
@@ -2058,14 +2381,14 @@ function _cpOpen(bidId,view){
       }catch(e){propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Error parsing proposal.</div>';}});
     }).catch(()=>{propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Could not load proposal.</div>';});
   }else{
-    propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:14px;font-style:italic">No proposal on file for this bid.</div>';
+    propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:14px;font-style:italic">No proposal on file for this proposal.</div>';
   }
 
   // Render tabs
   function _tabBtn(v,label,active){
     return '<button id="cp-tab-'+v+'" onclick="_cpView(\''+v+'\')" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1.5px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue-lt)':'var(--bg)')+';color:'+(active?'var(--blue-dk)':'var(--text2)')+'">'+label+'</button>';
   }
-  document.getElementById('cp-tabs').innerHTML=_tabBtn('bid',svgIcon('📋')+' Our bid',view==='bid')+_tabBtn('proposal',svgIcon('📄')+' Client view',view==='proposal');
+  document.getElementById('cp-tabs').innerHTML=_tabBtn('bid',svgIcon('📋')+' Our proposal',view==='bid')+_tabBtn('proposal',svgIcon('📄')+' Client view',view==='proposal');
   _cpView(view);
 }
 function _cpView(v){
@@ -2132,7 +2455,7 @@ function renderCDJobs(){
       '<div style="display:flex;justify-content:space-between;align-items:flex-start">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:14px;font-weight:700">'+escHtml(j.name||'')+'</div>'+
-          '<div style="font-size:11px;color:var(--text3)">'+parseD(j.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+(j.time?' @ '+fmtTime(j.time):'')+' · '+(j.eventType==='estimate'?(j.hours?j.hours+'hr estimate':'Estimate visit'):j.days+' day'+(j.days>1?'s':''))+(j.addr?' · '+escHtml(j.addr):'')+' </div>'+
+          '<div style="font-size:11px;color:var(--text3)">'+parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(j.time?' @ '+fmtTime(j.time):'')+' · '+(j.eventType==='estimate'?(j.hours?j.hours+'hr proposal':'Proposal visit'):j.days+' day'+(j.days>1?'s':''))+(j.addr?' · '+escHtml(j.addr):'')+' </div>'+
           milesHTML+
         '</div>'+
         '<div style="text-align:right;flex-shrink:0">'+
@@ -2200,69 +2523,177 @@ function _mapsPickAddr(idx){
 }
 let _cdAddrList=[];
 function _cdMapAddr(i){const a=_cdAddrList[i];if(a)window.open('https://maps.apple.com/?daddr='+encodeURIComponent(a),'_blank');}
+function _cdDShort(s){if(!s)return '';const d=new Date(s);return isNaN(d)?String(s):d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}
+// Compact money for the property value header: $385K, $1.2M (no cents on a home value).
+function _cdCompactMoney(n){n=Number(n)||0;if(n>=1e6)return '$'+(n/1e6).toFixed(n%1e6?1:0).replace(/\.0$/,'')+'M';if(n>=1e3)return '$'+Math.round(n/1e3)+'K';return '$'+Math.round(n);}
+// One property card = one address: Zillow facts + pre-1978 lead trigger + the
+// crew site note + every proposal/job at THIS address with dates, dollars, and
+// running billed/paid totals. Same card for the primary and every extra address.
+function _cdPropCardHtml(c,a,idx,total){
+  const p=getProperty(c,a.addr);
+  const note=getSiteNote(c,a.addr);
+  const hist=getPropertyHistory(c,a.addr);
+  // Research-backed: 1 property renders fully expanded (an accordion for one item
+  // is pure friction); 2+ collapse to accordion rows you tap to open.
+  const single=(total===1);
+  const openKey='_cdpropOpen_'+c.id+'_'+idx;
+  const isOpen=single||!!window[openKey];
+  const pre78=!!(p.yearBuilt&&p.yearBuilt<1978);
+  const ep=(typeof _parseAddrParts==='function')?_parseAddrParts(a.addr||''):{street:a.addr||'',city:'',state:'',zip:''};
+  const street=((idx===0&&c.street)?c.street:ep.street)||a.addr||'No address';
+  const city=(idx===0&&c.city)?c.city:ep.city;
+  const state=(idx===0&&c.state)?c.state:ep.state;
+  const zip=(idx===0&&c.zip)?c.zip:ep.zip;
+  const cityLine=[city,state].filter(Boolean).join(', ');
+  // Collapsed summary line: calm, one row, only what identifies the property.
+  const metaBits=[cityLine,p.yearBuilt?('Built '+p.yearBuilt):''].filter(Boolean);
+  const metaLine=metaBits.join('  ·  ')||'No property details yet';
+  const workCount=hist.proposals.length+hist.jobs.length;
+  const money=(typeof _canSeeFinancials!=='function')||_canSeeFinancials(); // hide $ from crew without financials
+  const value=(money&&p.estimatedValue)?_cdCompactMoney(p.estimatedValue):'';
+  // A rental reads off the label the owner gave it or the property's own flag.
+  const isRental=/rental|tenant|investment/i.test(a.label||'')||!!p.isRental;
+  // Chips: only what matters at a glance. RENTAL is carried by the icon + label
+  // pill, so only the compliance-critical PRE-1978 flag needs a chip here.
+  const chipRow=pre78?`<div style="margin-top:7px"><span style="font-size:9px;font-weight:800;letter-spacing:.03em;color:#A32D2D;background:rgba(163,45,45,.1);padding:2px 7px;border-radius:20px">PRE-1978 · LEAD</span></div>`:'';
+
+  // ── Header (always shown) ────────────────────────────────────────────────
+  // Property-type icon in a tinted tile (house = owner site, building = rental),
+  // a colored label pill, street, then a calm meta line. Enrichable: when we have
+  // no property data yet the meta line invites a lookup instead of reading empty.
+  const accent=isRental?{fg:'#B45900',bg:'rgba(233,123,0,.10)',bd:'rgba(233,123,0,.22)'}:{fg:'#2563eb',bg:'rgba(37,99,235,.08)',bd:'rgba(37,99,235,.18)'};
+  const iconTile=`<div style="width:40px;height:40px;border-radius:11px;background:${accent.bg};border:1px solid ${accent.bd};display:flex;align-items:center;justify-content:center;flex-shrink:0">${svgIcon(isRental?'🏢':'🏠',{size:20})}</div>`;
+  const labelPill=`<span style="display:inline-block;font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:2px 8px;border-radius:20px;background:${accent.bg};color:${accent.fg}">${escHtml(a.label||'Primary')}</span>`;
+  const noData=!p.propDataFetchedAt&&!p.yearBuilt&&!p.estimatedValue;
+  const meta2=noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap to look up property details</span>`:`${escHtml(metaLine)}${workCount?`  ·  ${workCount} on file`:''}`;
+  // All the property facts inline on the card, so the owner sees them without
+  // having to expand every address (owner ask: "see all property data").
+  // Open balance is computed up here because it decides whether the header stat
+  // slot is spoken for, which in turn decides whether est. value has to ride in
+  // the facts line instead.
+  const openBal=money?Math.max(0,(hist.billed||0)-(hist.paid||0)):0;
+  const _facts=[];
+  if(p.sqft)_facts.push(`${Number(p.sqft).toLocaleString()} sqft`);
+  if(p.bedrooms||p.bathrooms)_facts.push(`${p.bedrooms||'?'} bd / ${p.bathrooms||'?'} ba`);
+  if(p.lotSize)_facts.push(`${escHtml(String(p.lotSize))} lot`);
+  if(p.lastSalePrice||p.lastSaleDate)_facts.push(`Sold ${p.lastSaleDate?new Date(p.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${money&&p.lastSalePrice?' for '+_cdCompactMoney(p.lastSalePrice):''}`.trim());
+  // Est. value normally sits in the header stat, but money owed at this address
+  // takes that slot. Without this, the value silently vanishes from the card the
+  // moment a proposal is outstanding, which is exactly when it's worth knowing.
+  if(value&&openBal>0.01)_facts.push(`${value} est. value`);
+  const factsLine=_facts.length?`<div style="font-size:11px;color:var(--text3);margin-top:8px;line-height:1.45">${_facts.join('  ·  ')}</div>`:'';
+  // Collapsed row identifier: single shows the full meta, multi shows just the city.
+  const metaShown=single?meta2:(noData?`${cityLine?escHtml(cityLine)+'  ·  ':''}<span style="color:var(--blue)">Tap for details</span>`:escHtml(cityLine||''));
+  // One decision-relevant stat on the row: open balance if owed here, else est. value.
+  const statBlock=openBal>0.01
+    ?`<div style="text-align:right;flex-shrink:0"><div style="font-size:14px;font-weight:800;color:#ff6b6b;white-space:nowrap">${fmt(openBal)}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Owed</div></div>`
+    :(value?`<div style="text-align:right;flex-shrink:0"><div style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">${value}</div><div style="font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">Est. value</div></div>`:'');
+  // Down-caret chevron matching the Overview section dropdown, so the property
+  // rows read as the same control (owner: "accordion should look like the
+  // overview accordion"). Rotates to point up when the row is expanded.
+  const chevron=single?'':`<span style="flex-shrink:0;display:inline-flex;color:var(--text3);transform:rotate(${isOpen?180:0}deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
+  const _hdrClick=single?'':`onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()"`;
+  const header=`<div ${_hdrClick} style="display:flex;align-items:flex-start;gap:12px;padding:13px 14px;${single?'':'cursor:pointer'}">
+    ${iconTile}
+    <div style="flex:1;min-width:0">
+      ${labelPill}
+      <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:4px;line-height:1.25;word-break:break-word">${escHtml(street)}</div>
+      <div style="font-size:12px;color:var(--text3);margin-top:2px">${metaShown}</div>
+      ${single?factsLine:''}
+      ${chipRow}
+    </div>
+    ${statBlock}
+    ${chevron}
+  </div>`;
+
+  // ── Expanded body ────────────────────────────────────────────────────────
+  let body='';
+  if(isOpen){
+    const leadRow=pre78?`<div style="display:flex;gap:9px;align-items:flex-start;padding:10px 12px;background:rgba(163,45,45,.06);border-radius:12px;margin-bottom:12px;color:#A32D2D;font-size:12px;line-height:1.4"><span style="flex-shrink:0">${svgIcon('⚠️')}</span><span><strong>Pre-1978 home.</strong> Federal lead-paint (EPA RRP) disclosure required before disturbing paint.</span></div>`:'';
+    // Site-access note lives here, PER PROPERTY (owner: "site access notes really
+    // need to roll under a property"). Editable inline; crew sees it on this
+    // address's job. Keyed by this property's address via _cdSavePropNote(idx).
+    const noteRow=`<div style="margin-bottom:12px;padding:11px 12px;background:var(--bg2);border-left:3px solid var(--amber,#8A4E00);border-radius:10px">
+      <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--amber,#8A4E00);margin-bottom:6px">Site access <span style="font-weight:500;text-transform:none;letter-spacing:0;color:var(--text3)">· crew sees this on the job</span></div>
+      <textarea id="cd-propnote-${idx}" rows="2" placeholder="Gate code, dog, where to park, tricky access…" style="width:100%;font-size:12px;padding:8px 10px;border-radius:8px;border:1px solid var(--border2);background:var(--bg-card,var(--bg));color:var(--text);font-family:inherit;resize:vertical;box-sizing:border-box;line-height:1.4;margin-bottom:8px">${escHtml(note||'')}</textarea>
+      <button onclick="event.stopPropagation();_cdSavePropNote(${idx})" class="btn btn-p btn-sm">Save site access</button>
+    </div>`;
+    // Property facts (sqft/beds/last sale) show in the header for a single
+    // property and in this body for multi, so the expanded body adds only the
+    // lead flag, access note, and work history.
+    // Work items, one clean chronological list with a type tag.
+    const items=[
+      ...hist.proposals.map(b=>({kind:'Proposal',accent:'var(--blue)',name:b.type||b.name||'Proposal',date:b.bid_date||(b.created?String(b.created).slice(0,10):''),amount:b.amount||0,meta:b.status||''})),
+      ...hist.jobs.map(j=>({kind:'Job',accent:'#1f9d57',name:j.name||'Job',date:j.start||'',amount:j.value||0,meta:(j.status==='completed'||j.status==='done')&&j.end?('Done '+_cdDShort(j.end)):(j.status||'')})),
+    ].sort((x,y)=>String(y.date).localeCompare(String(x.date)));
+    const rows=items.map(it=>`<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.name)}</div>
+        <div style="font-size:11px;color:var(--text3);margin-top:1px"><span style="color:${it.accent};font-weight:700">${it.kind}</span>${it.date?'  ·  '+_cdDShort(it.date):''}${it.meta?'  ·  '+escHtml(it.meta):''}</div>
+      </div>
+      ${money?`<div style="font-size:13px;font-weight:700;color:var(--text);flex-shrink:0">${fmt(it.amount)}</div>`:''}
+    </div>`).join('');
+    const totalSpan=money?`<span style="font-size:12px;color:var(--text2)"><strong style="color:var(--text)">${fmt(hist.paid)}</strong> <span style="color:var(--text3)">of ${fmt(hist.billed)} paid</span></span>`:'';
+    const workBlock=workCount?`<div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+        <span style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Work at this address</span>
+        ${totalSpan}
+      </div>
+      ${rows}
+    </div>`:`<div style="font-size:12px;color:var(--text3);padding:2px 0">No proposals or jobs at this address yet.</div>`;
+    // Footer: data source / lookup + map + remove.
+    const srcLink=p.assessorUrl
+      ?`<a href="${escHtml(p.assessorUrl)}" target="_blank" style="font-size:12px;color:var(--blue);text-decoration:none">${p.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`
+      :(!p.propDataFetchedAt&&street&&city?`<button onclick="_lookupPropertyData(${c.id},{street:'${escHtml(street)}',city:'${escHtml(city)}',state:'${escHtml(state||'')}',zip:'${escHtml(zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:12px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit">${svgIcon('🏠')} Look up property</button>`:'');
+    const removeBtn=idx>0?`<button onclick="removeClientAddress(${idx-1})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 11px;font-size:12px;cursor:pointer;font-family:inherit;color:#A32D2D">Remove</button>`:'';
+    const footer=`<div style="display:flex;align-items:center;gap:12px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border)">
+      ${srcLink||'<span></span>'}
+      <div style="flex:1"></div>
+      <button onclick="_cdMapAddr(${idx})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit;color:var(--text2)">Map</button>
+      ${removeBtn}
+    </div>`;
+    body=`<div style="padding:0 14px 14px">${single?'':factsLine}${leadRow}${noteRow}${workBlock}${footer}</div>`;
+  }
+  return `<div style="background:var(--bg-card,var(--bg));border:1px solid var(--line-2);border-radius:12px;margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow-card)">${header}${body}</div>`;
+}
 function renderCDAddresses(){
   const el=document.getElementById('cd-addresses-list');if(!el)return;
   const c=getClientById(currentClientId);if(!c)return;
-  const extras=(c.extraAddresses||[]);
-  _cdAddrList=[c.addr,...extras.map(a=>a.addr)];
-  const openKey='_cdpropOpen_'+currentClientId;
-  const isOpen=!!window[openKey];
-  const hasProp=!!(c.yearBuilt||c.sqft||c.estimatedValue||c.stories||c.bedrooms||c.bathrooms||c.exteriorMaterial||c.roofType||c.garage||c.lotSize||c.lastSaleDate||c.isRental);
-  const pre78Badge=c.yearBuilt&&c.yearBuilt<1978?`<span style="font-size:10px;background:rgba(163,45,45,.12);color:#A32D2D;border-radius:4px;padding:2px 5px;font-weight:700;margin-left:5px">${svgIcon('⚠️')} Pre-1978</span>`:'';
-  const srcBadge=c.propDataFetchedAt
-    ?(c.propDataExact===false?`<span style="font-size:10px;color:var(--text3);margin-left:4px">(area avg)</span>`:'')
-    :(c.street&&c.city?`<button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_lookupPropertyData(${c.id},{street:'${escHtml(c.street||'')}',city:'${escHtml(c.city||'')}',state:'${escHtml(c.state||'')}',zip:'${escHtml(c.zip||'')}'});this.disabled=true;this.textContent='Looking up…'" style="font-size:11px;color:var(--blue);background:none;border:none;cursor:pointer;padding:0;font-family:inherit;margin-left:6px">${svgIcon('🏠')} Look up</button>`:'');
-  const chevron=hasProp?`<span style="font-size:9px;color:var(--text3);display:inline-block;transform:rotate(${isOpen?90:0}deg);transition:transform .15s;margin-right:2px">${svgIcon('▶')}</span>`:'';
-  const propPanel=hasProp&&isOpen?`<div style="padding:10px 0 4px;border-top:1px solid var(--border);margin-top:8px">
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px${c.exteriorMaterial||c.roofType||c.garage||c.isRental||c.lastSaleDate||c.lastSalePrice||c.assessorUrl?';margin-bottom:8px':''}">
-      ${c.yearBuilt?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.yearBuilt}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📅')} Year built</div></div>`:''}
-      ${c.sqft?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${Number(c.sqft).toLocaleString()}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('📐')} Sq ft</div></div>`:''}
-      ${c.estimatedValue?`<div style="min-width:0"><div style="font-size:14px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fmt(c.estimatedValue)}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('💰')} Est. value</div></div>`:''}
-      ${c.stories?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.stories}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🏢')} Stories</div></div>`:''}
-      ${c.bedrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bedrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛏')} Beds</div></div>`:''}
-      ${c.bathrooms?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.bathrooms}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🛁')} Baths</div></div>`:''}
-      ${c.lotSize?`<div style="min-width:0"><div style="font-size:15px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(String(c.lotSize))}</div><div style="font-size:10px;color:var(--text3)">${svgIcon('🌳')} Lot</div></div>`:''}
-    </div>
-    ${c.exteriorMaterial||c.roofType||c.garage||c.isRental?`<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:${c.lastSaleDate||c.lastSalePrice||c.assessorUrl?'8px':'0'}">
-      ${c.exteriorMaterial?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🏠')} ${escHtml(String(c.exteriorMaterial))}</span>`:''}
-      ${c.roofType?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🏗️')} ${escHtml(String(c.roofType))}</span>`:''}
-      ${c.garage?`<span style="font-size:11px;background:var(--bg);border:1px solid var(--border2);border-radius:20px;padding:3px 8px">${svgIcon('🚗')} ${escHtml(String(c.garage))}</span>`:''}
-      ${c.isRental?`<span style="font-size:11px;background:rgba(233,123,0,.12);border:1px solid rgba(233,123,0,.3);border-radius:20px;padding:3px 8px;color:#E97B00;font-weight:700">${svgIcon('🔑')} Rental</span>`:''}
-    </div>`:''}
-    ${c.lastSaleDate||c.lastSalePrice?`<div style="font-size:12px;color:var(--text3);padding-top:6px;border-top:1px solid var(--border);margin-bottom:${c.assessorUrl?'6px':'0'}">Last sold ${c.lastSaleDate?new Date(c.lastSaleDate).toLocaleDateString('en-US',{month:'short',year:'numeric'}):''}${c.lastSalePrice?' · <strong style="color:var(--text)">'+fmt(c.lastSalePrice)+'</strong>':''}</div>`:''}
-    ${c.assessorUrl?`<a href="${escHtml(c.assessorUrl)}" target="_blank" style="font-size:11px;color:var(--blue)">${c.propDataSource==='zillow'?'View on Zillow →':'County record →'}</a>`:''}
-  </div>`:''
-  let html=`<div style="padding:9px 0${extras.length?';border-bottom:1px solid var(--border)':''}">
-    <div onclick="window['${openKey}']=!window['${openKey}'];renderCDAddresses()" style="display:flex;justify-content:space-between;align-items:flex-start;cursor:${hasProp?'pointer':'default'}">
-      <div style="flex:1;min-width:0">
-        <div style="font-size:12px;font-weight:700;display:flex;align-items:center;flex-wrap:wrap;gap:2px">Primary${pre78Badge}${srcBadge}</div>
-        <div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(c.addr||'No address')}</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;margin-left:8px;margin-top:2px">
-        ${chevron}
-        <button onmousedown="event.stopPropagation()" onclick="event.stopPropagation();_cdMapAddr(0)" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
-      </div>
-    </div>
-    ${propPanel}
-  </div>`;
-  extras.forEach((a,i)=>{
-    html+=`<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 0${i<extras.length-1?';border-bottom:1px solid var(--border)':''}">
-      <div><div style="font-size:12px;font-weight:700;color:var(--text3)">${escHtml(a.label||'Property '+(i+2))}</div><div style="font-size:13px;color:var(--text2);margin-top:2px">${escHtml(a.addr)}</div></div>
-      <div style="display:flex;gap:6px;flex-shrink:0">
-        <button onclick="_cdMapAddr(${i+1})" style="background:none;border:1px solid var(--border2);border-radius:var(--r);padding:5px 10px;font-size:11px;cursor:pointer;font-family:inherit;color:var(--text3)">Map</button>
-        <button onclick="removeClientAddress(${i})" style="background:none;border:1px solid #A32D2D;border-radius:var(--r);padding:5px 8px;font-size:11px;cursor:pointer;font-family:inherit;color:#A32D2D">✕</button>
-      </div></div>`;
-  });
-  if(!c.addr&&extras.length===0)html+='<div style="font-size:12px;color:var(--text3);padding:6px 0 2px">No address, edit client to add one.</div>';
-  el.innerHTML=html;
+  // A GC/PM/builder doesn't own the sites under them, so call the section "Job
+  // sites," not "Properties" (which would imply they're theirs).
+  const acctOwns=(typeof accountOwnsSites==='function')?accountOwnsSites(c):true;
+  const title=acctOwns?'Properties':'Job sites';
+  const _noun=acctOwns?'property':'job site';
+  const addrs=clientAddresses(c);
+  _cdAddrList=addrs.map(a=>a.addr);
+  const open=(window._cdPropsOpen!==false);
+  // The parent bar is rendered as a plain element styled IDENTICALLY to the
+  // Overview section selector (#cd-tab-select): same width, padding, border,
+  // radius, shadow, 15px/800 type, and the same right-aligned down-chevron. No
+  // card wrapper, so the two controls are pixel-for-pixel the same.
+  const _barStyle='width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-size:15px;font-weight:800;box-shadow:var(--shadow-card);display:flex;align-items:center;justify-content:space-between;cursor:pointer';
+  const _chev='<span style="display:inline-flex;color:#888;flex-shrink:0;transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>';
+  const _count=addrs.length?' <span style="color:var(--text3);font-weight:700">· '+addrs.length+'</span>':'';
+  const _anim=(window._cdAccAnim==='props');window._cdAccAnim=null;
+  const bar='<div onclick="window._cdPropsOpen=(window._cdPropsOpen===false);window._cdAccAnim=\'props\';renderCDAddresses()" style="'+_barStyle+'"><span>'+title+_count+'</span>'+_chev+'</div>';
+  if(!open){el.innerHTML=bar;return;} // collapsed: only the bar, exactly like a collapsed selector
+  const _addBtn='<button onclick="openAddAddressModal()" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;margin-top:8px;padding:13px;border:1.5px dashed var(--blue);border-radius:var(--r-lg);background:var(--blue-lt,rgba(37,99,235,.06));color:var(--blue-dk);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">'+svgIcon('➕',{size:15})+' Add '+_noun+'</button>';
+  const rows=addrs.length
+    ?'<div style="margin-top:8px">'+addrs.map((a,i)=>_cdPropCardHtml(c,a,i,addrs.length)).join('')+'</div>'
+    :'<div style="font-size:12px;color:var(--text3);padding:8px 2px">No '+_noun+' yet.</div>';
+  el.innerHTML=bar+'<div class="td-acc-body'+(_anim?' td-acc-in':'')+'"><div class="td-acc-inner">'+rows+_addBtn+'</div></div>';
 }
 function openAddAddressModal(){
+  const inS='width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit';
+  const lblS='font-size:11px;font-weight:700;display:block;margin-bottom:4px';
   const overlay=document.createElement('div');overlay.className='zmodal-overlay';
-  overlay.innerHTML='<div class="zmodal" style="max-width:360px"><div class="zmodal-title">Add property address</div>'+
-    '<div class="f" style="margin-bottom:10px"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Label (e.g. Vacation home, Rental)</label>'+
-    '<input id="_aa-label" placeholder="Vacation home" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
-    '<div class="f" style="margin-bottom:14px;position:relative"><label style="font-size:11px;font-weight:700;display:block;margin-bottom:4px">Address <span style="color:#A32D2D">*</span></label>'+
-    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" autocomplete="off" style="width:100%;box-sizing:border-box;padding:9px;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg2);color:var(--text);font-size:13px;font-family:inherit"></div>'+
+  overlay.innerHTML='<div class="zmodal" style="max-width:380px"><div class="zmodal-title">Add property address</div>'+
+    '<div class="f" style="margin-bottom:10px"><label style="'+lblS+'">Label (e.g. Vacation home, Rental)</label>'+
+    '<input id="_aa-label" placeholder="Vacation home" style="'+inS+'"></div>'+
+    '<div class="f" style="margin-bottom:10px;position:relative"><label style="'+lblS+'">Address <span style="color:#A32D2D">*</span></label>'+
+    '<input id="_aa-addr" placeholder="5678 Oak Ave, Wichita KS 67206" autocomplete="off" style="'+inS+'"></div>'+
+    '<div class="f" style="margin-bottom:14px"><label style="'+lblS+'">Property type</label>'+
+    '<select id="_aa-ptype" style="'+inS+'"><option value="">- Select -</option><option>Single family home</option><option>Townhouse / condo</option><option>Rental property</option><option>Commercial</option><option>New construction</option><option>Other</option></select></div>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="saveAddClientAddress()" class="btn btn-g" style="flex:1">Add</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Cancel</button>'+
@@ -2279,6 +2710,8 @@ function saveAddClientAddress(){
   const c=getClientById(currentClientId);if(!c)return;
   if(!c.extraAddresses)c.extraAddresses=[];
   c.extraAddresses.push({label,addr});
+  const ptype=document.getElementById('_aa-ptype')?.value||'';
+  if(ptype&&typeof setPropertyData==='function')setPropertyData(c,addr,{propertyType:ptype,isRental:/rental/i.test(ptype)||undefined});
   saveAll();
   document.querySelector('.zmodal-overlay')?.remove();
   renderCDAddresses();
@@ -2292,6 +2725,69 @@ function removeClientAddress(idx){
   });
 }
 
+// ── Shared client-address picker ────────────────────────────────────────────
+// ONE component used by BOTH the estimate (header address chip) and the Log-a-
+// trip / start-drive modal (under "Driving to"). Given a client with 2+
+// properties, it lists them; a tap fires onPick(addr). "+ New address" adds one
+// inline and auto-picks it. Callers only open it when clientAddresses(c).length
+// > 1; a single-address client skips it entirely (zero extra taps). Speed is the
+// goal: search/choose the client, then one tap on the right property.
+let _addrPickCb=null,_addrPickList=[],_addrPickClientId=null;
+function pickClientAddress(clientId,onPick){
+  const c=getClientById(clientId);if(!c)return;
+  _addrPickList=(typeof clientAddresses==='function')?clientAddresses(c):[{label:'Primary',addr:c.addr}];
+  _addrPickCb=onPick;_addrPickClientId=clientId;
+  document.getElementById('_addrpick-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_addrpick-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const pin='<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="var(--blue)" stroke-width="2.2" style="flex-shrink:0"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+  const rows=_addrPickList.map((a,i)=>{
+    const street=(a.addr||'').split(',')[0];
+    const rest=(a.addr||'').includes(',')?(a.addr.split(',').slice(1).join(',').trim()):'';
+    const sub=[a.label,rest].filter(Boolean).join(' · ');
+    return '<div onclick="_addrPickChoose('+i+')" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer">'+pin+
+      '<div style="flex:1;min-width:0"><div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(street)+'</div>'+
+      (sub?'<div style="font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(sub)+'</div>':'')+'</div></div>';
+  }).join('');
+  const sheet=document.createElement('div');sheet.className='zmodal';sheet.style.maxWidth='380px';sheet.style.padding='6px';sheet.id='_addrpick-sheet';
+  sheet.innerHTML=
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);padding:11px 12px 4px">Which property?</div>'+
+    rows+
+    '<div onclick="_addrPickAddNew()" style="display:flex;align-items:center;gap:11px;padding:12px;border-top:1px solid var(--border);cursor:pointer;color:var(--blue);font-weight:800;font-size:14px"><span style="width:26px;height:26px;border-radius:50%;border:1.5px dashed var(--blue);display:flex;align-items:center;justify-content:center;flex-shrink:0"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--blue)" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span>New address for this client</div>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+}
+function _addrPickFire(addr){
+  document.getElementById('_addrpick-ov')?.remove();
+  const cb=_addrPickCb;_addrPickCb=null;
+  if(cb)cb(addr);
+}
+function _addrPickChoose(i){const a=_addrPickList[i];if(a)_addrPickFire(a.addr);}
+function _addrPickAddNew(){
+  const sheet=document.getElementById('_addrpick-sheet');if(!sheet)return;
+  const cid=_addrPickClientId;
+  sheet.innerHTML=
+    '<div style="font-size:15px;font-weight:800;padding:10px 12px 8px">New address</div>'+
+    '<div style="padding:0 12px 12px">'+
+      '<input id="_addrpick-new" placeholder="123 Main St, City ST" autocomplete="off" style="width:100%;box-sizing:border-box;padding:11px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:14px;font-family:inherit;background:var(--bg2);color:var(--text)">'+
+      '<div style="display:flex;gap:8px;margin-top:12px">'+
+        '<button onclick="_addrPickSaveNew()" class="btn btn-g" style="flex:2">Add &amp; use</button>'+
+        '<button onclick="pickClientAddress('+cid+',_addrPickCb)" class="btn" style="flex:1">Back</button>'+
+      '</div>'+
+    '</div>';
+  const inp=document.getElementById('_addrpick-new');
+  if(inp&&typeof _addrAutoFull==='function')_addrAutoFull(inp,null);
+  setTimeout(()=>inp&&inp.focus(),60);
+}
+function _addrPickSaveNew(){
+  const val=(document.getElementById('_addrpick-new')?.value||'').trim();
+  if(!val){if(typeof zAlert==='function')zAlert('Enter an address.');return;}
+  const c=getClientById(_addrPickClientId);if(!c)return;
+  c.extraAddresses=c.extraAddresses||[];
+  c.extraAddresses.push({label:'Additional property',addr:val});
+  if(typeof saveAll==='function')saveAll();
+  _addrPickFire(val);
+}
+
 // ── Property data auto-lookup ───────────────────────────────────────────────
 async function _lookupPropertyData(clientId,addrParts){
   try{
@@ -2301,26 +2797,29 @@ async function _lookupPropertyData(clientId,addrParts){
     let res;try{res=await fetch('/api/property?addr='+encodeURIComponent(addr),{signal:_ctrl.signal});}finally{clearTimeout(_t);}
     if(!res.ok||res.status===204)return;
     const d=await res.json();
+    const c=clients.find(x=>x.id===clientId);if(!c)return;
+    // Key property data by the STREET line so it lands on the right address
+    // (primary or an extra), never overwriting a sibling property's data.
+    const _keyAddr=addrParts.street||addr;
+    const _existing=(typeof getProperty==='function')?getProperty(c,_keyAddr):{};
     if(d.error||d.found===false){
       // Backend has no record for this address. Stamp propDataFetchedAt so the
       // background queue (filters on !propDataFetchedAt) doesn't re-query it on
       // every boot, that repeated lookup was the recurring /api/property miss.
-      const c0=clients.find(x=>x.id===clientId);
-      if(c0&&!c0.propDataFetchedAt){c0.propDataFetchedAt=new Date().toISOString();c0.propDataMiss=true;saveAll();}
+      if(!_existing.propDataFetchedAt){setPropertyData(c,_keyAddr,{propDataFetchedAt:new Date().toISOString(),propDataMiss:true});saveAll();}
       return;
     }
-    const c=clients.find(x=>x.id===clientId);if(!c)return;
-    if(d.yearBuilt&&!c.yearBuilt)c.yearBuilt=d.yearBuilt;
-    if(d.sqft)c.sqft=d.sqft;
-    if(d.estValue)c.estimatedValue=d.estValue;
-    if(d.beds)c.bedrooms=d.beds;
-    if(d.baths)c.bathrooms=d.baths;
-    if(d.lastSalePrice)c.lastSalePrice=d.lastSalePrice;
-    if(d.lastSaleDate)c.lastSaleDate=d.lastSaleDate;
-    if(d.propertyUrl)c.assessorUrl=d.propertyUrl;
-    c.propDataSource='zillow';
-    c.propDataExact=true;
-    c.propDataFetchedAt=new Date().toISOString();
+    const _pd={};
+    if(d.yearBuilt&&!_existing.yearBuilt)_pd.yearBuilt=d.yearBuilt; // never override a manually-entered year
+    if(d.sqft)_pd.sqft=d.sqft;
+    if(d.estValue)_pd.estimatedValue=d.estValue;
+    if(d.beds)_pd.bedrooms=d.beds;
+    if(d.baths)_pd.bathrooms=d.baths;
+    if(d.lastSalePrice)_pd.lastSalePrice=d.lastSalePrice;
+    if(d.lastSaleDate)_pd.lastSaleDate=d.lastSaleDate;
+    if(d.propertyUrl)_pd.assessorUrl=d.propertyUrl;
+    _pd.propDataSource='zillow';_pd.propDataExact=true;_pd.propDataFetchedAt=new Date().toISOString();
+    setPropertyData(c,_keyAddr,_pd);
     saveAll();
     if(currentClientId===clientId)renderClientDetail();
   }catch(e){console.warn('Property lookup failed:',e);}

@@ -14,7 +14,7 @@ function openExpenseFlow(){
   const catOpts=IRS_EXPENSE_CATS.map(c=>'<option value="'+c.id+'">'+c.icon+' '+c.label+'</option>').join('');
   const jobOpts='<option value="">- Not tied to a specific job -</option>'+
     bids.filter(b=>b.status==='Closed Won').map(b=>'<option value="'+b.id+'">'+escHtml(b.client_name||b.name)+(b.addr?' · '+escHtml((b.addr||'').split(',')[0]):'')+'</option>').join('');
-  const today=new Date().toISOString().slice(0,10);
+  const today=todayKey();
   ov.innerHTML=
     '<div style="background:var(--bg);border-radius:20px;width:100%;max-width:600px;max-height:92vh;overflow-y:auto;padding:20px 20px 28px">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">'+
@@ -668,7 +668,7 @@ function _confirmReceiptDate(aiDate,statusEl){
   div.id='rcpt-date-confirm';
   div.style.cssText='background:#FEF3C7;border:1px solid #D97706;border-radius:var(--r);padding:10px 12px;margin-top:8px';
   let displayDate=aiDate||'(no date found)';
-  try{if(aiDate){const d=new Date(aiDate+'T12:00:00');displayDate=d.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});}}catch(e){}
+  try{if(aiDate){const d=new Date(aiDate+'T12:00:00');displayDate=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}}catch(e){}
   div.innerHTML=
     '<div style="font-size:11px;font-weight:700;color:#92400E;margin-bottom:6px">'+svgIcon('📅',{size:12})+' AI read date as: <strong>'+displayDate+'</strong>, correct?</div>'+
     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">'+
@@ -796,6 +796,7 @@ async function expSave(){
   const receipt_img=_expState.imagePages.length&&!receipt_key?'data:image/jpeg;base64,'+_expState.imagePages[0].b64:null;
   expenses.push({
     id:expId,date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
+    loggedAt:new Date().toISOString(),
     vehicleName:(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):'')||undefined,
     lead_source:leadSource||undefined,
     meal_purpose:mealPurpose||undefined,meal_attendees:mealAttendees||undefined,
@@ -843,32 +844,32 @@ function quickAction(type){
     todayEstimates.forEach(j=>{
       const c=getClientById(j.client_id);
       if(c&&!options.find(o=>o.clientId===j.client_id))
-        options.push({label:c.name,sub:'Estimate today'+(j.time?' @ '+fmtTime(j.time):''),clientId:j.client_id,icon:'📅'});
+        options.push({label:c.name,sub:'Proposal today'+(j.time?' @ '+fmtTime(j.time):''),clientId:j.client_id,icon:'📅'});
     });
     if(!options.length){
       const week=addDays(tk,7);
       jobs.filter(j=>j.eventType==='estimate'&&j.start>=tk&&j.start<=week).forEach(j=>{
         const c=getClientById(j.client_id);
         if(c&&!options.find(o=>o.clientId===j.client_id))
-          options.push({label:c.name,sub:'Estimate '+j.start+(j.time?' @ '+fmtTime(j.time):''),clientId:j.client_id,icon:'📅'});
+          options.push({label:c.name,sub:'Proposal '+j.start+(j.time?' @ '+fmtTime(j.time):''),clientId:j.client_id,icon:'📅'});
       });
     }
     clients.filter(c=>!getClientBids(c.id).length).slice(0,4).forEach(c=>{
       if(!options.find(o=>o.clientId===c.id))
         options.push({label:c.name,sub:(c.addr||'').split(',')[0]||'New lead',clientId:c.id,icon:'🆕'});
     });
-    showQuickPicker('Start Estimate','Which client?',options,'estimate',true);
+    showQuickPicker('Start Proposal','Which client?',options,'estimate',true);
   } else if(type==='schedule'){
     if(!wonUnscheduled.length){
       if(!bids.some(b=>b.status==='Closed Won')){
-        showWorkflowGate('No signed jobs to schedule. Close an estimate first.','Start Estimate','function(){quickAction(\'estimate\');}');return;
+        showWorkflowGate('No signed jobs to schedule. Close a proposal first.','Start Proposal','function(){quickAction(\'estimate\');}');return;
       }
       showWorkflowGate('All signed jobs are already scheduled. Check your calendar.','View Calendar','function(){goPg(\'pg-cal\');}');return;
     }
     const options=[];
     wonUnscheduled.slice(0,8).forEach(b=>{
       const c=getClientById(b.client_id);
-      if(c)options.push({label:c.name,sub:fmt(b.amount)+', won bid',clientId:b.client_id,bidId:b.id,icon:'✓'});
+      if(c)options.push({label:c.name,sub:fmt(b.amount)+', won proposal',clientId:b.client_id,bidId:b.id,icon:'✓'});
     });
     showQuickPicker('Schedule Job','Which job to schedule?',options,'schedule',false);
   } else if(type==='complete'){
@@ -1046,7 +1047,7 @@ function executeQuickAction(actionType,clientId,bidId,jobId){
     const tk=todayKey();
     const hasEst=jobs.some(j=>j.client_id===clientId&&j.eventType==='estimate'&&j.start===tk);
     const hasWon=bids.some(b=>b.client_id===clientId&&b.status==='Closed Won');
-    const purpose=hasWon?'Job site':hasEst?'Estimate':'Estimate';
+    const purpose=hasWon?'Job site':hasEst?'Proposal':'Proposal';
     openLogTripModal({clientId,toAddress:c?c.addr:'',purpose,clientName:c?c.name:''});
   } else if(actionType==='expense'){
     showQuickExpenseModal(clientId,bidId);
@@ -1142,6 +1143,7 @@ function saveQuickExpense(clientId){
   expenses.unshift({
     id:Date.now(),
     date:_qeDateVal,
+    loggedAt:new Date().toISOString(),
     cat,
     vehicleName:(cat.indexOf('Vehicle')===0&&_qeVeh?_qeVeh.value:'')||undefined,
     vendor,
@@ -1208,7 +1210,7 @@ function renderCalConflicts(){
   if(el)el.innerHTML=conflicts.map(c=>'<div class="tip tip-d" style="margin-bottom:6px">Scheduling conflict: '+c+'</div>').join('');
 }
 function renderCalWeek(){const t=new Date(),dow=t.getDay(),DNAMES=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],tk=todayKey();const days=[];for(let i=0;i<7;i++){const d=new Date(t);d.setDate(t.getDate()-dow+i);days.push(d);}document.getElementById('cal-week').innerHTML=days.map((d,i)=>{const key=dateKey(d),dj=getJobsOnDay(key).filter(x=>!x.isBuf),isToday=key===tk;return`<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border)"><div style="width:30px;text-align:center;flex-shrink:0"><div style="font-size:10px;font-weight:700;text-transform:uppercase;color:${isToday?'var(--blue)':'var(--text3)'}">${DNAMES[i]}</div><div style="font-size:13px;font-weight:${isToday?'700':'400'};color:${isToday?'var(--blue)':'var(--text2)'}">${d.getDate()}</div></div><div style="flex:1;min-width:0">${dj.length?dj.map(({job})=>`<div style="font-size:10px;padding:2px 5px;border-radius:3px;background:${job.color};color:#fff;margin-bottom:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(job.name)}</div>`).join(''):'<div style="font-size:11px;color:var(--text3)">Open</div>'}</div></div>`;}).join('');}
-function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>addDays(j.start,(parseInt(j.days)||1)-1)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name)}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{month:'short',day:'numeric'})} · ${j.days}d${j.value?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
+function renderCalUpcoming(){const tk=todayKey(),upcoming=[...jobs].filter(j=>addDays(j.start,(parseInt(j.days)||1)-1)>=tk).sort((a,b)=>a.start.localeCompare(b.start)).slice(0,6);document.getElementById('cal-upcoming').innerHTML=!upcoming.length?'<div class="empty">No upcoming jobs.</div>':upcoming.map(j=>{const isA=j.start<=tk;return`<div style="display:flex;gap:8px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:2px;background:${j.color};flex-shrink:0;margin-top:3px"></div><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(j.name)}</div><div style="font-size:10px;color:var(--text3)">${parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})} · ${j.days}d${j.value?' · '+fmt(j.value):''}</div></div><span class="bdg ${isA?'bdg-active':'bdg-upcoming'}">${isA?'Active':'Soon'}</span></div>`;}).join('');}
 
 function populateSchedSelect(){
   const cSel=document.getElementById('s-client-sel');
@@ -1216,44 +1218,77 @@ function populateSchedSelect(){
   const scheduledIds=new Set(jobs.filter(j=>j.bid_id).map(j=>j.bid_id));
   const won=bids.filter(b=>b.status==='Closed Won');
   const bSel=document.getElementById('s-bid-sel');
-  if(bSel)bSel.innerHTML='<option value="">- Select a won bid -</option>'+won.map(b=>'<option value="'+b.id+'"'+(scheduledIds.has(b.id)?' disabled':'')+'>'+escHtml(b.client_name||b.name)+', '+fmt(b.amount)+(scheduledIds.has(b.id)?' (scheduled)':'')+' </option>').join('');
+  if(bSel)bSel.innerHTML='<option value="">- Select a won proposal -</option>'+won.map(b=>'<option value="'+b.id+'"'+(scheduledIds.has(b.id)?' disabled':'')+'>'+escHtml(b.client_name||b.name)+', '+fmt(b.amount)+(scheduledIds.has(b.id)?' (scheduled)':'')+' </option>').join('');
+  const crewSel=document.getElementById('s-crew-sel');
+  if(crewSel){
+    const emps=(S.employees||[]).filter(e=>e.name);
+    crewSel.innerHTML='<option value="">Unassigned (I\'ll do it)</option>'+emps.map(e=>'<option value="'+e.id+'">'+escHtml(e.name)+'</option>').join('');
+  }
 }
 
 function setSchedType(type,btn){
   schedType=type;
   const isEst=type==='estimate';
-  document.querySelectorAll('#pg-schedule .fbar .fb').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('#pg-schedule .sf-seg .sf-seg-btn').forEach(b=>b.classList.remove('active'));
   if(btn)btn.classList.add('active');
   else{const t=document.getElementById(isEst?'sched-tab-est':'sched-tab-job');if(t)t.classList.add('active');}
-  const estF=document.getElementById('sched-est-fields');if(estF)estF.style.display=isEst?'block':'none';
-  const jobF=document.getElementById('sched-job-fields');if(jobF)jobF.style.display=isEst?'none':'block';
-  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=isEst?'none':'block';
-  const timeRow=document.getElementById('s-time');if(timeRow){const _tf=timeRow.closest('.f');if(_tf)_tf.style.display=isEst?'':'none';}
+  // These are .sf-row flex rows now, toggle with '' (revert to CSS flex), not
+  // 'block', or the leading icon + body would stack instead of sitting inline.
+  const estF=document.getElementById('sched-est-fields');if(estF)estF.style.display=isEst?'':'none';
+  const jobF=document.getElementById('sched-job-fields');if(jobF)jobF.style.display=isEst?'none':'';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=isEst?'none':'';
+  // Time now applies to jobs too (owner spec 2026-07-18: every job gets real
+  // start-time granularity, not just estimates), same input either way, just
+  // the label and default differ, estimates default to a real time + the
+  // past-now bump (validateEstimateTime), jobs start blank/optional.
+  const timeLbl=document.getElementById('s-time-label');
+  if(timeLbl)timeLbl.innerHTML=isEst?'Proposal visits':'Start time <span style="font-weight:600">(optional)</span>';
+  const timeInput=document.getElementById('s-time');if(timeInput)timeInput.value=isEst?'09:00':'';
+  // Crew picker shows in BOTH estimate and job mode once a second person
+  // exists (an estimate visit is still someone's appointment). It's ONE shared
+  // field (owner spec 2026-07-18): the crew you pick in either mode carries
+  // straight to the other, so it's deliberately NOT reset on a mode switch.
+  // A solo account (no employees) never sees the row, zero added taps.
+  const crewRow=document.getElementById('s-crew-row');
+  if(crewRow)crewRow.style.display=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length)?'':'none';
   selectedColor=isEst?'#7F77DD':'#185FA5';
-  const sw=document.getElementById('s-color-swatch');if(sw)sw.style.background=selectedColor;
-  const lb=document.getElementById('s-color-label');
-  if(lb)lb.textContent=isEst?'Shows as purple on the calendar, estimate visit':'Shows as blue on the calendar, paint job';
   const tip=document.getElementById('sched-tip');
-  if(tip){tip.innerHTML=isEst?'Pick a client, date and time. <strong>Evenings (after 5pm) and weekends</strong> are always open, they never block your paint days.':'Pull from a won bid and pick a start date.';tip.className=isEst?'tip':'tip tip-s';}
+  if(tip){tip.innerHTML=isEst?'Pick a client, date and time. <strong>Evenings (after 5pm) and weekends</strong> are always open, they never block your paint days.':'Pull from a won proposal and pick a start date.';tip.className=isEst?'tip':'tip tip-s';}
   const days=document.getElementById('s-days');if(days)days.value=isEst?1:2;
   const buf=document.getElementById('s-buf');if(buf)buf.value=isEst?'0':'1';
   const daysRow=document.getElementById('s-dur-days-row');
   const hoursRow=document.getElementById('s-dur-hours-row');
-  const bufRow=document.querySelector('#s-buf')?.closest('.f');
+  const bufRow=document.getElementById('s-buf-row');
   if(daysRow)daysRow.style.display=isEst?'none':'';
   if(hoursRow)hoursRow.style.display=isEst?'':'none';
   if(bufRow)bufRow.style.display=isEst?'none':'';
   ['s-name','s-addr','s-start','s-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sv=document.getElementById('s-value');if(sv)sv.value='';
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
+  if(typeof _schedSiteNote==='function')_schedSiteNote(null);
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
 }
 
+// Surface the client's internal Site access note (gate code, dog, parking)
+// read-only in the scheduler, the note captured at the estimate flows here so
+// whoever schedules sees it. Hidden when the client has none.
+function _schedSiteNote(clientId){
+  const el=document.getElementById('s-sitenote'),row=document.getElementById('s-sitenote-row');
+  if(!el||!row)return;
+  const c=clientId!=null?getClientById(clientId):null;
+  // Key by the address currently in the scheduler (bid/client addr), so the note
+  // shown is the one for THIS property, not a sibling property of the same client.
+  const _sa=document.getElementById('s-addr');
+  const sn=(c?getSiteNote(c,(_sa&&_sa.value)||c.addr):'').trim();
+  el.textContent=sn;row.style.display=sn?'':'none';
+}
 function pullClient(){
   const cid=parseInt(v('s-client-sel'));if(!cid)return;
   const c=getClientById(cid);if(!c)return;
-  document.getElementById('s-name').value=c.name+', estimate';
+  document.getElementById('s-name').value=c.name+', proposal';
   document.getElementById('s-addr').value=c.addr||'';
+  _schedSiteNote(cid);
   document.getElementById('s-days').value=1;
   const na=getNextAvail();
   document.getElementById('s-start').value=na.key;
@@ -1261,9 +1296,19 @@ function pullClient(){
   availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();
   refreshAvail();updateSchedPreview();
 }
-function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';document.getElementById('s-days').value=b.days||2;document.getElementById('s-days-src').textContent='from bid';document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from bid:</strong> '+escHtml(b.client_name||'')+' · '+fmt(b.amount)+' · '+(b.days||2)+' days. Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
-function buildColorRow(){document.getElementById('s-color-row').innerHTML=JOB_COLORS.map(c=>`<div style="width:24px;height:24px;border-radius:4px;background:${c};cursor:pointer;border:2px solid ${c===selectedColor?'#000':'transparent'}" onclick="selColor('${c}')"></div>`).join('');}
-function selColor(c){selectedColor=c;buildColorRow();}
+function pullBid(){const id=parseInt(v('s-bid-sel'));if(!id)return;const b=bids.find(x=>x.id===id);if(!b)return;document.getElementById('s-name').value=(b.client_name||b.name)+(b.type?', '+b.type:'');document.getElementById('s-addr').value=b.addr||'';document.getElementById('s-value').value=b.amount||'';
+  // Owner spec 2026-07-18: ADDRESS always stays visible after a bid is pulled,
+  // it's the field that confirms you grabbed the right job (two bids for
+  // similar client names are easy to mix up), and it's load-bearing for
+  // geofence arrival matching + GC-sub job linking, so seeing it is the point.
+  // Job VALUE, on the other hand, isn't a disambiguator and re-typing it here
+  // isn't how a price change happens (that's a change order), so it stays
+  // hidden when the bid already carries it and only reappears if the bid has
+  // no amount, so a genuinely-missing value can still be entered.
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=(b.amount>0)?'none':'';
+  _schedSiteNote(b.client_id);
+  document.getElementById('s-notes').value=b.notes||'';document.getElementById('sched-tip').innerHTML='<strong>Pulled from the won proposal below.</strong> Pick an available start date.';document.getElementById('sched-tip').className='tip tip-s';const na=getNextAvail();document.getElementById('s-start').value=na.key;availYear=parseD(na.key).getFullYear();availMonth=parseD(na.key).getMonth();refreshAvail();updateSchedPreview();}
 function avPrev(){
   const nowY=new Date().getFullYear(),nowM=new Date().getMonth();
   if(availYear===nowY&&availMonth===nowM)return; // already at current month
@@ -1276,7 +1321,11 @@ function onStartChange(){const sv=v('s-start');if(sv){availYear=parseD(sv).getFu
 async function refreshAvail(){
   const M=['January','February','March','April','May','June','July','August','September','October','November','December'];
   document.getElementById('avail-month-lbl').textContent=M[availMonth]+' '+availYear;
-  const{booked,buf}=getBookedDays(),selected=v('s-start'),days=parseInt(v('s-days'))||1,b=parseInt(v('s-buf'))||0,today=todayKey();
+  // Crew-scoped once a second person exists to assign work to (owner spec
+  // 2026-07-18): each crew has its own availability, a solo account (no
+  // S.employees) always sees the original account-wide getBookedDays().
+  const _hasCrew=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length&&typeof getBookedDaysForCrew==='function');
+  const{booked,buf}=_hasCrew?getBookedDaysForCrew(v('s-crew-sel')||null):getBookedDays(),selected=v('s-start'),days=parseInt(v('s-days'))||1,b=parseInt(v('s-buf'))||0,today=todayKey();
   const timeOffDays=getTimeOffDays();
   const _schedBidId=parseInt(v('s-bid-sel'))||null;
   const _schedBid=_schedBidId?bids.find(b=>b.id===_schedBidId):null;
@@ -1325,7 +1374,11 @@ async function refreshAvail(){
     const isWeekend=dayDow===0||dayDow===6;
     const isWorkday=!isWeekend||(allowWknd);
     const wx=weather[key];
-    const wxHtml=wx?'<div style="font-size:11px;line-height:1">'+wx.icon+'</div><div style="font-size:8px;color:'+(wx.rain?'#A32D2D':'inherit')+';font-weight:600;line-height:1.2">'+wx.hi+'°</div>':'';
+    // Owner feedback 2026-07-17: a weather icon + temperature on EVERY day was
+    // pure noise, the only weather fact that actually matters for scheduling a
+    // paint day is "is rain a risk." Show nothing on clear days, a single rain
+    // icon (temp tucked into the tooltip) only when it actually might rain.
+    const wxHtml=(wx&&wx.rain)?'<div style="font-size:11px;line-height:1;margin-top:1px" title="'+(wx.label||'Rain')+', '+wx.hi+'°">'+wx.icon+'</div>':'';
     const isRainBlocked=_hasPwash&&wx&&wx.rain;
     const dayNum=parseInt(key.split('-')[2]);
     if(isPast)return'<div class="av-d av-past">'+dayNum+'</div>';
@@ -1337,7 +1390,7 @@ async function refreshAvail(){
       return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
     }
     if(isTaken)return'<div class="av-d av-taken">'+dayNum+wxHtml+'</div>';
-    if(isBuf)return'<div class="av-d av-buf">'+dayNum+'</div>';
+    if(isBuf)return'<div class="av-d av-buf">'+dayNum+wxHtml+'</div>';
     if(isRainBlocked)return'<div class="av-d av-taken" title="Rain forecast, pressure wash blocked" style="background:#FEE8E8;cursor:not-allowed">'+dayNum+wxHtml+'</div>';
     if(isSel)return'<div class="av-d av-sel" onclick="pickDay(\''+key+'\')">'+dayNum+(isStart?'<br><span style="font-size:9px">start</span>':'')+wxHtml+'</div>';
     return'<div class="av-d av-open" onclick="pickDay(\''+key+'\')">'+dayNum+wxHtml+'</div>';
@@ -1381,7 +1434,7 @@ function validateEstimateTime(){
     setTimeout(()=>timeEl.style.borderColor='',2000);
   }
 }
-function updateSchedPreview(){const start=v('s-start'),days=parseInt(v('s-days'))||1,buf=parseInt(v('s-buf'))||0;const el=document.getElementById('sched-preview');if(!start){el.style.display='none';return;}const sf=parseD(start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});const ef=parseD(addDays(start,days-1)).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});el.style.display='block';el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:12px"><span><span style="color:var(--text2)">Start:</span> <strong>${sf}</strong></span><span><span style="color:var(--text2)">Finish:</span> <strong>${ef}</strong></span><span><span style="color:var(--text2)">Duration:</span> <strong>${days} day${days>1?'s':''}</strong></span>${buf>0?`<span><span style="color:var(--text2)">Buffer ends:</span> <strong>${parseD(addDays(start,days+buf-1)).toLocaleDateString('en-US',{month:'short',day:'numeric'})}</strong></span>`:''}</div>`;}
+function updateSchedPreview(){const start=v('s-start'),days=parseInt(v('s-days'))||1,buf=parseInt(v('s-buf'))||0;const el=document.getElementById('sched-preview');if(!start){el.style.display='none';return;}const sf=parseD(start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});const ef=parseD(addDays(start,days-1)).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});el.style.display='block';el.innerHTML=`<div style="display:flex;flex-wrap:wrap;gap:12px"><span><span style="color:var(--text2)">Start:</span> <strong>${sf}</strong></span><span><span style="color:var(--text2)">Finish:</span> <strong>${ef}</strong></span><span><span style="color:var(--text2)">Duration:</span> <strong>${days} day${days>1?'s':''}</strong></span>${buf>0?`<span><span style="color:var(--text2)">Buffer ends:</span> <strong>${parseD(addDays(start,days+buf-1)).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})}</strong></span>`:''}</div>`;}
 function _schedErr(msg,focusId){
   const e=document.getElementById('sched-err');
   if(e){e.textContent=msg;e.style.display='block';e.scrollIntoView&&e.scrollIntoView({behavior:'smooth',block:'nearest'});}
@@ -1400,9 +1453,11 @@ function scheduleJob(){
   const name=v('s-name').trim();if(!name){_schedErr('Enter a job name.','s-name');return;}
   const start=v('s-start');if(!start){_schedErr('Pick a start date.','s-start');return;}
   const days=parseInt(v('s-days'))||1;
-  const{booked}=getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i))){_schedErr('One or more days already booked, pick a different start date.','s-start');return;}}
+  const _crewId=v('s-crew-sel')||null;
+  const _hasCrew=(typeof S!=='undefined'&&Array.isArray(S.employees)&&S.employees.length&&typeof getBookedDaysForCrew==='function');
+  const{booked}=_hasCrew?getBookedDaysForCrew(_crewId):getBookedDays();for(let i=0;i<days;i++){if(booked.has(addDays(start,i))){_schedErr(_hasCrew?'This crew already has a job on one or more of those days, pick a different start date or crew.':'One or more days already booked, pick a different start date.','s-start');return;}}
   const bidId=parseInt(v('s-bid-sel'))||null,bid=bidId?bids.find(b=>b.id===bidId):null;
-  if(bid&&bid.status==='Pending'){_schedErr('The estimate must be signed (Closed Won) before scheduling.','s-bid-sel');return;}
+  if(bid&&bid.status==='Pending'){_schedErr('The proposal must be signed (Closed Won) before scheduling.','s-bid-sel');return;}
   // Rain block: pressure wash can't start on a rainy day
   if(schedType==='job'&&bid&&bid.scope&&bid.scope.pwash){
     const wx=_weatherCache&&_weatherCache[start];
@@ -1414,9 +1469,14 @@ function scheduleJob(){
   _submitting=true;setTimeout(()=>{_submitting=false;},1500);
   const clientId=schedType==='estimate'?(parseInt(v('s-client-sel'))||null):(bid?bid.client_id:null);
   const jobValue=schedType==='estimate'?0:(parseFloat(v('s-value'))||0);
-  const jobTime=schedType==='estimate'?(v('s-time')||'09:00'):'';
+  const jobTime=schedType==='estimate'?(v('s-time')||'09:00'):(v('s-time')||'');
   const jobHours=schedType==='estimate'?parseFloat(v('s-hours')||'2'):null;
-  jobs.push({id:Date.now(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming'});
+  // Crew assignment applies to estimates too now (whoever does the visit), not
+  // just jobs, so geofence/time-on-site tracking covers the walkthrough as well.
+  const _asgnTo=_crewId||null;
+  jobs.push({id:Date.now(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
+  // Booked. Estimate VISITS are a different milestone than the job being booked.
+  try{if(typeof logLifecycle==='function')logLifecycle(schedType==='estimate'?'estimate_visit_booked':'job_scheduled',{bidId,clientId,jobId:jobs[jobs.length-1]&&jobs[jobs.length-1].id});}catch(_e){}
   if(schedType==='estimate'&&clientId){
     const pendingBid=bids.find(b=>b.client_id===clientId&&b.status==='Pending'&&!b.followup);
     if(pendingBid)pendingBid.followup=addDays(start,3);
@@ -1430,9 +1490,12 @@ function resetSched(){
   ['s-name','s-addr','s-start','s-notes'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const sv=document.getElementById('s-value');if(sv)sv.value='';
   const sd=document.getElementById('s-days');if(sd)sd.value=schedType==='estimate'?1:2;
-  const st=document.getElementById('s-time');if(st)st.value='09:00';
+  const st=document.getElementById('s-time');if(st)st.value=schedType==='estimate'?'09:00':'';
   const sh=document.getElementById('s-hours');if(sh)sh.value='2';
-  const src=document.getElementById('s-days-src');if(src)src.textContent='';
+  const addrRow=document.getElementById('s-addr-row');if(addrRow)addrRow.style.display='';
+  const valRow=document.getElementById('s-value-row');if(valRow)valRow.style.display=schedType==='estimate'?'none':'';
+  const crewSel=document.getElementById('s-crew-sel');if(crewSel)crewSel.value='';
+  if(typeof _schedSiteNote==='function')_schedSiteNote(null);
   document.getElementById('sched-preview').style.display='none';
   refreshAvail();
 }
@@ -1624,7 +1687,7 @@ async function fetchStateInfo(state){
     // Falls back gracefully if function doesn't handle this yet
   }catch(e){console.warn('fetchStateInfo:',e);}
 }
-function openExportPanel(){
+async function openExportPanel(){
   const yr=trackerYear||S.taxYear||new Date().getFullYear();
   const years=[...new Set([
     ...expenses.map(e=>e.date?.slice(0,4)),
@@ -1651,11 +1714,11 @@ function openExportPanel(){
         '</select>'+
       '</div>'+
       '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:10px">Choose format</div>'+
-      exportOptionHTML('exportAllDataCSV()','📦','Everything: one CSV','Every client, lead, bid, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, bids, jobs, payments, income, expenses, mileage, all labeled sections.')+
+      exportOptionHTML('exportAllDataCSV()','📦','Everything: one CSV','Every client, lead, proposal, job, payment, income, expense, mileage, and time entry in one file. Clients, leads, proposals, jobs, payments, income, expenses, mileage, all labeled sections.')+
       exportOptionHTML('exportAllXLSX()','📊','Income · Expenses · Mileage, Excel','One workbook, three sheets. All years of income, expenses, and mileage, dollar columns formatted, SUM totals at the bottom of each sheet.')+
       exportOptionHTML('exportPLCSV()','📈','Profit & Loss CSV','Income vs expenses vs mileage deduction, net profit at the bottom. Hand straight to your accountant.')+
       exportOptionHTML('exportTaxPDF()','📄','Full tax report, PDF','Schedule C summary, income, expenses by IRS category, mileage log. Print or save, IRS audit ready.')+
-      exportOptionHTML('exportFullBackup()','💾','Full data backup','All clients, jobs, bids, income, expenses, mileage. JSON: restore or migrate anytime.')+
+      exportOptionHTML('exportFullBackup()','💾','Full data backup','All clients, jobs, proposals, income, expenses, mileage. JSON: restore or migrate anytime.')+
       exportOptionHTML('exportReceiptImages()','📄','Receipt PDF','All receipt photos in one PDF, sorted by date with vendor, amount and category. Print or send to your CPA.')+
     '</div>';
   document.body.appendChild(ov);
@@ -1945,7 +2008,7 @@ function exportMileageCSV(){
 
 function exportAllDataCSV(){
   const biz=S.bname||'TradeDesk';
-  const now=new Date().toLocaleDateString('en-US');
+  const now=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const q=s=>'"'+(s||'').toString().replace(/"/g,'""')+'"';
   const sections=[];
   const sec=(title,headers,rows)=>{
@@ -1987,7 +2050,7 @@ function exportAllDataCSV(){
   );
 
   // Bids / Estimates
-  sec('BIDS & ESTIMATES',
+  sec('PROPOSALS',
     ['Client','Trade','Amount','Status','Created','Signed Date','Deposit'],
     bids.filter(b=>!b.draft||(b.amount||0)>0).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||'')).map(b=>[
       q(clients.find(c=>c.id===b.client_id)?.name),q(b.trade_type||b.tradeType),
@@ -2180,7 +2243,7 @@ function exportTaxPDF(){
     if(!byCat[cat.label])byCat[cat.label]={label:cat.label,icon:cat.icon||'',line:cat.line||'',total:0};
     byCat[cat.label].total+=e.amount;
   });
-  const d=new Date().toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+  const d=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const statusLabel={single:'Single',mfj:'Married Filing Jointly',hoh:'Head of Household'}[status]||status;
   // Build HTML using string concat, no template literals to avoid parser issues
   let h='<!DOCTYPE html><html><head><meta charset="utf-8">';
@@ -2303,7 +2366,7 @@ function exportTaxPDF(){
 
 function exportFullBackup(){
   const biz=(S.bname||'TradeDesk').replace(/\s+/g,'_');
-  const ts=new Date().toISOString().slice(0,10);
+  const ts=todayKey();
   const backup={version:3,exported:new Date().toISOString(),business:S.bname||'',
     data:{clients,bids,jobs,income,expenses,mileage,payments,liens},settings:S,
     meta:{clients:clients.length,bids:bids.length,expenses:expenses.length,income:income.length,mileage:mileage.length}};
@@ -2359,7 +2422,7 @@ async function exportReceiptImages(){
   const bname=S.bname||'TradeDesk';
   const pages=filtered.map((e,i)=>{
     const cat=e.catLabel||e.cat||'';
-    const d=e.date?new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):e.date||'';
+    const d=e.date?new Date(e.date+'T12:00:00').toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):e.date||'';
     const sz=_sizeMap[e.id];
     const imgStyle=sz&&!sz.fallback
       ?`display:block;margin:0 auto;border:1px solid #ddd;border-radius:6px;width:${sz.w}px;height:${sz.h}px;max-width:100%`
@@ -2469,7 +2532,7 @@ function renderJobsHistory(){
       const paid=getBidPaid(b.id);
       const balance=getBidBalance(b);
       const isPaidFull=balance<=0.01;
-      return '<div onclick="openBidHistoryDetail('+b.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(b.client_name||b.name||'bid')+'" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
+      return '<div onclick="openBidHistoryDetail('+b.id+')" data-lp-id="'+b.id+'" data-lp-type="bid" data-lp-label="'+escHtml(b.client_name||b.name||'proposal')+'" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border);cursor:pointer">'+
         '<div style="flex:1;min-width:0">'+
           '<div style="font-size:14px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(b.client_name||b.name||'Unknown')+'</div>'+
           '<div style="font-size:11px;color:var(--text3)">'+fmtDateShort(b.bid_date)+(b.addr?' · '+b.addr:'')+'</div>'+
@@ -2591,7 +2654,7 @@ async function _openJobProfit(){
 // ── Crew labor cost, per-employee rollup + dashboard tile ────────────────────
 function _ctDateStr(d){
   try{return new Intl.DateTimeFormat('en-CA',{timeZone:'America/Chicago',year:'numeric',month:'2-digit',day:'2-digit'}).format(d);}
-  catch(_e){return d.toISOString().slice(0,10);}
+  catch(_e){return dateKey(d);}
 }
 // Fetch pay rates (loaded + wage) and tracked time entries since an ISO instant.
 async function _fetchCrewLabor(sinceISO){
@@ -2763,14 +2826,14 @@ function getTopScope(scope){
 function closeBidHistoryDetail(){const el=document.getElementById('tr-bid-detail');if(el)el.style.display='none';}
 function viewSavedProposal(bidId){
   const b=bids.find(x=>x.id===bidId);
-  if(!b||!b.proposalHtml){zAlert('No saved proposal found for this bid. Proposals are saved starting from this update, older bids won\'t have one stored.',{title:'Not available'});return;}
+  if(!b||!b.proposalHtml){zAlert('No saved proposal document found. We store the proposal document starting from this update, so older proposals won\'t have one.',{title:'Not available'});return;}
   const ov=document.createElement('div');
   ov.setAttribute('data-pov','1');
   ov.style.cssText='position:fixed;inset:0;background:#f0f4f8;z-index:10000;overflow-y:auto;-webkit-overflow-scrolling:touch';
   const signedBadge=b.signedAt?
     '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px">'+
       '<span style="font-size:16px">'+svgIcon('✓',{size:16})+'</span>'+
-      '<span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span>'+
+      '<span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span>'+
     '</div>':'';
   ov.innerHTML=
     '<div style="position:sticky;top:0;background:#1a365d;color:#fff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;z-index:1">'+
@@ -2832,7 +2895,7 @@ function openBidHistoryDetail(bidId){
 
     '<div class="card" style="margin-bottom:10px">'+
       '<div class="card-hd">Financials</div>'+
-      '<div class="tax-row"><span>Bid total</span><span style="font-weight:700;font-size:15px">'+fmt(b.amount)+'</span></div>'+
+      '<div class="tax-row"><span>Proposal total</span><span style="font-weight:700;font-size:15px">'+fmt(b.amount)+'</span></div>'+
       '<div class="tax-row"><span>Collected</span><span style="color:var(--green-mid);font-weight:700">'+fmt(totalPaid)+'</span></div>'+
       (getBidBalance(b)>0.01?'<div class="tax-row"><span>Outstanding</span><span style="color:#A32D2D;font-weight:700">'+fmt(getBidBalance(b))+'</span></div>':'')+
       (pays.length?
@@ -2892,7 +2955,7 @@ function renderJobSummary(){
       '<div class="meta-xs">'+(b.addr||'')+(exp>0?' · '+fmt(exp)+' expenses':'')+' '+(miles>0?' · '+miles.toFixed(1)+'mi':'')+'</div></div>'+
       '<div style="text-align:right">'+
         '<div style="font-size:13px;font-weight:700;color:'+(net>0?'var(--green-mid)':'#A32D2D')+'">'+fmt(net)+'</div>'+
-        '<div class="meta-xs">of '+fmt(b.amount)+' bid</div>'+
+        '<div class="meta-xs">of '+fmt(b.amount)+' proposal</div>'+
       '</div>'+
     '</div>';
   }).join('');
@@ -3004,6 +3067,31 @@ function _bkTogMonth(tab,mo){
   el.classList.toggle('open');
   if(body)body.style.display=opening?'block':'none';
 }
+// THE month accordion shell, one definition used by Income, Expenses, and the
+// client-record Activity timeline. Chevron on the right, title + sub on the left,
+// a total/count slot, body collapses. Any new month-grouped view reuses this
+// instead of hand-rolling the markup, so a change here updates every spot at once.
+// `inner` is whatever goes inside (normally _bkRenderDays output).
+function _bkMonthAcc(tab,mo,moLabel,subLabel,totalHtml,inner,isOpen){
+  return '<div id="bk-'+tab+'-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
+    '<button class="bk-month-hd" onclick="_bkTogMonth(\''+tab+'\',\''+mo+'\')">'+
+      '<div style="flex:1;text-align:left">'+
+        '<div class="bk-month-title">'+moLabel+'</div>'+
+        '<div class="bk-month-sub">'+subLabel+'</div>'+
+      '</div>'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        (totalHtml||'')+
+        '<div class="bk-month-chev">▸</div>'+
+      '</div>'+
+    '</button>'+
+    '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+inner+'</div>'+
+  '</div>';
+}
+// Month label for a 'YYYY-MM' key, e.g. "July 2026".
+function _bkMonthLabel(mo){
+  const[y,m]=String(mo||'').split('-');
+  return(y&&m)?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):String(mo||'');
+}
 // Day-level accordion inside a month (owner: "break it down by month AND day").
 function _bkTogDay(tab,mo,day){
   const el=document.getElementById('bk-'+tab+'-day-'+mo+'-'+day);
@@ -3016,15 +3104,19 @@ function _bkTogDay(tab,mo,day){
 function _bkDayLabel(d){
   const p=(d||'').split('-').map(Number);
   if(p.length<3||!p[0]||!p[1]||!p[2])return d||'-';
-  try{return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});}catch(_e){return d;}
+  try{return new Date(p[0],p[1]-1,p[2]).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(_e){return d;}
 }
 // Render a month's rows grouped into per-day accordions (each day its own dropdown,
 // default open). rowFn is the month's local row renderer (_incRow / _expRow).
 // sumFn/fmtFn are optional, default to the original $-amount behavior so Income
 // and Expenses (the only callers before Time Log) are unaffected; Time Log passes
 // a minutes-sum + duration formatter instead of $ since it isn't a money view.
-function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn){
-  sumFn=sumFn||(r=>r.amount||0);fmtFn=fmtFn||fmt;
+// opts (all optional) let a non-ledger caller reuse the SAME day accordion without
+// forking it: opts.bodyFn(dayRows) renders a custom body instead of the table, and
+// opts.metaFn(dayRows) replaces the "count · $total" header meta. The client-record
+// Activity timeline uses both; Books passes neither and is unchanged.
+function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn,opts){
+  sumFn=sumFn||(r=>r.amount||0);fmtFn=fmtFn||fmt;opts=opts||{};
   const byDay={};
   rows.forEach(r=>{const d=(r.date||'').slice(0,10)||'unknown';(byDay[d]||(byDay[d]=[])).push(r);});
   const days=Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
@@ -3035,14 +3127,15 @@ function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn
     return '<div class="bk-day open" id="bk-'+tab+'-day-'+mo+'-'+safe+'">'+
       '<button class="bk-day-hd" onclick="_bkTogDay(\''+tab+'\',\''+mo+'\',\''+safe+'\')">'+
         '<span class="bk-day-title">'+_bkDayLabel(day)+'</span>'+
-        '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+dr.length+' · '+fmtFn(dayTotal)+'</span>'+
+        '<span class="bk-day-meta" style="color:'+(totalColor||'var(--text3)')+'">'+(opts.metaFn?opts.metaFn(dr):(dr.length+' · '+fmtFn(dayTotal)))+'</span>'+
         '<span class="bk-day-chev">▾</span>'+
       '</button>'+
       '<div class="bk-day-body">'+
+        (opts.bodyFn?opts.bodyFn(dr):
         '<div class="bk-tbl-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table class="tbl bk-tbl" style="min-width:'+minWidth+'px"><thead><tr>'+
           headers.map(h=>'<th>'+h+'</th>').join('')+((tab==='exp'||tab==='tl')?'<th></th>':'')+'</tr></thead><tbody>'+
           dr.map(rowFn).join('')+
-        '</tbody></table></div>'+
+        '</tbody></table></div>')+
       '</div>'+
     '</div>';
   }).join('');
@@ -3064,7 +3157,7 @@ function renderIncome(){
   const byMonth={};
   sorted.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
-  const curMo=new Date().toISOString().slice(0,7);
+  const curMo=todayKey().slice(0,7);
   const _methodBadge=m=>{
     const v=(m||'').toLowerCase();
     if(!m||m==='-')return '<span style="color:var(--text3)">-</span>';
@@ -3092,24 +3185,12 @@ function renderIncome(){
     html+='<div class="bk-months">'+months.map(mo=>{
       const rows=byMonth[mo];
       const moTotal=rows.reduce((s,r)=>s+r.amount,0);
-      const[y,m]=mo.split('-');
-      const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
       const isOpen=mo.match(/^\d{4}-\d{2}$/)&&mo>=curMo;
-      return '<div id="bk-inc-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
-        '<button class="bk-month-hd" onclick="_bkTogMonth(\'inc\',\''+mo+'\')">'+
-          '<div style="flex:1;text-align:left">'+
-            '<div class="bk-month-title">'+moLabel+'</div>'+
-            '<div class="bk-month-sub">'+rows.length+' record'+(rows.length!==1?'s':'')+'</div>'+
-          '</div>'+
-          '<div style="display:flex;align-items:center;gap:10px">'+
-            '<div style="font-size:15px;font-weight:900;color:var(--green-mid);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(moTotal)+'</div>'+
-            '<div class="bk-month-chev">▸</div>'+
-          '</div>'+
-        '</button>'+
-        '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
-          _bkRenderDays('inc',mo,rows,['Client','Amount','Date','Type','Method'],_incRow,480,'var(--green-mid)')+
-        '</div>'+
-      '</div>';
+      return _bkMonthAcc('inc',mo,_bkMonthLabel(mo),
+        rows.length+' record'+(rows.length!==1?'s':''),
+        '<div style="font-size:15px;font-weight:900;color:var(--green-mid);font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">'+fmt(moTotal)+'</div>',
+        _bkRenderDays('inc',mo,rows,['Client','Amount','Date','Type','Method'],_incRow,480,'var(--green-mid)'),
+        isOpen);
     }).join('')+'</div>';
   }catch(err){
     console.error('renderIncome error:',err);
@@ -3186,7 +3267,7 @@ function renderExpenses(){
   const byMonth={};
   sorted.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';if(!byMonth[mo])byMonth[mo]=[];byMonth[mo].push(r);});
   const months=Object.keys(byMonth).sort((a,b)=>b.localeCompare(a));
-  const curMo=new Date().toISOString().slice(0,7);
+  const curMo=todayKey().slice(0,7);
   const _expRow=r=>{
     const info=IRS_EXPENSE_CATS.find(c=>c.id===r.cat);
     const pageCount=(r.receipt_keys?.length||0)+(r.receipt_key&&!r.receipt_keys?1:0);
@@ -3210,24 +3291,12 @@ function renderExpenses(){
     html+='<div class="bk-months">'+months.map(mo=>{
       const rows=byMonth[mo];
       const moTotal=rows.reduce((s,r)=>s+r.amount,0);
-      const[y,m]=mo.split('-');
-      const moLabel=y&&m?new Date(parseInt(y),parseInt(m)-1,1).toLocaleDateString('en-US',{month:'long',year:'numeric'}):mo;
       const isOpen=mo.match(/^\d{4}-\d{2}$/)&&mo>=curMo;
-      return '<div id="bk-exp-mo-'+mo+'" class="bk-month'+(isOpen?' open':'')+'">'+
-        '<button class="bk-month-hd" onclick="_bkTogMonth(\'exp\',\''+mo+'\')">'+
-          '<div style="flex:1;text-align:left">'+
-            '<div class="bk-month-title">'+moLabel+'</div>'+
-            '<div class="bk-month-sub">'+rows.length+' expense'+(rows.length!==1?'s':'')+'</div>'+
-          '</div>'+
-          '<div style="display:flex;align-items:center;gap:10px">'+
-            '<div style="font-size:15px;font-weight:900;color:#A32D2D;font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">('+fmt(moTotal)+')</div>'+
-            '<div class="bk-month-chev">▸</div>'+
-          '</div>'+
-        '</button>'+
-        '<div class="bk-month-body"'+(isOpen?'':' style="display:none"')+'>'+
-          _bkRenderDays('exp',mo,rows,['Vendor','Amount','Date','Category','Receipt'],_expRow,560,'#A32D2D')+
-        '</div>'+
-      '</div>';
+      return _bkMonthAcc('exp',mo,_bkMonthLabel(mo),
+        rows.length+' expense'+(rows.length!==1?'s':''),
+        '<div style="font-size:15px;font-weight:900;color:#A32D2D;font-variant-numeric:tabular-nums;font-family:var(--font-display);letter-spacing:-.5px">('+fmt(moTotal)+')</div>',
+        _bkRenderDays('exp',mo,rows,['Vendor','Amount','Date','Category','Receipt'],_expRow,560,'#A32D2D'),
+        isOpen);
     }).join('')+'</div>';
   }catch(err){
     console.error('renderExpenses error:',err);
@@ -3306,6 +3375,11 @@ function editExpense(id){
 }
 
 function renderSummary(){
+  // Funnel timings. Rendered async so a slow round-trip never delays the tax
+  // summary the contractor actually opened this tab for.
+  try{
+    if(typeof renderLifecycleFunnel==='function')renderLifecycleFunnel('lc-funnel-mine');
+  }catch(_e){}
   const yr=String(trackerYear||new Date().getFullYear());
   const sumSel=document.getElementById('sum-tx-status');
   if(sumSel&&S.txStatus)sumSel.value=S.txStatus;
@@ -3431,17 +3505,24 @@ function renderMoneyPage(){
     const stageColor=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red)':daysUnpaid>=14?'var(--c-amber)':'var(--text-2)'):bucket==='paid'?'var(--c-green)':'var(--text-3)';
     const stageBg=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red-soft)':daysUnpaid>=14?'var(--c-amber-soft)':'var(--cream)'):bucket==='paid'?'var(--c-green-soft)':'var(--cream)';
     const stageBorder=bucket==='overdue'?(daysUnpaid>=21?'var(--c-red-edge)':daysUnpaid>=14?'var(--c-amber-edge)':'var(--line)'):bucket==='paid'?'var(--c-green-edge)':'var(--line)';
+    // Lien path only applies to a client who owns the property (a true client), not
+    // a GC/builder/property manager. No lien deadline warning or lien buttons for them.
+    const canLien=(typeof accountOwnsSites==='function')?accountOwnsSites(c):true;
     const {daysUntilDeadline}=getLienTimeline(b)||{daysUntilDeadline:999};
-    const lienWarn=daysUntilDeadline>0&&daysUntilDeadline<=30?
+    const lienWarn=canLien&&daysUntilDeadline>0&&daysUntilDeadline<=30?
       ' <span style="color:var(--c-red);font-weight:700">· '+svgIcon('⚠',{size:12})+' Lien: '+daysUntilDeadline+'d left</span>':'';
     const nxt=getNextCollAction(stage);
     let nextBtn='';
     if(nxt.smsKey){
-      nextBtn='<button class="btn btn-sm" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+nxt.smsKey+'\')" style="font-size:11px">'+svgIcon('💬',{size:12})+' '+nxt.label+'</button>';
-    } else if(stage==='intent'||stage==='lien_ready'){
+      const key=(nxt.smsKey==='intent'&&!canLien)?'second':nxt.smsKey; // no lien threat to a non-owner
+      const lbl=(nxt.smsKey==='intent'&&!canLien)?'Send demand':nxt.label;
+      nextBtn='<button class="btn btn-sm" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+key+'\')" style="font-size:11px">'+svgIcon('💬',{size:12})+' '+lbl+'</button>';
+    } else if(canLien&&(stage==='intent'||stage==='lien_ready')){
       nextBtn='<button class="btn btn-sm" onclick="showFileLienDirect('+b.id+')" style="font-size:11px;background:var(--c-deep);color:var(--c-deep-soft);border-color:transparent">'+svgIcon('⚖',{size:12})+' '+nxt.label+'</button>';
-    } else if(stage==='lien_filed'){
+    } else if(canLien&&stage==='lien_filed'){
       nextBtn='<button class="btn btn-sm" onclick="releaseLien('+b.id+')" style="font-size:11px;background:var(--c-green-soft);color:var(--c-green);border-color:var(--c-green-edge)">'+nxt.label+'</button>';
+    } else if(!canLien&&c.phone){
+      nextBtn='<button class="btn btn-sm" onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\'second\')" style="font-size:11px">'+svgIcon('💬',{size:12})+' Send demand</button>';
     }
     return '<div style="padding:14px 18px;border-bottom:1px solid var(--line);cursor:pointer" onclick="openClientDetail('+c.id+',\'money\')" >'+
       '<div style="display:flex;align-items:center;gap:10px">'+

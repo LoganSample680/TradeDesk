@@ -427,7 +427,7 @@ function renderLegalInspector(){
     let count=0;const steps=[];
     while(count<cancel.days){
       d.setDate(d.getDate()+1);
-      const ymd=d.toISOString().slice(0,10);
+      const ymd=dateKey(d);
       const isSun=d.getDay()===0;
       const isFed=holidays.includes(ymd);
       if(isSun)steps.push({date:ymd,skip:true,reason:'Sunday'});
@@ -435,7 +435,7 @@ function renderLegalInspector(){
       else{count++;steps.push({date:ymd,skip:false,reason:'Business day '+count});}
     }
     d.setHours(23,59,59,999);
-    deadlineTxt=d.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'})+' at midnight';
+    deadlineTxt=d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' at midnight';
     el.querySelector('#dev-legal-steps').innerHTML=steps.map(s=>'<div style="font-size:10px;padding:2px 0;color:'+(s.skip?'#94a3b8':'var(--text)')+'">'+s.date+', '+(s.skip?'<em>skipped ('+s.reason+')</em>':s.reason)+'</div>').join('');
   }
 

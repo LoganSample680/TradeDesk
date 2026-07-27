@@ -2330,6 +2330,44 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r.editId).toBeNull();
     });
 
+    test('clears the "Who is this?" party-type on a fresh lead (forces an explicit pick)', async () => {
+      const r = await page.evaluate(() => {
+        const pt = document.getElementById('cf-partytype');
+        if (pt) pt.value = 'gc';
+        openNewClient();
+        return { val: document.getElementById('cf-partytype')?.value };
+      });
+      expect(r.val).toBe('');
+    });
+  });
+
+  test.describe('party type (Who is this?) is required and persists', () => {
+    test('saveClient blocks when party type is not chosen, and stores it once set', async () => {
+      const r = await page.evaluate(() => {
+        openNewClient();
+        window.editClientId = null;
+        const before = clients.length;
+        document.getElementById('cf-name').value = 'Party Type Test Co';
+        document.getElementById('cf-phone').value = '316-555-0199';
+        document.getElementById('cf-source').value = document.getElementById('cf-source').options[1]?.value || 'Google';
+        document.getElementById('cf-partytype').value = ''; // not chosen
+        window._allowPhoneDupe = true;
+        saveClient();
+        const blocked = clients.length === before &&
+          document.getElementById('err-cf-partytype')?.style.display !== 'none';
+        // now choose a type and save
+        document.getElementById('cf-partytype').value = 'gc';
+        window._submitting = false; window._allowPhoneDupe = true;
+        saveClient();
+        const saved = clients.find(c => c.name === 'Party Type Test Co');
+        const partyType = saved ? saved.partyType : null;
+        if (saved) clients.splice(clients.indexOf(saved), 1);
+        return { blocked, partyType };
+      });
+      expect(r.blocked).toBe(true);        // required: no save until chosen
+      expect(r.partyType).toBe('gc');      // persisted on the client record
+    });
+
     test('shows client-form-wrap', async () => {
       const r = await page.evaluate(() => {
         const fw = document.getElementById('client-form-wrap');
@@ -2552,6 +2590,754 @@ test.describe('clients.js: exhaustive coverage', () => {
         catch (e) { return { ok: false, err: e.message }; }
       });
       expect(r.ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Per-property records: facts + lead trigger + history, keyed by address
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('Per-property records (address as first-class)', () => {
+    test('getProperty/setPropertyData: each address keeps its own facts, no cross-bleed', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 970101, name: 'Two Prop', addr: '10 Main St, Town, KS 60000',
+          extraAddresses: [{ label: 'Rental', addr: '22 Side Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 970101).concat([c]);
+        setPropertyData(c, '10 Main St', { yearBuilt: 2010, estimatedValue: 400000 });
+        setPropertyData(c, '22 Side Ave', { yearBuilt: 1950, estimatedValue: 150000 });
+        return {
+          mainYear: getProperty(c, '10 Main St').yearBuilt,
+          sideYear: getProperty(c, '22 Side Ave').yearBuilt,
+          mainVal: getProperty(c, '10 Main St').estimatedValue,
+          sideVal: getProperty(c, '22 Side Ave').estimatedValue,
+          primaryMirror: c.yearBuilt, // primary write mirrors to client-level
+        };
+      });
+      expect(r.mainYear).toBe(2010);
+      expect(r.sideYear).toBe(1950);
+      expect(r.mainVal).toBe(400000);
+      expect(r.sideVal).toBe(150000);
+      expect(r.primaryMirror).toBe(2010);
+    });
+
+    test('legacy: a client-level yearBuilt reads as the PRIMARY address property (no migration)', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 970102, name: 'Legacy', addr: '5 Old Rd, Town, KS 60000', yearBuilt: 1962, estimatedValue: 90000 };
+        clients = clients.filter(x => x.id !== 970102).concat([c]);
+        const p = getProperty(c, c.addr);
+        // A different, unseeded address returns no legacy facts (not the primary's).
+        const other = getProperty(c, '999 Nowhere Blvd');
+        return { legacyYear: p.yearBuilt, legacyVal: p.estimatedValue, otherYear: other.yearBuilt || null };
+      });
+      expect(r.legacyYear).toBe(1962);
+      expect(r.legacyVal).toBe(90000);
+      expect(r.otherYear).toBe(null);
+    });
+
+    test('pre-1978 lead trigger is per-address: only the old property fires', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 970103, name: 'Lead Split', addr: '1 New Way, Town, KS 60000',
+          extraAddresses: [{ label: 'Old', addr: '2 Old Way, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 970103).concat([c]);
+        setPropertyData(c, '1 New Way', { yearBuilt: 2005 });
+        setPropertyData(c, '2 Old Way', { yearBuilt: 1948 });
+        const pre78 = a => { const y = getProperty(c, a).yearBuilt; return !!(y && y < 1978); };
+        return { newPre78: pre78('1 New Way'), oldPre78: pre78('2 Old Way') };
+      });
+      expect(r.newPre78).toBe(false);
+      expect(r.oldPre78).toBe(true);
+    });
+
+    test('getPropertyHistory: proposals, jobs, billed and paid roll up per address', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970104;
+        const c = { id: cid, name: 'Hist Co', addr: 'A St, Town, KS 60000',
+          extraAddresses: [{ label: 'B', addr: 'B Ave, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        bids = bids.filter(b => b.client_id !== cid).concat([
+          { id: 970201, client_id: cid, name: 'P1', addr: 'A St, Town, KS 60000', amount: 1000, status: 'Sent', bid_date: '2026-01-01' },
+          { id: 970202, client_id: cid, name: 'P2', addr: 'B Ave, Town, KS 60000', amount: 2000, status: 'Sent', bid_date: '2026-01-02' },
+          { id: 970203, client_id: cid, name: 'P-noaddr' /* no addr → primary */, amount: 500, status: 'Sent', bid_date: '2026-01-03' },
+        ]);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: 970301, client_id: cid, name: 'J1', addr: 'A St, Town, KS 60000', value: 1000, status: 'completed', start: '2026-01-10', end: '2026-01-12' },
+          { id: 970302, client_id: cid, name: 'J2', addr: 'B Ave, Town, KS 60000', value: 2000, status: 'upcoming', start: '2026-02-01' },
+        ]);
+        payments = payments.filter(p => p.client_id !== cid).concat([
+          { id: 970401, client_id: cid, job_id: 970301, amount: 1000, date: '2026-01-13' },
+        ]);
+        const A = getPropertyHistory(c, 'A St');
+        const B = getPropertyHistory(c, 'B Ave');
+        return {
+          aProps: A.proposals.length, aJobs: A.jobs.length, aBilled: A.billed, aPaid: A.paid,
+          bProps: B.proposals.length, bJobs: B.jobs.length, bBilled: B.billed, bPaid: B.paid,
+        };
+      });
+      expect(r.aProps).toBe(2);   // P1 + the addr-less proposal folds into primary
+      expect(r.aJobs).toBe(1);
+      expect(r.aBilled).toBe(1000);
+      expect(r.aPaid).toBe(1000);
+      expect(r.bProps).toBe(1);
+      expect(r.bJobs).toBe(1);
+      expect(r.bBilled).toBe(2000);
+      expect(r.bPaid).toBe(0);    // B's job not paid yet
+    });
+
+    test('clientAddresses: primary + extras, deduped by street key', async () => {
+      const r = await page.evaluate(() => {
+        const c = { id: 970105, name: 'Addr Co', addr: '7 First St, Town, KS 60000',
+          extraAddresses: [{ label: 'Two', addr: '8 Second St, Town, KS 60000' }, { label: 'Dupe', addr: '7 First St, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== 970105).concat([c]);
+        const a = clientAddresses(c);
+        return { count: a.length, first: a[0].label };
+      });
+      expect(r.count).toBe(2);        // duplicate of primary dropped
+      expect(r.first).toBe('Primary');
+    });
+
+    test('renderCDAddresses: one card per address; pre-1978 banner only on the old one; no throw', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970106;
+        const c = { id: cid, name: 'Render Co', addr: '3 Newer Ln, Town, KS 60000',
+          extraAddresses: [{ label: 'Old rental', addr: '4 Older Ln, Town, KS 60000' }] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '3 Newer Ln', { yearBuilt: 2001, estimatedValue: 300000 });
+        setPropertyData(c, '4 Older Ln', { yearBuilt: 1940, estimatedValue: 120000 });
+        currentClientId = cid;
+        let ok = true, err = '';
+        try { window['_cdpropOpen_' + cid + '_0'] = true; window['_cdpropOpen_' + cid + '_1'] = true; renderCDAddresses(); }
+        catch (e) { ok = false; err = e.message; }
+        const html = document.getElementById('cd-addresses-list').innerHTML;
+        const leadCount = (html.match(/EPA RRP/g) || []).length;
+        return { ok, err, hasNewer: html.includes('3 Newer Ln'), hasOlder: html.includes('4 Older Ln'), leadCount };
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.hasNewer).toBe(true);
+      expect(r.hasOlder).toBe(true);
+      expect(r.leadCount).toBe(1); // lead banner renders once, for the pre-1978 address only
+    });
+
+    test('GC account: section is titled "Job sites" (a GC does not own the addresses under them)', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970120;
+        const c = { id: cid, name: 'Summit Build Group', partyType: 'gc', addr: '10 Spec House Ln, Town, KS 60000' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        renderCDAddresses();
+        const list = document.getElementById('cd-addresses-list');
+        return { html: list ? list.innerHTML : '' };
+      });
+      expect(r.html).toContain('Job sites');    // not "Properties" for a GC who doesn't own them
+      expect(r.html).not.toContain('Properties');
+    });
+
+    test('homeowner account: section stays "Properties"', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970121;
+        const c = { id: cid, name: 'Rita Alvarez', partyType: 'homeowner', addr: '7 Home St, Town, KS 60000' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        renderCDAddresses();
+        const list = document.getElementById('cd-addresses-list');
+        return { html: list ? list.innerHTML : '' };
+      });
+      expect(r.html).toContain('Properties');
+    });
+
+    test('accountOwnsSites: homeowner/business own; GC/builder/PM do not (drives the lien path)', async () => {
+      const r = await page.evaluate(() => ({
+        homeowner: accountOwnsSites({ partyType: 'homeowner' }),
+        business: accountOwnsSites({ partyType: 'business' }),
+        legacy: accountOwnsSites({}),           // no partyType (legacy) = treated as owner
+        gc: accountOwnsSites({ partyType: 'gc' }),
+        builder: accountOwnsSites({ partyType: 'builder' }),
+        pm: accountOwnsSites({ partyType: 'pm' }),
+      }));
+      expect(r.homeowner).toBe(true);
+      expect(r.business).toBe(true);
+      expect(r.legacy).toBe(true);
+      expect(r.gc).toBe(false);
+      expect(r.builder).toBe(false);
+      expect(r.pm).toBe(false);
+    });
+
+    test('saveAddClientAddress: captures the property type (no owner-capture complexity)', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970122;
+        const c = { id: cid, name: 'GC Co', partyType: 'gc', addr: '1 First St, Town, KS 60000', extraAddresses: [] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        currentClientId = cid;
+        openAddAddressModal();
+        document.getElementById('_aa-addr').value = '55 Jobsite Rd, Town, KS 60000';
+        document.getElementById('_aa-ptype').value = 'New construction';
+        const hasOwnerFields = !!document.getElementById('_aa-owner-name');
+        saveAddClientAddress();
+        const prop = getProperty(c, '55 Jobsite Rd');
+        return { hasOwnerFields, propertyType: prop.propertyType,
+          added: (c.extraAddresses || []).some(a => /55 Jobsite Rd/.test(a.addr)) };
+      });
+      expect(r.hasOwnerFields).toBe(false);       // the owner-capture UI was removed
+      expect(r.added).toBe(true);
+      expect(r.propertyType).toBe('New construction');
+    });
+
+    // Regression: an address entered on an estimate must roll into the client's
+    // property list (accordion), not just live on the bid. Owner-reported bug.
+    test('_geiEnsureClientProperty: a new estimate address rolls into the client properties (dedup-safe)', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970131;
+        const c = { id: cid, name: 'Estimate Addr Co', addr: '1 Primary St, Town, KS 60000', extraAddresses: [] };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        const has = a => clientAddresses(c).some(x => x.addr === a);
+        _geiEnsureClientProperty(cid, '742 New Job Ln, Town, KS 60000');   // new → added
+        const addedNew = has('742 New Job Ln, Town, KS 60000');
+        const countAfterNew = clientAddresses(c).length;
+        _geiEnsureClientProperty(cid, '1 Primary St, Town, KS 60000');     // primary → no dup
+        _geiEnsureClientProperty(cid, '742 New Job Ln, Town, KS 60000');   // extra again → no dup
+        _geiEnsureClientProperty(cid, '   ');                              // empty → no-op
+        return { addedNew, countAfterNew, finalCount: clientAddresses(c).length };
+      });
+      expect(r.addedNew).toBe(true);
+      expect(r.countAfterNew).toBe(2);   // primary + the new estimate address
+      expect(r.finalCount).toBe(2);      // dedupe + empty never grow the list
+    });
+
+    test('PRIVACY: an employee without financials sees the property but no dollar figures', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970107;
+        const c = { id: cid, name: 'Perm Co', addr: '5 Money Rd, Town, KS 60000' };
+        clients = clients.filter(x => x.id !== cid).concat([c]);
+        setPropertyData(c, '5 Money Rd', { yearBuilt: 1970, estimatedValue: 250000, lastSalePrice: 210000, lastSaleDate: '2018-05-01' });
+        bids = bids.filter(b => b.client_id !== cid).concat([{ id: 970501, client_id: cid, name: 'Repaint', addr: '5 Money Rd, Town, KS 60000', amount: 4200, status: 'Sent', bid_date: '2026-01-01' }]);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([{ id: 970601, client_id: cid, name: 'Repaint', addr: '5 Money Rd, Town, KS 60000', value: 4200, status: 'upcoming', start: '2026-02-01' }]);
+        currentClientId = cid;
+        const render = () => { window['_cdpropOpen_' + cid + '_0'] = true; renderCDAddresses(); return document.getElementById('cd-addresses-list').innerHTML; };
+        const _origEmp = window._isEmployee, _origRec = window._employeeRecord;
+        try {
+          // Crew WITHOUT financials: dollars hidden, property still shown.
+          window._isEmployee = true; window._employeeRecord = { permissions: { financials: false } };
+          const crew = render();
+          // Manager WITH financials: dollars shown.
+          window._employeeRecord = { permissions: { financials: true } };
+          const mgr = render();
+          return {
+            crewHasDollar: /\$\d/.test(crew), crewHasProperty: crew.includes('Money Rd') && crew.includes('Repaint') && crew.includes('1970'),
+            crewHasLead: crew.includes('EPA RRP'),
+            mgrHasValue: mgr.includes('$250K'), mgrHasAmount: /\$4,200/.test(mgr), mgrHasPaidTotal: mgr.includes('paid'),
+            // Regression guard: this address has an unpaid $4,200 proposal, so the
+            // header stat slot shows "Owed". Est. value must still appear (in the
+            // facts line) rather than being silently pushed off the card.
+            mgrHasOwed: mgr.includes('Owed'),
+          };
+        } finally {
+          window._isEmployee = _origEmp; window._employeeRecord = _origRec;
+        }
+      });
+      // Crew: no dollar anywhere, but the property, its work list, and the lead disclosure still render.
+      expect(r.crewHasDollar).toBe(false);
+      expect(r.crewHasProperty).toBe(true);
+      expect(r.crewHasLead).toBe(true);
+      // Manager: value, amounts, and paid total all visible.
+      expect(r.mgrHasValue).toBe(true);
+      expect(r.mgrHasAmount).toBe(true);
+      expect(r.mgrHasPaidTotal).toBe(true);
+      // Owed and est. value coexist: one does not evict the other.
+      expect(r.mgrHasOwed).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Client-record section accordions: Notes, Activity timeline, Client risk each
+  // render a collapsible bar styled exactly like the Properties/Overview selector.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('client-record accordions', () => {
+    test('each section mounts a titled bar with a chevron', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = undefined; window._cdTimelineOpen = undefined; window._cdRiskOpen = undefined;
+        renderClientNotes(); renderCDTimeline(); renderCDRisk();
+        const notes = document.getElementById('cd-notes-mount').innerHTML;
+        const tl = document.getElementById('cd-timeline-mount').innerHTML;
+        const risk = document.getElementById('cd-risk-mount').innerHTML;
+        const svgCount = s => (s.match(/M6 9l6 6 6-6/g) || []).length; // the shared down-chevron path
+        return {
+          notesTitle: notes.includes('Notes'), notesChev: svgCount(notes),
+          tlTitle: tl.includes('Activity timeline'), tlChev: svgCount(tl),
+          riskTitle: risk.includes('Client risk'), riskChev: svgCount(risk),
+        };
+      });
+      expect(r.notesTitle).toBe(true);
+      expect(r.tlTitle).toBe(true);
+      expect(r.riskTitle).toBe(true);
+      // exactly one accordion chevron per bar
+      expect(r.notesChev).toBe(1);
+      expect(r.tlChev).toBe(1);
+      expect(r.riskChev).toBe(1);
+    });
+
+    test('collapsing a section hides its body, leaving only the bar', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = true; renderClientNotes();
+        const openHasInput = !!document.getElementById('cd-note-input');
+        window._cdNotesOpen = false; renderClientNotes();
+        const closedHasInput = !!document.getElementById('cd-note-input');
+        const barStillThere = document.getElementById('cd-notes-mount').innerHTML.includes('Notes');
+        return { openHasInput, closedHasInput, barStillThere };
+      });
+      expect(r.openHasInput).toBe(true);    // open: the note entry textarea is present
+      expect(r.closedHasInput).toBe(false); // collapsed: body (and its textarea) gone
+      expect(r.barStillThere).toBe(true);   // bar remains
+    });
+
+    test('each open accordion body carries the shared td-acc-body reveal animation', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = true; window._cdTimelineOpen = true; window._cdRiskOpen = true; window._cdPropsOpen = true;
+        renderClientNotes(); renderCDTimeline(); renderCDRisk(); renderCDAddresses();
+        const has = id => document.getElementById(id).innerHTML.includes('class="td-acc-body"') || !!document.querySelector('#' + id + ' .td-acc-body');
+        return { props: has('cd-addresses-list'), notes: has('cd-notes-mount'), tl: has('cd-timeline-mount'), risk: has('cd-risk-mount') };
+      });
+      expect(r.props).toBe(true);
+      expect(r.notes).toBe(true);
+      expect(r.tl).toBe(true);
+      expect(r.risk).toBe(true);
+    });
+
+    test('the three bars share the Properties/Overview bar style verbatim', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = false; window._cdRiskOpen = false; window._cdPropsOpen = false;
+        renderClientNotes(); renderCDRisk(); renderCDAddresses();
+        const key = 'width:100%;box-sizing:border-box;padding:13px 14px;border:1px solid var(--line-2);border-radius:12px;background-color:var(--bg-card);color:var(--text);font-size:15px;font-weight:800;box-shadow:var(--shadow-card)';
+        const has = id => document.getElementById(id).innerHTML.includes(key);
+        return { props: has('cd-addresses-list'), notes: has('cd-notes-mount'), risk: has('cd-risk-mount') };
+      });
+      expect(r.props).toBe(true);
+      expect(r.notes).toBe(true);
+      expect(r.risk).toBe(true);
+    });
+
+    test('Notes stores an array, so the Overview intake-notes line never prints [object Object]', async () => {
+      const r = await page.evaluate(() => {
+        const c = getClientById(77701);
+        c.notes = [{ id: 'x1', text: 'structured note', ts: '2026-07-10T12:00:00Z' }];
+        saveAll();
+        openClientDetail(77701, 'clients');
+        const ov = document.getElementById('cdt-overview-content').innerHTML;
+        return { hasObjObj: ov.includes('[object Object]') };
+      });
+      expect(r.hasObjObj).toBe(false);
+    });
+
+    // Date stamps are MM/DD/YYYY everywhere. The ONE intentional exception is the
+    // month-bucket header ("July 2026"), which names a month rather than stamping a
+    // date, and matches the Books month accordions this timeline now shares. So the
+    // assertion strips .bk-month-title and requires no month name anywhere else.
+    test('every rendered date stamp in the client record is MM/DD/YYYY, month names only in month headers', async () => {
+      const r = await page.evaluate(() => {
+        openClientDetail(77701, 'clients');
+        window._cdNotesOpen = true; window._cdTimelineOpen = true;
+        renderClientNotes(); renderCDTimeline();
+        const tlEl = document.getElementById('cd-timeline-mount');
+        const clone = tlEl.cloneNode(true);
+        clone.querySelectorAll('.bk-month-title').forEach(n => n.remove());
+        const blob = clone.innerHTML + document.getElementById('cd-notes-mount').innerHTML;
+        const monthName = /\b(January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\b/;
+        return {
+          hasMonthName: monthName.test(blob),
+          hasMDY: /\d{2}\/\d{2}\/\d{4}/.test(tlEl.innerHTML),
+          monthHeaders: tlEl.querySelectorAll('.bk-month-title').length,
+        };
+      });
+      expect(r.hasMonthName).toBe(false);
+      expect(r.hasMDY).toBe(true);
+      expect(r.monthHeaders).toBeGreaterThan(0); // months are grouped, Books-style
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Audit trail: the client-record timeline surfaces the full engagement chain
+  // (lead → sent → opened w/ IP → signed w/ IP) and exports a court-ready report.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('client-record audit timeline', () => {
+    const AB = 96019001;
+    test('timeline shows lead/sent/opened/signed events with time + captured IP', async () => {
+      const r = await page.evaluate((bidId) => {
+        clients = clients.filter(c => c.id !== 96019).concat([{ id: 96019, name: 'Audit Client', source: 'Referral', created: '2026-07-08T09:12:00Z' }]);
+        bids = bids.filter(b => b.client_id !== 96019).concat([{
+          id: bidId, client_id: 96019, client_name: 'Audit Client', status: 'Closed Won', amount: 6400,
+          bid_date: '2026-07-10', sentAt: '2026-07-10T14:22:00Z', signedAt: '2026-07-12T16:41:00Z',
+          signedName: 'Audit Client', paymentMethod: 'card', signIp: '73.202.114.9', signUa: 'iPhone Safari' }]);
+        window._proposalViewsByBidClient = { [bidId]: '2026-07-11T19:08:00Z' };
+        window._proposalViewsByBidClientIp = { [bidId]: { ip: '73.202.114.9', ua: 'iPhone Safari' } };
+        window.currentClientId = 96019;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return document.getElementById('cd-timeline-mount').innerHTML;
+      }, AB);
+      expect(r).toContain('Lead created');
+      expect(r).toContain('Proposal sent');
+      expect(r).toContain('Client opened proposal');
+      expect(r).toContain('Signed by Audit Client');
+      expect(r).toContain('73.202.114.9');          // captured IP surfaces
+      expect(r).toContain('Audit report');          // export entry point present
+      expect(r).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/); // a clock time is shown, not just a date
+    });
+
+    test('timeline renders EVERY logged step (approved/payment/method) with its own IP', async () => {
+      const r = await page.evaluate((bidId) => {
+        window._proposalAuditEventsByBid = { [bidId]: [
+          { event: 'signed', ts: '2026-07-12T16:41:00Z', ip: '73.202.114.9', ua: 'iPhone' },
+          { event: 'method_selected', ts: '2026-07-12T16:40:00Z', ip: '73.202.114.9', ua: 'iPhone' },
+          { event: 'payment_viewed', ts: '2026-07-12T16:39:00Z', ip: '73.202.114.9', ua: 'iPhone' },
+          { event: 'approved', ts: '2026-07-12T16:38:00Z', ip: '73.202.114.9', ua: 'iPhone' },
+          { event: 'proposal_opened', ts: '2026-07-11T19:08:00Z', ip: '68.44.10.2', ua: 'iPhone' },
+          { event: 'hub_opened', ts: '2026-07-11T08:30:00Z', ip: '68.44.10.2', ua: 'iPhone' },
+        ] };
+        window.currentClientId = 96019;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return document.getElementById('cd-timeline-mount').innerHTML;
+      }, AB);
+      expect(r).toContain('Tapped Approve &amp; Sign');
+      expect(r).toContain('Reached payment step');
+      expect(r).toContain('Chose payment method');
+      expect(r).toContain('Client opened hub');
+      expect(r).toContain('68.44.10.2');   // the open came from a different IP than the sign
+      expect(r).toContain('73.202.114.9');
+    });
+
+    test('exportAuditReport builds a certificate containing the IP chain (no throw)', async () => {
+      const r = await page.evaluate((bidId) => {
+        let captured = '';
+        const orig = window.open;
+        window.open = () => ({ document: { open(){}, write(h){ captured += h; }, close(){} }, focus(){}, print(){} });
+        let threw = false;
+        try { exportAuditReport(bidId); } catch (e) { threw = true; }
+        window.open = orig;
+        return { threw, captured };
+      }, AB);
+      expect(r.threw).toBe(false);
+      expect(r.captured).toContain('Proposal Audit Certificate');
+      expect(r.captured).toContain('73.202.114.9');
+      expect(r.captured).toContain('Signed by Audit Client');
+      expect(r.captured).toContain('not legal advice');
+    });
+
+    // Regression (owner-reported): the rail was a border on the whole list, so it
+    // poked out above the first dot and trailed below the last one. It's now drawn
+    // per item from dot-center to next-dot-center, and the last item draws none.
+    test('timeline rail connects dot-center to dot-center, with no stub past the last dot', async () => {
+      const r = await page.evaluate(() => {
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const groups = [...document.querySelectorAll('#cd-timeline-mount .timeline')];
+        if (!groups.length) return { skip: true };
+        return groups.map(g => {
+          const items = [...g.querySelectorAll('.tl-item')];
+          return items.map((it, i) => {
+            const dotRect = it.querySelector('.tl-dot').getBoundingClientRect();
+            const itemRect = it.getBoundingClientRect();
+            const bs = getComputedStyle(it, '::before');
+            // Measure in page coordinates so the check holds regardless of box-sizing.
+            const dotCenter = dotRect.left + dotRect.width / 2;
+            const railCenter = itemRect.left + parseFloat(bs.left) + parseFloat(bs.width) / 2;
+            return {
+              isLast: i === items.length - 1,
+              railHidden: bs.display === 'none',
+              centerDelta: Math.abs(dotCenter - railCenter),
+              hasIcon: !!it.querySelector('.tl-dot svg'),
+            };
+          });
+        });
+      });
+      if (r.skip) return;
+      const flat = r.flat();
+      expect(flat.length).toBeGreaterThan(0);
+      // every LAST item in a day group draws no rail (nothing dangling below it)
+      flat.filter(x => x.isLast).forEach(x => expect(x.railHidden).toBe(true));
+      // every non-last item draws a rail, centered on its node (within a pixel)
+      flat.filter(x => !x.isLast).forEach(x => {
+        expect(x.railHidden).toBe(false);
+        expect(x.centerDelta).toBeLessThanOrEqual(1);
+      });
+      // and every node renders an icon, not a bare ring
+      flat.forEach(x => expect(x.hasIcon).toBe(true));
+    });
+
+    // Regression (owner-reported): the timeline printed a bid's CURRENT status on
+    // the row dated at its creation, so a proposal created 07/10 and signed 07/12
+    // showed "Closed Won" on 07/10, i.e. won before it was signed. The creation row
+    // now states creation only; wins/losses are their own dated events.
+    test('creation row shows creation state, not the current status', async () => {
+      const r = await page.evaluate((bidId) => {
+        window.currentClientId = 96019;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const html = document.getElementById('cd-timeline-mount').innerHTML;
+        // the bid row itself must not carry the live status
+        const bidRow = html.split('Proposal: ')[1] || '';
+        return { bidRowStart: bidRow.slice(0, 220), full: html };
+      }, AB);
+      expect(r.bidRowStart).toContain('Created');
+      expect(r.bidRowStart).not.toContain('Closed Won');
+    });
+
+    test('a job won without a signature renders a dated "Marked won" event flagged unsigned', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 96021, bidId = 96021001;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Handshake Client', created: '2026-07-01T09:00:00Z' }]);
+        bids = bids.filter(b => b.client_id !== cid).concat([{
+          id: bidId, client_id: cid, client_name: 'Handshake Client', status: 'Closed Won', amount: 3200,
+          bid_date: '2026-07-02', handshake: true, handshake_date: '2026-07-09' }]);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const html = document.getElementById('cd-timeline-mount').innerHTML;
+        let cert = '';
+        const orig = window.open;
+        window.open = () => ({ document: { open(){}, write(h){ cert += h; }, close(){} }, focus(){}, print(){} });
+        exportAuditReport(bidId);
+        window.open = orig;
+        return { html, cert };
+      });
+      expect(r.html).toContain('Marked won, handshake deal');
+      expect(r.html).toContain('No signature on file');
+      expect(r.html).toContain('07/09/2026');            // dated when marked, not at creation
+      expect(r.cert).toContain('No e-signature captured'); // the certificate says so plainly
+    });
+
+    // Regression (owner-reported): a new lead's row showed no time, because
+    // c.created is only a YYYY-MM-DD day key. The client id is Date.now() at
+    // creation, so the real time is recovered from it.
+    test('Lead created shows a real clock time even when only a day key was saved', async () => {
+      const r = await page.evaluate(() => {
+        const ms = new Date('2026-07-23T14:37:00').getTime();
+        clients = clients.filter(c => c.id !== ms).concat([
+          { id: ms, name: 'Yard Sign Lead', source: 'Yard sign', created: '2026-07-23' }]);
+        bids = bids.filter(b => b.client_id !== ms);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = ms;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return {
+          html: document.getElementById('cd-timeline-mount').innerHTML,
+          derived: _cdLeadCreatedTs({ id: ms, created: '2026-07-23' }),
+          prefersCreatedAt: _cdLeadCreatedTs({ id: ms, createdAt: '2026-01-02T03:04:00Z', created: '2026-07-23' }),
+          legacyFallback: _cdLeadCreatedTs({ id: 7, created: '2026-07-23' }),
+        };
+      });
+      expect(r.html).toContain('Lead created');
+      expect(r.html).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/);          // a real clock time
+      expect(r.derived).toContain('2026-07-23');                   // recovered from the id
+      expect(r.prefersCreatedAt).toBe('2026-01-02T03:04:00Z');     // explicit stamp wins
+      expect(r.legacyFallback).toBe('2026-07-23');                 // non-epoch id -> day key
+    });
+
+    // The month layer is chrome when a client's whole history sits in one month.
+    test('month accordions appear only when history spans more than one month', async () => {
+      const r = await page.evaluate(() => {
+        const one = new Date('2026-07-23T14:37:00').getTime();
+        clients = clients.filter(c => c.id !== one).concat([{ id: one, name: 'One Month', source: 'Yard sign', created: '2026-07-23' }]);
+        bids = bids.filter(b => b.client_id !== one);
+        window.currentClientId = one; window._cdTimelineOpen = true; renderCDTimeline();
+        const single = document.getElementById('cd-timeline-mount').querySelectorAll('.bk-month').length;
+
+        const two = new Date('2026-06-08T09:12:00').getTime();
+        clients = clients.filter(c => c.id !== two).concat([{ id: two, name: 'Two Months', source: 'Referral', created: '2026-06-08' }]);
+        bids = bids.filter(b => b.client_id !== two).concat([{ id: two + 1, client_id: two, client_name: 'Two Months', status: 'Closed Won', amount: 100, bid_date: '2026-07-10', signedAt: '2026-07-12T16:41:00Z' }]);
+        window.currentClientId = two; renderCDTimeline();
+        const multi = document.getElementById('cd-timeline-mount').querySelectorAll('.bk-month').length;
+        return { single, multi };
+      });
+      expect(r.single).toBe(0);            // one month, no redundant month header
+      expect(r.multi).toBeGreaterThan(1);  // spans months, months grouped Books-style
+    });
+
+    // Owner mandate: every timeline event carries a timestamp, not just a date.
+    // Records store day keys, so the time is resolved from an explicit ISO stamp,
+    // a HH:MM field, or the record id (Date.now() at creation).
+    test('every event type renders a clock time', async () => {
+      const r = await page.evaluate(() => {
+        const day = '2026-07-16';
+        const at = (h, m) => new Date(`2026-07-16T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`).getTime();
+        const cid = at(8, 5), bidId = at(9, 12);
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Every Event', source: 'Referral', created: day }]);
+        bids = bids.filter(b => b.client_id !== cid).concat([{
+          id: bidId, client_id: cid, client_name: 'Every Event', status: 'Closed Won', amount: 5000,
+          bid_date: day, completion_date: day, completedAt: new Date(at(16, 5)).toISOString(),
+          collHistory: [{ stage: 'reminder', ts: new Date(at(15, 40)).toISOString(), note: '' }] }]);
+        payments = payments.filter(p => p.bid_id !== bidId).concat([
+          { id: at(17, 22), bid_id: bidId, client_id: cid, date: day, amount: 2500, method: 'Card' }]);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: at(10, 30), client_id: cid, bid_id: bidId, name: 'Work', start: day, days: 2, value: 5000, time: '13:00' },
+          { id: at(10, 45), client_id: cid, bid_id: bidId, name: 'Visit', eventType: 'estimate', start: day, time: '11:30' }]);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const rows = [...document.querySelectorAll('#cd-timeline-mount .tl-item')].map(el => el.innerText);
+        return {
+          rows,
+          // a back-dated record must NOT borrow the clock time it was entered at
+          backDated: _cdEventTs('2026-01-05', { id: at(17, 22) }),
+          sameDay: _cdEventTs(day, { id: at(17, 22) }),
+        };
+      });
+      expect(r.rows.length).toBeGreaterThanOrEqual(7);
+      r.rows.forEach(row => expect(row).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/));
+      expect(r.backDated).toBe('2026-01-05');      // date only, no borrowed time
+      expect(r.sameDay).toContain('2026-07-16');   // same day, real time used
+    });
+
+    // Regression (owner-reported): a lead and its proposal, created two minutes
+    // apart in the evening, showed on two DIFFERENT dates, and the proposal had no
+    // time. Two causes: id-derived stamps used toISOString() (UTC), so an 8:31 PM
+    // Central event sliced to the next day's key while day keys elsewhere are
+    // local; and bid ids are Date.now()*1000, not epoch ms, so their time never
+    // resolved.
+    test('events created moments apart stay on one local day, with times', async () => {
+      const r = await page.evaluate(() => {
+        const leadMs = new Date('2026-07-24T20:31:00').getTime();
+        const bidMs = new Date('2026-07-24T20:33:00').getTime();
+        clients = clients.filter(c => c.id !== leadMs).concat([
+          { id: leadMs, name: 'Evening Lead', source: 'Unknown', created: '2026-07-24' }]);
+        bids = bids.filter(b => b.client_id !== leadMs).concat([{
+          id: bidMs * 1000 + 123,            // _newBidId() scale
+          client_id: leadMs, client_name: 'Evening Lead', status: 'Sent', draft: false,
+          amount: 154.58, bid_date: '2026-07-24',
+          signedAt: new Date('2026-07-24T20:40:00').toISOString() }]);  // server UTC stamp
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = leadMs;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const el = document.getElementById('cd-timeline-mount');
+        return {
+          dayHeaders: [...el.querySelectorAll('.bk-day-title')].map(n => n.textContent),
+          rows: [...el.querySelectorAll('.tl-item')].map(n => n.innerText),
+          epochPlain: _cdEpochMs(bidMs),          // Date.now() scale
+          epochBid: _cdEpochMs(bidMs * 1000 + 123), // _newBidId scale
+          epochJunk: _cdEpochMs(7),
+        };
+      });
+      // one local day, not split across two
+      expect(new Set(r.dayHeaders).size).toBe(1);
+      expect(r.dayHeaders[0]).toBe('07/24/2026');
+      // and every row carries a time, including the UTC-stamped signature
+      expect(r.rows.length).toBe(3);
+      r.rows.forEach(row => expect(row).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/));
+      // both id scales normalise to the same moment; junk ids are rejected
+      expect(r.epochPlain).toBe(new Date('2026-07-24T20:33:00').getTime());
+      expect(Math.abs(r.epochBid - r.epochPlain)).toBeLessThan(1000);
+      expect(r.epochJunk).toBe(0);
+    });
+
+    // The send is a load-bearing audit event (it proves the client was given the
+    // proposal before signing). Nothing used to stamp bid.sentAt, so the row never
+    // rendered; _commitProposalSent now records it. Proposals sent before that
+    // still show the row from the proposalSentDate day key, without a clock time.
+    test('Proposal sent renders with a time when stamped, and from the legacy date otherwise', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 1750000100000, bidMs = new Date('2026-07-24T14:22:00').getTime();
+        const seed = extra => {
+          clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Sent Check', source: 'Referral', created: '2026-07-24' }]);
+          bids = bids.filter(b => b.client_id !== cid).concat([Object.assign({
+            id: bidMs * 1000 + 7, client_id: cid, client_name: 'Sent Check', status: 'Sent', draft: false,
+            amount: 900, bid_date: '2026-07-24', notifyEmail: 'c@example.com' }, extra)]);
+          window._proposalAuditEventsByBid = {};
+          window.currentClientId = cid;
+          window._cdTimelineOpen = true;
+          renderCDTimeline();
+          const row = [...document.querySelectorAll('#cd-timeline-mount .tl-item')]
+            .find(n => n.innerText.startsWith('Proposal sent'));
+          return row ? row.innerText : 'MISSING';
+        };
+        return {
+          stamped: seed({ sentAt: new Date('2026-07-24T14:22:00').toISOString() }),
+          legacy: seed({ proposalSentDate: '2026-07-24' }),
+        };
+      });
+      expect(r.stamped).toContain('Proposal sent');
+      expect(r.stamped).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/);   // exact send time
+      expect(r.legacy).toContain('Proposal sent');            // still shown for older data
+    });
+
+    // Owner-specified job lifecycle. An event carrying only a date (older records,
+    // a job's start day) used to anchor at noon and fall below everything logged
+    // that evening, which is how a sent proposal ended up at the bottom of its day.
+    test('the day reads in job-lifecycle order, and a date-only event slots correctly', async () => {
+      const r = await page.evaluate(() => {
+        const at = (hh, m) => new Date(`2026-07-16T${String(hh).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`).getTime();
+        const day = '2026-07-16', cid = at(7, 5), bidId = at(8, 0) * 1000 + 3;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Full Life', source: 'Referral', created: day }]);
+        bids = bids.filter(b => b.client_id !== cid).concat([{
+          id: bidId, client_id: cid, client_name: 'Full Life', status: 'Closed Won', draft: false, amount: 5000,
+          bid_date: day, proposalSentDate: day,                       // date only, no clock time
+          signedAt: new Date(at(11, 0)).toISOString(), signedName: 'FL',
+          completion_date: day, completedAt: new Date(at(16, 5)).toISOString() }]);
+        payments = payments.filter(p => p.bid_id !== bidId).concat([
+          { id: at(11, 5), bid_id: bidId, client_id: cid, date: day, amount: 2500, method: 'Card' }]);
+        if (typeof expenses !== 'undefined') expenses = expenses.filter(x => x.client_id !== cid)
+          .concat([{ id: at(14, 15), client_id: cid, date: day, amount: 212.4, vendor: 'SW', cat: 'materials' }]);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        // oldest-first, so it reads as the job's story
+        return [...document.querySelectorAll('#cd-timeline-mount .tl-item')]
+          .map(n => n.innerText.split('\n')[0]).reverse();
+      });
+      const idx = label => r.findIndex(x => x.startsWith(label));
+      expect(idx('Lead created')).toBeGreaterThanOrEqual(0);
+      // the date-only send sits after the proposal was created, not at the bottom
+      expect(idx('Proposal:')).toBeLessThan(idx('Proposal sent'));
+      expect(idx('Proposal sent')).toBeLessThan(idx('Signed'));
+      expect(idx('Signed')).toBeLessThan(idx('Payment:'));
+      expect(idx('Payment:')).toBeLessThan(idx('Expense:'));
+      expect(idx('Expense:')).toBeLessThan(idx('Job completed'));
+      expect(idx('Lead created')).toBe(0);
+    });
+
+    // Owner mandate: every event carries a date AND an exact time, no exceptions.
+    // Records store a user-chosen day, so the instant comes from loggedAt (stamped
+    // at save) or, for older rows, the record id. When the entry day differs from
+    // the event day the row says "logged <when>" rather than passing a data-entry
+    // time off as the moment the thing happened.
+    test('every row has an exact time; a back-dated record states when it was logged', async () => {
+      const r = await page.evaluate(() => {
+        const cid = new Date('2026-07-20T09:00:00').getTime();
+        const bidId = new Date('2026-07-20T09:05:00').getTime() * 1000 + 1;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Backdate', source: 'Referral', created: '2026-07-20' }]);
+        bids = bids.filter(b => b.client_id !== cid).concat([{
+          id: bidId, client_id: cid, client_name: 'Backdate', status: 'Closed Won',
+          draft: false, amount: 1000, bid_date: '2026-07-20' }]);
+        payments = payments.filter(p => p.bid_id !== bidId).concat([
+          { id: new Date('2026-07-20T14:30:00').getTime(), bid_id: bidId, client_id: cid, date: '2026-07-20', amount: 500, method: 'Cash' },
+          { id: new Date('2026-07-24T20:31:00').getTime(), bid_id: bidId, client_id: cid, date: '2026-07-18', amount: 250, method: 'Check' }]);
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const rows = [...document.querySelectorAll('#cd-timeline-mount .tl-item')].map(n => n.innerText);
+        return {
+          rows,
+          sameDay: rows.find(x => x.includes('$500.00')),
+          backDated: rows.find(x => x.includes('$250.00')),
+        };
+      });
+      // no row anywhere is left without an exact time
+      r.rows.forEach(row => expect(row).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/));
+      expect(r.sameDay).toMatch(/2:30\s?PM/);            // entered same day: that IS the time
+      expect(r.backDated).toContain('logged 07/24/2026'); // back-dated: stated, not faked
+      expect(r.backDated).toMatch(/8:31\s?PM/);
+    });
+
+    test('exportAuditReport on a missing bid does not throw', async () => {
+      const ok = await page.evaluate(() => {
+        try { exportAuditReport(99999999); return true; } catch (e) { return false; }
+      });
+      expect(ok).toBe(true);
     });
   });
 

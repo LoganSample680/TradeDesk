@@ -41,7 +41,7 @@ function _showNewLeadsPicker(){
     // the relative label for older/fixture ids that predate this or aren't real timestamps.
     const _cts=Number(c.id);
     const hasRealTs=_cts>1e12;
-    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+new Date(_cts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
+    const stamp=hasRealTs?(new Date(_cts).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' · '+new Date(_cts).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'})):'';
     const subLabel=stamp?ageLabel+' · '+stamp:ageLabel;
     const initial=escHtml((c.name||'?').trim().charAt(0).toUpperCase()||'?');
     return '<button onclick="_pickLeadForEstimate('+c.id+')" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'none\'" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:10px 8px;border:none;border-radius:var(--r);background:none;cursor:pointer;font-family:inherit;margin-bottom:4px;transition:background .12s ease">'+
@@ -56,7 +56,7 @@ function _showNewLeadsPicker(){
   const countLabel=leads.length===1?'1 lead':leads.length+' leads';
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px">'+
-      '<div style="font-size:16px;font-weight:800">Leads waiting on an estimate</div>'+
+      '<div style="font-size:16px;font-weight:800">Leads waiting on a proposal</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:20})+'</button>'+
     '</div>'+
     (leads.length?'<div style="font-size:12px;color:var(--text3);margin-bottom:12px">'+countLabel+'</div>':'')+
@@ -133,7 +133,7 @@ function _renderDashSetupTodo(){
     {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
-      sub:'Estimates that look like a real company, not a text message.',cta:'Add logo'},
+      sub:'Proposals that look like a real company, not a text message.',cta:'Add logo'},
     {id:'team',done:false,icon:'👥',title:'Add your crew',
       sub:'W-2 employees clock in so you stop chasing hours on paper, or invite 1099 subs. Solo? Say so and this goes away.',cta:'Set up'},
   ];
@@ -180,7 +180,7 @@ function _renderDashSetupTodo(){
             '<span style="display:block;font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px">'+it.sub+'</span>'+
             '<button onclick="_skipSetupTodo(\''+it.id+'\')" style="margin-top:4px;background:none;border:none;padding:0;font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>'+
           '</span>'+
-          '<button onclick="_setupTodoGo(\''+it.id+'\')" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">'+it.cta+'</button>'+
+          '<button class="td-setup-cta" onclick="_setupTodoGo(\''+it.id+'\')" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">'+it.cta+'</button>'+
         '</div>'
       ).join('')+
     '</div>';
@@ -237,9 +237,9 @@ function renderDash(){
   _renderDashRunning=true;
   try{
   document.getElementById('dash-greet').textContent=getDashGreeting();
-  document.getElementById('dash-date').textContent=new Date().toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric',year:'numeric'});
+  document.getElementById('dash-date').textContent=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const _calDateEl=document.getElementById('dash-cal-date');
-  if(_calDateEl)_calDateEl.textContent=new Date().toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+  if(_calDateEl)_calDateEl.textContent=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const tk=todayKey();
 
   const yr=dashYear||new Date().getFullYear();
@@ -271,7 +271,7 @@ function renderDash(){
   const closeRatio=totalDecided>0?Math.round(wonBidsAll/totalDecided*100):null;
   const closeColor=closeRatio===null?'var(--text3)':closeRatio>=40?'var(--green-mid)':closeRatio>=25?'var(--amber)':'#A32D2D';
   const closeLabel=closeRatio===null?'-':closeRatio+'%';
-  const closeSub=closeRatio===null?'No decided bids yet':closeRatio>=40?'Above avg '+svgIcon('✓',{size:12}):closeRatio>=25?'Near avg (~33%)':'Below avg, follow up more';
+  const closeSub=closeRatio===null?'No decided proposals yet':closeRatio>=40?'Above avg '+svgIcon('✓',{size:12}):closeRatio>=25?'Near avg (~33%)':'Below avg, follow up more';
   const wonBidAmts=bids.filter(b=>b.status==='Closed Won').map(b=>b.amount||0);
   const avgJobVal=wonBidAmts.length?Math.round(wonBidAmts.reduce((s,a)=>s+a,0)/wonBidAmts.length):null;
 
@@ -298,7 +298,7 @@ function renderDash(){
       if(_collectOwed>0)_biggestNote='The biggest one is '+fmt(_collectOwed)+' in outstanding balances.';
       else if(_wonNeedAction>0)_biggestNote=_wonNeedAction+' signed job'+(+_wonNeedAction>1?'s':'')+' need scheduling or a deposit.';
       else if(_urgFu>0)_biggestNote=_urgFu+' follow-up'+(+_urgFu>1?'s':'')+' are overdue.';
-      else if(_pendingBids>0)_biggestNote=_pendingBids+' pending bid'+(+_pendingBids>1?'s':'')+' need attention.';
+      else if(_pendingBids>0)_biggestNote=_pendingBids+' pending proposal'+(+_pendingBids>1?'s':'')+' need attention.';
       _subEl.textContent=_attnItems+' thing'+(_attnItems>1?'s':'')+' need'+(_attnItems===1?'s':'')+' your attention today. '+_biggestNote;
     }else{
       _subEl.textContent='You\'re all caught up, nothing urgent.';
@@ -309,7 +309,7 @@ function renderDash(){
   if(kpiEl&&_isEmployee){
     // Employee home: Today's Jobs (dispatch-assigned) + vehicle line
     const empId=_employeeRecord?.id;
-    const myDayJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&j.assignedDate===tk)
+    const myDayJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk))
       .sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
     // Vehicle display
     const vehKey='emp_vehicle_'+tk;
@@ -354,6 +354,7 @@ function renderDash(){
           '<div style="font-size:12px;color:var(--text2);flex:1">'+escHtml(addr)+'</div>'+
           (mapsUrl?'<a href="'+mapsUrl+'" style="font-size:11px;font-weight:700;color:var(--blue);text-decoration:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue)">'+svgIcon('🗺',{size:12})+' Navigate</a>':'')+
         '</div>':'')+
+        _jobFieldNote(j,{editable:true})+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+
           '<span style="font-size:11px;font-weight:700;color:'+statusColor+'">'+statusLabel+'</span>'+
           _empActionBtn(j)+
@@ -512,22 +513,29 @@ function renderDash(){
         const _aj=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===_onClock.jobId):null;
         const _cAddr=(_aj&&_aj.addr)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).addr||''):'')||'';
         const _cid=(_aj&&_aj.client_id)||((typeof clients!=='undefined'&&clients.find)?((clients.find(c=>c.name===_onClock.clientName)||{}).id||null):null);
+        // Field note right where the crew is standing: gate code, dog, ladder.
+        const _ocNoteHtml=_jobFieldNote(_aj,{editable:true});
+        const _ocNoteBlock=_ocNoteHtml?'<div style="padding:0 14px 2px">'+_ocNoteHtml+'</div>':'';
         const _extra='<div style="display:flex;align-items:center;gap:6px;font-size:13px;color:#0E6B39;font-weight:700;margin-top:3px"><span style="flex-shrink:0"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="#0E6B39" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>Arrived '+_fmtClk(_onClock.startTime)+' <span style="color:#9fb5a8;font-weight:700">·</span> <span id="dash-onsite-time">'+_fmtDur(_onClock.startTime)+'</span> on site</div>';
         const ocBtns=[];
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
-        if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Estimate</button>');
-        _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
+        if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
+        _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
       } else {
         // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
         const nb=_nearbyJob;
         const clockTarget=nb.jobId||nb.fallbackJobId;
         const hasBalance=nb.balance>0.01;
+        // Field note surfaces on arrival too, before clocking in (gate code etc).
+        const _nbJob=(typeof jobs!=='undefined'&&jobs.find)?jobs.find(j=>j.id===clockTarget):null;
+        const _nbNoteHtml=_jobFieldNote(_nbJob,{editable:true});
+        const _nbNoteBlock=_nbNoteHtml?'<div style="padding:0 14px 2px">'+_nbNoteHtml+'</div>':'';
         const nbBtns=[];
         nbBtns.push('<button onclick="_nearbyClockIn('+nb.clientId+','+(clockTarget||'null')+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:linear-gradient(160deg,#22c55e,#12894a);color:#fff;box-shadow:0 6px 16px -6px rgba(14,107,57,.6);display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><path d="M7 5v14l11-7z"/></svg>Clock in</button>');
-        nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Estimate</button>');
+        nbBtns.push('<button onclick="_nearbyStartWork('+nb.clientId+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
         if(hasBalance)nbBtns.push('<button onclick="openPayPanel('+nb.bidId+',\'final\')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#0E6B39;color:#fff;display:flex;align-items:center;justify-content:center;gap:6px">'+svgIcon('💰',{size:13,color:'#fff'})+'Collect</button>');
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
-        _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
+        _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
       }
     }else{_nearbyEl.style.display='none';}
   }
@@ -626,6 +634,131 @@ function _dashLogPipeMileage(jobId){
   const c=getClientById(j.client_id);
   if(typeof openLogTripModal==='function')openLogTripModal({toAddress:j.addr||'',clientId:j.client_id||'',clientName:(c&&c.name)||'',purpose:'Job site'});
 }
+// Field note callout, internal only (owner + assigned crew, never the client).
+// Composes two layers so gate codes/dog warnings never get re-typed:
+//   · SITE  = per-property note (getSiteNote by job address), auto-shows on every job at that address
+//   · this job = job.notes, the one-off ("bring the 24ft ladder")
+// job.noteAlert flags it as a hazard → red treatment that can't be skimmed past.
+// Pass the JOB OBJECT (not a string). opts.editable adds an Edit / "+ Add" affordance
+// that opens the field editor. Returns '' when there's nothing to show and not editable.
+// Note photos (type 'note') attached to a job, e.g. "which door", "where to park".
+function _notephotos(j){return (j&&Array.isArray(j.photos))?j.photos.filter(p=>p&&p.type==='note'):[];}
+function _notePhotoSrc(p){return (p&&(p.data||p.thumbUrl||p.url))||'';}
+// Tiny self-contained fullscreen viewer for a raw image src (no global photo id).
+function _viewNotePhoto(src){
+  if(!src)return;
+  document.getElementById('_notephoto-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_notephoto-ov';
+  ov.style.cssText='position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.9);display:flex;align-items:center;justify-content:center;padding:20px';
+  ov.onclick=()=>ov.remove();
+  const img=document.createElement('img');img.src=src;img.style.cssText='max-width:100%;max-height:100%;border-radius:8px';
+  ov.appendChild(img);document.body.appendChild(ov);
+}
+function _jobFieldNote(job,opts){
+  opts=opts||{};
+  const j=(job&&typeof job==='object')?job:null;
+  const c=(j&&j.client_id!=null&&typeof clients!=='undefined'&&clients.find)?clients.find(x=>String(x.id)===String(j.client_id)):null;
+  const site=(c?getSiteNote(c,(j&&j.addr)||c.addr):'').trim();
+  const jn=(j&&(j.notes||'').trim())||'';
+  const alert=!!(j&&j.noteAlert);
+  const pics=_notephotos(j);
+  const editable=!!(opts.editable&&j&&j.id!=null);
+  if(!site&&!jn&&!alert&&!pics.length){
+    return editable?'<button onclick="event.stopPropagation();_openJobNoteEditor('+j.id+')" style="margin-top:7px;font-size:11px;font-weight:700;color:var(--text3);background:none;border:1px dashed var(--border2);border-radius:var(--r);padding:6px 10px;cursor:pointer;font-family:inherit">+ Add a field note</button>':'';
+  }
+  const accent=alert?'var(--c-red,#B22A20)':'var(--amber,#8A4E00)';
+  const bg=alert?'rgba(178,42,32,.06)':'var(--bg2)';
+  const label=alert?'Heads up':'Field note';
+  const editBtn=editable?'<button onclick="event.stopPropagation();_openJobNoteEditor('+j.id+')" style="margin-left:auto;font-size:10px;font-weight:800;color:var(--blue);background:none;border:none;cursor:pointer;font-family:inherit;padding:0">Edit</button>':'';
+  const siteLine=site?'<div style="font-size:12px;color:var(--text2);line-height:1.4;white-space:pre-wrap"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin-right:5px">Site</span>'+escHtml(site)+'</div>':'';
+  const jobLine=jn?'<div style="font-size:12px;color:var(--text2);line-height:1.4;white-space:pre-wrap'+(site?';margin-top:4px':'')+'">'+escHtml(jn)+'</div>':'';
+  const photoRow=pics.length?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:'+((site||jn)?'7':'2')+'px">'+pics.map(p=>{const s=_notePhotoSrc(p);return s?'<img src="'+escHtml(s)+'" onclick="event.stopPropagation();_viewNotePhoto(this.src)" style="width:44px;height:44px;object-fit:cover;border-radius:6px;border:1px solid var(--border);cursor:pointer">':'';}).join('')+'</div>':'';
+  return '<div style="margin-top:7px;padding:8px 10px;background:'+bg+';border-radius:var(--r);border-left:3px solid '+accent+'">'+
+    '<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px"><span style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+(alert?accent:'var(--text3)')+'">'+label+'</span>'+editBtn+'</div>'+
+    siteLine+jobLine+photoRow+
+  '</div>';
+}
+
+// Field-note editor, a bottom sheet (mirrors _openCrewAssignSheet). Edits the
+// one-off job note, the hazard/alert flag, and the client's persistent Site
+// note in one place, so the crew can jot from the field and a gate code gets
+// entered once. Available to the owner + the assigned crew wherever it renders.
+function _openJobNoteEditor(jobId){
+  const j=jobs.find(x=>String(x.id)===String(jobId));if(!j)return;
+  const c=(j.client_id!=null&&clients.find)?clients.find(x=>String(x.id)===String(j.client_id)):null;
+  const pics=_notephotos(j);
+  document.getElementById('_jobnote-ov')?.remove();
+  const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_jobnote-ov';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  // Centered modal, matches every other popup in the app (.zmodal in a flex-centered
+  // .zmodal-overlay), not a bottom sheet.
+  const sheet=document.createElement('div');sheet.className='zmodal';
+  sheet.style.maxWidth='420px';sheet.style.maxHeight='88vh';sheet.style.overflowY='auto';
+  const _ta=(id,val,ph)=>'<textarea id="'+id+'" placeholder="'+ph+'" style="width:100%;box-sizing:border-box;min-height:60px;font-size:14px;padding:10px 12px;border:1.5px solid var(--line-2);border-radius:var(--r);background:var(--bg-card);color:var(--text);font-family:inherit;line-height:1.45;resize:none">'+escHtml(val||'')+'</textarea>';
+  const _lbl=(t,hint)=>'<div style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:16px 0 6px">'+t+(hint?' <span style="font-weight:600;text-transform:none;letter-spacing:0;color:var(--text3)">'+hint+'</span>':'')+'</div>';
+  const _addr=(j.addr||(c&&c.addr)||'').trim();
+  const _pin='<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="var(--text3)" stroke-width="2" style="flex-shrink:0"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
+  sheet.innerHTML=
+    '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px">'+
+      '<div style="min-width:0"><div style="font-size:16px;font-weight:800;line-height:1.1">Field note</div>'+
+        '<div style="font-size:12px;color:var(--text3);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(j.name||c&&c.name||'Job')+'</div>'+
+        (_addr?'<div style="font-size:12px;color:var(--text2);font-weight:600;margin-top:3px;display:flex;align-items:center;gap:4px">'+_pin+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(_addr)+'</span></div>':'')+
+      '</div>'+
+      '<button onclick="document.getElementById(\'_jobnote-ov\').remove()" style="flex-shrink:0;width:32px;height:32px;border-radius:50%;border:1px solid var(--border2);background:var(--bg2);font-size:16px;line-height:1;cursor:pointer;font-family:inherit;color:var(--text3)">&times;</button>'+
+    '</div>'+
+    _ta('_jn-note-ta',j.notes,'This visit: bring the ladder, extra paint...')+
+    '<label style="display:flex;align-items:center;gap:10px;margin:14px 0 4px;cursor:pointer">'+
+      '<input type="checkbox" id="_jn-alert"'+(j.noteAlert?' checked':'')+' style="width:20px;height:20px;flex-shrink:0;accent-color:var(--c-red,#B22A20);cursor:pointer">'+
+      '<span style="font-size:14px;font-weight:700;color:var(--text)">Flag as hazard</span>'+
+    '</label>'+
+    (j.client_id!=null?
+      _lbl('Site access','· this address, every visit')+
+      _ta('_jn-site-ta',c?getSiteNote(c,_addr):'','Gate code, dog, where to park...')
+    :'')+
+    _lbl('Photos','')+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">'+
+      pics.map((p,i)=>{const s=_notePhotoSrc(p);return '<div style="position:relative;width:56px;height:56px">'+
+        (s?'<img src="'+escHtml(s)+'" onclick="_viewNotePhoto(this.src)" style="width:56px;height:56px;object-fit:cover;border-radius:8px;border:1px solid var(--border);cursor:pointer">':'')+
+        '<button onclick="_jnDelPhoto('+j.id+','+i+')" style="position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;border:none;background:var(--c-red,#B22A20);color:#fff;font-size:13px;line-height:1;cursor:pointer;font-family:inherit">&times;</button>'+
+      '</div>';}).join('')+
+      '<label style="width:56px;height:56px;border-radius:8px;border:1.5px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text3);font-size:26px;line-height:1">+<input type="file" accept="image/*" onchange="_jnAddPhoto('+j.id+',this)" style="display:none"></label>'+
+    '</div>'+
+    '<button onclick="_saveJobNote('+j.id+')" class="btn btn-g" style="width:100%;height:48px;font-size:15px;font-weight:800;border-radius:var(--r);margin-top:16px">Save note</button>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+}
+
+// Pull the editor's current field values onto the job/client WITHOUT closing or
+// saving, so an async photo add + editor re-render never drops in-progress text.
+function _jnCaptureEdits(jobId){
+  const j=jobs.find(x=>String(x.id)===String(jobId));if(!j)return null;
+  const ta=document.getElementById('_jn-note-ta');if(ta)j.notes=ta.value.trim();
+  const al=document.getElementById('_jn-alert');if(al)j.noteAlert=!!al.checked;
+  const site=document.getElementById('_jn-site-ta');
+  if(site&&j.client_id!=null&&clients.find){const c=clients.find(x=>String(x.id)===String(j.client_id));if(c)setSiteNote(c,(j.addr||c.addr),site.value.trim());}
+  return j;
+}
+function _jnAddPhoto(jobId,input){
+  _jnCaptureEdits(jobId);
+  if(typeof addJobPhoto==='function')addJobPhoto(jobId,input,'note');
+  // addJobPhoto reads the file async (FileReader); re-open shortly so the new
+  // thumbnail appears. Edits were captured above so nothing typed is lost.
+  setTimeout(()=>{if(document.getElementById('_jobnote-ov'))_openJobNoteEditor(jobId);},450);
+}
+function _jnDelPhoto(jobId,idx){
+  _jnCaptureEdits(jobId);
+  if(typeof deleteJobPhoto==='function')deleteJobPhoto(jobId,idx,'note');
+  _openJobNoteEditor(jobId);
+}
+function _saveJobNote(jobId){
+  const j=_jnCaptureEdits(jobId);if(!j)return;
+  saveAll();
+  document.getElementById('_jobnote-ov')?.remove();
+  if(typeof renderDash==='function')try{renderDash();}catch(e){}
+  if(typeof renderClientDetail==='function')try{renderClientDetail();}catch(e){}
+  if(typeof renderDispatch==='function')try{renderDispatch();}catch(e){}
+  showToast('Note saved','✓');
+}
+
 function renderDashToday(){
   const el=document.getElementById('dash-today');if(!el)return;
   const tk=todayKey();
@@ -644,10 +777,10 @@ function renderDashToday(){
     const dow=new Date().getDay();
     const msgs=[
       'Nothing Sunday, recharge for the week.',
-      'Open Monday. Book an estimate today.',
+      'Open Monday. Book a proposal today.',
       'Open Tuesday. Good day to follow up.',
       'Open Wednesday. Mid-week reach out.',
-      'Open Thursday. Book weekend estimates.',
+      'Open Thursday. Book weekend proposals.',
       'Open Friday. Homeowners are home this weekend.',
       'Open Saturday. Great day for estimates.'
     ];
@@ -681,7 +814,7 @@ function renderDashToday(){
     // Quick crew assignment row (owner only, non-estimate jobs)
     const _crewRow=(!_isEmployee&&!isEst)?(()=>{
       if(_crewEmps.length>0){
-        const _aId=j.assignedTo&&j.assignedDate===tk?j.assignedTo:null;
+        const _aId=j.assignedTo||null; // persists for the job's whole span, not just today
         const _aEmp=_aId?_crewEmps.find(e=>String(e.id)===String(_aId)):null;
         return '<div onclick="event.stopPropagation()" style="display:flex;align-items:center;gap:8px;margin-top:7px;padding-top:7px;border-top:1px solid var(--border)">'+
           (_aEmp?'<span style="font-size:11px;font-weight:700;color:var(--blue);background:var(--blue-lt,#e6f0fb);padding:3px 9px;border-radius:20px">'+svgIcon('👤',{size:11})+' '+escHtml(_aEmp.name)+'</span>':
@@ -724,6 +857,7 @@ function renderDashToday(){
           '</span>'+
         '</div>'+
       '</div>'+
+      _jobFieldNote(j,{editable:true})+
       _crewRow+
     '</div>';
   }).join('');
@@ -732,7 +866,6 @@ function renderDashToday(){
 
 function _openCrewAssignSheet(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
-  const tk=todayKey();
   const emps=(S.employees||[]).filter(e=>e.name);
   if(!emps.length){showToast('Add team members first','👤');return;}
   document.getElementById('_crew-assign-ov')?.remove();
@@ -741,7 +874,7 @@ function _openCrewAssignSheet(jobId){
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px 40px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
   const c=getClientById(j.client_id);
-  const curEmpId=j.assignedTo&&j.assignedDate===tk?j.assignedTo:null;
+  const curEmpId=j.assignedTo||null; // persists for the job's whole span, not just today
   const roleLabels={tech:'Field Tech',office:'Office',manager:'Manager',owner:'Owner'};
   sheet.innerHTML=
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'+
@@ -768,14 +901,13 @@ function _openCrewAssignSheet(jobId){
 
 function _assignCrewToJob(jobId,empId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
-  const tk=todayKey();
   if(empId!=null){
-    j.assignedTo=empId;j.assignedDate=tk;
+    j.assignedTo=empId;
     // Durable record of everyone ever assigned, powers the crew trust ranking on estimates.
     if(!Array.isArray(j.crewHistory))j.crewHistory=[];
     if(!j.crewHistory.map(String).includes(String(empId)))j.crewHistory.push(empId);
     const emp=(S.employees||[]).find(e=>String(e.id)===String(empId));
-    showToast(escHtml(emp?.name||'Crew member')+' assigned today','👤');
+    showToast(escHtml(emp?.name||'Crew member')+' assigned','👤');
   }else{
     j.assignedTo=null;j.assignedDate=null;
     showToast('Assignment removed','');
@@ -953,19 +1085,20 @@ function printKansasLien(bidId){
   h1{font-size:18pt;text-align:center;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
   h2{font-size:13pt;text-align:center;margin-bottom:24px;font-weight:normal}
   .subtitle{text-align:center;font-size:11pt;margin-bottom:30px;font-style:italic}
-  .section{margin-bottom:18px}
+  .section{margin-bottom:18px;page-break-inside:avoid;break-inside:avoid}
   .label{font-size:10pt;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
   .value{border-bottom:1px solid #000;min-height:24px;padding:2px 4px;font-size:13pt}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .notice{border:2px solid #000;padding:14px;margin:20px 0;font-size:11pt;line-height:1.6}
-  .oath{margin:24px 0;font-size:11pt;line-height:1.8;text-align:justify}
-  .sig-block{margin-top:36px}
+  .notice{border:2px solid #000;padding:14px;margin:20px 0;font-size:11pt;line-height:1.6;page-break-inside:avoid;break-inside:avoid}
+  .oath{margin:24px 0;font-size:11pt;line-height:1.8;text-align:justify;page-break-inside:avoid;break-inside:avoid}
+  .sig-block{margin-top:36px;page-break-inside:avoid;break-inside:avoid}
   .sig-line{border-bottom:1px solid #000;min-height:36px;margin-bottom:4px}
   .sig-label{font-size:10pt;text-align:center;color:#333}
-  .notary{border:1px solid #000;padding:16px;margin-top:28px;font-size:11pt;line-height:1.8}
+  .notary{border:1px solid #000;padding:16px;margin-top:28px;font-size:11pt;line-height:1.8;page-break-inside:avoid;break-inside:avoid}
   .notary-title{font-size:12pt;font-weight:bold;text-transform:uppercase;margin-bottom:10px;text-align:center}
   .page-break{page-break-after:always;margin-bottom:40px}
-  .proposal-section{margin-top:40px}
+  .proposal-section{margin-top:40px;max-width:100%;overflow-wrap:break-word}
+  .proposal-section *{max-width:100%!important;box-sizing:border-box}
   .td-bar-btn{padding:12px 18px;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;min-height:46px;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent;line-height:1}
   @media print{body{padding:20px}.no-print{display:none}}
 </style></head><body>
@@ -1111,6 +1244,90 @@ ${bid.proposalHtml?`<div class="page-break"></div><div class="proposal-section">
   else{zAlert('Allow pop-ups to open the lien document. In Safari: tap AA in address bar → Allow pop-ups.');}
 }
 
+// ── Notice of Intent to Lien, the relationship-safe "get paid" demand ────────
+// Sent BEFORE any lien is filed. Research (Levelset): ~50% of intent notices get
+// the sub paid with no lien ever filed, 56% within 42 days. Unlike printKansasLien
+// this is NOT a recorded instrument, it's a formal written demand mailed (certified)
+// to the property OWNER OF RECORD and, on a GC job, to the general contractor who
+// hired us. Owner and payer can be different parties (a GC doesn't own the site), so
+// both are named. State-general: statute + filing deadline pulled from STATE_LIEN /
+// LIEN_RULES with a generic fallback, and a prominent "not legal advice" disclaimer.
+function printNoticeOfIntent(bidId){
+  const bid=bids.find(b=>b.id===bidId);if(!bid)return;
+  const c=getClientById(bid.client_id);if(!c)return;
+  const bname=S.bname||'TradeDesk';const bphone=S.bphone||'';const blic=S.blic||'';
+  const signer=(typeof getOwnerName==='function'&&getOwnerName())||'';
+  const addr=bid.addr||c.addr||'';
+  const bal=(typeof getBidBalance==='function'?getBidBalance(bid):0)||0;
+  const {stateCode:st,county}=(typeof getCountyForBid==='function')?getCountyForBid(bid):{stateCode:'',county:''};
+  const stateName=(typeof STATE_TAX!=='undefined'&&STATE_TAX[st]?.name)||st||'the applicable state';
+  const statute=(typeof STATE_LIEN!=='undefined'&&STATE_LIEN[st]?.statute)||(st?st+" mechanic's lien statutes":"applicable state mechanic's lien statutes");
+  const rules=(typeof LIEN_RULES!=='undefined'&&LIEN_RULES[st])||null;
+  const demandDays=10; // days to pay before we file; generic, not a statutory NOI window
+  const fmtD=d=>{if(!d)return'____________';const p=String(d).split('-');if(p.length<3)return d;const mn=['January','February','March','April','May','June','July','August','September','October','November','December'];return mn[parseInt(p[1])-1]+' '+parseInt(p[2])+', '+p[0];};
+  const todayD=fmtD(todayKey());
+  const payByD=fmtD(addDays(todayKey(),demandDays));
+  const lastWork=bid.completion_date||bid.bid_date||todayKey();
+  const fileDeadline=rules?fmtD(addDays(lastWork,rules.filing_deadline_days)):'';
+  const workDesc=bid.type||bid.geiDesc||'labor, services and materials furnished';
+  // Owner of record vs the party who hired us. On a GC/PM account the site owner is a
+  // separate person (or unknown → fill-in line); on a homeowner account they're the same.
+  // The site owner (who a lien targets) vs the client who hired/owes us. On a GC/PM
+  // job they differ; propIsThirdPartyOwned/propOwnerName resolve which is which.
+  const thirdParty=(typeof propIsThirdPartyOwned==='function')?propIsThirdPartyOwned(c,addr):(/gc|builder|pm/i.test(c.partyType||'')||!!c.isGC);
+  const ownerName=(typeof propOwnerName==='function')?propOwnerName(c,addr):(thirdParty?'':c.name);
+  const ownerBlock=ownerName?escHtml(ownerName):'________________________________  <span style="font-size:9pt">(property owner of record)</span>';
+  const gcBlock=thirdParty?`<div class="party"><div class="plabel">And to, General Contractor / Hiring Party</div><div class="pval">${escHtml(c.name)}${c.phone?' · '+escHtml(c.phone):''}</div></div>`:'';
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Notice of Intent to Lien, ${escHtml(c.name)}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'Times New Roman',Times,serif;font-size:13pt;color:#000;background:#fff;padding:44px;line-height:1.5}
+  h1{font-size:17pt;text-align:center;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+  h2{font-size:11pt;text-align:center;font-weight:normal;font-style:italic;margin-bottom:26px}
+  .row{margin-bottom:14px}
+  .party{margin-bottom:12px}
+  .plabel{font-size:9pt;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;color:#333}
+  .pval{font-size:13pt;border-bottom:1px solid #000;padding:2px 2px 3px}
+  .amt{font-size:20pt;font-weight:bold}
+  .body p{margin-bottom:12px;text-align:justify}
+  .demand{border:2px solid #000;padding:14px 16px;margin:18px 0;font-size:12pt;line-height:1.6}
+  .disc{border:1px solid #999;background:#f6f6f6;padding:12px 14px;margin-top:26px;font-size:9.5pt;line-height:1.5;color:#333}
+  .sig{margin-top:34px}
+  .sig-line{border-bottom:1px solid #000;height:34px;width:60%}
+  .sig-cap{font-size:9pt;color:#333;margin-top:3px}
+  .td-bar-btn{padding:12px 18px;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;min-height:46px;white-space:nowrap;font-family:-apple-system,system-ui,sans-serif;line-height:1}
+  @media print{body{padding:24px}.no-print{display:none}}
+</style></head><body>
+<div class="no-print" style="position:sticky;top:0;z-index:10;background:#185FA5;color:#fff;padding:10px 14px;margin:-44px -44px 30px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+  <button onclick="tdBack()" class="td-bar-btn" style="border:1.5px solid rgba(255,255,255,.6);background:transparent;color:#fff">&larr; Back to TradeDesk</button>
+  <button onclick="tdDoPrint()" class="td-bar-btn" style="border:none;background:#fff;color:#185FA5">&#128424;&#65039; Print / Save PDF</button>
+</div>
+<script>function tdDoPrint(){try{window.focus();}catch(e){}window.print();}function tdBack(){try{window.close();}catch(e){}setTimeout(function(){if(!window.closed){try{if(document.referrer)location.href=document.referrer;else history.back();}catch(e){history.back();}}},250);}</script>
+<h1>Notice of Intent to File a Mechanic's Lien</h1>
+<h2>Send by Certified Mail, Return Receipt Requested</h2>
+<div class="row" style="text-align:right">Date: ${todayD}</div>
+<div class="party"><div class="plabel">To, Property Owner of Record</div><div class="pval">${ownerBlock}</div></div>
+${gcBlock}
+<div class="party"><div class="plabel">Property / Job Site</div><div class="pval">${escHtml(addr)}</div></div>
+<div class="party"><div class="plabel">From, Claimant</div><div class="pval">${escHtml(bname)}${blic?' · Lic. '+escHtml(blic):''}${bphone?' · '+escHtml(bphone):''}</div></div>
+<div class="row" style="margin-top:18px"><div class="plabel">Amount Past Due</div><div class="amt">${fmt(bal)}</div></div>
+<div class="body" style="margin-top:16px">
+  <p>You are hereby notified that the undersigned, <strong>${escHtml(bname)}</strong>, furnished ${escHtml(workDesc)} for the improvement of the property located at <strong>${escHtml(addr)}</strong>, with work last furnished on or about <strong>${fmtD(lastWork)}</strong>.</p>
+  <p>The sum of <strong>${fmt(bal)}</strong> remains due and unpaid. Under ${escHtml(statute)}, the undersigned has the right to file and enforce a mechanic's lien against the above property to secure payment of this amount${fileDeadline?', and may do so at any time before the statutory filing deadline of <strong>'+fileDeadline+'</strong>':''}.</p>
+</div>
+<div class="demand"><strong>DEMAND:</strong> Unless full payment of ${fmt(bal)} is received on or before <strong>${payByD}</strong>, the undersigned intends to file a mechanic's lien against the property described above and to pursue all remedies available under law, which may include recovery of interest, costs, and attorney's fees where permitted.</div>
+<div class="body"><p>To resolve this matter, contact <strong>${escHtml(bname)}</strong>${bphone?' at '+escHtml(bphone):''} immediately.</p></div>
+<div class="sig">
+  <div class="sig-line"></div>
+  <div class="sig-cap">${escHtml(signer||bname)}${signer?', for '+escHtml(bname):''}</div>
+</div>
+<div class="disc"><strong>Not legal advice.</strong> Mechanic's-lien and preliminary-notice requirements, deadlines, required wording, and who must be served vary by state and can change. Some states require a specific statutory notice form or advance preliminary notice before this notice is effective. Verify the requirements for ${escHtml(stateName)} with the county/register of deeds or a construction attorney before relying on or filing anything. TradeDesk generates this document as a convenience only.</div>
+</body></html>`;
+  const win=window.open('','_blank');
+  if(win){win.document.write(html);win.document.close();}
+  else{zAlert('Allow pop-ups to open the notice. In Safari: tap AA in the address bar → Allow pop-ups.');}
+}
+
 // ── Release of Mechanic's Lien, the recordable discharge filed once paid ─────
 // Once the debt is satisfied, the contractor has a STATUTORY DUTY to file a lien
 // release with the same Register of Deeds so the property title is cleared;
@@ -1143,16 +1360,16 @@ function printKansasLienRelease(bidId){
   h1{font-size:18pt;text-align:center;text-transform:uppercase;letter-spacing:2px;margin-bottom:6px}
   h2{font-size:13pt;text-align:center;margin-bottom:24px;font-weight:normal}
   .subtitle{text-align:center;font-size:11pt;margin-bottom:30px;font-style:italic}
-  .section{margin-bottom:18px}
+  .section{margin-bottom:18px;page-break-inside:avoid;break-inside:avoid}
   .label{font-size:10pt;font-weight:bold;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px}
   .value{border-bottom:1px solid #000;min-height:24px;padding:2px 4px;font-size:13pt}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-  .notice{border:2px solid #000;padding:14px;margin:20px 0;font-size:11pt;line-height:1.6}
-  .oath{margin:24px 0;font-size:11pt;line-height:1.8;text-align:justify}
-  .sig-block{margin-top:36px}
+  .notice{border:2px solid #000;padding:14px;margin:20px 0;font-size:11pt;line-height:1.6;page-break-inside:avoid;break-inside:avoid}
+  .oath{margin:24px 0;font-size:11pt;line-height:1.8;text-align:justify;page-break-inside:avoid;break-inside:avoid}
+  .sig-block{margin-top:36px;page-break-inside:avoid;break-inside:avoid}
   .sig-line{border-bottom:1px solid #000;min-height:36px;margin-bottom:4px}
   .sig-label{font-size:10pt;text-align:center;color:#333}
-  .notary{border:1px solid #000;padding:16px;margin-top:28px;font-size:11pt;line-height:1.8}
+  .notary{border:1px solid #000;padding:16px;margin-top:28px;font-size:11pt;line-height:1.8;page-break-inside:avoid;break-inside:avoid}
   .notary-title{font-size:12pt;font-weight:bold;text-transform:uppercase;margin-bottom:10px;text-align:center}
   .td-bar-btn{padding:12px 18px;border-radius:8px;font-size:15px;font-weight:800;cursor:pointer;min-height:46px;white-space:nowrap;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;-webkit-tap-highlight-color:transparent;line-height:1}
   @media print{body{padding:20px}.no-print{display:none}}
@@ -1296,6 +1513,13 @@ function renderTodayFeed(){
   }
   const _bidInbox=(typeof _subBidInboxHTML==='function')?_subBidInboxHTML(typeof _subBids!=='undefined'?_subBids:null):'';
   const finalPayItems=[],depositItems=[],scheduleItems=[],pendingItems=[],buildItems=[],alertItems=[];
+  // Street-line address under a money-feed card's name, so multiple bids for one
+  // client (different properties) are told apart at a glance. Empty string when
+  // there's no address, nothing renders.
+  const _mmtAddrLine=(b,c)=>{const a=(b?.addr||c?.addr||'').split(',')[0].trim();return a?'<div class="tf-addr">'+svgIcon('📍',{size:11})+'<span>'+escHtml(a)+'</span></div>':'';};
+  // Header amount: drop the ".00" on whole-dollar figures so the card reads clean
+  // ($9,500 not $9,500.00); amounts with real cents keep them.
+  const _mmtAmt=v=>fmt(v).replace(/\.00$/,'');
 
   // ALERTS: License expiring/expired (always first, outside sections)
   const licAlerts=getLicenseAlerts();
@@ -1332,15 +1556,31 @@ function renderTodayFeed(){
     // globally by the .tf-acts>.btn CSS rule (flex:1 1 0), so every button in the
     // row is the same size regardless of label. Call removed, texting is the
     // collections channel and the row only has space for two even buttons.
-    if(next.smsKey&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+next.smsKey+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+next.label+'</button>';
-    else if(isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' File Lien</button>';
-    else if(lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' View lien doc</button>';
+    // The lien path (intent-to-lien threat, Notice of Intent, File Lien) only applies
+    // to a TRUE client who owns the property. A GC/builder/property manager doesn't
+    // own the site and the sub may never know the homeowner, so we never show them a
+    // lien path, just plain past-due demands.
+    const canLien=(typeof accountOwnsSites==='function')?accountOwnsSites(c):true;
+    if(next.smsKey&&c.phone){
+      const threat=next.smsKey==='intent'&&!canLien; // don't send a lien threat to a non-owner
+      const key=threat?'second':next.smsKey;
+      const lbl=threat?(svgIcon('💬',{size:11})+' Send demand'):next.label;
+      actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\''+key+'\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+lbl+'</button>';
+    }
+    // Notice of Intent to Lien = the relationship-safe step BEFORE filing (gets subs
+    // paid ~half the time with no lien). Offered at the intent stage; File Lien is the
+    // harder escalation that follows. Lien-path buttons only for true clients.
+    else if(canLien&&stage==='intent')actBtns+='<button onclick="printNoticeOfIntent('+b.id+')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+svgIcon('📄',{size:11})+' Notice of Intent</button>';
+    else if(canLien&&isFileable)actBtns+='<button onclick="showFileLienDirect('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' File Lien</button>';
+    else if(canLien&&lienStage)actBtns+='<button onclick="printKansasLien('+b.id+')" class="btn btn-sm" style="font-size:11px;background:#3D0000;color:#FFB3B3;border-color:#3D0000">'+svgIcon('⚖',{size:11})+' View lien doc</button>';
+    else if(!canLien&&c.phone)actBtns+='<button onclick="collSendSMS(bids.find(x=>x.id=='+b.id+'),\'second\')" class="btn btn-sm" style="font-size:11px;border-color:var(--amber);color:#856404;background:var(--amber-lt)">'+svgIcon('💬',{size:11})+' Send demand</button>';
     actBtns+='<button onclick="openPayPanel('+b.id+')" class="btn btn-sm btn-g" style="font-size:11px">Collect →</button>';
     finalPayItems.push(
       '<div class="tf-card">'+
         '<div class="tf-icon">'+svgIcon('💰',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+urgTag+countdownTag+'</div>'+
+          _mmtAddrLine(b,c)+
           '<div class="tf-sub" style="color:#A32D2D">'+fmt(bal)+' owed · '+daysAgo+'d since completion</div>'+
         '</div>'+
         '<div class="tf-acts" style="display:flex;gap:6px">'+actBtns+'</div>'+
@@ -1364,6 +1604,7 @@ function renderTodayFeed(){
           '<div class="tf-icon">'+svgIcon('📅',{size:18})+'</div>'+
           '<div class="tf-body">'+
             '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
+            _mmtAddrLine(b,c)+
             '<div class="tf-sub" style="color:var(--blue)">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+fmt(b.amount)+' · deposit paid · not yet scheduled</div>'+
           '</div>'+
           '<div class="tf-acts">'+
@@ -1381,6 +1622,7 @@ function renderTodayFeed(){
           '<div class="tf-icon">'+(hasJob?svgIcon('💰',{size:18}):svgIcon('💳',{size:18}))+'</div>'+
           '<div class="tf-body">'+
             '<div class="tf-name">'+escHtml(cDisp)+'</div>'+
+            _mmtAddrLine(b,c)+
             '<div class="tf-sub" style="color:'+(hasJob?'#A32D2D':'var(--blue)')+'">'+subText+'</div>'+
           '</div>'+
           '<div class="tf-acts">'+
@@ -1403,6 +1645,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">'+svgIcon('🔥',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+escHtml(c.name)+'</div>'+
+          _mmtAddrLine(b,c)+
           '<div class="tf-sub" style="color:#A32D2D">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+'2nd follow-up · '+fmt(b.amount)+' · '+Math.abs(daysOut)+'d waiting</div>'+
         '</div>'+
         '<div class="tf-acts">'+
@@ -1421,7 +1664,7 @@ function renderTodayFeed(){
     const c=getClientById(b.client_id);if(!c)return;
     const fn=c.name.split(' ')[0];
     const stage=b.followupStage||1;
-    const msgs=['Hey '+fn+', just checking in, did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the estimate I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled, let me know!'];
+    const msgs=['Hey '+fn+', just checking in, did you get a chance to look over the proposal? Happy to answer any questions.','Hi '+fn+', wanted to follow up on the proposal I sent over. Let me know if you\'d like to move forward or have any questions.','Hey '+fn+', I have an opening coming up that might work great for your project. Would love to get it scheduled, let me know!'];
     const smsBody=encodeURIComponent(msgs[Math.min(stage-1,msgs.length-1)]);
     const daysOut=Math.floor((new Date(tk+'T12:00')-new Date(b.followup+'T12:00'))/86400000);
     pendingItems.push(
@@ -1466,7 +1709,7 @@ function renderTodayFeed(){
       const yest=new Date(today-86400000);
       if(d>=today)return'Today at '+t;
       if(d>=yest)return'Yesterday at '+t;
-      return d.toLocaleDateString([],{weekday:'short',month:'short',day:'numeric'})+' at '+t;
+      return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' at '+t;
     };
     let viewedBadge='';
     if(_hubTs){
@@ -1485,12 +1728,18 @@ function renderTodayFeed(){
     if(_contractorTs){
       viewedBadge+='<div style="font-size:10px;color:var(--text3);margin-top:1px">You previewed · '+_localTs(_contractorTs)+'</div>';
     }
+    const _pStreet=(b.addr||c?.addr||'').split(',')[0].trim();
     pendingItems.push(
-      '<div class="tf-card">'+
+      '<div class="tf-card tf-b-pending">'+
         '<div class="tf-icon">'+svgIcon('📨',{size:18})+'</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">'+escHtml(c.name)+'</div>'+
-          '<div class="tf-sub" style="color:'+urgColor+'">'+((typeof _estimateTypeLabel==='function'&&_estimateTypeLabel(b))?_estimateTypeLabel(b)+' · ':'')+fmt(b.amount)+' · '+daysStr+'</div>'+
+          '<div class="tf-hd">'+
+            '<div class="tf-name tf-1line">'+escHtml(c.name)+'</div>'+
+            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'')+
+          '</div>'+
+          (_pStreet?'<div class="tf-sub tf-1line" style="color:var(--text-3);margin-top:2px">'+escHtml(_pStreet)+'</div>':'')+
+          // Age/urgency is the loud line, the #1 unmet contractor need on sent quotes.
+          (daysStr?'<div class="tf-when" style="color:'+urgColor+'">'+escHtml(daysStr)+'</div>':'')+
           viewedBadge+
         '</div>'+
         '<div class="tf-acts">'+
@@ -1513,14 +1762,24 @@ function renderTodayFeed(){
     // Estimate type spelled out (never an acronym) so the feed shows which
     // kind of estimate was chosen without opening it.
     const typeLbl=typeof _estimateTypeLabel==='function'?_estimateTypeLabel(b):'';
-    const subLabel=(typeLbl?typeLbl+' · ':'')+(isDraft&&!b.amount?'In progress, finish &amp; send':isDraft?'Draft: finish &amp; send':(fmt(b.amount)+' · built '+(days===0?'today':days+'d ago')+' · not sent yet'));
+    // Header carries the money (or a Draft pill when nothing's priced yet); the meta
+    // row carries the estimate type + project name; a subtle status line nudges the
+    // Name is the anchor (how contractors refer to a job), amount a strong secondary
+    // beside it, one muted locator line below (property · project). Unpriced shells
+    // carry a Draft tag instead of a $ figure.
+    // Muted line: property, then the spelled-out estimate type (Time & Materials /
+    // Build Your Own, never an acronym), then the project name. Estimate type sits
+    // ahead of the project name so it stays visible when the line truncates.
+    const _sub=[(b.addr||c?.addr||'').split(',')[0].trim(),typeLbl,b.type].filter(Boolean).join(' · ');
     buildItems.push(
-      '<div class="tf-card">'+
+      '<div class="tf-card tf-b-build">'+
         '<div class="tf-icon">'+svgIcon('✏',{size:18})+'</div>'+
         '<div class="tf-body">'+
-          '<div class="tf-name">'+escHtml(displayName)+'</div>'+
-          (b.type?'<div class="tf-sub" style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:1px">'+escHtml(b.type)+'</div>':'')+
-          '<div class="tf-sub" style="color:var(--text3)">'+subLabel+'</div>'+
+          '<div class="tf-hd">'+
+            '<div class="tf-name tf-1line">'+escHtml(displayName)+(b.amount>0?'':'<span class="tf-tag">Draft</span>')+'</div>'+
+            (b.amount>0?'<div class="tf-amt">'+_mmtAmt(b.amount)+'</div>':'')+
+          '</div>'+
+          (_sub?'<div class="tf-sub tf-1line" style="color:var(--text-3);margin-top:2px">'+escHtml(_sub)+'</div>':'')+
         '</div>'+
         '<div class="tf-acts">'+
           '<button onclick="openGenericEstimate(getClientById('+b.client_id+'),'+b.id+',\''+escHtml(b.trade_type||'general')+'\')" class="btn btn-sm btn-p" style="font-size:11px">Resume →</button>'+
@@ -1538,7 +1797,7 @@ function renderTodayFeed(){
         '<div class="tf-icon">'+svgIcon('🙋',{size:18})+'</div>'+
         '<div class="tf-body">'+
           '<div class="tf-name">'+(newLeads.length===1?'1 new lead ready':newLeads.length+' new leads ready')+'</div>'+
-          '<div class="tf-sub" style="color:var(--blue)">Build estimates to move them forward</div>'+
+          '<div class="tf-sub" style="color:var(--blue)">Build proposals to move them forward</div>'+
         '</div>'+
         '<div class="tf-acts"><button onclick="_showNewLeadsPicker()" class="btn btn-sm btn-p" style="font-size:11px">View leads →</button></div>'+
       '</div>'
@@ -1629,7 +1888,7 @@ function checkGoalPrompt(){
     box.innerHTML=
       '<div style="font-size:22px;text-align:center;margin-bottom:8px">'+svgIcon('🎯',{size:22})+'</div>'+
       '<div class="zmodal-title" style="text-align:center">5 paid jobs, milestone!</div>'+
-      '<div class="zmodal-msg" style="text-align:center">Your average job is '+fmt(avgVal)+'. Set a monthly revenue goal and the app will track your progress and tell you exactly how many estimates you need.</div>'+
+      '<div class="zmodal-msg" style="text-align:center">Your average job is '+fmt(avgVal)+'. Set a monthly revenue goal and the app will track your progress and tell you exactly how many proposals you need.</div>'+
       '<div class="zmodal-btns" style="flex-direction:column;gap:8px">'+
         '<input type="number" id="goal-prompt-input" placeholder="Monthly goal e.g. 8000" min="0" step="500" '+
           'style="font-size:18px;font-weight:700;padding:12px;border-radius:var(--r);border:2px solid var(--blue);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box;text-align:center">'+
@@ -1709,12 +1968,12 @@ function renderGoal(){
       '<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center">'+
         '<div><div style="font-size:18px;font-weight:800;color:var(--blue)">'+fmt(remaining)+'</div><div style="font-size:10px;color:var(--text3)">Still needed</div></div>'+
         '<div><div style="font-size:18px;font-weight:800">'+jobsNeeded+'</div><div style="font-size:10px;color:var(--text3)">Jobs to close</div></div>'+
-        '<div><div style="font-size:18px;font-weight:800;color:var(--amber)">'+estsNeeded+'</div><div style="font-size:10px;color:var(--text3)">Estimates needed</div></div>'+
+        '<div><div style="font-size:18px;font-weight:800;color:var(--amber)">'+estsNeeded+'</div><div style="font-size:10px;color:var(--text3)">Proposals needed</div></div>'+
       '</div>'+
       '<div style="font-size:10px;color:var(--text3);margin-top:6px;text-align:center">Based on '+fmt(avgJobVal)+' avg job · '+(Math.round(closeRate*100))+'% close rate</div>';
   } else if(remaining>0&&decidedAll.length<5){
     html+=
-      '<div style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center">Need '+Math.max(0,5-decidedAll.length)+' more decided bids to calculate estimates needed</div>';
+      '<div style="margin-top:8px;font-size:11px;color:var(--text3);text-align:center">Need '+Math.max(0,5-decidedAll.length)+' more decided proposals to calculate proposals needed</div>';
   }
 
   html+='</div>';
@@ -1837,7 +2096,7 @@ function showSourceDetail(src){
       '<div><div style="font-size:20px;font-weight:800;color:var(--green-mid)">'+(revenue>0?fmt(revenue):'-')+'</div><div style="font-size:10px;color:var(--text3)">Revenue</div></div>'+
       '<div><div style="font-size:20px;font-weight:800">'+avgVal+'</div><div style="font-size:10px;color:var(--text3)">Avg job</div></div>'+
     '</div>'+
-    (pending>0?'<div style="font-size:11px;color:var(--amber);margin-top:8px;text-align:center">'+pending+' pending bid'+(pending>1?'s':'')+', not yet counted in close rate</div>':'');
+    (pending>0?'<div style="font-size:11px;color:var(--amber);margin-top:8px;text-align:center">'+pending+' pending proposal'+(pending>1?'s':'')+', not yet counted in close rate</div>':'');
 }
 const CLOSE_RATE = 0.60; // 60% industry avg for professional solo painter in Kansas
 
@@ -1894,16 +2153,16 @@ function renderPipeline(){
   } else if(w2paint>=2||w3paint>=2){
     healthColor='var(--amber)';
     healthMsg='Pipeline needs attention.';
-    action=estimatesNeeded>0?'Run <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to fill open days.':'';
+    action=estimatesNeeded>0?'Run <strong>'+estimatesNeeded+' proposal'+(estimatesNeeded>1?'s':'')+' this week</strong> to fill open days.':'';
   } else {
     healthColor='#A32D2D';
-    healthMsg='Pipeline is thin, book estimates now.';
-    action='You need <strong>'+estimatesNeeded+' estimate'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay booked. Best days: Tuesday + Thursday evening.';
+    healthMsg='Pipeline is thin, book proposals now.';
+    action='You need <strong>'+estimatesNeeded+' proposal'+(estimatesNeeded>1?'s':'')+' this week</strong> to stay booked. Best days: Tuesday + Thursday evening.';
   }
 
-  const w1label=parseD(thisMonday).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-  const w2label=parseD(nextMonday).toLocaleDateString('en-US',{month:'short',day:'numeric'});
-  const w3label=parseD(weekAfterMonday).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  const w1label=parseD(thisMonday).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const w2label=parseD(nextMonday).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const w3label=parseD(weekAfterMonday).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
 
   el.innerHTML=
     '<div style="background:var(--bg);border:1px solid var(--border);border-radius:var(--rl);padding:14px;margin-bottom:10px">'+
@@ -1990,8 +2249,8 @@ function renderLeadsPage(){
     incomplete:    {cls:'sf-pending', label:'NEEDS SETUP'},
     new:           {cls:'sf-new',     label:'NEW LEAD'},
     est_scheduled: {cls:'sf-upcoming',label:'EST BOOKED'},
-    est_ready:     {cls:'sf-deposit', label:'EST READY'},
-    bid_out:       {cls:'sf-pending', label:'BID OUT'},
+    est_ready:     {cls:'sf-deposit', label:'PROPOSAL READY'},
+    bid_out:       {cls:'sf-pending', label:'PROPOSAL OUT'},
     bid_urgent:    {cls:'sf-overdue', label:'FOLLOW UP'},
     abandoned:     {cls:'sf-done',    label:'COLD'},
   };
@@ -2040,12 +2299,12 @@ function openBidDetail(bidId,view){
   ov.setAttribute('data-bdov','1');
   ov.style.cssText='position:fixed;inset:0;background:var(--bg);z-index:10001;overflow-y:auto;-webkit-overflow-scrolling:touch';
   const c=getClientById(b.client_id)||{name:b.client_name||b.name||''};
-  const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}):(b.bid_date||'');
+  const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):(b.bid_date||'');
   function _tabBtn(v,label,active){return '<button id="bdd-tab-'+v+'" onclick="_bddView(\''+v+'\')" style="padding:7px 16px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;border:1.5px solid '+(active?'var(--blue)':'var(--border2)')+';background:'+(active?'var(--blue-lt)':'var(--bg)')+';color:'+(active?'var(--blue-dk)':'var(--text2)')+'">'+label+'</button>';}
   ov.innerHTML=
     '<div style="position:sticky;top:0;background:var(--bg);border-bottom:2px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px;z-index:2">'+
       '<button onclick="document.querySelector(\'[data-bdov]\').remove()" style="padding:7px 12px;border-radius:8px;border:1.5px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text);white-space:nowrap">'+svgIcon('✕',{size:13})+' Close</button>'+
-      '<div id="bdd-tabs" style="display:flex;gap:6px;flex:1;justify-content:center">'+_tabBtn('bid',svgIcon('📋',{size:12})+' Our bid',view==='bid')+_tabBtn('proposal',svgIcon('📄',{size:12})+' Client view',view==='proposal')+'</div>'+
+      '<div id="bdd-tabs" style="display:flex;gap:6px;flex:1;justify-content:center">'+_tabBtn('bid',svgIcon('📋',{size:12})+' Our proposal',view==='bid')+_tabBtn('proposal',svgIcon('📄',{size:12})+' Client view',view==='proposal')+'</div>'+
       '<div style="width:70px"></div>'+
     '</div>'+
     '<div style="padding:14px 16px;background:#1a365d;color:#fff">'+
@@ -2079,7 +2338,7 @@ function openBidDetail(bidId,view){
     if(b.paint||b.condition)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:12px;color:var(--text2);margin-bottom:6px"><strong>Paint:</strong> '+(PAINT[b.paint]||b.paint||'-')+'</div><div style="font-size:12px;color:var(--text2)"><strong>Condition:</strong> '+(COND[b.condition]||b.condition||'-')+'</div></div>';
     if(scope.length)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:8px">Scope of work</div>'+scope.map(s=>'<div style="font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">'+escHtml(s)+'</div>').join('')+'</div>';
   }else{
-    bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:13px;color:var(--text3);text-align:center;padding:12px 0;font-style:italic">No line items or surfaces stored for this bid.</div></div>';
+    bidHTML+='<div class="card" style="margin-bottom:12px"><div style="font-size:13px;color:var(--text3);text-align:center;padding:12px 0;font-style:italic">No line items or surfaces stored for this proposal.</div></div>';
   }
   if(b.notes)bidHTML+='<div class="card" style="margin-bottom:12px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px"><div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3)">Notes</div><button onclick="openBidNotes('+b.id+')" style="background:none;border:none;padding:0;cursor:pointer;font-size:13px;color:var(--blue);font-weight:700">Edit</button></div><div style="font-size:13px;color:var(--text2);line-height:1.6;white-space:pre-wrap">'+escHtml(b.notes)+'</div></div>';
   if(pays.length){
@@ -2110,17 +2369,17 @@ function openBidDetail(bidId,view){
   const _isLost=b.status==='Closed Lost'||b.status==='Abandoned';
   const _isWon=b.status==='Closed Won';
   if(_isLost){
-    const _lostDate=b.lostAt?new Date(b.lostAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'';
+    const _lostDate=b.lostAt?new Date(b.lostAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
     bidHTML+='<div class="card" style="margin-bottom:12px;border:1px solid #F0C9C9;background:#FEF2F2">'+
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:#A32D2D;margin-bottom:6px">Closed: lost</div>'+
       '<div style="font-size:13px;color:var(--text2);line-height:1.6">'+escHtml(b.lostReason||'Marked lost')+(_lostDate?' · '+_lostDate:'')+'</div>'+
       (b.lostNote?'<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-top:4px;font-style:italic">“'+escHtml(b.lostNote)+'”</div>':'')+
-      '<button onclick="reopenEstimate('+bidId+')" class="btn btn-sm" style="margin-top:10px;font-size:12px;font-weight:700">↩ Reopen estimate</button>'+
+      '<button onclick="reopenEstimate('+bidId+')" class="btn btn-sm" style="margin-top:10px;font-size:12px;font-weight:700">↩ Reopen proposal</button>'+
     '</div>';
   }else if(b.signingToken&&!_isWon&&!b.clientCancelled){
     bidHTML+='<div class="card" style="margin-bottom:12px">'+
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;color:var(--text3);margin-bottom:6px">Didn’t close?</div>'+
-      '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:10px">If this estimate won’t move forward, close it out so it stops sitting in “Awaiting signature.”</div>'+
+      '<div style="font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:10px">If this proposal won’t move forward, close it out so it stops sitting in “Awaiting signature.”</div>'+
       '<button onclick="openCloseOutEstimate('+bidId+')" class="btn btn-sm" style="font-size:12px;font-weight:700;color:#A32D2D;border-color:#E5B5B5;background:#FEF2F2">Close out, mark as lost</button>'+
     '</div>';
   }
@@ -2132,12 +2391,12 @@ function openBidDetail(bidId,view){
   const storageKey=b.signingKey||b.proposalKey||null;
   function _sigBadge(){
     if(!b.signedAt)return '';
-    return '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓',{size:16,color:'#065F46'})+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>';
+    return '<div style="background:#D1FAE5;border:1px solid #6EE7B7;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#065F46;display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+svgIcon('✓',{size:16,color:'#065F46'})+'</span><span><strong>Signed</strong> '+new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+(b.signedName?' by '+escHtml(b.signedName):'')+'</span></div>';
   }
   function _sigFooter(sigUrl){
     if(!b.signedAt||!sigUrl)return '';
     const sigDate=new Date(b.signedAt);
-    const dateStr=sigDate.toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'});
+    const dateStr=sigDate.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
     const timeStr=sigDate.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true});
     return '<div style="margin-top:20px;padding:16px 18px;border-top:2px solid #e2e8f0;background:#f8fafc">'+
       '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:10px">Client Signature</div>'+
@@ -2228,7 +2487,7 @@ function renderProposalsPage(){
   const list=document.getElementById('proposals-list');
   if(!list)return;
   if(!filtered.length){
-    list.innerHTML='<div class="empty"><div class="em-emoji">'+svgIcon('📨',{size:44})+'</div><h3>Nothing here</h3><p>Try a different filter, or start a new estimate from a client card.</p></div>';
+    list.innerHTML='<div class="empty"><div class="em-emoji">'+svgIcon('📨',{size:44})+'</div><h3>Nothing here</h3><p>Try a different filter, or start a new proposal from a client card.</p></div>';
     return;
   }
 
@@ -2238,7 +2497,7 @@ function renderProposalsPage(){
     const SHORT_MO=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     const byYear={};
     const sortedSigned=[...filtered].map(b=>{
-      const dk=b.signedAt?new Date(b.signedAt).toISOString().slice(0,10):(b.completion_date||b.bid_date||'');
+      const dk=b.signedAt?dateKey(new Date(b.signedAt)):(b.completion_date||b.bid_date||'');
       return {...b,_dk:dk};
     }).sort((a,b)=>b._dk.localeCompare(a._dk));
     sortedSigned.forEach(b=>{
@@ -2257,7 +2516,7 @@ function renderProposalsPage(){
     }
     function _pfCard(b){
       const c=getClientById(b.client_id)||{name:b.client_name||b.name||'Unknown'};
-      const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):(b._dk||'');
+      const dateStr=b.signedAt?new Date(b.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):(b._dk||'');
       const proj=b.addr||b.type||b.trade_type||'Proposal';
       return '<div class="card" style="margin:0 0 10px;border-radius:12px">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'+
@@ -2269,7 +2528,7 @@ function renderProposalsPage(){
           '<div style="font-size:18px;font-weight:800;color:var(--green-mid);margin-left:12px;flex-shrink:0">'+fmt(b.amount)+'</div>'+
         '</div>'+
         '<div style="display:flex;gap:8px">'+
-          '<button onclick="openBidDetail('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋',{size:12})+' Our bid</button>'+
+          '<button onclick="openBidDetail('+b.id+',\'bid\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700">'+svgIcon('📋',{size:12})+' Our proposal</button>'+
           (b.proposalHtml?'<button onclick="openBidDetail('+b.id+',\'proposal\')" class="btn btn-sm" style="flex:1;justify-content:center;font-size:12px;font-weight:700;background:var(--blue-lt);color:var(--blue-dk);border-color:var(--blue)">'+svgIcon('📄',{size:12})+' Client view</button>':'<span style="flex:1;font-size:11px;color:var(--text3);display:flex;align-items:center;justify-content:center;font-style:italic">No proposal saved</span>')+
         '</div>'+
       '</div>';

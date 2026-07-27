@@ -176,6 +176,166 @@ Deno.serve(async (req) => {
     }
   } catch (e) { log.sign_funnel_state = String(e) }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PUBLISHED BENCHMARKS (metric prefix 'bench_')
+  //
+  // Everything above is internal ops telemetry the owner reads. Everything in
+  // this block is written to be READ BY CONTRACTORS, so their own numbers in
+  // Books have a TradeDesk-wide figure to sit beside.
+  //
+  // Two rules make that safe, and they are enforced here AND again in the RLS
+  // policy (20260807), so neither one alone is load-bearing:
+  //   - only 'bench_' rows are readable by contractors;
+  //   - a bucket with fewer than MIN_ACCOUNTS distinct businesses behind it is
+  //     not written at all. With a small platform, "the average for HVAC" drawn
+  //     from one account IS that account's number, and a competitor could read
+  //     it straight off. Withholding a thin bucket is the whole guard.
+  // No account id, business name, client name, or dollar figure is published:
+  // a count, a median, quartiles, an average.
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Two independent floors, because the owner and a contractor are not the same
+  // audience and should not share a threshold:
+  //
+  //   This one (BENCHMARK_MIN_ACCOUNTS, default 5) decides what gets WRITTEN, so
+  //   it controls what the ops dashboard can see. The dashboard reads with the
+  //   service role, which bypasses RLS, so anything written is visible there.
+  //   On a young platform set it to 1: the owner looking at their own customers'
+  //   aggregate is not a privacy problem.
+  //
+  //   The RLS policy (migration 20260807) independently refuses to serve any row
+  //   with n < 5 to a contractor. Lowering the env var therefore gives the owner
+  //   more visibility without ever putting a thin, re-identifiable average in
+  //   front of a customer.
+  const MIN_ACCOUNTS = Math.max(1, Number(Deno.env.get('BENCHMARK_MIN_ACCOUNTS') || 5) || 5)
+  const held: string[] = []   // buckets withheld for being too thin, reported in the response
+
+  // Publish a bucket only if enough distinct accounts stand behind it.
+  const putBench = (
+    metric: string,
+    scope: string,
+    accounts: Set<string>,
+    d: ReturnType<typeof dist> | null,
+    value: number | null = null,
+  ) => {
+    if (accounts.size < MIN_ACCOUNTS) { held.push(`${metric}/${scope} (${accounts.size} accounts)`); return }
+    rows.push({ day, metric, scope, n: d?.n ?? (value !== null ? accounts.size : 0), median: d?.median ?? null, p25: d?.p25 ?? null, p75: d?.p75 ?? null, avg: d?.avg ?? null, value, updated_at: now })
+  }
+
+  // ── Close rate by lead source, and by trade. ──
+  // A lead counts as closed when any of its proposals reached Closed Won. The
+  // denominator is every lead from that source, not just decided ones: the app's
+  // own Lead sources card made that mistake once and overstated every rate.
+  try {
+    const { data: cRows } = await sb.from('td_clients')
+      .select('id, user_id, data').is('deleted_at', null)
+    const { data: bRows } = await sb.from('td_bids')
+      .select('user_id, data').is('deleted_at', null)
+    const { data: uRows } = await sb.from('users').select('id, business_type')
+
+    const tradeOf = new Map<string, string>()
+    for (const u of (uRows ?? [])) {
+      const t = String((u as any).business_type || '').trim().toLowerCase()
+      if (t) tradeOf.set(String((u as any).id), t)
+    }
+
+    // Which (account, client) pairs won at least one proposal.
+    const wonPairs = new Set<string>()
+    for (const b of (bRows ?? [])) {
+      const d: any = (b as any).data || {}
+      if (String(d.status || '') !== 'Closed Won') continue
+      if (d.client_id == null) continue
+      wonPairs.add(`${(b as any).user_id}|${d.client_id}`)
+    }
+
+    // Per bucket: leads, wins, and the distinct accounts contributing.
+    type Bucket = { leads: number; won: number; accounts: Set<string> }
+    const bySource = new Map<string, Bucket>()
+    const byTrade = new Map<string, Bucket>()
+    const bump = (m: Map<string, Bucket>, key: string, uid: string, won: boolean) => {
+      let b = m.get(key); if (!b) { b = { leads: 0, won: 0, accounts: new Set() }; m.set(key, b) }
+      b.leads++; if (won) b.won++; b.accounts.add(uid)
+    }
+
+    for (const c of (cRows ?? [])) {
+      const uid = String((c as any).user_id)
+      const d: any = (c as any).data || {}
+      const won = wonPairs.has(`${uid}|${d.id ?? (c as any).id}`)
+      const src = String(d.source || '').trim()
+      if (src) bump(bySource, src, uid, won)
+      const trade = tradeOf.get(uid)
+      if (trade) bump(byTrade, trade, uid, won)
+    }
+
+    for (const [src, b] of bySource) {
+      putBench('bench_close_rate_source', `source:${src}`, b.accounts, null, Math.round((b.won / b.leads) * 1000) / 10)
+    }
+    for (const [trade, b] of byTrade) {
+      putBench('bench_close_rate_trade', `trade:${trade}`, b.accounts, null, Math.round((b.won / b.leads) * 1000) / 10)
+    }
+    log.bench_close_rate = { sources: bySource.size, trades: byTrade.size }
+  } catch (e) { log.bench_close_rate = String(e) }
+
+  // ── Funnel stage durations, platform-wide. ──
+  // Same stages the contractor sees for themselves in Books, computed here across
+  // every account so the two can sit side by side. Reads the same two event
+  // tables the per-contractor RPC does.
+  try {
+    const { data: le } = await sb.from('lifecycle_events')
+      .select('contractor_user_id, bid_id, client_id, event, ts')
+    const { data: ae } = await sb.from('proposal_audit_events')
+      .select('contractor_user_id, bid_id, client_id, event, ts')
+
+    // First occurrence of each event per entity: a proposal is opened many times,
+    // but "time to first open" is the number that means something.
+    const first = new Map<string, { ts: string; uid: string }>()
+    for (const r of [...(le ?? []), ...(ae ?? [])] as any[]) {
+      const entity = r.bid_id ?? r.client_id; if (entity == null || !r.ts) continue
+      const k = `${r.contractor_user_id}|${entity}|${r.event}`
+      const prev = first.get(k)
+      if (!prev || r.ts < prev.ts) first.set(k, { ts: r.ts, uid: String(r.contractor_user_id) })
+    }
+
+    // These pairs must stay identical to the stages in lifecycle_funnel (see
+    // 20260806), because the app pairs a contractor's own row with the matching
+    // benchmark on from_event/to_event, NOT on the display label. Keying on the
+    // events means a wording change to either side can never silently mismatch
+    // a contractor's number against the wrong benchmark.
+    const STAGES: [string, string][] = [
+      ['lead_created', 'proposal_saved'],
+      ['proposal_started', 'proposal_saved'],
+      ['proposal_saved', 'proposal_sent'],
+      ['proposal_sent', 'proposal_opened'],
+      ['proposal_opened', 'signed'],
+      ['proposal_sent', 'signed'],
+      ['signed', 'job_scheduled'],
+      ['job_scheduled', 'job_completed'],
+      ['job_completed', 'balance_settled'],
+    ]
+    // Regroup by entity so a stage is a lookup rather than a scan per pair.
+    const byEntity = new Map<string, Map<string, { ts: string; uid: string }>>()
+    for (const [k, v] of first) {
+      const [uid, entity, event] = k.split('|')
+      const ek = `${uid}|${entity}`
+      let m = byEntity.get(ek); if (!m) { m = new Map(); byEntity.set(ek, m) }
+      m.set(event, v)
+    }
+    for (const [fromEv, toEv] of STAGES) {
+      const hrs: number[] = []
+      const accounts = new Set<string>()
+      for (const [, m] of byEntity) {
+        const a = m.get(fromEv), b = m.get(toEv)
+        if (!a || !b) continue
+        const h = HOURS(a.ts, b.ts)
+        if (h < 0) continue          // clock skew or out-of-order: not a duration
+        hrs.push(h); accounts.add(a.uid)
+      }
+      putBench('bench_stage_hours', `stage:${fromEv}>${toEv}`, accounts, dist(hrs))
+    }
+    log.bench_stage_hours = { entities: byEntity.size }
+  } catch (e) { log.bench_stage_hours = String(e) }
+
+  if (held.length) log.benchmarks_withheld = held
+
   // ── Write the day's rollup. ──
   let writeErr: string | null = null
   if (rows.length) {

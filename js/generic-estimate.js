@@ -7,10 +7,10 @@ function openBidNotes(bidId){
   box.style.maxWidth='480px';
   box.innerHTML=
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">'+
-      '<div style="font-size:16px;font-weight:800">Bid notes</div>'+
+      '<div style="font-size:16px;font-weight:800">Proposal notes</div>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="border:none;background:none;font-size:22px;cursor:pointer;color:var(--text3);padding:0;line-height:1">'+svgIcon('✕',{size:16})+'</button>'+
     '</div>'+
-    '<textarea id="_bid-notes-ta" rows="8" placeholder="Add notes about this bid..." style="width:100%;box-sizing:border-box;padding:12px;font-size:14px;line-height:1.5;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:14px">'+escHtml(b.notes||'')+'</textarea>'+
+    '<textarea id="_bid-notes-ta" rows="8" placeholder="Add notes about this proposal..." style="width:100%;box-sizing:border-box;padding:12px;font-size:14px;line-height:1.5;border:1px solid var(--border2);border-radius:var(--r);background:var(--bg);color:var(--text);font-family:inherit;resize:vertical;margin-bottom:14px">'+escHtml(b.notes||'')+'</textarea>'+
     '<div style="display:flex;gap:8px">'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="flex:1;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">Cancel</button>'+
       '<button onclick="_saveBidNotes('+bidId+')" style="flex:2;padding:12px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Save</button>'+
@@ -321,6 +321,10 @@ let _tmCapAction='Stop & get re-approval';
 let _geiIsFreeForm=false;
 Object.defineProperty(window,'_geiIsFreeForm',{get:()=>_geiIsFreeForm,set:v=>{_geiIsFreeForm=v;},configurable:true});
 let _geiClientTaxRate=null,_geiTaxLookupTimer=null;
+// Last-known estimate address, set at open/resume and by the property gate. The
+// editable #gei-addr field is the source of truth when present; this is the
+// fallback the resolver uses so the address never depends solely on the DOM.
+let _geiCurAddr='';
 
 function _geiOnAddrInput(){
   clearTimeout(_geiTaxLookupTimer);
@@ -416,12 +420,32 @@ function _maybeResumeActiveEstimate(){
 //  • only empty stubs (or nothing) → open directly; empty stubs are reused
 //    silently so abandoning the type picker twice never piles up blank drafts
 function _geiOpenModeEstimate(c,bidId,mode){
-  if(bidId){openGenericEstimate(c,bidId,null,{mode});return;}
-  const drafts=c?_geiFindDraftsFor(c.id,mode).filter(b=>!_geiDraftIsEmpty(b)):[];
-  if(!drafts.length){openGenericEstimate(c,null,null,{mode});return;}
-  _geiShowDraftChooser(c,mode,drafts);
+  if(bidId){openGenericEstimate(c,bidId,null,{mode});return;} // resume keeps the bid's own address
+  // Owner spec: for a NEW estimate on a client with 2+ properties, pick the
+  // address FIRST (right after choosing T&M/BYO), before the builder appears, so
+  // it can never land on the wrong one. Add-new is inside the picker. Single-
+  // address clients skip straight through, no extra tap.
+  if(c&&typeof clientAddresses==='function'&&clientAddresses(c).length>1&&typeof pickClientAddress==='function'){
+    pickClientAddress(c.id,addr=>_geiOpenModeAt(c,mode,addr));
+    return;
+  }
+  _geiOpenModeAt(c,mode,c?c.addr:'');
 }
-function _geiShowDraftChooser(c,mode,drafts){
+function _geiOpenModeAt(c,mode,addr){
+  // Drafts belong to a specific property. Only offer a draft to resume when it's
+  // for the SAME address the user just picked at the gate: a primary-address
+  // draft must never surface (or silently resume) when they picked the rental or
+  // added a new address (owner-reported: "added a new address but it started the
+  // estimate under primary"). A draft with no addr is treated as the primary.
+  const _pick=_geiAddrKey(addr||(c&&c.addr)||'');
+  const drafts=c?_geiFindDraftsFor(c.id,mode).filter(b=>!_geiDraftIsEmpty(b)&&_geiAddrKey(b.addr||c.addr||'')===_pick):[];
+  if(!drafts.length){openGenericEstimate(c,null,null,{mode,forceAddr:addr});return;}
+  _geiShowDraftChooser(c,mode,drafts,addr);
+}
+// Normalize an address to its street line so "same property" comparisons are
+// stable (mirrors data.js siteNoteKey; falls back if that helper isn't loaded).
+function _geiAddrKey(a){return (typeof siteNoteKey==='function')?siteNoteKey(a||''):String(a||'').split(',')[0].trim().toLowerCase().replace(/\s+/g,' ');}
+function _geiShowDraftChooser(c,mode,drafts,addr){
   document.getElementById('_gei-draft-chooser')?.remove();
   const modeLabel=mode==='tm'?'Time & Materials':'Build Your Own';
   const ov=document.createElement('div');ov.className='zmodal-overlay';ov.id='_gei-draft-chooser';
@@ -441,11 +465,11 @@ function _geiShowDraftChooser(c,mode,drafts){
     '<div style="font-size:16px;font-weight:800;margin-bottom:4px">Unsent '+modeLabel+' draft'+(drafts.length>1?'s':'')+'</div>'+
     '<div style="font-size:13px;color:var(--text3);margin-bottom:14px">'+escHtml(c?.name||'This client')+' already has '+(drafts.length>1?drafts.length+' unsent drafts':'an unsent draft')+' of this type. Pick one to keep working on it, or start a fresh version to send alongside it.</div>'+
     rows+
-    '<button onclick="_geiStartFreshDraft()" style="display:block;width:100%;padding:13px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">'+svgIcon('➕',{size:14})+' Start a fresh '+modeLabel+' estimate</button>'+
+    '<button onclick="_geiStartFreshDraft()" style="display:block;width:100%;padding:13px;border-radius:10px;border:none;background:var(--blue);color:#fff;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;margin-top:4px">'+svgIcon('➕',{size:14})+' Start a fresh '+modeLabel+' proposal</button>'+
     '<button onclick="document.getElementById(\'_gei-draft-chooser\')?.remove()" style="display:block;width:100%;padding:11px;border-radius:10px;border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">Cancel</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  ov.dataset.mode=mode;ov.dataset.clientId=c?.id||'';
+  ov.dataset.mode=mode;ov.dataset.clientId=c?.id||'';ov.dataset.addr=addr||'';
 }
 function _geiResumeChosenDraft(bidId){
   const ov=document.getElementById('_gei-draft-chooser');
@@ -456,13 +480,15 @@ function _geiResumeChosenDraft(bidId){
 }
 function _geiStartFreshDraft(){
   const ov=document.getElementById('_gei-draft-chooser');
-  const mode=ov?.dataset.mode;const clientId=Number(ov?.dataset.clientId);
+  const mode=ov?.dataset.mode;const clientId=Number(ov?.dataset.clientId);const addr=ov?.dataset.addr||'';
   ov?.remove();
   const c=getClientById(clientId);if(!c)return;
-  openGenericEstimate(c,null,null,{mode,forceNew:true});
+  openGenericEstimate(c,null,null,{mode,forceNew:true,forceAddr:addr});
 }
 
 function openGenericEstimate(c,bidId,_tradePick,opts){
+  // Start of the drafting clock, so "how long to write a proposal" is measurable.
+  try{if(typeof lcProposalStarted==='function')lcProposalStarted(c&&c.id!=null?c.id:_geiClientId);}catch(_e){}
   // Mode comes in explicitly (never inherited from whatever estimate was open
   // last): stale _geiIsTM/_geiIsFreeForm from a previous estimate was how a
   // Time & Materials resume could open with Build Your Own state mixed in.
@@ -484,10 +510,14 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(eyebrowEl)eyebrowEl.textContent=m.label+' proposal';
   const sf=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val||'';};
   sf('gei-client',c?.name||'');
-  sf('gei-addr',c?.addr||'');
+  sf('gei-addr',opts?.forceAddr||c?.addr||''); // forceAddr = property chosen at the type gate
+  _geiCurAddr=opts?.forceAddr||c?.addr||'';
   if(c?.addr)setTimeout(_geiLookupClientTaxRate,0);
   const DESC_PH={electrical:'e.g. Panel upgrade, add EV charger in garage',plumbing:'e.g. Replace water heater, install shutoff valves',hvac:'e.g. Replace AC unit, charge refrigerant',roofing:'e.g. Full shingle replacement, fix ridge flashing',landscaping:'e.g. Weekly mowing, spring cleanup, new mulch',general:'e.g. Drywall repair, power washing, handyman'};
   sf('gei-desc','');sf('gei-notes','');sf('gei-tax-pct','0');sf('gei-duration','');
+  // Site notes (crew-only, client-level) are rendered + prefilled lazily by the
+  // shared _geiRenderSiteNoteField when the active layout shows (T&M/BYO chrome
+  // or the generic step 3), so it's one field across every estimate type.
   const descEl=document.getElementById('gei-desc');
   if(descEl)descEl.placeholder=DESC_PH[_geiTrade]||'Describe the job';
   const nwEl=document.getElementById('gei-new-work');
@@ -497,7 +527,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   if(bidId){
     const b=bids.find(x=>x.id===bidId);
     if(b){
-      sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');
+      sf('gei-desc',b.type||'');sf('gei-notes',b.notes||'');if(b.addr){sf('gei-addr',b.addr);_geiCurAddr=b.addr;}
       if(b.geiLines&&b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(b.geiLines));
       if(b.geiTaxPct)sf('gei-tax-pct',b.geiTaxPct);
       if(b.jobScope)_geiJobScope=b.jobScope;
@@ -534,7 +564,14 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     // old silent-resume behavior unchanged.
     const _mode=opts?.mode;
     const _typeOk=b=>_mode==='tm'?!!b.isTM:_mode==='byo'?!b.isTM:true;
-    const _tMatch=b=>b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending')&&_typeOk(b);
+    // Same-property scoping: only reuse/purge a draft whose address matches the one
+    // being opened. Without this, picking a new/other address would silently resume
+    // the primary-address draft (the owner-reported wrong-address bug). A draft with
+    // no addr is treated as the primary; a legacy direct call with no forceAddr keeps
+    // the old primary-scoped behavior.
+    const _wantAddr=_geiAddrKey(opts?.forceAddr||c?.addr||'');
+    const _addrOk=b=>_geiAddrKey(b.addr||c?.addr||'')===_wantAddr;
+    const _tMatch=b=>b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&(b.status==='Draft'||b.status==='Pending')&&_typeOk(b)&&_addrOk(b);
     let _existingGei=bids.find(b=>_tMatch(b)&&b.trade_type===_geiTrade);
     if(!_existingGei){
       // Fallback: pick up old bids that predate the trade_type field
@@ -547,9 +584,13 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     }
     if(_existingGei){
       _existingGei.trade_type=_geiTrade; // heal legacy bids
+      _existingGei.addr=_existingGei.addr||opts?.forceAddr||c?.addr||''; // heal legacy no-addr drafts to their property
       _geiEditBidId=_existingGei.id;
       const _b=_existingGei;
       sf('gei-desc',_b.geiDesc||'');sf('gei-notes',_b.notes||'');
+      // The resumed draft's address applies, UNLESS the property gate just picked
+      // one (forceAddr) — a deliberate pick always wins over a stub's default.
+      if(_b.addr&&!opts?.forceAddr){sf('gei-addr',_b.addr);_geiCurAddr=_b.addr;}
       if(_b.geiLines&&_b.geiLines.length)_geiLines=JSON.parse(JSON.stringify(_b.geiLines));
       if(_b.geiTaxPct)sf('gei-tax-pct',_b.geiTaxPct);
       if(_b.geiDuration)sf('gei-duration',_b.geiDuration);
@@ -569,7 +610,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
       // memory: every reload re-downloaded the zombies, which the old load-side GEI
       // filter then re-hid, the silent-hide loop behind the owner's 53-vs-43 report.
       _userDelete(()=>{
-        bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)));
+        bids=bids.filter(b=>b.id===_existingGei.id||!(b.client_id===_geiClientId&&!b.signingToken&&b.geiLines!==undefined&&!b.amount&&!(b.geiLines||[]).length&&(b.status==='Draft'||b.status==='Pending')&&(b.trade_type===_geiTrade||!b.trade_type)&&_addrOk(b)));
       });
       _resumingExisting=true;
       saveAll();
@@ -582,6 +623,7 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     // found by the type-aware reuse above, so backing out and re-picking the
     // same type would spawn a duplicate blank draft every time.
     const draftBid={id:_newBidId(),client_id:_geiClientId,client_name:_draftClientName,bid_date:todayKey(),amount:0,deposit:0,type:_draftTypeLabel+' estimate',notes:'',status:'Draft',draft:true,trade_type:_geiTrade,geiLines:[],geiTaxPct:0,
+      addr:opts?.forceAddr||c?.addr||'', // the property this estimate is for, so drafts stay same-property-scoped
       ...(_geiIsTM?{isTM:true}:{}),...(_geiIsFreeForm?{isFreeForm:true}:{})};
     bids.unshift(draftBid);_geiEditBidId=draftBid.id;saveAll();
   }
@@ -603,6 +645,11 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
     if(_descVal){const _tEl=document.getElementById('gei-trade-title');if(_tEl)_tEl.textContent=_descVal;}
   }
   goPg('pg-est-generic');
+  // The builder is now up: retire the "pick estimate type" screen (kept as the
+  // backdrop behind the address gate for multi-property clients) with a soft fade.
+  const _sp=document.getElementById('_style-pick-ov');
+  if(_sp){_sp.style.opacity='0';_sp.style.transform='translateY(10px)';setTimeout(()=>_sp.remove(),240);}
+  if(typeof _stylePickState!=='undefined')try{_stylePickState=null;}catch(e){}
   goGeiStep(_resumingExisting?2:1);
 }
 
@@ -648,6 +695,7 @@ function goGeiStep(n){
   if(n===2&&(!S.myBundles||!S.myBundles.length)){showGeiOnboarding();return;}
   _geiStep=n;
   [1,2,3].forEach(i=>{const el=document.getElementById('gei-s'+i);if(el)el.style.display=(i===n)?'':'none';});
+  if(n===1)_geiRenderSiteNoteField('gen'); // generic wizard: field lives in step 1, by the property context
   window.scrollTo({top:0,behavior:'instant'});
   _geiRenderStepBar();
   _geiSyncScopeButtons();
@@ -871,6 +919,64 @@ const _GEI_MODES={
 // wizard, show the page, render the shared components, brand the title, fill the
 // client sub-header, and restore the saved deposit %. Returns the saved bid (or
 // undefined) so each mode's show-page can do its own field restores from it.
+// Shared internal Site-notes field, ONE code path for every estimate type (T&M,
+// BYO, and the generic wizard). Renders the single #gei-sitenote textarea into
+// the ACTIVE context's wrap (clearing the others so the id never duplicates) and
+// prefills from the CLIENT record. Crew-only, never on the client's proposal.
+// Live persistence: the site note writes straight to the CLIENT record as the
+// contractor types (debounced saveAll), so a re-render of the surrounding
+// section never drops unsaved keystrokes and every internal surface reads the
+// same source of truth.
+let _geiSiteNoteT=null;
+// The property this estimate is for: the edited bid's address if any, else the
+// client's primary address. Per-property notes key off this.
+function _geiSiteAddr(){
+  // The editable #gei-addr field is the source of truth while present (the user
+  // can retype the job address). If it's absent, fall back to _geiCurAddr (set at
+  // open/resume/gate), then the bid, then the client, so the address never
+  // depends solely on a DOM node existing.
+  const el=document.getElementById('gei-addr');
+  if(el){if(el.value&&el.value.trim())return el.value.trim();}
+  else if(_geiCurAddr)return _geiCurAddr;
+  const b=(_geiEditBidId!=null&&bids.find)?bids.find(x=>x.id===_geiEditBidId):null;
+  if(b&&b.addr)return b.addr;
+  const c=(_geiClientId!=null&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
+  return (c&&c.addr)||'';
+}
+// Header sub-line "client · address". Plain confirmation of the property the
+// estimate is for (chosen at the type gate for multi-property clients); the
+// address is NOT changed from inside the estimate, by owner preference.
+function _geiRenderAddrSub(prefix){
+  const sub=document.getElementById(prefix+'-page-sub');if(!sub)return;
+  const c=getClientById(_geiClientId);
+  if(!c){sub.textContent='New proposal';return;}
+  const street=(_geiSiteAddr()||'').split(',')[0];
+  sub.textContent=(c.name||'')+(street?' · '+street:'');
+}
+function _geiSiteNoteInput(val){
+  if(_geiClientId==null||!clients.find)return;
+  const c=clients.find(x=>String(x.id)===String(_geiClientId));if(!c)return;
+  setSiteNote(c,_geiSiteAddr(),val);
+  if(_geiSiteNoteT)clearTimeout(_geiSiteNoteT);
+  _geiSiteNoteT=setTimeout(()=>{try{saveAll();}catch(e){}},400);
+}
+function _geiRenderSiteNoteField(prefix){
+  ['tm','byo','gen'].forEach(p=>{if(p!==prefix){const w=document.getElementById(p+'-sitenote-wrap');if(w)w.innerHTML='';}});
+  const wrap=document.getElementById(prefix+'-sitenote-wrap');if(!wrap)return;
+  const c=(_geiClientId!=null&&clients.find)?clients.find(x=>String(x.id)===String(_geiClientId)):null;
+  const addr=_geiSiteAddr();
+  const val=c?getSiteNote(c,addr):'';
+  const addrShort=(addr||'').split(',')[0].trim();
+  // Sits right under the address header, amber inset stripe marks it internal.
+  // One id (#gei-sitenote) across T&M, BYO, and the generic wizard.
+  wrap.innerHTML='<div class="card card-pad-0" style="margin-bottom:12px;box-shadow:var(--shadow-card),inset 3px 0 0 var(--amber,#8A4E00)">'+
+    '<div class="card-hd"><div class="card-hd-title">'+svgIcon('📋',{size:14})+' Property access notes</div></div>'+
+    '<div style="padding:12px 14px">'+
+      '<div style="font-size:11px;color:var(--text-3);margin-bottom:8px">Crew only, never on the proposal. Saved to '+(addrShort?'<strong>'+escHtml(addrShort)+'</strong> and auto-loads on every future job there':'this property')+'.</div>'+
+      '<textarea id="gei-sitenote" rows="3" oninput="_geiSiteNoteInput(this.value)" placeholder="Gate code, dog, where to park, tricky access..." style="width:100%;box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--border2);border-radius:var(--r);font-size:13px;font-family:inherit;background:var(--bg2);color:var(--text);resize:vertical;line-height:1.5">'+escHtml(val)+'</textarea>'+
+    '</div>'+
+  '</div>';
+}
 function _geiShowSharedChrome(prefix){
   const m=_GEI_MODES[prefix];if(!m)return;
   ['gei-old-tbar','gei-step-bar','gei-s1','gei-s2','gei-s3'].forEach(id=>{
@@ -882,19 +988,14 @@ function _geiShowSharedChrome(prefix){
   _geiRenderProfitGauge(prefix,m.gaugeOninput);
   _geiRenderActionButtons(prefix,m.actionOpts);
   _geiRenderDepositField(prefix,m.depositOninput);
+  _geiRenderSiteNoteField(prefix);
   // Trade branding in title
   const tmMeta=TRADE_META[_geiTrade||getActiveTrade()]||{icon:'🔧',label:'Trade'};
   const titleEl=document.getElementById(prefix+'-tbar-title');
   if(titleEl){const _customName=document.getElementById('gei-desc')?.value?.trim();titleEl.innerHTML=_customName?escHtml(_customName):(svgIcon(tmMeta.icon,{size:24})+' '+tmMeta.label+' · '+m.titleSuffix);}
-  // Sub-header: client name · address
-  const c=getClientById(_geiClientId);
-  const sub=document.getElementById(prefix+'-page-sub');
-  if(sub){
-    const parts=[];
-    if(c?.name)parts.push(c.name);
-    if(c?.addr)parts.push(c.addr.split(',')[0]);
-    sub.textContent=parts.join(' · ')||'New estimate';
-  }
+  // Sub-header: client name · address (address is a picker chip when the client
+  // has 2+ properties, so an estimate never silently lands on the wrong one).
+  _geiRenderAddrSub(prefix);
   // Restore deposit % from saved bid (back-calculate from deposit/amount): the
   // field was rendered fresh above, so this must come after _geiRenderDepositField.
   const b=bids.find(x=>x.id===_geiEditBidId);
@@ -1186,6 +1287,13 @@ function _byoAutosave(){
   if(!_geiEditBidId)return;
   const b=bids.find(x=>x.id===_geiEditBidId);
   if(!b)return;
+  // openGenericEstimate always pre-creates an empty draft stub before any save
+  // happens (autosave/resume resilience), and THIS function, not the Save
+  // button, is what actually writes a new estimate's first real content onto
+  // it, every item/field handler below calls _byoAutosave, for both BYO and
+  // T&M. So the empty-stub-to-real-content transition happens here, capture it
+  // before mutating.
+  const _wasEmpty=_geiDraftIsEmpty(b);
   // "Name your proposal" (#gei-desc) used to only get captured by the explicit Save
   // button (saveGenericEstimate): every autosave silently dropped a name edit until
   // the user hit Save, so backing out mid-edit lost the new name.
@@ -1228,6 +1336,11 @@ function _byoAutosave(){
   }
   saveAll();
   _geiMarkActive(); // keep the auto-resume marker fresh on every save
+  // The "wrote a proposal" moment: fires exactly once, the first time this
+  // draft actually holds real content, regardless of which field triggered it.
+  if(_wasEmpty&&!_geiDraftIsEmpty(b)){
+    try{if(typeof lcProposalSaved==='function')lcProposalSaved(b.id,b.client_id);}catch(_e){}
+  }
 }
 function _injectRrpItems(){
   const _rrpC=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
@@ -1329,7 +1442,7 @@ function _empNextJob(emp){
 }
 function _shortDate(d){
   if(!d)return'';
-  try{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-US',{month:'short',day:'numeric'});}catch(e){return d;}
+  try{const dt=new Date(d+'T12:00:00');return dt.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});}catch(e){return d;}
 }
 // Loaded hourly rate (wage × payroll burden) for one employee email, from the pay-rate cache.
 function _empLoadedFor(email){
@@ -1695,7 +1808,7 @@ function _byoDuplicateBid(){
   if(!_geiEditBidId){showToast('Save your draft first, then duplicate','⚠️');return;}
   saveGenericEstimate(true);
   const src=bids.find(x=>x.id===_geiEditBidId);
-  if(!src){showToast('Bid not found','⚠️');return;}
+  if(!src){showToast('Proposal not found','⚠️');return;}
   // Label the original "Option A" so both show distinct names in the bid list
   const baseName=(src.type||'Custom Proposal').replace(/\s*-\s*Option\s+[AB]$/i,'').trim();
   if(!/option [ab]$/i.test(src.type||'')){
@@ -1736,9 +1849,9 @@ function _showProposalPreviewOverlay(proposalHtml){
 // Show a picker so the contractor can send two side-by-side options to a client.
 // The picker lets the contractor preview the comparison before sending.
 function _openComparisonPicker(){
-  if(!_geiClientId){showToast('Open from a client to compare bids','ℹ️');return;}
+  if(!_geiClientId){showToast('Open from a client to compare proposals','ℹ️');return;}
   const clientBids=bids.filter(x=>(x.client_id===_geiClientId)&&(x.isFreeForm||x.geiLines));
-  if(clientBids.length<2){showToast('You need at least 2 saved bids for this client to compare','ℹ️');return;}
+  if(clientBids.length<2){showToast('You need at least 2 saved proposals for this client to compare','ℹ️');return;}
   document.getElementById('_cmp-picker-ov')?.remove();
   const ov=document.createElement('div');
   ov.id='_cmp-picker-ov';
@@ -1747,19 +1860,19 @@ function _openComparisonPicker(){
   box.style.cssText='background:#fff;border-radius:18px 18px 0 0;width:100%;max-width:520px;padding:20px 16px 32px;box-sizing:border-box;max-height:80vh;overflow-y:auto';
   const rows=clientBids.map((b,i)=>{
     const total=b.amount||0;
-    const label=b.type||('Bid '+(i+1));
+    const label=b.type||('Proposal '+(i+1));
     return `<label style="display:flex;align-items:center;gap:12px;padding:12px;border:1.5px solid var(--border2);border-radius:10px;margin-bottom:8px;cursor:pointer"><input type="checkbox" name="cmp-bid" value="${b.id}" style="width:20px;height:20px;accent-color:var(--blue);flex-shrink:0"><span style="flex:1"><span style="font-size:14px;font-weight:700;display:block">${escHtml(label)}</span><span style="font-size:12px;color:var(--text-3)">$${total.toLocaleString()} · ${b.status||'Draft'}</span></span></label>`;
   }).join('');
-  box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">${svgIcon('📊',{size:17})} Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 bids, your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">${svgIcon('👁',{size:16,color:'#fff'})} Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
+  box.innerHTML=`<div style="font-size:17px;font-weight:800;margin-bottom:4px">${svgIcon('📊',{size:17})} Compare & Send</div><div style="font-size:13px;color:var(--text-3);margin-bottom:16px">Pick exactly 2 proposals, your client will see both side by side and can choose one.</div>${rows}<button onclick="_buildComparisonPreview()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;touch-action:manipulation;margin-top:8px">${svgIcon('👁',{size:16,color:'#fff'})} Preview comparison</button><button onclick="document.getElementById('_cmp-picker-ov')?.remove()" style="width:100%;padding:12px;border-radius:var(--rl);border:none;background:none;color:var(--text-3);font-size:14px;cursor:pointer;font-family:inherit;margin-top:6px">Cancel</button>`;
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _buildComparisonPreview(){
   const checked=[...document.querySelectorAll('input[name="cmp-bid"]:checked')].map(x=>x.value);
-  if(checked.length!==2){showToast('Select exactly 2 bids to compare','⚠️');return;}
+  if(checked.length!==2){showToast('Select exactly 2 proposals to compare','⚠️');return;}
   const bidA=bids.find(x=>x.id===checked[0]);
   const bidB=bids.find(x=>x.id===checked[1]);
-  if(!bidA||!bidB){showToast('Bids not found','⚠️');return;}
+  if(!bidA||!bidB){showToast('Proposals not found','⚠️');return;}
   const fmt=n=>'$'+(n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const makeCard=(b,label,accentColor)=>{
     const lineRows=(b.geiLines||[]).filter(l=>l.desc||l.rate).map(l=>`<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:7px 12px;font-size:12px;color:#2d3748;overflow-wrap:anywhere"><div>${escHtml(l.desc||'')}${l.qty!==1?`<span style="color:#94a3b8;font-size:11px"> ×${l.qty}</span>`:''}</div>${l.notes?`<div style="font-size:11px;color:#718096;margin-top:2px">${escHtml(l.notes)}</div>`:''}</td><td style="padding:7px 8px;text-align:right;font-size:12px;font-weight:600;color:#1a365d">${fmt((l.qty||1)*(l.rate||0))}</td></tr>`).join('');
@@ -1968,7 +2081,7 @@ function _geiRenderFreeFormBuilder(){
     '</div>'+
     histHtml+
     '<div id="gei-ff-lines"></div>'+
-    (!hasLines?'<div style="text-align:center;padding:24px 0;font-size:13px;color:var(--text3)">Tap <strong>+ Add line</strong> to start building your estimate.</div>':'');
+    (!hasLines?'<div style="text-align:center;padding:24px 0;font-size:13px;color:var(--text3)">Tap <strong>+ Add line</strong> to start building your proposal.</div>':'');
   _geiRenderFreeFormLines();
 }
 function _geiRenderFreeFormLines(){
@@ -2017,7 +2130,7 @@ function _geiAddFreeFormLine(prefill){
         '<span style="font-size:12px;color:var(--text2)">Line total</span>'+
         '<span id="_ffa-total-disp" style="font-size:18px;font-weight:800;color:var(--blue)">'+(d.qty&&d.rate?'$'+((d.qty||1)*(d.rate||0)).toLocaleString('en-US',{maximumFractionDigits:0}):'-')+'</span>'+
       '</div>'+
-      '<button class="btn btn-p" onclick="_geiConfirmFreeFormAdd('+(isEdit?d._edit:-1)+')" style="margin-bottom:8px">'+(isEdit?'Update line':'Add to estimate')+'</button>'+
+      '<button class="btn btn-p" onclick="_geiConfirmFreeFormAdd('+(isEdit?d._edit:-1)+')" style="margin-bottom:8px">'+(isEdit?'Update line':'Add to proposal')+'</button>'+
       '<button class="btn" onclick="document.getElementById(\'_ff-add-ov\')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>'+
     '</div>';
   document.body.appendChild(ov);
@@ -2461,7 +2574,7 @@ function _geiShowFreeFormModal(job){
         <div class="f"><label>Labor rate ($/${job.unit})</label><input id="_ff-labor" type="number" value="${laborRate}" min="0" step="any" style="font-size:14px"></div>
         ${job.mat>0?`<div class="f"><label>Material cost ($/${job.unit})</label><input id="_ff-mat" type="number" value="${job.mat}" min="0" step="any" style="font-size:14px"></div>`:'<div></div>'}
       </div>
-      <button class="btn btn-p" onclick="_geiConfirmFreeForm(${JSON.stringify(job).replace(/"/g,'&quot;')})" style="margin-bottom:8px">Add to estimate</button>
+      <button class="btn btn-p" onclick="_geiConfirmFreeForm(${JSON.stringify(job).replace(/"/g,'&quot;')})" style="margin-bottom:8px">Add to proposal</button>
       <button class="btn" onclick="document.getElementById('_gei-ff-ov')?.remove()" style="color:var(--text2);font-size:13px">Cancel</button>
     </div>`;
   document.body.appendChild(ov);
@@ -2692,7 +2805,7 @@ function _panelPrint(){
   const circuits=_panelSched.circuits||[];
   const client=document.getElementById('gei-client')?.value||'';
   const addr=document.getElementById('gei-addr')?.value||'';
-  const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+  const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const biz=S.bname||getBusinessName()||'';
   const imbalTxt=imbalance>0.10?`<span style="color:#dc2626;font-weight:700">${svgIcon('⚠',{size:13,color:'#dc2626'})} ${(imbalance*100).toFixed(0)}% imbalance, rebalance recommended</span>`:`<span style="color:#16a34a;font-weight:700">${svgIcon('✓',{size:13,color:'#16a34a'})} Balanced (${(imbalance*100).toFixed(0)}% difference)</span>`;
   const rows=circuits.map((c,i)=>`<tr>
@@ -2810,8 +2923,27 @@ function calcGeiTotal(){
   return{sub,tax:markup+salesTax,markup,salesTax,total};
 }
 
+// When an estimate is saved at an address the client doesn't have on file yet
+// (typed into the editable address field, or added via the picker's New-address),
+// roll it into the client's property list so it shows up in the Properties
+// accordion, not just on the bid. Owner-reported: "subsequent properties added
+// on an estimate don't roll over to the accordion."
+function _geiEnsureClientProperty(clientId,addr){
+  addr=(addr||'').trim();
+  if(!addr)return;
+  const c=(typeof getClientById==='function')?getClientById(clientId):(typeof clients!=='undefined'?clients.find(x=>x.id===clientId):null);
+  if(!c)return;
+  const norm=a=>(typeof _addrKey==='function')?_addrKey(a):(a||'').trim().toLowerCase();
+  const key=norm(addr);
+  if(!key)return;
+  const existing=(typeof clientAddresses==='function')?clientAddresses(c):[{addr:c.addr}];
+  if(existing.some(a=>norm(a.addr)===key))return; // already the primary or a saved extra
+  c.extraAddresses=c.extraAddresses||[];
+  c.extraAddresses.push({label:'Additional property',addr});
+}
 function saveGenericEstimate(draft){
   const v=id=>document.getElementById(id)?.value||'';
+  _geiEnsureClientProperty(_geiClientId,v('gei-addr'));
   const{total}=calcGeiTotal();
   const trade=_geiTrade||getActiveTrade();
   const taxPct=parseFloat(v('gei-tax-pct'))||0;
@@ -2853,6 +2985,13 @@ function saveGenericEstimate(draft){
   if(_geiEditBidId){
     const b=bids.find(x=>x.id===_geiEditBidId);
     if(b){
+      // openGenericEstimate always pre-creates an empty draft stub and sets
+      // _geiEditBidId before any save happens (autosave/resume resilience), so
+      // this branch, not the "new bid" one below, is what a NEW estimate's
+      // first-ever save actually runs through. Capture emptiness BEFORE
+      // mutating: the transition from stub to real content is the "wrote a
+      // proposal" moment the "new bid" branch's lcProposalSaved can never fire.
+      const _wasEmpty=_geiDraftIsEmpty(b);
       b.amount=total;b.type=v('gei-desc')||_typeLabel;b.geiDesc=v('gei-desc')||'';
       b.notes=v('gei-notes');b.geiLines=JSON.parse(JSON.stringify(_geiLines));
       b.geiTaxPct=taxPct;b.jobScope=_geiJobScope||'repair';b.salesTaxRate=parseFloat(S.salesTaxRate)||0;b.status=draft?'Draft':'Pending';b.draft=!!draft;
@@ -2865,6 +3004,9 @@ function saveGenericEstimate(draft){
       if(_panelSched)b.panelSched=JSON.parse(JSON.stringify(_panelSched));else delete b.panelSched;
       Object.assign(b,_tmFields);
       saveAll();
+      if(_wasEmpty&&!_geiDraftIsEmpty(b)){
+        try{if(typeof lcProposalSaved==='function')lcProposalSaved(b.id,b.client_id);}catch(_e){}
+      }
     }
   } else {
     const newBid={
@@ -2885,7 +3027,15 @@ function saveGenericEstimate(draft){
       trade_type:trade,...(_panelSched?{panelSched:JSON.parse(JSON.stringify(_panelSched))}:{}),..._tmFields,
     };
     bids.unshift(newBid);_geiEditBidId=newBid.id;saveAll();
+    // Proposal exists: closes the drafting clock and starts the sent/signed funnel.
+    try{if(typeof lcProposalSaved==='function')lcProposalSaved(newBid.id,newBid.client_id);}catch(_e){}
   }
+  // Site notes → per-property note on the CLIENT record (never the bid, so they
+  // never reach the proposal). One shared save for every estimate type (T&M,
+  // BYO, future). Only write when the field was actually rendered (guards
+  // against a save from a screen that never showed it wiping an existing note).
+  const _snEl=document.getElementById('gei-sitenote');
+  if(_snEl&&_geiClientId!=null&&clients.find){const _c=clients.find(x=>String(x.id)===String(_geiClientId));if(_c){setSiteNote(_c,_geiSiteAddr(),_snEl.value.trim());saveAll();}}
   if(!draft)_saveToLineHistory();
   showToast(draft?'Draft saved':'Proposal saved','✅');
   if(!draft)goPg('pg-clients');
@@ -2965,7 +3115,7 @@ async function sendGenericProposal(previewOnly){
       if(!_byoOn.some(it=>it.section==='Interior'||it.section==='Exterior')){zAlert('Add at least one line item in Interior or Exterior.',{title:'Work items required'});return;}
     }
     // Build minimal proposal for sign.html
-    if(!navigator.onLine){zAlert('You\'re offline, the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
+    if(!navigator.onLine){zAlert('You\'re offline, the proposal link can\'t be activated right now.\n\nYour proposal is saved. Once you\'re back online, open this proposal and tap Send to send the link to your client.',{title:'No internet connection'});return;}
     if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   }
   if(_stripeConnectStatus===null)_fetchStripeConnectStatus().catch(()=>{});
@@ -2984,7 +3134,7 @@ async function sendGenericProposal(previewOnly){
       const _bidScope=(_geiScopeChips&&_geiScopeChips.length)?_geiScopeChips.join(', '):(v('gei-desc')||'');
       const _bidLines=_geiIsFreeForm?_byoItems.filter(it=>it.on).length:_geiLines.length;
       const _routed=await _maybeRouteGcBid(total,_bidScope,_bidLines);
-      if(!_routed&&typeof zAlert==='function')zAlert('Couldn\'t send the bid to the GC. Check your connection and try again.',{title:'Bid not sent'});
+      if(!_routed&&typeof zAlert==='function')zAlert('Couldn\'t send the proposal to the GC. Check your connection and try again.',{title:'Proposal not sent'});
       return;
     }
     window._gcBidCtx=null; // stale: fall through to the normal client send
@@ -3001,8 +3151,8 @@ async function sendGenericProposal(previewOnly){
   const tradeName=(_tradeM&&_tradeM.label)||'Service';
   const estNum=_geiEditBidId?String(_geiEditBidId).slice(-6):'-';
   const _geiNow=new Date();
-  const dateStr=_geiNow.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
-  const _geiExpD=new Date(_geiNow.getTime()+30*86400000).toLocaleDateString('en-US',{month:'numeric',day:'numeric',year:'numeric'});
+  const dateStr=_geiNow.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
+  const _geiExpD=new Date(_geiNow.getTime()+30*86400000).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const totalFmt='$'+total.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
   const _tmDepPct=_geiDepositPct();
   // Deposit is a % of the client-facing TOTAL (incl. tax): the label says "(N%)" next
@@ -3117,11 +3267,16 @@ async function sendGenericProposal(previewOnly){
     ?`<div style="padding:14px 18px 6px;border-bottom:1px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:${_pAccent};margin-bottom:10px">Scope of work</div>${_scopeBlocks.join('')}</div>`
     :'';
   const _geiEpaClient=_geiClientId?clients.find(c=>c.id===_geiClientId):null;
-  const _geiYearBuilt=_geiEpaClient?_geiEpaClient.yearBuilt||null:null;
+  // EPA RRP is a PER-PROPERTY fact: read year built + rrpDisturb for the exact
+  // address this estimate is for (bid addr, else client primary), not the client
+  // as a whole, so a pre-1978 rental triggers it while a new-build at the same
+  // client does not. getProperty falls back to client-level for the primary.
+  const _geiProp=(_geiEpaClient&&typeof getProperty==='function')?getProperty(_geiEpaClient,(typeof _geiSiteAddr==='function'?_geiSiteAddr():(_geiEpaClient.addr||''))):{};
+  const _geiYearBuilt=_geiProp.yearBuilt||(_geiEpaClient?_geiEpaClient.yearBuilt||null:null);
   // EPA RRP (lead-safe) applies to pre-1978 homes where paint will be disturbed.
   // Mirrors _indEpaRequired on the industry path; this declaration was dropped in a
   // refactor while line 2677 still referenced it → ReferenceError aborting every send.
-  const _geiEpaRequired=!!(_geiYearBuilt&&_geiYearBuilt<1978&&((_geiEpaClient&&_geiEpaClient.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
+  const _geiEpaRequired=!!(_geiYearBuilt&&_geiYearBuilt<1978&&((_geiProp.rrpDisturb==='yes')||(_geiEpaClient&&_geiEpaClient.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const _rrpSection='';
   // TOTAL is the one number a client should remember, sized and weighted like a
   // deliberate focal point (matches the confident-number treatment sign.html's own
@@ -3181,6 +3336,12 @@ async function sendGenericProposal(previewOnly){
     if(b.status==='Draft'||!b.status)b.status='Pending';
     b.draft=false;
     if(!b.proposalSentDate)b.proposalSentDate=todayKey();
+    // THIS is the real send moment: proposals.js _commitProposalSent (Text/Email
+    // share) also logs proposal_sent, but that only fires if the contractor taps
+    // one of those specific share options. A contractor who just copies the link
+    // (or the hub URL above) never hits that path, so the milestone belongs here,
+    // once=true dedupes if _commitProposalSent also fires later for the same bid.
+    try{if(typeof logLifecycle==='function')logLifecycle('proposal_sent',{bidId:b.id,clientId:b.client_id});}catch(_e){}
     saveAll();
     // saveAll() only SCHEDULES a debounced cloud write (2s timer), force + await it
     // now so the bid's signingToken/proposalKey/status are confirmed in td_bids
@@ -3415,7 +3576,7 @@ function _renderIndResult(){
   const el=document.getElementById('ind-result-card');if(!el)return;
   const r=_calcInd();
   if(!r){
-    el.innerHTML='<div style="padding:14px;background:var(--bg2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3)">Add equipment above to see the estimate</div>';
+    el.innerHTML='<div style="padding:14px;background:var(--bg2);border-radius:var(--r);text-align:center;font-size:12px;color:var(--text3)">Add equipment above to see the proposal</div>';
     return;
   }
   const crewLabel=r.crew===1?'Solo: you handle it':r.crew===2?'You + 1 helper needed':r.crew===3?'3-person crew needed':'Full 4-person crew';
@@ -3424,7 +3585,7 @@ function _renderIndResult(){
   const scaffLine=r.flags.some(f=>f&&f.includes('Scaffolding'))?'<div style="margin-top:6px;padding:7px 10px;background:#fef9c3;border-radius:var(--r);font-size:11px;color:#854d0e;font-weight:600">'+svgIcon('🏗',{size:11,color:'#854d0e'})+' Scaffolding may be needed on one or more pieces, verify on-site</div>':'';
   el.innerHTML=
     '<div style="background:linear-gradient(135deg,#1a365d 0%,#2a4a7f 100%);border-radius:var(--r);padding:16px;color:#fff">'+
-      '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-bottom:10px">Estimate Summary</div>'+
+      '<div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;opacity:.7;margin-bottom:10px">Proposal Summary</div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">'+
         '<div><div style="font-size:10px;opacity:.65">Surface area</div><div style="font-size:20px;font-weight:800">'+r.totalSqft.toLocaleString()+'<span style="font-size:11px;font-weight:400;opacity:.8"> sq ft</span></div></div>'+
         '<div><div style="font-size:10px;opacity:.65">Duration</div><div style="font-size:20px;font-weight:800">'+r.calDays+'–'+(r.calDays+1)+'<span style="font-size:11px;font-weight:400;opacity:.8"> days</span></div></div>'+
@@ -3436,7 +3597,7 @@ function _renderIndResult(){
         '<div style="font-size:14px;font-weight:800">'+crewLabel+'</div>'+
       '</div>'+
       '<div style="border-top:1px solid rgba(255,255,255,.2);padding-top:12px">'+
-        '<div style="font-size:10px;opacity:.65;margin-bottom:4px">Bid range</div>'+
+        '<div style="font-size:10px;opacity:.65;margin-bottom:4px">Proposal range</div>'+
         '<div style="font-size:24px;font-weight:800">'+fmt(r.totalLow)+' – '+fmt(r.totalHigh)+'</div>'+
         '<div style="font-size:10px;opacity:.55;margin-top:2px">25% deposit = '+fmt(Math.round((r.totalLow+r.totalHigh)/2*0.25))+'</div>'+
       '</div>'+
@@ -3470,14 +3631,14 @@ function _saveIndBid(silent){
   saveAll();
   if(!silent){
     document.getElementById('ind-equip-ov')?.remove();
-    showToast('Industrial bid saved','💾');
+    showToast('Industrial proposal saved','💾');
     if(document.getElementById('cdt-bids-content')?.style.display!=='none')setTimeout(()=>renderCDBids(),100);
   }
   return true;
 }
 async function _sendIndProposal(){
   if(!_saveIndBid(true))return; // save first, bail if no pieces
-  if(!navigator.onLine){zAlert('You\'re offline, the proposal link can\'t be activated right now.\n\nYour estimate is saved. Once you\'re back online, open this bid and tap Send to send the link to your client.',{title:'No internet connection'});return;}
+  if(!navigator.onLine){zAlert('You\'re offline, the proposal link can\'t be activated right now.\n\nYour proposal is saved. Once you\'re back online, open this proposal and tap Send to send the link to your client.',{title:'No internet connection'});return;}
   if(!supaEnabled()||!_supaUser){zAlert('Sign in to send client links.');return;}
   const r=_calcInd();
   const c=_indClient;
@@ -3486,7 +3647,7 @@ async function _sendIndProposal(){
   const bname=escHtml(S.bname||getBusinessName()||'');
   const bphone=escHtml(S.bphone||'');const blic=escHtml(S.blic||'');
   const clientName=escHtml(c?.name||'');const clientAddr=escHtml(c?.addr||'');
-  const dateStr=new Date().toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+  const dateStr=new Date().toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const estNum=String(_indBidId).slice(-6);
   const midPrice=Math.round((r.totalLow+r.totalHigh)/2);
   const totalFmt='$'+midPrice.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -3501,11 +3662,15 @@ async function _sendIndProposal(){
   }).join('');
   const liftWarning=r.liftNeeded?'<div style="padding:10px 18px;background:#fff7ed;border-bottom:1px solid #fed7aa;font-size:11px;color:#c2410c;font-weight:600">'+svgIcon('⚠',{size:11,color:'#c2410c'})+' Man-lift rental likely required (~$350/day): verify availability before scheduling</div>':'';
   const notesSection=notes?`<div style="padding:14px 24px;border-top:1px solid #e2e8f0;font-size:12px;color:#4a5568;line-height:1.6"><strong style="color:#7c2d12">Site Notes:</strong> ${escHtml(notes)}</div>`:'';
-  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${svgIcon('🏗',{size:11,color:'#fff'})} Industrial Coating Estimate</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT BID</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr><tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
+  const proposalHtml=`<div style="background:#fff;color:#1a1a1a;border-radius:10px;overflow:hidden;border:1px solid #e2e8f0;box-shadow:0 4px 24px rgba(0,0,0,.10)"><div style="background:linear-gradient(135deg,#7c2d12 0%,#c2410c 100%);color:#fff;padding:20px 24px;display:flex;justify-content:space-between;align-items:flex-start"><div><div style="font-size:18px;font-weight:800">${bname}</div>${bphone?`<div style="font-size:12px;opacity:.7;margin-top:3px">${bphone}</div>`:''}${blic?`<div style="font-size:11px;opacity:.6;margin-top:2px">Lic# ${blic}</div>`:''}</div><div style="text-align:right"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.12em;opacity:.9">${svgIcon('🏗',{size:11,color:'#fff'})} Industrial Coating Proposal</div><div style="font-size:11px;opacity:.6;margin-top:6px"># ${estNum}</div><div style="font-size:11px;opacity:.6">Date: ${dateStr}</div></div></div><div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid #e2e8f0"><div style="padding:14px 18px;border-right:1px solid #e2e8f0"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Customer</div><div style="font-size:14px;font-weight:700;color:#7c2d12">${clientName}</div>${clientAddr?`<div style="font-size:12px;color:#4a5568;margin-top:4px">${clientAddr}</div>`:''}</div><div style="padding:14px 18px"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#94a3b8;margin-bottom:6px">Project</div><div style="font-size:13px;font-weight:600;color:#7c2d12">Industrial Equipment Coating</div><div style="font-size:11px;color:#718096;margin-top:3px">${tier.badge} ${tier.name} Specification</div><div style="font-size:11px;color:#718096;margin-top:2px">Valid 30 days from date above</div></div></div><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0"><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;letter-spacing:.08em">Equipment</th><th style="padding:8px 8px;text-align:center;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:40px">Qty</th><th style="padding:8px 8px;text-align:right;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px;width:72px">~Sq Ft</th><th style="padding:8px 14px;text-align:left;font-weight:800;text-transform:uppercase;color:#64748b;font-size:9px">Notes</th></tr></thead><tbody>${equipRows}</tbody></table><div style="padding:14px 18px;border-top:1px solid #e2e8f0;background:#fafafa"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px">Coating Specification</div><div style="font-size:12px;color:#374151;line-height:1.9"><div><strong>Prep method:</strong> ${escHtml(tier.desc)}</div><div><strong>Primer:</strong> ${escHtml(resolvedPrimer)}</div><div><strong>Topcoat:</strong> ${escHtml(resolvedTopcoat)}</div><div><strong>Finish:</strong> ${escHtml(finish)}</div>${colorNotes?`<div><strong>Color notes:</strong> ${escHtml(colorNotes)}</div>`:''}</div></div><div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0"><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Surface Area</div><div style="font-size:16px;font-weight:800;color:#374151">${r.totalSqft.toLocaleString()} sqft</div></div><div style="padding:12px 14px;border-right:1px solid #e2e8f0"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Duration</div><div style="font-size:16px;font-weight:800;color:#374151">${r.calDays}–${r.calDays+1} days</div></div><div style="padding:12px 14px"><div style="font-size:10px;color:#94a3b8;margin-bottom:3px">Crew</div><div style="font-size:16px;font-weight:800;color:#374151">${crewLabel}</div></div></div>${liftWarning}<table style="width:100%;border-collapse:collapse"><tr style="background:#7c2d12;color:#fff"><td style="padding:12px 18px;font-weight:800;font-size:13px">ESTIMATE RANGE</td><td style="padding:12px 18px;text-align:right;font-weight:800;font-size:14px">${rangeStr}</td></tr><tr style="background:#c2410c;color:rgba(255,255,255,.88)"><td style="padding:7px 18px;font-size:12px;font-weight:800">MIDPOINT PROPOSAL</td><td style="padding:7px 18px;text-align:right;font-size:13px;font-weight:800">${totalFmt}</td></tr><tr style="background:#9a3412;color:rgba(255,255,255,.85)"><td style="padding:6px 18px;font-size:11px;font-weight:600">25% Deposit Due Before Work Begins</td><td style="padding:6px 18px;text-align:right;font-size:12px;font-weight:700">${depositFmt}</td></tr></table>${notesSection}<div style="padding:18px 24px;border-top:2px solid #e2e8f0;background:#f8fafc"><div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#7c2d12;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid #e2e8f0">Terms &amp; Conditions</div><div style="font-size:11px;color:#2d3748;line-height:2"><div>1. <strong>Deposit:</strong> 25% due before work begins.</div><div>2. <strong>Balance:</strong> Remainder due upon completion.</div><div>3. <strong>Warranty:</strong> All workmanship warranted for 1 year.</div></div></div></div>`;
   const token=Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('');
   const proposalKey=`proposals/${_supaUser.id}/${_indBidId}_${token}.json`;
-  const _indYearBuilt=c?c.yearBuilt||null:null;
-  const _indEpaRequired=!!(_indYearBuilt&&_indYearBuilt<1978&&((c&&c.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
+  // Per-property EPA RRP: key year built + rrpDisturb to THIS estimate's address
+  // (industrial bid addr, else client primary), so it reflects the actual site.
+  const _indAddr=(typeof bids!=='undefined'&&bids.find?((bids.find(x=>x.id===_indBidId)||{}).addr):'')||(c&&c.addr)||'';
+  const _indProp=(c&&typeof getProperty==='function')?getProperty(c,_indAddr):{};
+  const _indYearBuilt=_indProp.yearBuilt||(c?c.yearBuilt||null:null);
+  const _indEpaRequired=!!(_indYearBuilt&&_indYearBuilt<1978&&((_indProp.rrpDisturb==='yes')||(c&&c.rrpDisturb==='yes')||(typeof _rrpPaintAnswer!=='undefined'&&_rrpPaintAnswer==='yes')));
   const proposalData={
     id:_indBidId,token,clientName:c?.name||'',businessName:S.bname||getBusinessName(),
     contractorUserId:_effectiveUid(),contractorEmail:_supaUser.email,
@@ -3598,10 +3763,10 @@ function _stsuSave(){
 function _geiSignInPerson(){
   saveGenericEstimate(true);
   const bid=bids.find(x=>x.id===_geiEditBidId);
-  if(!bid){showToast('Save your estimate first','⚠️');return;}
-  if(!bid.client_id){showToast('Link this estimate to a client first','⚠️');return;}
+  if(!bid){showToast('Save your proposal first','⚠️');return;}
+  if(!bid.client_id){showToast('Link this proposal to a client first','⚠️');return;}
   const{total}=calcGeiTotal();
-  if(!total){showToast('Add items to your estimate before signing','⚠️');return;}
+  if(!total){showToast('Add items to your proposal before signing','⚠️');return;}
   const cname=document.getElementById('gei-client')?.value||bid.client_name||'Client';
   const depPct=_geiDepositPct();
   const depAmt=Math.round(total*depPct/100*100)/100;
@@ -3661,7 +3826,7 @@ async function _geiConfirmInPerson(){
   const typed=pname;
   if(!pname&&!(typeof esignHasInk==='function'&&esignHasInk('gei-ip'))){showToast('Type your name or draw a signature above','⚠️');return;}
   const bid=bids.find(x=>x.id===_geiEditBidId);
-  if(!bid){showToast('Bid not found','⚠️');return;}
+  if(!bid){showToast('Proposal not found','⚠️');return;}
   const{total}=calcGeiTotal();
   const depPct=_geiDepositPct();
   const depAmt=Math.round(total*depPct/100*100)/100;

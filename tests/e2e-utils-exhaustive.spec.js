@@ -1035,8 +1035,7 @@ test.describe('utils.js: exhaustive coverage', () => {
     });
     test('valid date string, returns human-readable date', async () => {
       const r = await page.evaluate(() => fmtDateShort('2026-06-15'));
-      expect(r).toContain('Jun');
-      expect(r).toContain('2026');
+      expect(r).toContain('06/15/2026');
     });
     test('invalid date string, returns input or fallback', async () => {
       const r = await page.evaluate(() => {
@@ -1048,6 +1047,88 @@ test.describe('utils.js: exhaustive coverage', () => {
     test('concurrent calls, no crash', async () => {
       const ok = await concurrent('fmtDateShort("2026-06-15")', 5);
       expect(ok).toBe(5);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // 24b. fmtDateMDY, the canonical MM/DD/YYYY (01/01/1900) stamp for the whole app
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('fmtDateMDY', () => {
+    test('null / undefined / empty, returns empty string', async () => {
+      const r = await page.evaluate(() => [fmtDateMDY(null), fmtDateMDY(undefined), fmtDateMDY('')]);
+      expect(r).toEqual(['', '', '']);
+    });
+    test('date-only string, zero-padded MM/DD/YYYY', async () => {
+      const r = await page.evaluate(() => fmtDateMDY('2026-01-05'));
+      expect(r).toBe('01/05/2026');
+    });
+    test('single-digit month and day are both padded (the 01/01/1900 shape)', async () => {
+      const r = await page.evaluate(() => fmtDateMDY('1900-01-01'));
+      expect(r).toBe('01/01/1900');
+    });
+    test('ISO timestamp, formats the calendar day', async () => {
+      const r = await page.evaluate(() => fmtDateMDY('2026-12-31T23:00:00Z'));
+      expect(r).toMatch(/^\d{2}\/\d{2}\/2026$/);
+    });
+    test('a Date object is accepted', async () => {
+      const r = await page.evaluate(() => fmtDateMDY(new Date(2026, 2, 9)));
+      expect(r).toBe('03/09/2026');
+    });
+    test('date-only string does not roll back a day across timezones', async () => {
+      const r = await page.evaluate(() => fmtDateMDY('2026-03-15'));
+      expect(r).toBe('03/15/2026');
+    });
+    test('garbage input, returns the input rather than throwing', async () => {
+      const r = await page.evaluate(() => {
+        try { return { ok: true, result: fmtDateMDY('not-a-date') }; }
+        catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+    });
+    test('fmtDateShort delegates to fmtDateMDY (same output)', async () => {
+      const r = await page.evaluate(() => fmtDateShort('2026-06-15') === fmtDateMDY('2026-06-15'));
+      expect(r).toBe(true);
+    });
+  });
+
+  // Owner mandate: dates and times shown to a user are ALWAYS the device's local
+  // time, never UTC. `toISOString().slice(0,10)` (or (0,7)) yields the UTC
+  // calendar day/month, so west of UTC every evening action lands on tomorrow.
+  // The app's local day key is dateKey()/todayKey(); this guards the whole
+  // source tree so the pattern can't creep back in.
+  test('no UTC-derived day or month keys anywhere in app source', () => {
+    const fs = require('fs'), path = require('path');
+    const root = path.join(__dirname, '..');
+    const files = [
+      ...fs.readdirSync(path.join(root, 'js')).filter(f => f.endsWith('.js')).map(f => 'js/' + f),
+      'index.html', 'client.html', 'sign.html', 'contract-sign.html', 'landing.html',
+    ].filter(f => fs.existsSync(path.join(root, f)));
+    const offenders = [];
+    files.forEach(rel => {
+      const src = fs.readFileSync(path.join(root, rel), 'utf8');
+      src.split('\n').forEach((line, i) => {
+        if (/toISOString\(\)\.slice\(0,\s*(?:10|7)\)/.test(line)) offenders.push(`${rel}:${i + 1}`);
+      });
+    });
+    expect(offenders, 'use dateKey(d) / todayKey() for LOCAL day keys, not toISOString().slice()').toEqual([]);
+  });
+
+  test.describe('fmtDateTimeMDY', () => {
+    test('null / empty, returns empty string', async () => {
+      const r = await page.evaluate(() => [fmtDateTimeMDY(null), fmtDateTimeMDY('')]);
+      expect(r).toEqual(['', '']);
+    });
+    test('ISO timestamp, returns MM/DD/YYYY at h:mm AM/PM', async () => {
+      const r = await page.evaluate(() => fmtDateTimeMDY('2026-07-12T16:41:00'));
+      expect(r).toMatch(/^07\/12\/2026 at \d{1,2}:\d{2}\s?(AM|PM)$/);
+    });
+    test('date-only string has no clock time appended', async () => {
+      const r = await page.evaluate(() => fmtDateTimeMDY('2026-07-12'));
+      expect(r).toBe('07/12/2026');
+    });
+    test('garbage input does not throw', async () => {
+      const r = await page.evaluate(() => { try { return { ok: true, v: fmtDateTimeMDY('nope') }; } catch (e) { return { ok: false }; } });
+      expect(r.ok).toBe(true);
     });
   });
 

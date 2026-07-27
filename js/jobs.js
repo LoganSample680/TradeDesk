@@ -56,8 +56,16 @@ function _nearbyClockIn(clientId,jobId){
   }
   openClockInSheet(jobId);
 }
+// A job that's already complete/cancelled is not open for new time entries.
+// Matches the exact condition the automatic geofence tracker already uses
+// (_geoMyJobs, js/geo-track.js) so the manual "tap to clock in" path can't
+// do what the background tracker already refuses to.
+function _jobClosedToClockIn(j){
+  return !!(j.cancelled||j.status==='done'||j.completion_date);
+}
 function openClockInSheet(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  if(_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
   const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
   const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
   const clientName=c?c.name:j.name;
@@ -96,7 +104,7 @@ function openClockInSheet(jobId){
     }
     rows+='<button onclick="_clockAddTask('+jobId+')" '+
       'style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 16px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer;font-size:13px;color:var(--text3)">'+
-      '<span style="font-size:16px">'+svgIcon('➕',{size:16})+'</span><span>Add task not in estimate…</span>'+
+      '<span style="font-size:16px">'+svgIcon('➕',{size:16})+'</span><span>Add task not in proposal…</span>'+
     '</button>';
     const el=document.getElementById('_cks-sheet');if(!el)return;
     el.innerHTML=
@@ -168,7 +176,11 @@ function _markJobComplete(jobId){
   zConfirm('Clock out the current task and mark this job as complete?',()=>{
     if(_activeTimer&&_activeTimer.jobId===jobId)clockOut(true,true);
     const j=jobs.find(x=>x.id===jobId);
-    if(j){j.status='done';j.completion_date=todayKey();saveAll();}
+    if(j){j.status='done';j.completion_date=todayKey();j.completedAt=new Date().toISOString();
+      try{if(typeof logLifecycle==='function')logLifecycle('job_completed',{jobId:j.id,bidId:j.bid_id,clientId:j.client_id});}catch(_e){}
+      // mirror onto the bid so the client timeline can stamp the exact completion time
+      if(j.bid_id){const _b=bids.find(x=>x.id===j.bid_id);if(_b)_b.completedAt=j.completedAt;}
+      saveAll();}
     document.getElementById('_cks-ov')?.remove();
     showToast('Job marked complete 🏁','✅');
     renderJobsPage&&renderJobsPage();
@@ -192,6 +204,10 @@ function _isMyTimeEntry(e){
 
 function clockIn(jobId,scopeId,scopeLabel){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
+  // Defense in depth: openClockInSheet() already refuses to open on a
+  // closed job, but clockIn() is reachable directly too, never let a
+  // completed/cancelled job accept a new time entry either way.
+  if(_jobClosedToClockIn(j)){showToast('This job is already marked complete, nothing left to clock into.','✅');return;}
   if(_activeTimer){
     if(_activeTimer.jobId===jobId&&_activeTimer.scopeId===(scopeId||null)){
       showToast('Already tracking '+(scopeLabel||'this task'),'⏱');return;
@@ -641,7 +657,7 @@ function renderJobsPage(){
     const balance=getBidBalance(b);
     const nextJob=st.jobs.filter(j=>j.start>=tk).sort((a,x)=>a.start.localeCompare(x.start))[0];
     const propAddr=(b.addr||c.addr||'').split(',')[0];
-    const nextStart=nextJob?parseD(nextJob.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'}):'';
+    const nextStart=nextJob?parseD(nextJob.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
     const nextJobId=nextJob?nextJob.id:null;
     let primaryBtn='';
     if(st.stage==='active'&&nextJobId&&!nextJob.completion_date){
@@ -690,7 +706,7 @@ function renderJobsPage(){
 function _renderJobsKanban(el,tk,wonBidsList){
   const pendingSent=bids.filter(b=>b.status==='Pending'&&b.signingToken);
   const cols=[
-    {id:'estimate', label:'Estimate sent',            items:pendingSent},
+    {id:'estimate', label:'Proposal sent',            items:pendingSent},
     {id:'signed',   label:'Signed · ready to sched',  items:wonBidsList.filter(b=>getBidStage(b).stage==='signed')},
     {id:'active',   label:'Active',                    items:wonBidsList.filter(b=>getBidStage(b).stage==='active'||getBidStage(b).stage==='scheduled')},
     {id:'collect',  label:'Collect',                   items:wonBidsList.filter(b=>getBidStage(b).stage==='balance_due')},
@@ -709,8 +725,8 @@ function _renderJobsKanban(el,tk,wonBidsList){
           const c=getClientById(b.client_id)||{name:b.name||'Client',id:b.client_id,addr:b.addr||''};
           const st=getBidStage(b);
           const nextJob=st.jobs&&st.jobs.filter(j=>j.start>=tk).sort((a,x)=>a.start.localeCompare(x.start))[0];
-          const dateStr=nextJob?parseD(nextJob.start).toLocaleDateString('en-US',{month:'short',day:'numeric'}):
-                        b.bid_date?parseD(b.bid_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+          const dateStr=nextJob?parseD(nextJob.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):
+                        b.bid_date?parseD(b.bid_date).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
           const addrShort=(b.addr||c.addr||'').split(',')[0];
           const balance=b.status==='Closed Won'?getBidBalance(b):0;
           const amt=col.id==='collect'?fmt(balance):fmt(b.amount);
@@ -730,7 +746,7 @@ function _renderJobsKanban(el,tk,wonBidsList){
             chipLabel=fmt(balance)+' owed';
             chipCls='sf-overdue';
           }else{
-            const paidDate=b.completion_date?parseD(b.completion_date).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+            const paidDate=b.completion_date?parseD(b.completion_date).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'';
             chipLabel=paidDate?paidDate+' paid':'Paid';
             chipCls='sf-won';
           }
@@ -908,7 +924,7 @@ function openJobSheet(clientId){
   // ── Schedule section ────────────────────────────────────────
   let schedHtml='';
   if(nextJob){
-    const dt=parseD(nextJob.start).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'});
+    const dt=parseD(nextJob.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
     schedHtml=
       '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">'+svgIcon('📅')+' Schedule</div>'+
@@ -967,7 +983,7 @@ function openJobSheet(clientId){
         '<div style="font-size:11px;color:var(--text3)">'+dot+colorFinish+'</div></div>'+
         '<div style="font-size:14px;font-weight:800;color:var(--blue-dk);flex-shrink:0;margin-left:10px">'+cans+' gal</div></div>';
     }).join('');
-    const bidLabel=showBidLabel?(b.addr||b.name||b.type||'Bid '+b.bid_date||''):'';
+    const bidLabel=showBidLabel?(b.addr||b.name||b.type||'Proposal '+b.bid_date||''):'';
     return '<div style="padding:14px 20px;border-bottom:1px solid var(--border)">'+
       '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(bidLabel?'4px':'10px')+'">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--text3)">'+svgIcon('📦')+' Materials</div>'+
@@ -1199,7 +1215,7 @@ function openJobSheet(clientId){
       allCOs.map(co=>{
         const deltaColor=co.type==='add'?'var(--blue)':'#A32D2D';
         const deltaLabel=co.type==='add'?'+'+fmt(co.amount):'-'+fmt(co.amount);
-        const signedLabel=co.signedAt?new Date(co.signedAt).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}):'Unsigned';
+        const signedLabel=co.signedAt?new Date(co.signedAt).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}):'Unsigned';
         return '<div style="border:1px solid var(--border2);border-radius:var(--r);padding:12px 14px;margin-bottom:8px;background:var(--bg2)">'+
           '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px">'+
             '<div style="font-size:12px;font-weight:800;color:var(--text)">CO #'+co.coNum+'</div>'+
@@ -1222,14 +1238,15 @@ function openJobSheet(clientId){
 
   // ── Assigned employee (dispatch) ─────────────────────────────────────────────
   let assignedEmpHtml='';
-  const latestAssignedJob=allJobs.filter(j=>j.assignedTo).sort((a,b)=>(b.assignedDate||'').localeCompare(a.assignedDate||''))[0];
+  const latestAssignedJob=allJobs.filter(j=>j.assignedTo).sort((a,b)=>(b.assignedDate||b.start||'').localeCompare(a.assignedDate||a.start||''))[0];
   if(latestAssignedJob&&latestAssignedJob.assignedTo){
     const assignedEmp=(S.employees||[]).find(e=>String(e.id)===String(latestAssignedJob.assignedTo));
     if(assignedEmp){
+      const _asgnDate=latestAssignedJob.assignedDate||latestAssignedJob.start;
       assignedEmpHtml='<div style="padding:10px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px">'+
         '<span style="font-size:11px;font-weight:700;color:var(--text3)">ASSIGNED TO</span>'+
         '<span style="font-size:13px;font-weight:700;color:var(--text)">'+escHtml(assignedEmp.name)+'</span>'+
-        (latestAssignedJob.assignedDate?'<span style="font-size:10px;color:var(--text3)">· '+latestAssignedJob.assignedDate+'</span>':'')+
+        (_asgnDate?'<span style="font-size:10px;color:var(--text3)">· '+_asgnDate+'</span>':'')+
       '</div>';
     }
   }
@@ -1401,6 +1418,7 @@ function markSubPaid(jobId,subIdx,clientId){
     const _spBid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
     expenses.push({
       id:Date.now(),date:sp.paidDate,cat:'subs',catLabel:'Subcontractors',
+      loggedAt:new Date().toISOString(),
       vendor:sp.subName||'Subcontractor',amount:sp.amount,
       notes:'Sub pay, '+(sp.desc||j.name||''),
       subId:sp.subId,subPayKey:_spKey,
@@ -1458,7 +1476,7 @@ function openPushBackModal(jobId,clientId,parentOverlay){
   const c=getClientById(clientId);
   const firstName=c?c.name.split(' ')[0]:'there';
   const biz=S.bname||'your contractor';
-  const oldDate=parseD(j.start).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  const oldDate=parseD(j.start).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   const defaultMsg='Hi '+firstName+', this is '+biz+'. We need to push your job back a bit, we\'ll get you on the schedule as soon as possible and confirm the new date. We\'re sorry for any inconvenience and appreciate your patience!';
   document.getElementById('_pb-modal-ov')?.remove();
   const ov=document.createElement('div');ov.id='_pb-modal-ov';ov.className='zmodal-overlay';
@@ -1492,7 +1510,7 @@ function _updatePushBackMsg(clientId){
   if(!newDateEl||!msgEl)return;
   const newDateStr=newDateEl.value;
   if(!newDateStr)return;
-  const newDateFmt=parseD(newDateStr).toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'});
+  const newDateFmt=parseD(newDateStr).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'});
   msgEl.value='Hi '+firstName+', this is '+biz+'. We\'ve rescheduled your job to '+newDateFmt+'. We apologize for the change and look forward to seeing you then!';
 }
 function _savePushBack(jobId,clientId){
@@ -1506,7 +1524,7 @@ function _savePushBack(jobId,clientId){
   saveAll();
   _uploadClientHub&&_uploadClientHub(clientId).catch(()=>{});
   document.getElementById('_pb-modal-ov')?.remove();
-  showToast('Job pushed to '+parseD(newDate).toLocaleDateString('en-US',{month:'short',day:'numeric'}),'📅');
+  showToast('Job pushed to '+parseD(newDate).toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'}),'📅');
   if(c&&c.phone&&msg){
     window.location.href='sms:'+c.phone.replace(/\D/g,'')+'&body='+encodeURIComponent(msg);
   }
@@ -1712,7 +1730,7 @@ function _renderJobTasks(jobId){
   }).join('');
 }
 function _fmtTaskTime(iso){
-  try{const d=new Date(iso);return d.toLocaleDateString('en-US',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
+  try{const d=new Date(iso);return d.toLocaleDateString('en-US',{year:'numeric',month:'2-digit',day:'2-digit'})+' '+d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(e){return'';}
 }
 function _contractorToggleTask(jobId,taskId){
   const j=jobs.find(x=>x.id===jobId);if(!j||!j.tasks)return;
@@ -1726,7 +1744,7 @@ function _contractorToggleTask(jobId,taskId){
 function deleteJob(jobId){
   const j=jobs.find(x=>x.id===jobId);
   if(!j)return;
-  const label=j.eventType==='estimate'?'estimate visit':'job';
+  const label=j.eventType==='estimate'?'proposal visit':'job';
   zConfirm('Remove this '+label+' from the calendar?',()=>{
     _userDelete(()=>{jobs=jobs.filter(x=>x.id!==jobId);saveAll();});
     renderClientDetail();renderCalendar();

@@ -9,3 +9,6 @@ test-results/
 playwright-report/
 settings.local.json
 tests/flow/.local-accounts.json
+
+# Local screenshot scratch (never repo content)
+_shot_*.png

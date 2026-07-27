@@ -49,10 +49,16 @@ function goPg(id){
     setCF(cf,document.getElementById('cft-'+cf));
   }
   if(id==='pg-cal')renderCalendar();
-  if(id==='pg-schedule'){populateSchedSelect();buildColorRow();const _jt=document.getElementById('sched-tab-job');if(_jt)_jt.style.display='';try{setSchedType(schedType,document.getElementById(schedType==='estimate'?'sched-tab-est':'sched-tab-job'));}catch(e){}setTimeout(validateEstimateTime,100);}
+  if(id==='pg-schedule'){populateSchedSelect();const _jt=document.getElementById('sched-tab-job');if(_jt)_jt.style.display='';try{setSchedType(schedType,document.getElementById(schedType==='estimate'?'sched-tab-est':'sched-tab-job'));}catch(e){}setTimeout(validateEstimateTime,100);}
   if(id==='pg-tracker'){trackerYear=new Date().getFullYear();_trackerYearManual=false;renderTrackerTab();populateExpJobSel();}
   if(id==='pg-taxes'){_taxPageYear=new Date().getFullYear();calcTax();}
-  if(id==='pg-settings'){buildScopeDefaultsUI();
+  if(id==='pg-settings'){
+    // Always land on the settings home list, never the last-viewed detail panel.
+    // Deep-link callers (setup-todo cards, Stripe-return redirect) that want a
+    // specific panel call _openSetDetail() themselves right after this, in a
+    // setTimeout that runs after this synchronous block, so they still win.
+    if(typeof _closeSetDetail==='function')_closeSetDetail();
+    buildScopeDefaultsUI();
     loadSettingsForm();updateLocationBtn();renderTeam();loadStripeConnectStatus();_renderSettingsTradeSections();_renderDevTradeCard();renderSettingsTrades();
     if(window._scrollToVehicles){
       window._scrollToVehicles=false;

@@ -46,6 +46,7 @@ test.describe('clients/leads: realistic combinatorial breaker', () => {
       goPg('pg-clients'); openNewClient();
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('cf-name', opts.name);
+      set('cf-partytype', opts.partyType || 'homeowner'); // required field: who is this
       // Random-ish KS phone so seeded leads look real and exercise dedup variety.
       const ac = ['316','620','785','913'][Math.floor(Math.random()*4)];
       const rand = String(Math.floor(2000000 + Math.random()*7999999));
@@ -151,6 +152,7 @@ test.describe('clients/leads: realistic combinatorial breaker', () => {
       try {
         goPg('pg-clients'); openNewClient();
         document.getElementById('cf-name').value = nm;
+        document.getElementById('cf-partytype').value = 'homeowner'; // required field
         document.getElementById('cf-phone').value = '3165551234';
         const s = document.getElementById('cf-source'); if (s && s.options.length > 1) s.value = s.options[1].value;
         document.getElementById('cf-notes').value = '__E2E__ ' + runTag;
