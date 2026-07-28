@@ -2007,9 +2007,9 @@ function _qrIntakeShim(qrLabel) {
       eq:()=>q, neq:()=>q, gt:()=>q, lt:()=>q, gte:()=>q, lte:()=>q,
       in:()=>q, is:()=>q, not:()=>q, or:()=>q, filter:()=>q, match:()=>q,
       ilike:()=>q, like:()=>q, contains:()=>q, order:()=>q, limit:()=>q, range:()=>q,
-      single:()=>noopResult(table==='accounts'?ACCT_ROW[0]:null),
-      maybeSingle:()=>noopResult(table==='accounts'?ACCT_ROW[0]:(table==='qr_sources'&&${JSON.stringify(!!qrLabel)}?{label:${JSON.stringify(qrLabel || '')}}:null)),
-      then:(cb)=>(table==='accounts'?noopResult(ACCT_ROW):noopResult([])).then(cb),
+      single:()=>noopResult(table==='account_public'?ACCT_ROW[0]:null),
+      maybeSingle:()=>noopResult(table==='account_public'?ACCT_ROW[0]:(table==='qr_sources'&&${JSON.stringify(!!qrLabel)}?{label:${JSON.stringify(qrLabel || '')}}:null)),
+      then:(cb)=>(table==='account_public'?noopResult(ACCT_ROW):noopResult([])).then(cb),
       catch:(cb)=>Promise.resolve([]),
     };
     return q;
