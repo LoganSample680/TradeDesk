@@ -2186,9 +2186,14 @@ function renderPipeline(){
 }
 function openIntakeFormModal(){
   const base=typeof _clientBaseUrl==='function'?_clientBaseUrl():window.location.origin+window.location.pathname.split('index.html')[0];
-  // ?a=<account_id> is required — intake.html can't resolve which contractor's
-  // branding/leads to use without it (see intake.html's ACCOUNT_ID check).
-  const acctId=(typeof _effectiveUid==='function'&&_effectiveUid())||(S&&S.accountId)||'';
+  // ?a=<account_id> is required — intake.html resolves it against account_public,
+  // a straight view over accounts(id). That's accounts.id (_account.id, loaded at
+  // boot), NOT the signed-in auth user's own id: accounts.id is a separate
+  // gen_random_uuid() assigned at account creation (see settings.js obSubmit),
+  // never equal to owner_id/auth.uid(). _effectiveUid() answers a different
+  // question ("whose money/notifications does this belong to" for employee
+  // proxying) and must not be reused here.
+  const acctId=(typeof _account!=='undefined'&&_account&&_account.id)||'';
   const url=base+'intake.html'+(acctId?'?a='+encodeURIComponent(acctId):'');
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   ov.innerHTML='<div class="zmodal" style="max-width:360px">'+

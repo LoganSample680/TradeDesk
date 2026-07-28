@@ -31,7 +31,10 @@ function _qrTargetUrl(code){
 
 async function _qrLoadSources(){
   if(!_supa||!_supaUser)return;
-  const acctId=(typeof _effectiveUid==='function'&&_effectiveUid())||'';
+  // qr_sources.account_id is a FK to accounts(id), a separate gen_random_uuid()
+  // from the owner's own auth uid — _account.id, not _effectiveUid(). Using
+  // _effectiveUid() here matches zero rows (RLS-legal, just always empty).
+  const acctId=(typeof _account!=='undefined'&&_account&&_account.id)||'';
   if(!acctId)return;
   try{
     const{data}=await _supa.from('qr_sources').select('*').eq('account_id',acctId).order('created_at',{ascending:false});
@@ -63,6 +66,18 @@ function renderQrLeadsPage(){
   }else{
     el.innerHTML=_qrSources.map(s=>{
       const c=_qrEventCounts[s.id]||{scan:0,form_opened:0,submitted:0};
+      const spent=(typeof expenses!=='undefined'?expenses:[]).filter(e=>e.cat==='marketing'&&e.lead_source===s.label).reduce((sum,e)=>sum+(e.amount||0),0);
+      const perLead=spent>0&&c.submitted>0?spent/c.submitted:null;
+      const roiRow=spent>0
+        ?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;padding:8px 10px;background:rgba(45,93,168,.06);border-radius:8px;font-size:12px">'+
+          '<div><span style="font-weight:800;color:var(--text)">'+fmt(spent)+'</span> <span style="color:var(--text3)">spent</span></div>'+
+          '<div style="color:var(--border2)">·</div>'+
+          '<div><span style="font-weight:800;color:var(--blue)">'+(perLead!=null?fmt(perLead):'—')+'</span> <span style="color:var(--text3)">'+(perLead!=null?'per lead':'no leads yet')+'</span></div>'+
+          '<button onclick="_qrLogCost(\''+s.id+'\')" style="margin-left:auto;flex-shrink:0;border:none;background:none;color:var(--blue);font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;padding:2px">Log more</button>'+
+        '</div>'
+        :'<div style="margin-bottom:10px">'+
+          '<button onclick="_qrLogCost(\''+s.id+'\')" style="border:none;background:none;color:var(--blue);font-size:11.5px;font-weight:700;cursor:pointer;font-family:inherit;padding:0">+ Log what this cost, see ROI</button>'+
+        '</div>';
       return '<div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--rl);padding:14px;margin-bottom:10px">'+
         '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px">'+
           '<div>'+
@@ -76,9 +91,10 @@ function renderQrLeadsPage(){
           '<div><span style="font-weight:800;color:var(--text)">'+c.form_opened+'</span> <span style="color:var(--text3)">opened form</span></div>'+
           '<div><span style="font-weight:800;color:var(--blue)">'+c.submitted+'</span> <span style="color:var(--text3)">became a lead</span></div>'+
         '</div>'+
+        roiRow+
         '<div style="display:flex;gap:8px">'+
-          '<button onclick="_qrDownload(\''+s.id+'\',\'svg\')" class="btn btn-sm" style="flex:1">Download SVG (print)</button>'+
           '<button onclick="_qrDownload(\''+s.id+'\',\'png\')" class="btn btn-sm" style="flex:1">Download PNG</button>'+
+          '<button onclick="_qrDownload(\''+s.id+'\',\'svg\')" class="btn btn-sm" style="flex:1">Download SVG (print)</button>'+
         '</div>'+
       '</div>';
     }).join('');
@@ -95,7 +111,11 @@ async function _qrCreateSource(){
   const label=(labelEl?.value||'').trim();
   const category=catEl?.value||'Other';
   if(!label){if(typeof showToast==='function')showToast('Give it a name first, e.g. "Yard sign - 123 Main St"','⚠️');labelEl?.focus();return;}
-  const acctId=(typeof _effectiveUid==='function'&&_effectiveUid())||'';
+  // account_id is a FK to accounts(id): _account.id, not _effectiveUid() (the
+  // auth user's own id — a different uuid). The RLS insert policy checks
+  // account_id against accounts owned by auth.uid(), so the wrong id here
+  // gets silently rejected by RLS, not caught by any mocked offline test.
+  const acctId=(typeof _account!=='undefined'&&_account&&_account.id)||'';
   if(!acctId||!_supa)return;
   const code=_qrGenCode();
   try{
@@ -113,6 +133,28 @@ async function _qrDeleteSource(id){
   if(!_supa)return;
   try{await _supa.from('qr_sources').delete().eq('id',id);}catch(e){}
   await _qrLoadSources();
+}
+
+// Ties QR spend into the marketing-expense ROI table that already exists on
+// the dashboard (renderLeadSources in dashboard.js), rather than building a
+// second, parallel cost/ROI system. A "marketing" expense whose lead_source
+// matches this QR source's label is exactly what that table already sums.
+function _qrLogCost(sourceId){
+  const s=_qrSources.find(x=>x.id===sourceId);if(!s)return;
+  if(typeof openExpenseFlow!=='function')return;
+  openExpenseFlow();
+  const catEl=document.getElementById('em-cat');
+  if(catEl){catEl.value='marketing';if(typeof toggleExpenseSections==='function')toggleExpenseSections();}
+  const srcEl=document.getElementById('em-mkt-source');
+  if(srcEl){
+    if(![...srcEl.options].some(o=>o.value===s.label)){
+      const opt=document.createElement('option');opt.value=s.label;opt.textContent=s.label;
+      srcEl.appendChild(opt);
+    }
+    srcEl.value=s.label;
+  }
+  const vendEl=document.getElementById('em-vendor');
+  if(vendEl&&!vendEl.value)vendEl.value=s.label;
 }
 
 function _qrDownload(sourceId,format){
