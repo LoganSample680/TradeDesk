@@ -42,6 +42,19 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
     const acctId = await page.evaluate(() => (typeof _account !== 'undefined' && _account) ? _account.id : null);
     test.skip(!acctId, 'dev account has no accounts row, cannot drive QR lead tracking');
 
+    // migrations + Edge Functions only push to the Dev Supabase project on merge
+    // to main (deploy-functions.yml), so a brand-new table/function from an
+    // unmerged PR is legitimately absent here — soft-skip rather than fail,
+    // same pattern as open-tracking-flow.spec.js's proposal_views probe.
+    const schemaProbe = await page.evaluate(async () => {
+      try {
+        const { error } = await _supa.from('qr_sources').select('id').limit(1);
+        if (error && (/does not exist|relation|PGRST/i.test(error.message || '') || error.code === '42P01')) return { reachable: false };
+        return { reachable: true };
+      } catch (e) { return { reachable: false }; }
+    });
+    test.skip(!schemaProbe.reachable, 'qr_sources/qr_events not yet migrated onto the Dev Supabase project — pushes on merge to main, this flow test goes live then');
+
     const qrLabel = `E2E QR Truck Wrap ${process.pid}`;
     const leadName = `E2E QR Lead ${process.pid}`;
     const leadPhone = '3165551' + String(process.pid % 1000).padStart(3, '0');
