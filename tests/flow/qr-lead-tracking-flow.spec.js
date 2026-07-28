@@ -40,10 +40,15 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
     // 5 real steps, each hitting live Supabase, on a Dev account with years of
     // accumulated seed data (CLAUDE.md §12.7: live tests never clean up), so
     // signIn/cloud-boot alone eats real time before any step here even starts.
-    // 150000 wasn't enough (confirmed: steps 1-3 — create source, real anon
-    // scan+redirect+submit, event/label verification — all passed for real
-    // against live Supabase before the overall test timeout hit mid-step-4).
-    test.setTimeout(240000);
+    // 150000, then 240000, both confirmed too tight: steps 1-3 (create source,
+    // real anon scan+redirect+submit, event/label verification) pass for real
+    // against live Supabase both times, only the promote step's saveAll()
+    // (pre-existing _promoteInbound() behavior, not touched by this PR) blows
+    // the budget — this account's saveAll() re-uploads its full backlog of
+    // client-hub proposal snapshots on every save, and that backlog only grows
+    // (crew-convergence-flow.spec.js documents the same "ever-growing account"
+    // cost and budgets up to 420000 for it). Matching that ceiling here.
+    test.setTimeout(420000);
 
     const acctId = await page.evaluate(() => (typeof _account !== 'undefined' && _account) ? _account.id : null);
     test.skip(!acctId, 'dev account has no accounts row, cannot drive QR lead tracking');
