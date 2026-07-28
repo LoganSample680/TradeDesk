@@ -1986,12 +1986,58 @@ test.describe('intake.html: lead capture form', () => {
 //  INTAKE.HTML: QR LEAD TRACKING (?src=<code> from functions/q/[[code]].js)
 // ════════════════════════════════════════════════════════════════════════════
 
+// _supabaseShimIntake()'s query builder resolves .insert()/.maybeSingle() fully
+// in-process (see tests/helpers.js) — it never issues a real fetch for those,
+// so page.route interception of /rest/v1/* can NEVER observe an insert or a
+// qr_sources lookup made through it. This local shim extends that same shape
+// (own createClient, own queryBuilder) but records every insert to
+// window.__qrInserts and resolves qr_sources by code, so these tests observe
+// real in-page state instead of a network call that structurally never fires.
+function _qrIntakeShim(qrLabel) {
+  return `
+(function(global){
+  function noopResult(data){ return Promise.resolve({data,error:null}); }
+  const ACCT_ROW=[{id:'acct-e2e-0001',business_name:'E2E Pro Painting',phone:'316-555-1234',logo_data:null,brand_color:'#2D5DA8'}];
+  global.__qrInserts=[];
+  function queryBuilder(table){
+    const q={
+      select:()=>q, update:()=>q, delete:()=>q,
+      insert:(row)=>{ global.__qrInserts.push({table,row}); return noopResult([{}]); },
+      upsert:()=>noopResult([{}]),
+      eq:()=>q, neq:()=>q, gt:()=>q, lt:()=>q, gte:()=>q, lte:()=>q,
+      in:()=>q, is:()=>q, not:()=>q, or:()=>q, filter:()=>q, match:()=>q,
+      ilike:()=>q, like:()=>q, contains:()=>q, order:()=>q, limit:()=>q, range:()=>q,
+      single:()=>noopResult(table==='accounts'?ACCT_ROW[0]:null),
+      maybeSingle:()=>noopResult(table==='accounts'?ACCT_ROW[0]:(table==='qr_sources'&&${JSON.stringify(!!qrLabel)}?{label:${JSON.stringify(qrLabel || '')}}:null)),
+      then:(cb)=>(table==='accounts'?noopResult(ACCT_ROW):noopResult([])).then(cb),
+      catch:(cb)=>Promise.resolve([]),
+    };
+    return q;
+  }
+  const _supabase={
+    createClient:function(url,key){
+      return{
+        auth:{ getUser:()=>noopResult({user:null}), getSession:()=>noopResult({session:null}),
+          onAuthStateChange:(cb)=>{if(typeof window!=='undefined')window.__capturedAuthCallback=cb;return{data:{subscription:{unsubscribe:()=>{}}}};} },
+        from:(table)=>queryBuilder(table),
+        storage:{from:(b)=>({upload:(p,d,o)=>noopResult({path:p}),download:(p)=>noopResult(null),getPublicUrl:(p)=>({data:{publicUrl:''}}),remove:(ps)=>noopResult(null),list:(pr)=>noopResult([])})},
+        functions:{invoke:(n,o)=>noopResult({ok:true})},
+        channel:(n)=>({on:function(){return this;},subscribe:function(cb){if(cb)cb('SUBSCRIBED');return this;},unsubscribe:()=>{}}),
+        removeChannel:()=>{},
+      };
+    }
+  };
+  global.supabase=_supabase;
+  if(typeof module!=='undefined')module.exports=_supabase;
+})(typeof window!=='undefined'?window:global);
+`;
+}
+
 test.describe('intake.html: QR lead tracking', () => {
   let page;
   const FAKE_ACCOUNT_ID = 'acct-e2e-0001';
   const QR_CODE = 'testcode1';
   const QR_LABEL = 'Yard sign - 123 Main St';
-  let leadInsertPayload = null;
 
   test.beforeAll(async ({ browser }) => {
     const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
@@ -1999,12 +2045,10 @@ test.describe('intake.html: QR lead tracking', () => {
 
     await page.route('**/*', async (route) => {
       const url = route.request().url();
-      const method = route.request().method();
-
       if (url.startsWith('http://localhost')) return route.continue();
       if (url.startsWith('data:'))           return route.continue();
       if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
-        return route.fulfill({ status: 200, contentType: 'application/javascript', body: _supabaseShimIntake() });
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: _qrIntakeShim(QR_LABEL) });
       }
       if (url.includes('fonts.googleapis') || url.includes('fonts.gstatic')) {
         return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
@@ -2012,22 +2056,9 @@ test.describe('intake.html: QR lead tracking', () => {
       if (url.includes('favicon') || url.includes('js.stripe') || url.includes('apple-mapkit')) {
         return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
       }
-      if (url.includes('/rest/v1/accounts') || (url.includes('.supabase.co') && url.includes('accounts') && method === 'GET')) {
-        return route.fulfill({
-          status: 200, contentType: 'application/json',
-          body: JSON.stringify([{ id: FAKE_ACCOUNT_ID, business_name: 'E2E Pro Painting', phone: '316-555-1234', logo_data: null, brand_color: '#2D5DA8' }]),
-        });
-      }
-      // qr_sources lookup: the code in this test's URL resolves to a real label.
-      if (url.includes('/rest/v1/qr_sources')) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ label: QR_LABEL }]) });
-      }
-      if (url.includes('/rest/v1/inbound_leads') || url.includes('inbound_leads')) {
-        try { leadInsertPayload = JSON.parse(route.request().postData() || '{}'); } catch(_) {}
-        return route.fulfill({ status: 201, contentType: 'application/json', body: '[{}]' });
-      }
-      // sendBeacon target for the field_dropoff event — never asserted on here
-      // (unload timing is unreliable to test deterministically), just must not 404.
+      // sendBeacon target for the field_dropoff event — a real network call
+      // (sendBeacon can't be shimmed in-JS), never asserted on here (unload
+      // timing is unreliable to test deterministically), just must not 404.
       if (url.includes('log-qr-event')) {
         return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
       }
@@ -2061,12 +2092,16 @@ test.describe('intake.html: QR lead tracking', () => {
   test.afterAll(async () => { await page.context().close(); });
 
   test('intake.html+QR: resolves the code to its human label, not the raw code', async () => {
-    const label = await page.evaluate(() => window._qrLabel);
+    // _qrLabel is a top-level `let` in intake.html's own inline script, a bare
+    // lexical binding, not a window property (page.evaluate's callback runs
+    // in the page's real global scope, so the bare identifier resolves fine;
+    // window._qrLabel would not).
+    const label = await page.evaluate(() => _qrLabel);
     expect(label).toBe(QR_LABEL);
   });
 
   test('intake.html+QR: submitting tags the lead with the resolved label, not "qr_form"', async () => {
-    leadInsertPayload = null;
+    await page.evaluate(() => { window.__qrInserts.length = 0; });
     await page.evaluate(async () => {
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       set('f-name', 'QR Test Lead');
@@ -2078,27 +2113,28 @@ test.describe('intake.html: QR lead tracking', () => {
       if (typeof submitForm === 'function') { try { await submitForm(); } catch(e) {} }
     });
     await page.waitForTimeout(500);
-    expect(leadInsertPayload).toBeTruthy();
-    expect(leadInsertPayload.source).toBe(QR_LABEL);
+    const row = await page.evaluate(() => (window.__qrInserts.find(i => i.table === 'inbound_leads') || {}).row);
+    expect(row).toBeTruthy();
+    expect(row.source).toBe(QR_LABEL);
   });
 
   test('intake.html+QR: _qrTrackField records the furthest field with a value', async () => {
     const result = await page.evaluate(() => {
       const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
       ['f-name','f-phone','f-street','f-notes'].forEach(id => set(id, ''));
-      window._furthestField = '';
+      _furthestField = '';
       set('f-name', 'Someone');
       _qrTrackField();
-      const afterName = window._furthestField;
+      const afterName = _furthestField;
       set('f-phone', '316-555-0000');
       _qrTrackField();
-      const afterPhone = window._furthestField;
+      const afterPhone = _furthestField;
       // Clearing a later field falls back to the furthest one still filled,
       // not just "the last field touched" — matches _qrTrackField's own
       // highest-index-with-a-value scan, not a running pointer.
       set('f-phone', '');
       _qrTrackField();
-      const afterClearingPhone = window._furthestField;
+      const afterClearingPhone = _furthestField;
       return { afterName, afterPhone, afterClearingPhone };
     });
     expect(result.afterName).toBe('f-name');
@@ -2110,19 +2146,11 @@ test.describe('intake.html: QR lead tracking', () => {
     // Independent page: no src param at all.
     const ctx2 = await page.context().browser().newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
     const page2 = await ctx2.newPage();
-    let payload = null;
     await page2.route('**/*', async (route) => {
       const url = route.request().url();
       if (url.startsWith('http://localhost') || url.startsWith('data:')) return route.continue();
       if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
-        return route.fulfill({ status: 200, contentType: 'application/javascript', body: _supabaseShimIntake() });
-      }
-      if (url.includes('/rest/v1/accounts')) {
-        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: FAKE_ACCOUNT_ID, business_name: 'E2E Pro Painting', phone: '316-555-1234' }]) });
-      }
-      if (url.includes('/rest/v1/inbound_leads')) {
-        try { payload = JSON.parse(route.request().postData() || '{}'); } catch(_) {}
-        return route.fulfill({ status: 201, contentType: 'application/json', body: '[{}]' });
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: _qrIntakeShim(null) });
       }
       return route.fulfill({ status: 200, contentType: url.includes('.supabase.co') ? 'application/json' : 'text/plain', body: url.includes('.supabase.co') ? '[]' : '' });
     });
@@ -2135,8 +2163,9 @@ test.describe('intake.html: QR lead tracking', () => {
       if (typeof submitForm === 'function') { try { await submitForm(); } catch(e) {} }
     });
     await page2.waitForTimeout(500);
-    expect(payload).toBeTruthy();
-    expect(payload.source).toBe('qr_form');
+    const row = await page2.evaluate(() => (window.__qrInserts.find(i => i.table === 'inbound_leads') || {}).row);
+    expect(row).toBeTruthy();
+    expect(row.source).toBe('qr_form');
     await ctx2.close();
   });
 
