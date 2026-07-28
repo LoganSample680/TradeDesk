@@ -4,6 +4,12 @@ verify_jwt = false
 [functions.log-proposal-view]
 verify_jwt = false
 
+# functions/q/[[code]].js (the QR redirect) and intake.html both call this with
+# no Supabase session — a scanner is never signed in. Same anonymous-caller
+# shape as log-proposal-view above.
+[functions.log-qr-event]
+verify_jwt = false
+
 [functions.send-proposal-email]
 verify_jwt = true
 

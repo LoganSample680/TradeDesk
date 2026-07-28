@@ -3250,6 +3250,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <div class="tbar-r">
       <button class="btn btn-sm" onclick="openImportContacts()">Import</button>
+      <button class="btn btn-sm" onclick="openIntakeFormModal()">Get leads</button>
       <button class="btn btn-p btn-sm" onclick="goPg('pg-clients');setTimeout(()=>openNewClient(),100)">+ New lead</button>
     </div>
   </div>
@@ -3262,6 +3263,26 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb"        id="lft-pending"    onclick="setLeadFilter('pending',this)">Proposal (pending)</button>
   </div>
   <div id="leads-list"></div>
+</div>
+<div class="pg" id="pg-qr-leads">
+  <div class="tbar">
+    <div class="tbar-l">
+      <div class="tbar-eyebrow"><a href="javascript:void(0)" onclick="goPg('pg-leads')" style="color:inherit;text-decoration:none">← Leads</a></div>
+      <div class="tbar-title">QR codes</div>
+      <div class="tbar-sub">One code per truck, sign, or card. Each tracks its own scans and leads.</div>
+    </div>
+  </div>
+  <div style="padding:0 16px">
+    <div style="background:var(--bg2);border:1px solid var(--border2);border-radius:var(--rl);padding:14px;margin-bottom:16px">
+      <div style="font-size:12px;font-weight:700;color:var(--text2);margin-bottom:8px">New QR code</div>
+      <input id="qr-new-label" type="text" placeholder='e.g. "Yard sign - 123 Main St"' style="width:100%;padding:10px 12px;border-radius:var(--r);border:1px solid var(--border2);font-size:14px;font-family:inherit;margin-bottom:8px">
+      <div style="display:flex;gap:8px">
+        <select id="qr-new-cat" style="flex:1;padding:10px 12px;border-radius:var(--r);border:1px solid var(--border2);font-size:14px;font-family:inherit"></select>
+        <button onclick="_qrCreateSource()" class="btn btn-p btn-sm">Create</button>
+      </div>
+    </div>
+    <div id="qr-leads-list"></div>
+  </div>
 </div>
 <div class="pg" id="pg-jobs">
   <div class="tbar">
@@ -3587,6 +3608,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   </div>
 </div>
 <script src="js/lib/xlsx.min.js"></script>
+<script src="js/lib/qrcode.js"></script>
 <script src="js/icons.js"></script>
 <script>
 // Hydrate static emoji-icon placeholders, this file writes most of its UI as
@@ -3607,6 +3629,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/cloud.js"></script>
 <script src="js/observability.js"></script>
 <script src="js/dashboard.js"></script>
+<script src="js/qr-leads.js"></script>
 <script src="js/clients.js"></script>
 <script src="js/bids.js"></script>
 <script src="js/jobs.js"></script>
