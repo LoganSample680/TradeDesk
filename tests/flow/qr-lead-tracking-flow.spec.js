@@ -37,7 +37,13 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
   test('a QR code is created, scanned, submitted, promoted, and its cost tied into ROI', async ({ page, browser }) => {
-    test.setTimeout(150000);
+    // 5 real steps, each hitting live Supabase, on a Dev account with years of
+    // accumulated seed data (CLAUDE.md §12.7: live tests never clean up), so
+    // signIn/cloud-boot alone eats real time before any step here even starts.
+    // 150000 wasn't enough (confirmed: steps 1-3 — create source, real anon
+    // scan+redirect+submit, event/label verification — all passed for real
+    // against live Supabase before the overall test timeout hit mid-step-4).
+    test.setTimeout(240000);
 
     const acctId = await page.evaluate(() => (typeof _account !== 'undefined' && _account) ? _account.id : null);
     test.skip(!acctId, 'dev account has no accounts row, cannot drive QR lead tracking');
