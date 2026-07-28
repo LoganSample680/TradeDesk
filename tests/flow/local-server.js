@@ -75,6 +75,39 @@ const MIME = {
 function isApi(url) { return url === '/api' || url.startsWith('/api/') || url.startsWith('/api?'); }
 function stripApi(url) { return url.replace(/^\/api/, '') || '/'; }
 
+// Reproduces functions/q/[[code]].js locally (same reasoning as the /api proxy
+// above): that's a SEPARATE Cloudflare Pages Function, and this server has no
+// Pages Functions runtime, so without this a scanned QR code just 404s here
+// instead of redirecting — the live flow test would time out on #f-name no
+// matter how correct the app code is. code shape must match _qrGenCode()'s
+// output (js/qr-leads.js) and functions/q/[[code]].js's own validation.
+function isQrRedirect(url) { return /^\/q\/[a-z0-9]{6,16}(\?.*)?$/.test(url); }
+async function handleQrRedirect(req, res) {
+  const code = req.url.split('?')[0].replace(/^\/q\//, '');
+  const anonKey = LOCAL_STACK ? LOCAL_PUBLISHABLE_KEY : CLOUD_ANON_JWT;
+  let accountId = null;
+  try {
+    const r = await fetch(UPSTREAM + '/rest/v1/qr_sources?code=eq.' + encodeURIComponent(code) + '&select=account_id', {
+      headers: { apikey: anonKey, Authorization: 'Bearer ' + anonKey },
+    });
+    if (r.ok) {
+      const rows = await r.json().catch(() => []);
+      accountId = rows && rows[0] && rows[0].account_id;
+    }
+  } catch (e) { /* unmatched code, fall through to plain intake.html */ }
+  // Fire-and-forget scan log, mirrors functions/q/[[code]].js's waitUntil(logScan).
+  fetch(UPSTREAM + '/functions/v1/log-qr-event', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + anonKey },
+    body: JSON.stringify({ code, event: 'scan' }),
+  }).catch(() => {});
+  const location = accountId
+    ? '/intake.html?a=' + encodeURIComponent(accountId) + '&src=' + encodeURIComponent(code)
+    : '/intake.html';
+  res.writeHead(302, { Location: location });
+  res.end();
+}
+
 function serveStatic(req, res) {
   // Map the URL path to a file under the repo root. Default '/' -> index.html.
   let urlPath = decodeURIComponent((req.url.split('?')[0]) || '/');
@@ -141,6 +174,9 @@ const server = http.createServer((req, res) => {
     }
     req.url = stripApi(req.url);          // /api/auth/v1/... -> /auth/v1/...
     return proxy.web(req, res, { target: UPSTREAM });
+  }
+  if (isQrRedirect(req.url)) {
+    return void handleQrRedirect(req, res);
   }
   serveStatic(req, res);
 });
