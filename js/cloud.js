@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.31';
+const APP_VERSION='07.28.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -6565,7 +6565,11 @@ function _onNewInboundLead(row){
   // Unknown lead (QR form), queue for review
   _pendingInbound.unshift(row);
   _updateInboundBadge();
-  showToast('New lead from '+(row.source==='qr_form'?'QR form':'intake form')+', tap to review','🆕');
+  // row.source is already the human label ("Yard sign - 123 Main St") when it
+  // came through a tracked QR code (see intake.html's _qrLabel resolution);
+  // 'qr_form' is the older generic fallback for an untracked shared link.
+  const _srcLabel=(row.source&&row.source!=='qr_form')?row.source:'intake form';
+  showToast('New lead from '+_srcLabel+', tap to review','🆕');
   if(document.querySelector('.pg.active')?.id==='pg-leads')renderLeadsPage();
 }
 function _updateInboundBadge(){
@@ -6596,10 +6600,15 @@ function _inboundReviewHTML(){
 }
 async function _promoteInbound(id){
   const row=_pendingInbound.find(x=>x.id===id);if(!row)return;
-  // Create client record
-  const newClient={id:Date.now(),name:row.name||'Unknown',phone:row.phone||'',email:'',addr:row.addr||'',ptype:'Single family home',source:'QR form',ref:'',notes:row.notes||'',created:todayKey(),createdAt:new Date().toISOString(),extraAddresses:[],clientToken:'',clientHubKey:''};
+  // Create client record. partyType defaults to 'homeowner': every QR
+  // placement this feeds (yard sign, truck wrap, business card) is
+  // consumer-facing physical marketing, a GC/builder relationship doesn't
+  // form by scanning a code off someone's driveway. One-tap fixable on the
+  // client record if a promotion ever is the rare exception.
+  const newClient={id:Date.now(),name:row.name||'Unknown',phone:row.phone||'',email:'',addr:row.addr||'',ptype:'Single family home',partyType:'homeowner',source:(row.source&&row.source!=='qr_form')?row.source:'QR form',ref:'',notes:row.notes||'',created:todayKey(),createdAt:new Date().toISOString(),extraAddresses:[],clientToken:'',clientHubKey:''};
   clients.push(newClient);_ensureClientToken(newClient.id);
   saveAll();
+  if(typeof logLifecycle==='function')logLifecycle('lead_created',{clientId:newClient.id,meta:{source:newClient.source}});
   // Mark inbound as applied
   _pendingInbound=_pendingInbound.filter(x=>x.id!==id);
   _updateInboundBadge();

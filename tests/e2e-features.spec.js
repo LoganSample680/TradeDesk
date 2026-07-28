@@ -1983,6 +1983,169 @@ test.describe('intake.html: lead capture form', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  INTAKE.HTML: QR LEAD TRACKING (?src=<code> from functions/q/[[code]].js)
+// ════════════════════════════════════════════════════════════════════════════
+
+test.describe('intake.html: QR lead tracking', () => {
+  let page;
+  const FAKE_ACCOUNT_ID = 'acct-e2e-0001';
+  const QR_CODE = 'testcode1';
+  const QR_LABEL = 'Yard sign - 123 Main St';
+  let leadInsertPayload = null;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+
+    await page.route('**/*', async (route) => {
+      const url = route.request().url();
+      const method = route.request().method();
+
+      if (url.startsWith('http://localhost')) return route.continue();
+      if (url.startsWith('data:'))           return route.continue();
+      if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: _supabaseShimIntake() });
+      }
+      if (url.includes('fonts.googleapis') || url.includes('fonts.gstatic')) {
+        return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+      }
+      if (url.includes('favicon') || url.includes('js.stripe') || url.includes('apple-mapkit')) {
+        return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+      }
+      if (url.includes('/rest/v1/accounts') || (url.includes('.supabase.co') && url.includes('accounts') && method === 'GET')) {
+        return route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify([{ id: FAKE_ACCOUNT_ID, business_name: 'E2E Pro Painting', phone: '316-555-1234', logo_data: null, brand_color: '#2D5DA8' }]),
+        });
+      }
+      // qr_sources lookup: the code in this test's URL resolves to a real label.
+      if (url.includes('/rest/v1/qr_sources')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ label: QR_LABEL }]) });
+      }
+      if (url.includes('/rest/v1/inbound_leads') || url.includes('inbound_leads')) {
+        try { leadInsertPayload = JSON.parse(route.request().postData() || '{}'); } catch(_) {}
+        return route.fulfill({ status: 201, contentType: 'application/json', body: '[{}]' });
+      }
+      // sendBeacon target for the field_dropoff event — never asserted on here
+      // (unload timing is unreliable to test deterministically), just must not 404.
+      if (url.includes('log-qr-event')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      }
+      if (url.includes('.supabase.co')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      }
+      return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+    });
+
+    page._consoleErrors = [];
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        const t = msg.text();
+        if (t.includes('favicon') || t.includes('net::ERR') || t.includes('ERR_CONNECTION') ||
+            t.includes('Failed to load resource') || t.includes('checkNew') ||
+            t.includes('apple-mapkit') || t.includes('cdn.apple') || t.includes('js.stripe') ||
+            t.includes('cdn.jsdelivr')) return;
+        page._consoleErrors.push(t);
+      }
+    });
+    page.on('pageerror', err => {
+      const msg = err.message || '';
+      if (msg.includes('_intakeInitMapKit')) return;
+      if (page._consoleErrors) page._consoleErrors.push('PAGE ERROR: ' + msg);
+    });
+
+    await page.goto(`/intake.html?a=${FAKE_ACCOUNT_ID}&src=${QR_CODE}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(2500);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('intake.html+QR: resolves the code to its human label, not the raw code', async () => {
+    const label = await page.evaluate(() => window._qrLabel);
+    expect(label).toBe(QR_LABEL);
+  });
+
+  test('intake.html+QR: submitting tags the lead with the resolved label, not "qr_form"', async () => {
+    leadInsertPayload = null;
+    await page.evaluate(async () => {
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      set('f-name', 'QR Test Lead');
+      set('f-phone', '316-555-8888');
+      set('f-street', '123 Main St');
+      set('f-city', 'Wichita');
+      set('f-state', 'KS');
+      set('f-zip', '67202');
+      if (typeof submitForm === 'function') { try { await submitForm(); } catch(e) {} }
+    });
+    await page.waitForTimeout(500);
+    expect(leadInsertPayload).toBeTruthy();
+    expect(leadInsertPayload.source).toBe(QR_LABEL);
+  });
+
+  test('intake.html+QR: _qrTrackField records the furthest field with a value', async () => {
+    const result = await page.evaluate(() => {
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      ['f-name','f-phone','f-street','f-notes'].forEach(id => set(id, ''));
+      window._furthestField = '';
+      set('f-name', 'Someone');
+      _qrTrackField();
+      const afterName = window._furthestField;
+      set('f-phone', '316-555-0000');
+      _qrTrackField();
+      const afterPhone = window._furthestField;
+      // Clearing a later field falls back to the furthest one still filled,
+      // not just "the last field touched" — matches _qrTrackField's own
+      // highest-index-with-a-value scan, not a running pointer.
+      set('f-phone', '');
+      _qrTrackField();
+      const afterClearingPhone = window._furthestField;
+      return { afterName, afterPhone, afterClearingPhone };
+    });
+    expect(result.afterName).toBe('f-name');
+    expect(result.afterPhone).toBe('f-phone');
+    expect(result.afterClearingPhone).toBe('f-name');
+  });
+
+  test('intake.html+QR: no ?src= means no QR lookup, falls back to legacy qr_form source', async () => {
+    // Independent page: no src param at all.
+    const ctx2 = await page.context().browser().newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    const page2 = await ctx2.newPage();
+    let payload = null;
+    await page2.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (url.startsWith('http://localhost') || url.startsWith('data:')) return route.continue();
+      if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: _supabaseShimIntake() });
+      }
+      if (url.includes('/rest/v1/accounts')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: FAKE_ACCOUNT_ID, business_name: 'E2E Pro Painting', phone: '316-555-1234' }]) });
+      }
+      if (url.includes('/rest/v1/inbound_leads')) {
+        try { payload = JSON.parse(route.request().postData() || '{}'); } catch(_) {}
+        return route.fulfill({ status: 201, contentType: 'application/json', body: '[{}]' });
+      }
+      return route.fulfill({ status: 200, contentType: url.includes('.supabase.co') ? 'application/json' : 'text/plain', body: url.includes('.supabase.co') ? '[]' : '' });
+    });
+    await page2.goto(`/intake.html?a=${FAKE_ACCOUNT_ID}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page2.waitForTimeout(1500);
+    await page2.evaluate(async () => {
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      set('f-name', 'Plain Link Lead'); set('f-phone', '316-555-7777');
+      set('f-street', '5 Elm St'); set('f-city', 'Wichita');
+      if (typeof submitForm === 'function') { try { await submitForm(); } catch(e) {} }
+    });
+    await page2.waitForTimeout(500);
+    expect(payload).toBeTruthy();
+    expect(payload.source).toBe('qr_form');
+    await ctx2.close();
+  });
+
+  test('intake.html+QR: zero console errors', async () => {
+    assertNoErrors(page, 'intake.html+QR');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  MILEAGE TRIP LOGGING
 // ════════════════════════════════════════════════════════════════════════════
 

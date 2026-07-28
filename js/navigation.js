@@ -73,6 +73,7 @@ function goPg(id){
   if(id==='pg-timelog')renderTimeLog();
   if(id==='pg-checklist')renderChecklist();
   if(id==='pg-leads')renderLeadsPage();
+  if(id==='pg-qr-leads'){renderQrLeadsPage();_qrLoadSources();}
   if(id==='pg-jobs')renderJobsPage();
   if(id==='pg-proposals')renderProposalsPage();
   if(id==='pg-money')renderMoneyPage();
