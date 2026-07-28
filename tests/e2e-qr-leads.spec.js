@@ -21,6 +21,11 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
 
   const qrReset = () => page.evaluate(() => {
     window._supaUser = { id: 'qr-e2e-user-1', email: 'q@t.com' };
+    // _account is a bare `let` (data.js), not bridged like _supaUser/_supa —
+    // must be set as the bare identifier, not window._account, or it silently
+    // stays null. qr_sources.account_id needs accounts.id (_account.id), a
+    // different uuid from the auth user's own id above.
+    _account = { id: 'acct-e2e-0001' };
     window.__rec = { inserts: [], deletes: [] };
     window.__qrSourcesData = [];
     window.__qrEventsData = [];
@@ -83,6 +88,43 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
     await qrRestore();
   });
 
+  // Regression guard (root cause, CLAUDE.md §10.1): account_id is a FK to
+  // accounts(id), a separate gen_random_uuid() from the signed-in auth user's
+  // own id. _qrCreateSource/_qrLoadSources previously used _effectiveUid()
+  // (the auth user id) for account_id, which the RLS insert policy silently
+  // rejects in production (accounts.id != owner_id/auth.uid()) — invisible to
+  // offline tests because they fully mock the insert and never hit real RLS.
+  // Locks in that account_id is sourced from _account.id, not the auth user id.
+  test('_qrCreateSource: uses accounts.id (_account.id) for account_id, not the auth user\'s own id', async () => {
+    await qrReset();
+    await page.evaluate(() => {
+      _account = { id: 'acct-real-account-row-id' };
+      _supaUser = { id: 'auth-user-id-should-not-be-used', email: 'q@t.com' };
+      renderQrLeadsPage();
+      document.getElementById('qr-new-label').value = 'Truck wrap - regression check';
+    });
+    await page.evaluate(() => _qrCreateSource());
+    await page.waitForTimeout(50);
+    const row = await page.evaluate(() => window.__rec.inserts.find(i => i.tbl === 'qr_sources')?.row);
+    expect(row.account_id).toBe('acct-real-account-row-id');
+    expect(row.account_id).not.toBe('auth-user-id-should-not-be-used');
+    await qrRestore();
+  });
+
+  test('_qrCreateSource: _account not yet loaded, does not insert with a bad account_id', async () => {
+    await qrReset();
+    await page.evaluate(() => {
+      _account = null;
+      renderQrLeadsPage();
+      document.getElementById('qr-new-label').value = 'Should not insert';
+    });
+    await page.evaluate(() => _qrCreateSource());
+    await page.waitForTimeout(50);
+    const inserted = await page.evaluate(() => window.__rec.inserts.some(i => i.tbl === 'qr_sources'));
+    expect(inserted).toBe(false);
+    await qrRestore();
+  });
+
   test('_qrDeleteSource: removes the row and reloads the list', async () => {
     await qrReset();
     await page.evaluate(() => {
@@ -115,6 +157,93 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
     expect(html).toContain('>7<');
     expect(html).toContain('>4<');
     expect(html).toContain('>2<');
+    await qrRestore();
+  });
+
+  test('renderQrLeadsPage: download buttons put SVG (the one used for print) on the right, PNG on the left', async () => {
+    await qrReset();
+    await page.evaluate(() => {
+      _qrSources = [{ id: 'src-btn', label: 'Business cards', category: 'Business card', code: 'btncode01' }];
+      _qrEventCounts = {};
+      renderQrLeadsPage();
+    });
+    const order = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('#qr-leads-list button')].filter(b => /Download/.test(b.textContent));
+      return btns.map(b => b.textContent.trim());
+    });
+    expect(order).toEqual(['Download PNG', 'Download SVG (print)']);
+    await qrRestore();
+  });
+
+  test('renderQrLeadsPage: no marketing spend logged yet, shows the "log cost" nudge, not a $0 ROI', async () => {
+    await qrReset();
+    await page.evaluate(() => {
+      expenses = [];
+      _qrSources = [{ id: 'src-nospend', label: 'Door hangers - north side', category: 'Door hanger', code: 'nospend01' }];
+      _qrEventCounts = { 'src-nospend': { scan: 5, form_opened: 2, submitted: 1 } };
+      renderQrLeadsPage();
+    });
+    const html = await page.evaluate(() => document.getElementById('qr-leads-list').innerHTML);
+    expect(html).toContain('Log what this cost, see ROI');
+    expect(html).not.toContain('per lead');
+    await qrRestore();
+  });
+
+  test('renderQrLeadsPage: sums marketing expenses tagged with this source\'s label into spent + cost-per-lead', async () => {
+    await qrReset();
+    await page.evaluate(() => {
+      expenses = [
+        { id: 1, cat: 'marketing', lead_source: 'Truck wrap - Ford F150', amount: 120 },
+        { id: 2, cat: 'marketing', lead_source: 'Truck wrap - Ford F150', amount: 60 },
+        { id: 3, cat: 'marketing', lead_source: 'Some other source', amount: 999 }, // must NOT be counted
+        { id: 4, cat: 'materials', lead_source: 'Truck wrap - Ford F150', amount: 500 }, // wrong cat, must NOT be counted
+      ];
+      _qrSources = [{ id: 'src-spend', label: 'Truck wrap - Ford F150', category: 'Vehicle / truck wrap', code: 'spend0001' }];
+      _qrEventCounts = { 'src-spend': { scan: 40, form_opened: 20, submitted: 9 } };
+      renderQrLeadsPage();
+    });
+    const html = await page.evaluate(() => document.getElementById('qr-leads-list').innerHTML);
+    expect(html).toContain('$180.00'); // 120 + 60, the other rows excluded
+    expect(html).toContain('$20.00'); // 180 / 9 leads
+    expect(html).toContain('per lead');
+    await qrRestore();
+  });
+
+  test('_qrLogCost: opens the expense flow pre-set to Marketing with this source\'s label as the channel', async () => {
+    await qrReset();
+    const result = await page.evaluate(() => {
+      document.getElementById('expense-modal')?.remove();
+      expenses = [];
+      _qrSources = [{ id: 'src-cost', label: 'Yard sign - job sites', category: 'Yard sign', code: 'costcode1' }];
+      _qrEventCounts = { 'src-cost': { scan: 14, form_opened: 6, submitted: 2 } };
+      renderQrLeadsPage();
+      _qrLogCost('src-cost');
+      return {
+        modalOpen: !!document.getElementById('expense-modal'),
+        cat: document.getElementById('em-cat')?.value,
+        mktVisible: document.getElementById('em-marketing-section')?.style.display,
+        src: document.getElementById('em-mkt-source')?.value,
+        vendor: document.getElementById('em-vendor')?.value,
+      };
+    });
+    expect(result.modalOpen).toBe(true);
+    expect(result.cat).toBe('marketing');
+    expect(result.mktVisible).toBe('block');
+    expect(result.src).toBe('Yard sign - job sites');
+    expect(result.vendor).toBe('Yard sign - job sites');
+    await page.evaluate(() => document.getElementById('expense-modal')?.remove());
+    await qrRestore();
+  });
+
+  test('_qrLogCost: unknown source id, does not throw or open the modal', async () => {
+    await qrReset();
+    const threw = await page.evaluate(() => {
+      document.getElementById('expense-modal')?.remove();
+      try { _qrLogCost('does-not-exist'); return false; } catch (e) { return true; }
+    });
+    expect(threw).toBe(false);
+    const modalOpen = await page.evaluate(() => !!document.getElementById('expense-modal'));
+    expect(modalOpen).toBe(false);
     await qrRestore();
   });
 
