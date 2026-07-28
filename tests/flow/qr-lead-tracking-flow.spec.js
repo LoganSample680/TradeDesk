@@ -46,14 +46,18 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
     // to main (deploy-functions.yml), so a brand-new table/function from an
     // unmerged PR is legitimately absent here — soft-skip rather than fail,
     // same pattern as open-tracking-flow.spec.js's proposal_views probe.
+    // ANY error here (not a specific message/code match — a first pass at that
+    // missed PostgREST's actual schema-cache-miss shape, PGRST205, which lives
+    // in error.code, not error.message) means treat it as unreachable and skip;
+    // there's no scenario where an unexpected error here should hard-fail the
+    // whole flow instead of skipping cleanly.
     const schemaProbe = await page.evaluate(async () => {
       try {
         const { error } = await _supa.from('qr_sources').select('id').limit(1);
-        if (error && (/does not exist|relation|PGRST/i.test(error.message || '') || error.code === '42P01')) return { reachable: false };
-        return { reachable: true };
-      } catch (e) { return { reachable: false }; }
+        return { reachable: !error, errInfo: error ? JSON.stringify(error) : null };
+      } catch (e) { return { reachable: false, errInfo: 'threw: ' + e.message }; }
     });
-    test.skip(!schemaProbe.reachable, 'qr_sources/qr_events not yet migrated onto the Dev Supabase project — pushes on merge to main, this flow test goes live then');
+    test.skip(!schemaProbe.reachable, 'qr_sources/qr_events not yet migrated onto the Dev Supabase project — pushes on merge to main, this flow test goes live then. ' + (schemaProbe.errInfo || ''));
 
     const qrLabel = `E2E QR Truck Wrap ${process.pid}`;
     const leadName = `E2E QR Lead ${process.pid}`;
