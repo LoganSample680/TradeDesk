@@ -204,8 +204,18 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
         await p.waitForFunction((id) => {
           return typeof _pendingInbound !== 'undefined' && _pendingInbound.some(r => r.id === id);
         }, leadRow.id, { timeout: 15000 }).catch(() => {});
-        await p.evaluate(() => { if (document.querySelector('.pg.active')?.id !== 'pg-leads') renderLeadsPage(); });
-        return await tap(p, `button[onclick="_promoteInbound('${leadRow.id}')"]`);
+        // Physically navigate to the Leads page (real thumb, §12.6) — a first
+        // version of this step rendered into the hidden #pg-leads without
+        // navigating, so the promote button existed at zero size and could
+        // never be tapped (the click diag that exposed the account_id bug).
+        let n = 0;
+        const leadsNav = await p.evaluate(() =>
+          (document.getElementById('mtb-leads')?.offsetWidth > 0) ? '#mtb-leads' : '#nb-leads');
+        n += await tap(p, leadsNav);
+        await p.waitForSelector('#pg-leads.active', { state: 'attached', timeout: 8000 });
+        await p.waitForSelector(`button[onclick="_promoteInbound('${leadRow.id}')"]`, { timeout: 10000 });
+        n += await tap(p, `button[onclick="_promoteInbound('${leadRow.id}')"]`);
+        return n;
       },
       rule: async (p) => {
         const found = await p.evaluate(async (name) => {
