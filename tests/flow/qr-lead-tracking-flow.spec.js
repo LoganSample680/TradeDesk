@@ -25,7 +25,7 @@
 // Seed data (the QR source, its lead, the client, the expense) is left in
 // the account per CLAUDE.md §12.7 — nothing here tears down.
 const { test, expect } = require('./flow-test');
-const { needsLiveCreds, signIn, step, report, resetLedger, scopeBypassHeader, tap, type, pick, cloudRows } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, scopeBypassHeader, tap, type, pick, scrollBy, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'qr-leads/scan-to-labeled-lead';
@@ -87,13 +87,13 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
           (document.getElementById('mtb-leads')?.offsetWidth > 0) ? '#mtb-leads' : '#nb-leads');
         n += await tap(p, leadsNav);
         await p.waitForSelector('#pg-leads.active', { state: 'attached', timeout: 8000 });
-        n += await tap(p, '#pg-leads .tbar-r button:has-text("Get leads")');
+        n += await tap(p, '#pg-leads .tbar-r button[onclick="openIntakeFormModal()"]');
         await p.waitForSelector('.zmodal-overlay', { state: 'visible', timeout: 8000 });
-        n += await tap(p, '.zmodal-overlay button:has-text("Get QR codes")');
+        n += await tap(p, '.zmodal-overlay button[onclick*="pg-qr-leads"]');
         await p.waitForSelector('#pg-qr-leads.active', { state: 'attached', timeout: 8000 });
         n += await type(p, '#qr-new-label', qrLabel);
         n += await pick(p, '#qr-new-cat', 'Vehicle / truck wrap');
-        n += await tap(p, '#pg-qr-leads button:has-text("Create")');
+        n += await tap(p, '#pg-qr-leads button[onclick="_qrCreateSource()"]');
         return n;
       },
       rule: async (p) => {
@@ -241,14 +241,23 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
       expected: `td_expenses has a marketing expense, lead_source="${qrLabel}", amount=${costAmount}`,
       act: async (p) => {
         let n = 0;
+        // The promote step ends on the new client's detail page (product
+        // behavior: _promoteInbound does goPg('pg-client-detail')), possibly
+        // scrolled. Navigate back like a real thumb, then flick to the top —
+        // without it the "Get leads" tbar button sits under the fixed
+        // #mobile-topbar and the tap gets intercepted (seen on the runner).
         const leadsNav = await p.evaluate(() =>
           (document.getElementById('mtb-leads')?.offsetWidth > 0) ? '#mtb-leads' : '#nb-leads');
         n += await tap(p, leadsNav);
         await p.waitForSelector('#pg-leads.active', { state: 'attached', timeout: 8000 });
-        n += await tap(p, '#pg-leads .tbar-r button:has-text("Get leads")');
+        n += await scrollBy(p, -8000);
+        await p.waitForTimeout(300);
+        n += await tap(p, '#pg-leads .tbar-r button[onclick="openIntakeFormModal()"]');
         await p.waitForSelector('.zmodal-overlay', { state: 'visible', timeout: 8000 });
-        n += await tap(p, '.zmodal-overlay button:has-text("Get QR codes")');
+        n += await tap(p, '.zmodal-overlay button[onclick*="pg-qr-leads"]');
         await p.waitForSelector('#pg-qr-leads.active', { state: 'attached', timeout: 8000 });
+        n += await scrollBy(p, -8000);
+        await p.waitForTimeout(300);
         await p.evaluate(() => _qrLoadSources());
         await p.waitForSelector(`button[onclick="_qrLogCost('${sourceId}')"]`, { timeout: 10000 });
         n += await tap(p, `button[onclick="_qrLogCost('${sourceId}')"]`);
