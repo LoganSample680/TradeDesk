@@ -68,9 +68,14 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
     });
     test.skip(!schemaProbe.reachable, 'qr_sources/qr_events not yet migrated onto the Dev Supabase project — pushes on merge to main, this flow test goes live then. ' + (schemaProbe.errInfo || ''));
 
-    const qrLabel = `E2E QR Truck Wrap ${process.pid}`;
-    const leadName = `E2E QR Lead ${process.pid}`;
-    const leadPhone = '3165551' + String(process.pid % 1000).padStart(3, '0');
+    // Fixed-width run id: the label and lead name are TYPED key-by-key, so
+    // their lengths feed the click ledger. A raw pid's digit count varies
+    // (6 vs 7 on linux), which would wobble the total and flake the hard
+    // click gate. Six chars always, uniqueness per run preserved.
+    const runId = String(process.pid).slice(-6).padStart(6, '0');
+    const qrLabel = `E2E QR Truck Wrap ${runId}`;
+    const leadName = `E2E QR Lead ${runId}`;
+    const leadPhone = '3165551' + runId.slice(-3);
     let sourceId = null, sourceCode = null;
 
     // ── Contractor creates a QR source: real taps, the actual owner journey ──

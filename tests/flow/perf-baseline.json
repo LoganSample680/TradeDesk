@@ -7,5 +7,9 @@
   "lifecycle/lead-to-paid-byo": {
     "clicks": 189,
     "note": "Whole-business floor, BYO variant (2026-07-14 capture). 2026-07-21 +2 (upper bound) for the new REQUIRED 'Who is this?' party-type pick; re-tighten on next live capture. The 90-click estimate step is the standing streamline target (templates/price-book)."
+  },
+  "qr-leads/scan-to-labeled-lead": {
+    "clicks": 132,
+    "note": "Captured 2026-07-29 on the self-hosted runner (chromium, 6-digit run id, now pinned fixed-width so typed lengths are deterministic): create source 29 + anon scan/form submit 89 + event/label verify 0 + promote 2 + log cost 12. Raise ONLY for a deliberate new step, same commit."
   }
 }
