@@ -15,6 +15,26 @@
 let _qrSources=[];
 let _qrEventCounts={}; // qr_source_id -> {scan,form_opened,submitted}
 
+// Whether this account has ever created a QR source, cached so the dashboard
+// setup checklist (js/dashboard.js _renderDashSetupTodo) can read it
+// synchronously on the first render instead of flashing "not done" until
+// _qrLoadSources's network round-trip lands (same pattern as the Stripe
+// status cache priming in that same function).
+function _qrSourceCacheKey(){
+  const uid=(typeof _effectiveUid==='function'&&_effectiveUid())||(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id)||'';
+  return uid?'td_qr_has_source_'+uid:null;
+}
+// Returns true/false from cache, or null if never cached yet (boot's cue to
+// fetch once and correct it — see js/cloud.js's post-load setTimeout).
+function _qrHasSourceCached(){
+  const key=_qrSourceCacheKey();if(!key)return null;
+  try{const v=localStorage.getItem(key);return v===null?null:v==='1';}catch(e){return null;}
+}
+function _qrSetSourceCache(has){
+  const key=_qrSourceCacheKey();if(!key)return;
+  try{localStorage.setItem(key,has?'1':'0');}catch(e){}
+}
+
 function _qrGenCode(){
   // Lowercase base36, 10 chars — matches functions/q/[[code]].js's
   // ^[a-z0-9]{6,16}$ validation. crypto.getRandomValues, not Math.random:
@@ -50,6 +70,12 @@ async function _qrLoadSources(){
     }
   }catch(e){_qrSources=[];_qrEventCounts={};}
   renderQrLeadsPage();
+  const hadCache=_qrHasSourceCached();
+  _qrSetSourceCache(_qrSources.length>0);
+  // Only bother re-rendering the checklist if this call changed what it
+  // would show (first-ever load, or a create/delete flipped the count),
+  // not on every routine page revisit.
+  if(hadCache!==( _qrSources.length>0)&&typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();
 }
 
 const QR_CATEGORIES=['Yard sign','Vehicle / truck wrap','Business card','Door hanger','Flyer','Other'];

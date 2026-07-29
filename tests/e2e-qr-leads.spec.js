@@ -137,6 +137,54 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
     await qrRestore();
   });
 
+  test('_qrHasSourceCached / _qrSetSourceCache: null before ever cached, then reflects what was set', async () => {
+    await qrReset();
+    const result = await page.evaluate(() => {
+      try { localStorage.removeItem('td_qr_has_source_qr-e2e-user-1'); } catch (e) {}
+      const beforeAny = _qrHasSourceCached();
+      _qrSetSourceCache(true);
+      const afterTrue = _qrHasSourceCached();
+      _qrSetSourceCache(false);
+      const afterFalse = _qrHasSourceCached();
+      localStorage.removeItem('td_qr_has_source_qr-e2e-user-1');
+      return { beforeAny, afterTrue, afterFalse };
+    });
+    expect(result.beforeAny, 'never cached → null (the boot self-heal cue), not false').toBeNull();
+    expect(result.afterTrue).toBe(true);
+    expect(result.afterFalse).toBe(false);
+    await qrRestore();
+  });
+
+  test('_qrLoadSources: writes the has-source cache and re-renders the dashboard checklist only when the flag actually changes', async () => {
+    await qrReset();
+    const result = await page.evaluate(async () => {
+      try { localStorage.removeItem('td_qr_has_source_qr-e2e-user-1'); } catch (e) {}
+      let renderCalls = 0;
+      const _origRender = window._renderDashSetupTodo;
+      window._renderDashSetupTodo = () => { renderCalls++; };
+      // First load: zero sources, cache goes null -> false. That's a change (null !== false), so it must re-render.
+      window.__qrSourcesData = [];
+      await _qrLoadSources();
+      const afterEmpty = { cached: _qrHasSourceCached(), renderCalls };
+      // Second load: still zero sources, false -> false, no change, must NOT re-render again.
+      await _qrLoadSources();
+      const afterEmptyAgain = { cached: _qrHasSourceCached(), renderCalls };
+      // Third load: a source now exists, false -> true, a real change, must re-render.
+      window.__qrSourcesData = [{ id: 'src-cache-1', label: 'Cache Test', category: 'Other', code: 'cachetest1' }];
+      await _qrLoadSources();
+      const afterCreated = { cached: _qrHasSourceCached(), renderCalls };
+      window._renderDashSetupTodo = _origRender;
+      localStorage.removeItem('td_qr_has_source_qr-e2e-user-1');
+      return { afterEmpty, afterEmptyAgain, afterCreated };
+    });
+    expect(result.afterEmpty.cached).toBe(false);
+    expect(result.afterEmpty.renderCalls, 'null -> false is a change, re-renders once').toBe(1);
+    expect(result.afterEmptyAgain.renderCalls, 'false -> false is not a change, no extra re-render').toBe(1);
+    expect(result.afterCreated.cached).toBe(true);
+    expect(result.afterCreated.renderCalls, 'false -> true is a change, re-renders again').toBe(2);
+    await qrRestore();
+  });
+
   test('renderQrLeadsPage: shows the empty state with zero sources', async () => {
     await qrReset();
     await page.evaluate(() => { _qrSources = []; _qrEventCounts = {}; renderQrLeadsPage(); });

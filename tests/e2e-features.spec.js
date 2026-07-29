@@ -1358,17 +1358,22 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      const _origQrCache = window._qrHasSourceCached;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
       S.vehicles = []; S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      window._qrHasSourceCached = () => false; // fresh account: no QR code created yet
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
+      const qrRow = card ? [...card.querySelectorAll('.td-setup-row')].find(r => /first QR code/i.test(r.textContent)) : null;
       const out = {
         cardShown: card && card.style.display !== 'none',
         hasVehicleItem: !!(card && /add your vehicles/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
         hasGetPaidItem: !!(card && /card payments/i.test(card.textContent)),
         hasLogoItem: !!(card && /add your logo/i.test(card.textContent)),
         hasTeamItem: !!(card && /add your crew/i.test(card.textContent) && /_setupTodoGo\('team'\)/.test(card.innerHTML)),
+        hasQrItem: !!(qrRow && /_setupTodoGo\('qrcode'\)/.test(qrRow.innerHTML)),
+        qrNotSkippable: !!(qrRow && !/Skip for now/.test(qrRow.innerHTML)),
         hasSkip: !!(card && /Skip for now/.test(card.innerHTML)),
         // Endowed progress: shrinking count + a bar that starts above zero.
         hasCount: !!(card && /left/i.test(card.textContent)),
@@ -1376,6 +1381,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
         driveGrayed: !!(drive && drive.style.pointerEvents === 'none' && parseFloat(drive.style.opacity) < 1),
       };
       S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      window._qrHasSourceCached = _origQrCache;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
@@ -1385,18 +1391,22 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     expect(r.hasGetPaidItem, 'Set-up-payments item present').toBe(true);
     expect(r.hasLogoItem, 'Add-logo item present').toBe(true);
     expect(r.hasTeamItem, 'Add-crew item present + wired to the chooser').toBe(true);
-    expect(r.hasSkip, 'each item is skippable').toBe(true);
+    expect(r.hasQrItem, 'Create-your-first-QR-code item present + wired').toBe(true);
+    expect(r.qrNotSkippable, 'the QR item has no "Skip for now" (owner call: not skippable)').toBe(true);
+    expect(r.hasSkip, 'the other (optional) items are still skippable').toBe(true);
     expect(r.hasCount, 'shrinking "N left" count present').toBe(true);
     expect(r.hasProgress, 'endowed-progress "X of Y done" present').toBe(true);
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
   });
 
-  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up) has the smooth-transition class', async () => {
+  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up, Create) has the smooth-transition class', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      const _origQrCache = window._qrHasSourceCached;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
       S.vehicles = []; S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      window._qrHasSourceCached = () => false;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
@@ -1407,12 +1417,13 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
         hasTransition: !!(cs && cs.transitionDuration && cs.transitionDuration !== '0s'),
       };
       S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      window._qrHasSourceCached = _origQrCache;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
     if (r.skip) return;
-    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 4 CTAs').toBe(4);
-    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up all carry the transition class').toBe(true);
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 5 CTAs (4 optional + QR)').toBe(5);
+    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up / Create all carry the transition class').toBe(true);
     expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
   });
 
@@ -1448,10 +1459,14 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
+      const _origQrCache = window._qrHasSourceCached;
       window.saveAll = () => {};
-      // Vehicle added (done); the two optional items skipped → nothing left.
+      // Vehicle added (done); the two optional items skipped; QR marked done via
+      // its cache (it can't be skipped, so "everything clear" requires done:true,
+      // not skipped) → nothing left.
       S.vehicles = [{ id: 1, name: '2019 F-150' }]; S.vehiclesTs = Date.now();
       S.setupSkipped = ['getpaid', 'logo', 'team']; S.setupDone = false;
+      window._qrHasSourceCached = () => true;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
@@ -1462,6 +1477,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       _renderDashSetupTodo();
       const hiddenAfterDismiss = !!(card && card.style.display === 'none');
       window.saveAll = _origSave;
+      window._qrHasSourceCached = _origQrCache;
       S.vehicles = _saved; S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.setupDone = _savedDone;
       _renderDashSetupTodo();
       return { doneStateShown, driveEnabled, hiddenAfterDismiss };
@@ -1492,6 +1508,40 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     if (r.skip) return;
     expect(r.after, 'one fewer row after skipping').toBe(r.before - 1);
     expect(r.logoGone, 'skipped item is gone').toBe(true);
+  });
+
+  test('_skipSetupTodo("qrcode"): no-op — the QR item cannot be skipped even if called directly', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _skipSetupTodo !== 'function') return { skip: true };
+      const _savedSkip = S.setupSkipped, _origSave = window.saveAll;
+      window.saveAll = () => {};
+      S.setupSkipped = [];
+      _skipSetupTodo('qrcode');
+      const out = { skippedList: [...S.setupSkipped] };
+      window.saveAll = _origSave;
+      S.setupSkipped = _savedSkip;
+      return out;
+    });
+    if (r.skip) return;
+    expect(r.skippedList, 'qrcode never lands in setupSkipped, no matter how it\'s invoked').not.toContain('qrcode');
+  });
+
+  test('_setupTodoGo("qrcode"): navigates to the QR codes page and focuses the label field', async () => {
+    const r = await page.evaluate(() => new Promise((resolve) => {
+      if (typeof _setupTodoGo !== 'function') return resolve({ skip: true });
+      goPg('pg-dash');
+      _setupTodoGo('qrcode');
+      setTimeout(() => {
+        resolve({
+          onQrPage: document.getElementById('pg-qr-leads')?.classList.contains('active'),
+          labelFocused: document.activeElement?.id === 'qr-new-label',
+        });
+        goPg('pg-dash');
+      }, 250);
+    }));
+    if (r.skip) return;
+    expect(r.onQrPage, 'lands on pg-qr-leads').toBe(true);
+    expect(r.labelFocused, 'focuses the new-source label input, ready to type').toBe(true);
   });
 
   test('quickAction("drive"): no vehicle: guarded, does not open the drive modal', async () => {

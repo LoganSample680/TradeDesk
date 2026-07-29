@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.28.26.18';
+const APP_VERSION='07.28.26.19';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -6043,6 +6043,11 @@ async function supaLoadFromCloud({silent=false}={}){
       // treats unknown-Stripe as handled (no flash), so a contractor who actually
       // needs to connect only sees "Turn on card payments" appear here, cleanly.
       setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().then(()=>{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}).catch(()=>{});},500);
+      // Same self-heal for the QR-code checklist item: an account that already had
+      // sources before this item shipped has no local cache yet, so pull the real
+      // count once per boot and correct the card (covers new accounts too, since
+      // _qrLoadSources writes the cache the first time it ever runs for them).
+      setTimeout(()=>{if(typeof _qrHasSourceCached==='function'&&_qrHasSourceCached()===null&&typeof _qrLoadSources==='function')_qrLoadSources().catch(()=>{});},650);
       _removeBootOverlay();goPg('pg-dash');
     }
 
