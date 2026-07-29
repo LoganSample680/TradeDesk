@@ -215,6 +215,13 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
         await p.waitForSelector('#pg-leads.active', { state: 'attached', timeout: 8000 });
         await p.waitForSelector(`button[onclick="_promoteInbound('${leadRow.id}')"]`, { timeout: 10000 });
         n += await tap(p, `button[onclick="_promoteInbound('${leadRow.id}')"]`);
+        // _promoteInbound pushes the client synchronously but its
+        // goPg('pg-client-detail') fires only AFTER an awaited inbound_leads
+        // status write. Without waiting for that deferred hop to land, the
+        // next step's Leads navigation gets yanked back to the client page
+        // mid-tap (diag: activePage=pg-client-detail during the tap). A real
+        // user watches this page open — the test should too.
+        await p.waitForSelector('#pg-client-detail.active', { state: 'attached', timeout: 15000 }).catch(() => {});
         return n;
       },
       rule: async (p) => {
