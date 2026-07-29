@@ -175,8 +175,21 @@ function _qrDownload(sourceId,format){
     const blob=new Blob([svg],{type:'image/svg+xml'});
     _qrTriggerDownload(URL.createObjectURL(blob),fname+'.svg');
   }else{
-    const dataUrl=qr.createDataURL(10,40);
-    _qrTriggerDownload(dataUrl,fname+'.png');
+    // qr.createDataURL() only ever encodes a GIF (this library has no PNG
+    // encoder) — handing that data:image/gif URI to a .png download gives
+    // the browser GIF bytes under a .png name, which is what rendered as a
+    // corrupt/glitched file for some recipients. Decode it through a canvas
+    // so the .png we actually hand out is PNG-encoded.
+    const gifDataUrl=qr.createDataURL(10,40);
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');
+      canvas.width=img.naturalWidth;canvas.height=img.naturalHeight;
+      canvas.getContext('2d').drawImage(img,0,0);
+      _qrTriggerDownload(canvas.toDataURL('image/png'),fname+'.png');
+    };
+    img.onerror=()=>{if(typeof showToast==='function')showToast('PNG render failed, try SVG instead','⚠️');};
+    img.src=gifDataUrl;
   }
 }
 function _qrTriggerDownload(href,filename){

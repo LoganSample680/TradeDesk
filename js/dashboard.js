@@ -2203,11 +2203,10 @@ function openIntakeFormModal(){
       '<div style="font-size:12px;color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(url)+'</div>'+
       '<button id="_intake-copy-btn" onclick="_copyIntakeUrl(\''+escHtml(url)+'\')" style="flex-shrink:0;padding:6px 12px;border-radius:6px;border:1px solid var(--border2);background:var(--bg2);font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text)">Copy</button>'+
     '</div>'+
-    '<div style="display:flex;gap:8px;margin-bottom:8px">'+
+    '<div style="display:flex;gap:8px">'+
       '<button onclick="window.open(\''+escHtml(url)+'\',\'_blank\')" class="btn btn-g" style="flex:1">Open form ↗</button>'+
       '<button onclick="this.closest(\'.zmodal-overlay\').remove()" class="btn" style="flex:1">Done</button>'+
     '</div>'+
-    '<button onclick="this.closest(\'.zmodal-overlay\').remove();if(typeof goPg===\'function\')goPg(\'pg-qr-leads\')" class="btn" style="width:100%;background:none;border:1px dashed var(--border2);color:var(--text2)">'+svgIcon('▦',{size:14})+' Get QR codes for trucks, signs, cards →</button>'+
   '</div>';
   document.body.appendChild(ov);
 }

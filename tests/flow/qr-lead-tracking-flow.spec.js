@@ -79,8 +79,10 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
     let sourceId = null, sourceCode = null;
 
     // ── Contractor creates a QR source: real taps, the actual owner journey ──
-    // (Leads -> "Get leads" -> "Get QR codes..." -> fill + Create), not a
-    // shortcut function call.
+    // (Leads -> "QR codes" -> fill + Create), not a shortcut function call.
+    // The direct tbar button replaced a buried link inside the "Get leads"
+    // share-link modal (owner feedback: it was two taps through an unrelated
+    // modal to reach a page that has nothing to do with sharing a link).
     await step(page, {
       label: 'contractor creates a QR source', page: 'pg-qr-leads', role: 'contractor',
       suspect: 'qr-leads.js _qrCreateSource',
@@ -92,9 +94,7 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
           (document.getElementById('mtb-leads')?.offsetWidth > 0) ? '#mtb-leads' : '#nb-leads');
         n += await tap(p, leadsNav);
         await p.waitForSelector('#pg-leads.active', { state: 'attached', timeout: 8000 });
-        n += await tap(p, '#pg-leads .tbar-r button[onclick="openIntakeFormModal()"]');
-        await p.waitForSelector('.zmodal-overlay', { state: 'visible', timeout: 8000 });
-        n += await tap(p, '.zmodal-overlay button[onclick*="pg-qr-leads"]');
+        n += await tap(p, `#pg-leads .tbar-r button[onclick="goPg('pg-qr-leads')"]`);
         await p.waitForSelector('#pg-qr-leads.active', { state: 'attached', timeout: 8000 });
         n += await type(p, '#qr-new-label', qrLabel);
         n += await pick(p, '#qr-new-cat', 'Vehicle / truck wrap');
@@ -256,7 +256,7 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
         // The promote step ends on the new client's detail page (product
         // behavior: _promoteInbound does goPg('pg-client-detail')), possibly
         // scrolled. Navigate back like a real thumb, then flick to the top —
-        // without it the "Get leads" tbar button sits under the fixed
+        // without it the "QR codes" tbar button sits under the fixed
         // #mobile-topbar and the tap gets intercepted (seen on the runner).
         const leadsNav = await p.evaluate(() =>
           (document.getElementById('mtb-leads')?.offsetWidth > 0) ? '#mtb-leads' : '#nb-leads');
@@ -264,9 +264,7 @@ test.describe('QR lead tracking: scan -> tracked form -> labeled lead -> ROI (UI
         await p.waitForSelector('#pg-leads.active', { state: 'attached', timeout: 8000 });
         n += await scrollBy(p, -8000);
         await p.waitForTimeout(300);
-        n += await tap(p, '#pg-leads .tbar-r button[onclick="openIntakeFormModal()"]');
-        await p.waitForSelector('.zmodal-overlay', { state: 'visible', timeout: 8000 });
-        n += await tap(p, '.zmodal-overlay button[onclick*="pg-qr-leads"]');
+        n += await tap(p, `#pg-leads .tbar-r button[onclick="goPg('pg-qr-leads')"]`);
         await p.waitForSelector('#pg-qr-leads.active', { state: 'attached', timeout: 8000 });
         n += await scrollBy(p, -8000);
         await p.waitForTimeout(300);

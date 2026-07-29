@@ -320,14 +320,49 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
     await page.evaluate(() => document.querySelectorAll('.zmodal-overlay').forEach(m => m.remove()));
   });
 
-  test('openIntakeFormModal: offers a path to the QR codes page', async () => {
+  // Regression: the QR codes page used to be reachable ONLY via a dashed link
+  // buried at the bottom of this unrelated share-link modal (owner feedback:
+  // even the builder couldn't find it). It's now a direct button on the Leads
+  // tbar (see next test), so the modal no longer needs its own path there.
+  test('openIntakeFormModal: no longer embeds a path to the QR codes page (moved to a direct Leads tbar button)', async () => {
     await page.evaluate(() => { document.querySelectorAll('.zmodal-overlay').forEach(m => m.remove()); openIntakeFormModal(); });
     const hasQrLink = await page.evaluate(() => {
       const overlay = document.querySelector('.zmodal-overlay');
       return overlay ? overlay.innerHTML.includes("pg-qr-leads") : false;
     });
-    expect(hasQrLink).toBe(true);
+    expect(hasQrLink).toBe(false);
     await page.evaluate(() => document.querySelectorAll('.zmodal-overlay').forEach(m => m.remove()));
+  });
+
+  test('Leads page: "QR codes" tbar button goes straight to pg-qr-leads, no modal in between', async () => {
+    await page.evaluate(() => goPg('pg-leads'));
+    const btn = page.locator('#pg-leads .tbar-r button', { hasText: 'QR codes' });
+    await expect(btn).toBeVisible();
+    await btn.click();
+    await page.waitForTimeout(50);
+    const active = await page.evaluate(() => document.getElementById('pg-qr-leads')?.classList.contains('active'));
+    expect(active).toBe(true);
+    const modalOpen = await page.evaluate(() => !!document.querySelector('.zmodal-overlay'));
+    expect(modalOpen).toBe(false);
+    await page.evaluate(() => goPg('pg-dash'));
+  });
+
+  test('_qrDownload: PNG format actually produces PNG-encoded bytes, not a GIF wearing a .png name', async () => {
+    await qrReset();
+    const capturedHref = await page.evaluate(() => new Promise((resolve) => {
+      _qrSources = [{ id: 'src-png-1', code: 'pngtest1', label: 'PNG Test Source', category: 'other', created_at: new Date().toISOString() }];
+      const origTrigger = window._qrTriggerDownload;
+      window._qrTriggerDownload = (href, filename) => { window._qrTriggerDownload = origTrigger; resolve({ href, filename }); };
+      _qrDownload('src-png-1', 'png');
+      setTimeout(() => resolve(null), 4000);
+    }));
+    expect(capturedHref).toBeTruthy();
+    expect(capturedHref.filename).toMatch(/\.png$/);
+    // The bug: createDataURL() only ever emits image/gif — a real fix means
+    // the bytes handed to the browser are actually PNG-encoded, matching the
+    // .png extension/label, not a GIF silently mislabeled.
+    expect(capturedHref.href).toMatch(/^data:image\/png/);
+    await qrRestore();
   });
 
   test('pg-qr-leads: goPg renders the page and triggers a source load', async () => {
