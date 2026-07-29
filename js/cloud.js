@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.28.26.10';
+const APP_VERSION='07.28.26.11';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -6520,8 +6520,17 @@ async function _loadPendingInbound(){
   // while the request is in flight, _supaUser changes out from under this await,
   // and the response (or its absence) must never be applied against the wrong account.
   const _forUser=_supaUser.id;
+  // inbound_leads.account_id is a FK to accounts(id) — what intake.html/the QR
+  // redirect stamp on every lead (their ?a= param IS accounts.id, resolved via
+  // account_public). Filtering by _supaUser.id (the auth uid, a DIFFERENT uuid)
+  // matched zero rows forever, so QR/intake leads landed in the DB but never
+  // surfaced in the app. Both ids stay in the filter: client.html's onboard form
+  // still writes the legacy auth-uid convention (pre-existing, tracked separately),
+  // so legacy rows keep matching wherever RLS permits them.
+  const _acctId=(typeof _account!=='undefined'&&_account&&_account.id)||null;
+  const _ids=[_forUser];if(_acctId&&_acctId!==_forUser)_ids.push(_acctId);
   try{
-    const{data}=await _supa.from('inbound_leads').select('*').eq('account_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:false});
+    const{data}=await _supa.from('inbound_leads').select('*').in('account_id',_ids).eq('status','pending').order('created_at',{ascending:false});
     if(_supaUser?.id!==_forUser)return; // account switched mid-request, drop this response entirely
     if(!data){_pendingInbound=[];_updateInboundBadge();return;}
     // Split: onboard_link rows (have client_id) auto-merge; QR rows go to review queue
