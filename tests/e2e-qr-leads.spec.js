@@ -264,6 +264,52 @@ test.describe('QR lead tracking: js/qr-leads.js', () => {
     await qrRestore();
   });
 
+  // Regression guard (root cause, CLAUDE.md §10.1): inbound_leads.account_id is a
+  // FK to accounts(id) — what intake.html/the QR redirect stamp on every lead. The
+  // reader (_loadPendingInbound, cloud.js) filtered by _supaUser.id (the auth uid,
+  // a DIFFERENT uuid), matching zero rows forever: every QR/intake lead landed in
+  // the DB but never surfaced in the app. Caught by the live flow test — the
+  // promote button could never render. Locks in that the query's account_id filter
+  // includes accounts.id (_account.id) and that a lead tagged with it reaches
+  // _pendingInbound.
+  test('_loadPendingInbound: queries by accounts.id, a QR lead tagged with it reaches the review queue', async () => {
+    const result = await page.evaluate(async () => {
+      const saved = { supa: window._supa, user: window._supaUser, acct: _account, pending: _pendingInbound.slice() };
+      try {
+        window._supaUser = { id: 'auth-uid-not-the-account-id', email: 'q@t.com' };
+        _account = { id: 'acct-row-uuid-0001' };
+        let captured = null;
+        window._supa = {
+          from: (tbl) => ({
+            select: () => ({
+              in: (col, ids) => {
+                captured = { tbl, col, ids };
+                return { eq: () => ({ order: () => Promise.resolve({ data: [
+                  { id: 'lead-qr-1', account_id: 'acct-row-uuid-0001', name: 'QR Lead', source: 'Yard sign - 123 Main St', status: 'pending' },
+                ] }) }) };
+              },
+            }),
+          }),
+        };
+        _pendingInbound = [];
+        await _loadPendingInbound();
+        return {
+          capturedTbl: captured && captured.tbl,
+          capturedCol: captured && captured.col,
+          hasAcctId: !!(captured && captured.ids.includes('acct-row-uuid-0001')),
+          queued: _pendingInbound.some(r => r.id === 'lead-qr-1'),
+        };
+      } finally {
+        window._supa = saved.supa; window._supaUser = saved.user;
+        _account = saved.acct; _pendingInbound = saved.pending;
+      }
+    });
+    expect(result.capturedTbl).toBe('inbound_leads');
+    expect(result.capturedCol).toBe('account_id');
+    expect(result.hasAcctId).toBe(true);
+    expect(result.queued).toBe(true);
+  });
+
   test('openIntakeFormModal: intake link includes the account id (regression: was missing ?a=)', async () => {
     await page.evaluate(() => { document.querySelectorAll('.zmodal-overlay').forEach(m => m.remove()); openIntakeFormModal(); });
     const hasParam = await page.evaluate(() => {
