@@ -119,6 +119,61 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
       },
     });
 
+    // ── 2b. Rename it, and prove the money follows ─────────────────────────
+    // Service records, vehicle expenses and mileage trips all link to a vehicle
+    // by NAME. Nothing re-pointed them on rename, and _vehSchedC EXCLUDES any
+    // vehicle expense it cannot bucket, so a rename silently stopped those costs
+    // deducting on Schedule C. Asserted here against a real expense row.
+    const renamedTo = `${vehName} XLT`;
+    const fuelCost = 400;
+    await step(page, {
+      label: 'contractor renames the vehicle', page: 'pg-team', role: 'contractor',
+      suspect: 'fleet.js saveFleetVehicle re-stamp of vehicleName/vehicle links',
+      ruleText: 'a rename must carry the vehicle\'s expenses with it, not orphan them out of the deduction',
+      expected: `after rename, the $${fuelCost} fuel expense still attributes to the vehicle (untagged = 0)`,
+      act: async (p) => {
+        // A real vehicle-tagged fuel expense for this truck, this year.
+        await p.evaluate(({ vehName, fuelCost }) => {
+          expenses.unshift({
+            id: Date.now(), date: todayKey(), loggedAt: new Date().toISOString(),
+            cat: 'fuel', catLabel: 'Fuel', vendor: 'E2E Fuel Stop',
+            vehicleName: vehName, amount: fuelCost, deductible: true,
+            notes: 'E2E rename-attribution probe', created_at: new Date().toISOString(),
+          });
+          saveAll();
+        }, { vehName, fuelCost });
+        let n = 0;
+        n += await tap(p, "#nb-team, #mtb-team");
+        await p.waitForSelector('#pg-team.active', { state: 'attached', timeout: 8000 });
+        await p.evaluate(() => { setFleetTab('fleet'); });
+        const idx = await p.evaluate((vehName) =>
+          getVehicles().findIndex(v => v.name === vehName), vehName);
+        await p.evaluate((i) => openAddVehicleModal(i), idx);
+        await p.waitForSelector('#fv-name', { state: 'visible', timeout: 8000 });
+        n += await type(p, '#fv-name', ' XLT');
+        await p.evaluate(() => saveFleetVehicle());
+        return n;
+      },
+      rule: async (p) => {
+        const out = await p.evaluate(({ renamedTo, fuelCost }) => {
+          const yr = String(new Date().getFullYear());
+          const sched = _vehSchedC(yr);
+          const v = getVehicles().find(x => x.name === renamedTo);
+          const exp = expenses.find(e => e.notes === 'E2E rename-attribution probe');
+          return {
+            renamed: !!v,
+            odoSurvived: v ? (_vehOdo(v, new Date().getFullYear()).start || 0) : 0,
+            expRelinked: exp ? exp.vehicleName : null,
+            untagged: sched.untagged,
+            untaggedTotal: sched.untaggedTotal,
+          };
+        }, { renamedTo, fuelCost });
+        const ok = out.renamed && out.expRelinked === renamedTo &&
+                   out.untagged === 0 && out.odoSurvived === startOdo;
+        return { ok, got: JSON.stringify(out) };
+      },
+    });
+
     // ── 3. Force the exact race that used to swallow the fleet ─────────────
     // A settings save with a FRESH settingsTs. Under the old design the fleet
     // rode inside that blob, so whichever write lost this race lost the truck.
@@ -135,7 +190,7 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
       },
       rule: async (p) => {
         const rows = await cloudRows(p, 'td_vehicles');
-        const row = (rows || []).find(r => r.name === vehName);
+        const row = (rows || []).find(r => r.name === renamedTo);
         return { ok: !!row, got: row ? 'still present' : 'GONE after settings save' };
       },
     });
@@ -145,7 +200,7 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
       label: 'sign out and back in', page: 'pg-dash', role: 'contractor',
       suspect: 'cloud.js supaLoadFromCloud + _migrateVehiclesFromSettings',
       ruleText: 'THE reported bug: the fleet must survive a full sign-out/sign-in cycle',
-      expected: `after re-auth, "${vehName}" is present with odo.${year}.start = ${startOdo}`,
+      expected: `after re-auth, "${renamedTo}" is present with odo.${year}.start = ${startOdo}`,
       act: async (p) => {
         await p.evaluate(async () => { try { await _supa.auth.signOut(); } catch (e) {} });
         // Hard reload so nothing survives in memory — this is what the owner
@@ -157,16 +212,16 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
       rule: async (p) => {
         let out = null;
         for (let i = 0; i < 8; i++) {
-          out = await p.evaluate(({ vehName, year }) => {
-            const v = (typeof getVehicles === 'function' ? getVehicles() : []).find(x => x.name === vehName);
+          out = await p.evaluate(({ renamedTo, year }) => {
+            const v = (typeof getVehicles === 'function' ? getVehicles() : []).find(x => x.name === renamedTo);
             if (!v) return null;
             return { name: v.name, id: String(v.id), start: (_vehOdo(v, year) || {}).start || 0 };
-          }, { vehName, year });
+          }, { renamedTo, year });
           if (out && out.start === startOdo) break;
           await new Promise(r => setTimeout(r, 2000));
         }
         return {
-          ok: !!out && out.name === vehName && out.start === startOdo,
+          ok: !!out && out.name === renamedTo && out.start === startOdo,
           got: JSON.stringify(out),
         };
       },
