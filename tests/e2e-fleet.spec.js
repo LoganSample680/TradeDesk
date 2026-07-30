@@ -14,6 +14,18 @@ test.describe('Fleet Management', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The fleet is a synced table now (td_vehicles, 20260809), so it obeys the
+    // same load-replaces-local rule as clients/bids/jobs. Every test here seeds
+    // vehicles IN MEMORY ONLY, and a reconnect-triggered load
+    // (_probeAndSync -> _onReconnect -> supaLoadFromCloud) hands back the mocked
+    // backend's zero rows and wipes that seed mid-test. It surfaced on WebKit
+    // first purely because it is slower, so the window is wider — the race was
+    // latent in ~13 tests in this file, not only the one that happened to fail.
+    //
+    // Boot has already completed above, so pinning the load to a no-op for THIS
+    // spec kills the whole class of flake without hiding anything: cloud-load
+    // behaviour is covered by the sync specs, not by fleet UI tests.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
 
   test.afterAll(async () => {
@@ -133,20 +145,22 @@ test.describe('Fleet Management', () => {
   test('Vehicle detail modal opens on card click', async () => {
     await goPg(page, 'pg-team');
 
-    // Make sure we have at least one vehicle
+    // Seed unconditionally and open in the SAME evaluate. vehicles is a synced
+    // table now, so a cloud load landing in a gap here replaces this
+    // in-memory-only seed with the mocked backend's zero rows, and
+    // openFleetVehicleDetail bails on a missing index without opening anything.
+    // The old shape left two gaps (a conditional seed that depended on whatever
+    // the previous test left behind, then a 200ms wait before opening); WebKit
+    // is slow enough to lose that race where Chromium wasn't.
     await page.evaluate(() => {
-      if (!getVehicles().length) {
-        _setVehicles([{
-          name: '2019 F-150', nickname: 'Work Truck',
-          status: 'active', downtimeLog: [], addedDate: '2024-01-01',
-          bizUse: 100,
-        }]);
-        renderFleetVehicles();
-      }
+      _setVehicles([{
+        name: '2019 F-150', nickname: 'Work Truck',
+        status: 'active', downtimeLog: [], addedDate: '2024-01-01',
+        bizUse: 100,
+      }]);
+      renderFleetVehicles();
+      openFleetVehicleDetail(0);
     });
-    await page.waitForTimeout(200);
-
-    await page.evaluate(() => openFleetVehicleDetail(0));
     await page.waitForTimeout(300);
 
     const overlay = await page.locator('#fleet-detail-overlay').isVisible();
@@ -827,6 +841,18 @@ test.describe('Vehicle management consolidation, removal regression', () => {
     await mockAllExternal(page);
     await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 20000 });
     await waitForAppBoot(page);
+    // The fleet is a synced table now (td_vehicles, 20260809), so it obeys the
+    // same load-replaces-local rule as clients/bids/jobs. Every test here seeds
+    // vehicles IN MEMORY ONLY, and a reconnect-triggered load
+    // (_probeAndSync -> _onReconnect -> supaLoadFromCloud) hands back the mocked
+    // backend's zero rows and wipes that seed mid-test. It surfaced on WebKit
+    // first purely because it is slower, so the window is wider — the race was
+    // latent in ~13 tests in this file, not only the one that happened to fail.
+    //
+    // Boot has already completed above, so pinning the load to a no-op for THIS
+    // spec kills the whole class of flake without hiding anything: cloud-load
+    // behaviour is covered by the sync specs, not by fleet UI tests.
+    await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
   });
 
   test.afterAll(async () => { await page.context().close(); });
