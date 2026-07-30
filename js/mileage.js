@@ -315,7 +315,7 @@ function saveEndDriveModal(){
   if(miles>500){if(!confirm('That\'s '+miles+' miles: does that look right?'))return;}
   const c=getClientById(gps.clientId);
   mileage.unshift({
-    id:Date.now(),date:todayKey(),vehicle:gps.vehicle,purpose:gps.purpose,
+    id:_newId(),date:todayKey(),vehicle:gps.vehicle,vehicleId:_vehIdForName(gps.vehicle),purpose:gps.purpose,
     loggedAt:new Date().toISOString(),
     miles:Math.round(miles*10)/10,
     client_id:gps.clientId,client_name:c?c.name:'',
@@ -1093,7 +1093,7 @@ function saveLoggedTrip(){
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
   // Save immediately with 0 miles, background route calc will update
-  const rec={id:Date.now(),date,loggedAt:new Date().toISOString(),vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,created_at:new Date().toISOString(),calc_method:'pending'};
+  const rec={id:_newId(),date,loggedAt:new Date().toISOString(),vehicle,vehicleId:_vehIdForName(vehicle),from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,created_at:new Date().toISOString(),calc_method:'pending'};
   if(_isEmployee){rec.logged_by_id=_supaUser.id;rec.logged_by_name=_employeeRecord?.name||_supaUser.email;}
   mileage.unshift(rec);
   if(cid)autoLogContact(cid,'drive');

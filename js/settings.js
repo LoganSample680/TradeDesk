@@ -503,7 +503,7 @@ function _addHepaEntry(licId){
   const _hepaWhoVal=(_hepaWhoEl?_hepaWhoEl.value||'':'').trim();
   const _hepaNotesVal2=(_hepaNotesEl2?_hepaNotesEl2.value||'':'').trim();
   lic.equipmentLog.push({
-    id:Date.now().toString(36),
+    id:_newId(), // was Date.now().toString(36): no entropy, two log entries in the same ms collided
     date:_licDateParse(_hepaDateVal)||todayKey(),
     type:_hepaTypeVal,
     who:_hepaWhoVal,
@@ -1148,6 +1148,33 @@ function _migrateVehiclesFromSettings(){
   return rows.length;
 }
 
+// Stamps vehicleId onto records written BEFORE ids existed, by resolving their
+// stored name once. Idempotent: a record that already has an id is skipped, so
+// this can run on every boot without churn, and a record whose name no longer
+// resolves is simply left alone (the matcher still falls back to the name, so
+// it keeps working exactly as it does today).
+// Runs after the fleet has loaded — it needs real vehicles to resolve against.
+function _backfillVehicleLinks(){
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  if(!vehs.length)return 0;
+  let n=0;
+  const stamp=(arr,nameField)=>{
+    if(!Array.isArray(arr))return;
+    arr.forEach(r=>{
+      if(!r)return;
+      if(r.vehicleId!==undefined&&r.vehicleId!==null)return;
+      const nm=r[nameField];
+      if(!nm)return;
+      const id=_vehIdForName(nm);
+      if(id!==undefined&&id!==null){r.vehicleId=id;n++;}
+    });
+  };
+  stamp(typeof maintenance!=='undefined'?maintenance:null,'vehicleName');
+  stamp(typeof expenses!=='undefined'?expenses:null,'vehicleName');
+  stamp(typeof mileage!=='undefined'?mileage:null,'vehicle');
+  return n;
+}
+
 // Closes out the one-time lift. Called once the fleet is durable — after the
 // post-load flush lands (cloud.js), on an explicit vehicle delete, and on a
 // deliberate "Clear all data" — so that from then on an empty fleet is taken at
@@ -1155,6 +1182,34 @@ function _migrateVehiclesFromSettings(){
 // coming back" can't return).
 function _markVehiclesMigrated(){
   if(!S.vehiclesMigratedTs){S.vehiclesMigratedTs=Date.now();S.settingsTs=Date.now();}
+}
+// ── Vehicle links are by ID now, name is display only ────────────────────────
+// Service records, vehicle expenses and mileage trips used to point at their
+// vehicle by NAME. Renaming a truck orphaned them, and an orphaned vehicle
+// expense is silently EXCLUDED from the Schedule C deduction rather than
+// erroring, so a rename quietly shrank the contractor's write-off.
+//
+// Every such record now carries a vehicleId stamped AT CREATION. The name is
+// kept alongside it purely so the UI (and any un-backfilled legacy row) still
+// reads correctly.
+function _vehIdForName(name){
+  if(!name)return undefined;
+  const n=String(name).trim();
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  const v=vehs.find(x=>x.name===n)||vehs.find(x=>getVehicleLabel(x)===n)||vehs.find(x=>getVehicleFullLabel(x)===n);
+  return v?v.id:undefined;
+}
+// The one matcher every vehicle rollup uses. Deliberately NON-REGRESSIVE: it
+// matches on the id when the record has one, and STILL falls back to the name,
+// so it can only ever match the same records as before or more — never fewer.
+// That property is what makes it safe to put in front of the deduction math: no
+// contractor's write-off can shrink because of this change.
+function _vehLinkMatches(rec,v,nameField){
+  if(!rec||!v)return false;
+  const rid=rec.vehicleId;
+  if(rid!==undefined&&rid!==null&&String(rid)===String(v.id))return true;
+  const nm=rec[nameField||'vehicleName'];
+  return !!nm&&nm===v.name;
 }
 function getVehicleLabel(v){
   if(!v)return '';

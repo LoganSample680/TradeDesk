@@ -107,7 +107,7 @@ function _fleetCard(v, idx) {
   const yr = new Date().getFullYear().toString();
   const trips = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr));
   const ytdMi = Math.round(trips.reduce((s,t)=>s+(t.miles||0),0));
-  const maint = maintenance.filter(m=>m.vehicleName===v.name);
+  const maint = maintenance.filter(m=>_vehLinkMatches(m,v));
   const lastMaint = maint.slice().sort((a,b)=>b.date>a.date?1:-1)[0];
   const due = _fleetDueAlerts(v, maint);
   const maintYTD = maint.filter(m=>(m.date||'').startsWith(yr)).reduce((s,m)=>s+(m.cost||0),0);
@@ -250,9 +250,11 @@ function _fleetPnLCalc(v, maintRecords, trips, year) {
      personal-use slice (1 - bizUse%) of its expenses is excluded too.
    Both methods are computed for every vehicle so year-end can show WHICH ONE WINS.
 
-   Attribution: trips match by trip.vehicle === v.name (the existing fleet
-   convention); expenses match by e.vehicleName (stamped by the expense modals and
-   fleet auto-writes). Unmatched records: single-vehicle fleet -> that vehicle;
+   Attribution: every record carries a vehicleId stamped at creation, and
+   _vehLinkMatches prefers it, STILL falling back to the name for rows written
+   before that existed. The fallback is what makes this non-regressive: the
+   engine can only ever match the same records or more, never fewer, so no
+   contractor's deduction can shrink because of the id migration. Unmatched records: single-vehicle fleet -> that vehicle;
    multi-vehicle -> trips go to the first mileage-method vehicle (deducted, matching
    pre-engine behavior), expenses are conservatively EXCLUDED and counted in
    `untagged` so the UI can nudge the user to tag them (never double-deduct).
@@ -282,11 +284,11 @@ function _vehSchedC(yr){
   const single=buckets.length===1?buckets[0]:null;
   const firstMileage=buckets.find(b=>b.method==='mileage')||null;
   trips.forEach(t=>{
-    const hit=(t.vehicle&&buckets.find(b=>b.v.name===t.vehicle))||single||firstMileage||buckets[0];
+    const hit=buckets.find(b=>_vehLinkMatches(t,b.v,'vehicle'))||single||firstMileage||buckets[0];
     hit.miles+=(t.miles||0);
   });
   vehExp.forEach(e=>{
-    const hit=(e.vehicleName&&buckets.find(b=>b.v.name===e.vehicleName))||single;
+    const hit=buckets.find(b=>_vehLinkMatches(e,b.v))||single;
     if(hit)hit.exp.push(e);
     else{out.untagged++;out.untaggedTotal+=(e.amount||0);out.expAdjust+=(e.amount||0);out.excludedIds.push(e.id);}
   });
@@ -298,7 +300,7 @@ function _vehSchedC(yr){
     // expenses PLUS service-log records that never became expenses (mileage-method
     // maintenance is records-only). Contractors log BOTH all year; the verdict must
     // see everything. Schedule C (actualDed) stays expenses-only.
-    const unexpMaint=maintenance.filter(m=>m.vehicleName===b.v.name&&(m.date||'').startsWith(yr)&&!m.expenseId).reduce((s,m)=>s+(m.cost||0),0);
+    const unexpMaint=maintenance.filter(m=>_vehLinkMatches(m,b.v)&&(m.date||'').startsWith(yr)&&!m.expenseId).reduce((s,m)=>s+(m.cost||0),0);
     const costTotal=+(expTotal+unexpMaint).toFixed(2);
     const actualCmp=+(costTotal*b.bizPct).toFixed(2);
     out.vehExpTotal+=expTotal;
@@ -369,7 +371,7 @@ function _renderFleetDetailModal() {
 
   const yr = new Date().getFullYear().toString();
   const trips = mileage.filter(t=>t.vehicle===v.name);
-  const maint = maintenance.filter(m=>m.vehicleName===v.name).slice().sort((a,b)=>b.date>a.date?1:-1);
+  const maint = maintenance.filter(m=>_vehLinkMatches(m,v)).slice().sort((a,b)=>b.date>a.date?1:-1);
   const pnl = _fleetPnLCalc(v, maint, trips.filter(t=>(t.date||'').startsWith(yr)), yr);
   const downDays = _fleetDownDays(v, yr);
   const allDownDays = _fleetTotalDownDays(v);
@@ -853,6 +855,10 @@ function saveFleetVehicle() {
   const deductEl = document.querySelector('input[name="fv-deduct"]:checked');
   const newV = {
     ...oldV,
+    // Mint the id HERE, not in _setVehicles further down: the purchase expense
+    // below links to newV.id, and on a brand-new vehicle that would otherwise
+    // still be undefined — writing an expense pointing at nothing.
+    id: oldV.id || (typeof _newId==='function' ? _newId() : Date.now()*1000),
     name,
     nickname: (document.getElementById('fv-nick')?document.getElementById('fv-nick').value:'').trim(),
     color:    (document.getElementById('fv-color')?document.getElementById('fv-color').value:'').trim(),
@@ -882,6 +888,7 @@ function saveFleetVehicle() {
       catLabel: 'Vehicle purchase',
       vendor: name,
       vehicleName: name,
+      vehicleId: newV.id,
       amount: newPrice,
       notes: 'Vehicle purchase: '+name,
       deductible: true,
@@ -1318,6 +1325,7 @@ function saveMaintRecord() {
   const rec = {
     id: _maintEditId || Date.now(),
     vehicleName: v.name,
+    vehicleId: v.id,
     date,
     odo,
     type,
@@ -1383,6 +1391,7 @@ function saveMaintRecord() {
       catLabel: 'Vehicle: maintenance',
       vendor: vendor||(v.nickname||v.name),
       vehicleName: v.name,
+      vehicleId: v.id,
       amount: cost,
       notes: (MAINT_TYPES[type]?MAINT_TYPES[type].label:type)+(notes?', '+notes:''),
       deductible: true,

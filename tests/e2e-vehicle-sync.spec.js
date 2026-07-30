@@ -435,6 +435,140 @@ test.describe('Fleet persistence: td_vehicles sync fabric', () => {
     await restore(snap);
   });
 
+  // ── Unique ids at creation (owner directive) ─────────────────────────────
+  test('_newId never collides, even for records minted in the same millisecond', async () => {
+    const r = await page.evaluate(() => {
+      // Freeze the clock so every id is minted inside ONE millisecond — the exact
+      // condition where the old bare Date.now() handed out duplicate ids and the
+      // upsert silently overwrote one record with another.
+      const realNow = Date.now;
+      Date.now = () => 1785000000000;
+      try {
+        const ids = Array.from({ length: 500 }, () => _newId());
+        return { count: ids.length, unique: new Set(ids).size, allNumbers: ids.every(i => typeof i === 'number') };
+      } finally { Date.now = realNow; }
+    });
+    expect(r.count).toBe(500);
+    expect(r.unique, '500 records created in the same millisecond must get 500 distinct ids').toBe(500);
+    expect(r.allNumbers, 'ids stay numeric — the app compares and stores them as numbers').toBe(true);
+  });
+
+  // ── The hole the rename re-stamp structurally cannot close ───────────────
+  // The re-stamp only rewrites records sitting in the RENAMING device's memory.
+  // A trip logged on another device that this one has not loaded keeps the old
+  // name forever. Under name-matching that record is orphaned, and an orphaned
+  // vehicle expense is EXCLUDED from the deduction rather than erroring — so it
+  // silently shrinks the write-off. Ids close it because the link never depended
+  // on the name in the first place.
+  test('a record the renaming device never saw still attributes after a rename (id link)', async () => {
+    const snap = await snapshot();
+    const r = await page.evaluate(() => {
+      const _m = maintenance.slice(), _e = expenses.slice(), _t = mileage.slice();
+      const _origSave = window.saveAll, _origToast = window.showToast;
+      window.saveAll = () => {}; window.showToast = () => {};
+      try {
+        _setVehicles([{ id: 'veh-xdev-1', name: 'ORIGINAL NAME', deductionMethod: 'actual', bizUse: 100 }]);
+        const yr = String(new Date().getFullYear());
+        maintenance.length = 0; expenses.length = 0; mileage.length = 0;
+
+        // Rename FIRST, while this device holds no records at all.
+        _fleetEditIdx = 0;
+        openAddVehicleModal(0);
+        document.getElementById('fv-name').value = 'RENAMED';
+        saveFleetVehicle();
+        document.getElementById('fleet-veh-overlay')?.remove();
+
+        // NOW a peer's rows arrive (realtime/delta), still carrying the OLD name.
+        // They were created with a vehicleId, which is the whole point.
+        expenses.push({ id: 'e-peer', vehicleId: 'veh-xdev-1', vehicleName: 'ORIGINAL NAME',
+                        date: yr + '-04-01', cat: 'fuel', amount: 250 });
+        mileage.push({ id: 't-peer', vehicleId: 'veh-xdev-1', vehicle: 'ORIGINAL NAME',
+                       date: yr + '-04-02', miles: 90 });
+        maintenance.push({ id: 'm-peer', vehicleId: 'veh-xdev-1', vehicleName: 'ORIGINAL NAME',
+                           date: yr + '-04-03', cost: 175 });
+
+        const sched = _vehSchedC(yr);
+        const v = getVehicles()[0];
+        return {
+          vehName: v.name,
+          peerExpenseStillStale: expenses[0].vehicleName, // proves the re-stamp never touched it
+          untagged: sched.untagged,
+          untaggedTotal: sched.untaggedTotal,
+          vehExpTotal: sched.vehExpTotal,
+          maintOnCard: maintenance.filter(m => _vehLinkMatches(m, v)).length,
+          tripsAttributed: sched.perVehicle && sched.perVehicle[0] ? sched.perVehicle[0].miles : null,
+        };
+      } finally {
+        maintenance.length = 0; _m.forEach(x => maintenance.push(x));
+        expenses.length = 0; _e.forEach(x => expenses.push(x));
+        mileage.length = 0; _t.forEach(x => mileage.push(x));
+        window.saveAll = _origSave; window.showToast = _origToast;
+      }
+    });
+    expect(r.vehName).toBe('RENAMED');
+    expect(r.peerExpenseStillStale, 'the peer row genuinely still carries the old name').toBe('ORIGINAL NAME');
+    expect(r.untagged, 'the peer expense is NOT orphaned out of the deduction').toBe(0);
+    expect(r.untaggedTotal).toBe(0);
+    expect(r.vehExpTotal, 'its $250 still counts toward the vehicle').toBe(250);
+    expect(r.maintOnCard, 'the peer service record still shows on the vehicle').toBe(1);
+    expect(r.tripsAttributed, 'the peer trip still attributes to the vehicle').toBe(90);
+    await restore(snap);
+  });
+
+  test('the matcher is non-regressive: a legacy row with no vehicleId still matches by name', async () => {
+    const snap = await snapshot();
+    const r = await page.evaluate(() => {
+      const _e = expenses.slice();
+      try {
+        _setVehicles([{ id: 'veh-legacy-1', name: 'LEGACY TRUCK', deductionMethod: 'actual', bizUse: 100 }]);
+        const yr = String(new Date().getFullYear());
+        expenses.length = 0;
+        // Exactly what an un-backfilled pre-id row looks like: name only.
+        expenses.push({ id: 'e-legacy', vehicleName: 'LEGACY TRUCK', date: yr + '-05-01', cat: 'fuel', amount: 310 });
+        const sched = _vehSchedC(yr);
+        return { untagged: sched.untagged, vehExpTotal: sched.vehExpTotal };
+      } finally { expenses.length = 0; _e.forEach(x => expenses.push(x)); }
+    });
+    expect(r.untagged, 'a name-only legacy row must never fall out of the deduction').toBe(0);
+    expect(r.vehExpTotal).toBe(310);
+    await restore(snap);
+  });
+
+  test('_backfillVehicleLinks stamps legacy rows once and is idempotent', async () => {
+    const snap = await snapshot();
+    const r = await page.evaluate(() => {
+      const _m = maintenance.slice(), _e = expenses.slice(), _t = mileage.slice();
+      try {
+        _setVehicles([{ id: 'veh-bf-1', name: 'BACKFILL TRUCK' }]);
+        maintenance.length = 0; expenses.length = 0; mileage.length = 0;
+        maintenance.push({ id: 'm-bf', vehicleName: 'BACKFILL TRUCK', date: '2026-01-01', cost: 100 });
+        expenses.push({ id: 'e-bf', vehicleName: 'BACKFILL TRUCK', date: '2026-01-02', cat: 'fuel', amount: 50 });
+        mileage.push({ id: 't-bf', vehicle: 'BACKFILL TRUCK', date: '2026-01-03', miles: 10 });
+        expenses.push({ id: 'e-unknown', vehicleName: 'A TRUCK THAT IS GONE', date: '2026-01-04', cat: 'fuel', amount: 20 });
+        const first = _backfillVehicleLinks();
+        const second = _backfillVehicleLinks();
+        return {
+          first, second,
+          maintId: String(maintenance[0].vehicleId),
+          expId: String(expenses[0].vehicleId),
+          tripId: String(mileage[0].vehicleId),
+          unknownLeftAlone: expenses[1].vehicleId === undefined,
+        };
+      } finally {
+        maintenance.length = 0; _m.forEach(x => maintenance.push(x));
+        expenses.length = 0; _e.forEach(x => expenses.push(x));
+        mileage.length = 0; _t.forEach(x => mileage.push(x));
+      }
+    });
+    expect(r.first, 'three legacy rows get stamped').toBe(3);
+    expect(r.second, 'a second pass stamps nothing').toBe(0);
+    expect(r.maintId).toBe('veh-bf-1');
+    expect(r.expId).toBe('veh-bf-1');
+    expect(r.tripId).toBe('veh-bf-1');
+    expect(r.unknownLeftAlone, 'a row whose vehicle is gone is left for the name fallback').toBe(true);
+    await restore(snap);
+  });
+
   test('zero console errors across the vehicle sync suite', async () => {
     assertNoErrors(page, 'vehicle sync');
   });

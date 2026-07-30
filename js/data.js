@@ -24,7 +24,31 @@ Object.defineProperty(window,'agreements',{get:()=>agreements,set:v=>{agreements
 // `events` is a module-scoped let; expose a getter so emitEvent (dashboard.js) can push to it.
 function _tdGetEvents(){return events;}
 Object.defineProperty(window,'_employeeRecord',{get:()=>_employeeRecord,set:v=>{_employeeRecord=v;},configurable:true});
-function _newBidId(){return Date.now()*1000+Math.floor(Math.random()*999);}
+// ── The one id generator (owner directive: unique ids for everything, at
+// creation, so duplicates are impossible by construction) ───────────────────
+// Records used to be minted with a bare Date.now(). Every td_* table is keyed by
+// id, so two records created in the SAME MILLISECOND collided and the upsert
+// silently overwrote one with the other — a real, invisible data-loss path that
+// gets likelier the faster a contractor works (tap-tap-tap logging trips or
+// service records) and on bulk writes that create several rows in one pass.
+//
+// ms*1000 + a per-millisecond sequence guarantees uniqueness ON THIS DEVICE for
+// up to 1000 records in the same millisecond. The sequence STARTS at a random
+// offset each millisecond rather than 0, so two devices creating a record in the
+// same millisecond are very unlikely to pick the same slot (a plain counter
+// would make them collide every time, since both would start at 0).
+// Stays a Number: ids are compared and stored numerically all over the app, and
+// nothing anywhere derives a timestamp back out of one (verified), so this is a
+// drop-in change.
+let _idSeq=0,_idLastMs=0;
+function _newId(){
+  const ms=Date.now();
+  if(ms!==_idLastMs){_idLastMs=ms;_idSeq=Math.floor(Math.random()*100);}
+  else _idSeq++;
+  return ms*1000+(_idSeq%1000);
+}
+// Kept as the historical name; there is only one implementation now.
+function _newBidId(){return _newId();}
 let currentClientId=null,editClientId=null,clientFilter='all';
 Object.defineProperty(window,'currentClientId',{get:()=>currentClientId,set:v=>{currentClientId=v;},configurable:true});
 Object.defineProperty(window,'editClientId',{get:()=>editClientId,set:v=>{editClientId=v;},configurable:true});

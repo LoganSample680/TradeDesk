@@ -1507,7 +1507,7 @@ function _markDepositCash(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const depAmt=(bid.deposit||0)>0?bid.deposit:bid.amount||0;
   zConfirm('Mark '+fmt(depAmt)+' deposit collected as cash?',()=>{
-    payments.push({id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
+    payments.push({id:_newId(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
       date:todayKey(),type:'deposit',amount:depAmt,method:'cash',ref:'Cash: recorded from feed'});
     saveAll();renderDash();showToast('Cash deposit recorded','💰');
     _refreshClientHub(bid.client_id); // keep client hub balance in sync

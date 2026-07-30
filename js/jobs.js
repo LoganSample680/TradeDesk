@@ -49,7 +49,7 @@ function _fmtMin(m){
 function _nearbyClockIn(clientId,jobId){
   if(!jobId){
     const c=getClientById(clientId);if(!c)return;
-    const j={id:Date.now(),bid_id:null,client_id:clientId,name:c.name,addr:c.addr||'',start:todayKey(),days:1,buffer:0,value:0,color:'#6366F1',eventType:'job',allowWeekend:true,time:null,hours:null,notes:'',status:'upcoming'};
+    const j={id:_newId(),bid_id:null,client_id:clientId,name:c.name,addr:c.addr||'',start:todayKey(),days:1,buffer:0,value:0,color:'#6366F1',eventType:'job',allowWeekend:true,time:null,hours:null,notes:'',status:'upcoming'};
     jobs.push(j);
     saveAll();
     jobId=j.id;
@@ -261,7 +261,7 @@ function clockOut(saveEntry,silent){
       // clockIn above). Never silently drop real logged time if it's somehow
       // missing (deleted mid-timer, or a session from before this fix).
       const{loggedByUid,loggedByName}=_tlLoggedByInfo();
-      timeEntries.push({id:Date.now(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:_activeTimer.scopeId,scope_label:scopeLabel,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:false});
+      timeEntries.push({id:_newId(),job_id:jobId,date:todayKey(),start_time:new Date(_activeTimer.startTime).toISOString(),end_time:new Date().toISOString(),minutes,scope_id:_activeTimer.scopeId,scope_label:scopeLabel,logged_by_uid:loggedByUid,logged_by_name:loggedByName,open:false});
     }
     const j=jobs.find(x=>x.id===jobId);
     if(j)j.actualHours=Math.round(((j.actualHours||0)+minutes/60)*10)/10;
@@ -1417,7 +1417,7 @@ function markSubPaid(jobId,subIdx,clientId){
   if(sp.amount>0&&!expenses.some(e=>e.subPayKey===_spKey)){
     const _spBid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
     expenses.push({
-      id:Date.now(),date:sp.paidDate,cat:'subs',catLabel:'Subcontractors',
+      id:_newId(),date:sp.paidDate,cat:'subs',catLabel:'Subcontractors',
       loggedAt:new Date().toISOString(),
       vendor:sp.subName||'Subcontractor',amount:sp.amount,
       notes:'Sub pay, '+(sp.desc||j.name||''),
@@ -1698,7 +1698,7 @@ function _addJobTask(jobId){
   if(!text)return;
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
   if(!j.tasks)j.tasks=[];
-  j.tasks.push({id:Date.now(),text,done:false});
+  j.tasks.push({id:_newId(),text,done:false});
   input.value='';
   saveAll();
   _renderJobTasks(jobId);
@@ -1937,7 +1937,7 @@ async function confirmJobDone(jobId){
           const newAmount=Math.max(0,Math.round((b.amount+adjAmt)*100)/100);
           if(!b.changeOrders)b.changeOrders=[];
           b.changeOrders.push({
-            id:Date.now(),coNum,date:dateStr,desc:adjReason,type:'addition',
+            id:_newId(),coNum,date:dateStr,desc:adjReason,type:'addition',
             amount:adjAmt,delta:adjAmt,originalAmount,newAmount,
             signedAt:new Date().toISOString(),signerName:cap.signerName||'',sigData:cap.sigData||''
           });

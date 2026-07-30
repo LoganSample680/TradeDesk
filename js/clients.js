@@ -146,7 +146,7 @@ function saveDiagnosticCharge(clientId){
   else{if(amtEl)amtEl.style.borderColor='';if(amtErr)amtErr.style.display='none';}
   if(!ok)return;
   const bid={
-    id:Date.now(),client_id:clientId,client_name:c.name,addr:c.addr||'',
+    id:_newId(),client_id:clientId,client_name:c.name,addr:c.addr||'',
     type:'Diagnostic charge',kind:'diagnostic',desc,
     amount:Math.round(amount*100)/100,deposit:0,
     status:'Closed Won',draft:false,

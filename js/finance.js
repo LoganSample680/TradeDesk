@@ -746,6 +746,7 @@ async function expSave(){
       const upd_receipt_img=existing_keys.length?null:expenses[idx].receipt_img;
       expenses[idx]={...expenses[idx],date,cat,catLabel:catInfo2.label||cat,vendor,amount,notes,
         vehicleName:(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):'')||undefined,
+        vehicleId:_vehIdForName(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):''),
         lead_source:leadSource||undefined,meal_purpose:mealPurpose2||undefined,meal_attendees:mealAttendees2||undefined,
         job_id:jobId,job_name:job2?job2.client_name||job2.name:'',
         receipt:upd_receipt_key||upd_receipt_img?'Yes: photo stored':'No receipt photo',
@@ -798,6 +799,7 @@ async function expSave(){
     id:expId,date,cat,catLabel:catInfo.label||cat,vendor,amount,notes,
     loggedAt:new Date().toISOString(),
     vehicleName:(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):'')||undefined,
+    vehicleId:_vehIdForName(['fuel','vehicle','vehicle_purchase'].includes(cat)?(document.getElementById('em-vehicle')?.value||''):''),
     lead_source:leadSource||undefined,
     meal_purpose:mealPurpose||undefined,meal_attendees:mealAttendees||undefined,
     created_at:new Date().toISOString(),
@@ -1141,11 +1143,12 @@ function saveQuickExpense(clientId){
   const _qeDateVal=_qeDateEl?_qeDateEl.value||todayKey():todayKey();
   const _qeVeh=document.getElementById('qe-vehicle');
   expenses.unshift({
-    id:Date.now(),
+    id:_newId(),
     date:_qeDateVal,
     loggedAt:new Date().toISOString(),
     cat,
     vehicleName:(cat.indexOf('Vehicle')===0&&_qeVeh?_qeVeh.value:'')||undefined,
+    vehicleId:_vehIdForName(cat.indexOf('Vehicle')===0&&_qeVeh?_qeVeh.value:''),
     vendor,
     amount,
     pay:'Business card',
@@ -1474,7 +1477,7 @@ function scheduleJob(){
   // Crew assignment applies to estimates too now (whoever does the visit), not
   // just jobs, so geofence/time-on-site tracking covers the walkthrough as well.
   const _asgnTo=_crewId||null;
-  jobs.push({id:Date.now(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
+  jobs.push({id:_newId(),bid_id:bidId,client_id:clientId,name,addr:v('s-addr'),start,days,buffer:parseInt(v('s-buf'))||0,value:jobValue,color:selectedColor,eventType:schedType,time:jobTime,hours:jobHours,notes:v('s-notes'),status:'upcoming',loggedAt:new Date().toISOString(),assignedTo:_asgnTo,crewHistory:_asgnTo?[_asgnTo]:[]});
   // Booked. Estimate VISITS are a different milestone than the job being booked.
   try{if(typeof logLifecycle==='function')logLifecycle(schedType==='estimate'?'estimate_visit_booked':'job_scheduled',{bidId,clientId,jobId:jobs[jobs.length-1]&&jobs[jobs.length-1].id});}catch(_e){}
   if(schedType==='estimate'&&clientId){
@@ -3042,7 +3045,7 @@ function saveManualIncome(){
   if(method==='Cash'&&!document.getElementById('_inc-cash-confirm')?.checked){
     errEl.textContent='Please confirm this cash was deposited to your business account.';errEl.style.display='block';return;
   }
-  const entry={id:Date.now(),bid_id:null,client_id:client?client.id:null,client_name:client?client.name:(notes||'Other'),date:date.replace(/-/g,'').slice(0,8),type,amount:amtRaw,method,notes,created_at:new Date().toISOString()};
+  const entry={id:_newId(),bid_id:null,client_id:client?client.id:null,client_name:client?client.name:(notes||'Other'),date:date.replace(/-/g,'').slice(0,8),type,amount:amtRaw,method,notes,created_at:new Date().toISOString()};
   income.push(entry);
   document.getElementById('_inc-ov')?.remove();
   const entryYear=parseInt(date.slice(0,4));

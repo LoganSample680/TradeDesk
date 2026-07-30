@@ -2184,7 +2184,7 @@ async function _submitInviteEmployee(){
   const classification=(document.getElementById('_inv-class')?.value||'').trim();
   const permissions={};
   Object.keys(_EMP_PERM_LABELS).forEach(p=>{permissions[p]=!!(document.getElementById('_perm-'+p)?.checked);});
-  const newEmp={id:Date.now(),name,phone,email,role,classification,permissions};
+  const newEmp={id:_newId(),name,phone,email,role,classification,permissions};
   if(!S.employees)S.employees=[];
   S.employees.push(newEmp);
   _settingsChanged();saveAll();
@@ -3610,7 +3610,7 @@ function _assignmentToJob(a,clientId){
   // Invalid Date into every calendar/pipeline loop that parses job.start.
   const raw=String(a.start_date||'');
   const start=/^\d{4}-\d{2}-\d{2}$/.test(raw)?raw:(typeof todayKey==='function'?todayKey():'');
-  return{id:Date.now(),bid_id:null,client_id:clientId||null,
+  return{id:_newId(),bid_id:null,client_id:clientId||null,
     name:'Job: '+(a.gc_business_name||'linked contractor'),
     addr:String(a.job_addr),start,days:1,buffer:0,value:0,color:'#185FA5',
     eventType:'job',time:'',hours:null,
@@ -3632,7 +3632,7 @@ function _paymentOfferToIncome(offer,forceClientId){
   if(!offer||!(Number(offer.amount)>0))return null;
   const payer=(offer.gc_business_name||'').trim();
   const c=(forceClientId==null&&payer)?clients.find(x=>x.name&&x.name.toLowerCase()===payer.toLowerCase()):null;
-  return{id:Date.now(),bid_id:null,client_id:forceClientId!=null?forceClientId:(c?c.id:null),client_name:payer||'Contractor',
+  return{id:_newId(),bid_id:null,client_id:forceClientId!=null?forceClientId:(c?c.id:null),client_name:payer||'Contractor',
     date:String(offer.paid_date||'').replace(/-/g,'').slice(0,8),type:'Job payment',amount:Number(offer.amount),
     method:'',notes:('From '+(payer||'a linked contractor')+(offer.job_addr?', job @ '+offer.job_addr:'')).slice(0,200),
     created_at:new Date().toISOString()};
@@ -5320,7 +5320,7 @@ async function checkNewSignatures(_src){
             const _ctotal=_cpaid.reduce((t,p)=>t+p.amount,0);
             const _hasRefund=(typeof payments!=='undefined'?payments:[]).some(p=>p.bid_id===bid.id&&p._cancelRefund);
             if(_ctotal>0&&!_hasRefund){
-              payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),loggedAt:new Date().toISOString(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund: client cancelled within rescission window'});
+              payments.push({id:_newId(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),loggedAt:new Date().toISOString(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund: client cancelled within rescission window'});
             }
             changed=true;
             const _isStripe=s.payment_method&&s.payment_method!=='cash'&&s.payment_method!=='check';
@@ -5655,7 +5655,7 @@ function quickScheduleJob(bidId,startKey,clientId){
   const days=bid.days||2;
   const name=(bid.client_name||bid.name||'Job')+(bid.type?', '+bid.type:'');
   jobs.push({
-    id:Date.now(),bid_id:bidId,client_id:clientId||bid.client_id,
+    id:_newId(),bid_id:bidId,client_id:clientId||bid.client_id,
     name,addr:bid.addr||'',start:startKey,days,buffer:1,
     value:bid.amount||0,color:'#185FA5',eventType:'job',
     time:'',hours:null,notes:bid.notes||'',status:'upcoming',
@@ -6091,6 +6091,15 @@ async function supaLoadFromCloud({silent=false}={}){
               .catch(()=>{});
           },60);
           if(typeof renderFleetVehicles==='function'){try{renderFleetVehicles();}catch(_e){}}
+        }
+      }catch(_e){}
+      // Stamp vehicleId onto pre-id service records, vehicle expenses and trips.
+      // Must run AFTER the fleet is in memory (it resolves names against it) and
+      // is idempotent, so a boot where nothing needs stamping costs one pass.
+      try{
+        if(typeof _backfillVehicleLinks==='function'){
+          const _n=_backfillVehicleLinks();
+          if(_n>0){_logSave('vehicle-links-backfilled',{count:_n});saveAll();}
         }
       }catch(_e){}
     }
@@ -6685,7 +6694,7 @@ async function _promoteInbound(id){
   // consumer-facing physical marketing, a GC/builder relationship doesn't
   // form by scanning a code off someone's driveway. One-tap fixable on the
   // client record if a promotion ever is the rare exception.
-  const newClient={id:Date.now(),name:row.name||'Unknown',phone:row.phone||'',email:'',addr:row.addr||'',ptype:'Single family home',partyType:'homeowner',source:(row.source&&row.source!=='qr_form')?row.source:'QR form',ref:'',notes:row.notes||'',created:todayKey(),createdAt:new Date().toISOString(),extraAddresses:[],clientToken:'',clientHubKey:''};
+  const newClient={id:_newId(),name:row.name||'Unknown',phone:row.phone||'',email:'',addr:row.addr||'',ptype:'Single family home',partyType:'homeowner',source:(row.source&&row.source!=='qr_form')?row.source:'QR form',ref:'',notes:row.notes||'',created:todayKey(),createdAt:new Date().toISOString(),extraAddresses:[],clientToken:'',clientHubKey:''};
   clients.push(newClient);_ensureClientToken(newClient.id);
   saveAll();
   if(typeof logLifecycle==='function')logLifecycle('lead_created',{clientId:newClient.id,meta:{source:newClient.source}});

@@ -205,7 +205,7 @@ function _agSave(){
     if(a){Object.assign(a,{type,party,title,body,profitPct,cadence:type==='profit_share'?cadence:'',effectiveDate});}
   }else{
     agreements.push({
-      id:Date.now(),type,party,title,body,profitPct,
+      id:_newId(),type,party,title,body,profitPct,
       cadence:type==='profit_share'?cadence:'',
       partyClientId:(clients.find(c=>c.name===party)||{}).id||null,
       partyEmployeeId:((S.employees||[]).find(e=>e.name===party)||{}).id||null,
