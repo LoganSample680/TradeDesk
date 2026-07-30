@@ -377,6 +377,64 @@ test.describe('Fleet persistence: td_vehicles sync fabric', () => {
     await restore(snap);
   });
 
+  // ── A rename must carry the vehicle's records with it ────────────────────
+  // Service records and vehicle expenses link by `vehicleName`, trips by
+  // `vehicle`, and nothing re-pointed them on rename. That orphaned the
+  // vehicle's whole history — and because _vehSchedC conservatively EXCLUDES
+  // any vehicle expense it cannot match to a bucket, the contractor's costs
+  // silently stopped deducting on Schedule C after renaming a truck.
+  test('renaming a vehicle re-links its service records, expenses and trips', async () => {
+    const snap = await snapshot();
+    const r = await page.evaluate(() => {
+      const _m = maintenance.slice(), _e = expenses.slice(), _t = mileage.slice();
+      const _origSave = window.saveAll, _origToast = window.showToast;
+      window.saveAll = () => {}; window.showToast = () => {};
+      try {
+        _setVehicles([{ id: 'veh-relink-1', name: 'OLD TRUCK NAME', deductionMethod: 'actual', bizUse: 100 }]);
+        maintenance.length = 0; expenses.length = 0; mileage.length = 0;
+        const yr = String(new Date().getFullYear());
+        maintenance.push({ id: 'm1', vehicleName: 'OLD TRUCK NAME', date: yr + '-03-01', cost: 250, type: 'oil_change' });
+        expenses.push({ id: 'e1', vehicleName: 'OLD TRUCK NAME', date: yr + '-03-02', cat: 'fuel', amount: 400 });
+        mileage.push({ id: 't1', vehicle: 'OLD TRUCK NAME', date: yr + '-03-03', miles: 120 });
+
+        // Rename through the real modal path.
+        _fleetEditIdx = 0;
+        openAddVehicleModal(0);
+        document.getElementById('fv-name').value = 'NEW TRUCK NAME';
+        saveFleetVehicle();
+
+        const v = getVehicles()[0];
+        const sched = _vehSchedC(yr);
+        const bucket = (sched.perVehicle || []).find(b => (b.name || b.v?.name) === 'NEW TRUCK NAME') || null;
+        return {
+          name: v.name,
+          maintRelinked: maintenance[0].vehicleName,
+          expRelinked: expenses[0].vehicleName,
+          tripRelinked: mileage[0].vehicle,
+          // The money assertions: the $400 fuel expense must still be attributed,
+          // not dumped into "untagged" and dropped from the deduction.
+          untagged: sched.untagged,
+          untaggedTotal: sched.untaggedTotal,
+          vehExpTotal: sched.vehExpTotal,
+        };
+      } finally {
+        maintenance.length = 0; _m.forEach(x => maintenance.push(x));
+        expenses.length = 0; _e.forEach(x => expenses.push(x));
+        mileage.length = 0; _t.forEach(x => mileage.push(x));
+        window.saveAll = _origSave; window.showToast = _origToast;
+        document.getElementById('fleet-veh-overlay')?.remove();
+      }
+    });
+    expect(r.name).toBe('NEW TRUCK NAME');
+    expect(r.maintRelinked, 'service record follows the rename').toBe('NEW TRUCK NAME');
+    expect(r.expRelinked, 'vehicle expense follows the rename').toBe('NEW TRUCK NAME');
+    expect(r.tripRelinked, 'mileage trip follows the rename').toBe('NEW TRUCK NAME');
+    expect(r.untagged, 'no expense is orphaned into untagged by a rename').toBe(0);
+    expect(r.untaggedTotal, 'no dollars fall out of the deduction on rename').toBe(0);
+    expect(r.vehExpTotal, 'the $400 fuel cost is still attributed to the vehicle').toBe(400);
+    await restore(snap);
+  });
+
   test('zero console errors across the vehicle sync suite', async () => {
     assertNoErrors(page, 'vehicle sync');
   });

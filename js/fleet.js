@@ -893,6 +893,32 @@ function saveFleetVehicle() {
     newV.purchaseExpenseId = null;
   }
 
+  // ── A rename must carry its records with it ──────────────────────────────
+  // Everything attached to a vehicle is linked by NAME, not id: service records
+  // and vehicle expenses via `vehicleName`, mileage trips via `vehicle`. Nothing
+  // re-pointed them when the name changed, so renaming a truck orphaned its
+  // whole history — and the damage was not just cosmetic. _vehSchedC buckets
+  // expenses by name and CONSERVATIVELY EXCLUDES anything it cannot match
+  // (counting it as "untagged" so it never double-deducts), so after a rename
+  // the contractor's fuel/repair/purchase costs silently stopped deducting on
+  // Schedule C, and the service log vanished from the vehicle's card, its P&L,
+  // and the which-method-wins verdict.
+  //
+  // Re-stamping the links here fixes trips, expenses and service records in one
+  // pass and leaves every read site unchanged. These are all synced tables, so
+  // the saveAll() below propagates the re-stamp to the other devices too.
+  // (The deeper fix is to key these off the vehicle's stable row id the way
+  // odometer readings now are; that means touching the mileage UI, both expense
+  // modals and the deduction engine, so it is deliberately not bundled into a
+  // tax-math change.)
+  if(isEdit && oldV.name && oldV.name !== name){
+    const _oldName = oldV.name;
+    let _relinked = 0;
+    maintenance.forEach(m=>{ if(m.vehicleName===_oldName){ m.vehicleName=name; _relinked++; } });
+    expenses.forEach(e=>{ if(e.vehicleName===_oldName){ e.vehicleName=name; _relinked++; } });
+    mileage.forEach(t=>{ if(t.vehicle===_oldName){ t.vehicle=name; _relinked++; } });
+    if(_relinked&&typeof showToast==='function')setTimeout(()=>showToast(_relinked+' linked record'+(_relinked===1?'':'s')+' moved to the new name','🔗'),900);
+  }
   if(isEdit) vehs[_fleetEditIdx] = newV;
   else vehs.push(newV);
   _setVehicles(vehs);
