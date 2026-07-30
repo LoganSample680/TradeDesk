@@ -60,7 +60,7 @@ test.describe('Clear all data, every store wiped', () => {
       agreements = [{ id: 15, title: 'NDA' }];
       checksState = { foo: 'bar' };
       S.employees = [{ id: 16, name: 'Crew A' }];
-      S.vehicles = [{ id: 17, name: 'Van' }];
+      _setVehicles([{ id: 17, name: 'Van' }]);
 
       clearAllData();
       // clearAllData's confirmed callback is async (awaits the cloud-tracking clear);
@@ -75,7 +75,11 @@ test.describe('Clear all data, every store wiped', () => {
         events: events.length, photos: photos.length, licenses: licenses.length,
         contracts: contracts.length, agreements: agreements.length,
         checksStateKeys: Object.keys(checksState).length,
-        employees: (S.employees || []).length, vehicles: (S.vehicles || []).length,
+        employees: (S.employees || []).length,
+        // The live fleet (td_vehicles) AND the retired blob key must both end up
+        // empty: leaving the legacy copy behind would let the one-time migration
+        // lift the "cleared" trucks straight back on the next boot.
+        vehicles: getVehicles().length, legacyVehicleBlob: (S.vehicles || []).length,
       };
     });
 

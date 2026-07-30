@@ -1217,6 +1217,7 @@ const _TD_TABLES=[
   {t:'td_contracts',   get:()=>contracts,   set:v=>{contracts.length=0;v.forEach(r=>contracts.push(r));}, tx:null},
   {t:'td_agreements',  get:()=>agreements,  set:v=>{agreements.length=0;v.forEach(r=>agreements.push(r));}, tx:null},
   {t:'td_maintenance', get:()=>maintenance, set:v=>{maintenance.length=0;v.forEach(r=>maintenance.push(r));}, tx:null},
+  {t:'td_vehicles',    get:()=>vehicles,    set:v=>{vehicles.length=0;v.forEach(r=>vehicles.push(r));},     tx:null},
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
@@ -1229,6 +1230,14 @@ const _TD_TABLES=[
 // next load. Deleting a vehicle service record simply didn't stick. Built
 // FROM _TD_TABLES now so a future table can never repeat this class of bug.
 _locallyDeletedIds=Object.fromEntries(_TD_TABLES.map(({t})=>[t,new Set()]));
+// SAME defect, second map. _lastKnownIds is declared as a hand-listed literal
+// far above (it predates _TD_TABLES), and it had already drifted: td_maintenance
+// was missing, so line ~1028's "we deleted it locally, never resurrect" guard
+// silently no-opped for service records. Backfill from _TD_TABLES so neither
+// that table nor td_vehicles (nor any future one) can repeat it. Additive, not a
+// replacement: existing Sets keep their identity for anything holding a ref, and
+// specs that reset _lastKnownIds={} still work via the defensive ||new Set() sites.
+_TD_TABLES.forEach(({t})=>{if(!_lastKnownIds[t])_lastKnownIds[t]=new Set();});
 // Dev-time guard: reports if _TD_TABLES ever gains a table this object
 // doesn't cover (the exact defect above), a silent multi-week data-loss bug
 // turned into an immediate, loud console error instead. Self-checking since
@@ -1237,7 +1246,9 @@ _locallyDeletedIds=Object.fromEntries(_TD_TABLES.map(({t})=>[t,new Set()]));
 function _assertLocallyDeletedIdsComplete(){
   const missing=_TD_TABLES.map(({t})=>t).filter(t=>!_locallyDeletedIds[t]);
   if(missing.length)console.error('[_locallyDeletedIds] missing table(s): deletes on '+missing.join(', ')+' will never sweep from the cloud:',missing);
-  return missing;
+  const missingKnown=_TD_TABLES.map(({t})=>t).filter(t=>!_lastKnownIds[t]);
+  if(missingKnown.length)console.error('[_lastKnownIds] missing table(s): a locally-deleted row on '+missingKnown.join(', ')+' can resurrect from a peer:',missingKnown);
+  return missing.concat(missingKnown);
 }
 _assertLocallyDeletedIdsComplete();
 // True when a Supabase error means "this table doesn't exist in the DB yet", e.g. a
@@ -1768,6 +1779,7 @@ async function supaInit(){
           if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
+          if(_cd.vehicles?.length)vehicles=_cd.vehicles;
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -1818,6 +1830,7 @@ async function supaInit(){
           _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+          vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
           // Inbound-lead review queue lives OUTSIDE these arrays and was never cleared
           // here: the incoming account's Leads page kept rendering the outgoing
           // account's unreviewed QR/intake leads until its own poll happened to
@@ -1983,6 +1996,7 @@ async function supaInit(){
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
         if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
+          if(_cd.vehicles?.length)vehicles=_cd.vehicles;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -2454,7 +2468,7 @@ function _checkEmployeeVehiclePicker(){
   const tk=todayKey();
   const key='emp_vehicle_'+tk;
   if(localStorage.getItem(key))return;
-  const vehs=S.vehicles||[];
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
   const ov=document.createElement('div');ov.id='_vehicle-picker-ov';ov.className='zmodal-overlay';
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
@@ -3961,6 +3975,7 @@ function _enterOfflineMode(){
       if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
       if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
+          if(_cd.vehicles?.length)vehicles=_cd.vehicles;
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
       if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
     }catch(_ce){}
@@ -4256,6 +4271,11 @@ function _wipeLocalAccountData(){
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
   _subBids=null;window._subBidsKicked=false; // incoming-bid cache is per-account
   clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+  // The fleet is a synced array now (td_vehicles), not a settings key, so it needs
+  // the same hard clear the other per-record arrays get here — otherwise the
+  // outgoing account's trucks stay in memory and render under the next login,
+  // which is the exact cross-account bleed the S.vehicles reset below guarded.
+  vehicles=[];
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
   // the arrays above, the next account's Leads page would keep rendering this
   // account's unreviewed QR/intake leads (and could even promote one into the
@@ -4276,9 +4296,11 @@ function _wipeLocalAccountData(){
   Object.values(_lastKnownIds).forEach(s=>{if(s&&typeof s.clear==='function')s.clear();});
   // settingsTs:0: zp3_S is shared across accounts on this device. Without zeroing the
   // timestamp these blanked settings beat the next account's cloud copy and overwrite it.
-  // vehiclesTs:0 for the same reason: the blanked vehicles:[] must never win the
-  // per-field keep-local rule over the next login's real cloud fleet.
-  S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],vehiclesTs:0,weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
+  // vehicles/vehiclesTs are the pre-20260809 LEGACY fleet copy; they are no longer read
+  // at runtime, but they stay zeroed here so the next account can never migrate this
+  // account's leftover blob. vehiclesMigratedTs clears with them so the next login is
+  // free to run its own one-time lift.
+  S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],vehiclesTs:0,vehiclesMigratedTs:0,weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
   saveAll();
 }
 async function supaSignOut(){
@@ -4372,6 +4394,13 @@ function _mergeIncomingSettings(ss,src){
     return false;
   }
   const _localTsBefore=S.settingsTs||0;
+  // LEGACY ONLY. The live fleet is td_vehicles now (20260809) and never passes
+  // through here. This keep-newer-local rule survives for one job: protecting the
+  // un-migrated S.vehicles blob on an account whose _migrateVehiclesFromSettings
+  // hasn't run yet, so the lift still finds the real fleet to read. Once
+  // S.vehiclesMigratedTs is set these keys are inert. Do not add new fields here —
+  // a per-field patch on a shared blob is the pattern that lost the fleet to begin
+  // with; give the data its own table instead.
   const _localVehs=S.vehicles,_localVehsTs=S.vehiclesTs||0;
   S={...S,...ss};
   S._sOwner=_incomingOwner; // stamp owner so the NEXT login can detect an account switch
@@ -4438,7 +4467,7 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from, the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,ts:Date.now()});
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
@@ -4710,10 +4739,19 @@ function _paintCacheForDelta(uid){
   try{
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
-    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance};
+    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles};
     const _ptTs=Date.now();
     for(const{t,set}of _TD_TABLES){
-      const rows=Array.isArray(byKey[t])?byKey[t]:[];
+      // A cache written by an OLDER app version has no key for a table added
+      // since (td_vehicles here; td_maintenance had the same exposure when it
+      // landed). Treating that absence as "the cloud says empty" and calling
+      // set([]) silently WIPES the in-memory records on the first boot after
+      // deploy — a real data-loss path, caught by the fleet suite. An absent key
+      // means the cache has no opinion about this table, so leave it alone and
+      // let the real cloud load populate it.
+      const cached=byKey[t];
+      if(!Array.isArray(cached))continue;
+      const rows=cached;
       set(rows);
       // Painted rows came from the cloud-derived cache → in sync as of NOW for the merge's
       // pending-gate. Conservative on purpose: field clocks rehydrated from the op log are
@@ -4730,7 +4768,7 @@ function _writeLocalCache(){
   try{
     const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,checksState,
+      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
     // Delta sidecar: the server-updated_at cursor + known-cloud hashes, owner-scoped.
@@ -6030,6 +6068,33 @@ async function supaLoadFromCloud({silent=false}={}){
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
 
+    // ── One-time fleet lift out of the settings blob (20260809_td_vehicles) ──
+    // MUST run here, after the load: only now do we know whether this account
+    // already has td_vehicles rows. Running it earlier would migrate against an
+    // empty array and duplicate a fleet the cloud was about to deliver.
+    // No-ops on every subsequent boot (rows exist / vehiclesMigratedTs set), and
+    // its ids are derived from the legacy name slug so two devices racing the
+    // same lift converge on identical rows instead of doubling the fleet.
+    if(!_isEmployee&&typeof _migrateVehiclesFromSettings==='function'){
+      try{
+        const _lifted=_migrateVehiclesFromSettings();
+        if(_lifted>0){
+          _logSave('vehicles-migrated',{count:_lifted});
+          // Push straight away: until these rows land, the fleet still exists
+          // only in the blob this migration is retiring. Only once the flush
+          // resolves is the lift durable enough to mark done — see the note in
+          // _migrateVehiclesFromSettings about the first-boot wipe window.
+          saveAll();
+          setTimeout(()=>{
+            Promise.resolve(_flushSaveNow())
+              .then(()=>{if(typeof _markVehiclesMigrated==='function')_markVehiclesMigrated();saveAll();})
+              .catch(()=>{});
+          },60);
+          if(typeof renderFleetVehicles==='function'){try{renderFleetVehicles();}catch(_e){}}
+        }
+      }catch(_e){}
+    }
+
     // If _mergeIncomingSettings detected local is newer than cloud it scheduled a
     // debounced save (2 s). Flush it immediately now that _supaCloudLoaded=true so
     // a force-quit right after boot can't outrun the timer and lose settings.
@@ -6278,6 +6343,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.licenses?.length)licenses=_cd.licenses;if(_cd.events?.length)events=_cd.events;
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
+          if(_cd.vehicles?.length)vehicles=_cd.vehicles;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED, fallback)');applySettings();_refillSettingsFormUnlessEditing();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;

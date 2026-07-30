@@ -831,7 +831,7 @@ function quickAction(type){
     // Mileage requires a vehicle on record (IRS: every trip log names a vehicle).
     // The Drive button is grayed until one exists (_renderDashSetupTodo); this is
     // the fallback so the flow never dead-ends into an empty mileage log.
-    if((typeof getVehicles==='function'?getVehicles():(S.vehicles||[])).length===0){
+    if((typeof getVehicles==='function'?getVehicles():[]).length===0){
       if(typeof showToast==='function')showToast('Add a vehicle first to log mileage','🚗');
       if(typeof openAddVehicleModal==='function')openAddVehicleModal();
       return;

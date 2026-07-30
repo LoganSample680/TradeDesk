@@ -23,7 +23,7 @@ function seedFleet() {
   // separate orphan the app never sees. So we MUST assign via bare `S` here.
   S.irsRate = 0.67;
   S.vehicleOdoLog = S.vehicleOdoLog || {};
-  S.vehicles = [
+  _setVehicles([
     {
       name: '2019 F-150', nickname: 'Work Truck', status: 'active',
       color: 'White', plate: 'ABC-1234', vin: '1FTFW1ET0000TEST0',
@@ -42,7 +42,7 @@ function seedFleet() {
       purchasePrice: 20000, salePrice: 12000, saleDate: '2026-03-15',
       bizUse: 50, gvwr: 'light', deductionMethod: 'mileage', downtimeLog: [],
     },
-  ];
+  ]);
   window.maintenance = [
     { id: 101, vehicleName: '2019 F-150', date: '2026-01-10', type: 'oil_change',
       typeLabel: 'Oil Change', cost: 60, odo: 12000, vendor: 'Jiffy Lube',
@@ -729,14 +729,14 @@ test.describe('Fleet mutations + photo handlers', () => {
         const vehs = getVehicles();
         const before = vehs.length;
         // add a throwaway vehicle at the end and remove that index
-        S.vehicles = [...vehs, { name: 'Throwaway Truck', nickname: 'TMP', status: 'active' }];
-        const idx = S.vehicles.length - 1;
+        _setVehicles([...vehs, { name: 'Throwaway Truck', nickname: 'TMP', status: 'active' }]);
+        const idx = getVehicles().length - 1;
         const origConfirm = window.zConfirm;
         window.zConfirm = (msg, cb) => { if (cb) cb(); };
         _confirmRemoveVehicle(idx);
         window.zConfirm = origConfirm;
-        const hasThrowaway = (S.vehicles || []).some(v => v.name === 'Throwaway Truck');
-        return { ok: true, before, after: (S.vehicles || []).length, hasThrowaway };
+        const hasThrowaway = getVehicles().some(v => v.name === 'Throwaway Truck');
+        return { ok: true, before, after: getVehicles().length, hasThrowaway };
       } catch (e) { return { ok: false, error: e.message }; }
     });
     if (result.skip) return;

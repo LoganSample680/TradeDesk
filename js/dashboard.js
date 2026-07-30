@@ -79,7 +79,7 @@ function _pickLeadForEstimate(clientId){
 function _renderDashSetupTodo(){
   const el=document.getElementById('dash-setup-todo');
   if(!el)return;
-  const hasVehicle=(typeof getVehicles==='function'?getVehicles():(S.vehicles||[])).length>0;
+  const hasVehicle=(typeof getVehicles==='function'?getVehicles():[]).length>0;
   // Gray the Drive button until a vehicle exists, pointer-events:none makes it
   // physically un-tappable, matching the "can't log mileage yet" intent; the
   // quickAction('drive') guard is the belt-and-suspenders fallback.
@@ -330,7 +330,7 @@ function renderDash(){
     const vehId=localStorage.getItem(vehKey);
     let vehLabel='';
     if(vehId&&vehId!=='none'){
-      const v=(S.vehicles||[]).find(x=>String(x.id)===String(vehId));
+      const v=((typeof getVehicles==='function')?getVehicles():[]).find(x=>String(x.id)===String(vehId));
       if(v)vehLabel=[v.year,v.make,v.model].filter(Boolean).join(' ')||v.name||'Vehicle';
     }
     function _empStatusLabel(s){return s==='done'?'Completed '+svgIcon('✓',{size:12}):s==='arrived'?'On site':s==='enroute'?'On my way':'Not started';}

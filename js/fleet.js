@@ -1,5 +1,7 @@
 // js/fleet.js: Fleet management module
-// Vehicles are stored in S.vehicles (settings, syncs to Supabase)
+// Vehicles are rows in td_vehicles (per-record sync, same fabric as every other
+// td_* table). They lived in the S.vehicles settings blob until 20260809 — see
+// _setVehicles in settings.js for why that lost edits.
 // Maintenance records are stored in `maintenance` array (localStorage zp3_maint)
 
 /* ── Service type definitions ───────────────────────────────────────────────── */
@@ -638,9 +640,7 @@ function _renderOdometerReport() {
   const v = vehs[_odoReportVehIdx];
   if(!v) return;
   const yr = String(_odoReportYear);
-  const log = S.vehicleOdoLog || {};
-  const key = _vehKey(v);
-  const rec = (log[yr] && log[yr][key]) || {};
+  const rec = _vehOdo(v, yr);
   const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                              .reduce((s,t)=>s+(t.miles||0),0);
   const startOdo = rec.start || 0;
@@ -716,12 +716,9 @@ function saveOdometerReport() {
   const v = vehs[_odoReportVehIdx];
   if(!v) return;
   const yr = String(_odoReportYear);
-  const key = _vehKey(v);
-  if(!S.vehicleOdoLog) S.vehicleOdoLog = {};
-  if(!S.vehicleOdoLog[yr]) S.vehicleOdoLog[yr] = {};
-  if(!S.vehicleOdoLog[yr][key]) S.vehicleOdoLog[yr][key] = {};
-  if(start>0) S.vehicleOdoLog[yr][key].start = start;
-  if(end>0)   S.vehicleOdoLog[yr][key].end   = end;
+  const patch = {};
+  if(start>0) patch.start = start;
+  if(end>0)   patch.end   = end;
   // Auto-calculate and save business use %
   const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                              .reduce((s,t)=>s+(t.miles||0),0);
@@ -731,7 +728,10 @@ function saveOdometerReport() {
     vehs[_odoReportVehIdx] = v;
     _setVehicles(vehs);
   }
-  S.settingsTs=Date.now(); // odometer log is IRS data, must win the settings sync
+  // Readings ride the vehicle's own row now, so this no longer needs to fight
+  // for the settings blob (the old `S.settingsTs=Date.now()` "must win the
+  // settings sync" line was treating the symptom of exactly that race).
+  if(Object.keys(patch).length) _setVehOdo(v, yr, patch);
   saveAll();
   document.getElementById('odo-report-overlay')?.remove();
   showToast('Mileage report saved'+(totalDriven>0&&loggedMiles>0?', '+v.bizUse+'% business use':''),'📊');
@@ -924,11 +924,23 @@ function _confirmRemoveVehicle(idx) {
   const v = vehs[idx];
   if(!v) return;
   zConfirm('Remove '+(v.nickname||v.name)+'? This will not delete service records.', () => {
-    vehs.splice(idx, 1);
-    _setVehicles(vehs);
+    // Through _userDelete: it diffs the array before/after and records the removed
+    // id in _locallyDeletedIds, which is the ONLY thing that lets supaSaveToCloud's
+    // sweep soft-delete the row server-side. Without it the vehicle disappears
+    // locally and then resurrects from the cloud on the next load — the same defect
+    // that hid in td_maintenance for weeks (see _TD_TABLES' note in cloud.js).
+    _userDelete(() => {
+      vehs.splice(idx, 1);
+      _setVehicles(vehs);
+    });
+    // An explicit removal proves the owner is managing this fleet, so stop the
+    // one-time lift for good: otherwise deleting the last vehicle before the
+    // migration was marked done would let the retired blob resurrect it.
+    if(typeof _markVehiclesMigrated==='function')_markVehiclesMigrated();
     saveAll();
     _closeFleetVehModal();
     renderFleetVehicles();
+    if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();
   }, {title:'Remove vehicle', yes:'Remove'});
 }
 

@@ -60,7 +60,7 @@ test.describe('Fleet Management', () => {
 
     // Ensure no vehicles
     await page.evaluate(() => {
-      S.vehicles = [];
+      _setVehicles([]);
       renderFleetVehicles();
     });
     await page.waitForTimeout(200);
@@ -78,7 +78,7 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [];
+      _setVehicles([]);
       renderFleetVehicles();
     });
     await page.waitForTimeout(200);
@@ -107,7 +107,7 @@ test.describe('Fleet Management', () => {
 
     // Reset vehicles
     await page.evaluate(() => {
-      S.vehicles = [];
+      _setVehicles([]);
     });
 
     // Add a vehicle via the modal
@@ -135,12 +135,12 @@ test.describe('Fleet Management', () => {
 
     // Make sure we have at least one vehicle
     await page.evaluate(() => {
-      if (!S.vehicles || !S.vehicles.length) {
-        S.vehicles = [{
+      if (!getVehicles().length) {
+        _setVehicles([{
           name: '2019 F-150', nickname: 'Work Truck',
           status: 'active', downtimeLog: [], addedDate: '2024-01-01',
           bizUse: 100,
-        }];
+        }]);
         renderFleetVehicles();
       }
     });
@@ -163,17 +163,18 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01',
         bizUse: 100,
-      }];
+      }]);
       maintenance = [];
       renderFleetVehicles();
+      // Open in the SAME evaluate: vehicles is a synced table now, so a cloud
+      // load landing in a gap here would replace this in-memory-only seed with
+      // the mocked backend's zero rows before the modal ever reads it.
+      openAddMaintenanceModal(0);
     });
-    await page.waitForTimeout(200);
-
-    await page.evaluate(() => openAddMaintenanceModal(0));
     await page.waitForTimeout(400);
 
     const maintOverlay = await page.locator('#fleet-maint-overlay').isVisible();
@@ -198,11 +199,11 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01',
         bizUse: 100,
-      }];
+      }]);
       maintenance = [];
       renderFleetVehicles();
     });
@@ -244,17 +245,18 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01',
         bizUse: 100,
-      }];
+      }]);
       maintenance = [];
       renderFleetVehicles();
+      // Open in the SAME evaluate: vehicles is a synced table now, so a cloud
+      // load landing in a gap here would replace this in-memory-only seed with
+      // the mocked backend's zero rows before the modal ever reads it.
+      openAddMaintenanceModal(0);
     });
-    await page.waitForTimeout(200);
-
-    await page.evaluate(() => openAddMaintenanceModal(0));
     await page.waitForTimeout(400);
 
     // Switch to brakes type
@@ -284,11 +286,11 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01',
         bizUse: 100,
-      }];
+      }]);
       maintenance = [];
       renderFleetVehicles();
     });
@@ -299,7 +301,7 @@ test.describe('Fleet Management', () => {
       const vehs = getVehicles();
       vehs[0].status = 'down';
       vehs[0].downtimeLog = [{ start: '2026-05-27', end: null, reason: 'Engine work' }];
-      S.vehicles = vehs;
+      _setVehicles(vehs);
       saveAll();
       renderFleetVehicles();
     });
@@ -316,13 +318,13 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'down',
         downtimeLog: [{ start: '2026-05-20', end: null, reason: 'Engine work' }],
         addedDate: '2024-01-01',
         bizUse: 100,
-      }];
+      }]);
       maintenance = [];
       renderFleetVehicles();
     });
@@ -352,12 +354,12 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01',
         purchasePrice: 35000, purchaseDate: '2024-01-15',
         bizUse: 100,
-      }];
+      }]);
       maintenance = [{
         id: 1001, vehicleName: '2019 F-150', date: '2026-05-01',
         odo: 45000, type: 'oil_change', typeLabel: 'Oil Change',
@@ -390,10 +392,10 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [
+      _setVehicles([
         { name: '2019 F-150', status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100 },
         { name: '2021 Sprinter', status: 'active', downtimeLog: [], addedDate: '2024-06-01', bizUse: 100 },
-      ];
+      ]);
       maintenance = [];
       renderFleetVehicles();
     });
@@ -434,7 +436,7 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [];
+      _setVehicles([]);
       expenses = [];
     });
 
@@ -466,11 +468,11 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2018 Ram 1500', status: 'active',
         downtimeLog: [], addedDate: '2023-01-01', bizUse: 100,
         purchasePrice: 25000,
-      }];
+      }]);
       income = [];
       renderFleetVehicles();
     });
@@ -504,11 +506,11 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Big Red', color: 'Red',
         plate: 'ABC-1234', status: 'active', downtimeLog: [],
         addedDate: '2024-01-01', bizUse: 80,
-      }];
+      }]);
       renderFleetVehicles();
     });
     await page.waitForTimeout(200);
@@ -597,10 +599,10 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
-      }];
+      }]);
       renderFleetVehicles();
     });
     await page.waitForTimeout(200);
@@ -633,10 +635,10 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
-      }];
+      }]);
       renderFleetVehicles();
     });
     await page.waitForTimeout(200);
@@ -666,10 +668,10 @@ test.describe('Fleet Management', () => {
     const yr = new Date().getFullYear().toString();
 
     await page.evaluate((yr) => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
-      }];
+      }]);
       // 3 business trips this year totalling 600 miles
       mileage = [
         { id: 1, vehicle: '2019 F-150', date: yr+'-03-15', miles: 250 },
@@ -703,10 +705,11 @@ test.describe('Fleet Management', () => {
     const bizUse = await page.evaluate(() => getVehicles()[0].bizUse);
     expect(bizUse).toBe(60);
 
-    // Odometer log should be saved
+    // Odometer readings should be saved — on the vehicle's own row now, not in a
+    // separate name-keyed S.vehicleOdoLog map (20260809_td_vehicles).
     const odoLog = await page.evaluate((yr) => {
-      const key = _vehKey(getVehicles()[0]);
-      return S.vehicleOdoLog?.[yr]?.[key] || null;
+      const rec = _vehOdo(getVehicles()[0], yr);
+      return Object.keys(rec).length ? rec : null;
     }, yr);
     expect(odoLog).not.toBeNull();
     expect(odoLog.start).toBe(10000);
@@ -720,16 +723,17 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
-      }];
+      }]);
       maintenance = [];
       renderFleetVehicles();
+      // Open in the SAME evaluate: vehicles is a synced table now, so a cloud
+      // load landing in a gap here would replace this in-memory-only seed with
+      // the mocked backend's zero rows before the modal ever reads it.
+      openAddMaintenanceModal(0);
     });
-    await page.waitForTimeout(200);
-
-    await page.evaluate(() => openAddMaintenanceModal(0));
     await page.waitForTimeout(400);
 
     // Should have scan receipt label/button
@@ -752,10 +756,10 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
-      }];
+      }]);
       mileage = [
         { id: 1, vehicle: '2019 F-150', date: '2024-06-15', miles: 400 },
         { id: 2, vehicle: '2019 F-150', date: '2025-03-10', miles: 350 },
@@ -783,10 +787,10 @@ test.describe('Fleet Management', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2019 F-150', nickname: 'Work Truck',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 100,
-      }];
+      }]);
       mileage = [];
       maintenance = [];
       renderFleetVehicles();
@@ -849,67 +853,93 @@ test.describe('Vehicle management consolidation, removal regression', () => {
   });
 
   // ── Regression: a deleted vehicle must STAY deleted ───────────────────────
-  // Bug ("Zach Ford always comes back"): getVehicles() re-seeded a vehicle from
-  // the legacy single-vehicle string field S.veh whenever S.vehicles was empty,
-  // so deleting the last vehicle resurrected it on the very next render. The seed
-  // now fires only when the fleet was NEVER managed (no S.vehiclesTs stamp); any
-  // add/edit/delete stamps it and permanently disables the seed.
+  // Bug ("Zach Ford always comes back"): the legacy single-vehicle field S.veh
+  // was re-seeded on every read, so deleting the last vehicle resurrected it on
+  // the very next render.
+  //
+  // OLD mechanism (pre-20260809): getVehicles() itself did the seeding, gated on
+  // an S.vehiclesTs stamp that every write had to remember to set.
+  // NEW mechanism: the fleet is td_vehicles and getVehicles() is a pure read of
+  // that array. The S.veh seed happens ONCE, inside
+  // _migrateVehiclesFromSettings, gated on S.vehiclesMigratedTs — so the
+  // resurrection risk moved from "every render" to "the one-time lift", and
+  // that is where this test now points. The behaviour under protection is
+  // unchanged: a deliberately deleted vehicle never comes back.
   test('Deleting the last vehicle stays deleted, no resurrection from legacy S.veh', async () => {
     const r = await page.evaluate(() => {
       // Legacy account shape: old string field set, fleet never managed.
+      vehicles.length = 0;
       delete S.vehicles;
       delete S.vehiclesTs;
+      S.vehiclesMigratedTs = 0;
       S.veh = 'Zach Ford';
-      const legacySeed = getVehicles().map(v => v.name); // migration still shows it
+      _migrateVehiclesFromSettings();
+      const legacySeed = getVehicles().map(v => v.name); // one-time lift shows it
 
-      // Delete it the way the fleet remove path does: array shrinks + stamp.
+      // Delete it the way the real fleet remove path does — _confirmRemoveVehicle
+      // both shrinks the array AND calls _markVehiclesMigrated(), which is what
+      // retires the legacy blob for good. Skipping that second half is precisely
+      // what would let the next boot's lift resurrect the truck.
       const vehs = getVehicles();
       vehs.splice(0, 1);
-      S.vehicles = vehs;
-      S.vehiclesTs = Date.now();
+      _setVehicles(vehs);
+      _markVehiclesMigrated();
       const afterDelete = getVehicles().map(v => v.name);
 
-      // S.veh is still a live settings field, re-reading must NOT bring it back.
+      // S.veh is still a live settings field; neither a re-read nor a second
+      // boot (which re-runs the lift) may bring the deleted truck back.
       const afterReRead = getVehicles().map(v => v.name);
-      return { legacySeed, afterDelete, afterReRead, vehStillSet: S.veh };
+      _migrateVehiclesFromSettings();
+      const afterNextBoot = getVehicles().map(v => v.name);
+      return { legacySeed, afterDelete, afterReRead, afterNextBoot, vehStillSet: S.veh };
     });
-    expect(r.legacySeed).toContain('Zach Ford'); // legacy one-time migration still works
+    expect(r.legacySeed).toContain('Zach Ford'); // legacy one-time lift still works
     expect(r.afterDelete).toEqual([]);           // deletion sticks
     expect(r.afterReRead).toEqual([]);           // no resurrection on the next render
+    expect(r.afterNextBoot).toEqual([]);         // and none on the next boot's lift
     expect(r.vehStillSet).toBe('Zach Ford');     // the settings field itself is untouched
 
     // Leave a clean fleet for the tests that follow.
-    await page.evaluate(() => { S.vehicles = []; delete S.veh; });
+    await page.evaluate(() => { _setVehicles([]); delete S.veh; });
     assertNoErrors(page, 'vehicle delete does not resurrect from legacy S.veh');
   });
 
-  // ── Regression: fleet writes must win the settings sync ───────────────────
-  // Bug ("Zach's Ford deletes itself"): every fleet write stamped only its
-  // private vehiclesTs, never the blob-level settingsTs. The cloud save gate
-  // (skip-settings when cloud settingsTs is newer) therefore treated a fresh
-  // vehicle add as STALE and silently never uploaded it, the vehicle lived
+  // ── Regression: a fleet edit can never look "stale" to the save gate ──────
+  // Bug ("Zach's Ford deletes itself"): the fleet rode inside the settings blob,
+  // so a vehicle add only uploaded if its write also won a blob-level timestamp
+  // race. When it lost (cloud settingsTs newer → skip-settings) the vehicle lived
   // only in that device's cache and vanished on the next sign-out/fresh boot.
-  // _setVehicles is the single write path and must stamp BOTH timestamps.
-  test('_setVehicles stamps settingsTs AND vehiclesTs, a fleet edit can never look stale to the save gate', async () => {
+  //
+  // OLD fix: make every fleet write stamp settingsTs as well as vehiclesTs — i.e.
+  // keep fighting the race. NEW fix (20260809): take the fleet OUT of the blob.
+  // There is no shared stamp left to lose, so this now asserts the stronger
+  // property — a fleet edit lands as its own per-record row and is completely
+  // independent of settingsTs, even one stuck in the distant past.
+  test('a fleet edit is a per-record write, independent of the settings blob timestamp', async () => {
     const r = await page.evaluate(() => {
       if (typeof _setVehicles !== 'function') return null;
-      const staleTs = 1000; // ancient settingsTs, like a user who never opens Settings
-      S.settingsTs = staleTs;
-      S.vehiclesTs = 0;
-      const before = Date.now();
+      S.settingsTs = 1000; // ancient blob stamp, like a user who never opens Settings
+      const settingsTsBefore = S.settingsTs;
       _setVehicles([{ name: 'Zach Ford', nickname: '' }]);
+      const def = (typeof _TD_TABLES !== 'undefined' ? _TD_TABLES : []).find(t => t.t === 'td_vehicles');
       return {
-        vehicles: (S.vehicles || []).map(v => v.name),
-        settingsBumped: (S.settingsTs || 0) >= before, // beats any older cloud blob
-        vehiclesBumped: (S.vehiclesTs || 0) >= before, // wins the per-field tiebreaker
+        vehicles: getVehicles().map(v => v.name),
+        // The edit is visible to the per-record uploader...
+        visibleToSync: !!def && def.get().some(v => v.name === 'Zach Ford'),
+        // ...without touching the blob stamp at all. Under the old design this
+        // had to be bumped or the vehicle silently never left the device.
+        settingsTsUntouched: S.settingsTs === settingsTsBefore,
+        // And the vehicle is not written back into the retired blob key.
+        notInLegacyBlob: !(S.vehicles || []).some(v => v && v.name === 'Zach Ford'),
       };
     });
     expect(r).not.toBeNull();
     expect(r.vehicles).toEqual(['Zach Ford']);
-    expect(r.settingsBumped).toBe(true);
-    expect(r.vehiclesBumped).toBe(true);
-    await page.evaluate(() => { S.vehicles = []; });
-    assertNoErrors(page, '_setVehicles stamps both sync timestamps');
+    expect(r.visibleToSync, 'the edit is queued for per-row upload').toBe(true);
+    expect(r.settingsTsUntouched, 'no blob race to win any more').toBe(true);
+    expect(r.notInLegacyBlob, 'the retired S.vehicles key is never written again').toBe(true);
+    await page.evaluate(() => { _setVehicles([]); });
+    assertNoErrors(page, 'fleet edit is independent of the settings blob');
   });
 
   // ── Regression: the fleet SERVICE LOG is a synced cloud table ─────────────
@@ -962,7 +992,7 @@ test.describe('Vehicle management consolidation, removal regression', () => {
       const YR = '2031';
       const rate = _getIrsRateForYear(YR);
       const mSnap = [...mileage], eSnap = [...expenses];
-      S.vehicles = [{ name: 'Test Truck', deductionMethod: 'mileage', bizUse: 80 }];
+      _setVehicles([{ name: 'Test Truck', deductionMethod: 'mileage', bizUse: 80 }]);
       mileage = [{ id: 1, date: YR + '-03-01', miles: 100, vehicle: 'Test Truck' }];
       expenses = [
         { id: 11, date: YR + '-03-02', cat: 'fuel', amount: 200, vehicleName: 'Test Truck' },
@@ -970,7 +1000,7 @@ test.describe('Vehicle management consolidation, removal regression', () => {
         { id: 13, date: YR + '-03-04', cat: 'materials', amount: 50 },          // NOT a vehicle expense
       ];
       const vd = _vehSchedC(YR);
-      mileage = mSnap; expenses = eSnap; S.vehicles = [];
+      mileage = mSnap; expenses = eSnap; _setVehicles([]);
       return { vd, expected: +(100 * rate).toFixed(2) };
     });
     expect(r).not.toBeNull();
@@ -986,11 +1016,11 @@ test.describe('Vehicle management consolidation, removal regression', () => {
       if (typeof _vehSchedC !== 'function') return null;
       const YR = '2032';
       const mSnap = [...mileage], eSnap = [...expenses];
-      S.vehicles = [{ name: 'Work Van', deductionMethod: 'actual', bizUse: 75 }];
+      _setVehicles([{ name: 'Work Van', deductionMethod: 'actual', bizUse: 75 }]);
       mileage = [{ id: 2, date: YR + '-05-01', miles: 400, vehicle: 'Work Van' }];
       expenses = [{ id: 21, date: YR + '-05-02', cat: 'fuel', amount: 1000, vehicleName: 'Work Van' }];
       const vd = _vehSchedC(YR);
-      mileage = mSnap; expenses = eSnap; S.vehicles = [];
+      mileage = mSnap; expenses = eSnap; _setVehicles([]);
       return vd;
     });
     expect(r).not.toBeNull();
@@ -1008,7 +1038,7 @@ test.describe('Vehicle management consolidation, removal regression', () => {
       const YR = '2033';
       const rate = _getIrsRateForYear(YR);
       const mSnap = [...mileage], eSnap = [...expenses];
-      S.vehicles = [];
+      _setVehicles([]);
       mileage = [{ id: 3, date: YR + '-06-01', miles: 50 }];
       expenses = [{ id: 31, date: YR + '-06-02', cat: 'fuel', amount: 80 }];
       const vd = _vehSchedC(YR);
@@ -1028,7 +1058,7 @@ test.describe('Vehicle management consolidation, removal regression', () => {
       const YR = '2036';
       const rate = _getIrsRateForYear(YR);
       const mSnap = [...mileage], eSnap = [...expenses], mtSnap = [...maintenance];
-      S.vehicles = [{ name: 'Log Everything Truck', deductionMethod: 'mileage', bizUse: 100 }];
+      _setVehicles([{ name: 'Log Everything Truck', deductionMethod: 'mileage', bizUse: 100 }]);
       mileage = [{ id: 5, date: YR + '-02-01', miles: 100, vehicle: 'Log Everything Truck' }];
       // A fuel expense (excluded from Schedule C under mileage method)...
       expenses = [{ id: 51, date: YR + '-02-02', cat: 'fuel', amount: 400, vehicleName: 'Log Everything Truck' }];
@@ -1036,7 +1066,7 @@ test.describe('Vehicle management consolidation, removal regression', () => {
       // is records-only). The year-end verdict must still count it.
       maintenance = [{ id: 52, date: YR + '-02-03', vehicleName: 'Log Everything Truck', type: 'trans', cost: 800 }];
       const vd = _vehSchedC(YR);
-      mileage = mSnap; expenses = eSnap; maintenance = mtSnap; S.vehicles = [];
+      mileage = mSnap; expenses = eSnap; maintenance = mtSnap; _setVehicles([]);
       return { p: vd.perVehicle[0], schedCAdjust: vd.expAdjust, mileDedExpected: +(100 * rate).toFixed(2) };
     });
     expect(r).not.toBeNull();
@@ -1051,13 +1081,13 @@ test.describe('Vehicle management consolidation, removal regression', () => {
     const ok = await page.evaluate(() => {
       if (typeof _vehWinnerAlert !== 'function') return null;
       const mSnap = [...mileage];
-      S.vehicles = [{ name: 'Verdict Truck', deductionMethod: 'mileage', bizUse: 100 }];
+      _setVehicles([{ name: 'Verdict Truck', deductionMethod: 'mileage', bizUse: 100 }]);
       mileage = [{ id: 6, date: '2037-01-05', miles: 50, vehicle: 'Verdict Truck' }];
       _vehWinnerAlert('2037');
       const ov = [...document.querySelectorAll('.zmodal-overlay')].pop();
       const has = !!ov && /vehicle deduction/i.test(ov.textContent || '');
       document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
-      mileage = mSnap; S.vehicles = [];
+      mileage = mSnap; _setVehicles([]);
       return has;
     });
     expect(ok).toBe(true);
@@ -1069,14 +1099,14 @@ test.describe('Vehicle management consolidation, removal regression', () => {
       if (typeof _vehSchedC !== 'function') return null;
       const YR = '2034';
       const mSnap = [...mileage], eSnap = [...expenses];
-      S.vehicles = [
+      _setVehicles([
         { name: 'Truck A', deductionMethod: 'mileage', bizUse: 100 },
         { name: 'Van B', deductionMethod: 'actual', bizUse: 100 },
-      ];
+      ]);
       mileage = []; // no trips this year
       expenses = [{ id: 41, date: YR + '-07-01', cat: 'fuel', amount: 120 }]; // no vehicleName, 2 vehicles
       const vd = _vehSchedC(YR);
-      mileage = mSnap; expenses = eSnap; S.vehicles = [];
+      mileage = mSnap; expenses = eSnap; _setVehicles([]);
       return vd;
     });
     expect(r).not.toBeNull();
@@ -1128,7 +1158,7 @@ test.describe('Vehicle management consolidation, removal regression', () => {
   // ── Mileage: no-vehicle prompt appears when there are no vehicles ─────────
   test('Mileage page shows no-vehicle onboarding prompt when no vehicles added', async () => {
     await page.evaluate(() => {
-      S.vehicles = [];
+      _setVehicles([]);
       mileage = [];
     });
     await goPg(page, 'pg-tracker');
@@ -1148,7 +1178,7 @@ test.describe('Vehicle management consolidation, removal regression', () => {
   test('Mileage page renders hero and trip log normally when vehicles present', async () => {
     const yr = new Date().getFullYear().toString();
     await page.evaluate((yr) => {
-      S.vehicles = [{ name: '2019 F-150', nickname: 'Work Truck', status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 80 }];
+      _setVehicles([{ name: '2019 F-150', nickname: 'Work Truck', status: 'active', downtimeLog: [], addedDate: '2024-01-01', bizUse: 80 }]);
       mileage = [
         { id: 1, vehicle: '2019 F-150', date: yr+'-04-10', miles: 45, purpose: 'Client visit' },
         { id: 2, vehicle: '2019 F-150', date: yr+'-04-15', miles: 30 },
@@ -1169,7 +1199,7 @@ test.describe('Vehicle management consolidation, removal regression', () => {
 
   // ── Fleet: openAddVehicleModal called from anywhere navigates to Fleet ────
   test('openAddVehicleModal(-1) is the sole vehicle add entry point', async () => {
-    await page.evaluate(() => { S.vehicles = []; });
+    await page.evaluate(() => { _setVehicles([]); });
     await goPg(page, 'pg-team');
     await page.waitForTimeout(200);
 
@@ -1191,47 +1221,59 @@ test.describe('Vehicle management consolidation, removal regression', () => {
     assertNoErrors(page, 'openAddVehicleModal is sole vehicle add entry point');
   });
 
-  // ── Purchase info survives a second edit (vehiclesTs guard) ─────────────
-  test('Purchase info survives a second edit (vehiclesTs cloud-overwrite guard)', async () => {
-    // Simulate the race: user saves a vehicle with purchase info, then a stale
-    // cloud load tries to overwrite S.vehicles with old data lacking those fields.
-    // The vehiclesTs guard in supaLoadFromCloud should protect the local version.
+  // ── An incoming settings blob can no longer touch the fleet ──────────────
+  // THE owner-reported bug, asserted directly. A vehicle is saved with its full
+  // purchase info and its current-year odometer reading; then a settings blob
+  // arrives from the cloud that still carries an OLD `vehicles` key (exactly what
+  // a device running pre-20260809 code would upload) and wins the blob race.
+  //
+  // OLD design: that incoming blob WAS the fleet, so surviving it depended on a
+  // vehiclesTs tiebreaker — and any path that forgot to stamp it (or lost the
+  // race) silently reverted the truck. The odometer log had no such guard at all,
+  // which is why the current-year reading kept disappearing.
+  // NEW design: the fleet is not in settings, so a settings merge is simply
+  // incapable of reverting it. No tiebreaker required.
+  test('a stale settings merge cannot revert the fleet or its odometer readings', async () => {
     await page.evaluate(() => {
-      // Save a vehicle with full purchase info, stamping vehiclesTs
-      S.vehicles = [{
+      _setVehicles([{
         name: '2020 Ram 1500', nickname: 'Fleet Truck',
         purchaseDate: '2020-06-15', purchasePrice: 45000, purchaseOdo: 100,
         gvwr: 'heavy_truck', deductionMethod: 'mileage',
         status: 'active', addedDate: '2020-06-15',
-      }];
-      S.vehiclesTs = Date.now() - 1000; // 1s ago, local is newer
+      }]);
+      _setVehOdo(getVehicles()[0], 2026, { start: 48250, startDate: '2026-01-01' });
     });
 
-    // Simulate stale cloud settings arriving (no purchase fields, older ts)
     await page.evaluate(() => {
-      const staleSettings = JSON.stringify({
+      // A peer's settings blob arrives carrying the retired keys, and it WINS the
+      // blob race (newer settingsTs). Under the old design this reverted the truck.
+      const ss = {
         vehicles: [{ name: '2020 Ram 1500', nickname: 'Fleet Truck', status: 'active', addedDate: '2020-06-15' }],
-        vehiclesTs: Date.now() - 60000, // 60s ago, cloud is stale
+        vehiclesTs: Date.now(),
+        vehicleOdoLog: {},
+        settingsTs: Date.now(),
         bname: 'Test Biz',
-      });
-      // Run the merge logic that supaLoadFromCloud uses
-      const ss = JSON.parse(staleSettings);
-      const _localVehs = S.vehicles;
-      const _localVehsTs = S.vehiclesTs || 0;
+      };
       S = { ...S, ...ss };
-      if (_localVehsTs > (ss.vehiclesTs || 0)) {
-        S.vehicles = _localVehs;
-        S.vehiclesTs = _localVehsTs;
-      }
     });
 
-    // Purchase info should still be intact
-    const vehs = await page.evaluate(() => S.vehicles);
-    expect(vehs[0].purchaseDate).toBe('2020-06-15');
-    expect(vehs[0].purchasePrice).toBe(45000);
-    expect(vehs[0].purchaseOdo).toBe(100);
+    const r = await page.evaluate(() => {
+      const v = getVehicles()[0];
+      return {
+        count: getVehicles().length,
+        purchaseDate: v && v.purchaseDate,
+        purchasePrice: v && v.purchasePrice,
+        purchaseOdo: v && v.purchaseOdo,
+        odoStart: _vehOdo(v, 2026).start || 0,
+      };
+    });
+    expect(r.count).toBe(1);
+    expect(r.purchaseDate).toBe('2020-06-15');
+    expect(r.purchasePrice).toBe(45000);
+    expect(r.purchaseOdo).toBe(100);
+    expect(r.odoStart, 'the current-year odometer reading survives too').toBe(48250);
 
-    assertNoErrors(page, 'Purchase info survives vehiclesTs guard');
+    assertNoErrors(page, 'settings merge cannot revert the fleet');
   });
 
   // ── Zero console errors throughout ───────────────────────────────────────
@@ -1247,11 +1289,11 @@ test.describe('Vehicle management consolidation, removal regression', () => {
       // A scorecard/clock modal (.zmodal-overlay, contains 📊) left open by a
       // prior test intercepts pointer events in WebKit and blocks the click below.
       document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
-      S.vehicles = [{
+      _setVehicles([{
         name: '2022 Silverado', nickname: 'Van',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01',
         bizUse: 100,
-      }];
+      }]);
       maintenance = [{ id: 9001, vehicleName: '2022 Silverado', type: 'oil', typeLabel: 'Oil Change', date: '2025-05-01', cost: 75, odo: 42000 }];
       renderFleetVehicles();
     });
@@ -1289,11 +1331,11 @@ test.describe('Vehicle management consolidation, removal regression', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2022 Silverado', nickname: 'Van',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01',
         bizUse: 100,
-      }];
+      }]);
       maintenance = [{ id: 9002, vehicleName: '2022 Silverado', type: 'oil', typeLabel: 'Oil Change', date: '2025-05-10', cost: 80, odo: 43000 }];
       renderFleetVehicles();
       openFleetVehicleDetail(0);
@@ -1318,11 +1360,11 @@ test.describe('Vehicle management consolidation, removal regression', () => {
     await goPg(page, 'pg-team');
 
     await page.evaluate(() => {
-      S.vehicles = [{
+      _setVehicles([{
         name: '2022 Silverado', nickname: 'Van',
         status: 'active', downtimeLog: [], addedDate: '2024-01-01',
         bizUse: 100,
-      }];
+      }]);
       maintenance = [{ id: 9003, vehicleName: '2022 Silverado', type: 'oil', typeLabel: 'Oil Change', date: '2025-05-15', cost: 90, odo: 44000 }];
       renderFleetVehicles();
       openAddMaintenanceModal(0, 9003);

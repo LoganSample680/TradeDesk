@@ -1357,10 +1357,10 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
   test('_renderDashSetupTodo: fresh account: shows the full checklist and grays the Drive button', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
       const _origQrCache = window._qrHasSourceCached;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
-      S.vehicles = []; S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
       window._qrHasSourceCached = () => false; // fresh account: no QR code created yet
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
@@ -1380,7 +1380,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
         hasProgress: !!(card && /\d+ of \d+ done/i.test(card.textContent)),
         driveGrayed: !!(drive && drive.style.pointerEvents === 'none' && parseFloat(drive.style.opacity) < 1),
       };
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
       window._qrHasSourceCached = _origQrCache;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
@@ -1402,10 +1402,10 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
   test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up, Create) has the smooth-transition class', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
       const _origQrCache = window._qrHasSourceCached;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
-      S.vehicles = []; S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
       window._qrHasSourceCached = () => false;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
@@ -1416,7 +1416,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
         allHaveClass: ctas.every(b => b.classList.contains('td-setup-cta')),
         hasTransition: !!(cs && cs.transitionDuration && cs.transitionDuration !== '0s'),
       };
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
       window._qrHasSourceCached = _origQrCache;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
@@ -1458,13 +1458,13 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
   test('_renderDashSetupTodo: every item done/skipped: shows a clean done state, then retires on dismiss', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
       const _origQrCache = window._qrHasSourceCached;
       window.saveAll = () => {};
       // Vehicle added (done); the two optional items skipped; QR marked done via
       // its cache (it can't be skipped, so "everything clear" requires done:true,
       // not skipped) → nothing left.
-      S.vehicles = [{ id: 1, name: '2019 F-150' }]; S.vehiclesTs = Date.now();
+      _setVehicles([{ id: 1, name: '2019 F-150' }]); S.vehiclesTs = Date.now();
       S.setupSkipped = ['getpaid', 'logo', 'team']; S.setupDone = false;
       window._qrHasSourceCached = () => true;
       _renderDashSetupTodo();
@@ -1478,7 +1478,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const hiddenAfterDismiss = !!(card && card.style.display === 'none');
       window.saveAll = _origSave;
       window._qrHasSourceCached = _origQrCache;
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.setupDone = _savedDone;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.setupDone = _savedDone;
       _renderDashSetupTodo();
       return { doneStateShown, driveEnabled, hiddenAfterDismiss };
     });
@@ -1491,9 +1491,9 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
   test('_skipSetupTodo: skipping an item removes it from the checklist', async () => {
     const r = await page.evaluate(() => {
       if (typeof _skipSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _origSave = window.saveAll;
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _origSave = window.saveAll;
       window.saveAll = () => {};
-      S.vehicles = []; S.vehiclesTs = 0; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      _setVehicles([]); S.vehiclesTs = 0; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
       _renderDashSetupTodo();
       const before = document.getElementById('dash-setup-todo').querySelectorAll('.td-setup-row').length;
       _skipSetupTodo('logo');
@@ -1501,7 +1501,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const after = card.querySelectorAll('.td-setup-row').length;
       const logoGone = !/add your logo/i.test(card.textContent);
       window.saveAll = _origSave;
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
       _renderDashSetupTodo();
       return { before, after, logoGone };
     });
@@ -1547,8 +1547,8 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
   test('quickAction("drive"): no vehicle: guarded, does not open the drive modal', async () => {
     const r = await page.evaluate(() => {
       if (typeof quickAction !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh;
-      S.vehicles = []; S.vehiclesTs = 0; S.veh = '';
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh;
+      _setVehicles([]); S.vehiclesTs = 0; S.veh = '';
       let driveOpened = false, addOpened = false;
       const _origDrive = window.openDriveModal, _origAdd = window.openAddVehicleModal, _origToast = window.showToast;
       window.openDriveModal = () => { driveOpened = true; };
@@ -1556,7 +1556,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       window.showToast = () => {};
       try { quickAction('drive'); } catch (e) {}
       window.openDriveModal = _origDrive; window.openAddVehicleModal = _origAdd; window.showToast = _origToast;
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh;
       return { driveOpened, addOpened };
     });
     if (r.skip) return;
@@ -2723,9 +2723,8 @@ test.describe('Employee dispatch and daily view', () => {
       _employeeRecord = { id: 'test-emp-1', name: 'Test Worker' };
       // Seed a vehicle
       if (typeof S !== 'undefined') {
-        S.vehicles = S.vehicles || [];
-        if (!S.vehicles.find(v => v.id === 'veh-test-1')) {
-          S.vehicles.push({ id: 'veh-test-1', year: '2023', make: 'Ford', model: 'F-150' });
+        if (!getVehicles().find(v => String(v.id) === 'veh-test-1')) {
+          _setVehicles([...getVehicles(), { id: 'veh-test-1', year: '2023', make: 'Ford', model: 'F-150' }]);
         }
       }
       // Clear today's vehicle selection
@@ -3056,7 +3055,7 @@ test.describe('Employee tasks and mileage vehicle pre-fill', () => {
   test('mileage openLogTripModal pre-fills employee vehicle', async () => {
     const result = await page.evaluate(() => {
       if (typeof openLogTripModal !== 'function') return { fnExists: false };
-      S.vehicles = [{ id: 'v1', name: '2023 F-150', nickname: 'Work Truck' }];
+      _setVehicles([{ id: 'v1', name: '2023 F-150', nickname: 'Work Truck' }]);
       localStorage.setItem('emp_vehicle_' + todayKey(), 'v1');
       _isEmployee = true;
       _employeeRecord = { id: 'emp-mile-test', name: 'Driver', role: 'tech' };
@@ -3067,7 +3066,7 @@ test.describe('Employee tasks and mileage vehicle pre-fill', () => {
       _isEmployee = false;
       _employeeRecord = null;
       localStorage.removeItem('emp_vehicle_' + todayKey());
-      S.vehicles = [];
+      _setVehicles([]);
       return { fnExists: true, preSelected };
     });
     if (!result.fnExists) return;
@@ -7788,6 +7787,12 @@ test.describe('Never-delete policy, archive + hold + edit', () => {
     // settings merge kept the locally-newer vehicles with no account check. The guard
     // stamps S._sOwner and, on an owner change, takes the incoming account's settings
     // wholesale: no vehicle (or any key) survives across the boundary.
+    //
+    // Post-20260809 this covers the RETIRED S.vehicles blob key only — the live
+    // fleet is td_vehicles and gets the same protection the other per-record
+    // arrays get, a hard `vehicles=[]` at both account boundaries in cloud.js
+    // (the SIGNED_IN switch and the sign-out reset). Kept because an un-migrated
+    // account still carries the legacy key, and it must not cross accounts either.
     const r = await page.evaluate(() => {
       if (typeof _mergeIncomingSettings !== 'function') return { skip: true };
       const savedS = JSON.parse(JSON.stringify(S));

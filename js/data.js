@@ -1,6 +1,6 @@
 // ── Submit guard, prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[],vehicles=[];
 // Expose all data arrays and employee record on window so Playwright E2E tests can read/write them.
 // All are module-scoped `let` variables (not on window by default in non-module scripts).
 Object.defineProperty(window,'bids',{get:()=>bids,set:v=>{bids=v;},configurable:true});
@@ -11,6 +11,10 @@ Object.defineProperty(window,'income',{get:()=>income,set:v=>{income=v;},configu
 Object.defineProperty(window,'expenses',{get:()=>expenses,set:v=>{expenses=v;},configurable:true});
 Object.defineProperty(window,'mileage',{get:()=>mileage,set:v=>{mileage=v;},configurable:true});
 Object.defineProperty(window,'maintenance',{get:()=>maintenance,set:v=>{maintenance=v;},configurable:true});
+// The fleet. Was S.vehicles inside the settings blob until 20260809_td_vehicles;
+// it is now a per-record synced table so one device can never clobber another's
+// fleet edit, and each vehicle carries its own odometer readings (v.odo[year]).
+Object.defineProperty(window,'vehicles',{get:()=>vehicles,set:v=>{vehicles=v;},configurable:true});
 Object.defineProperty(window,'liens',{get:()=>liens,set:v=>{liens=v;},configurable:true});
 Object.defineProperty(window,'timeEntries',{get:()=>timeEntries,set:v=>{timeEntries=v;},configurable:true});
 Object.defineProperty(window,'photos',{get:()=>photos,set:v=>{photos=v;},configurable:true});
@@ -233,6 +237,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   localStorage.setItem('zp3_contracts',JSON.stringify(contracts));
   localStorage.setItem('zp3_agreements',JSON.stringify(agreements));
   localStorage.setItem('zp3_maint',JSON.stringify(maintenance));
+  localStorage.setItem('zp3_vehicles',JSON.stringify(vehicles));
   // Offline-pending: write synchronously so a force-quit can never outrun a timer.
   // Use the shared owner-stamped blob so this account's data can never be merged
   // into a different account on the next sign-in (cross-account-bleed guard).
@@ -264,6 +269,11 @@ function loadAll(){
     // td_maintenance sync requires an id on every record; very old service
     // records predating the id field get one now so they can ride the upload.
     maintenance.forEach((m,i)=>{if(!m.id)m.id=Date.now()+i;});
+    vehicles=lp('zp3_vehicles',[]);
+    // Same contract as maintenance above: td_vehicles is keyed by id, so any
+    // record that predates the table (or arrived from the legacy S.vehicles
+    // blob before _migrateVehiclesFromSettings ran) gets a stable one now.
+    vehicles.forEach((v,i)=>{if(!v.id)v.id=Date.now()*1000+i;});
     // Tax bracket migrations
     if(S.fedMFS===14600)S.fedMFS=15000;
     if(S.fedSingle===14600)S.fedSingle=15000;
@@ -278,6 +288,11 @@ function loadAll(){
     S.teamTracking=true; // crew tracking is mandatory, no longer user-toggleable
     if(S.irsRate===0.67||S.irsRate===0.670)S.irsRate=0.700;
     if(new Date().getFullYear()>=2026&&S.irsRate<0.725){S.irsRate=0.725;S.irsRateYear=new Date().getFullYear();}
+    // Lift the legacy in-blob fleet (S.vehicles + S.vehicleOdoLog) into the
+    // td_vehicles array. Idempotent and guarded, so calling it here (local boot,
+    // covers offline/no-account use) and again after the cloud load (cloud.js,
+    // once the real fleet has arrived) can never double-create.
+    if(typeof _migrateVehiclesFromSettings==='function')_migrateVehiclesFromSettings();
     try{localStorage.setItem('zp3_S',JSON.stringify(S));}catch(e){}
   }catch(e){}
   // Nuke stale Supabase-managed keys left by old app versions

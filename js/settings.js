@@ -978,7 +978,14 @@ function clearAllData(){
       // missing) means those records survive a "Clear all data" and resurface.
       _userDelete(()=>{
         clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
-        S.employees=[];_setVehicles([]); // stamped wipe, must beat any stale cloud copy in the merge
+        S.employees=[];_setVehicles([]);
+        // Retire the pre-td_vehicles blob too. _setVehicles no longer touches
+        // S.vehicles (the fleet is its own table now), so without this a "Clear
+        // all data" would leave the legacy copy sitting there for
+        // _migrateVehiclesFromSettings to lift straight back on the next boot.
+        // Stamping vehiclesMigratedTs is what actually blocks that re-lift.
+        S.vehicles=[];S.vehiclesTs=Date.now();S.vehicleOdoLog={};S.veh='';
+        S.vehiclesMigratedTs=Date.now();S.settingsTs=Date.now();
         estLinkedClientId=null;editingBidId=null;
         gps={active:false,startCoords:null,startTime:null,clientId:null,clientName:'',timerInt:null,vehicle:'',purpose:''};
         if(_activeTimer){clearInterval(_activeTimer.timerInterval);_activeTimer=null;hideClockBanner();}
@@ -1056,25 +1063,98 @@ function updateLocationBtn(){
   else{btn.innerHTML=svgIcon('📍')+' Location access';btn.style.color='';}
 }
 
-// EVERY vehicle write goes through here. Stamps BOTH timestamps:
-// - vehiclesTs: the per-field tiebreaker _mergeIncomingSettings uses to keep a
-//   newer local fleet over an older incoming one.
-// - settingsTs: the blob-level last-writer-wins stamp. Without it a fleet edit
-//   looked "stale" to the save gate (cloud settingsTs newer → skip-settings) and
-//   NEVER UPLOADED, the added vehicle lived only in this device's cache and
-//   vanished on the next sign-out/fresh boot (the "Zach's Ford deletes itself" bug).
-function _setVehicles(vehs){S.vehicles=vehs;S.vehiclesTs=Date.now();S.settingsTs=Date.now();}
-function getVehicles(){
-  let vehs=Array.isArray(S.vehicles)?S.vehicles:[];
-  // Legacy one-time seed from the old single-vehicle string field `S.veh`.
-  // Fire it ONLY when the fleet has NEVER been managed, i.e. no vehiclesTs
-  // stamp. Every add/edit/delete stamps S.vehiclesTs (a plain settings save
-  // does not), so once the user has touched the fleet, including DELETING
-  // the last vehicle, this seed is permanently off and a removed vehicle can
-  // never resurrect from S.veh (the "Zach Ford keeps coming back" bug).
-  if(!vehs.length&&!S.vehiclesTs&&S.veh&&S.veh.trim()){vehs=[S.veh.trim()];}
-  // Migrate legacy string array to object array
-  return vehs.map(v=>typeof v==='string'?{name:v,nickname:''}:v);
+// ── The fleet lives in td_vehicles (20260809), NOT in the settings blob ──────
+// It used to be S.vehicles inside S, and that was the bug: the settings blob is
+// last-writer-wins by settingsTs and supaSaveToCloud SKIPS the whole settings
+// write when the cloud stamp is newer ('skip-settings'). A truck added or
+// renamed on one device therefore never uploaded whenever any other session had
+// touched settings since, and the next sign-in repainted from a cloud copy that
+// had never received it. Per-record rows with their own server updated_at end
+// that class of loss outright; there is no shared stamp left to lose a race on.
+//
+// EVERY vehicle write still goes through _setVehicles so the array keeps one
+// identity (the _TD_TABLES getter and _userDelete's before/after snapshot both
+// close over it) and every row keeps a stable id.
+function _setVehicles(vehs){
+  const next=(vehs||[]).map((v,i)=>{
+    const o=(typeof v==='string')?{name:v,nickname:''}:{...v};
+    // A row with no id can never sync (td_vehicles is keyed by id) and would be
+    // re-created as a duplicate on every save.
+    if(!o.id)o.id=Date.now()*1000+Math.floor(Math.random()*999)+i;
+    return o;
+  });
+  vehicles.length=0;next.forEach(v=>vehicles.push(v));
+}
+function getVehicles(){return vehicles;}
+
+// The pre-td_vehicles odometer key: a slug of the vehicle NAME. Renaming a truck
+// changed its key and orphaned its own IRS readings (the app then re-prompted for
+// them forever). Kept for ONE job only — reading legacy S.vehicleOdoLog during
+// the one-time migration below. Nothing at runtime may key off a name again.
+function _legacyVehKey(v){return(typeof v==='string'?v:(v.name||'vehicle')).toLowerCase().replace(/\s+/g,'_');}
+
+// One-time lift of the legacy fleet out of the settings blob into td_vehicles,
+// folding each vehicle's odometer readings (previously a separate name-keyed map,
+// S.vehicleOdoLog[year][nameSlug]) onto its own row as v.odo[year].
+//
+// Idempotent by construction, which matters because it runs on every device:
+//   • ids are DERIVED from the legacy name slug, not Date.now(), so two devices
+//     migrating the same fleet independently produce the SAME ids and the upsert
+//     converges instead of duplicating the fleet.
+//   • it no-ops the moment any td_vehicles row exists.
+//   • S.vehiclesMigratedTs stops it re-running on a device whose owner has since
+//     deliberately deleted every vehicle — without that flag an empty fleet plus
+//     a still-present legacy blob would resurrect the deleted trucks, which is
+//     exactly the old "Zach's Ford keeps coming back" bug in a new costume.
+// The legacy S.vehicles / S.vehicleOdoLog keys are deliberately LEFT IN the blob,
+// untouched and never written again, as a read-only safety net: if this lift ever
+// fails mid-flight, the original fleet is still sitting there to migrate next boot.
+function _migrateVehiclesFromSettings(){
+  if(vehicles.length||S.vehiclesMigratedTs)return 0;
+  let legacy=Array.isArray(S.vehicles)?S.vehicles:[];
+  // Older single-vehicle field, seeded only if the fleet was never managed.
+  if(!legacy.length&&!S.vehiclesTs&&S.veh&&S.veh.trim())legacy=[S.veh.trim()];
+  // Nothing to lift → mark done immediately; there is no data to lose.
+  if(!legacy.length){S.vehiclesMigratedTs=Date.now();return 0;}
+  // Rows WERE lifted: deliberately do NOT mark done yet. Between the lift and
+  // the upload landing, a concurrent cloud load returns zero td_vehicles rows
+  // and replaces the table with them (standard behaviour for every synced
+  // table) — and on the first boot after this ships, EVERY existing account is
+  // in that window. Marking done here would make that wipe permanent. Leaving
+  // the flag unset means the next boot simply lifts again, and because the ids
+  // are derived from the legacy name slug the re-lift produces byte-identical
+  // rows rather than a duplicate fleet. _markVehiclesMigrated() closes it out
+  // once the rows are actually durable.
+  const odoLog=S.vehicleOdoLog||{};
+  const seen=new Set();
+  const rows=legacy.map((v,i)=>{
+    const o=(typeof v==='string')?{name:v,nickname:''}:{...v};
+    const slug=_legacyVehKey(o);
+    let id='v_'+slug;
+    // Two trucks sharing a name were already indistinguishable in the old
+    // name-keyed odo log; keep them as separate rows rather than collapsing one.
+    if(seen.has(id))id='v_'+slug+'_'+i;
+    seen.add(id);
+    if(!o.id)o.id=id;
+    const odo={...(o.odo||{})};
+    Object.keys(odoLog).forEach(yr=>{
+      const rec=odoLog[yr]&&odoLog[yr][slug];
+      if(rec&&!odo[yr])odo[yr]={...rec};
+    });
+    if(Object.keys(odo).length)o.odo=odo;
+    return o;
+  });
+  vehicles.length=0;rows.forEach(r=>vehicles.push(r));
+  return rows.length;
+}
+
+// Closes out the one-time lift. Called once the fleet is durable — after the
+// post-load flush lands (cloud.js), on an explicit vehicle delete, and on a
+// deliberate "Clear all data" — so that from then on an empty fleet is taken at
+// face value and the retired blob is never lifted again ("Zach's Ford keeps
+// coming back" can't return).
+function _markVehiclesMigrated(){
+  if(!S.vehiclesMigratedTs){S.vehiclesMigratedTs=Date.now();S.settingsTs=Date.now();}
 }
 function getVehicleLabel(v){
   if(!v)return '';
@@ -1104,7 +1184,6 @@ function _checkOdometerPrompt(){
   if(document.querySelector('.zmodal-overlay,#_odo-modal-ov'))return;
   const cy=new Date().getFullYear();
   const mo=new Date().getMonth(); // 0=Jan
-  const log=S.vehicleOdoLog||{};
   const snoozed=S._odoSnoozedUntil||0;
   if(Date.now()<snoozed)return;
 
@@ -1112,8 +1191,7 @@ function _checkOdometerPrompt(){
   const tasks=[];
   // 1. Current year start, always check regardless of month (mid-year signups need this too)
   vehs.forEach(v=>{
-    const key=_vehKey(v);
-    if(!(log[cy]&&log[cy][key]&&log[cy][key].start)){
+    if(!_vehOdo(v,cy).start){
       // midYear=true when past April, modal shows "best estimate" language instead of "Jan 1"
       tasks.push({year:cy,type:'start',veh:v,midYear:mo>3});
     }
@@ -1122,8 +1200,7 @@ function _checkOdometerPrompt(){
   if(mo<=2){
     const ly=cy-1;
     vehs.forEach(v=>{
-      const key=_vehKey(v);
-      if(!(log[ly]&&log[ly][key]&&log[ly][key].end)){
+      if(!_vehOdo(v,ly).end){
         tasks.push({year:ly,type:'end',veh:v});
       }
     });
@@ -1136,7 +1213,38 @@ function _checkOdometerPrompt(){
   _showOdometerModal(tasks,snoozeCount>=3);
 }
 
-function _vehKey(v){return(typeof v==='string'?v:(v.name||'vehicle')).toLowerCase().replace(/\s+/g,'_');}
+// ── Odometer readings now hang off the vehicle row, not a name-keyed map ─────
+// Read: never throws, always returns an object, so callers can do _vehOdo(v,y).start.
+function _vehOdo(v,year){return(v&&v.odo&&v.odo[String(year)])||{};}
+// Write: merges a patch into v.odo[year] and persists the fleet. Because the
+// vehicle is its own td_vehicles row, this upload can no longer be skipped by an
+// unrelated settings save winning the blob race — which is what used to lose the
+// current-year reading. Returns the updated record.
+function _setVehOdo(v,year,patch){
+  if(!v)return null;
+  const vehs=getVehicles();
+  // Match on the stable row id. Callers legitimately hold a STALE object
+  // reference (the odometer modal captures t.veh when it builds its task list,
+  // and every _setVehicles since has replaced the array's records with fresh
+  // copies), so identity comparison would miss and silently drop the reading.
+  const i=vehs.findIndex(x=>String(x.id)===String(v.id));
+  if(i<0){
+    // Not in the fleet — a deleted vehicle, or a record that never had an id.
+    // Patch the caller's object so it stays self-consistent, but do NOT call
+    // _setVehicles: writing the fleet back without this row would report success
+    // while persisting nothing, which is precisely the silent loss this whole
+    // refactor exists to end.
+    if(!v.odo)v.odo={};
+    v.odo[String(year)]={...(v.odo[String(year)]||{}),...patch};
+    return null;
+  }
+  const target=vehs[i];
+  if(!target.odo)target.odo={};
+  target.odo[String(year)]={...(target.odo[String(year)]||{}),...patch};
+  _setVehicles(vehs);
+  // Re-read: _setVehicles replaces each record with a normalized copy.
+  return _vehOdo(getVehicles()[i],year);
+}
 
 // Public entry point called from "Update readings" button and the mileage action card
 function checkOdometerEntries(manual){
@@ -1147,11 +1255,9 @@ function checkOdometerEntries(manual){
   if(!vehs.length)return;
   const cy=new Date().getFullYear();
   const mo=new Date().getMonth();
-  const log=S.vehicleOdoLog||{};
   const tasks=[];
   vehs.forEach(v=>{
-    const key=_vehKey(v);
-    const rec=log[cy]?.[key]||{};
+    const rec=_vehOdo(v,cy);
     tasks.push({year:cy,type:'start',veh:v,midYear:mo>3,manual:true});
     // Show year-end slot if past June or if a reading already exists to correct
     if(mo>=6||rec.end){tasks.push({year:cy,type:'end',veh:v,manual:true});}
