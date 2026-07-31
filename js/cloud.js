@@ -3989,6 +3989,19 @@ function _enterOfflineMode(){
   // Immediately probe for connection so re-auth fires without waiting for the 5s tick
   setTimeout(()=>_probeAndSync(),500);
 }
+function _eyeSvg(off){
+  return off
+    ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0112 19c-7 0-11-7-11-7a20.4 20.4 0 015.06-5.94M9.9 4.24A10.6 10.6 0 0112 4c7 0 11 7 11 7a20.5 20.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+    : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+}
+function _pwToggle(inputId,btnId){
+  const inp=document.getElementById(inputId),btn=document.getElementById(btnId);
+  if(!inp||!btn)return;
+  const show=inp.type==='password';
+  inp.type=show?'text':'password';
+  btn.innerHTML=_eyeSvg(show);
+  btn.setAttribute('aria-label',show?'Hide password':'Show password');
+}
 function supaShowLogin(opts={}){
   if(!supaEnabled())return;
   // Never interrupt the user with a login screen if they have a session backup
@@ -4121,7 +4134,11 @@ function supaShowLogin(opts={}){
                 '<div class="f" style="margin:2px 0 12px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Email</label>'+
                   '<input type="email" id="supa-email" placeholder="you@yourbusiness.com" '+_fldFocus+' style="'+_fld+'"></div>'+
                 '<div class="f" style="margin-bottom:8px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Password</label>'+
-                  '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" '+_fldFocus+' style="'+_fld+'"></div>'+
+                  '<div style="position:relative">'+
+                    '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" '+_fldFocus+' style="'+_fld+';padding-right:42px">'+
+                    '<button type="button" id="supa-pass-eye" onclick="_pwToggle(\'supa-pass\',\'supa-pass-eye\')" aria-label="Show password" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);border-radius:8px;padding:0" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text3)\'">'+_eyeSvg(false)+'</button>'+
+                  '</div>'+
+                '</div>'+
                 '<div style="text-align:right;margin-bottom:18px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
                 '<button onclick="supaSignIn()" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 6px 20px rgba(13,17,23,.28)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 3px 12px rgba(13,17,23,.18)\'" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(13,17,23,.18);letter-spacing:-.01em;transition:transform .15s,box-shadow .15s">Sign in</button>'+
               '</div>'+
