@@ -35,8 +35,26 @@ const FLOW = 'fleet/vehicle-survives-resignin';
 // #nb-team on a phone waits 10s on an element that is present but zero-size and
 // buried under the fixed #mobile-topbar — which is exactly how the first two
 // real runs of this flow died, before touching any vehicle logic.
+// Adding a vehicle schedules the IRS odometer-compliance modal 500ms later
+// (fleet.js saveFleetVehicle -> _checkOdometerPrompt). It is a fixed,
+// full-viewport overlay at z-index 99990, so from that moment on it swallows
+// every nav tap in the flow — which is exactly how the third real run died,
+// again before touching any vehicle logic. A real contractor dismisses it;
+// so does this test. Not what this flow asserts, it just must not be in the way.
+async function dismissOdoPrompt(p) {
+  const present = await p.evaluate(() => !!document.getElementById('_odo-modal-ov'));
+  if (!present) return 0;
+  await p.evaluate(() => {
+    if (typeof _odoSnooze === 'function') _odoSnooze();
+    else document.getElementById('_odo-modal-ov')?.remove();
+  });
+  await p.waitForSelector('#_odo-modal-ov', { state: 'detached', timeout: 5000 });
+  return 1; // an honest tap: the user pressed "remind me later"
+}
+
 async function gotoTeam(p) {
   let n = 0;
+  n += await dismissOdoPrompt(p);
   n += await scrollBy(p, -8000); // clear the fixed topbar before any tap
   const onMobile = await p.evaluate(() => (document.getElementById('mtb-more')?.offsetWidth || 0) > 0);
   if (onMobile) {
@@ -97,6 +115,12 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
         await p.waitForSelector('#fv-name', { state: 'visible', timeout: 8000 });
         n += await type(p, '#fv-name', vehName);
         await p.evaluate(() => saveFleetVehicle());
+        // Settle the compliance modal here rather than letting it surface
+        // mid-step later. It may legitimately never open (a prior run on this
+        // shared dev account may still be inside its 24h snooze), so this waits
+        // opportunistically and dismisses only what is actually there.
+        await p.waitForSelector('#_odo-modal-ov', { state: 'attached', timeout: 4000 }).catch(() => {});
+        n += await dismissOdoPrompt(p);
         return n;
       },
       rule: async (p) => {
