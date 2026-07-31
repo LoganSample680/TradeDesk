@@ -24,7 +24,7 @@
 //
 // Seed data is left in the account per CLAUDE.md §12.7 — nothing here tears down.
 const { test, expect } = require('./flow-test');
-const { needsLiveCreds, signIn, step, report, resetLedger, tap, type, cloudRows } = require('./live-helpers');
+const { needsLiveCreds, signIn, step, report, resetLedger, tap, type, scrollBy, cloudRows } = require('./live-helpers');
 const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'fleet/vehicle-survives-resignin';
@@ -69,7 +69,14 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
       expected: `td_vehicles has a row named "${vehName}"`,
       act: async (p) => {
         let n = 0;
-        n += await tap(p, "#nb-team, #mtb-team");
+        // Pick whichever nav target is actually VISIBLE at this viewport. A
+        // comma selector grabs the first match, which on a phone is the desktop
+        // nav item: present in the DOM but zero-size and sitting under the fixed
+        // #mobile-topbar, so the tap times out against something nobody can see.
+        const teamNav = await p.evaluate(() =>
+          (document.getElementById('mtb-team')?.offsetWidth > 0) ? '#mtb-team' : '#nb-team');
+        n += await scrollBy(p, -8000); // clear the fixed topbar before tapping
+        n += await tap(p, teamNav);
         await p.waitForSelector('#pg-team.active', { state: 'attached', timeout: 8000 });
         n += await tap(p, '#ft-t-fleet');
         await p.evaluate(() => openAddVehicleModal());
@@ -143,7 +150,14 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
           saveAll();
         }, { vehName, fuelCost });
         let n = 0;
-        n += await tap(p, "#nb-team, #mtb-team");
+        // Pick whichever nav target is actually VISIBLE at this viewport. A
+        // comma selector grabs the first match, which on a phone is the desktop
+        // nav item: present in the DOM but zero-size and sitting under the fixed
+        // #mobile-topbar, so the tap times out against something nobody can see.
+        const teamNav = await p.evaluate(() =>
+          (document.getElementById('mtb-team')?.offsetWidth > 0) ? '#mtb-team' : '#nb-team');
+        n += await scrollBy(p, -8000); // clear the fixed topbar before tapping
+        n += await tap(p, teamNav);
         await p.waitForSelector('#pg-team.active', { state: 'attached', timeout: 8000 });
         await p.evaluate(() => { setFleetTab('fleet'); });
         const idx = await p.evaluate((vehName) =>
