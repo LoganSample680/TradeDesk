@@ -29,6 +29,28 @@ const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'fleet/vehicle-survives-resignin';
 
+// Fleet & Team is NOT a primary nav item on mobile. The bottom bar is
+// Home/Leads/Clients/Jobs/More, so a phone reaches it via More -> "Fleet & Team"
+// (#mtb-more then #mmi-team); only the desktop sidebar has #nb-team. Tapping
+// #nb-team on a phone waits 10s on an element that is present but zero-size and
+// buried under the fixed #mobile-topbar — which is exactly how the first two
+// real runs of this flow died, before touching any vehicle logic.
+async function gotoTeam(p) {
+  let n = 0;
+  n += await scrollBy(p, -8000); // clear the fixed topbar before any tap
+  const onMobile = await p.evaluate(() => (document.getElementById('mtb-more')?.offsetWidth || 0) > 0);
+  if (onMobile) {
+    n += await tap(p, '#mtb-more');
+    await p.waitForSelector('#mmi-team', { state: 'visible', timeout: 8000 });
+    n += await tap(p, '#mmi-team');
+  } else {
+    n += await tap(p, '#nb-team');
+  }
+  await p.waitForSelector('#pg-team.active', { state: 'attached', timeout: 8000 });
+  return n;
+}
+
+
 test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sign-in', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
 
@@ -69,15 +91,7 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
       expected: `td_vehicles has a row named "${vehName}"`,
       act: async (p) => {
         let n = 0;
-        // Pick whichever nav target is actually VISIBLE at this viewport. A
-        // comma selector grabs the first match, which on a phone is the desktop
-        // nav item: present in the DOM but zero-size and sitting under the fixed
-        // #mobile-topbar, so the tap times out against something nobody can see.
-        const teamNav = await p.evaluate(() =>
-          (document.getElementById('mtb-team')?.offsetWidth > 0) ? '#mtb-team' : '#nb-team');
-        n += await scrollBy(p, -8000); // clear the fixed topbar before tapping
-        n += await tap(p, teamNav);
-        await p.waitForSelector('#pg-team.active', { state: 'attached', timeout: 8000 });
+        n += await gotoTeam(p);
         n += await tap(p, '#ft-t-fleet');
         await p.evaluate(() => openAddVehicleModal());
         await p.waitForSelector('#fv-name', { state: 'visible', timeout: 8000 });
@@ -150,15 +164,7 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
           saveAll();
         }, { vehName, fuelCost });
         let n = 0;
-        // Pick whichever nav target is actually VISIBLE at this viewport. A
-        // comma selector grabs the first match, which on a phone is the desktop
-        // nav item: present in the DOM but zero-size and sitting under the fixed
-        // #mobile-topbar, so the tap times out against something nobody can see.
-        const teamNav = await p.evaluate(() =>
-          (document.getElementById('mtb-team')?.offsetWidth > 0) ? '#mtb-team' : '#nb-team');
-        n += await scrollBy(p, -8000); // clear the fixed topbar before tapping
-        n += await tap(p, teamNav);
-        await p.waitForSelector('#pg-team.active', { state: 'attached', timeout: 8000 });
+        n += await gotoTeam(p);
         await p.evaluate(() => { setFleetTab('fleet'); });
         const idx = await p.evaluate((vehName) =>
           getVehicles().findIndex(v => v.name === vehName), vehName);
