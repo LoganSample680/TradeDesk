@@ -1399,7 +1399,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
   });
 
-  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up, Create) has the smooth-transition class', async () => {
+  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up, Create, Turn on) has the smooth-transition class', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
@@ -1407,6 +1407,11 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
       _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
       window._qrHasSourceCached = () => false;
+      // 'location' is the 6th item and, like QR, is noSkip: drive mileage and job
+      // hours are the whole time-tracking product and neither works without the
+      // permission. Pin the cache to 'prompt' (not granted) so the fresh-account
+      // case renders it as outstanding, the same way the QR cache is pinned.
+      const _origPerm = _geoPermCache; _geoPermCache = 'prompt';
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
@@ -1418,12 +1423,13 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       };
       _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
       window._qrHasSourceCached = _origQrCache;
+      _geoPermCache = _origPerm;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
     if (r.skip) return;
-    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 5 CTAs (4 optional + QR)').toBe(5);
-    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up / Create all carry the transition class').toBe(true);
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 6 CTAs (4 optional + QR + location)').toBe(6);
+    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up / Create / Turn on all carry the transition class').toBe(true);
     expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
   });
 
@@ -1461,12 +1467,13 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
       const _origQrCache = window._qrHasSourceCached;
       window.saveAll = () => {};
-      // Vehicle added (done); the two optional items skipped; QR marked done via
-      // its cache (it can't be skipped, so "everything clear" requires done:true,
-      // not skipped) → nothing left.
+      // Vehicle added (done); the three optional items skipped; QR and location
+      // marked done via their caches (NEITHER can be skipped, so "everything
+      // clear" requires done:true for both, not skipped) → nothing left.
       _setVehicles([{ id: 1, name: '2019 F-150' }]); S.vehiclesTs = Date.now();
       S.setupSkipped = ['getpaid', 'logo', 'team']; S.setupDone = false;
       window._qrHasSourceCached = () => true;
+      const _origPerm2 = _geoPermCache; _geoPermCache = 'granted';
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
@@ -1478,6 +1485,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const hiddenAfterDismiss = !!(card && card.style.display === 'none');
       window.saveAll = _origSave;
       window._qrHasSourceCached = _origQrCache;
+      _geoPermCache = _origPerm2;
       _setVehicles(_saved); S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.setupDone = _savedDone;
       _renderDashSetupTodo();
       return { doneStateShown, driveEnabled, hiddenAfterDismiss };
