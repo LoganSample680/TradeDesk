@@ -495,15 +495,19 @@ test.describe('Settings extra utility functions', () => {
     if (!result.skip) { expect(result.ok).toBe(true); }
   });
 
-  test('_vehKey: returns vehicle storage key', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _vehKey !== 'function') return { skip: true };
-      try {
-        const key = _vehKey('Work Van', 'Van 1');
-        return { ok: true, isString: typeof key === 'string' };
-      } catch (e) { return { ok: false, error: e.message }; }
-    });
-    if (!result.skip) { expect(result.ok).toBe(true); }
+  // _vehKey (a slug of the vehicle NAME) was deleted in 20260809_td_vehicles:
+  // keying odometer readings by name meant renaming a truck orphaned its own IRS
+  // history. Readings now hang off the stable row id via _vehOdo/_setVehOdo.
+  // Asserting the old entry point is GONE, not merely unused (CLAUDE.md §7.1).
+  test('_vehKey: removed — odometer readings are keyed by row id, never by name', async () => {
+    const result = await page.evaluate(() => ({
+      vehKeyGone: typeof _vehKey === 'undefined',
+      readerExists: typeof _vehOdo === 'function',
+      writerExists: typeof _setVehOdo === 'function',
+    }));
+    expect(result.vehKeyGone, 'the name-slug key function is deleted, not just uncalled').toBe(true);
+    expect(result.readerExists).toBe(true);
+    expect(result.writerExists).toBe(true);
   });
 
   test('_renderDevTradeCard: renders dev trade card HTML', async () => {

@@ -1046,7 +1046,7 @@ function _saveCalTask(dateKey){
   const time=document.getElementById('_ctask-time')?.value||'';
   const notes=(document.getElementById('_ctask-notes')?.value||'').trim();
   document.querySelector('.zmodal-overlay')?.remove();
-  jobs.push({id:Date.now(),bid_id:null,client_id:null,name:title,addr:'',start:dateKey,days:1,buffer:0,value:0,color:'#6366F1',eventType:'task',allowWeekend:true,time,hours:null,notes,status:'upcoming'});
+  jobs.push({id:_newId(),bid_id:null,client_id:null,name:title,addr:'',start:dateKey,days:1,buffer:0,value:0,color:'#6366F1',eventType:'task',allowWeekend:true,time,hours:null,notes,status:'upcoming'});
   saveAll();
   renderCalGrid();
   expandCalDay(dateKey);
@@ -1407,7 +1407,7 @@ function _submitCOSign(bidId,clientId){
   // Save CO
   if(!b.changeOrders)b.changeOrders=[];
   b.changeOrders.push({
-    id:Date.now(),coNum,date:todayKey(),desc,type,amount,delta,
+    id:_newId(),coNum,date:todayKey(),desc,type,amount,delta,
     originalAmount,newAmount,
     signedAt:new Date().toISOString(),signerName,sigData
   });
@@ -1429,7 +1429,7 @@ async function _sendCOToHub(bidId,clientId){
   if(!coData)return;
   const{desc,type,amount,delta,originalAmount,newAmount,coNum}=coData;
   if(!b.changeOrders)b.changeOrders=[];
-  const co={id:Date.now(),coNum,date:todayKey(),desc,type,amount,delta,originalAmount,newAmount,status:'pending_client',sentAt:new Date().toISOString()};
+  const co={id:_newId(),coNum,date:todayKey(),desc,type,amount,delta,originalAmount,newAmount,status:'pending_client',sentAt:new Date().toISOString()};
   b.changeOrders.push(co);
   saveAll();renderDash();renderJobsPage();
   ov?.remove();

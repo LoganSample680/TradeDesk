@@ -79,7 +79,7 @@ function _pickLeadForEstimate(clientId){
 function _renderDashSetupTodo(){
   const el=document.getElementById('dash-setup-todo');
   if(!el)return;
-  const hasVehicle=(typeof getVehicles==='function'?getVehicles():(S.vehicles||[])).length>0;
+  const hasVehicle=(typeof getVehicles==='function'?getVehicles():[]).length>0;
   // Gray the Drive button until a vehicle exists, pointer-events:none makes it
   // physically un-tappable, matching the "can't log mileage yet" intent; the
   // quickAction('drive') guard is the belt-and-suspenders fallback.
@@ -127,6 +127,11 @@ function _renderDashSetupTodo(){
   }catch(_e){}
   const stripeOk=!!(typeof _stripeConnectStatus!=='undefined'&&_stripeConnectStatus&&_stripeConnectStatus.charges_enabled);
   const hasLogo=!!(S.logoData||S.logoUrl);
+  // Primed synchronously from cache (same reasoning as the Stripe cache above):
+  // _qrHasSourceCached() returns true/false once _qrLoadSources has ever run for
+  // this account, or null before that, which cloud.js's post-load hook treats as
+  // "go check" rather than a flash of "not done" on every single boot.
+  const hasQrSource=typeof _qrHasSourceCached==='function'&&_qrHasSourceCached()===true;
   const ALL=[
     {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your vehicles',
       sub:'Mileage writes itself off at tax time, and it turns on the Drive button.',cta:'Add vehicle'},
@@ -136,6 +141,13 @@ function _renderDashSetupTodo(){
       sub:'Proposals that look like a real company, not a text message.',cta:'Add logo'},
     {id:'team',done:false,icon:'👥',title:'Add your crew',
       sub:'W-2 employees clock in so you stop chasing hours on paper, or invite 1099 subs. Solo? Say so and this goes away.',cta:'Set up'},
+    // Not skippable (noSkip:true — owner call): a QR code is how physical
+    // marketing (yard signs, truck wraps, cards) turns into tracked leads,
+    // and it's a 2-tap create, not a real barrier, so this is the one item
+    // worth pushing every contractor through rather than letting it get
+    // shrugged off like the optional ones above.
+    {id:'qrcode',done:hasQrSource,icon:'▦',title:'Create your first QR code',
+      sub:'Put it on a sign or truck, every scan becomes a tracked lead.',cta:'Create',noSkip:true},
   ];
   const remaining=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
   // Endowed progress: credit the 3 things signup genuinely finished (account, trade,
@@ -178,7 +190,7 @@ function _renderDashSetupTodo(){
           '<span style="flex:1;min-width:0">'+
             '<span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+it.title+'</span>'+
             '<span style="display:block;font-size:11px;color:var(--text3);line-height:1.4;margin-top:2px">'+it.sub+'</span>'+
-            '<button onclick="_skipSetupTodo(\''+it.id+'\')" style="margin-top:4px;background:none;border:none;padding:0;font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>'+
+            (it.noSkip?'':'<button onclick="_skipSetupTodo(\''+it.id+'\')" style="margin-top:4px;background:none;border:none;padding:0;font-size:11px;color:var(--text3);text-decoration:underline;cursor:pointer;font-family:inherit">Skip for now</button>')+
           '</span>'+
           '<button class="td-setup-cta" onclick="_setupTodoGo(\''+it.id+'\')" style="flex-shrink:0;font-size:12px;font-weight:800;color:#fff;background:var(--blue);padding:9px 14px;border-radius:8px;border:none;cursor:pointer;font-family:inherit">'+it.cta+'</button>'+
         '</div>'
@@ -195,6 +207,7 @@ function _setupTodoGo(id){
   if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
   if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
   if(id==='team'){_setupTeamChooser();return;}
+  if(id==='qrcode'){if(typeof goPg==='function')goPg('pg-qr-leads');setTimeout(()=>{document.getElementById('qr-new-label')?.focus();},160);return;}
 }
 // Team is a fork, not a single action (owner 2026-07-14): W-2 employee, 1099 sub,
 // or "I don't have a team", the last one is the honest completion for a solo op,
@@ -228,6 +241,7 @@ function _setupTeamRoute(kind){
   },180);
 }
 function _skipSetupTodo(id){
+  if(id==='qrcode')return; // not skippable — no UI path to this either, belt-and-suspenders
   if(!Array.isArray(S.setupSkipped))S.setupSkipped=[];
   if(!S.setupSkipped.includes(id)){S.setupSkipped.push(id);if(typeof saveAll==='function')saveAll();}
   _renderDashSetupTodo();
@@ -316,7 +330,7 @@ function renderDash(){
     const vehId=localStorage.getItem(vehKey);
     let vehLabel='';
     if(vehId&&vehId!=='none'){
-      const v=(S.vehicles||[]).find(x=>String(x.id)===String(vehId));
+      const v=((typeof getVehicles==='function')?getVehicles():[]).find(x=>String(x.id)===String(vehId));
       if(v)vehLabel=[v.year,v.make,v.model].filter(Boolean).join(' ')||v.name||'Vehicle';
     }
     function _empStatusLabel(s){return s==='done'?'Completed '+svgIcon('✓',{size:12}):s==='arrived'?'On site':s==='enroute'?'On my way':'Not started';}
@@ -1493,7 +1507,7 @@ function _markDepositCash(bidId){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   const depAmt=(bid.deposit||0)>0?bid.deposit:bid.amount||0;
   zConfirm('Mark '+fmt(depAmt)+' deposit collected as cash?',()=>{
-    payments.push({id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
+    payments.push({id:_newId(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
       date:todayKey(),type:'deposit',amount:depAmt,method:'cash',ref:'Cash: recorded from feed'});
     saveAll();renderDash();showToast('Cash deposit recorded','💰');
     _refreshClientHub(bid.client_id); // keep client hub balance in sync
@@ -2186,10 +2200,18 @@ function renderPipeline(){
 }
 function openIntakeFormModal(){
   const base=typeof _clientBaseUrl==='function'?_clientBaseUrl():window.location.origin+window.location.pathname.split('index.html')[0];
-  const url=base+'intake.html';
+  // ?a=<account_id> is required — intake.html resolves it against account_public,
+  // a straight view over accounts(id). That's accounts.id (_account.id, loaded at
+  // boot), NOT the signed-in auth user's own id: accounts.id is a separate
+  // gen_random_uuid() assigned at account creation (see settings.js obSubmit),
+  // never equal to owner_id/auth.uid(). _effectiveUid() answers a different
+  // question ("whose money/notifications does this belong to" for employee
+  // proxying) and must not be reused here.
+  const acctId=(typeof _account!=='undefined'&&_account&&_account.id)||'';
+  const url=base+'intake.html'+(acctId?'?a='+encodeURIComponent(acctId):'');
   const ov=document.createElement('div');ov.className='zmodal-overlay';
   ov.innerHTML='<div class="zmodal" style="max-width:360px">'+
-    '<div class="zmodal-title">'+svgIcon('📋',{size:16})+' Client Intake Form</div>'+
+    '<div class="zmodal-title">'+svgIcon('📋',{size:16})+' Get more leads</div>'+
     '<div style="font-size:13px;color:var(--text2);margin-bottom:14px;line-height:1.5">Share this link with prospects so they can submit their info before you arrive. New submissions appear automatically at the top of Leads.</div>'+
     '<div style="display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;margin-bottom:14px">'+
       '<div style="font-size:12px;color:var(--text3);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(url)+'</div>'+

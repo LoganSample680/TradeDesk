@@ -1357,25 +1357,31 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
   test('_renderDashSetupTodo: fresh account: shows the full checklist and grays the Drive button', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      const _origQrCache = window._qrHasSourceCached;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
-      S.vehicles = []; S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      window._qrHasSourceCached = () => false; // fresh account: no QR code created yet
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
+      const qrRow = card ? [...card.querySelectorAll('.td-setup-row')].find(r => /first QR code/i.test(r.textContent)) : null;
       const out = {
         cardShown: card && card.style.display !== 'none',
         hasVehicleItem: !!(card && /add your vehicles/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
         hasGetPaidItem: !!(card && /card payments/i.test(card.textContent)),
         hasLogoItem: !!(card && /add your logo/i.test(card.textContent)),
         hasTeamItem: !!(card && /add your crew/i.test(card.textContent) && /_setupTodoGo\('team'\)/.test(card.innerHTML)),
+        hasQrItem: !!(qrRow && /_setupTodoGo\('qrcode'\)/.test(qrRow.innerHTML)),
+        qrNotSkippable: !!(qrRow && !/Skip for now/.test(qrRow.innerHTML)),
         hasSkip: !!(card && /Skip for now/.test(card.innerHTML)),
         // Endowed progress: shrinking count + a bar that starts above zero.
         hasCount: !!(card && /left/i.test(card.textContent)),
         hasProgress: !!(card && /\d+ of \d+ done/i.test(card.textContent)),
         driveGrayed: !!(drive && drive.style.pointerEvents === 'none' && parseFloat(drive.style.opacity) < 1),
       };
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      window._qrHasSourceCached = _origQrCache;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
@@ -1385,18 +1391,22 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     expect(r.hasGetPaidItem, 'Set-up-payments item present').toBe(true);
     expect(r.hasLogoItem, 'Add-logo item present').toBe(true);
     expect(r.hasTeamItem, 'Add-crew item present + wired to the chooser').toBe(true);
-    expect(r.hasSkip, 'each item is skippable').toBe(true);
+    expect(r.hasQrItem, 'Create-your-first-QR-code item present + wired').toBe(true);
+    expect(r.qrNotSkippable, 'the QR item has no "Skip for now" (owner call: not skippable)').toBe(true);
+    expect(r.hasSkip, 'the other (optional) items are still skippable').toBe(true);
     expect(r.hasCount, 'shrinking "N left" count present').toBe(true);
     expect(r.hasProgress, 'endowed-progress "X of Y done" present').toBe(true);
     expect(r.driveGrayed, 'Drive button grayed + un-tappable').toBe(true);
   });
 
-  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up) has the smooth-transition class', async () => {
+  test('_renderDashSetupTodo: every CTA button (Add vehicle, Connect, Add logo, Set up, Create) has the smooth-transition class', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
+      const _origQrCache = window._qrHasSourceCached;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
-      S.vehicles = []; S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      window._qrHasSourceCached = () => false;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const ctas = card ? [...card.querySelectorAll('.td-setup-row button.td-setup-cta')] : [];
@@ -1406,13 +1416,14 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
         allHaveClass: ctas.every(b => b.classList.contains('td-setup-cta')),
         hasTransition: !!(cs && cs.transitionDuration && cs.transitionDuration !== '0s'),
       };
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      window._qrHasSourceCached = _origQrCache;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
     if (r.skip) return;
-    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 4 CTAs').toBe(4);
-    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up all carry the transition class').toBe(true);
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 5 CTAs (4 optional + QR)').toBe(5);
+    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up / Create all carry the transition class').toBe(true);
     expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
   });
 
@@ -1447,11 +1458,15 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
   test('_renderDashSetupTodo: every item done/skipped: shows a clean done state, then retires on dismiss', async () => {
     const r = await page.evaluate(() => {
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
+      const _origQrCache = window._qrHasSourceCached;
       window.saveAll = () => {};
-      // Vehicle added (done); the two optional items skipped → nothing left.
-      S.vehicles = [{ id: 1, name: '2019 F-150' }]; S.vehiclesTs = Date.now();
+      // Vehicle added (done); the two optional items skipped; QR marked done via
+      // its cache (it can't be skipped, so "everything clear" requires done:true,
+      // not skipped) → nothing left.
+      _setVehicles([{ id: 1, name: '2019 F-150' }]); S.vehiclesTs = Date.now();
       S.setupSkipped = ['getpaid', 'logo', 'team']; S.setupDone = false;
+      window._qrHasSourceCached = () => true;
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
       const drive = document.getElementById('qa-drive-btn');
@@ -1462,7 +1477,8 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       _renderDashSetupTodo();
       const hiddenAfterDismiss = !!(card && card.style.display === 'none');
       window.saveAll = _origSave;
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.setupDone = _savedDone;
+      window._qrHasSourceCached = _origQrCache;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.setupDone = _savedDone;
       _renderDashSetupTodo();
       return { doneStateShown, driveEnabled, hiddenAfterDismiss };
     });
@@ -1475,9 +1491,9 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
   test('_skipSetupTodo: skipping an item removes it from the checklist', async () => {
     const r = await page.evaluate(() => {
       if (typeof _skipSetupTodo !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _origSave = window.saveAll;
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _origSave = window.saveAll;
       window.saveAll = () => {};
-      S.vehicles = []; S.vehiclesTs = 0; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      _setVehicles([]); S.vehiclesTs = 0; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
       _renderDashSetupTodo();
       const before = document.getElementById('dash-setup-todo').querySelectorAll('.td-setup-row').length;
       _skipSetupTodo('logo');
@@ -1485,7 +1501,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const after = card.querySelectorAll('.td-setup-row').length;
       const logoGone = !/add your logo/i.test(card.textContent);
       window.saveAll = _origSave;
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
       _renderDashSetupTodo();
       return { before, after, logoGone };
     });
@@ -1494,11 +1510,45 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     expect(r.logoGone, 'skipped item is gone').toBe(true);
   });
 
+  test('_skipSetupTodo("qrcode"): no-op — the QR item cannot be skipped even if called directly', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _skipSetupTodo !== 'function') return { skip: true };
+      const _savedSkip = S.setupSkipped, _origSave = window.saveAll;
+      window.saveAll = () => {};
+      S.setupSkipped = [];
+      _skipSetupTodo('qrcode');
+      const out = { skippedList: [...S.setupSkipped] };
+      window.saveAll = _origSave;
+      S.setupSkipped = _savedSkip;
+      return out;
+    });
+    if (r.skip) return;
+    expect(r.skippedList, 'qrcode never lands in setupSkipped, no matter how it\'s invoked').not.toContain('qrcode');
+  });
+
+  test('_setupTodoGo("qrcode"): navigates to the QR codes page and focuses the label field', async () => {
+    const r = await page.evaluate(() => new Promise((resolve) => {
+      if (typeof _setupTodoGo !== 'function') return resolve({ skip: true });
+      goPg('pg-dash');
+      _setupTodoGo('qrcode');
+      setTimeout(() => {
+        resolve({
+          onQrPage: document.getElementById('pg-qr-leads')?.classList.contains('active'),
+          labelFocused: document.activeElement?.id === 'qr-new-label',
+        });
+        goPg('pg-dash');
+      }, 250);
+    }));
+    if (r.skip) return;
+    expect(r.onQrPage, 'lands on pg-qr-leads').toBe(true);
+    expect(r.labelFocused, 'focuses the new-source label input, ready to type').toBe(true);
+  });
+
   test('quickAction("drive"): no vehicle: guarded, does not open the drive modal', async () => {
     const r = await page.evaluate(() => {
       if (typeof quickAction !== 'function') return { skip: true };
-      const _saved = S.vehicles, _savedTs = S.vehiclesTs, _savedVeh = S.veh;
-      S.vehicles = []; S.vehiclesTs = 0; S.veh = '';
+      const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh;
+      _setVehicles([]); S.vehiclesTs = 0; S.veh = '';
       let driveOpened = false, addOpened = false;
       const _origDrive = window.openDriveModal, _origAdd = window.openAddVehicleModal, _origToast = window.showToast;
       window.openDriveModal = () => { driveOpened = true; };
@@ -1506,7 +1556,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       window.showToast = () => {};
       try { quickAction('drive'); } catch (e) {}
       window.openDriveModal = _origDrive; window.openAddVehicleModal = _origAdd; window.showToast = _origToast;
-      S.vehicles = _saved; S.vehiclesTs = _savedTs; S.veh = _savedVeh;
+      _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh;
       return { driveOpened, addOpened };
     });
     if (r.skip) return;
@@ -1979,6 +2029,198 @@ test.describe('intake.html: lead capture form', () => {
 
   test('intake.html: zero console errors on load', async () => {
     assertNoErrors(page, 'intake.html');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+//  INTAKE.HTML: QR LEAD TRACKING (?src=<code> from functions/q/[[code]].js)
+// ════════════════════════════════════════════════════════════════════════════
+
+// _supabaseShimIntake()'s query builder resolves .insert()/.maybeSingle() fully
+// in-process (see tests/helpers.js) — it never issues a real fetch for those,
+// so page.route interception of /rest/v1/* can NEVER observe an insert or a
+// qr_sources lookup made through it. This local shim extends that same shape
+// (own createClient, own queryBuilder) but records every insert to
+// window.__qrInserts and resolves qr_sources by code, so these tests observe
+// real in-page state instead of a network call that structurally never fires.
+function _qrIntakeShim(qrLabel) {
+  return `
+(function(global){
+  function noopResult(data){ return Promise.resolve({data,error:null}); }
+  const ACCT_ROW=[{id:'acct-e2e-0001',business_name:'E2E Pro Painting',phone:'316-555-1234',logo_data:null,brand_color:'#2D5DA8'}];
+  global.__qrInserts=[];
+  function queryBuilder(table){
+    const q={
+      select:()=>q, update:()=>q, delete:()=>q,
+      insert:(row)=>{ global.__qrInserts.push({table,row}); return noopResult([{}]); },
+      upsert:()=>noopResult([{}]),
+      eq:()=>q, neq:()=>q, gt:()=>q, lt:()=>q, gte:()=>q, lte:()=>q,
+      in:()=>q, is:()=>q, not:()=>q, or:()=>q, filter:()=>q, match:()=>q,
+      ilike:()=>q, like:()=>q, contains:()=>q, order:()=>q, limit:()=>q, range:()=>q,
+      single:()=>noopResult(table==='account_public'?ACCT_ROW[0]:null),
+      maybeSingle:()=>noopResult(table==='account_public'?ACCT_ROW[0]:(table==='qr_sources'&&${JSON.stringify(!!qrLabel)}?{label:${JSON.stringify(qrLabel || '')}}:null)),
+      then:(cb)=>(table==='account_public'?noopResult(ACCT_ROW):noopResult([])).then(cb),
+      catch:(cb)=>Promise.resolve([]),
+    };
+    return q;
+  }
+  const _supabase={
+    createClient:function(url,key){
+      return{
+        auth:{ getUser:()=>noopResult({user:null}), getSession:()=>noopResult({session:null}),
+          onAuthStateChange:(cb)=>{if(typeof window!=='undefined')window.__capturedAuthCallback=cb;return{data:{subscription:{unsubscribe:()=>{}}}};} },
+        from:(table)=>queryBuilder(table),
+        storage:{from:(b)=>({upload:(p,d,o)=>noopResult({path:p}),download:(p)=>noopResult(null),getPublicUrl:(p)=>({data:{publicUrl:''}}),remove:(ps)=>noopResult(null),list:(pr)=>noopResult([])})},
+        functions:{invoke:(n,o)=>noopResult({ok:true})},
+        channel:(n)=>({on:function(){return this;},subscribe:function(cb){if(cb)cb('SUBSCRIBED');return this;},unsubscribe:()=>{}}),
+        removeChannel:()=>{},
+      };
+    }
+  };
+  global.supabase=_supabase;
+  if(typeof module!=='undefined')module.exports=_supabase;
+})(typeof window!=='undefined'?window:global);
+`;
+}
+
+test.describe('intake.html: QR lead tracking', () => {
+  let page;
+  const FAKE_ACCOUNT_ID = 'acct-e2e-0001';
+  const QR_CODE = 'testcode1';
+  const QR_LABEL = 'Yard sign - 123 Main St';
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+
+    await page.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (url.startsWith('http://localhost')) return route.continue();
+      if (url.startsWith('data:'))           return route.continue();
+      if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: _qrIntakeShim(QR_LABEL) });
+      }
+      if (url.includes('fonts.googleapis') || url.includes('fonts.gstatic')) {
+        return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
+      }
+      if (url.includes('favicon') || url.includes('js.stripe') || url.includes('apple-mapkit')) {
+        return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+      }
+      // sendBeacon target for the field_dropoff event — a real network call
+      // (sendBeacon can't be shimmed in-JS), never asserted on here (unload
+      // timing is unreliable to test deterministically), just must not 404.
+      if (url.includes('log-qr-event')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+      }
+      if (url.includes('.supabase.co')) {
+        return route.fulfill({ status: 200, contentType: 'application/json', body: '[]' });
+      }
+      return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+    });
+
+    page._consoleErrors = [];
+    page.on('console', msg => {
+      if (msg.type() === 'error') {
+        const t = msg.text();
+        if (t.includes('favicon') || t.includes('net::ERR') || t.includes('ERR_CONNECTION') ||
+            t.includes('Failed to load resource') || t.includes('checkNew') ||
+            t.includes('apple-mapkit') || t.includes('cdn.apple') || t.includes('js.stripe') ||
+            t.includes('cdn.jsdelivr')) return;
+        page._consoleErrors.push(t);
+      }
+    });
+    page.on('pageerror', err => {
+      const msg = err.message || '';
+      if (msg.includes('_intakeInitMapKit')) return;
+      if (page._consoleErrors) page._consoleErrors.push('PAGE ERROR: ' + msg);
+    });
+
+    await page.goto(`/intake.html?a=${FAKE_ACCOUNT_ID}&src=${QR_CODE}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page.waitForTimeout(2500);
+  });
+
+  test.afterAll(async () => { await page.context().close(); });
+
+  test('intake.html+QR: resolves the code to its human label, not the raw code', async () => {
+    // _qrLabel is a top-level `let` in intake.html's own inline script, a bare
+    // lexical binding, not a window property (page.evaluate's callback runs
+    // in the page's real global scope, so the bare identifier resolves fine;
+    // window._qrLabel would not).
+    const label = await page.evaluate(() => _qrLabel);
+    expect(label).toBe(QR_LABEL);
+  });
+
+  test('intake.html+QR: submitting tags the lead with the resolved label, not "qr_form"', async () => {
+    await page.evaluate(() => { window.__qrInserts.length = 0; });
+    await page.evaluate(async () => {
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      set('f-name', 'QR Test Lead');
+      set('f-phone', '316-555-8888');
+      set('f-street', '123 Main St');
+      set('f-city', 'Wichita');
+      set('f-state', 'KS');
+      set('f-zip', '67202');
+      if (typeof submitForm === 'function') { try { await submitForm(); } catch(e) {} }
+    });
+    await page.waitForTimeout(500);
+    const row = await page.evaluate(() => (window.__qrInserts.find(i => i.table === 'inbound_leads') || {}).row);
+    expect(row).toBeTruthy();
+    expect(row.source).toBe(QR_LABEL);
+  });
+
+  test('intake.html+QR: _qrTrackField records the furthest field with a value', async () => {
+    const result = await page.evaluate(() => {
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      ['f-name','f-phone','f-street','f-notes'].forEach(id => set(id, ''));
+      _furthestField = '';
+      set('f-name', 'Someone');
+      _qrTrackField();
+      const afterName = _furthestField;
+      set('f-phone', '316-555-0000');
+      _qrTrackField();
+      const afterPhone = _furthestField;
+      // Clearing a later field falls back to the furthest one still filled,
+      // not just "the last field touched" — matches _qrTrackField's own
+      // highest-index-with-a-value scan, not a running pointer.
+      set('f-phone', '');
+      _qrTrackField();
+      const afterClearingPhone = _furthestField;
+      return { afterName, afterPhone, afterClearingPhone };
+    });
+    expect(result.afterName).toBe('f-name');
+    expect(result.afterPhone).toBe('f-phone');
+    expect(result.afterClearingPhone).toBe('f-name');
+  });
+
+  test('intake.html+QR: no ?src= means no QR lookup, falls back to legacy qr_form source', async () => {
+    // Independent page: no src param at all.
+    const ctx2 = await page.context().browser().newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    const page2 = await ctx2.newPage();
+    await page2.route('**/*', async (route) => {
+      const url = route.request().url();
+      if (url.startsWith('http://localhost') || url.startsWith('data:')) return route.continue();
+      if (url.includes('cdn.jsdelivr.net') && url.includes('supabase')) {
+        return route.fulfill({ status: 200, contentType: 'application/javascript', body: _qrIntakeShim(null) });
+      }
+      return route.fulfill({ status: 200, contentType: url.includes('.supabase.co') ? 'application/json' : 'text/plain', body: url.includes('.supabase.co') ? '[]' : '' });
+    });
+    await page2.goto(`/intake.html?a=${FAKE_ACCOUNT_ID}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    await page2.waitForTimeout(1500);
+    await page2.evaluate(async () => {
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+      set('f-name', 'Plain Link Lead'); set('f-phone', '316-555-7777');
+      set('f-street', '5 Elm St'); set('f-city', 'Wichita');
+      if (typeof submitForm === 'function') { try { await submitForm(); } catch(e) {} }
+    });
+    await page2.waitForTimeout(500);
+    const row = await page2.evaluate(() => (window.__qrInserts.find(i => i.table === 'inbound_leads') || {}).row);
+    expect(row).toBeTruthy();
+    expect(row.source).toBe('qr_form');
+    await ctx2.close();
+  });
+
+  test('intake.html+QR: zero console errors', async () => {
+    assertNoErrors(page, 'intake.html+QR');
   });
 });
 
@@ -2481,9 +2723,8 @@ test.describe('Employee dispatch and daily view', () => {
       _employeeRecord = { id: 'test-emp-1', name: 'Test Worker' };
       // Seed a vehicle
       if (typeof S !== 'undefined') {
-        S.vehicles = S.vehicles || [];
-        if (!S.vehicles.find(v => v.id === 'veh-test-1')) {
-          S.vehicles.push({ id: 'veh-test-1', year: '2023', make: 'Ford', model: 'F-150' });
+        if (!getVehicles().find(v => String(v.id) === 'veh-test-1')) {
+          _setVehicles([...getVehicles(), { id: 'veh-test-1', year: '2023', make: 'Ford', model: 'F-150' }]);
         }
       }
       // Clear today's vehicle selection
@@ -2814,7 +3055,7 @@ test.describe('Employee tasks and mileage vehicle pre-fill', () => {
   test('mileage openLogTripModal pre-fills employee vehicle', async () => {
     const result = await page.evaluate(() => {
       if (typeof openLogTripModal !== 'function') return { fnExists: false };
-      S.vehicles = [{ id: 'v1', name: '2023 F-150', nickname: 'Work Truck' }];
+      _setVehicles([{ id: 'v1', name: '2023 F-150', nickname: 'Work Truck' }]);
       localStorage.setItem('emp_vehicle_' + todayKey(), 'v1');
       _isEmployee = true;
       _employeeRecord = { id: 'emp-mile-test', name: 'Driver', role: 'tech' };
@@ -2825,7 +3066,7 @@ test.describe('Employee tasks and mileage vehicle pre-fill', () => {
       _isEmployee = false;
       _employeeRecord = null;
       localStorage.removeItem('emp_vehicle_' + todayKey());
-      S.vehicles = [];
+      _setVehicles([]);
       return { fnExists: true, preSelected };
     });
     if (!result.fnExists) return;
@@ -7546,6 +7787,12 @@ test.describe('Never-delete policy, archive + hold + edit', () => {
     // settings merge kept the locally-newer vehicles with no account check. The guard
     // stamps S._sOwner and, on an owner change, takes the incoming account's settings
     // wholesale: no vehicle (or any key) survives across the boundary.
+    //
+    // Post-20260809 this covers the RETIRED S.vehicles blob key only — the live
+    // fleet is td_vehicles and gets the same protection the other per-record
+    // arrays get, a hard `vehicles=[]` at both account boundaries in cloud.js
+    // (the SIGNED_IN switch and the sign-out reset). Kept because an un-migrated
+    // account still carries the legacy key, and it must not cross accounts either.
     const r = await page.evaluate(() => {
       if (typeof _mergeIncomingSettings !== 'function') return { skip: true };
       const savedS = JSON.parse(JSON.stringify(S));

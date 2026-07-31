@@ -7,5 +7,13 @@
   "lifecycle/lead-to-paid-byo": {
     "clicks": 189,
     "note": "Whole-business floor, BYO variant (2026-07-14 capture). 2026-07-21 +2 (upper bound) for the new REQUIRED 'Who is this?' party-type pick; re-tighten on next live capture. The 90-click estimate step is the standing streamline target (templates/price-book)."
+  },
+  "qr-leads/scan-to-labeled-lead": {
+    "clicks": 130,
+    "note": "Lowered from 132 (2026-07-29): 'QR codes' is now a direct button on the Leads tbar instead of a link buried inside the 'Get leads' share-link modal (owner feedback: even the builder couldn't find it), removing 1 tap from each of the 2 navigations to pg-qr-leads in this flow. Breakdown: create source 28 + anon scan/form submit 89 + event/label verify 0 + promote 2 + log cost 11."
+  },
+  "fleet/vehicle-survives-resignin": {
+    "clicks": 47,
+    "note": "First capture 2026-07-31 (chromium, self-hosted flow-local): add vehicle 20 + odometer 1 + rename 23 + settings-race 1 + sign-out/in 2. The 23-click rename is inflated by retyping the whole name (the type() helper clears the field), and 20 of the add is typing the vehicle name, so the real nav cost here is small. Standing streamline target: reaching Fleet & Team on a phone still costs 2 taps through the More menu."
   }
 }

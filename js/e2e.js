@@ -97,7 +97,7 @@ async function runE2ETest(){
   let tc=clients[0];
   if(!tc){
     // Create a throwaway test client
-    tc={id:Date.now(),name:'E2E Test Client',phone:'555-000-0001',addr:'123 Test St',notes:'',created:todayKey()};
+    tc={id:_newId(),name:'E2E Test Client',phone:'555-000-0001',addr:'123 Test St',notes:'',created:todayKey()};
     clients.unshift(tc);
     check('created test client',()=>{if(!clients.find(c=>c.id===tc.id))throw new Error('client not in array');});
   } else {

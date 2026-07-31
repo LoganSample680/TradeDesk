@@ -7,7 +7,7 @@ function _showOdometerModal(tasks,hardBlock){
     const t=tasks[taskIdx];
     const vLabel=getVehicleLabel(t.veh);
     const isStart=t.type==='start';
-    const existing=(S.vehicleOdoLog||{})[t.year]?.[_vehKey(t.veh)]||{};
+    const existing=_vehOdo(t.veh,t.year);
     const otherReading=isStart?existing.end:existing.start;
 
     // Calculate logged miles for this vehicle+year for context
@@ -27,15 +27,15 @@ function _showOdometerModal(tasks,hardBlock){
         <strong>IRS Pub. 463 requires annual odometer records.</strong> ${t.midYear?'You joined mid-year, enter the odometer reading from when you first started using this vehicle for business, or your best Jan 1 estimate. An estimate is far better than no record.':'Recording Jan 1 &amp; Dec 31 readings proves your business-use % and makes your mileage deduction bulletproof, even in a field audit.'}
         ${loggedMi>0?`<div style="margin-top:6px">${svgIcon('📍',{size:12})} You logged <strong>${loggedMi.toFixed(1)} mi</strong> in ${t.year} for this vehicle in TradeDesk.</div>`:''}
         ${otherReading?`<div style="margin-top:4px">${isStart?'Dec 31':'Jan 1'} reading on file: <strong>${otherReading.toLocaleString()} mi</strong></div>`:''}
-        ${(()=>{const prevEnd=(S.vehicleOdoLog||{})[t.year-1]?.[_vehKey(t.veh)]?.end||0;return(isStart&&prevEnd&&!existing.start)?`<div style="margin-top:4px">${svgIcon('✅',{size:12})} Carried forward from Dec 31, ${t.year-1}: <strong>${prevEnd.toLocaleString()} mi</strong></div>`:'';})()}
+        ${(()=>{const prevEnd=_vehOdo(t.veh,t.year-1).end||0;return(isStart&&prevEnd&&!existing.start)?`<div style="margin-top:4px">${svgIcon('✅',{size:12})} Carried forward from Dec 31, ${t.year-1}: <strong>${prevEnd.toLocaleString()} mi</strong></div>`:'';})()}
       </div>
       <div style="font-size:13px;font-weight:700;color:var(--text2);margin-bottom:6px">${isStart?(t.midYear?t.year+' opening odometer (best estimate)':'Jan 1, '+t.year+' odometer reading'):'Dec 31, '+t.year+' odometer reading'}</div>
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-        <input id="_odo-val" type="number" min="0" inputmode="numeric" placeholder="e.g. 48,250" value="${(()=>{const pv=isStart?(existing.start||((S.vehicleOdoLog||{})[t.year-1]?.[_vehKey(t.veh)]?.end||0)):existing.end||0;return pv||'';})()}" style="flex:1;padding:12px 14px;border-radius:var(--r);border:2px solid var(--blue);font-size:20px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box">
+        <input id="_odo-val" type="number" min="0" inputmode="numeric" placeholder="e.g. 48,250" value="${(()=>{const pv=isStart?(existing.start||_vehOdo(t.veh,t.year-1).end||0):existing.end||0;return pv||'';})()}" style="flex:1;padding:12px 14px;border-radius:var(--r);border:2px solid var(--blue);font-size:20px;font-weight:700;font-family:inherit;background:var(--bg2);color:var(--text);outline:none;box-sizing:border-box">
         <span style="font-size:13px;color:var(--text3);font-weight:600">miles</span>
       </div>
       <div id="_odo-err" style="color:#A32D2D;font-size:12px;min-height:16px;margin-bottom:10px"></div>
-      ${tasks.length>1?`<div style="font-size:11px;color:var(--text3);margin-bottom:12px;text-align:center">${taskIdx+1} of ${tasks.length} vehicles</div>`:''}
+      ${tasks.length>1?`<div style="font-size:11px;color:var(--text3);margin-bottom:12px;text-align:center">${taskIdx+1} of ${tasks.length} readings${(()=>{const n=new Set(tasks.map(t=>String(t.veh&&t.veh.id))).size;return n>1?` · ${n} vehicles`:'';})()}</div>`:''}
       <button onclick="_odoSaveStep()" style="width:100%;padding:14px;border-radius:var(--rl);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit;margin-bottom:10px">Save &amp; continue →</button>
       ${hardBlock
         ? `<div style="font-size:11px;color:var(--text3);text-align:center">This record is required for IRS compliance. Enter your best estimate if unsure of the exact number.</div>`
@@ -50,11 +50,7 @@ function _showOdometerModal(tasks,hardBlock){
     const err=document.getElementById('_odo-err');
     if(!raw||raw<1){if(err)err.textContent='Enter a valid odometer reading.';return;}
     const t=tasks[taskIdx];
-    const key=_vehKey(t.veh);
-    if(!S.vehicleOdoLog)S.vehicleOdoLog={};
-    if(!S.vehicleOdoLog[t.year])S.vehicleOdoLog[t.year]={};
-    if(!S.vehicleOdoLog[t.year][key])S.vehicleOdoLog[t.year][key]={};
-    const existing=S.vehicleOdoLog[t.year][key];
+    const existing={..._vehOdo(t.veh,t.year)};
     if(t.type==='start'){
       if(existing.end&&raw>=existing.end){if(err)err.textContent='Start odometer must be less than end odometer ('+existing.end.toLocaleString()+' mi).';return;}
       existing.start=raw;existing.startDate=todayKey();
@@ -67,20 +63,18 @@ function _showOdometerModal(tasks,hardBlock){
       const logged=mileage.filter(m=>m.date&&m.date.startsWith(yrStr)).reduce((s,m)=>s+(m.miles||0),0);
       if(totalDriven>0){
         const bizPct=Math.min(100,Math.round(logged/totalDriven*100));
-        const vehs=getVehicles();const vi=vehs.findIndex(v=>_vehKey(v)===key);
+        // Match on the stable row id, not a name slug: renaming the truck used to
+        // change its key here and silently drop the business-use write.
+        const vehs=getVehicles();const vi=vehs.findIndex(v=>String(v.id)===String(t.veh&&t.veh.id));
         if(vi>=0){vehs[vi].bizUse=bizPct;_setVehicles(vehs);}
         existing.bizUsePct=bizPct;existing.loggedMi=Math.round(logged);existing.totalMi=totalDriven;
         if(logged>totalDriven){existing.mileageFlag=true;}
       }
       // Auto-seed next year's Jan 1 start from this Dec 31 reading, user never has to enter year-start again
-      const ny=t.year+1;
-      if(!S.vehicleOdoLog[ny])S.vehicleOdoLog[ny]={};
-      if(!S.vehicleOdoLog[ny][key])S.vehicleOdoLog[ny][key]={};
-      S.vehicleOdoLog[ny][key].start=raw;
-      S.vehicleOdoLog[ny][key].startDate=todayKey();
+      _setVehOdo(t.veh,t.year+1,{start:raw,startDate:todayKey()});
     }
+    _setVehOdo(t.veh,t.year,existing);
     S._odoSnoozeCount=0;
-    S.settingsTs=Date.now(); // odometer log is IRS data, must win the settings sync
     saveAll();_flushSaveNow();
     taskIdx++;
     renderTask();
@@ -130,9 +124,7 @@ function _odoSnooze(){
 window._odoSnooze=_odoSnooze;
 
 function _getVehicleOdoSummary(veh,year){
-  const key=_vehKey(veh);
-  const log=(S.vehicleOdoLog||{})[year]?.[key]||{};
-  return log;
+  return _vehOdo(veh,year);
 }
 
 function updateVehicleBizUse(idx,val){
@@ -323,7 +315,7 @@ function saveEndDriveModal(){
   if(miles>500){if(!confirm('That\'s '+miles+' miles: does that look right?'))return;}
   const c=getClientById(gps.clientId);
   mileage.unshift({
-    id:Date.now(),date:todayKey(),vehicle:gps.vehicle,purpose:gps.purpose,
+    id:_newId(),date:todayKey(),vehicle:gps.vehicle,vehicleId:_vehIdForName(gps.vehicle),purpose:gps.purpose,
     loggedAt:new Date().toISOString(),
     miles:Math.round(miles*10)/10,
     client_id:gps.clientId,client_name:c?c.name:'',
@@ -1101,7 +1093,7 @@ function saveLoggedTrip(){
   const cid=parseInt(document.getElementById('lm-client')?.value)||null;
   const c=cid?getClientById(cid):null;
   // Save immediately with 0 miles, background route calc will update
-  const rec={id:Date.now(),date,loggedAt:new Date().toISOString(),vehicle,from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,created_at:new Date().toISOString(),calc_method:'pending'};
+  const rec={id:_newId(),date,loggedAt:new Date().toISOString(),vehicle,vehicleId:_vehIdForName(vehicle),from,from_name,to,to_name,start:0,end:0,miles:0,purpose,client_id:cid,client_name:c?c.name:'',notes,created_at:new Date().toISOString(),calc_method:'pending'};
   if(_isEmployee){rec.logged_by_id=_supaUser.id;rec.logged_by_name=_employeeRecord?.name||_supaUser.email;}
   mileage.unshift(rec);
   if(cid)autoLogContact(cid,'drive');
@@ -1160,9 +1152,7 @@ function renderAllMileage(){
       return;
     }
     const pVeh=vehs[0]||null;
-    const odoLog=(S.vehicleOdoLog||{})[yr]||{};
-    const pKey=pVeh?_vehKey(pVeh):'default';
-    const odoRec=odoLog[pKey]||{};
+    const odoRec=_vehOdo(pVeh,yr);
     const startOdo=odoRec.start||0;
     const endOdo=odoRec.end||0;
     const totalDriven=endOdo>startOdo?endOdo-startOdo:0;
@@ -1257,14 +1247,14 @@ function setMilFilter(f){
   _milRenderTripList(shown,yr);
 }
 
-function _milSetOdo(vehKey,field,val){
+// vehId is the stable td_vehicles row id (was a slug of the vehicle NAME, which
+// meant a rename silently started writing to a different, empty record).
+function _milSetOdo(vehId,field,val){
   const yr=String(trackerYear||new Date().getFullYear());
-  if(!S.vehicleOdoLog)S.vehicleOdoLog={};
-  if(!S.vehicleOdoLog[yr])S.vehicleOdoLog[yr]={};
-  if(!S.vehicleOdoLog[yr][vehKey])S.vehicleOdoLog[yr][vehKey]={};
+  const veh=getVehicles().find(v=>String(v.id)===String(vehId));
+  if(!veh)return;
   const n=parseFloat(String(val).replace(/[^0-9.]/g,''))||0;
-  S.vehicleOdoLog[yr][vehKey][field]=n;
-  S.settingsTs=Date.now();
+  _setVehOdo(veh,yr,{[field]:n});
   saveAll();_flushSaveNow();
   renderAllMileage();
 }
@@ -1274,10 +1264,9 @@ function _milRenderVehicleWorksheet(yr,tot,irsRate){
   if(!el)return;
   const vehs=getVehicles();
   if(!vehs.length){el.innerHTML='';return;}
-  const odoLog=(S.vehicleOdoLog||{})[yr]||{};
   const veh=vehs[0];
-  const pKey=_vehKey(veh);
-  const odoRec=odoLog[pKey]||{};
+  const pKey=String(veh.id||'');
+  const odoRec=_vehOdo(veh,yr);
   const startOdo=odoRec.start||0;
   const endOdo=odoRec.end||0;
   const totalDriven=endOdo>startOdo?endOdo-startOdo:0;
@@ -1483,11 +1472,9 @@ function _milRenderSummary(filtered,tot,irsRate){
   classified.forEach(m=>{const p=m.purpose||'Other';byPurpose[p]=(byPurpose[p]||0)+(m.miles||0);});
   const topPurpose=Object.entries(byPurpose).sort((a,b)=>b[1]-a[1])[0];
   const yr=String(trackerYear||new Date().getFullYear());
-  const odoLog=(S.vehicleOdoLog||{})[yr]||{};
   const vehs=getVehicles();
   const pVeh=vehs[0]||null;
-  const pKey=pVeh?_vehKey(pVeh):'default';
-  const odoRec=odoLog[pKey]||{};
+  const odoRec=_vehOdo(pVeh,yr);
   const totalDriven=(odoRec.end||0)>(odoRec.start||0)?(odoRec.end-odoRec.start):0;
   const bizPct=totalDriven>0?Math.min(100,Math.round((tot/totalDriven)*100)):null;
   el.innerHTML=

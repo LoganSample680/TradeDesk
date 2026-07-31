@@ -1,5 +1,7 @@
 // js/fleet.js: Fleet management module
-// Vehicles are stored in S.vehicles (settings, syncs to Supabase)
+// Vehicles are rows in td_vehicles (per-record sync, same fabric as every other
+// td_* table). They lived in the S.vehicles settings blob until 20260809 — see
+// _setVehicles in settings.js for why that lost edits.
 // Maintenance records are stored in `maintenance` array (localStorage zp3_maint)
 
 /* ── Service type definitions ───────────────────────────────────────────────── */
@@ -105,7 +107,7 @@ function _fleetCard(v, idx) {
   const yr = new Date().getFullYear().toString();
   const trips = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr));
   const ytdMi = Math.round(trips.reduce((s,t)=>s+(t.miles||0),0));
-  const maint = maintenance.filter(m=>m.vehicleName===v.name);
+  const maint = maintenance.filter(m=>_vehLinkMatches(m,v));
   const lastMaint = maint.slice().sort((a,b)=>b.date>a.date?1:-1)[0];
   const due = _fleetDueAlerts(v, maint);
   const maintYTD = maint.filter(m=>(m.date||'').startsWith(yr)).reduce((s,m)=>s+(m.cost||0),0);
@@ -248,9 +250,11 @@ function _fleetPnLCalc(v, maintRecords, trips, year) {
      personal-use slice (1 - bizUse%) of its expenses is excluded too.
    Both methods are computed for every vehicle so year-end can show WHICH ONE WINS.
 
-   Attribution: trips match by trip.vehicle === v.name (the existing fleet
-   convention); expenses match by e.vehicleName (stamped by the expense modals and
-   fleet auto-writes). Unmatched records: single-vehicle fleet -> that vehicle;
+   Attribution: every record carries a vehicleId stamped at creation, and
+   _vehLinkMatches prefers it, STILL falling back to the name for rows written
+   before that existed. The fallback is what makes this non-regressive: the
+   engine can only ever match the same records or more, never fewer, so no
+   contractor's deduction can shrink because of the id migration. Unmatched records: single-vehicle fleet -> that vehicle;
    multi-vehicle -> trips go to the first mileage-method vehicle (deducted, matching
    pre-engine behavior), expenses are conservatively EXCLUDED and counted in
    `untagged` so the UI can nudge the user to tag them (never double-deduct).
@@ -280,11 +284,11 @@ function _vehSchedC(yr){
   const single=buckets.length===1?buckets[0]:null;
   const firstMileage=buckets.find(b=>b.method==='mileage')||null;
   trips.forEach(t=>{
-    const hit=(t.vehicle&&buckets.find(b=>b.v.name===t.vehicle))||single||firstMileage||buckets[0];
+    const hit=buckets.find(b=>_vehLinkMatches(t,b.v,'vehicle'))||single||firstMileage||buckets[0];
     hit.miles+=(t.miles||0);
   });
   vehExp.forEach(e=>{
-    const hit=(e.vehicleName&&buckets.find(b=>b.v.name===e.vehicleName))||single;
+    const hit=buckets.find(b=>_vehLinkMatches(e,b.v))||single;
     if(hit)hit.exp.push(e);
     else{out.untagged++;out.untaggedTotal+=(e.amount||0);out.expAdjust+=(e.amount||0);out.excludedIds.push(e.id);}
   });
@@ -296,7 +300,7 @@ function _vehSchedC(yr){
     // expenses PLUS service-log records that never became expenses (mileage-method
     // maintenance is records-only). Contractors log BOTH all year; the verdict must
     // see everything. Schedule C (actualDed) stays expenses-only.
-    const unexpMaint=maintenance.filter(m=>m.vehicleName===b.v.name&&(m.date||'').startsWith(yr)&&!m.expenseId).reduce((s,m)=>s+(m.cost||0),0);
+    const unexpMaint=maintenance.filter(m=>_vehLinkMatches(m,b.v)&&(m.date||'').startsWith(yr)&&!m.expenseId).reduce((s,m)=>s+(m.cost||0),0);
     const costTotal=+(expTotal+unexpMaint).toFixed(2);
     const actualCmp=+(costTotal*b.bizPct).toFixed(2);
     out.vehExpTotal+=expTotal;
@@ -367,7 +371,7 @@ function _renderFleetDetailModal() {
 
   const yr = new Date().getFullYear().toString();
   const trips = mileage.filter(t=>t.vehicle===v.name);
-  const maint = maintenance.filter(m=>m.vehicleName===v.name).slice().sort((a,b)=>b.date>a.date?1:-1);
+  const maint = maintenance.filter(m=>_vehLinkMatches(m,v)).slice().sort((a,b)=>b.date>a.date?1:-1);
   const pnl = _fleetPnLCalc(v, maint, trips.filter(t=>(t.date||'').startsWith(yr)), yr);
   const downDays = _fleetDownDays(v, yr);
   const allDownDays = _fleetTotalDownDays(v);
@@ -638,9 +642,7 @@ function _renderOdometerReport() {
   const v = vehs[_odoReportVehIdx];
   if(!v) return;
   const yr = String(_odoReportYear);
-  const log = S.vehicleOdoLog || {};
-  const key = _vehKey(v);
-  const rec = (log[yr] && log[yr][key]) || {};
+  const rec = _vehOdo(v, yr);
   const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                              .reduce((s,t)=>s+(t.miles||0),0);
   const startOdo = rec.start || 0;
@@ -716,12 +718,9 @@ function saveOdometerReport() {
   const v = vehs[_odoReportVehIdx];
   if(!v) return;
   const yr = String(_odoReportYear);
-  const key = _vehKey(v);
-  if(!S.vehicleOdoLog) S.vehicleOdoLog = {};
-  if(!S.vehicleOdoLog[yr]) S.vehicleOdoLog[yr] = {};
-  if(!S.vehicleOdoLog[yr][key]) S.vehicleOdoLog[yr][key] = {};
-  if(start>0) S.vehicleOdoLog[yr][key].start = start;
-  if(end>0)   S.vehicleOdoLog[yr][key].end   = end;
+  const patch = {};
+  if(start>0) patch.start = start;
+  if(end>0)   patch.end   = end;
   // Auto-calculate and save business use %
   const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                              .reduce((s,t)=>s+(t.miles||0),0);
@@ -731,7 +730,10 @@ function saveOdometerReport() {
     vehs[_odoReportVehIdx] = v;
     _setVehicles(vehs);
   }
-  S.settingsTs=Date.now(); // odometer log is IRS data, must win the settings sync
+  // Readings ride the vehicle's own row now, so this no longer needs to fight
+  // for the settings blob (the old `S.settingsTs=Date.now()` "must win the
+  // settings sync" line was treating the symptom of exactly that race).
+  if(Object.keys(patch).length) _setVehOdo(v, yr, patch);
   saveAll();
   document.getElementById('odo-report-overlay')?.remove();
   showToast('Mileage report saved'+(totalDriven>0&&loggedMiles>0?', '+v.bizUse+'% business use':''),'📊');
@@ -853,6 +855,10 @@ function saveFleetVehicle() {
   const deductEl = document.querySelector('input[name="fv-deduct"]:checked');
   const newV = {
     ...oldV,
+    // Mint the id HERE, not in _setVehicles further down: the purchase expense
+    // below links to newV.id, and on a brand-new vehicle that would otherwise
+    // still be undefined — writing an expense pointing at nothing.
+    id: oldV.id || (typeof _newId==='function' ? _newId() : Date.now()*1000),
     name,
     nickname: (document.getElementById('fv-nick')?document.getElementById('fv-nick').value:'').trim(),
     color:    (document.getElementById('fv-color')?document.getElementById('fv-color').value:'').trim(),
@@ -882,6 +888,7 @@ function saveFleetVehicle() {
       catLabel: 'Vehicle purchase',
       vendor: name,
       vehicleName: name,
+      vehicleId: newV.id,
       amount: newPrice,
       notes: 'Vehicle purchase: '+name,
       deductible: true,
@@ -893,6 +900,32 @@ function saveFleetVehicle() {
     newV.purchaseExpenseId = null;
   }
 
+  // ── A rename must carry its records with it ──────────────────────────────
+  // Everything attached to a vehicle is linked by NAME, not id: service records
+  // and vehicle expenses via `vehicleName`, mileage trips via `vehicle`. Nothing
+  // re-pointed them when the name changed, so renaming a truck orphaned its
+  // whole history — and the damage was not just cosmetic. _vehSchedC buckets
+  // expenses by name and CONSERVATIVELY EXCLUDES anything it cannot match
+  // (counting it as "untagged" so it never double-deducts), so after a rename
+  // the contractor's fuel/repair/purchase costs silently stopped deducting on
+  // Schedule C, and the service log vanished from the vehicle's card, its P&L,
+  // and the which-method-wins verdict.
+  //
+  // Re-stamping the links here fixes trips, expenses and service records in one
+  // pass and leaves every read site unchanged. These are all synced tables, so
+  // the saveAll() below propagates the re-stamp to the other devices too.
+  // (The deeper fix is to key these off the vehicle's stable row id the way
+  // odometer readings now are; that means touching the mileage UI, both expense
+  // modals and the deduction engine, so it is deliberately not bundled into a
+  // tax-math change.)
+  if(isEdit && oldV.name && oldV.name !== name){
+    const _oldName = oldV.name;
+    let _relinked = 0;
+    maintenance.forEach(m=>{ if(m.vehicleName===_oldName){ m.vehicleName=name; _relinked++; } });
+    expenses.forEach(e=>{ if(e.vehicleName===_oldName){ e.vehicleName=name; _relinked++; } });
+    mileage.forEach(t=>{ if(t.vehicle===_oldName){ t.vehicle=name; _relinked++; } });
+    if(_relinked&&typeof showToast==='function')setTimeout(()=>showToast(_relinked+' linked record'+(_relinked===1?'':'s')+' moved to the new name','🔗'),900);
+  }
   if(isEdit) vehs[_fleetEditIdx] = newV;
   else vehs.push(newV);
   _setVehicles(vehs);
@@ -924,11 +957,23 @@ function _confirmRemoveVehicle(idx) {
   const v = vehs[idx];
   if(!v) return;
   zConfirm('Remove '+(v.nickname||v.name)+'? This will not delete service records.', () => {
-    vehs.splice(idx, 1);
-    _setVehicles(vehs);
+    // Through _userDelete: it diffs the array before/after and records the removed
+    // id in _locallyDeletedIds, which is the ONLY thing that lets supaSaveToCloud's
+    // sweep soft-delete the row server-side. Without it the vehicle disappears
+    // locally and then resurrects from the cloud on the next load — the same defect
+    // that hid in td_maintenance for weeks (see _TD_TABLES' note in cloud.js).
+    _userDelete(() => {
+      vehs.splice(idx, 1);
+      _setVehicles(vehs);
+    });
+    // An explicit removal proves the owner is managing this fleet, so stop the
+    // one-time lift for good: otherwise deleting the last vehicle before the
+    // migration was marked done would let the retired blob resurrect it.
+    if(typeof _markVehiclesMigrated==='function')_markVehiclesMigrated();
     saveAll();
     _closeFleetVehModal();
     renderFleetVehicles();
+    if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();
   }, {title:'Remove vehicle', yes:'Remove'});
 }
 
@@ -1280,6 +1325,7 @@ function saveMaintRecord() {
   const rec = {
     id: _maintEditId || Date.now(),
     vehicleName: v.name,
+    vehicleId: v.id,
     date,
     odo,
     type,
@@ -1345,6 +1391,7 @@ function saveMaintRecord() {
       catLabel: 'Vehicle: maintenance',
       vendor: vendor||(v.nickname||v.name),
       vehicleName: v.name,
+      vehicleId: v.id,
       amount: cost,
       notes: (MAINT_TYPES[type]?MAINT_TYPES[type].label:type)+(notes?', '+notes:''),
       deductible: true,

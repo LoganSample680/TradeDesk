@@ -1075,7 +1075,7 @@ function _submitCancellationRefund(bidId){
   const pdate=(dateEl?dateEl.value:'')||todayKey();
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   if(refund>0){
-    payments.push({id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
+    payments.push({id:_newId(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name,
       date:pdate,loggedAt:new Date().toISOString(),type:'refund',amount:-refund,method:'',ref:'Cancellation: materials: '+fmt(mat)});
   }
   bid.status='Abandoned';bid.draft=false;
@@ -1254,7 +1254,7 @@ async function _issueCardRefund(bidId,amount,bid){
     if(!res.ok||!d.refund)throw new Error(d.error||'Refund failed');
     const refAmt=d.refund.amount;
     if(!payments.some(p=>p.ref===d.refund.id)){
-      payments.push({id:Date.now(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:todayKey(),loggedAt:new Date().toISOString(),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
+      payments.push({id:_newId(),bid_id:bidId,client_id:bid?bid.client_id:null,client_name:bid?bid.client_name:'',date:todayKey(),loggedAt:new Date().toISOString(),type:'refund',amount:-refAmt,method:'Card',ref:d.refund.id});
       saveAll();
     }
     renderCDBids&&renderCDBids();renderDash&&renderDash();renderMoneyPage&&renderMoneyPage();refreshCollectLabel&&refreshCollectLabel();
@@ -1315,7 +1315,7 @@ function logPayment(){
     }
   }
   const storedAmount=isRefund?-a:a;
-  payments.push({id:Date.now(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,loggedAt:new Date().toISOString(),type:type,amount:storedAmount,method:pmethod,ref:pref});
+  payments.push({id:_newId(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,loggedAt:new Date().toISOString(),type:type,amount:storedAmount,method:pmethod,ref:pref});
   const _savedBidId=activePayBidId;
   saveAll();emitEvent('payment_received',bid.client_id,{bid_id:activePayBidId,amount:storedAmount});
   // Payments repeat, so they are not deduped. balance_settled fires once, when
@@ -1508,7 +1508,7 @@ async function saveLien(){
   const bid=bids.find(b=>b.id===bidId);if(!bid)return;
   _userDelete(()=>{
     liens=liens.filter(l=>l.bid_id!==activeLienBidId);
-    liens.push({id:Date.now(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status,amount:_moneyVal('lien-amount'),county:v('lien-county'),notes:v('lien-notes')});
+    liens.push({id:_newId(),bid_id:activeLienBidId,client_id:bid.client_id,client_name:bid.client_name,date:v('lien-date'),status,amount:_moneyVal('lien-amount'),county:v('lien-county'),notes:v('lien-notes')});
     saveAll();
   });
   closeLienPanel();renderCDBids();
@@ -1762,7 +1762,7 @@ function _confirmFileLien(bidId,detectedCounty){
   let lien=liens.find(l=>l.bid_id===bidId);
   if(!lien){
     const c=getClientById(bid.client_id);
-    lien={id:Date.now(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name||c?.name||'',amount:getBidBalance(bid),date:todayKey(),status:'filed',county:usedCounty,notes:''};
+    lien={id:_newId(),bid_id:bidId,client_id:bid.client_id,client_name:bid.client_name||c?.name||'',amount:getBidBalance(bid),date:todayKey(),status:'filed',county:usedCounty,notes:''};
     liens.push(lien);
   }else{lien.status='filed';lien.date=todayKey();if(!lien.county)lien.county=usedCounty;}
   setBidCollStage(bid,'lien_filed','Lien filed via direct action');

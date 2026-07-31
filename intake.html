@@ -76,16 +76,16 @@ textarea.input{resize:vertical;min-height:90px}
     <div class="card">
       <div class="field">
         <div class="field-label">Your name <span class="req">*</span></div>
-        <input id="f-name" class="input" type="text" placeholder="First and last name" autocomplete="name">
+        <input id="f-name" class="input" type="text" placeholder="First and last name" autocomplete="name" oninput="_qrTrackField()">
       </div>
       <div class="field">
         <div class="field-label">Phone number <span class="req">*</span></div>
-        <input id="f-phone" class="input" type="tel" placeholder="(555) 555-5555" autocomplete="tel">
+        <input id="f-phone" class="input" type="tel" placeholder="(555) 555-5555" autocomplete="tel" oninput="_qrTrackField()">
       </div>
       <div class="field">
         <div class="field-label">Property address <span class="req">*</span></div>
         <div style="position:relative;margin-bottom:8px">
-          <input id="f-street" class="input" type="text" placeholder="Start typing address…" autocomplete="off" oninput="_intakeAddrSearch(this.value)" onblur="setTimeout(()=>{const b=document.getElementById('f-addr-sugg');if(b)b.style.display='none'},150)">
+          <input id="f-street" class="input" type="text" placeholder="Start typing address…" autocomplete="off" oninput="_intakeAddrSearch(this.value);_qrTrackField()" onblur="setTimeout(()=>{const b=document.getElementById('f-addr-sugg');if(b)b.style.display='none'},150)">
           <div id="f-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;background:#fff;border:1.5px solid #ccc;border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:200;max-height:240px;overflow-y:auto"></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 56px 90px;gap:8px">
@@ -96,7 +96,7 @@ textarea.input{resize:vertical;min-height:90px}
       </div>
       <div class="field">
         <div class="field-label">What are you looking to get done?</div>
-        <textarea id="f-notes" class="input" placeholder="Interior walls, exterior trim, garage, deck…"></textarea>
+        <textarea id="f-notes" class="input" placeholder="Interior walls, exterior trim, garage, deck…" oninput="_qrTrackField()"></textarea>
       </div>
       <div class="field" style="margin-bottom:4px">
         <div class="field-label">Best time to call you</div>
@@ -141,10 +141,45 @@ const _supa=supabase.createClient(SUPA_URL,SUPA_KEY);
 
 const params=new URLSearchParams(location.search);
 const ACCOUNT_ID=params.get('a')||'';
+const QR_CODE=params.get('src')||'';
 
 let _acct=null;
 let _callTime='';
 let _submitting=false;
+let _qrLabel='';
+
+// ── QR funnel logging: scan (already logged by functions/q/[[code]].js
+// before this page even loaded) → form_opened → submitted, plus which
+// field someone got stuck on if they leave without submitting. No-ops
+// entirely when there's no ?src= (a plain shared intake link, not a QR
+// scan) — this is instrumentation, never load-bearing for the form itself.
+const FIELD_ORDER=['f-name','f-phone','f-street','f-notes'];
+let _furthestField='';
+let _qrSubmitted=false;
+function _qrLog(event,field){
+  if(!QR_CODE)return;
+  try{
+    _supa.functions.invoke('log-qr-event',{body:{code:QR_CODE,event,field:field||undefined}}).catch(()=>{});
+  }catch(_e){}
+}
+function _qrTrackField(){
+  for(let i=FIELD_ORDER.length-1;i>=0;i--){
+    if(v(FIELD_ORDER[i])){_furthestField=FIELD_ORDER[i];return;}
+  }
+  _furthestField='';
+}
+// sendBeacon, not the normal invoke() call above: this fires as the page is
+// actually being torn down (tab close, back button), where a regular fetch
+// can get cancelled mid-flight before it lands. No custom headers needed —
+// log-qr-event is deployed anon-callable, same as log-proposal-view.
+function _qrLogDropoffOnExit(){
+  if(!QR_CODE||_qrSubmitted||!_furthestField)return;
+  try{
+    const body=new Blob([JSON.stringify({code:QR_CODE,event:'field_dropoff',field:_furthestField})],{type:'application/json'});
+    navigator.sendBeacon('https://mwtsmctajhrrybblgorf.supabase.co/functions/v1/log-qr-event',body);
+  }catch(_e){}
+}
+document.addEventListener('pagehide',_qrLogDropoffOnExit);
 
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function v(id){return(document.getElementById(id)||{}).value||''}
@@ -224,8 +259,20 @@ async function init(){
     }
     _acct=data;
     applyBranding();
+    // Resolve the code to its human label ("Yard sign - 123 Main St") once,
+    // up front, so the lead this becomes carries the same source vocabulary
+    // a manually-entered client would ("Yard sign"), not a raw tracking code
+    // the contractor would have to decode. Best-effort: an unresolved code
+    // still submits fine, it just falls back to the generic 'qr_form' source.
+    if(QR_CODE){
+      try{
+        const{data:src}=await _supa.from('qr_sources').select('label').eq('code',QR_CODE).maybeSingle();
+        if(src&&src.label)_qrLabel=src.label;
+      }catch(_e){}
+    }
     hide('pg-load');
     show('pg-form');
+    _qrLog('form_opened');
   }catch(e){
     showErr('Connection error','Could not load contractor info. Please try again.');
   }
@@ -283,7 +330,7 @@ async function submitForm(){
 
   try{
     const{error}=await _supa.from('inbound_leads').insert({
-      source:'qr_form',
+      source:_qrLabel||'qr_form',
       account_id:ACCOUNT_ID,
       name:name,
       phone:phone,
@@ -297,6 +344,8 @@ async function submitForm(){
       status:'pending'
     });
     if(error)throw error;
+    _qrSubmitted=true;
+    _qrLog('submitted');
     showConfirm(name);
   }catch(e){
     _submitting=false;

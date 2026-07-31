@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.26.26.31';
+const APP_VERSION='07.30.26.1';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1217,6 +1217,7 @@ const _TD_TABLES=[
   {t:'td_contracts',   get:()=>contracts,   set:v=>{contracts.length=0;v.forEach(r=>contracts.push(r));}, tx:null},
   {t:'td_agreements',  get:()=>agreements,  set:v=>{agreements.length=0;v.forEach(r=>agreements.push(r));}, tx:null},
   {t:'td_maintenance', get:()=>maintenance, set:v=>{maintenance.length=0;v.forEach(r=>maintenance.push(r));}, tx:null},
+  {t:'td_vehicles',    get:()=>vehicles,    set:v=>{vehicles.length=0;v.forEach(r=>vehicles.push(r));},     tx:null},
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
@@ -1229,6 +1230,14 @@ const _TD_TABLES=[
 // next load. Deleting a vehicle service record simply didn't stick. Built
 // FROM _TD_TABLES now so a future table can never repeat this class of bug.
 _locallyDeletedIds=Object.fromEntries(_TD_TABLES.map(({t})=>[t,new Set()]));
+// SAME defect, second map. _lastKnownIds is declared as a hand-listed literal
+// far above (it predates _TD_TABLES), and it had already drifted: td_maintenance
+// was missing, so line ~1028's "we deleted it locally, never resurrect" guard
+// silently no-opped for service records. Backfill from _TD_TABLES so neither
+// that table nor td_vehicles (nor any future one) can repeat it. Additive, not a
+// replacement: existing Sets keep their identity for anything holding a ref, and
+// specs that reset _lastKnownIds={} still work via the defensive ||new Set() sites.
+_TD_TABLES.forEach(({t})=>{if(!_lastKnownIds[t])_lastKnownIds[t]=new Set();});
 // Dev-time guard: reports if _TD_TABLES ever gains a table this object
 // doesn't cover (the exact defect above), a silent multi-week data-loss bug
 // turned into an immediate, loud console error instead. Self-checking since
@@ -1237,7 +1246,9 @@ _locallyDeletedIds=Object.fromEntries(_TD_TABLES.map(({t})=>[t,new Set()]));
 function _assertLocallyDeletedIdsComplete(){
   const missing=_TD_TABLES.map(({t})=>t).filter(t=>!_locallyDeletedIds[t]);
   if(missing.length)console.error('[_locallyDeletedIds] missing table(s): deletes on '+missing.join(', ')+' will never sweep from the cloud:',missing);
-  return missing;
+  const missingKnown=_TD_TABLES.map(({t})=>t).filter(t=>!_lastKnownIds[t]);
+  if(missingKnown.length)console.error('[_lastKnownIds] missing table(s): a locally-deleted row on '+missingKnown.join(', ')+' can resurrect from a peer:',missingKnown);
+  return missing.concat(missingKnown);
 }
 _assertLocallyDeletedIdsComplete();
 // True when a Supabase error means "this table doesn't exist in the DB yet", e.g. a
@@ -1768,6 +1779,7 @@ async function supaInit(){
           if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
+          if(_cd.vehicles?.length)vehicles=_cd.vehicles;
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -1818,6 +1830,7 @@ async function supaInit(){
           _isEmployee=false;_employeeRecord=null;_contractorUserId=null;
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+          vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
           // Inbound-lead review queue lives OUTSIDE these arrays and was never cleared
           // here: the incoming account's Leads page kept rendering the outgoing
           // account's unreviewed QR/intake leads until its own poll happened to
@@ -1983,6 +1996,7 @@ async function supaInit(){
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
         if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
+          if(_cd.vehicles?.length)vehicles=_cd.vehicles;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -2170,7 +2184,7 @@ async function _submitInviteEmployee(){
   const classification=(document.getElementById('_inv-class')?.value||'').trim();
   const permissions={};
   Object.keys(_EMP_PERM_LABELS).forEach(p=>{permissions[p]=!!(document.getElementById('_perm-'+p)?.checked);});
-  const newEmp={id:Date.now(),name,phone,email,role,classification,permissions};
+  const newEmp={id:_newId(),name,phone,email,role,classification,permissions};
   if(!S.employees)S.employees=[];
   S.employees.push(newEmp);
   _settingsChanged();saveAll();
@@ -2454,7 +2468,7 @@ function _checkEmployeeVehiclePicker(){
   const tk=todayKey();
   const key='emp_vehicle_'+tk;
   if(localStorage.getItem(key))return;
-  const vehs=S.vehicles||[];
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
   const ov=document.createElement('div');ov.id='_vehicle-picker-ov';ov.className='zmodal-overlay';
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
@@ -3596,7 +3610,7 @@ function _assignmentToJob(a,clientId){
   // Invalid Date into every calendar/pipeline loop that parses job.start.
   const raw=String(a.start_date||'');
   const start=/^\d{4}-\d{2}-\d{2}$/.test(raw)?raw:(typeof todayKey==='function'?todayKey():'');
-  return{id:Date.now(),bid_id:null,client_id:clientId||null,
+  return{id:_newId(),bid_id:null,client_id:clientId||null,
     name:'Job: '+(a.gc_business_name||'linked contractor'),
     addr:String(a.job_addr),start,days:1,buffer:0,value:0,color:'#185FA5',
     eventType:'job',time:'',hours:null,
@@ -3618,7 +3632,7 @@ function _paymentOfferToIncome(offer,forceClientId){
   if(!offer||!(Number(offer.amount)>0))return null;
   const payer=(offer.gc_business_name||'').trim();
   const c=(forceClientId==null&&payer)?clients.find(x=>x.name&&x.name.toLowerCase()===payer.toLowerCase()):null;
-  return{id:Date.now(),bid_id:null,client_id:forceClientId!=null?forceClientId:(c?c.id:null),client_name:payer||'Contractor',
+  return{id:_newId(),bid_id:null,client_id:forceClientId!=null?forceClientId:(c?c.id:null),client_name:payer||'Contractor',
     date:String(offer.paid_date||'').replace(/-/g,'').slice(0,8),type:'Job payment',amount:Number(offer.amount),
     method:'',notes:('From '+(payer||'a linked contractor')+(offer.job_addr?', job @ '+offer.job_addr:'')).slice(0,200),
     created_at:new Date().toISOString()};
@@ -3961,6 +3975,7 @@ function _enterOfflineMode(){
       if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;
       if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
+          if(_cd.vehicles?.length)vehicles=_cd.vehicles;
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
       if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
     }catch(_ce){}
@@ -4256,6 +4271,11 @@ function _wipeLocalAccountData(){
   _deltaCursor=null;localStorage.removeItem('zp3_delta_meta');
   _subBids=null;window._subBidsKicked=false; // incoming-bid cache is per-account
   clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
+  // The fleet is a synced array now (td_vehicles), not a settings key, so it needs
+  // the same hard clear the other per-record arrays get here — otherwise the
+  // outgoing account's trucks stay in memory and render under the next login,
+  // which is the exact cross-account bleed the S.vehicles reset below guarded.
+  vehicles=[];
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
   // the arrays above, the next account's Leads page would keep rendering this
   // account's unreviewed QR/intake leads (and could even promote one into the
@@ -4276,9 +4296,11 @@ function _wipeLocalAccountData(){
   Object.values(_lastKnownIds).forEach(s=>{if(s&&typeof s.clear==='function')s.clear();});
   // settingsTs:0: zp3_S is shared across accounts on this device. Without zeroing the
   // timestamp these blanked settings beat the next account's cloud copy and overwrite it.
-  // vehiclesTs:0 for the same reason: the blanked vehicles:[] must never win the
-  // per-field keep-local rule over the next login's real cloud fleet.
-  S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],vehiclesTs:0,weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
+  // vehicles/vehiclesTs are the pre-20260809 LEGACY fleet copy; they are no longer read
+  // at runtime, but they stay zeroed here so the next account can never migrate this
+  // account's leftover blob. vehiclesMigratedTs clears with them so the next login is
+  // free to run its own one-time lift.
+  S={...S,bname:'',bphone:'',blic:'',bemail:'',vehicles:[],vehiclesTs:0,vehiclesMigratedTs:0,weatherLat:null,weatherLon:null,locationDenied:false,settingsTs:0};
   saveAll();
 }
 async function supaSignOut(){
@@ -4372,6 +4394,13 @@ function _mergeIncomingSettings(ss,src){
     return false;
   }
   const _localTsBefore=S.settingsTs||0;
+  // LEGACY ONLY. The live fleet is td_vehicles now (20260809) and never passes
+  // through here. This keep-newer-local rule survives for one job: protecting the
+  // un-migrated S.vehicles blob on an account whose _migrateVehiclesFromSettings
+  // hasn't run yet, so the lift still finds the real fleet to read. Once
+  // S.vehiclesMigratedTs is set these keys are inert. Do not add new fields here —
+  // a per-field patch on a shared blob is the pattern that lost the fleet to begin
+  // with; give the data its own table instead.
   const _localVehs=S.vehicles,_localVehsTs=S.vehiclesTs||0;
   S={...S,...ss};
   S._sOwner=_incomingOwner; // stamp owner so the NEXT login can detect an account switch
@@ -4438,7 +4467,7 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from, the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,ts:Date.now()});
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
@@ -4710,10 +4739,19 @@ function _paintCacheForDelta(uid){
   try{
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
-    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance};
+    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles};
     const _ptTs=Date.now();
     for(const{t,set}of _TD_TABLES){
-      const rows=Array.isArray(byKey[t])?byKey[t]:[];
+      // A cache written by an OLDER app version has no key for a table added
+      // since (td_vehicles here; td_maintenance had the same exposure when it
+      // landed). Treating that absence as "the cloud says empty" and calling
+      // set([]) silently WIPES the in-memory records on the first boot after
+      // deploy — a real data-loss path, caught by the fleet suite. An absent key
+      // means the cache has no opinion about this table, so leave it alone and
+      // let the real cloud load populate it.
+      const cached=byKey[t];
+      if(!Array.isArray(cached))continue;
+      const rows=cached;
       set(rows);
       // Painted rows came from the cloud-derived cache → in sync as of NOW for the merge's
       // pending-gate. Conservative on purpose: field clocks rehydrated from the op log are
@@ -4730,7 +4768,7 @@ function _writeLocalCache(){
   try{
     const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,checksState,
+      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
     // Delta sidecar: the server-updated_at cursor + known-cloud hashes, owner-scoped.
@@ -5282,7 +5320,7 @@ async function checkNewSignatures(_src){
             const _ctotal=_cpaid.reduce((t,p)=>t+p.amount,0);
             const _hasRefund=(typeof payments!=='undefined'?payments:[]).some(p=>p.bid_id===bid.id&&p._cancelRefund);
             if(_ctotal>0&&!_hasRefund){
-              payments.push({id:Date.now(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),loggedAt:new Date().toISOString(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund: client cancelled within rescission window'});
+              payments.push({id:_newId(),bid_id:bid.id,amount:-_ctotal,date:todayKey(),loggedAt:new Date().toISOString(),method:'refund',type:'refund',_cancelRefund:true,note:'Refund: client cancelled within rescission window'});
             }
             changed=true;
             const _isStripe=s.payment_method&&s.payment_method!=='cash'&&s.payment_method!=='check';
@@ -5617,7 +5655,7 @@ function quickScheduleJob(bidId,startKey,clientId){
   const days=bid.days||2;
   const name=(bid.client_name||bid.name||'Job')+(bid.type?', '+bid.type:'');
   jobs.push({
-    id:Date.now(),bid_id:bidId,client_id:clientId||bid.client_id,
+    id:_newId(),bid_id:bidId,client_id:clientId||bid.client_id,
     name,addr:bid.addr||'',start:startKey,days,buffer:1,
     value:bid.amount||0,color:'#185FA5',eventType:'job',
     time:'',hours:null,notes:bid.notes||'',status:'upcoming',
@@ -6030,6 +6068,42 @@ async function supaLoadFromCloud({silent=false}={}){
     _loadedDataOwner=(_supaUser&&_supaUser.id)||_loadedDataOwner; // remember whose data is in memory
     supaSetStatus('synced');
 
+    // ── One-time fleet lift out of the settings blob (20260809_td_vehicles) ──
+    // MUST run here, after the load: only now do we know whether this account
+    // already has td_vehicles rows. Running it earlier would migrate against an
+    // empty array and duplicate a fleet the cloud was about to deliver.
+    // No-ops on every subsequent boot (rows exist / vehiclesMigratedTs set), and
+    // its ids are derived from the legacy name slug so two devices racing the
+    // same lift converge on identical rows instead of doubling the fleet.
+    if(!_isEmployee&&typeof _migrateVehiclesFromSettings==='function'){
+      try{
+        const _lifted=_migrateVehiclesFromSettings();
+        if(_lifted>0){
+          _logSave('vehicles-migrated',{count:_lifted});
+          // Push straight away: until these rows land, the fleet still exists
+          // only in the blob this migration is retiring. Only once the flush
+          // resolves is the lift durable enough to mark done — see the note in
+          // _migrateVehiclesFromSettings about the first-boot wipe window.
+          saveAll();
+          setTimeout(()=>{
+            Promise.resolve(_flushSaveNow())
+              .then(()=>{if(typeof _markVehiclesMigrated==='function')_markVehiclesMigrated();saveAll();})
+              .catch(()=>{});
+          },60);
+          if(typeof renderFleetVehicles==='function'){try{renderFleetVehicles();}catch(_e){}}
+        }
+      }catch(_e){}
+      // Stamp vehicleId onto pre-id service records, vehicle expenses and trips.
+      // Must run AFTER the fleet is in memory (it resolves names against it) and
+      // is idempotent, so a boot where nothing needs stamping costs one pass.
+      try{
+        if(typeof _backfillVehicleLinks==='function'){
+          const _n=_backfillVehicleLinks();
+          if(_n>0){_logSave('vehicle-links-backfilled',{count:_n});saveAll();}
+        }
+      }catch(_e){}
+    }
+
     // If _mergeIncomingSettings detected local is newer than cloud it scheduled a
     // debounced save (2 s). Flush it immediately now that _supaCloudLoaded=true so
     // a force-quit right after boot can't outrun the timer and lose settings.
@@ -6043,6 +6117,11 @@ async function supaLoadFromCloud({silent=false}={}){
       // treats unknown-Stripe as handled (no flash), so a contractor who actually
       // needs to connect only sees "Turn on card payments" appear here, cleanly.
       setTimeout(()=>{if(_stripeConnectStatus===null)_fetchStripeConnectStatus().then(()=>{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}).catch(()=>{});},500);
+      // Same self-heal for the QR-code checklist item: an account that already had
+      // sources before this item shipped has no local cache yet, so pull the real
+      // count once per boot and correct the card (covers new accounts too, since
+      // _qrLoadSources writes the cache the first time it ever runs for them).
+      setTimeout(()=>{if(typeof _qrHasSourceCached==='function'&&_qrHasSourceCached()===null&&typeof _qrLoadSources==='function')_qrLoadSources().catch(()=>{});},650);
       _removeBootOverlay();goPg('pg-dash');
     }
 
@@ -6273,6 +6352,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.licenses?.length)licenses=_cd.licenses;if(_cd.events?.length)events=_cd.events;
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
+          if(_cd.vehicles?.length)vehicles=_cd.vehicles;
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED, fallback)');applySettings();_refillSettingsFormUnlessEditing();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;
@@ -6520,8 +6600,17 @@ async function _loadPendingInbound(){
   // while the request is in flight, _supaUser changes out from under this await,
   // and the response (or its absence) must never be applied against the wrong account.
   const _forUser=_supaUser.id;
+  // inbound_leads.account_id is a FK to accounts(id) — what intake.html/the QR
+  // redirect stamp on every lead (their ?a= param IS accounts.id, resolved via
+  // account_public). Filtering by _supaUser.id (the auth uid, a DIFFERENT uuid)
+  // matched zero rows forever, so QR/intake leads landed in the DB but never
+  // surfaced in the app. Both ids stay in the filter: client.html's onboard form
+  // still writes the legacy auth-uid convention (pre-existing, tracked separately),
+  // so legacy rows keep matching wherever RLS permits them.
+  const _acctId=(typeof _account!=='undefined'&&_account&&_account.id)||null;
+  const _ids=[_forUser];if(_acctId&&_acctId!==_forUser)_ids.push(_acctId);
   try{
-    const{data}=await _supa.from('inbound_leads').select('*').eq('account_id',_supaUser.id).eq('status','pending').order('created_at',{ascending:false});
+    const{data}=await _supa.from('inbound_leads').select('*').in('account_id',_ids).eq('status','pending').order('created_at',{ascending:false});
     if(_supaUser?.id!==_forUser)return; // account switched mid-request, drop this response entirely
     if(!data){_pendingInbound=[];_updateInboundBadge();return;}
     // Split: onboard_link rows (have client_id) auto-merge; QR rows go to review queue
@@ -6565,7 +6654,11 @@ function _onNewInboundLead(row){
   // Unknown lead (QR form), queue for review
   _pendingInbound.unshift(row);
   _updateInboundBadge();
-  showToast('New lead from '+(row.source==='qr_form'?'QR form':'intake form')+', tap to review','🆕');
+  // row.source is already the human label ("Yard sign - 123 Main St") when it
+  // came through a tracked QR code (see intake.html's _qrLabel resolution);
+  // 'qr_form' is the older generic fallback for an untracked shared link.
+  const _srcLabel=(row.source&&row.source!=='qr_form')?row.source:'intake form';
+  showToast('New lead from '+_srcLabel+', tap to review','🆕');
   if(document.querySelector('.pg.active')?.id==='pg-leads')renderLeadsPage();
 }
 function _updateInboundBadge(){
@@ -6596,10 +6689,15 @@ function _inboundReviewHTML(){
 }
 async function _promoteInbound(id){
   const row=_pendingInbound.find(x=>x.id===id);if(!row)return;
-  // Create client record
-  const newClient={id:Date.now(),name:row.name||'Unknown',phone:row.phone||'',email:'',addr:row.addr||'',ptype:'Single family home',source:'QR form',ref:'',notes:row.notes||'',created:todayKey(),createdAt:new Date().toISOString(),extraAddresses:[],clientToken:'',clientHubKey:''};
+  // Create client record. partyType defaults to 'homeowner': every QR
+  // placement this feeds (yard sign, truck wrap, business card) is
+  // consumer-facing physical marketing, a GC/builder relationship doesn't
+  // form by scanning a code off someone's driveway. One-tap fixable on the
+  // client record if a promotion ever is the rare exception.
+  const newClient={id:_newId(),name:row.name||'Unknown',phone:row.phone||'',email:'',addr:row.addr||'',ptype:'Single family home',partyType:'homeowner',source:(row.source&&row.source!=='qr_form')?row.source:'QR form',ref:'',notes:row.notes||'',created:todayKey(),createdAt:new Date().toISOString(),extraAddresses:[],clientToken:'',clientHubKey:''};
   clients.push(newClient);_ensureClientToken(newClient.id);
   saveAll();
+  if(typeof logLifecycle==='function')logLifecycle('lead_created',{clientId:newClient.id,meta:{source:newClient.source}});
   // Mark inbound as applied
   _pendingInbound=_pendingInbound.filter(x=>x.id!==id);
   _updateInboundBadge();

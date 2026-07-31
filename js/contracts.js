@@ -73,7 +73,7 @@ function _ctSaveNew(clientId){
   const start=document.getElementById('ct-start')?.value||todayKey();
   const next=document.getElementById('ct-next')?.value||todayKey();
   const notes=document.getElementById('ct-notes')?.value||'';
-  contracts.push({id:Date.now(),clientId,title,freq,amount,startDate:start,nextDate:next,notes,active:true,invoices:[]});
+  contracts.push({id:_newId(),clientId,title,freq,amount,startDate:start,nextDate:next,notes,active:true,invoices:[]});
   saveAll();
   document.getElementById('_ct-modal-ov')?.remove();
   showToast('Contract saved','📋');
