@@ -1831,6 +1831,10 @@ async function supaInit(){
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
+          // Crew caches are keyed by EMAIL, so without this the next account's
+          // roster renders the previous account's location status against any
+          // matching address. Reset the loaded flags too or they never refetch.
+          _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
           // Inbound-lead review queue lives OUTSIDE these arrays and was never cleared
           // here: the incoming account's Leads page kept rendering the outgoing
           // account's unreviewed QR/intake leads until its own poll happened to
@@ -2581,6 +2585,10 @@ function renderTeam(){
   if(_canViewComp()&&supaEnabled()&&_supaUser&&!_teamCompLoaded){
     _teamCompLoaded=true;_loadTeamComp().then(()=>renderTeam());
   }
+  // Crew location status, same lazy-load-then-rerender shape as team comp above.
+  if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser&&!_teamGeoLoaded){
+    _teamGeoLoaded=true;_loadTeamGeo().then(()=>renderTeam());
+  }
   const emps=S.employees||[];
   const empHtml=!emps.length
     ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet, just you. Add someone when you hire.</div>'
@@ -2603,6 +2611,15 @@ function renderTeam(){
         (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(e.phone)+'</div>':'')+
         (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
+        (function(){
+          // Owner-facing only, and never for the owner's own row (they see their
+          // own state on the dashboard checklist instead).
+          if(e.role==='owner')return '';
+          const g=_geoRosterStatus(e.email);
+          if(!g)return '';
+          return '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
+            '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>';
+        })()+
       '</div>';
     }).join('');
   if(el)el.innerHTML=_reqHtml+empHtml;
@@ -2730,6 +2747,71 @@ function _empEffectiveHourly(comp){
 // Loaded hourly = wage × burden multiplier (payroll taxes, workers' comp, insurance).
 function _empLoadedHourly(comp){
   return _empEffectiveHourly(comp)*(S.laborBurden||1.3);
+}
+// ── Crew location status for the roster ──────────────────────────────────────
+// Two sources, deliberately, because neither alone is trustworthy:
+//   • location_status  , what the device's permission API reported. Safari has
+//     historically not supported querying geolocation permission at all, so this
+//     is 'unsupported' (not a lie) on a chunk of real phones.
+//   • last ping        , whether breadcrumbs are actually arriving. This is the
+//     DEFINITIVE signal: if rows are landing, permission is granted no matter
+//     what the API claims. The owner's real question is "is tracking working for
+//     this person," and a recent ping answers it outright.
+// Freshness matters as much as state. An owner can never query a crew member's
+// live permission, only see what their device last said, so a stale 'granted'
+// renders GRAY (unknown), never green. A green light that lies is worse than an
+// honest "haven't heard from this phone."
+let _teamGeo={};
+let _teamGeoLoaded=false;
+const _GEO_FRESH_MS=36*3600*1000; // a phone that hasn't checked in for ~1.5 days is unknown, not OK
+async function _loadTeamGeo(){
+  if(!supaEnabled()||!_supaUser||_isEmployee)return;
+  const cid=_contractorUserId||_supaUser.id;
+  try{
+    const{data,error}=await _supa.from('team_members')
+      .select('email,employee_user_id,location_status,location_checked_at,location_device,location_ack_at').eq('contractor_user_id',cid);
+    if(error||!data)return;
+    const next={};
+    data.forEach(r=>{if(r.email)next[r.email.toLowerCase()]={
+      status:r.location_status||null,checkedAt:r.location_checked_at||null,
+      device:r.location_device||null,ackAt:r.location_ack_at||null,lastPing:null};});
+    // Ping recency, the signal that outranks the permission API.
+    try{
+      const since=new Date(Date.now()-_GEO_FRESH_MS).toISOString();
+      const{data:pings}=await _supa.from('location_pings')
+        .select('employee_user_id,ts').eq('contractor_user_id',cid).gte('ts',since)
+        .order('ts',{ascending:false}).limit(500);
+      const byUser={};
+      (pings||[]).forEach(p=>{if(p.employee_user_id&&!byUser[p.employee_user_id])byUser[p.employee_user_id]=p.ts;});
+      data.forEach(r=>{
+        const k=(r.email||'').toLowerCase();
+        if(k&&next[k]&&r.employee_user_id&&byUser[r.employee_user_id])next[k].lastPing=byUser[r.employee_user_id];
+      });
+    }catch(_e){}
+    _teamGeo=next;
+  }catch(_e){}
+}
+// Returns {dot,label,tone} or null when crew tracking is off for the account.
+function _geoRosterStatus(email){
+  if(!S.teamTracking)return null;
+  const g=_teamGeo[(email||'').toLowerCase()];
+  if(!g)return{dot:'⚪',label:'Not set up yet',tone:'var(--text3)'};
+  const pingAge=g.lastPing?Date.now()-new Date(g.lastPing).getTime():null;
+  // A ping inside the window is proof, regardless of what the permission API said.
+  if(pingAge!=null&&pingAge<_GEO_FRESH_MS)
+    return{dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),tone:'var(--green-mid,#16a34a)'};
+  if(g.status==='denied')
+    return{dot:'🔴',label:'Location off on their phone',tone:'#DC2626'};
+  if(!g.ackAt)
+    return{dot:'⚪',label:'Hasn’t opened the app yet',tone:'var(--text3)'};
+  const stale=!g.checkedAt||(Date.now()-new Date(g.checkedAt).getTime())>_GEO_FRESH_MS;
+  if(stale)
+    return{dot:'⚪',label:'No recent activity'+(g.checkedAt?' · '+_timeAgo(g.checkedAt):''),tone:'var(--text3)'};
+  if(g.status==='granted')
+    return{dot:'🟢',label:'Location on'+(g.device?' · '+g.device:''),tone:'var(--green-mid,#16a34a)'};
+  if(g.status==='unsupported')
+    return{dot:'⚪',label:'Can’t read status on this phone',tone:'var(--text3)'};
+  return{dot:'🔴',label:'Location not turned on',tone:'#DC2626'};
 }
 async function _loadTeamComp(){
   if(!supaEnabled()||!_supaUser||!_canViewComp())return;
@@ -4293,6 +4375,7 @@ function _wipeLocalAccountData(){
   // outgoing account's trucks stay in memory and render under the next login,
   // which is the exact cross-account bleed the S.vehicles reset below guarded.
   vehicles=[];
+  _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
   // the arrays above, the next account's Leads page would keep rendering this
   // account's unreviewed QR/intake leads (and could even promote one into the

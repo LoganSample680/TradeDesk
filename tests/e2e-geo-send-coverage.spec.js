@@ -161,12 +161,15 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
     const result = await page.evaluate(() => {
       if (typeof _geoSetConsent !== 'function') return { skip: true };
       localStorage.removeItem('geo_owner_consent');
-      const origStart = window.startGeoTracking;
-      let started = false;
-      window.startGeoTracking = () => { started = true; };
-      try { _geoSetConsent(true, true); } catch (e) { /* swallow */ }
-      window.startGeoTracking = origStart;
-      return { flag: localStorage.getItem('geo_owner_consent'), started };
+      // Owner allow now routes through _geoRequestPermission (which asks the OS
+      // and only then starts tracking) instead of calling startGeoTracking
+      // directly, so that "turn it on" works after hours too.
+      const origReq = window._geoRequestPermission;
+      let asked = false;
+      window._geoRequestPermission = () => { asked = true; };
+      try { _geoSetConsent(true); } catch (e) { /* swallow */ }
+      window._geoRequestPermission = origReq;
+      return { flag: localStorage.getItem('geo_owner_consent'), started: asked };
     });
     if (!result.skip) {
       expect(result.flag).toBe('1');
@@ -181,7 +184,7 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
       const origStart = window.startGeoTracking;
       let started = false;
       window.startGeoTracking = () => { started = true; };
-      try { _geoSetConsent(false, true); } catch (e) { /* swallow */ }
+      try { _geoSetConsent(false); } catch (e) { /* swallow */ }
       window.startGeoTracking = origStart;
       return { flag: localStorage.getItem('geo_owner_consent'), started };
     });
@@ -191,43 +194,33 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
     }
   });
 
-  test('_geoSetConsent: employee ALLOW clears decline flag + sets location_consent + starts tracking', async () => {
+  // Crew consent moved OUT of _geoSetConsent: the employee branch wrote
+  // location_consent=true, an agreement the person never made. Crew now go
+  // through _geoNoticeSheet, which records location_ack_at only on a real tap
+  // (covered in e2e-geo-permission.spec.js). These assert the DELETION.
+  test('_geoSetConsent no longer has an employee branch that fabricates consent', async () => {
     const result = await page.evaluate(() => {
-      if (typeof _geoSetConsent !== 'function') return { skip: true };
-      localStorage.setItem('geo_consent_declined', '1');
-      const origEmp = window._employeeRecord;
-      const origStart = window.startGeoTracking;
-      let started = false;
-      window.startGeoTracking = () => { started = true; };
-      window._employeeRecord = { id: 'emp-consent-1', location_consent: false };
-      try { _geoSetConsent(true, false); } catch (e) { /* swallow */ }
-      const consent = window._employeeRecord && window._employeeRecord.location_consent;
-      window._employeeRecord = origEmp;
-      window.startGeoTracking = origStart;
-      return { declined: localStorage.getItem('geo_consent_declined'), consent, started };
+      const src = String(_geoSetConsent);
+      return {
+        arity: _geoSetConsent.length,
+        mentionsConsentCol: /location_consent/.test(src),
+        mentionsDeclineFlag: /geo_consent_declined/.test(src),
+      };
     });
-    if (!result.skip) {
-      expect(result.declined).toBe(null);   // decline flag cleared on allow
-      expect(result.consent).toBe(true);    // team_members consent flag set
-      expect(result.started).toBe(true);
-    }
+    expect(result.arity).toBe(1);                 // (yes) only; the isOwner arg is gone
+    expect(result.mentionsConsentCol).toBe(false); // never writes the column again
+    expect(result.mentionsDeclineFlag).toBe(false);
   });
 
-  test('_geoSetConsent: employee DENY persists geo_consent_declined="1" and does NOT start tracking', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _geoSetConsent !== 'function') return { skip: true };
-      localStorage.removeItem('geo_consent_declined');
-      const origStart = window.startGeoTracking;
-      let started = false;
-      window.startGeoTracking = () => { started = true; };
-      try { _geoSetConsent(false, false); } catch (e) { /* swallow */ }
-      window.startGeoTracking = origStart;
-      return { declined: localStorage.getItem('geo_consent_declined'), started };
-    });
-    if (!result.skip) {
-      expect(result.declined).toBe('1');
-      expect(result.started).toBe(false);
-    }
+  test('the employee consent overlay is gone, crew get the notice sheet instead', async () => {
+    const result = await page.evaluate(() => ({
+      promptArity: _geoConsentPrompt.length,          // owner-only now, no isOwner arg
+      hasNoticeSheet: typeof _geoNoticeSheet === 'function',
+      hasAck: typeof _geoRecordAck === 'function',
+    }));
+    expect(result.promptArity).toBe(0);
+    expect(result.hasNoticeSheet).toBe(true);
+    expect(result.hasAck).toBe(true);
   });
 
   test('_geoConsentPrompt: owner variant creates the consent overlay (no throw)', async () => {
@@ -235,7 +228,7 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
       if (typeof _geoConsentPrompt !== 'function') return { skip: true };
       document.getElementById('_geo-consent-ov')?.remove();
       try {
-        _geoConsentPrompt(true);
+        _geoConsentPrompt();
         const ov = document.getElementById('_geo-consent-ov');
         const had = !!ov;
         const hasAllowBtn = ov ? /Allow during work hours/.test(ov.innerHTML) : false;
@@ -273,8 +266,8 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
       if (typeof _geoConsentPrompt !== 'function') return { skip: true };
       document.getElementById('_geo-consent-ov')?.remove();
       try {
-        _geoConsentPrompt(true);
-        _geoConsentPrompt(true); // guard: early-return if overlay already exists
+        _geoConsentPrompt();
+        _geoConsentPrompt(); // guard: early-return if overlay already exists
         const count = document.querySelectorAll('#_geo-consent-ov').length;
         document.getElementById('_geo-consent-ov')?.remove();
         return { ok: true, count };
@@ -341,11 +334,23 @@ test.describe('Geo banner + ping, _geoPermissionBanner / _geoRequestPermission /
   test('_geoRequestPermission, runs without throwing (calls startGeoTracking, schedules re-render)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoRequestPermission !== 'function') return { skip: true };
-      const origStart = window.startGeoTracking;
-      let started = false;
-      window.startGeoTracking = () => { started = true; };
-      try { _geoRequestPermission(); window.startGeoTracking = origStart; return { ok: true, started }; }
-      catch (e) { window.startGeoTracking = origStart; return { ok: false, error: e.message }; }
+      // It no longer calls startGeoTracking directly (that bailed outside
+      // business hours, which is what made the button dead at 7pm). It asks the
+      // geolocation API first and starts tracking only once permission lands.
+      const realGeo = navigator.geolocation;
+      let asked = false;
+      Object.defineProperty(navigator, 'geolocation', {
+        configurable: true,
+        value: { getCurrentPosition: (ok) => { asked = true; ok({ coords: { latitude: 1, longitude: 1 } }); } },
+      });
+      try {
+        _geoRequestPermission();
+        Object.defineProperty(navigator, 'geolocation', { configurable: true, value: realGeo });
+        return { ok: true, started: asked };
+      } catch (e) {
+        Object.defineProperty(navigator, 'geolocation', { configurable: true, value: realGeo });
+        return { ok: false, error: e.message };
+      }
     });
     if (!result.skip) {
       expect(result.ok).toBe(true);

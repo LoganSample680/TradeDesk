@@ -2,12 +2,19 @@
 //
 // Consent model:
 //   1. The contractor enables S.teamTracking in Settings (business-hours window
-//      + geofence radius).
-//   2. Employees are auto-enrolled, crew tracking is a mandatory condition of
-//      using TradeDesk, so there is no separate in-app opt-in for employees.
-//      (The browser/OS location-permission prompt is still shown on first run;
-//      that is an OS gate and cannot be bypassed.) Owners tracking their OWN
-//      time on jobs keep a one-time per-device opt-in.
+//      + geofence radius). Tracking during work hours is a condition of the job,
+//      which is the OWNER's call to make.
+//   2. Crew are TOLD before anything is logged. _geoNoticeSheet states plainly
+//      what is captured, the hours window, and that off-hours is never touched;
+//      their tap records location_ack_at + the notice version and, in that same
+//      gesture, opens the OS permission prompt. Nothing is tracked before that.
+//      We never write an agreement the person did not make: the old code set
+//      location_consent=true at sign-in without ever asking, which is a
+//      fabricated record, worse in a dispute than having none.
+//   3. Owners tracking their OWN time keep a one-time per-device opt-in
+//      (localStorage), since that is a preference, not an employment record.
+//   4. location_status/checked_at/device record what the DEVICE reported. That is
+//      a heartbeat for Fleet & Team, never a proxy for consent.
 // Tracking ONLY runs inside the business-hours window, never on personal time.
 //
 // Writes:
@@ -376,11 +383,82 @@ async function _geoPermissionBanner(){
     (denied?'':'<button onclick="_geoRequestPermission()" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:#DC2626;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Turn on location</button>')+
   '</div>';
 }
-function _geoRequestPermission(){
-  // Triggers the OS prompt when state is 'prompt'. (When already 'denied' the OS
-  // won't re-prompt, the banner tells them to use Settings instead.)
-  startGeoTracking();
-  setTimeout(_geoPermissionBanner,1500);
+// ── Permission request, DELIBERATELY independent of business hours ────────────
+// This used to be `startGeoTracking()`, which bails on `!_geoBusinessHoursNow()`
+// before it ever reaches watchPosition. So tapping "Turn on location" at 7pm did
+// NOTHING: no OS prompt, no error, no feedback, and the crew member reasonably
+// concluded the app was broken. Setup happens whenever a person gets around to
+// it, which is very often after the truck is parked, so the permission grant has
+// to be reachable 24/7 even though TRACKING itself stays hard-gated to the
+// business-hours window (that gate lives in startGeoTracking and _geoOnPing and
+// is untouched here).
+//
+// MUST be called from inside a real user gesture: browsers only surface the
+// geolocation prompt in response to a tap.
+function _geoRequestPermission(cb){
+  const done=(state)=>{
+    _geoReportPermission(state);
+    try{_geoPermissionBanner();}catch(_e){}
+    try{if(typeof _renderDashSetupTodo==='function')_renderDashSetupTodo();}catch(_e){}
+    if(typeof cb==='function')try{cb(state);}catch(_e){}
+  };
+  if(!navigator.geolocation){done('unsupported');return;}
+  // getCurrentPosition triggers the OS prompt on its own and, unlike watchPosition,
+  // hands back a definitive allow/deny we can record. Tracking is started
+  // separately below, only if we're actually inside business hours.
+  try{
+    navigator.geolocation.getCurrentPosition(
+      ()=>{ startGeoTracking(); done('granted'); },
+      (err)=>{ done(err&&err.code===1?'denied':'prompt'); },
+      {enableHighAccuracy:false,maximumAge:60000,timeout:15000}
+    );
+  }catch(_e){done('prompt');}
+}
+
+// ── Persist what the DEVICE reported ──────────────────────────────────────────
+// Status only, never consent. The owner cannot query a crew member's live
+// permission from their own phone, so this row is the only thing Fleet & Team can
+// render, and it is a heartbeat: without location_checked_at a member who
+// revoked permission last week would show green forever.
+async function _geoReadPermission(){
+  if(!navigator.geolocation)return 'unsupported';
+  try{
+    if(navigator.permissions&&navigator.permissions.query){
+      const p=await navigator.permissions.query({name:'geolocation'});
+      if(!p._tdBound){p._tdBound=true;p.onchange=()=>{_geoReportPermission(p.state);try{_geoPermissionBanner();}catch(_e){}};}
+      return p.state;
+    }
+  }catch(_e){}
+  // Safari has historically not supported querying geolocation permission. Saying
+  // 'unsupported' (rather than lying with 'prompt') lets the roster fall back to
+  // ping recency, which is the more reliable signal anyway.
+  return 'unsupported';
+}
+function _geoReportPermission(state){
+  if(!_supa||!_supaUser||!_isEmployee)return;
+  const patch={location_status:state||'prompt',location_checked_at:new Date().toISOString()};
+  try{
+    const d=(typeof S!=='undefined'&&S.devices||[]).find(x=>x.id===(typeof _initDeviceId==='function'&&_initDeviceId()));
+    if(d)patch.location_device=d.name||d.label||null;
+  }catch(_e){}
+  try{_supa.from('team_members').update(patch).eq('employee_user_id',_supaUser.id).then(()=>{},()=>{});}catch(_e){}
+}
+
+// ── The acknowledgment: the ONLY thing that records agreement ─────────────────
+// Written exclusively from a user gesture on the setup action, never inferred and
+// never defaulted. Versioned so the record still means something after the copy
+// changes.
+const GEO_NOTICE_VERSION='2026-07-31.1';
+function _geoNeedsAck(){
+  if(!_isEmployee)return false;
+  if(!S.teamTracking)return false;
+  return !(_employeeRecord&&_employeeRecord.location_ack_at);
+}
+function _geoRecordAck(){
+  const now=new Date().toISOString();
+  if(_employeeRecord){_employeeRecord.location_ack_at=now;_employeeRecord.location_ack_version=GEO_NOTICE_VERSION;}
+  if(!_supa||!_supaUser)return;
+  try{_supa.from('team_members').update({location_ack_at:now,location_ack_version:GEO_NOTICE_VERSION}).eq('employee_user_id',_supaUser.id).then(()=>{},()=>{});}catch(_e){}
 }
 
 // ── Start / stop ───────────────────────────────────────────────────────────────
@@ -442,15 +520,18 @@ function _geoTrackInit(){
   if(!(S.officeLat&&S.officeLon)&&typeof _geoOfficeCoords==='function')_geoOfficeCoords();
   if(_isEmployee){
     if(!_employeeRecord)return;
-    // Crew tracking is mandatory for employees, a condition of using TradeDesk.
-    // No per-employee app consent: start directly. (The browser/OS still shows
-    // its own location-permission prompt on first run; that cannot be bypassed.)
-    startGeoTracking();
-    setTimeout(_geoPermissionBanner,1800); // surface a fix-it banner if perms are off
-    if(_employeeRecord.location_consent!==true){
-      _employeeRecord.location_consent=true;
-      if(_supa&&_supaUser){try{_supa.from('team_members').update({location_consent:true}).eq('employee_user_id',_supaUser.id).then(()=>{},()=>{});}catch(_e){}}
+    // Tracking being a condition of the job is the OWNER's call and stays that
+    // way. What changed: we no longer FABRICATE the agreement. The app used to
+    // write location_consent=true here without ever telling the crew member their
+    // location was logged, so their first and only signal was a bare OS prompt.
+    // Now they get the notice once, and only their own tap is recorded.
+    if(_geoNeedsAck()){
+      setTimeout(()=>{try{_geoNoticeSheet();}catch(_e){}},600);
+      return; // no tracking until they've at least been TOLD
     }
+    startGeoTracking();
+    _geoReadPermission().then(_geoReportPermission);
+    setTimeout(_geoPermissionBanner,1800); // surface a fix-it banner if perms are off
     return;
   }else{
     // Owner tracking their own time on jobs (one-time opt-in on this device)
@@ -458,45 +539,73 @@ function _geoTrackInit(){
     if(oc==='1'){startGeoTracking();return;}
     if(oc==='declined')return;
     if(navigator.webdriver)return;
-    _geoConsentPrompt(true);
+    _geoConsentPrompt();
   }
 }
-function _geoConsentPrompt(isOwner){
+// ── The crew notice ───────────────────────────────────────────────────────────
+// Shown ONCE to an employee who has never acknowledged. Says plainly what is
+// logged, when, and what is NOT. Continue records the acknowledgment and then
+// fires the OS prompt inside that same gesture, which is also why accept rates
+// are higher this way than throwing a naked permission dialog at someone.
+function _geoNoticeSheet(){
+  if(document.getElementById('_geo-notice-ov'))return;
+  const hrs=escHtml((S.trackStart||'07:00')+'–'+(S.trackEnd||'18:00'));
+  const biz=escHtml((typeof getBusinessName==='function'&&getBusinessName())||S.bname||'your employer');
+  const ov=document.createElement('div');ov.id='_geo-notice-ov';ov.className='zmodal-overlay';
+  const sheet=document.createElement('div');
+  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:22px 18px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  sheet.innerHTML=
+    '<div style="font-size:30px;margin-bottom:8px">'+svgIcon('📍',{size:30})+'</div>'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:6px">'+biz+' logs your job time with location</div>'+
+    '<div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Your drive mileage and hours on each job record themselves, so you never fill out a timesheet or photograph an odometer.</div>'+
+    '<div style="background:var(--bg2);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">'+
+      '<div style="font-size:12px;color:var(--text2);line-height:1.7">'+
+        '<div>'+svgIcon('🕖',{size:12})+' <strong>Only during work hours ('+hrs+').</strong></div>'+
+        '<div>'+svgIcon('🚫',{size:12})+' Never nights, weekends, or your own time.</div>'+
+        '<div>'+svgIcon('👤',{size:12})+' Only your manager sees it, never your coworkers.</div>'+
+      '</div>'+
+    '</div>'+
+    '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:16px">Location tracking during work hours is part of using TradeDesk at '+biz+'. Your phone will ask for permission next, and you can change it anytime in your phone settings.</div>'+
+    '<button id="_geo-notice-go" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Got it, continue</button>';
+  ov.appendChild(sheet);document.body.appendChild(ov);
+  // The tap that acknowledges is the SAME gesture that opens the OS prompt.
+  sheet.querySelector('#_geo-notice-go').onclick=()=>{
+    _geoRecordAck();
+    ov.remove();
+    _geoRequestPermission();
+  };
+  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
+}
+function _geoConsentPrompt(){
   if(document.getElementById('_geo-consent-ov'))return;
   const ov=document.createElement('div');ov.id='_geo-consent-ov';ov.className='zmodal-overlay';
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:22px 18px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
   const biz=escHtml((typeof getBusinessName==='function'&&getBusinessName())||S.bname||'your employer');
   const hrs=escHtml((S.trackStart||'07:00')+'–'+(S.trackEnd||'18:00'));
-  const title=isOwner?'Track your own time on jobs?':'Share your location with '+biz+'?';
-  const sub=isOwner
-    ?'Logs your drive mileage and time on each job automatically so your own hours show up in Job Profit and Crew Cost, only during work hours ('+hrs+').'
-    :'This logs your drive mileage and time on each job automatically, only during work hours ('+hrs+'). It never tracks you outside that window or after hours.';
-  const note=isOwner?'You can turn this off anytime in Settings.':'You can turn this off anytime, and your pay is never affected by declining.';
+  const title='Track your own time on jobs?';
+  const sub='Logs your drive mileage and time on each job automatically so your own hours show up in Job Profit and Crew Cost, only during work hours ('+hrs+').';
+  const note='You can turn this off anytime in Settings.';
   sheet.innerHTML=
     '<div style="font-size:30px;margin-bottom:8px">'+svgIcon('📍',{size:30})+'</div>'+
     '<div style="font-size:17px;font-weight:800;margin-bottom:6px">'+title+'</div>'+
     '<div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:8px">'+sub+'</div>'+
     '<div style="font-size:12px;color:var(--text3);line-height:1.5;margin-bottom:16px">'+note+'</div>'+
-    '<button onclick="_geoSetConsent(true,'+(isOwner?'true':'false')+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;min-height:44px">Allow during work hours</button>'+
-    '<button onclick="_geoSetConsent(false,'+(isOwner?'true':'false')+')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Not now</button>';
+    '<button onclick="_geoSetConsent(true)" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px;min-height:44px">Allow during work hours</button>'+
+    '<button onclick="_geoSetConsent(false)" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Not now</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
   requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
 }
-function _geoSetConsent(yes,isOwner){
+// Owner-only. The employee branch was removed with the fabricated-consent write:
+// crew now go through _geoNoticeSheet, which records a real acknowledgment. This
+// is the owner opting IN to tracking their own time, which stays per-device in
+// localStorage because it is a personal preference, not an employment record.
+function _geoSetConsent(yes){
   document.getElementById('_geo-consent-ov')?.remove();
-  if(isOwner){
-    localStorage.setItem('geo_owner_consent',yes?'1':'declined');
-  }else{
-    if(!yes){localStorage.setItem('geo_consent_declined','1');return;}
-    localStorage.removeItem('geo_consent_declined');
-    if(_employeeRecord)_employeeRecord.location_consent=true;
-    if(_supa&&_supaUser){
-      try{_supa.from('team_members').update({location_consent:true}).eq('employee_user_id',_supaUser.id).then(()=>{},()=>{});}catch(_e){}
-    }
-  }
+  localStorage.setItem('geo_owner_consent',yes?'1':'declined');
+  if(typeof _renderDashSetupTodo==='function')try{_renderDashSetupTodo();}catch(_e){}
   if(!yes)return;
-  startGeoTracking(); // runs inside this user gesture so the browser permission prompt fires
-  if(typeof showToast==='function')showToast(isOwner?'Tracking your time on jobs during work hours':'Location sharing on during work hours','📍');
+  _geoRequestPermission(); // 24/7 reachable; tracking itself still honors business hours
+  if(typeof showToast==='function')showToast('Tracking your time on jobs during work hours','📍');
 }

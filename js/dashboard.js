@@ -102,6 +102,9 @@ function _renderDashSetupTodo(){
   const _signedIn=typeof _supaUser!=='undefined'&&!!_supaUser;
   const _settingsReady=typeof _authSettingsLoaded!=='undefined'&&_authSettingsLoaded;
   if(_signedIn&&!_settingsReady){el.style.display='none';return;}
+  // Kick the async permission read once per paint. It re-renders only when the
+  // state actually CHANGES, so this can never loop.
+  _geoRefreshPermCache();
   // The full setup checklist (owner 2026-07-14, research-backed). Every task shows
   // from day one and drops off the moment it's done (or the contractor skips an
   // optional one); the whole card collapses once nothing's left. Copy is money/
@@ -148,6 +151,20 @@ function _renderDashSetupTodo(){
     // shrugged off like the optional ones above.
     {id:'qrcode',done:hasQrSource,icon:'▦',title:'Create your first QR code',
       sub:'Put it on a sign or truck, every scan becomes a tracked lead.',cta:'Create',noSkip:true},
+    // Location: noSkip because drive mileage and job hours are the whole
+    // time-tracking product and neither works without it. Two states that are NOT
+    // "done": 'prompt' (never asked, tapping opens the OS dialog) and 'denied'
+    // (iOS will not re-prompt from JS, so the CTA has to route to Settings
+    // instead, or this becomes a task nobody can ever complete and the card never
+    // clears). 'unsupported' counts as done: Safari often can't report the state
+    // at all, and nagging someone whose location already works is worse than
+    // missing the nudge.
+    {id:'location',done:_geoPermDone(),icon:'📍',
+      title:_geoPermState()==='denied'?'Turn location back on':'Turn on location',
+      sub:_geoPermState()==='denied'
+        ?'Location is off, so drive mileage and job hours have stopped logging. Takes two taps in your phone settings.'
+        :'Your drive miles and hours on each job log themselves, no timesheets, no odometer photos. Work hours only.',
+      cta:_geoPermState()==='denied'?'Fix it':'Turn on',noSkip:true},
   ];
   const remaining=ALL.filter(t=>!t.done&&!skipped.includes(t.id));
   // Endowed progress: credit the 3 things signup genuinely finished (account, trade,
@@ -202,7 +219,44 @@ function _renderDashSetupTodo(){
 }
 // Setup-to-do actions. Kept out of inline onclick so the quoting stays sane and
 // the nav targets are guarded (a missing settings detail can never throw).
+// Permission state for the checklist. Read synchronously from a cache that
+// _geoRefreshPermCache() keeps warm, because the checklist renders on every
+// dashboard paint and navigator.permissions.query is async: awaiting it here
+// would reintroduce exactly the show-then-hide flash the Stripe cache above
+// exists to prevent.
+let _geoPermCache=null;
+function _geoPermState(){return _geoPermCache||'prompt';}
+function _geoPermDone(){const s=_geoPermState();return s==='granted'||s==='unsupported';}
+function _geoRefreshPermCache(){
+  if(typeof _geoReadPermission!=='function')return;
+  try{
+    _geoReadPermission().then(st=>{
+      if(st===_geoPermCache)return;
+      _geoPermCache=st;
+      if(typeof _geoReportPermission==='function')_geoReportPermission(st);
+      _renderDashSetupTodo();
+    }).catch(()=>{});
+  }catch(_e){}
+}
 function _setupTodoGo(id){
+  if(id==='location'){
+    // Denied: the OS will not re-prompt from script, so a button that "asks
+    // again" would do nothing at all. Show the platform walkthrough instead.
+    if(_geoPermState()==='denied'){
+      if(typeof zAlert==='function')zAlert(
+        'Your phone is blocking location for TradeDesk, so we can\'t turn it back on from in here.\n\n'+
+        'iPhone: Settings → TradeDesk → Location → While Using the App\n'+
+        'Android: Settings → Apps → TradeDesk → Permissions → Location → Allow only while using\n\n'+
+        'Come back here after and this will clear itself.',
+        {title:'Turn location back on'});
+      return;
+    }
+    // Owners record the per-device preference; crew get the notice sheet, which
+    // records a real acknowledgment. Either way the OS prompt fires inside this tap.
+    if(typeof _isEmployee!=='undefined'&&_isEmployee&&typeof _geoNoticeSheet==='function'){_geoNoticeSheet();return;}
+    if(typeof _geoSetConsent==='function'){_geoSetConsent(true);return;}
+    return;
+  }
   if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
   if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
   if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
