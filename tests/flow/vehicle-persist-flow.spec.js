@@ -194,7 +194,10 @@ test.describe('Fleet persistence: a vehicle + its odometer survive a real re-sig
           getVehicles().findIndex(v => v.name === vehName), vehName);
         await p.evaluate((i) => openAddVehicleModal(i), idx);
         await p.waitForSelector('#fv-name', { state: 'visible', timeout: 8000 });
-        n += await type(p, '#fv-name', ' XLT');
+        // type() clears the field before typing (it is a real "select all and
+        // retype" edit), so the new name must be typed in full — passing just
+        // ' XLT' renames the truck to "XLT", which is what the previous run did.
+        n += await type(p, '#fv-name', renamedTo);
         await p.evaluate(() => saveFleetVehicle());
         return n;
       },
