@@ -45,8 +45,33 @@ let _geoLegAtShop=false;   // was the LEG machine's location the shop last ping?
                            // directly: a second copy of "where were we" desynchronises the
                            // moment anything sets those, and a restored mid-shift session
                            // then reads as "arrived from nowhere" and restarts the visit.
-let _geoLastFenceAt=null;  // ISO of the last fix that still put us inside SOME fence.
-                           // The only departure evidence a single-ping transition has.
+let _geoLastFenceAt=null;
+// ── Home-office dwell: presence is not work ─────────────────────────────────
+// Owner idea (2026-08-01) closing a real hole: a contractor whose shop is at
+// their house had the shop fence running all night. Measured, 14 hours of sleep
+// logged as 845 minutes of paid shop overhead in a single row, because
+// _geoCloseShopEntry had a 2-minute floor and no ceiling.
+//
+// A time-of-day gate is NOT the fix. That was deliberately deleted (it silently
+// dropped Saturday call-outs and 7pm supply runs), and re-adding it here would
+// undo that for the same bad reason. From GPS alone "in my shop working" and
+// "asleep upstairs" are identical.
+//
+// So: at a location the contractor has themselves marked kind:'home_office',
+// time accrues only while they are ACTIVELY USING THE APP. That is the right
+// measure for a home office specifically, because the work done there IS the
+// paperwork: estimates, invoices, scheduling. Everywhere else (the shop proper,
+// a supply house) presence still counts, unchanged.
+//
+// Hands-on work at a home shop is deliberately NOT covered by this: prefabbing
+// with the phone in a pocket registers no activity. That case is the location
+// prompt's job, where they tap the job they're building for and it becomes real
+// job labor, which is better data than shop overhead anyway.
+const _GEO_IDLE_MS=5*60*1000;    // grace window after the last real interaction
+let _geoLastInteractAt=0;        // ms of the last pointer/key event
+let _geoHomeDwell=null;          // {activeMs,lastSampleMs} while inside a home office
+let _geoWasAtHome=false;         // was the PREVIOUS ping inside one? Keeps the tally
+                                 // alive for exactly the ping that closes the visit.
 // Tighter than the 600ft place fence on purpose: at 600ft a slow crawl through
 // city traffic reads as parked. 350ft still absorbs parking-lot GPS jitter.
 const _GEO_STOP_FT=350;
@@ -285,6 +310,26 @@ async function _geoOnPing(pos){
   // Throttled breadcrumb (~60s)
   const nowMs=Date.now();
   if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc);}
+  // ── Home-office activity sampling ─────────────────────────────────────────
+  // Sampled per ping rather than driven by visibilitychange, because a web app
+  // stops getting pings the moment it is backgrounded, which is exactly the
+  // behaviour wanted: no pings, no accrual. The per-sample cap stops a long gap
+  // (phone pocketed for an hour, then reopened) dumping that whole hour in as
+  // active on the strength of one tap.
+  //
+  // The tally deliberately SURVIVES the first ping outside the fence. That ping
+  // is the one that closes the visit, and the closers run later in this same
+  // ping, so clearing on sight would hand them a null and they would silently
+  // fall back to wall-clock: the whole night back again.
+  const _atHome=_geoAtHomeOffice(here);
+  if(_atHome){
+    if(!_geoHomeDwell)_geoHomeDwell={activeMs:0,lastSampleMs:nowMs};
+    else{
+      if(_geoAppActive(nowMs))_geoHomeDwell.activeMs+=Math.min(nowMs-_geoHomeDwell.lastSampleMs,_GEO_IDLE_MS);
+      _geoHomeDwell.lastSampleMs=nowMs;
+    }
+  }else if(!_geoWasAtHome)_geoHomeDwell=null;   // a ping later, nothing left to close
+  _geoWasAtHome=_atHome;
   // ── ONE fence state machine ───────────────────────────────────────────────
   // Four things can contain a truck: a JOB fence, the SHOP, a saved PLACE (a
   // supply house, a home office), or nothing at all, which after five minutes
@@ -446,7 +491,12 @@ async function _geoCloseEntry(jobId,departedIso,gap){
 function _geoCloseShopEntry(arrivedAt,departedIso){
   if(!arrivedAt)return;
   const departed=departedIso||new Date().toISOString();
-  const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
+  // At a home office, presence is not work: bill only the minutes the app was
+  // actually being used. This is what stops a shop-at-the-house logging the
+  // whole night. Everywhere else the dwell is wall-clock, unchanged.
+  const mins=_geoHomeDwell
+    ? Math.floor(_geoHomeDwell.activeMs/60000)
+    : Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
   if(mins<2)return;
   if(!_supaUser)return;
   _geoEnqueue('shop_time_entries',{
@@ -467,6 +517,34 @@ function _geoIsDriveSource(s){return /^drive/.test(String(s||''));}
 // Time outside every fence that is not driving: lunch, an errand, waiting on a
 // gate. Neither job labor nor drive time, and never silently folded into either.
 function _geoIsOffJobSource(s){return String(s||'')==='stop';}
+// Has the contractor marked THIS coordinate as their own home office? Their
+// call, never inferred: places.js is explicit that a qualifying home office
+// changes the tax answer and is a decision for them and their CPA.
+function _geoAtHomeOffice(coord){
+  if(!coord||typeof placeAt!=='function')return false;
+  try{
+    const pl=placeAt({lat:coord.lat,lon:coord.lng!=null?coord.lng:coord.lon});
+    return !!(pl&&pl.kind==='home_office');
+  }catch(_e){return false;}
+}
+// Using the app right now: on screen AND touched recently. Both halves matter.
+// Visible alone would count a phone left face-up on the workbench all night;
+// interaction alone would count a tab buried behind twelve others.
+function _geoAppActive(nowMs){
+  try{ if(typeof document!=='undefined'&&document.hidden)return false; }catch(_e){}
+  return (nowMs-_geoLastInteractAt)<=_GEO_IDLE_MS;
+}
+// Bound once, passively, on the capture phase so nothing can stop it: this only
+// ever stamps a timestamp, never touches the event.
+function _geoBindInteract(){
+  if(typeof document==='undefined'||window._geoInteractBound)return;
+  window._geoInteractBound=true;
+  const mark=()=>{_geoLastInteractAt=Date.now();};
+  ['pointerdown','keydown','touchstart','wheel'].forEach(ev=>{
+    try{document.addEventListener(ev,mark,{capture:true,passive:true});}catch(_e){}
+  });
+  _geoLastInteractAt=Date.now();   // opening the app IS an interaction
+}
 // Time inside a known place's fence (a supply house). Paid work, but overhead
 // rather than labor on any one job, so it is grouped with drive time.
 function _geoIsPlaceSource(s){return String(s||'')==='place';}
@@ -475,7 +553,11 @@ function _geoIsPlaceSource(s){return String(s||'')==='place';}
 function _geoClosePlaceEntry(placeId,arrivedAt){
   if(!arrivedAt)return;
   const departed=new Date().toISOString();
-  const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
+  // Same rule as the shop: a saved place marked home_office bills active app
+  // time only, every other kind bills the dwell.
+  const mins=_geoHomeDwell
+    ? Math.floor(_geoHomeDwell.activeMs/60000)
+    : Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
   if(mins<2)return;              // a pass-through, not a stop
   if(!_supaUser)return;
   const pl=(typeof getPlaces==='function')?getPlaces().find(p=>String(p.id)===String(placeId)):null;
@@ -711,7 +793,7 @@ function stopGeoTracking(){
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
   _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;
-  _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;
+  _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoClearOpen();_geoWakeRelease();
 }
 
@@ -743,6 +825,7 @@ function _geoTrackInit(){
   // An app kill / reload mid-shift: restore the persisted open entry so the
   // morning's arrival survives, the next ping resolves it exactly like a
   // background gap. A previous DAY's orphan closes at its last verified moment.
+  _geoBindInteract();
   _geoRestoreOpen();
   _geoDrainQueue();
   _geoPrunePings();
