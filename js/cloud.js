@@ -2527,10 +2527,8 @@ function _checkEmployeeVehiclePicker(){
         :'Your drives log themselves all day. This just puts the miles on the right truck.')+
     '</div>'+
     vehList+
-    // No "on foot" row (owner call): moving between job sites without driving is
-    // not a real day, and an option nobody picks is a tap everybody reads past.
-    // Crew keep the personal-vehicle row, which is a different answer entirely,
-    // it is how they say "these miles are not the company's".
+    // Crew keep the personal-vehicle row. It is not an "I didn't drive" escape
+    // hatch, it is how they say these miles are theirs and not the company's.
     (_isEmployee?'<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle, no mileage logged</button>':'');
   ov.appendChild(sheet);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2543,15 +2541,10 @@ function _pickVehicle(vid,label){
   const vd=document.getElementById('_emp-vehicle-display');
   if(vd)vd.textContent=vid==='personal'?'🚗 Personal vehicle':'🚗 Driving: '+label;
 }
-// Returns true when the employee's shift vehicle should have mileage tracked (company vehicle)
-//
-// Still tests for 'none' even though the prompt no longer offers it. That value
-// can already be sitting in localStorage under TODAY's key on any device where
-// somebody picked "on foot" before this change, and reading it as a vehicle id
-// would attribute the whole day to a truck named "none".
+// Returns true when the shift vehicle should have mileage tracked (company vehicle)
 function _isCompanyVehicleToday(){
   const v=localStorage.getItem('emp_vehicle_'+todayKey());
-  return !!(v&&v!=='none'&&v!=='personal');
+  return !!(v&&v!=='personal');
 }
 
 // ── Estimate access requests (owner side) ──────────────────────────────────

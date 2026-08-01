@@ -207,28 +207,41 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
   });
 
   // ── _isCompanyVehicleToday, boolean logic over localStorage states ───────
-  test('_isCompanyVehicleToday, true only for a real company vehicle id', async () => {
+  //
+  // This used to assert a third state, 'none', meaning "on foot today". That
+  // option was deleted on the owner's call (2026-08-01): no contractor walks
+  // between job sites, so it was a row everybody read past. The value is now
+  // unwritable, and 'none' is just an unrecognised id like any other.
+  //
+  // Which is exactly what the last case below pins. This function has always
+  // answered "is there a vehicle that is not their own car", not "is this id in
+  // the fleet", so any unrecognised string reads true and always has. Left
+  // asserted so the deletion cannot quietly change the shape of the answer.
+  test('_isCompanyVehicleToday, true for any vehicle that is not their own car', async () => {
     const r = await page.evaluate(() => {
       if (typeof _isCompanyVehicleToday !== 'function' || typeof todayKey !== 'function') return { skip: true };
       try {
         const key = 'emp_vehicle_' + todayKey();
         const orig = localStorage.getItem(key);
         localStorage.removeItem(key);          const unset    = _isCompanyVehicleToday(); // false
-        localStorage.setItem(key, 'none');     const onFoot   = _isCompanyVehicleToday(); // false
         localStorage.setItem(key, 'personal'); const personal = _isCompanyVehicleToday(); // false
         localStorage.setItem(key, 'veh-123');  const company  = _isCompanyVehicleToday(); // true
         localStorage.setItem(key, '');         const blank    = _isCompanyVehicleToday(); // false
+        localStorage.setItem(key, 'none');     const stale    = _isCompanyVehicleToday(); // true, no longer special
         if (orig === null) localStorage.removeItem(key); else localStorage.setItem(key, orig);
-        return { ok: true, unset, onFoot, personal, company, blank };
+        return { ok: true, unset, personal, company, blank, stale,
+                 src: String(_isCompanyVehicleToday) };
       } catch (e) { return { ok: false, error: e.message }; }
     });
     if (r.skip) return;
     expect(r.ok).toBe(true);
     expect(r.unset).toBe(false);
-    expect(r.onFoot).toBe(false);
     expect(r.personal).toBe(false);
     expect(r.company).toBe(true);
     expect(r.blank).toBe(false);
+    expect(r.stale).toBe(true);
+    // The branch is gone, not just unexercised (CLAUDE.md 7).
+    expect(r.src).not.toContain("'none'");
   });
 
   // ── _pickVehicle, selection writes localStorage; tolerant of missing DOM ──

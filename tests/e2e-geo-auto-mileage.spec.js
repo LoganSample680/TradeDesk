@@ -291,11 +291,11 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.html).not.toContain('no mileage logged');
     });
 
-    test('nobody is offered "on foot" any more, either role', async () => {
-      // Removed on the owner's call: moving between job sites without driving is
-      // not a real day, and an option nobody picks is a tap everybody reads past.
-      // Asserted gone rather than just unused (CLAUDE.md 7.1), and for BOTH
-      // roles, because it lived on the shared prompt.
+    test('nobody is offered "on foot", and no code path answers it', async () => {
+      // Deleted outright on the owner's call. No contractor walks between job
+      // sites, so it was a tap everybody read past. Asserted gone rather than
+      // merely unused (CLAUDE.md 7.1), for BOTH roles since it lived on the
+      // shared prompt, and the value's readers went with it (see below).
       const owner = await pickerFor({ vehicles: TWO, defaultId: 'v-truck' });
       const crew = await pickerFor({ employee: true, vehicles: TWO });
       expect(owner.html).not.toContain('On foot');
@@ -381,20 +381,33 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.docW).toBeLessThanOrEqual(out.vw + 1);
     });
 
-    test("a stored 'on foot' from before the row was removed is still honoured", async () => {
-      // The value can already be sitting under today's key on a device that
-      // picked it yesterday. Reading it as a vehicle id would bill the day to a
-      // truck named "none".
+    test("the 'none' special case is gone from the readers too", async () => {
+      // Both readers used to branch on it. Deleting the button without deleting
+      // the branches is exactly the hidden-not-removed shape CLAUDE.md 7 bans,
+      // so this pins the handling gone rather than dormant.
+      //
+      // A leftover value degrades safely, which is why deleting was cheap: an
+      // unknown id is not a vehicle, so the owner falls through to their usual
+      // truck and crew get nothing, both of which were already the rules for
+      // any unrecognised id.
       const out = await page.evaluate(() => {
-        const keepDef = S.defaultVehicleId;
+        const keepDef = S.defaultVehicleId, keepEmp = _isEmployee;
         try {
           S.defaultVehicleId = 'v-truck';
           localStorage.setItem('emp_vehicle_' + todayKey(), 'none');
-          return { veh: _autoTripVehicle(), company: _isCompanyVehicleToday() };
-        } finally { S.defaultVehicleId = keepDef; localStorage.removeItem('emp_vehicle_' + todayKey()); }
+          _isEmployee = false;
+          const owner = _autoTripVehicle();
+          _isEmployee = true;
+          const crew = _autoTripVehicle();
+          return { ownerId: owner && owner.id, crew, src: String(_autoTripVehicle) + String(_isCompanyVehicleToday) };
+        } finally {
+          S.defaultVehicleId = keepDef; _isEmployee = keepEmp;
+          localStorage.removeItem('emp_vehicle_' + todayKey());
+        }
       });
-      expect(out.veh).toBe('none');
-      expect(out.company).toBe(false);
+      expect(out.src).not.toContain("'none'");
+      expect(out.ownerId).toBe('v-truck');   // falls through, like any unknown id
+      expect(out.crew).toBeNull();
     });
 
     test('crew keep their personal-vehicle opt-out, and are asked with one truck', async () => {
@@ -472,31 +485,6 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.id).toBe('v-truck');
     });
 
-    test('"on foot today" logs no trip at all', async () => {
-      // An explicit answer, unlike an absent one, and the only way to say "I did
-      // not drive". It must not quietly bill to the usual truck.
-      const out = await page.evaluate(async (d) => {
-        const realUser = _supaUser, realRoute = _routeDistance, keepDef = S.defaultVehicleId;
-        _supaUser = { id: 'u-mi' };
-        window._routeDistance = _routeDistance = async () => ({ miles: 5, mins: 9 });
-        const before = mileage.length;
-        try {
-          S.defaultVehicleId = 'v-truck';
-          localStorage.setItem('emp_vehicle_' + todayKey(), 'none');
-          autoLogDriveTrip({
-            from: { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' },
-            to: { lat: d.JOB.lat, lng: d.JOB.lon, name: 'Miller Residence', kind: 'job' },
-            legKey: 'leg-onfoot-1', startedIso: new Date().toISOString()
-          });
-          await new Promise(r => setTimeout(r, 20));
-          return { added: mileage.length - before };
-        } finally {
-          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
-          S.defaultVehicleId = keepDef; localStorage.removeItem('emp_vehicle_' + todayKey());
-        }
-      }, { SHOP, JOB });
-      expect(out.added).toBe(0);
-    });
   });
 
   test.describe('the vehicle rule', () => {

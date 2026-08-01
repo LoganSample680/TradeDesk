@@ -460,9 +460,6 @@ function autoLogDriveTrip(opts){
   // so a retried or replayed leg can never bill the same miles twice.
   if(mileage.some(m=>m.legKey===legKey))return null;
   const veh=_autoTripVehicle();
-  // "On foot today" is a deliberate answer and it means there are no miles. A
-  // walked or ridden-along day must not quietly bill to the usual truck.
-  if(veh==='none')return null;
   // dateKey, not a slice of the ISO string. An ISO timestamp is UTC, so a 7pm
   // supply run in Central time slices to TOMORROW and lands the deduction in the
   // wrong day, and at New Year the wrong TAX YEAR.
@@ -514,24 +511,18 @@ function _autoTripPurpose(to){
 //
 // For CREW that is the only answer there is: no pick, no mileage, because
 // guessing a truck for somebody else's morning is how a personal car ends up
-// deducted. 'none' (on foot) and 'personal' both mean no company miles.
+// deducted. 'personal' means the miles are theirs, not the company's.
 //
 // For the OWNER the daily picker is a refinement, not a gate. They are asked
 // only when they run two or more trucks, and dismissing the prompt has to cost
 // them nothing, so an unanswered day falls back to the Fleet default.
-//
-// 'none' is still honoured although the prompt no longer offers it. The value
-// can already be stored under today's key on a device where somebody picked
-// "on foot" before that row was removed, and treating it as a vehicle id would
-// bill the day to a truck named "none".
 function _autoTripVehicle(){
   const vehs=(typeof getVehicles==='function')?getVehicles():[];
   const id=localStorage.getItem('emp_vehicle_'+todayKey());
   if(_isEmployee){
-    if(!id||id==='none'||id==='personal')return null;
+    if(!id||id==='personal')return null;
     return vehs.find(v=>String(v.id)===String(id))||null;
   }
-  if(id==='none')return 'none';                 // on foot: caller logs nothing
   if(id&&id!=='personal'){
     const picked=vehs.find(v=>String(v.id)===String(id));
     if(picked)return picked;                    // a stale id falls through to the default
@@ -982,7 +973,7 @@ function openLogTripModal(opts){
   let selVeh=opts.vehicle||(vehs.length===1?vehs[0].name:'');
   if(!selVeh&&_isEmployee){
     const _empVehId=localStorage.getItem('emp_vehicle_'+today);
-    if(_empVehId&&_empVehId!=='none'){
+    if(_empVehId){
       const _empVeh=vehs.find(v=>String(v.id)===String(_empVehId));
       if(_empVeh)selVeh=_empVeh.name||'';
     }
