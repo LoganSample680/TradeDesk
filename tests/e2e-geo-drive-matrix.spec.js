@@ -42,6 +42,18 @@ const STOP  = { lat: 39.1200, lon: -95.1200 };
 // A second unknown stop, so stop -> stop is a real trip rather than sitting still.
 const STOP2 = { lat: 39.1500, lon: -95.1500 };
 const ROAD  = { lat: 39.4000, lon: -95.4000 };
+// Waypoints for the all-day run. Two constraints, and the second is easy to get
+// wrong: every minute of driving must move more than the 350ft stationary radius
+// (these are 1,100-3,400 ft/min), AND no route may pass through another fence.
+// An evenly-spaced diagonal fails the second: the job-to-lunch line ran straight
+// through the supply yard, so the machine correctly split that drive in two and
+// dropped the sub-2-minute pass-through, losing three minutes from the day. The
+// bug was the test's geometry, not the app. These four are deliberately
+// non-collinear.
+const DAY_SHOP   = { lat: 40.0000, lon: -96.0000 };
+const DAY_JOB    = { lat: 40.0800, lon: -96.0000 };   // due north of the shop
+const DAY_SUPPLY = { lat: 40.0000, lon: -96.1000 };   // due west of the shop
+const DAY_LUNCH  = { lat: 40.1000, lon: -96.1200 };   // north-west, off every line
 
 test.describe('Drive matrix: every origin to every destination', () => {
   let page;
@@ -59,12 +71,15 @@ test.describe('Drive matrix: every origin to every destination', () => {
       S.teamTracking = true;
       if (typeof places !== 'undefined') places.length = 0;
       savePlace({ name: 'Matrix Supply', kind: 'supply', lat: d.PLACE.lat, lon: d.PLACE.lon, confirmedBy: 'manual' });
+      // The all-day run drives its own widely-spaced waypoints, so its supply
+      // house needs a row of its own or that dwell resolves to nothing.
+      savePlace({ name: 'All-day Supply', kind: 'supply', lat: d.DAY_SUPPLY.lat, lon: d.DAY_SUPPLY.lon, confirmedBy: 'manual' });
       jobs.length = 0;
       jobs.push({ id: 8801, name: 'Matrix Job 1', eventType: 'job', status: 'upcoming',
                   start: todayKey(), days: 1, lat: d.JOB1.lat, lon: d.JOB1.lon });
       jobs.push({ id: 8802, name: 'Matrix Job 2', eventType: 'job', status: 'upcoming',
                   start: todayKey(), days: 1, lat: d.JOB2.lat, lon: d.JOB2.lon });
-    }, { SHOP, PLACE, JOB1, JOB2 });
+    }, { SHOP, PLACE, JOB1, JOB2, DAY_SUPPLY });
   });
   test.afterAll(async () => { await page.context().close(); });
 
@@ -252,6 +267,128 @@ test.describe('Drive matrix: every origin to every destination', () => {
     expect(dwell[0].m).toBe(23);
     expect(dwell[0].dest).toBe('Matrix Supply');
     expect(dwell[0].job).toBe(null);          // paid work, but not labor on any one job
+  });
+
+  // ── The whole day, app open, pinging the entire time ──────────────────────
+  // Owner (2026-08-01): "say the app is open forever and you're driving about
+  // your day, need everything to log correctly and track the time correctly."
+  //
+  // Every other test here transitions in two or three pings. A real phone left
+  // open pings all day, so this drives 481 consecutive minutes through the same
+  // handler on a controlled clock, MOVING during every drive. That last part is
+  // what makes it a real test: a truck that pings from the same spot for ten
+  // minutes IS parked, so a drive has to keep moving or the machine is right to
+  // call it a stop, and the segments below interpolate between waypoints at
+  // roughly a thousand feet per minute to prove it does not.
+  //
+  // The assertion is the day's arithmetic. Individual buckets may shift by one
+  // minute, because a stop is bounded by the pings that VERIFIED it (first fix
+  // parked, last fix still parked) and the minute of departure lands on the
+  // drive instead. That is correct behaviour, not slack: nothing is invented and
+  // nothing is lost, so the TOTAL is exact.
+  test('a full day with the app open the whole time accounts for every minute', async () => {
+    const out = await page.evaluate(async (C) => {
+      const rows = [];
+      const realEnq = _geoEnqueue, realUser = _supaUser, RealDate = Date;
+      const savedJobs = jobs.slice();
+      // A controlled clock. The machine stamps everything from Date.now() and
+      // bare `new Date()`, so both have to move together or the durations are
+      // measured against wall time and the day collapses into seconds.
+      let clock = RealDate.parse('2026-06-15T07:00:00.000Z');
+      class FakeDate extends RealDate {
+        constructor(...a) { if (a.length === 0) super(clock); else super(...a); }
+        static now() { return clock; }
+        static parse(x) { return RealDate.parse(x); }
+        static UTC(...a) { return RealDate.UTC(...a); }
+      }
+      try {
+        window.Date = FakeDate;
+        _supaUser = { id: 'u-allday' };
+        _geoEnqueue = (tbl, row) => rows.push({ tbl, source: row.source, m: row.minutes });
+        jobs.length = 0;
+        jobs.push({ id: 8811, name: 'All-day Job', eventType: 'job', status: 'upcoming',
+                    start: todayKey(), days: 1, lat: C.JOB.lat, lon: C.JOB.lon });
+        _geoJobCoords = {};
+        S.officeLat = C.SHOP.lat; S.officeLon = C.SHOP.lon;
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoCurrentPlace = null;
+        _geoPlaceArrivedAt = null; _geoStopAnchor = null; _geoLastFenceAt = null; _geoLegAtShop = false;
+        try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+
+        // minute-offset → where the truck is. Dwell segments hold a fence
+        // coordinate; drive segments interpolate so every ping has moved.
+        const P = { shop: C.SHOP, job: C.JOB, supply: C.SUPPLY, lunch: C.LUNCH };
+        const SEGS = [
+          { n: 'shop',  a: 0,   b: 45  },
+          { n: 'drive', a: 45,  b: 70,  from: 'shop',   to: 'job' },
+          { n: 'job',   a: 70,  b: 235 },
+          { n: 'drive', a: 235, b: 250, from: 'job',    to: 'supply' },
+          { n: 'sup',   a: 250, b: 270 },
+          { n: 'drive', a: 270, b: 282, from: 'supply', to: 'job' },
+          { n: 'job',   a: 282, b: 365 },
+          { n: 'drive', a: 365, b: 375, from: 'job',    to: 'lunch' },
+          { n: 'lunch', a: 375, b: 420 },
+          { n: 'drive', a: 420, b: 430, from: 'lunch',  to: 'job' },
+          { n: 'job',   a: 430, b: 455 },
+          { n: 'drive', a: 455, b: 480, from: 'job',    to: 'shop' },
+          { n: 'shop',  a: 480, b: 481 },
+        ];
+        const posAt = (m) => {
+          const s = SEGS.find(x => m >= x.a && m < x.b);
+          if (s.n === 'drive') {
+            const f = (m - s.a + 1) / (s.b - s.a);      // +1: already moving on the first fix
+            const A = P[s.from], B = P[s.to];
+            return { lat: A.lat + (B.lat - A.lat) * f, lon: A.lon + (B.lon - A.lon) * f };
+          }
+          return { shop: P.shop, job: P.job, sup: P.supply, lunch: P.lunch }[s.n];
+        };
+        for (let m = 0; m <= 480; m++) {
+          clock = RealDate.parse('2026-06-15T07:00:00.000Z') + m * 60000;
+          const c = posAt(m);
+          await _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+        }
+        const sum = (f) => rows.filter(f).reduce((t, r) => t + (r.m || 0), 0);
+        return {
+          shop:   sum(r => r.tbl === 'shop_time_entries'),
+          drive:  sum(r => /^drive/.test(r.source || '')),
+          job:    sum(r => /^geofence/.test(r.source || '')),
+          place:  sum(r => r.source === 'place'),
+          stop:   sum(r => r.source === 'stop'),
+          driveN: rows.filter(r => /^drive/.test(r.source || '')).length,
+          jobN:   rows.filter(r => /^geofence/.test(r.source || '')).length,
+          all:    rows.map(r => (r.source || r.tbl) + ':' + r.m).join(','),
+          shopStillOpen: !!_geoShopArrivedAt,
+        };
+      } finally {
+        window.Date = RealDate;
+        _geoEnqueue = realEnq; _supaUser = realUser;
+        jobs.length = 0; savedJobs.forEach(j => jobs.push(j)); _geoJobCoords = {};
+      }
+    }, { SHOP: DAY_SHOP, JOB: DAY_JOB, SUPPLY: DAY_SUPPLY, LUNCH: DAY_LUNCH });
+
+    // The clock is fully controlled, so these are exact rather than approximate.
+    // Two effects make them differ from the naive segment lengths, and both are
+    // the machine being right:
+    //   • the truck REACHES a site on the final minute of the drive, so each job
+    //     visit is one minute longer and its inbound leg one minute shorter than
+    //     the nominal split (166/84/26 on-site, not 165/83/25);
+    //   • a stop is bounded by the pings that VERIFIED it, so the minute of
+    //     pulling out belongs to the drive rather than to lunch.
+    // Neither invents or loses a minute, which is what the total proves.
+    const detail = ` rows=${out.all}`;
+    expect(out.driveN, 'drive legs' + detail).toBe(6);
+    expect(out.jobN, 'job visits' + detail).toBe(3);
+    expect(out.shop,  'shop time' + detail).toBe(45);
+    expect(out.drive, 'drive time' + detail).toBe(92);
+    expect(out.job,   'on-site time' + detail).toBe(276);
+    expect(out.place, 'supply time' + detail).toBe(21);
+    expect(out.stop,  'off-job time' + detail).toBe(45);
+    // 480 minutes were driven. 479 are closed and filed; the last one is the
+    // shop dwell they are still sitting in, which closes when they leave. So:
+    // nothing invented, nothing lost, and the only unfiled minute is the one
+    // that has not finished happening.
+    expect(out.shop + out.drive + out.job + out.place + out.stop, 'the day' + detail).toBe(479);
+    expect(out.shopStillOpen, 'final shop dwell still running' + detail).toBe(true);
   });
 
   test('no console errors across the matrix', async () => { await assertNoErrors(page); });
