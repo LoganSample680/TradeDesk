@@ -755,6 +755,9 @@ async function expSave(){
         deductible:catInfo2.deductible!==false,meals_50:!!(catInfo2.meals_50),
       };
       expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+      // Only stamp an edit if it was never stamped. Re-stamping would move the
+      // pin to wherever they happened to be doing paperwork days later.
+      if(typeof _stampGeo==='function'&&expenses[idx]&&expenses[idx].lat==null)_stampGeo(expenses[idx]);
       showToast('Expense updated, '+vendor+' '+fmt(amount),'✓');
       closeExpenseFlow();
       setTimeout(()=>{if(typeof renderExpenses==='function')renderExpenses();},0);
@@ -809,6 +812,9 @@ async function expSave(){
     deductible:catInfo.deductible!==false,meals_50:!!(catInfo.meals_50),
   });
   expenses.sort((a,b)=>(a.date||'9').localeCompare(b.date||'9'));
+  // Where it was logged. Fire-and-forget: this never blocks or delays the save,
+  // and silently does nothing if location was never granted.
+  if(typeof _stampGeo==='function')_stampGeo(expenses.find(e=>e.id===expId));
   showToast((new Date(date).getFullYear()<new Date().getFullYear()?'Back-tax expense':'Expense')+' saved: '+vendor+' '+fmt(amount),receipt_img?'📎':'🧾');
   if(cat==='tools'&&amount>=500)setTimeout(()=>showToast(svgIcon('💡')+' Equipment $'+amount.toFixed(0)+'+ may qualify for Section 179 immediate deduction, flag for your CPA','📋'),900);
   closeExpenseFlow();
@@ -3282,7 +3288,18 @@ function renderExpenses(){
         :'<button onclick="viewReceipt('+r.id+')" style="background:#fff8e1;border:1px solid #f59e0b;color:#b45309;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">'+svgIcon('💾',{size:11})+' View</button>')
       :'<button onclick="addReceiptToExpense('+r.id+')" style="background:rgba(162,45,45,.08);border:1px solid #A32D2D;color:#A32D2D;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;cursor:pointer;font-family:inherit">+ Add</button>';
     return '<tr data-lp-id="'+r.id+'" data-lp-type="expense" data-lp-label="'+escHtml((r.vendor||'expense')+' · '+fmt(r.amount||0))+'">'+
-      '<td class="bold" data-label="Vendor">'+(r.vendor||'-')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+'</td>'+
+      '<td class="bold" data-label="Vendor">'+(r.vendor||'-')+(r.job_name?'<div style="font-size:9px;color:var(--text3)">'+r.job_name+'</div>':'')+
+        // Where it was logged. Tapping opens the pin, which is also the fastest
+        // way to eyeball whether a stamp landed somewhere sensible. Hidden when
+        // the fix was too loose to mean anything (>150m is wifi-triangulation
+        // territory and would put the pin on the wrong side of a retail park).
+        // nowrap + a short label: on the stacked mobile card the vendor name
+        // already wraps, and a two-word link beside it wrapped again and crowded
+        // the name (§15.1). One line, its own row under the vendor.
+        (r.lat!=null&&r.lon!=null&&(r.geoAcc==null||r.geoAcc<=150)
+          ?'<div style="font-size:9px;margin-top:3px;white-space:nowrap"><a href="https://www.google.com/maps?q='+r.lat+','+r.lon+'" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">'+svgIcon('📍',{size:9})+' Map</a></div>'
+          :'')+
+      '</td>'+
       '<td class="red" data-label="Amount">('+fmtD(r.amount||0)+')'+(r.meals_50?'<div style="font-size:9px;color:var(--amber)">50% deduct</div>':'')+'</td>'+
       '<td class="mute" data-label="Date">'+(r.date||'')+'</td>'+
       '<td class="mute" style="font-size:10px" data-label="Category">'+(info?info.icon+' '+info.label:r.catLabel||r.cat||'-')+'</td>'+

@@ -408,11 +408,70 @@ function _geoRequestPermission(cb){
   // separately below, only if we're actually inside business hours.
   try{
     navigator.geolocation.getCurrentPosition(
-      ()=>{ startGeoTracking(); done('granted'); },
+      ()=>{
+        // Record the grant so _geoCanStamp still works on browsers that cannot
+        // report permission state (Safari), where querying returns 'unsupported'
+        // forever even after the user has allowed it.
+        try{localStorage.setItem(_GEO_GRANTED_KEY,'1');}catch(_e){}
+        startGeoTracking(); done('granted');
+      },
       (err)=>{ done(err&&err.code===1?'denied':'prompt'); },
       {enableHighAccuracy:false,maximumAge:60000,timeout:15000}
     );
   }catch(_e){done('prompt');}
+}
+
+// ── Stamp WHERE a record was created ─────────────────────────────────────────
+// Fire-and-forget by design. The save NEVER waits on a GPS fix: a denied
+// permission, a basement with no signal, or a slow lock all mean the record has
+// no coordinate, never that the record fails to save. A map is not worth risking
+// a lost expense.
+//
+// This deliberately does NOT prompt. If location was never granted (the setup
+// checklist is where that gets asked for, in context, with an explanation), the
+// record just goes unstamped. A permission dialog erupting out of an unrelated
+// Save button is exactly what gets Deny tapped, and an iOS deny is sticky, so one
+// rude prompt here would poison tracking everywhere else in the app.
+//
+// geoAcc (metres) is stored because a wifi-triangulated 3km fix is worthless for
+// matching a supply house and actively misleading on a map. Consumers filter on
+// it: place-matching should reject anything looser than ~150m.
+//
+// geoAt is separate from the record's own date on purpose. An expense DATED
+// Tuesday but STAMPED at 9pm from the sofa is identifiable as non-contemporaneous,
+// which is what stops someone's living room being promoted to a supply house.
+const _GEO_GRANTED_KEY='zp3_geo_granted';
+async function _geoCanStamp(){
+  if(!navigator.geolocation)return false;
+  const st=await _geoReadPermission();
+  if(st==='granted')return true;
+  // Safari has historically not supported querying geolocation permission, so
+  // 'unsupported' is not the same as "no". Fall back to whether a grant has ever
+  // actually succeeded on this device, which _geoRequestPermission records.
+  if(st==='unsupported'){try{return localStorage.getItem(_GEO_GRANTED_KEY)==='1';}catch(_e){return false;}}
+  return false;
+}
+function _stampGeo(rec,done){
+  if(!rec)return;
+  _geoCanStamp().then(ok=>{
+    if(!ok)return;
+    try{
+      navigator.geolocation.getCurrentPosition(
+        (pos)=>{
+          try{
+            rec.lat=+pos.coords.latitude.toFixed(6);   // ~11cm, far more than enough
+            rec.lon=+pos.coords.longitude.toFixed(6);
+            rec.geoAcc=Math.round(pos.coords.accuracy||0);
+            rec.geoAt=new Date().toISOString();
+            if(typeof saveAll==='function')saveAll();
+            if(typeof done==='function')done(rec);
+          }catch(_e){}
+        },
+        ()=>{},  // denied / unavailable / timeout: no coordinate, no error, no noise
+        {enableHighAccuracy:true,maximumAge:60000,timeout:10000}
+      );
+    }catch(_e){}
+  }).catch(()=>{});
 }
 
 // ── Persist what the DEVICE reported ──────────────────────────────────────────
