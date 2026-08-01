@@ -58,6 +58,8 @@ let _geoWakeLockObj=null;  // screen wake lock held while inside a job fence
 // unbounded growth offline); only time entries are durable.
 const _GEO_QUEUE_KEY='zp3_geo_queue';
 let _geoDrainBusy=false;
+// Why the queue last stopped draining, for diagnostics. Null while healthy.
+let _geoQueueLastError=null;
 function _geoClientKey(){return ((_supaUser&&_supaUser.id)||'anon').slice(0,8)+'-'+Date.now().toString(36)+'-'+Math.floor(Math.random()*1e6).toString(36);}
 function _geoQueueRead(){try{return JSON.parse(localStorage.getItem(_GEO_QUEUE_KEY)||'[]');}catch(_e){return[];}}
 function _geoQueueWrite(q){try{localStorage.setItem(_GEO_QUEUE_KEY,JSON.stringify(q));}catch(_e){}}
@@ -101,7 +103,16 @@ async function _geoDrainQueue(){
         if(error&&/on conflict|constraint/i.test(String(error.message||''))){({error}=await _supa.from(item.tbl).insert(item.row));}
         if(error&&/client_key/i.test(String(error.message||''))){const{client_key,...plain}=item.row;({error}=await _supa.from(item.tbl).insert(plain));}
       }catch(_e){error=_e;}
-      if(error)break; // offline / transient: stop; the next drain retries from the same head
+      if(error){
+        // A stuck queue used to be completely invisible: the error was swallowed
+        // and the old stale-snapshot write made the rows disappear anyway, so it
+        // looked like everything drained. Record why it stopped, so a queue that
+        // can never drain is diagnosable instead of silent.
+        _geoQueueLastError=String((error&&(error.message||error.code))||error||'unknown')+
+          ' · '+item.tbl+'/'+((item.row&&item.row.source)||'?');
+        break; // offline / transient: the next drain retries from the same head
+      }
+      _geoQueueLastError=null;
       const cur=_geoQueueRead();
       const key=item.row&&item.row.client_key;
       const i=key?cur.findIndex(x=>x&&x.row&&x.row.client_key===key):0;

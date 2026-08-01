@@ -213,7 +213,20 @@ test.describe('A full 8-hour day: shop → job → supply → job → lunch → 
         // Home to the shop: end of day.
         await ping(p, ROAD);            await p.waitForTimeout(200);
         await setClock(p, { drive: D.toShop });
-        await ping(p, SHOP);            await p.waitForTimeout(2500); // drain the durable queue
+        await ping(p, SHOP);            await p.waitForTimeout(500);
+        // Drain deliberately rather than hoping a fixed sleep is long enough.
+        // Each row is its own round trip, so "wait 2.5s and hope" silently turns
+        // a slow drain into a missing-data failure and sends you hunting the
+        // wrong bug.
+        await p.evaluate(async () => {
+          for (let i = 0; i < 40; i++) {
+            let n = 0;
+            try { n = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]').length; } catch (e) {}
+            if (!n) break;
+            if (typeof _geoDrainQueue === 'function') await _geoDrainQueue();
+            await new Promise(r => setTimeout(r, 250));
+          }
+        });
         await p.evaluate(() => { if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); } });
         // 14 GPS pings, and zero taps: the contractor did not clock in, clock
         // out, or classify a single minute of this day. That is the feature.
@@ -275,6 +288,9 @@ test.describe('A full 8-hour day: shop → job → supply → job → lunch → 
             // durable queue is stuck: it is FIFO and breaks on the first error,
             // so one rejected row silently strands every row behind it.
             all: rows.map(r => (r.source || '?') + ':' + r.minutes).join(','),
+            // The drain swallowed every error, so a queue that could never drain
+            // looked identical to one that had finished.
+            queueErr: typeof _geoQueueLastError !== 'undefined' ? _geoQueueLastError : 'n/a',
             queued: (() => {
               try {
                 return JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')
