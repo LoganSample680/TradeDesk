@@ -2469,24 +2469,60 @@ async function _renderCrewMap(){
 }
 
 // ── Vehicle-start-of-shift picker ────────────────────────────────────────────
+// Crew have always been asked this. Owners now are too when they run more than
+// one truck (owner call 2026-08-01: "for multiple vehicles I kind of like a
+// popup, which vehicle are you driving today?").
+//
+// It is the same sheet rather than a second one, because it answers the same
+// question, but the two roles are asked DIFFERENTLY on purpose:
+//
+//   • ONE ACTIVE VEHICLE, no owner is asked anything. There is nothing to ask,
+//     and getDefaultVehicle already falls through to the only truck. Asking
+//     would be a daily tap for a question with one possible answer.
+//   • The owner's usual truck (the Fleet "My truck" default) is listed FIRST
+//     and marked, so the normal day is one confirming tap rather than a hunt.
+//   • Dismissing costs the owner nothing: _autoTripVehicle falls back to that
+//     same default, so a day's trips are never stranded without a vehicle. For
+//     crew there is no default to fall back to, so dismissing means no mileage,
+//     which is the safe direction for somebody else's car.
+//   • No "personal vehicle" row for the owner. Their personal car's business
+//     miles ARE deductible, so the honest answer is that the vehicle belongs in
+//     Fleet (which is what Fleet is for, and what the app already tells them:
+//     the IRS wants a vehicle description on every trip). Offering "personal,
+//     no mileage logged" to an owner would quietly bin a real deduction.
 function _checkEmployeeVehiclePicker(){
-  if(!_isEmployee)return;
   const tk=todayKey();
   const key='emp_vehicle_'+tk;
   if(localStorage.getItem(key))return;
   const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  const active=vehs.filter(v=>(v.status||'active')==='active');
+  if(!_isEmployee){
+    if(!S.teamTracking)return;      // nothing is being logged, so nothing to ask
+    if(active.length<2)return;      // one truck answers itself
+  }
+  const list=_isEmployee?vehs:active;
+  const defId=(!_isEmployee&&typeof getDefaultVehicle==='function')?((getDefaultVehicle()||{}).id||''):'';
+  // Usual truck first, so the common day is the top button.
+  const ordered=defId?list.slice().sort((a,b)=>(String(b.id)===String(defId)?1:0)-(String(a.id)===String(defId)?1:0)):list;
   const ov=document.createElement('div');ov.id='_vehicle-picker-ov';ov.className='zmodal-overlay';
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
-  const vehList=vehs.map(v=>{
+  const vehList=ordered.map(v=>{
     const label=[v.year,v.make,v.model].filter(Boolean).join(' ')||escHtml(v.name||v.id||'Vehicle');
-    return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+svgIcon('🚗')+' '+escHtml(label)+'</button>';
+    const isDef=defId&&String(v.id)===String(defId);
+    return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid '+(isDef?'var(--blue)':'var(--border2)')+';background:'+(isDef?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+
+      svgIcon('🚗')+'<span style="flex:1;min-width:0">'+escHtml(label)+'</span>'+
+      (isDef?'<span style="font-size:10px;font-weight:800;color:var(--blue);flex-shrink:0">USUAL</span>':'')+'</button>';
   }).join('');
   sheet.innerHTML=
-    '<div style="font-size:15px;font-weight:800;margin-bottom:4px">Which vehicle are you in today?</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Drive time is only logged for company vehicles, personal vehicle trips stay private.</div>'+
+    '<div style="font-size:15px;font-weight:800;margin-bottom:4px">Which vehicle are you '+(_isEmployee?'in':'driving')+' today?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+
+      (_isEmployee
+        ?'Drive time is only logged for company vehicles, personal vehicle trips stay private.'
+        :'Your drives log themselves all day. This just puts the miles on the right truck.')+
+    '</div>'+
     vehList+
-    '<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle, no mileage logged</button>'+
+    (_isEmployee?'<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle, no mileage logged</button>':'')+
     '<button onclick="_pickVehicle(\'none\',\'On foot\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚶')+' On foot / no vehicle</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});

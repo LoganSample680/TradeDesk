@@ -460,6 +460,9 @@ function autoLogDriveTrip(opts){
   // so a retried or replayed leg can never bill the same miles twice.
   if(mileage.some(m=>m.legKey===legKey))return null;
   const veh=_autoTripVehicle();
+  // "On foot today" is a deliberate answer and it means there are no miles. A
+  // walked or ridden-along day must not quietly bill to the usual truck.
+  if(veh==='none')return null;
   // dateKey, not a slice of the ISO string. An ISO timestamp is UTC, so a 7pm
   // supply run in Central time slices to TOMORROW and lands the deduction in the
   // wrong day, and at New Year the wrong TAX YEAR.
@@ -507,14 +510,28 @@ function _autoTripPurpose(to){
   if(k==='home_office')return 'Home Office';
   return 'Other';
 }
-// Crew answer this every morning with the shift picker; the owner sets it once
-// (getDefaultVehicle, js/settings.js). Never guesses a truck for an employee.
+// Whoever is driving, today's answer wins over the standing one.
+//
+// For CREW that is the only answer there is: no pick, no mileage, because
+// guessing a truck for somebody else's morning is how a personal car ends up
+// deducted. 'none' (on foot) and 'personal' both mean no company miles.
+//
+// For the OWNER the daily picker is a refinement, not a gate. They are asked
+// only when they run two or more trucks, and dismissing the sheet has to cost
+// them nothing, so an unanswered day falls back to the Fleet default. 'none'
+// still means on foot and suppresses the trip: that is an explicit answer, not
+// an absent one, and it is the only way to say "I did not drive today."
 function _autoTripVehicle(){
   const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  const id=localStorage.getItem('emp_vehicle_'+todayKey());
   if(_isEmployee){
-    const id=localStorage.getItem('emp_vehicle_'+todayKey());
     if(!id||id==='none'||id==='personal')return null;
     return vehs.find(v=>String(v.id)===String(id))||null;
+  }
+  if(id==='none')return 'none';                 // on foot: caller logs nothing
+  if(id&&id!=='personal'){
+    const picked=vehs.find(v=>String(v.id)===String(id));
+    if(picked)return picked;                    // a stale id falls through to the default
   }
   return (typeof getDefaultVehicle==='function')?getDefaultVehicle():null;
 }

@@ -198,6 +198,179 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── "Which vehicle are you driving today?" ─────────────────────────────────
+  // Owner call (2026-08-01): "for multiple vehicles I kind of like a popup,
+  // which vehicle are you driving today?"
+  //
+  // Crew have always been asked. Owners are now asked too, but only when the
+  // question has more than one answer, and never in a way that can LOSE a trip:
+  // dismissing the sheet falls back to the Fleet default, because an owner who
+  // swipes a popup away has not thereby given up the day's deduction.
+  const pickerFor = (opts) => page.evaluate((o) => {
+    const realEmp = _isEmployee, keepTracking = S.teamTracking, keepVeh = vehicles.slice();
+    const keepDef = S.defaultVehicleId;
+    try {
+      _isEmployee = !!o.employee;
+      S.teamTracking = o.tracking !== false;
+      S.defaultVehicleId = o.defaultId || '';
+      if (o.vehicles) { vehicles.length = 0; o.vehicles.forEach(v => vehicles.push(v)); }
+      localStorage.removeItem('emp_vehicle_' + todayKey());
+      document.getElementById('_vehicle-picker-ov')?.remove();
+      _checkEmployeeVehiclePicker();
+      const ov = document.getElementById('_vehicle-picker-ov');
+      const html = ov ? ov.innerHTML : '';
+      const labels = ov ? Array.from(ov.querySelectorAll('button')).map(b => b.textContent.trim()) : [];
+      ov?.remove();
+      return { shown: !!ov, labels, usualFirst: labels[0] || '', html };
+    } finally {
+      _isEmployee = realEmp; S.teamTracking = keepTracking; S.defaultVehicleId = keepDef;
+      vehicles.length = 0; keepVeh.forEach(v => vehicles.push(v));
+      localStorage.removeItem('emp_vehicle_' + todayKey());
+    }
+  }, opts);
+
+  test.describe('the daily vehicle popup', () => {
+    const TWO = [{ id: 'v-truck', name: 'F-250', status: 'active' },
+                 { id: 'v-van', name: 'Transit', status: 'active' }];
+
+    test('owner with two trucks is asked', async () => {
+      const out = await pickerFor({ vehicles: TWO, defaultId: 'v-truck' });
+      expect(out.shown).toBe(true);
+      expect(out.html).toContain('Which vehicle are you driving today?');
+    });
+
+    test('owner with one truck is never asked', async () => {
+      // Nothing to ask. getDefaultVehicle already falls through to the only
+      // truck, so a popup here is a daily tap for a one-answer question.
+      const out = await pickerFor({ vehicles: [TWO[0]], defaultId: '' });
+      expect(out.shown).toBe(false);
+    });
+
+    test('a sold second truck does not conjure the question', async () => {
+      const out = await pickerFor({
+        vehicles: [TWO[0], { id: 'v-old', name: 'Old Ranger', status: 'sold' }], defaultId: '' });
+      expect(out.shown).toBe(false);
+    });
+
+    test('the usual truck is listed first and marked', async () => {
+      // The normal day has to be one confirming tap, not a hunt. v-van is first
+      // in the fixture array, so seeing F-250 on top proves it was reordered.
+      const out = await pickerFor({ vehicles: [TWO[1], TWO[0]], defaultId: 'v-truck' });
+      expect(out.usualFirst).toContain('F-250');
+      expect(out.usualFirst).toContain('USUAL');
+    });
+
+    test('the owner is not offered "personal, no mileage logged"', async () => {
+      // Their personal car's business miles ARE deductible. Offering crew's
+      // opt-out would quietly bin a real deduction; the honest answer is that
+      // the vehicle belongs in Fleet.
+      const out = await pickerFor({ vehicles: TWO, defaultId: 'v-truck' });
+      expect(out.html).not.toContain('no mileage logged');
+      expect(out.labels.some(l => /On foot/.test(l))).toBe(true);
+    });
+
+    test('crew keep their personal-vehicle opt-out, and are asked with one truck', async () => {
+      // Regression guard: the employee path is what existed before and must not
+      // have moved. One vehicle still asks them, because the real question for
+      // crew is company vs their own car, which exists at any fleet size.
+      const out = await pickerFor({ employee: true, vehicles: [TWO[0]] });
+      expect(out.shown).toBe(true);
+      expect(out.html).toContain('Which vehicle are you in today?');
+      expect(out.html).toContain('no mileage logged');
+    });
+
+    test('nobody is asked twice in one day', async () => {
+      const out = await page.evaluate(() => {
+        const keepVeh = vehicles.slice(), keepDef = S.defaultVehicleId, keepTr = S.teamTracking;
+        try {
+          vehicles.length = 0;
+          vehicles.push({ id: 'a', name: 'A', status: 'active' }, { id: 'b', name: 'B', status: 'active' });
+          S.defaultVehicleId = 'a'; S.teamTracking = true;
+          localStorage.setItem('emp_vehicle_' + todayKey(), 'b');
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          _checkEmployeeVehiclePicker();
+          const shown = !!document.getElementById('_vehicle-picker-ov');
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          return { shown };
+        } finally {
+          vehicles.length = 0; keepVeh.forEach(v => vehicles.push(v));
+          S.defaultVehicleId = keepDef; S.teamTracking = keepTr;
+          localStorage.removeItem('emp_vehicle_' + todayKey());
+        }
+      });
+      expect(out.shown).toBe(false);
+    });
+
+    test('tracking off means no popup, because nothing is being logged', async () => {
+      const out = await pickerFor({ vehicles: TWO, defaultId: 'v-truck', tracking: false });
+      expect(out.shown).toBe(false);
+    });
+
+    test("today's pick beats the standing default", async () => {
+      const out = await page.evaluate(() => {
+        const keepDef = S.defaultVehicleId;
+        try {
+          S.defaultVehicleId = 'v-truck';
+          localStorage.setItem('emp_vehicle_' + todayKey(), 'v-van');
+          return { id: (_autoTripVehicle() || {}).id };
+        } finally { S.defaultVehicleId = keepDef; localStorage.removeItem('emp_vehicle_' + todayKey()); }
+      });
+      expect(out.id).toBe('v-van');
+    });
+
+    test('dismissing the popup costs the owner nothing', async () => {
+      // The whole reason the owner keeps a default: swiping a sheet away is not
+      // consent to lose the day's mileage.
+      const out = await page.evaluate(() => {
+        const keepDef = S.defaultVehicleId;
+        try {
+          S.defaultVehicleId = 'v-truck';
+          localStorage.removeItem('emp_vehicle_' + todayKey());
+          return { id: (_autoTripVehicle() || {}).id };
+        } finally { S.defaultVehicleId = keepDef; }
+      });
+      expect(out.id).toBe('v-truck');
+    });
+
+    test('a stale pick for a deleted truck falls back rather than logging nothing', async () => {
+      const out = await page.evaluate(() => {
+        const keepDef = S.defaultVehicleId;
+        try {
+          S.defaultVehicleId = 'v-truck';
+          localStorage.setItem('emp_vehicle_' + todayKey(), 'v-scrapped');
+          return { id: (_autoTripVehicle() || {}).id };
+        } finally { S.defaultVehicleId = keepDef; localStorage.removeItem('emp_vehicle_' + todayKey()); }
+      });
+      expect(out.id).toBe('v-truck');
+    });
+
+    test('"on foot today" logs no trip at all', async () => {
+      // An explicit answer, unlike an absent one, and the only way to say "I did
+      // not drive". It must not quietly bill to the usual truck.
+      const out = await page.evaluate(async (d) => {
+        const realUser = _supaUser, realRoute = _routeDistance, keepDef = S.defaultVehicleId;
+        _supaUser = { id: 'u-mi' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 5, mins: 9 });
+        const before = mileage.length;
+        try {
+          S.defaultVehicleId = 'v-truck';
+          localStorage.setItem('emp_vehicle_' + todayKey(), 'none');
+          autoLogDriveTrip({
+            from: { lat: d.SHOP.lat, lng: d.SHOP.lon, name: 'Shop', kind: 'shop' },
+            to: { lat: d.JOB.lat, lng: d.JOB.lon, name: 'Miller Residence', kind: 'job' },
+            legKey: 'leg-onfoot-1', startedIso: new Date().toISOString()
+          });
+          await new Promise(r => setTimeout(r, 20));
+          return { added: mileage.length - before };
+        } finally {
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+          S.defaultVehicleId = keepDef; localStorage.removeItem('emp_vehicle_' + todayKey());
+        }
+      }, { SHOP, JOB });
+      expect(out.added).toBe(0);
+    });
+  });
+
   test.describe('the vehicle rule', () => {
     test('employee in a company truck: miles log, on that truck', async () => {
       const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: 'v-van' });
