@@ -56,11 +56,20 @@ test.describe('Places: a geo-stamped receipt becomes a supply house that survive
     test.skip(!tableReady, 'td_places not migrated to Dev yet (merges with this PR)');
 
     const runId = String(process.pid).slice(-6).padStart(6, '0');
-    const vendor = `E2E Supply ${runId}`;
-    // A distinctive coordinate far from any real seed data, so a stale row from
-    // a previous run can never be mistaken for this one's.
-    const LAT = 38.0 + (Number(runId.slice(-3)) / 100000);
-    const LON = -96.5 - (Number(runId.slice(-3)) / 100000);
+    const vendor = `E2E Supply ${runId}-${Date.now().toString(36).slice(-4)}`;
+    // Each run gets its own CELL on a grid, spaced far wider than the dedup
+    // fence. The first version spread ~1000 pids across about 1.1km while
+    // PLACE_MATCH_FT is 600ft (~183m), so a run landed inside an earlier run's
+    // place and _placeFromExpense correctly refused to make a second one. The
+    // failure then read as "detection is broken" when detection was working
+    // exactly as designed. Live tests never clean up (§12.7), so this seed data
+    // accumulates forever and the spacing has to hold indefinitely: 0.02deg is
+    // ~1.4mi, an order of magnitude clear of the fence, and a 100x100 grid gives
+    // 10,000 distinct cells. Base 38N/96W is this spec's own band, kept clear of
+    // drive-attribution's.
+    const cell = (Number(runId) + Date.now()) % 10000;
+    const LAT = 38.0 + (cell % 100) * 0.02;
+    const LON = -96.0 - (Math.floor(cell / 100) % 100) * 0.02;
     let expId = null;
 
     // ── 1. Log a real expense carrying coordinates ─────────────────────────

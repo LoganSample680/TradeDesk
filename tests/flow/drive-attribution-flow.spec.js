@@ -25,10 +25,19 @@ const BASELINE = require('./perf-baseline.json');
 
 const FLOW = 'places/drive-attribution';
 
-// Far from any real seed data so a stale row can never be mistaken for ours.
-const SHOP   = { lat: 38.3100, lon: -96.8100 };
-const SUPPLY = { lat: 38.3400, lon: -96.8400 };   // ~2.5mi from the shop
-const AWAY   = { lat: 38.4200, lon: -96.9200 };   // well outside every fence
+// Each run gets its OWN cell, for the same reason geo-stamp-places does: live
+// tests never clean up (§12.7), so fixed coordinates meant every run created
+// another place on top of the last one and placeAt() would resolve whichever it
+// found first, which is not necessarily this run's. Base 41N/98W keeps this
+// spec's band clear of geo-stamp-places' 38N/96W.
+const CELL = (process.pid + Date.now()) % 10000;
+const BASE_LAT = 41.0 + (CELL % 100) * 0.02;
+const BASE_LON = -98.0 - (Math.floor(CELL / 100) % 100) * 0.02;
+// Within a cell the three points are far enough apart that none sits inside
+// another's 600ft fence.
+const SHOP   = { lat: BASE_LAT,          lon: BASE_LON };
+const SUPPLY = { lat: BASE_LAT + 0.0300, lon: BASE_LON - 0.0300 };  // ~2.5mi away
+const AWAY   = { lat: BASE_LAT + 0.1100, lon: BASE_LON - 0.1100 };  // outside every fence
 
 test.describe('Drive attribution: a supply run logs real miles, parked time is not driving', () => {
   test.skip(!needsLiveCreds(), 'live Supabase creds not configured (E2E_DEV_* secrets)');
@@ -47,7 +56,7 @@ test.describe('Drive attribution: a supply run logs real miles, parked time is n
     test.skip(!tableReady, 'td_places not migrated to Dev yet (merges with this PR)');
 
     const runId = String(process.pid).slice(-6).padStart(6, '0');
-    const supplyName = `E2E Yard ${runId}`;
+    const supplyName = `E2E Yard ${runId}-${Date.now().toString(36).slice(-4)}`;
 
     // Feed a coordinate straight into the real ping handler. This is the same
     // entry point watchPosition calls, so the whole state machine runs for real.
@@ -180,7 +189,7 @@ test.describe('Drive attribution: a supply run logs real miles, parked time is n
       act: async (p) => {
         await p.evaluate(() => {
           try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
-          const home = { lat: 38.5000, lon: -97.0000 }, overnight = 9 * 60 * 60 * 1000;
+          const home = { lat: BASE_LAT + 0.20, lon: BASE_LON - 0.20 }, overnight = 9 * 60 * 60 * 1000;
           recordUnknownStop(home, overnight);
           recordUnknownStop(home, overnight);
           recordUnknownStop(home, overnight);
@@ -192,7 +201,7 @@ test.describe('Drive attribution: a supply run logs real miles, parked time is n
           const n = pendingPlaceSuggestions().length;
           // And a genuine work stop of the same repetition IS still offered, so
           // the guard is narrow rather than switching detection off wholesale.
-          const yard = { lat: 38.6000, lon: -97.1000 }, normal = 6 * 60 * 1000;
+          const yard = { lat: BASE_LAT + 0.30, lon: BASE_LON - 0.30 }, normal = 6 * 60 * 1000;
           recordUnknownStop(yard, normal);
           recordUnknownStop(yard, normal);
           recordUnknownStop(yard, normal);
