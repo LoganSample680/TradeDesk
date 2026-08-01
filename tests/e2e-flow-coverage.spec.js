@@ -966,6 +966,55 @@ test.describe('Migration files: RLS auth.uid() cast compliance', () => {
   const path = require('path');
   const migrationsDir = path.join(__dirname, '..', 'supabase', 'migrations');
 
+  // Supabase derives a migration's VERSION from the leading digits of its
+  // filename, so two files sharing a date prefix both claim the same version and
+  // `supabase db push` dies with a schema_migrations primary-key violation. It
+  // fails at deploy time, long after review, on a step nobody watches.
+  test('no two migrations share a version prefix', () => {
+    if (!fs.existsSync(migrationsDir)) return;
+    const byVersion = {};
+    fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).forEach(f => {
+      const v = (f.match(/^(\d+)/) || [])[1];
+      if (!v) return;
+      (byVersion[v] = byVersion[v] || []).push(f);
+    });
+    const dupes = Object.entries(byVersion).filter(([, files]) => files.length > 1)
+      .map(([v, files]) => `${v}: ${files.join(', ')}`);
+    expect(dupes, `Migrations sharing a version prefix (supabase db push will fail):\n${dupes.join('\n')}`).toHaveLength(0);
+  });
+
+  // The RPC-recreation order is load-bearing and silently wrong when broken.
+  // get_account_delta is recreated wholesale by each migration that adds a synced
+  // table, so the LAST one applied wins. A new table whose migration sorts BEFORE
+  // an older one gets dropped from the sync payload on any from-migrations
+  // rebuild: it works on the hosted project (where it happened to be pushed last)
+  // and is missing everywhere else, which is the worst failure shape there is.
+  //
+  // Source of truth is js/cloud.js _TD_TABLES, the client's own fabric, because
+  // that is exactly the set the RPC has to cover. Tables outside it (td_ops, the
+  // benchmark tables, bid history, permission requests) sync by other means and
+  // are deliberately not in the payload.
+  test('the newest get_account_delta migration covers every _TD_TABLES entry', () => {
+    if (!fs.existsSync(migrationsDir)) return;
+    const cloudSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const block = cloudSrc.slice(cloudSrc.indexOf('_TD_TABLES=['));
+    const fabric = [...new Set((block.slice(0, block.indexOf(']')).match(/t:'(td_[a-z_]+)'/g) || [])
+      .map(m => m.replace(/t:'|'/g, '')))];
+    expect(fabric.length, 'parsed _TD_TABLES from js/cloud.js').toBeGreaterThan(5);
+
+    const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+    const recreators = files.filter(f =>
+      /create or replace function get_account_delta/i.test(fs.readFileSync(path.join(migrationsDir, f), 'utf8')));
+    if (!recreators.length) return;
+    const newest = recreators[recreators.length - 1];
+    const body = fs.readFileSync(path.join(migrationsDir, newest), 'utf8');
+    const missing = fabric.filter(t => !body.includes("'" + t + "'"));
+    expect(missing,
+      `${newest} is the last migration to recreate get_account_delta, so its copy wins. ` +
+      `These _TD_TABLES entries are absent from it and would not sync on a clean rebuild:\n${missing.join(', ')}`
+    ).toHaveLength(0);
+  });
+
   test('no migration contains uncast auth.uid() comparison (text = uuid bug)', () => {
     if (!fs.existsSync(migrationsDir)) return;
     const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql'));

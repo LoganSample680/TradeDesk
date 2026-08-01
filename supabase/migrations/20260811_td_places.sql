@@ -17,6 +17,15 @@
 --
 -- Mileage is a tax deduction, so these are accuracy defects, not UX ones.
 --
+-- ORDERING IS LOAD-BEARING: this file MUST sort after 20260809_td_vehicles,
+-- because both recreate get_account_delta and load_account_data and the LAST one
+-- applied wins. Named 20260801 originally, which sorted BEFORE vehicles, so on
+-- any from-migrations rebuild the vehicles copy of those RPCs would have
+-- overwritten this one and silently dropped td_places from the sync payload
+-- entirely. It also collided with 20260801_gallery_bucket: Supabase takes the
+-- version from the leading digits, so two files sharing a date prefix fail the
+-- push with a schema_migrations primary-key violation.
+--
 -- Same fabric as td_vehicles (20260809): the whole record lives in `data` jsonb,
 -- owner + crew RLS, updated_at trigger, delta cursor, realtime. Crew need read
 -- access because the fence machine runs on THEIR device.
@@ -79,6 +88,7 @@ begin
 end $$;
 
 -- ── get_account_delta — same body as 20260809 + td_places ───────────────────
+-- (Must stay newer than 20260809 or vehicles' copy wins and drops td_places.)
 drop function if exists get_account_delta(timestamptz, text);
 
 create or replace function get_account_delta(since timestamptz, ops_since text default null)
