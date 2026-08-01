@@ -105,7 +105,7 @@ test.describe('Drive matrix: every origin to every destination', () => {
         _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
         _geoShopArrivedAt = null; _geoDriveStartedAt = null;
         _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
-        _geoLastFenceAt = null;
+        _geoLastFenceAt = null; _geoLegAtShop = false;
         try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
 
         // ── establish the origin ──
@@ -161,6 +161,98 @@ test.describe('Drive matrix: every origin to every destination', () => {
       });
     }
   }
+
+  // ── Dwell, not just travel ────────────────────────────────────────────────
+  // The matrix above proves every LEG. Time spent standing still is the other
+  // half of the day and has its own row per fence type, so it gets asserted too:
+  // a complete set of legs with a missing dwell still loses paid hours.
+  test('the shop logs shop time, on its own table, whenever they are at the yard', async () => {
+    const out = await page.evaluate(async (C) => {
+      const rows = [];
+      const realEnq = _geoEnqueue, realUser = _supaUser;
+      _supaUser = { id: 'u-matrix' };
+      _geoEnqueue = (tbl, row) => rows.push({ tbl, source: row.source, m: row.minutes });
+      const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+      try {
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoCurrentPlace = null;
+        _geoPlaceArrivedAt = null; _geoStopAnchor = null; _geoLastFenceAt = null; _geoLegAtShop = false;
+        await ping(C.SHOP);
+        _geoShopArrivedAt = new Date(Date.now() - 34 * 60000).toISOString();
+        await ping(C.ROAD);                       // leaving the yard closes it
+        return rows;
+      } finally { _geoEnqueue = realEnq; _supaUser = realUser; }
+    }, { SHOP, ROAD });
+    const shop = out.filter(r => r.tbl === 'shop_time_entries');
+    expect(shop.length, `expected one shop_time_entries row, got ${JSON.stringify(out)}`).toBe(1);
+    expect(shop[0].m).toBe(34);
+  });
+
+  test('a job fenced at the yard logs BOTH job time and shop time', async () => {
+    // Owner call 2026-08-01: being at the yard logs shop time regardless of what
+    // else is happening there. A job that happens to sit inside the shop fence
+    // does not silence it. An earlier revision made JOB exclusive and swallowed
+    // the shop row, which is why this case is pinned.
+    const out = await page.evaluate(async (C) => {
+      const rows = [];
+      const realEnq = _geoEnqueue, realUser = _supaUser;
+      const savedJobs = jobs.slice();
+      _supaUser = { id: 'u-matrix' };
+      _geoEnqueue = (tbl, row) => rows.push({ tbl, source: row.source, m: row.minutes });
+      const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+      try {
+        // A job AT the shop coordinate.
+        jobs.length = 0;
+        jobs.push({ id: 8803, name: 'Yard Job', eventType: 'job', status: 'upcoming',
+                    start: todayKey(), days: 1, lat: C.SHOP.lat, lon: C.SHOP.lon });
+        _geoJobCoords = {};
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoCurrentPlace = null;
+        _geoPlaceArrivedAt = null; _geoStopAnchor = null; _geoLastFenceAt = null; _geoLegAtShop = false;
+        await ping(C.SHOP);
+        const both = { job: !!_geoCurrentJob, shop: !!_geoWasInShop };
+        _geoArrivedAt = new Date(Date.now() - 50 * 60000).toISOString();
+        _geoShopArrivedAt = new Date(Date.now() - 50 * 60000).toISOString();
+        await ping(C.ROAD);
+        return { rows, both };
+      } finally {
+        _geoEnqueue = realEnq; _supaUser = realUser;
+        jobs.length = 0; savedJobs.forEach(j => jobs.push(j)); _geoJobCoords = {};
+      }
+    }, { SHOP, ROAD });
+    // Both clocks run at once.
+    expect(out.both).toEqual({ job: true, shop: true });
+    const shop = out.rows.filter(r => r.tbl === 'shop_time_entries');
+    const job = out.rows.filter(r => r.tbl === 'job_time_entries' && /^geofence/.test(r.source || ''));
+    expect(shop.length, `shop row missing: ${JSON.stringify(out.rows)}`).toBe(1);
+    expect(job.length, `job row missing: ${JSON.stringify(out.rows)}`).toBe(1);
+    expect(shop[0].m).toBe(50);
+    expect(job[0].m).toBe(50);
+  });
+
+  test('a supply house logs its own dwell, attributed to no job', async () => {
+    const out = await page.evaluate(async (C) => {
+      const rows = [];
+      const realEnq = _geoEnqueue, realUser = _supaUser;
+      _supaUser = { id: 'u-matrix' };
+      _geoEnqueue = (tbl, row) => rows.push({ tbl, source: row.source, m: row.minutes, dest: row.dest_place, job: row.job_id });
+      const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+      try {
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoDriveStartedAt = null; _geoCurrentPlace = null;
+        _geoPlaceArrivedAt = null; _geoStopAnchor = null; _geoLastFenceAt = null; _geoLegAtShop = false;
+        await ping(C.PLACE);
+        _geoPlaceArrivedAt = new Date(Date.now() - 23 * 60000).toISOString();
+        await ping(C.ROAD);
+        return rows;
+      } finally { _geoEnqueue = realEnq; _supaUser = realUser; }
+    }, { PLACE, ROAD });
+    const dwell = out.filter(r => r.source === 'place');
+    expect(dwell.length, `expected one place dwell, got ${JSON.stringify(out)}`).toBe(1);
+    expect(dwell[0].m).toBe(23);
+    expect(dwell[0].dest).toBe('Matrix Supply');
+    expect(dwell[0].job).toBe(null);          // paid work, but not labor on any one job
+  });
 
   test('no console errors across the matrix', async () => { await assertNoErrors(page); });
 });

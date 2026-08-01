@@ -38,6 +38,13 @@ let _geoPlaceArrivedAt=null;// ISO arrival at that place, for dwell measurement
 let _geoShopArrivedAt=null;// ISO timestamp of shop arrival
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
 let _geoStopAnchor=null;   // {lat,lng,at,lastAt} while parked OUTSIDE every fence
+let _geoLegAtShop=false;   // was the LEG machine's location the shop last ping? Distinct
+                           // from _geoWasInShop, which is the independent shop DWELL flag,
+                           // and they differ only when a job is fenced at the yard. Every
+                           // other location is derived from _geoCurrentJob/_geoCurrentPlace
+                           // directly: a second copy of "where were we" desynchronises the
+                           // moment anything sets those, and a restored mid-shift session
+                           // then reads as "arrived from nowhere" and restarts the visit.
 let _geoLastFenceAt=null;  // ISO of the last fix that still put us inside SOME fence.
                            // The only departure evidence a single-ping transition has.
 // Tighter than the 600ft place fence on purpose: at 600ft a slow crawl through
@@ -173,6 +180,9 @@ function _geoRestoreOpen(){
     _geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;
     _geoWasInShop=!!s.wasInShop;_geoShopArrivedAt=s.shopArrivedAt;
     _geoDriveStartedAt=s.driveStartedAt;
+    // Job and place come back through their own vars; only the shop leg flag
+    // needs seeding, or a session restored at the yard loses its next leg.
+    _geoLegAtShop=!!s.wasInShop&&!s.job;
     _geoGapHiddenAt=s.hiddenAt; // the next ping resolves the gap (continuous vs gap-close)
   }catch(_e){}
 }
@@ -310,16 +320,32 @@ async function _geoOnPing(pos){
     if(ft<=_geoFenceFt()&&ft<bestFt){insideJob=j;bestFt=ft;}
   }
   const insideId=insideJob?insideJob.id:null;
-  // Priority. A JOB is what they are being paid to stand on, so it wins outright,
-  // which also stops a job at the yard being billed as job time AND shop time.
-  // SHOP outranks PLACE deliberately: the shop is often saved as a place too,
-  // and its own shop_time_entries row is the one payroll reads.
+  const nowIsoEarly=new Date(nowMs).toISOString();
+  // ── Shop dwell, tracked on its own ────────────────────────────────────────
+  // Being at the yard logs SHOP TIME, full stop (owner call 2026-08-01). It is
+  // deliberately not folded into the location below: a job fenced at the yard
+  // still counts as time at the yard, and shop time is overhead the contractor
+  // wants to see regardless of what else is going on there.
+  if(inShop!==_geoWasInShop){
+    if(inShop){_geoShopArrivedAt=nowIsoEarly;}
+    else{
+      // A hidden gap since arrival: close at the last VERIFIED moment rather
+      // than claiming shop time nobody observed.
+      if(_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt,_geoGapHiddenAt||undefined);
+      _geoShopArrivedAt=null;
+    }
+    _geoWasInShop=inShop;
+  }
+  // Where the truck IS, for the purpose of attributing drive legs. A JOB wins:
+  // a trip that ends at a job belongs to that job even when the job happens to
+  // sit inside the yard. SHOP outranks PLACE because the shop is often saved as
+  // a place too, and a leg home should read "Shop".
   const cur=insideId?{k:'job',id:String(insideId),name:null}
            :inShop?{k:'shop',id:'shop',name:(atPlace&&atPlace.name)||'Shop'}
            :atPlaceId?{k:'place',id:atPlaceId,name:atPlace.name}
            :null;
   const prev=_geoCurrentJob?{k:'job',id:String(_geoCurrentJob)}
-            :_geoWasInShop?{k:'shop',id:'shop'}
+            :_geoLegAtShop?{k:'shop',id:'shop'}
             :_geoCurrentPlace?{k:'place',id:String(_geoCurrentPlace)}
             :null;
   const same=(!cur&&!prev)||!!(cur&&prev&&cur.k===prev.k&&cur.id===prev.id);
@@ -341,8 +367,9 @@ async function _geoOnPing(pos){
       // back lands elsewhere, so they left at some unverified moment. Close at
       // the last VERIFIED on-site time, tagged, never claiming unseen minutes.
       if(prev.k==='job'&&_geoArrivedAt)await _geoCloseEntry(_geoCurrentJob,_geoGapHiddenAt||undefined,!!_geoGapHiddenAt);
-      else if(prev.k==='shop'&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt,_geoGapHiddenAt||undefined);
       else if(prev.k==='place'&&_geoPlaceArrivedAt)_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt);
+      // prev.k==='shop' needs nothing here: the independent shop block above
+      // owns that dwell, and only closes it when they actually leave the yard.
     }else if(_geoStopAnchor){
       // Leaving a stop settles it AND splits the leg at the kerb, so the parked
       // minutes never ride out attached to the drive entry.
@@ -374,8 +401,7 @@ async function _geoOnPing(pos){
     // ── 4. Commit the new state ─────────────────────────────────────────────
     _geoCurrentJob=(cur&&cur.k==='job')?insideId:null;
     _geoArrivedAt=(cur&&cur.k==='job')?nowIso:null;
-    _geoWasInShop=!!(cur&&cur.k==='shop');
-    _geoShopArrivedAt=(cur&&cur.k==='shop')?nowIso:null;
+    _geoLegAtShop=!!(cur&&cur.k==='shop');
     _geoCurrentPlace=(cur&&cur.k==='place')?cur.id:null;
     _geoPlaceArrivedAt=(cur&&cur.k==='place')?nowIso:null;
     if(cur&&cur.k==='job'){_geoPersistOpen();_geoWakeAcquire();}
@@ -468,13 +494,16 @@ function _geoCloseStop(a){
   if(!(ms>=_GEO_STOP_MS))return;          // a light, not a stop
   const mins=Math.max(0,Math.round(ms/60000));
   // Split the leg at the kerb. Without this the parked minutes ride out on the
-  // drive entry, which is the entire defect.
-  if(_geoDriveStartedAt&&!_geoCurrentJob){
-    _geoDriveEntry(null,_geoDriveStartedAt,null,a.at);
-    _geoDriveStartedAt=a.lastAt;          // the next leg begins when they pulled out
-  }else if(!_geoCurrentJob&&!_geoWasInShop){
-    _geoDriveStartedAt=a.lastAt;          // leaving a real stop is the start of a drive
-  }
+  // drive entry, which is the entire defect. Either way the next leg begins the
+  // moment they pulled out.
+  //
+  // No guards on the live fence flags here. This is only ever called when the
+  // previous location was OUTSIDE everything, so they are redundant, and one of
+  // them was actively wrong once the shop dwell moved earlier in the ping: by
+  // the time this ran on arriving at the yard, _geoWasInShop was already true,
+  // so the leg out of lunch never restarted and the trip home logged nothing.
+  if(_geoDriveStartedAt)_geoDriveEntry(null,_geoDriveStartedAt,null,a.at);
+  _geoDriveStartedAt=a.lastAt;
   // Somewhere they park repeatedly is a candidate location in its own right,
   // which is how an un-named supply yard eventually gets offered to them.
   if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
@@ -682,7 +711,7 @@ function stopGeoTracking(){
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
   _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;
-  _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;
+  _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;
   _geoClearOpen();_geoWakeRelease();
 }
 
