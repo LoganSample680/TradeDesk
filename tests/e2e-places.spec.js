@@ -88,6 +88,51 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.places[0].confirmedBy).toBe('expense');
   });
 
+  test('an EVENING receipt still creates a place (UTC vs local day bug)', async () => {
+    const out = await page.evaluate(() => {
+      // rec.date is a LOCAL day key; geoAt is a UTC ISO string. Anywhere west of
+      // UTC those disagree all evening: at 9pm Central it is already tomorrow in
+      // UTC. Comparing geoAt.slice(0,10) against the local date therefore made
+      // EVERY receipt logged after about 6pm look like next-day paperwork, so it
+      // silently never became a supply house. Evening supply runs are exactly
+      // what this feature is for.
+      const p2 = n => String(n).padStart(2, '0');
+      const now = new Date();
+      // A stamp 3 hours from now: on a runner behind UTC this rolls geoAt into
+      // tomorrow UTC while the local day key stays today.
+      const later = new Date(now.getTime() + 3 * 3600 * 1000);
+      const localDate = now.getFullYear() + '-' + p2(now.getMonth() + 1) + '-' + p2(now.getDate());
+      const sameLocalDay =
+        later.getFullYear() + '-' + p2(later.getMonth() + 1) + '-' + p2(later.getDate()) === localDate;
+      expenses.push({
+        id: 700, date: localDate, vendor: 'Evening Supply Run', amount: 88,
+        lat: 37.777, lon: -97.777, geoAcc: 10, geoAt: later.toISOString(),
+      });
+      return { made: detectPlacesFromExpenses(), count: places.length, sameLocalDay,
+               utcDiffers: later.toISOString().slice(0, 10) !== localDate };
+    });
+    // Only meaningful while the shifted stamp is still the same LOCAL day.
+    if (!out.sameLocalDay) return;
+    expect(out.made).toBe(1);
+    expect(out.count).toBe(1);
+  });
+
+  test('_geoLocalDayKey converts a UTC stamp to the LOCAL calendar day', async () => {
+    const out = await page.evaluate(() => {
+      const d = new Date();
+      const p2 = n => String(n).padStart(2, '0');
+      const expected = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+      return {
+        matchesLocal: _geoLocalDayKey(d.toISOString()) === expected,
+        garbageSafe: _geoLocalDayKey('not-a-date'),
+        emptySafe: _geoLocalDayKey(''),
+      };
+    });
+    expect(out.matchesLocal).toBe(true);
+    expect(out.garbageSafe).toBe('');
+    expect(out.emptySafe).toBe('');
+  });
+
   test('a receipt logged that evening from the sofa does NOT create a place', async () => {
     const out = await page.evaluate(() => {
       expenses.push({ id: 2, date: '2026-07-20', vendor: 'Ferguson Plumbing', amount: 340,

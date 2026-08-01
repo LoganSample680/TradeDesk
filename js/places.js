@@ -123,9 +123,24 @@ function _placeFromExpense(exp){
 }
 // The stamp counts as taken at the transaction if it happened on the same
 // calendar day the expense is dated. Anything later is paperwork.
+//
+// BOTH SIDES MUST BE THE SAME CALENDAR. rec.date is a LOCAL day key (todayKey,
+// built from getFullYear/Month/Date) while geoAt is a UTC ISO string, so
+// slicing geoAt's first ten characters compares a local day against a UTC day.
+// Anywhere west of UTC those disagree for the whole evening: at 9pm Central it
+// is already tomorrow in UTC, so every receipt logged after about 6pm looked
+// non-contemporaneous and silently never created a supply house. Evening supply
+// runs are exactly the trips this feature exists for, and exactly the ones the
+// removed time lock used to drop. Convert geoAt to the SAME local key first.
+function _geoLocalDayKey(iso){
+  const d=new Date(iso);
+  if(isNaN(d))return '';
+  const p=n=>String(n).padStart(2,'0');
+  return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());
+}
 function _geoStampIsContemporaneous(rec){
   if(!rec||!rec.geoAt||!rec.date)return false;
-  try{return String(rec.geoAt).slice(0,10)===String(rec.date).slice(0,10);}
+  try{return _geoLocalDayKey(rec.geoAt)===String(rec.date).slice(0,10);}
   catch(_e){return false;}
 }
 // Sweep every expense that has a usable stamp and no matching place yet. Cheap,
