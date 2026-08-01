@@ -407,20 +407,116 @@ function _initMapKit(){
   _retryPendingTrips();
 }
 async function _retryPendingTrips(){
-  const pending=mileage.filter(m=>m.calc_method==='pending'&&m.from&&m.to);
+  // Two kinds of unfinished trip, and they resolve differently. A manual one has
+  // typed ADDRESSES that still need geocoding; an automatic one already holds
+  // both coordinates, because the geofence knew exactly where it was. Neither
+  // may be dropped: a trip stuck at zero miles is a deduction the contractor
+  // earned and is not getting.
+  const pending=mileage.filter(m=>
+    (m.calc_method==='pending'&&m.from&&m.to)||
+    (m.calc_method==='pending_auto'&&m.fromCoord&&m.toCoord));
   if(!pending.length)return;
+  let filled=0;
   for(const rec of pending){
     try{
-      const fc=await _resolveCoords(rec.from);
-      const tc=await _resolveCoords(rec.to);
+      const auto=rec.calc_method==='pending_auto';
+      const fc=auto?rec.fromCoord:await _resolveCoords(rec.from);
+      const tc=auto?rec.toCoord:await _resolveCoords(rec.to);
       if(!fc||!tc)continue;
       const{miles}=await _routeDistance(fc,tc);
-      rec.miles=Math.round(miles*10)/10;rec.calc_method='address';
+      rec.miles=Math.round(miles*10)/10;rec.calc_method=auto?'auto_route':'address';
+      filled++;
     }catch(e){}
   }
+  if(!filled)return;   // nothing changed, do not churn a save or a re-render
   saveAll();
   if(document.getElementById('mil-table'))renderAllMileage();
   renderDash();
+}
+
+// ── Automatic trip, written by the geofence when a drive leg closes ──────────
+// Called from _geoAutoMileage (js/geo-track.js), which owns the decision of
+// WHETHER to log (the vehicle rule, the commute guard). This owns only HOW.
+//
+// Both endpoints arrive as geocodes, so the distance question is just "what does
+// MapKit say between these two points" (owner call 2026-08-01). Per IRS Pub 463
+// a per-trip odometer reading is not required; a timestamped, automatically
+// produced GPS log is accepted, and in practice is stronger evidence than paper
+// because it is contemporaneous by construction.
+//
+// Saves at zero miles FIRST and measures after. Arriving somewhere with no
+// signal is the normal case on a rural site, and the trip has to survive it.
+function autoLogDriveTrip(opts){
+  opts=opts||{};
+  const {from,to,legKey,startedIso}=opts;
+  // Validated HERE, not left to the caller. _geoAutoMileage checks the same
+  // thing, but this is a global entry point and a trip with no endpoints would
+  // still write a row and then hand undefined coordinates to the router: either
+  // a thrown error or, worse, a distance nobody can reproduce. No endpoints, no
+  // trip, whoever is calling.
+  if(!from||!to||!legKey)return null;
+  if(from.lat==null||from.lng==null||to.lat==null||to.lng==null)return null;
+  // Idempotent on the leg key: the drive leg and this trip carry the same one,
+  // so a retried or replayed leg can never bill the same miles twice.
+  if(mileage.some(m=>m.legKey===legKey))return null;
+  const veh=_autoTripVehicle();
+  // dateKey, not a slice of the ISO string. An ISO timestamp is UTC, so a 7pm
+  // supply run in Central time slices to TOMORROW and lands the deduction in the
+  // wrong day, and at New Year the wrong TAX YEAR.
+  const date=startedIso?dateKey(new Date(startedIso)):todayKey();
+  const rec={
+    id:_newId(),date,loggedAt:new Date().toISOString(),
+    vehicle:veh?(veh.name||''):'',vehicleId:veh?veh.id:undefined,
+    from:from.addr||from.name||'',from_name:from.name||'',
+    to:to.addr||to.name||'',to_name:to.name||'',
+    fromCoord:{lat:from.lat,lng:from.lng},toCoord:{lat:to.lat,lng:to.lng},
+    start:0,end:0,miles:0,
+    purpose:_autoTripPurpose(to),
+    client_id:to.clientId||null,
+    client_name:to.clientId&&typeof getClientById==='function'?((getClientById(to.clientId)||{}).name||''):'',
+    notes:'',gps:true,legKey,
+    created_at:new Date().toISOString(),calc_method:'pending_auto'
+  };
+  if(_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser){
+    rec.logged_by_id=_supaUser.id;
+    rec.logged_by_name=(typeof _employeeRecord!=='undefined'&&_employeeRecord&&_employeeRecord.name)||_supaUser.email;
+  }
+  mileage.unshift(rec);
+  saveAll();
+  (async()=>{
+    try{
+      const{miles}=await _routeDistance(rec.fromCoord,rec.toCoord);
+      const saved=mileage.find(m=>m.id===rec.id);
+      if(!saved)return;
+      saved.miles=Math.round(miles*10)/10;saved.calc_method='auto_route';
+      saveAll();
+      if(document.getElementById('mil-table'))renderAllMileage();
+      if(typeof renderDash==='function')renderDash();
+    }catch(_e){}   // stays pending_auto, _retryPendingTrips sweeps it later
+  })();
+  return rec;
+}
+// What the destination IS decides the business purpose. This is the whole reason
+// automatic mileage can be IRS-complete without asking anyone anything: the
+// geofence already knows it arrived at a job, the yard, or a supply house.
+function _autoTripPurpose(to){
+  const k=(to&&to.kind)||'';
+  if(k==='job')return 'Job site';
+  if(k==='shop')return 'Shop';
+  if(k==='supply')return 'Supply run';
+  if(k==='home_office')return 'Home Office';
+  return 'Other';
+}
+// Crew answer this every morning with the shift picker; the owner sets it once
+// (getDefaultVehicle, js/settings.js). Never guesses a truck for an employee.
+function _autoTripVehicle(){
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  if(_isEmployee){
+    const id=localStorage.getItem('emp_vehicle_'+todayKey());
+    if(!id||id==='none'||id==='personal')return null;
+    return vehs.find(v=>String(v.id)===String(id))||null;
+  }
+  return (typeof getDefaultVehicle==='function')?getDefaultVehicle():null;
 }
 function _photonGeocode(addr){
   const bias=(S.weatherLat&&S.weatherLon)?'&lat='+S.weatherLat+'&lon='+S.weatherLon:'&lat=37.6922&lon=-97.3375';

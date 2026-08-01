@@ -123,6 +123,7 @@ function _fleetCard(v, idx) {
         <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:1px">${escHtml(v.nickname||v.name||'')}</div>
         ${v.nickname?`<div style="font-size:11px;color:var(--text3)">${escHtml(v.name||'')}</div>`:''}
         <div style="font-size:11px;color:${statusColor};font-weight:700;margin-top:3px">${statusLabels[status]||statusLabels.active}</div>
+        ${_fleetDefaultPill(v, status)}
       </div>
       <button onclick="event.stopPropagation();openAddVehicleModal(${idx})" class="btn btn-sm" style="font-size:11px;padding:3px 8px;flex-shrink:0">Edit</button>
     </div>
@@ -150,6 +151,22 @@ function _fleetCard(v, idx) {
     </div>
     ${v.purchasePrice?`<div style="font-size:11px;color:var(--text3);margin-top:2px">Purchased: $${v.purchasePrice.toLocaleString()}${v.purchaseDate?' · '+_fleetFmtDate(v.purchaseDate):''}</div>`:''}
   </div>`;
+}
+
+/* ── "My truck": which vehicle automatic trips are logged against ───────────── */
+// Deliberately absent when there is only one active vehicle. With one truck the
+// answer is already unambiguous (getDefaultVehicle falls through to it), so a
+// control asking the contractor to confirm it would be pure noise on the screen
+// they see most. It appears the moment a second truck makes the question real.
+function _fleetDefaultPill(v, status) {
+  if(_isEmployee) return '';                 // crew answer this with the daily picker
+  if(status !== 'active') return '';         // never attribute new trips to a sold truck
+  const actives = getVehicles().filter(x=>(x.status||'active')==='active');
+  if(actives.length < 2) return '';
+  const isDefault = String(S.defaultVehicleId||'') === String(v.id);
+  return isDefault
+    ? `<div style="display:inline-flex;align-items:center;gap:4px;margin-top:5px;font-size:10px;font-weight:800;color:var(--blue);background:var(--blue-lt);border-radius:999px;padding:2px 8px">${svgIcon('🚛',{size:10})} My truck</div>`
+    : `<button onclick="event.stopPropagation();setDefaultVehicle('${v.id}')" style="margin-top:5px;font-size:10px;font-weight:700;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:999px;padding:2px 8px;cursor:pointer;font-family:inherit">Set as my truck</button>`;
 }
 
 /* ── Due service alerts ──────────────────────────────────────────────────────── */

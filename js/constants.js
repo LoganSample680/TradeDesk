@@ -1,4 +1,9 @@
-const MILE_PURPOSES=['Estimate','Job site','Client Consult','Supply run','Home Office','Payment Collection','Other'];
+// 'Shop' exists because the automatic mileage log produces return-to-yard legs
+// in volume (owner call 2026-08-01). Without it every drive back from a job
+// landed in 'Other' next to genuinely uncategorized trips, which is where a
+// bucket goes to stop being useful. Appended, never inserted: the order is what
+// the picker renders and what existing records were saved against.
+const MILE_PURPOSES=['Estimate','Job site','Client Consult','Supply run','Home Office','Payment Collection','Shop','Other'];
 const MILE_PURPOSE_COLORS={
   'Estimate':          {bg:'#eff6ff',text:'#1d4ed8',dot:'#1d4ed8'},
   'Job site':          {bg:'#f0fdf4',text:'#15803d',dot:'#15803d'},
@@ -6,6 +11,7 @@ const MILE_PURPOSE_COLORS={
   'Supply run':        {bg:'#fffbeb',text:'#b45309',dot:'#b45309'},
   'Home Office':       {bg:'#f0f9ff',text:'#0369a1',dot:'#0369a1'},
   'Payment Collection':{bg:'#f0fdf4',text:'#15803d',dot:'#15803d'},
+  'Shop':              {bg:'#f5f3ff',text:'#6d28d9',dot:'#6d28d9'},
   'Other':             {bg:'#f9fafb',text:'#6b7280',dot:'#6b7280'},
 };
 // Collision-resistant bid ID: milliseconds * 1000 + random 0-998 = 13-16 digit unique number

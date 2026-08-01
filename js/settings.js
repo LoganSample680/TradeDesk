@@ -1085,6 +1085,34 @@ function _setVehicles(vehs){
 }
 function getVehicles(){return vehicles;}
 
+// ── The truck the owner drives, for automatic mileage ────────────────────────
+// Every mileage entry needs a vehicle on it (IRS), and an automatically logged
+// trip has nobody to ask. Employees already answer this each morning with the
+// shift-vehicle picker; the owner sets it once here instead, because they drive
+// the same truck almost every day and a daily tap for a fixed answer is exactly
+// the friction this product exists to remove.
+//
+// The single-vehicle case needs no setup at all: one truck IS the default. Sold
+// and down vehicles are skipped, so retiring a truck cannot leave new trips
+// silently attributed to something no longer on the road.
+function getDefaultVehicle(){
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  const usable=vehs.filter(v=>(v.status||'active')==='active');
+  if(S.defaultVehicleId){
+    const pick=usable.find(v=>String(v.id)===String(S.defaultVehicleId));
+    if(pick)return pick;
+  }
+  return usable.length===1?usable[0]:null;
+}
+function setDefaultVehicle(id){
+  S.defaultVehicleId=id?String(id):'';
+  S.settingsTs=Date.now();
+  saveAll();
+  if(typeof renderFleetVehicles==='function'&&document.getElementById('fleet-vehicle-list'))renderFleetVehicles();
+  const v=getDefaultVehicle();
+  if(typeof showToast==='function')showToast(v?('Auto-logged trips go to '+(v.nickname||v.name)):'Default vehicle cleared','🚛');
+}
+
 // The pre-td_vehicles odometer key: a slug of the vehicle NAME. Renaming a truck
 // changed its key and orphaned its own IRS readings (the app then re-prompted for
 // them forever). Kept for ONE job only — reading legacy S.vehicleOdoLog during

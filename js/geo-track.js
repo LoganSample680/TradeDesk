@@ -46,6 +46,21 @@ let _geoLegAtShop=false;   // was the LEG machine's location the shop last ping?
                            // moment anything sets those, and a restored mid-shift session
                            // then reads as "arrived from nowhere" and restarts the visit.
 let _geoLastFenceAt=null;
+// ── Leg endpoints, so a drive can be measured and not just timed ────────────
+// Owner call (2026-08-01): "when we go geocode to geocode it calls MapKit to
+// compute the mileage then we just rely on MapKit's calculations."
+//
+// Both of these hold a LOCATION DESCRIPTOR, not a raw GPS fix:
+//   {lat,lng,name,kind,jobId,placeId,likelyHome}
+// The distinction is the point. The last fix inside a 600ft fence can sit 600ft
+// off the actual address, and a mileage row that says "Shop -> 123 Main St" has
+// to be reproducible: re-run the same two geocodes a year from now in an audit
+// and MapKit returns the same number. A raw fix would not.
+//
+// A stop (lunch, an errand) has no geocode, so it uses its own coordinate. That
+// is the one case where the raw position IS the location.
+let _geoLastFenceLoc=null; // descriptor for the fence we are currently inside
+let _geoLegOrigin=null;    // descriptor for where the open drive leg began
 // ── Home-office dwell: presence is not work ─────────────────────────────────
 // Owner idea (2026-08-01) closing a real hole: a contractor whose shop is at
 // their house had the shop fence running all night. Measured, 14 hours of sleep
@@ -293,6 +308,19 @@ async function _geoJobLatLng(j){
   return null;
 }
 
+// A job's descriptor. The coordinate comes from the SAME cache the fence test
+// used, so the mileage row and the geofence can never disagree about where a
+// job is. Name prefers the client, because "Miller residence" is what reads on
+// a mileage log; the job's own name is the fallback.
+function _geoLocOfJob(j){
+  if(!j)return null;
+  const c=_geoJobCoords[j.id];
+  if(!c)return null;
+  const cl=(typeof clients!=='undefined')?clients.find(x=>x.id===j.client_id):null;
+  return {lat:c.lat,lng:c.lng,name:(cl&&cl.name)||j.name||'Job',kind:'job',
+          jobId:j.id,clientId:j.client_id||null,addr:j.addr||(cl&&cl.addr)||''};
+}
+
 // ── Position handler: breadcrumb + geofence state machine ──────────────────────
 async function _geoOnPing(pos){
   // RE-ENTRANCY GUARD: this handler awaits network geocodes, and watchPosition can
@@ -389,6 +417,13 @@ async function _geoOnPing(pos){
            :inShop?{k:'shop',id:'shop',name:(atPlace&&atPlace.name)||'Shop'}
            :atPlaceId?{k:'place',id:atPlaceId,name:atPlace.name}
            :null;
+  // The GEOCODE of whatever contains us, resolved while the fixtures that
+  // produced `cur` are still in scope. Everything downstream measures distance
+  // between two of these, never between two raw fixes.
+  const curLoc=!cur?null
+    :cur.k==='job'?_geoLocOfJob(insideJob)
+    :cur.k==='shop'?{lat:shopC.lat,lng:shopC.lng,name:'Shop',kind:'shop'}
+    :{lat:atPlace.lat,lng:atPlace.lon,name:atPlace.name||'Place',kind:atPlace.kind||'other',placeId:atPlaceId};
   const prev=_geoCurrentJob?{k:'job',id:String(_geoCurrentJob)}
             :_geoLegAtShop?{k:'shop',id:'shop'}
             :_geoCurrentPlace?{k:'place',id:String(_geoCurrentPlace)}
@@ -427,20 +462,27 @@ async function _geoOnPing(pos){
     // stops the leg vanishing; tagging it keeps the row honest that one end is
     // inferred rather than seen.
     let legStart=_geoDriveStartedAt,legGap=false;
-    if(!legStart&&prev&&cur&&_geoLastFenceAt){legStart=_geoLastFenceAt;legGap=true;}
+    if(!legStart&&prev&&cur&&_geoLastFenceAt){
+      legStart=_geoLastFenceAt;legGap=true;
+      // Single ping across the whole trip, so the drive never "opened" and no
+      // origin was recorded. The fence we were last inside is the origin, and
+      // it is exactly as good a geocode as the two-ping case would have given.
+      _geoLegOrigin=_geoLastFenceLoc;
+    }
     // ── 3. Enter the new one ────────────────────────────────────────────────
     if(cur){
       if(legStart){
-        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,null,legGap);
-        else _geoDriveEntry(null,legStart,cur.name,null,legGap);
+        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,null,legGap,curLoc);
+        else _geoDriveEntry(null,legStart,cur.name,null,legGap,curLoc);
       }
       _geoDriveStartedAt=null;
       _geoStopAnchor=null;
+      _geoLegOrigin=null;
     }else{
       // Out on the road. Open at NOW rather than at the last on-site fix: we can
       // SEE they are gone, so the first moment we know they had left is the
       // conservative start.
-      if(!_geoDriveStartedAt)_geoDriveStartedAt=nowIso;
+      if(!_geoDriveStartedAt){_geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;}
       _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
     }
     // ── 4. Commit the new state ─────────────────────────────────────────────
@@ -454,7 +496,7 @@ async function _geoOnPing(pos){
   }
   // The last fix that still put them inside something. This is the only
   // departure evidence a single-ping transition ever has.
-  if(cur)_geoLastFenceAt=nowIso;
+  if(cur){_geoLastFenceAt=nowIso;_geoLastFenceLoc=curLoc;}
   // Whatever branch ran, THIS completed ping resolved any hidden gap, a stale
   // marker must never truncate a later, fully-visible close.
   _geoGapHiddenAt=null;
@@ -584,8 +626,15 @@ function _geoCloseStop(a){
   // them was actively wrong once the shop dwell moved earlier in the ping: by
   // the time this ran on arriving at the yard, _geoWasInShop was already true,
   // so the leg out of lunch never restarted and the trip home logged nothing.
-  if(_geoDriveStartedAt)_geoDriveEntry(null,_geoDriveStartedAt,null,a.at);
+  // A stop has no geocode, so it is its own endpoint: the inbound leg ends at
+  // the kerb they parked at, and the outbound leg starts from the same spot.
+  // `likelyHome` rides along because a leg that STARTS at home is a commute,
+  // and a commute is not a deductible mile however plainly the GPS saw it.
+  const stopLoc={lat:a.lat,lng:a.lng,name:'Stop',kind:'stop',
+                 likelyHome:(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:a.lat,lng:a.lng},ms)};
+  if(_geoDriveStartedAt)_geoDriveEntry(null,_geoDriveStartedAt,null,a.at,false,stopLoc);
   _geoDriveStartedAt=a.lastAt;
+  _geoLegOrigin=stopLoc;
   // Somewhere they park repeatedly is a candidate location in its own right,
   // which is how an un-named supply yard eventually gets offered to them.
   if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
@@ -600,7 +649,7 @@ function _geoCloseStop(a){
 }
 // `endedIso` closes the leg at an earlier verified moment than now: the moment
 // they parked, when the stop that follows is not driving.
-function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap){
+function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc){
   if(!driveStartedAt)return;
   const arrived=endedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(arrived)-Date.parse(driveStartedAt))/60000));
@@ -610,12 +659,52 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap){
   // Personal vehicle trips stay private, drive TIME is still logged (it's
   // compensable labor) but the mileage flag is omitted.
   const companyVeh=typeof _isCompanyVehicleToday==='function'&&_isCompanyVehicleToday();
+  // Minted here rather than inside _geoEnqueue so the SAME key lands on the time
+  // entry and on the mileage row. That is what makes the mileage row idempotent:
+  // one leg can only ever produce one trip, however many times this runs.
+  const legKey=_geoClientKey();
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:jobId!=null?String(jobId):null,arrived_at:driveStartedAt,departed_at:arrived,minutes:mins,
-    dest_place:destPlace||null,
+    dest_place:destPlace||null,client_key:legKey,
     source:(companyVeh?'drive':'drive-personal')+(gap?'-gap':'')
   });
+  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,driveStartedAt,companyVeh);
+}
+
+// ── Automatic mileage: the leg we just timed, measured ───────────────────────
+// Everything needed for an IRS Pub 463 entry already exists by the time a drive
+// leg closes: the date and both endpoints come from the geofence, and the
+// business purpose falls out of WHAT the destination is. The only missing
+// number is distance, and that is one MapKit call on two geocodes.
+//
+// Why this beats the dedicated mileage apps rather than matching them: MileIQ
+// and Everlance both run a second always-on background service, and battery
+// drain is the top complaint against each. We are already pinging for time
+// tracking, so this costs nothing extra to run. Their other standing complaint
+// is trip fragmentation, a day chopped into unlabeled pieces by every five
+// minute stop. Our splits happen at the same boundaries but each piece already
+// knows what it is, so a fragment here is a named leg rather than debris.
+//
+// The row is written IMMEDIATELY at zero miles and filled in afterwards, the
+// same shape the manual trip log already uses. A dead spot at arrival is the
+// normal case on a rural site and must never cost the contractor the trip.
+function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
+  try{
+    if(typeof autoLogDriveTrip!=='function')return;
+    if(!from||!to||from.lat==null||to.lat==null)return;
+    // THE VEHICLE RULE (owner, 2026-08-01). An employee's miles are the
+    // business's miles only when they are in the business's truck; in their own
+    // car the drive TIME is still theirs to be paid for, but the mileage is not
+    // the company's to deduct. The owner IS the business, so any vehicle counts,
+    // which is the entire point of the standard mileage deduction.
+    if(_isEmployee&&!companyVeh)return;
+    // A commute is not a business trip. The GPS cannot tell the difference and
+    // will happily hand us home -> first job; refusing it here is the app
+    // declining to inflate a deduction on the contractor's behalf.
+    if(from.likelyHome)return;
+    autoLogDriveTrip({from,to,legKey,startedIso});
+  }catch(_e){}
 }
 
 // ── Location-permission banner (employee self-service) ──────────────────────
@@ -794,6 +883,7 @@ function stopGeoTracking(){
   _geoCurrentJob=null;_geoArrivedAt=null;
   _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
+  _geoLastFenceLoc=null;_geoLegOrigin=null;
   _geoClearOpen();_geoWakeRelease();
 }
 
