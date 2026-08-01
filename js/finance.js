@@ -2759,13 +2759,42 @@ async function _crewCostRender(range){
   // Aggregate by employee
   const byEmp={};
   const _emp=uid=>{if(!byEmp[uid])byEmp[uid]={min:0,jobSiteMin:0,driveMin:0,shopMin:0,offMin:0,placeMin:0,jobs:{},dayMins:{}};return byEmp[uid];};
+  // The automatic location clocks and a manual job clock-in run on two separate
+  // streams that never talk to each other, and a person doing job-specific work
+  // (prefab at the yard, picking up material at a supplier) is inside both at
+  // once: the geofence logs the dwell for attendance, the manual clock logs
+  // timeEntries for the job. Summed blind, that window gets paid twice, two
+  // hours of real work becomes four hours of paid time. The manual entry is the
+  // one that means something (it says WHICH job), so it wins: dwell minutes are
+  // trimmed by however much a manual clock already covered the same uid over
+  // the same wall-clock window, before either is added to paid totals.
+  //
+  // Applies to BOTH shop dwell and saved-place dwell, since the dashboard
+  // prompt now fires at either. Drive and job-fence entries are never trimmed:
+  // they happen at a different physical place and cannot genuinely overlap.
+  const manualWindows={};
+  manualEnts.forEach(en=>{
+    if(!en.employee_user_id||!en.arrived_at||!en.departed_at)return;
+    const a=Date.parse(en.arrived_at),b=Date.parse(en.departed_at);
+    if(!(b>a))return;
+    (manualWindows[en.employee_user_id]=manualWindows[en.employee_user_id]||[]).push([a,b]);
+  });
+  const _ccOverlapMs=(aStart,aEnd,windows)=>windows.reduce((sum,[bStart,bEnd])=>
+    sum+Math.max(0,Math.min(aEnd,bEnd)-Math.max(aStart,bStart)),0);
   ents.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
-    const e=_emp(uid);const m=en.minutes||0;
+    const e=_emp(uid);let m=en.minutes||0;
     // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
     // e.min, which drives loaded cost and wage, and out of dayMins, which drives
     // the overtime flag. Counting a lunch break as either is a payroll error.
     if(_geoIsOffJobSource(en.source)){e.offMin+=m;return;}
+    // A saved-place dwell is trimmed by any manual clock covering it, same rule
+    // as the shop below: picking up material FOR a job and clocking that job is
+    // one span of work, not two.
+    if(_geoIsPlaceSource(en.source)&&en.arrived_at){
+      const a=Date.parse(en.arrived_at),b=en.departed_at?Date.parse(en.departed_at):a+m*60000;
+      m=Math.max(0,m-Math.min(m,Math.round(_ccOverlapMs(a,b,manualWindows[uid]||[])/60000)));
+    }
     e.min+=m;
     // Exact 'drive' missed 'drive-personal', so a personal-vehicle leg was
     // counted as on-site labor and billed to whichever job it ended at.
@@ -2779,27 +2808,6 @@ async function _crewCostRender(range){
     }
     const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
-  // The automatic shop-overhead clock and a manual job clock-in run on two
-  // separate streams that never talk to each other, and a person doing job-
-  // specific work (prefab, panel-building) AT the shop is inside both fences
-  // at once: the geofence logs shop_time_entries for attendance, the manual
-  // clock logs timeEntries for the job. Summed blind, that window gets paid
-  // twice, two hours of real work becomes four hours of paid time. The manual
-  // entry is the one that means something (it says WHICH job), so it wins:
-  // shop-overhead minutes are trimmed by however much a manual clock already
-  // covered the same uid over the same wall-clock window before either is
-  // added to paid totals. Only manual entries are checked against, geofence
-  // job/drive/place/stop entries fire at a different physical fence and can
-  // never genuinely overlap a shop dwell.
-  const manualWindows={};
-  manualEnts.forEach(en=>{
-    if(!en.employee_user_id||!en.arrived_at||!en.departed_at)return;
-    const a=Date.parse(en.arrived_at),b=Date.parse(en.departed_at);
-    if(!(b>a))return;
-    (manualWindows[en.employee_user_id]=manualWindows[en.employee_user_id]||[]).push([a,b]);
-  });
-  const _ccOverlapMs=(aStart,aEnd,windows)=>windows.reduce((sum,[bStart,bEnd])=>
-    sum+Math.max(0,Math.min(aEnd,bEnd)-Math.max(aStart,bStart)),0);
   shopEnts.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
     const e=_emp(uid);const raw=en.minutes||0;

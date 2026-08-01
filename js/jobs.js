@@ -56,10 +56,11 @@ function _nearbyClockIn(clientId,jobId){
   }
   openClockInSheet(jobId);
 }
-// One-tap clock-in from the "At the shop" dashboard prompt (js/dashboard.js).
-// Skips the task-scope sheet deliberately: the prompt already exists because
-// the automatic tracker cannot know intent, asking again which task within
-// the job would be a second guess piled on the first.
+// One-tap clock-in from the location prompt on the dashboard (js/dashboard.js),
+// which fires wherever the fence machine says they are: the shop, a supply
+// house, any saved place. Skips the task-scope sheet deliberately: the prompt
+// already exists because the automatic tracker cannot know intent, asking again
+// which task within the job would be a second guess piled on the first.
 //
 // No scope tag (owner 2026-08-01: "agnostic, pure shop time no job is shop
 // time, shop time tagged with a job is job time"). WHERE the labor happened is
@@ -68,16 +69,52 @@ function _nearbyClockIn(clientId,jobId){
 // category living permanently on every job that ever got prefab work. This is
 // the exact same null-scope path a walk-up clock-in with no task picked
 // already uses (Time Log/Job Profit already render an empty scope cleanly).
-function _shopPromptClockIn(jobId){
+function _locPromptClockIn(jobId){
   clockIn(jobId,null,null);
   renderDash&&renderDash();
 }
-// Scoped to the CURRENT shop dwell (keyed by its own arrival stamp), not
-// persisted anywhere: leave the yard and come back and it is a fresh offer.
-// A permanent opt-out someone forgets they set is worse than a prompt they
-// see again tomorrow, geofence coordinates are the only memory this needs.
-function _shopPromptDismiss(){
-  window._shopPromptDismissedAt=(typeof _geoShopArrivedAt!=='undefined')?_geoShopArrivedAt:null;
+// Which jobs to offer when standing somewhere that isn't a job site.
+//
+// NOT _geoMyJobs(): that is today's ACTIVE jobs, which is exactly right for
+// fencing (you can only be on a site that is running) and exactly wrong here.
+// Prefab and material pickup happen AHEAD of the work, so the job you are
+// building panels for on Monday usually starts Thursday and _jobActiveOn is
+// false for it. Offering only today's jobs would hide the likeliest answer.
+//
+// So: everything still open, from today forward, soonest first. Employees see
+// only what is dispatched to them, matching _geoMyJobs' own crew scoping.
+const _LOC_PROMPT_HORIZON_DAYS=21;   // a job further out than this is not what they're holding
+// When a job in the location-prompt list actually runs. The list spans three
+// weeks, so without this "Panel build" for next Thursday is indistinguishable
+// from today's, and picking the wrong one silently mis-costs a job.
+function _fmtJobStartHint(j){
+  const start=(j&&(j.start||j.date))||'';
+  if(!start)return '';
+  const tk=todayKey();
+  if(typeof _jobActiveOn==='function'&&_jobActiveOn(j,tk))return 'Today';
+  if(start===addDays(tk,1))return 'Tomorrow';
+  try{
+    const d=new Date(start+'T12:00:00');
+    if(isNaN(d))return '';
+    const days=Math.round((d-new Date(tk+'T12:00:00'))/86400000);
+    // Inside a week a weekday reads faster than a date; past that, the date.
+    return days>0&&days<7
+      ? d.toLocaleDateString('en-US',{weekday:'long'})
+      : d.toLocaleDateString('en-US',{month:'short',day:'numeric'});
+  }catch(_e){return '';}
+}
+function _locPromptJobs(){
+  const tk=todayKey();
+  const horizon=addDays(tk,_LOC_PROMPT_HORIZON_DAYS);
+  const eid=(typeof _isEmployee!=='undefined'&&_isEmployee)?(_employeeRecord?.id):null;
+  return jobs.filter(j=>{
+    if(!j||_jobClosedToClockIn(j))return false;
+    if(eid!=null&&String(j.assignedTo)!==String(eid))return false;
+    const start=j.start||j.date||'';
+    if(!start)return false;
+    // Active today (a multi-day job mid-span) OR starting within the horizon.
+    return _jobActiveOn(j,tk)||(start>=tk&&start<=horizon);
+  }).sort((a,b)=>String(a.start||a.date||'').localeCompare(String(b.start||b.date||'')));
 }
 // A job that's already complete/cancelled is not open for new time entries.
 // Matches the exact condition the automatic geofence tracker already uses

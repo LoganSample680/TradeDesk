@@ -544,27 +544,36 @@ function renderDash(){
     // The on-site card spans the WHOLE moment (owner: persist card + time-on-site):
     //   pre-clock-in  → geofence prompt with Clock in
     //   on the clock  → live "on site" timer + Arrived stamp + Clock out
-    //   at the shop   → "working on a job?" prompt (owner 2026-08-01: shop-based
-    //                    prefab/fab work is real job labor with nowhere to attach
-    //                    to; researched, no competitor geofence-prompts at the
-    //                    shop, this is TradeDesk's own gap to close)
-    // Shows whenever there's a nearby job, an active clock, or a shop dwell;
-    // hidden otherwise.
+    //   somewhere known → "working on a job?" prompt, titled by WHERE the fence
+    //                    machine says they are (owner 2026-08-01: "can we say At
+    //                    the Shop, At the Job, At the Supply House based on the
+    //                    geo tags"). Prefab at the yard and material pickup at a
+    //                    supplier are both real job labor with nowhere to attach
+    //                    to; researched, no competitor geofence-prompts anywhere
+    //                    but a job site, so this is TradeDesk's own gap to close.
+    // Shows whenever there's a nearby job, an active clock, or a known-location
+    // dwell; hidden otherwise.
     const _onClock=(typeof _activeTimer!=='undefined'&&_activeTimer&&_activeTimer.startTime)?_activeTimer:null;
-    // 2-minute floor matches _geoCloseShopEntry's own threshold for what counts
-    // as real shop time, a drive-through for a part shouldn't trigger a prompt.
-    const _shopDwellMs=(typeof _geoWasInShop!=='undefined'&&_geoWasInShop&&typeof _geoShopArrivedAt!=='undefined'&&_geoShopArrivedAt)
-      ?(Date.now()-Date.parse(_geoShopArrivedAt)):0;
-    // Dismissal is scoped to THIS dwell (keyed by its own arrival stamp), not
-    // persisted: leave and come back and it's a fresh offer, never a permanent
-    // opt-out someone forgets they set.
-    const _shopPromptDismissed=window._shopPromptDismissedAt===(typeof _geoShopArrivedAt!=='undefined'?_geoShopArrivedAt:null);
-    const _shopPromptJobs=(_shopDwellMs>=120000&&!_shopPromptDismissed&&typeof _geoMyJobs==='function')
-      ?_geoMyJobs().filter(j=>typeof _jobClosedToClockIn!=='function'||!_jobClosedToClockIn(j))
-          .sort((a,b)=>(a.start||'').localeCompare(b.start||'')).slice(0,5)
-      :[];
-    const _shopPrompt=!_onClock&&!_nearbyJob&&_shopPromptJobs.length>0;
-    if(_onClock||_nearbyJob||_shopPrompt){
+    // WHERE we are, straight off the fence machine rather than re-derived: the
+    // shop and every saved place already have their own tracked arrival, so the
+    // title is whatever the tracker itself resolved. 2-minute floor matches the
+    // dwell threshold those closers use, a drive-through for a part must not
+    // trigger a prompt.
+    let _locPrompt=null;
+    if(typeof _geoWasInShop!=='undefined'&&_geoWasInShop&&typeof _geoShopArrivedAt!=='undefined'&&_geoShopArrivedAt){
+      _locPrompt={key:'shop:'+_geoShopArrivedAt,at:_geoShopArrivedAt,title:'At the shop'};
+    }else if(typeof _geoCurrentPlace!=='undefined'&&_geoCurrentPlace&&typeof _geoPlaceArrivedAt!=='undefined'&&_geoPlaceArrivedAt){
+      // Name it, don't label it: "At Ferguson Supply" beats "At the supply
+      // house" when the contractor saved that name themselves, and a saved
+      // place can just as easily be a dump, a rental yard or a home office.
+      const _pl=(typeof getPlaces==='function')?getPlaces().find(p=>String(p.id)===String(_geoCurrentPlace)):null;
+      _locPrompt={key:'place:'+_geoCurrentPlace+':'+_geoPlaceArrivedAt,at:_geoPlaceArrivedAt,
+                  title:'At '+((_pl&&_pl.name)||'a saved place')};
+    }
+    if(_locPrompt&&(Date.now()-Date.parse(_locPrompt.at))<120000)_locPrompt=null;
+    const _locPromptList=(_locPrompt&&typeof _locPromptJobs==='function')?_locPromptJobs().slice(0,5):[];
+    const _showLocPrompt=!_onClock&&!_nearbyJob&&_locPromptList.length>0;
+    if(_onClock||_nearbyJob||_showLocPrompt){
       if(!document.getElementById('_td-nearby-anim-style')){
         const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
         // A radar-ping (concentric rings expanding from the pin) + a live status dot
@@ -607,25 +616,35 @@ function renderDash(){
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
         if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
         _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
-      } else if(_shopPrompt){
-        // AT THE SHOP, no job open: prefab/fab work here is real job labor with
-        // nowhere to attach today. One tap clocks in via the SAME manual system
-        // job-site clock-ins already use (js/jobs.js clockIn), untagged: once
-        // it's on a job it's job time, no new table, no new report, no special
-        // "shop labor" category. Dismissible, never a nag, see _shopDwellMs above.
-        const jobRows=_shopPromptJobs.map(j=>{
+      } else if(_showLocPrompt){
+        // Somewhere known, no job open: prefab at the yard and material pickup
+        // at a supplier are both real job labor with nowhere to attach today.
+        // One tap clocks in via the SAME manual system job-site clock-ins
+        // already use (js/jobs.js clockIn), untagged: once it's on a job it's
+        // job time, no new table, no new report, no special "shop labor"
+        // category.
+        //
+        // No dismiss (owner 2026-08-01: "don't think we need the not now").
+        // Ignoring the card already costs nothing, and clocking in replaces it
+        // with the on-the-clock view, so a dismiss control was a third state
+        // nobody needed and one more thing to mis-tap.
+        const jobRows=_locPromptList.map(j=>{
           const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
           const c=bid?getClientById(bid.client_id):getClientById(j.client_id);
-          return '<button onclick="_shopPromptClockIn('+j.id+')" style="display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer">'+
-            '<span style="width:8px;height:8px;border-radius:50%;background:var(--border2);flex-shrink:0"></span>'+
+          const sub=[c&&c.name&&c.name!==j.name?c.name:'',_fmtJobStartHint(j)].filter(Boolean).join(' · ');
+          return '<button onclick="_locPromptClockIn('+j.id+')" style="display:flex;align-items:center;gap:11px;width:100%;padding:11px 14px;border:none;background:none;border-bottom:1px solid var(--border);text-align:left;font-family:inherit;cursor:pointer">'+
+            // A play glyph in a green chip, the same shape and colour the job-site
+            // card's primary Clock in button uses, so a row reads as a BUTTON.
+            // A bare list with a dot looked like a read-only list (self-review of
+            // the first screenshot), which is fatal for a one-tap feature.
+            '<span style="width:30px;height:30px;border-radius:50%;background:linear-gradient(160deg,#22c55e,#12894a);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 3px 8px -3px rgba(14,107,57,.6)"><svg viewBox="0 0 24 24" width="12" height="12" fill="#fff"><path d="M7 5v14l11-7z"/></svg></span>'+
             '<span style="min-width:0;flex:1"><span style="display:block;font-size:13.5px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(j.name||(c&&c.name)||'Job')+'</span>'+
-            (c&&c.name&&c.name!==j.name?'<span style="display:block;font-size:11.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(c.name)+'</span>':'')+'</span>'+
+            (sub?'<span style="display:block;font-size:11.5px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+escHtml(sub)+'</span>':'')+'</span>'+
           '</button>';
         }).join('');
         const _extra='<div style="font-size:12px;color:var(--text3);margin-top:3px">Working on a job? Tap to clock in.</div>';
-        _nearbyEl.innerHTML=_cardShell(_cardHead('At the shop','',_extra)+
-          '<div style="max-height:210px;overflow-y:auto">'+jobRows+'</div>'+
-          '<div style="padding:8px 14px 14px"><button onclick="_shopPromptDismiss();renderDash&&renderDash();" style="width:100%;padding:9px;border-radius:10px;border:none;background:none;color:var(--text3);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit">Not now</button></div>');
+        _nearbyEl.innerHTML=_cardShell(_cardHead(_locPrompt.title,'',_extra)+
+          '<div style="max-height:250px;overflow-y:auto">'+jobRows+'</div>');
       } else {
         // PRE-CLOCK-IN geofence prompt. Clock in (primary) + Estimate + conditional Collect.
         const nb=_nearbyJob;

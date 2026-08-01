@@ -1510,17 +1510,16 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     });
   });
 
-  // ── At-the-shop prompt (owner 2026-08-01: shop-based prefab/fab work is real
-  // job labor with nowhere to attach today; researched, no competitor
-  // geofence-prompts at the shop) ─────────────────────────────────────────────
-  test.describe('renderDash: at-the-shop prompt', () => {
-    test('past the 2-minute dwell floor, no active clock, shows the job list and dismiss', async () => {
+  // ── Location prompt (owner 2026-08-01: shop/supply-house work is real job
+  // labor with nowhere to attach; titled by the geo tag itself) ───────────────
+  test.describe('renderDash: location prompt', () => {
+    test('at the shop past the dwell floor: titled "At the shop", rows are tappable clock-ins, no dismiss', async () => {
       const r = await page.evaluate(() => {
-        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, dismissedAt: window._shopPromptDismissedAt, jobs: jobs.slice() };
-        _nearbyJob = null; _activeTimer = null; window._shopPromptDismissedAt = null;
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _nearbyJob = null; _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
         jobs.length = 0;
         jobs.push({ id: 556001, name: 'Panel Build', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
-        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();   // 5 min, past the floor
+        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
         try {
           renderDash();
           const el = document.getElementById('dash-nearby');
@@ -1528,24 +1527,59 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
         finally {
           _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
-          window._shopPromptDismissedAt = orig.dismissedAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
         }
       });
       expect(r.ok, r.err).toBe(true);
       expect(r.display).toBe('block');
       expect(r.html).toContain('At the shop');
-      expect(r.html).toContain('_shopPromptClockIn(556001)');
+      expect(r.html).toContain('_locPromptClockIn(556001)');
       expect(r.html).toContain('Panel Build');
-      expect(r.html).toContain('_shopPromptDismiss()');
+      // Owner 2026-08-01: "don't think we need the not now". Ignoring the card
+      // already costs nothing and clocking in replaces it.
+      expect(r.html).not.toContain('Not now');
+      // Each row carries the same green play glyph the job-site card's primary
+      // Clock in uses, so a row reads as a button rather than a list item.
+      expect(r.html).toContain('M7 5v14l11-7z');
+    });
+
+    test('at a saved place: titled with that place\'s own NAME, not a generic label', async () => {
+      const r = await page.evaluate(() => {
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice(), places: (typeof places !== 'undefined' ? places.slice() : []) };
+        _nearbyJob = null; _activeTimer = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+        jobs.length = 0;
+        jobs.push({ id: 556020, name: 'Rough-in', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        const pl = savePlace({ name: 'Ferguson Supply', kind: 'supply', lat: 41.5, lon: -97.5, confirmedBy: 'manual' });
+        _geoCurrentPlace = String(pl.id);
+        _geoPlaceArrivedAt = new Date(Date.now() - 6 * 60000).toISOString();
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, display: el ? el.style.display : '', html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt;
+          jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+          if (typeof places !== 'undefined') { places.length = 0; orig.places.forEach(p => places.push(p)); }
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.display).toBe('block');
+      // The contractor named it; use their name. A saved place can be a supply
+      // house, a dump, a rental yard or a home office, so a hardcoded "At the
+      // supply house" would be wrong as often as right.
+      expect(r.html).toContain('At Ferguson Supply');
+      expect(r.html).toContain('_locPromptClockIn(556020)');
     });
 
     test('under the 2-minute dwell floor, stays hidden, a drive-through for a part must not nag', async () => {
       const r = await page.evaluate(() => {
-        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, dismissedAt: window._shopPromptDismissedAt, jobs: jobs.slice() };
-        _nearbyJob = null; _activeTimer = null; window._shopPromptDismissedAt = null;
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _nearbyJob = null; _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
         jobs.length = 0;
         jobs.push({ id: 556002, name: 'Panel Build 2', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
-        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 30000).toISOString();   // 30s, under the floor
+        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 30000).toISOString();
         try {
           renderDash();
           const el = document.getElementById('dash-nearby');
@@ -1553,17 +1587,17 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
         finally {
           _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
-          window._shopPromptDismissedAt = orig.dismissedAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
         }
       });
       expect(r.ok, r.err).toBe(true);
       expect(r.display).not.toBe('block');
     });
 
-    test('a nearby job site outranks the shop prompt when somehow both are true', async () => {
+    test('a nearby job site outranks the location prompt when somehow both are true', async () => {
       const r = await page.evaluate(() => {
-        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, dismissedAt: window._shopPromptDismissedAt, jobs: jobs.slice() };
-        _activeTimer = null; window._shopPromptDismissedAt = null;
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
         jobs.length = 0;
         jobs.push({ id: 556003, name: 'Panel Build 3', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
         _nearbyJob = { clientId: 556004, jobId: 556005, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Priority Client', addr: '9 Priority Ave' };
@@ -1575,7 +1609,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
         finally {
           _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
-          window._shopPromptDismissedAt = orig.dismissedAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
         }
       });
       expect(r.ok, r.err).toBe(true);
@@ -1583,14 +1617,12 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.html).not.toContain('At the shop');
     });
 
-    test('an active clock outranks the shop prompt', async () => {
+    test('an active clock outranks the location prompt', async () => {
       const r = await page.evaluate(() => {
-        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, dismissedAt: window._shopPromptDismissedAt, jobs: jobs.slice() };
-        _nearbyJob = null; window._shopPromptDismissedAt = null;
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _nearbyJob = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
         jobs.length = 0;
         jobs.push({ id: 556006, name: 'Panel Build 4', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
-        // scopeId/scopeLabel null: a shop-prompt clock-in carries no special tag
-        // (owner: once it's on a job it's just job time).
         _activeTimer = { jobId: 556006, jobName: 'Panel Build 4', clientName: 'On the clock', scopeId: null, scopeLabel: null, startTime: Date.now() - 60000, timerInterval: null, entryId: 999 };
         _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
         try {
@@ -1601,7 +1633,7 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         finally {
           clearInterval(_activeTimer && _activeTimer.timerInterval);
           _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
-          window._shopPromptDismissedAt = orig.dismissedAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
         }
       });
       expect(r.ok, r.err).toBe(true);
@@ -1609,38 +1641,10 @@ test.describe('dashboard.js: exhaustive coverage', () => {
       expect(r.html).not.toContain('At the shop');
     });
 
-    test('dismissing hides the prompt for this dwell, without touching the underlying flags', async () => {
+    test('no eligible jobs, the whole card stays hidden rather than an empty shell', async () => {
       const r = await page.evaluate(() => {
-        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, dismissedAt: window._shopPromptDismissedAt, jobs: jobs.slice() };
-        _nearbyJob = null; _activeTimer = null;
-        jobs.length = 0;
-        jobs.push({ id: 556007, name: 'Panel Build 5', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
-        const arrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
-        _geoWasInShop = true; _geoShopArrivedAt = arrivedAt;
-        window._shopPromptDismissedAt = null;
-        try {
-          _shopPromptDismiss();
-          renderDash();
-          const el = document.getElementById('dash-nearby');
-          return { ok: true, display: el ? el.style.display : '', dismissedAt: window._shopPromptDismissedAt, stillInShop: _geoWasInShop };
-        } catch (e) { return { ok: false, err: e.message }; }
-        finally {
-          _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
-          window._shopPromptDismissedAt = orig.dismissedAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
-        }
-      });
-      expect(r.ok, r.err).toBe(true);
-      expect(r.display).not.toBe('block');
-      // Dismissal is scoped to the dwell's own arrival stamp, not a bare flag,
-      // so a NEW arrival (a fresh stamp) is a fresh offer even without a reload.
-      expect(r.dismissedAt).not.toBeNull();
-      expect(r.stillInShop).toBe(true);   // dismissing the PROMPT never touches tracking state
-    });
-
-    test('a completed job never appears in the shop prompt list', async () => {
-      const r = await page.evaluate(() => {
-        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, dismissedAt: window._shopPromptDismissedAt, jobs: jobs.slice() };
-        _nearbyJob = null; _activeTimer = null; window._shopPromptDismissedAt = null;
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _nearbyJob = null; _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
         jobs.length = 0;
         jobs.push({ id: 556008, name: 'Done Job', client_id: null, eventType: 'job', status: 'done', completion_date: todayKey(), start: todayKey(), days: 1 });
         _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
@@ -1651,11 +1655,10 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         } catch (e) { return { ok: false, err: e.message }; }
         finally {
           _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
-          window._shopPromptDismissedAt = orig.dismissedAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
         }
       });
       expect(r.ok, r.err).toBe(true);
-      // No eligible jobs → the whole card stays hidden, not an empty shell.
       expect(r.display).not.toBe('block');
     });
   });
