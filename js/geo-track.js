@@ -243,8 +243,19 @@ async function _geoOnPing(pos){
   const inShop=shopC?(_geoDistFt(here,shopC)<=_geoFenceFt()):false;
   if(inShop!==_geoWasInShop){
     if(inShop){
+      // LOG the leg before clearing it. This branch used to just null the drive
+      // clock, so the last leg of every day (job -> back to the shop) recorded
+      // nothing at all. The known-place fence below already does this correctly,
+      // but the shop is matched HERE first and cleared before that code runs, so
+      // fixing places alone left the shop still losing its leg. Once cleared the
+      // place branch's own `if(_geoDriveStartedAt...)` is false, so there is no
+      // double-write.
+      if(_geoDriveStartedAt&&!_geoCurrentJob){
+        const shopPlace=(typeof placeAt==='function')?placeAt({lat:here.lat,lon:here.lng}):null;
+        _geoDriveEntry(null,_geoDriveStartedAt,(shopPlace&&shopPlace.name)||'Shop');
+      }
       _geoShopArrivedAt=new Date().toISOString();
-      _geoDriveStartedAt=null; // arriving at shop ends any drive leg
+      _geoDriveStartedAt=null;
     }else{
       // A hidden gap since shop arrival: if this first post-gap ping is OUTSIDE,
       // close at the last verified moment, never claim unverified shop time.

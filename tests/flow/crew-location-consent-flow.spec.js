@@ -133,15 +133,19 @@ test.describe('Crew location consent: recorded by a tap, never fabricated', () =
           _employeeRecord = { id: 'e2e-consent', location_ack_at: null };
           let upsertErr = null, selErr = null, seededRows = 0;
           try {
+            // `name` is NOT NULL on team_members (initial_schema.sql). Omitting it
+            // made the upsert abort with 23502, so no row ever carried
+            // employee_user_id = uid and the ack update matched nothing. The
+            // failure was invisible until the seed error stopped being swallowed.
             const { error } = await _supa.from('team_members').upsert({
               contractor_user_id: uid, email: 'e2e-consent@tradedesk.test',
-              employee_user_id: uid, active: true,
+              name: 'E2E Consent Crew', employee_user_id: uid, active: true,
             }, { onConflict: 'contractor_user_id,email' });
             upsertErr = error ? (error.code + ' ' + error.message) : null;
           } catch (e) { upsertErr = 'threw: ' + e.message; }
           try {
             const { data, error } = await _supa.from('team_members')
-              .select('id,email,employee_user_id').eq('contractor_user_id', uid);
+              .select('id,email,employee_user_id').eq('employee_user_id', uid);
             selErr = error ? (error.code + ' ' + error.message) : null;
             seededRows = (data || []).length;
           } catch (e) { selErr = 'threw: ' + e.message; }
@@ -160,7 +164,7 @@ test.describe('Crew location consent: recorded by a tap, never fabricated', () =
           const row = (data || []).find(r => r.location_ack_at);
           return {
             rows: (data || []).length,
-            ackAt: row && row.ackAt || (row && row.location_ack_at) || null,
+            ackAt: (row && row.location_ack_at) || null,
             version: row && row.location_ack_version || null,
             localVersion: typeof GEO_NOTICE_VERSION !== 'undefined' ? GEO_NOTICE_VERSION : null,
             dismissed: !document.getElementById('_geo-notice-ov'),
