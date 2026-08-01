@@ -323,6 +323,53 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.on).toBe(2);
   });
 
+  test('the legend reads Proposals, Jobs, Expenses in that order', async () => {
+    const out = await page.evaluate(() => {
+      renderGeoMap();
+      return [...document.querySelectorAll('#tr-map-filters button')]
+        .map(b => b.textContent.replace(/\s*\d+\s*$/, '').trim());
+    });
+    // Owner-specified order, and it happens to match the order work actually
+    // happens in. 'estimate' stays the internal key; this is what it's called.
+    expect(out.slice(0, 3)).toEqual(['Proposals', 'Jobs', 'Expenses']);
+  });
+
+  test('pins are anchored at the TIP, not centred on the coordinate', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      expenses.push({ id: 70, date: today, vendor: 'A', amount: 5, lat: 37.68, lon: -97.33, geoAcc: 10 });
+      renderGeoMap();
+      const a = document.querySelector('#tr-map-body a[href*="maps?q="]');
+      const st = a.getAttribute('style');
+      const mt = /margin:\s*-(\d+(?:\.\d+)?)px\s+0\s+0\s+-(\d+(?:\.\d+)?)px/.exec(st);
+      return {
+        isSvgPin: /<svg/.test(a.innerHTML),
+        marginTop: mt ? parseFloat(mt[1]) : 0,
+        marginLeft: mt ? parseFloat(mt[2]) : 0,
+      };
+    });
+    expect(out.isSvgPin).toBe(true);
+    // Pulled up its full height and left by half its width, so the point of the
+    // pin sits on the location. A centred dot would be half-height instead.
+    expect(out.marginTop).toBe(26);
+    expect(out.marginLeft).toBe(10);
+  });
+
+  test('southern pins draw last so they overlap the ones behind', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      // Pushed north-last on purpose: render order must NOT follow feed order.
+      expenses.push({ id: 80, date: today, vendor: 'South', amount: 5, lat: 37.60, lon: -97.33, geoAcc: 10 });
+      expenses.push({ id: 81, date: today, vendor: 'North', amount: 5, lat: 37.90, lon: -97.33, geoAcc: 10 });
+      renderGeoMap();
+      return [...document.querySelectorAll('#tr-map-body a[href*="maps?q="]')]
+        .map(a => a.getAttribute('title'));
+    });
+    // North first means south paints over it, which is how a real map stacks.
+    expect(out[0]).toContain('North');
+    expect(out[1]).toContain('South');
+  });
+
   test('the map tab is wired into setTrTab', async () => {
     const out = await page.evaluate(() => {
       setTrTab('map', document.getElementById('tr-t-map'));

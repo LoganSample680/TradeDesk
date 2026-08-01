@@ -191,14 +191,30 @@ function geoFeed(opts){
 // to the data's own bounding box, with everything on one canvas so clusters are
 // obvious. Tapping a point opens the real map in the OS app, which is where
 // someone wants directions anyway.
-let _geoMapTypes=['expense','job','estimate','payment','place'];
+let _geoMapTypes=['estimate','job','expense','payment','place'];
+// Key order IS the legend order (owner: proposals, jobs, expenses), which also
+// happens to be the order the work actually happens in. 'estimate' stays the
+// internal key because that is what the bids array holds; the label is what a
+// contractor calls it.
 const _GEO_MAP_STYLE={
-  expense: {c:'#B45309', label:'Expenses'},
+  estimate:{c:'#2D5DA8', label:'Proposals'},
   job:     {c:'#0E6B39', label:'Jobs'},
-  estimate:{c:'#2D5DA8', label:'Estimates'},
+  expense: {c:'#B45309', label:'Expenses'},
   payment: {c:'#6D28D9', label:'Payments'},
   place:   {c:'#A32D2D', label:'Places'},
 };
+// A dropped pin, anchored at its TIP rather than its middle: the point is the
+// location, the balloon sits above it. Round dots centred on the coordinate read
+// as a scatter chart; this reads as a map, and it is what someone expects after
+// dropping a pin in Apple Maps.
+const _GEO_PIN_W=20,_GEO_PIN_H=26;
+function _geoPinSvg(color){
+  return '<svg width="'+_GEO_PIN_W+'" height="'+_GEO_PIN_H+'" viewBox="0 0 24 32" style="display:block;filter:drop-shadow(0 1.5px 2px rgba(0,0,0,.35))">'+
+    '<path d="M12 0.5C6.2 0.5 1.5 5.2 1.5 11c0 7.6 9.3 19.2 10.5 20.6C13.2 30.2 22.5 18.6 22.5 11 22.5 5.2 17.8 0.5 12 0.5z" '+
+      'fill="'+color+'" stroke="#fff" stroke-width="1.6"/>'+
+    '<circle cx="12" cy="11" r="4" fill="#fff" fill-opacity=".92"/>'+
+  '</svg>';
+}
 function toggleGeoMapType(t){
   _geoMapTypes=_geoMapTypes.includes(t)?_geoMapTypes.filter(x=>x!==t):_geoMapTypes.concat(t);
   renderGeoMap();
@@ -215,7 +231,7 @@ function renderGeoMap(){
       const on=_geoMapTypes.includes(t),st=_GEO_MAP_STYLE[t];
       const n=all.filter(p=>p.type===t).length;
       return '<button type="button" onclick="toggleGeoMapType(\''+t+'\')" style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:5px 10px;border-radius:999px;cursor:pointer;font-family:inherit;border:1px solid '+(on?st.c:'var(--border2)')+';background:'+(on?st.c:'transparent')+';color:'+(on?'#fff':'var(--text3)')+'">'+
-        '<span style="width:7px;height:7px;border-radius:50%;background:'+(on?'#fff':st.c)+'"></span>'+st.label+' '+n+'</button>';
+        '<span style="width:7px;height:9px;border-radius:50% 50% 50% 50%/60% 60% 40% 40%;background:'+(on?'#fff':st.c)+'"></span>'+st.label+' '+n+'</button>';
     }).join('');
   }
   if(cnt)cnt.textContent=pts.length?pts.length+' pinned':'';
@@ -232,14 +248,18 @@ function renderGeoMap(){
   const minLat=Math.min(...lats),maxLat=Math.max(...lats);
   const minLon=Math.min(...lons),maxLon=Math.max(...lons);
   const spanLat=Math.max(maxLat-minLat,1e-4),spanLon=Math.max(maxLon-minLon,1e-4);
-  const H=260;
-  const dots=pts.map(p=>{
+  const H=280;
+  // Draw north-first so southern pins overlap the ones behind them, the way a
+  // real map stacks. Sorting a copy leaves the caller's feed order alone.
+  const dots=pts.slice().sort((a,b)=>b.lat-a.lat).map(p=>{
     const x=((p.lon-minLon)/spanLon)*100;
     const y=100-((p.lat-minLat)/spanLat)*100;   // north at the top
     const st=_GEO_MAP_STYLE[p.type]||{c:'var(--text3)'};
     const title=escHtml((p.label||p.type)+(p.date?' · '+p.date:''));
+    // margin pulls the pin up and left so the TIP lands on the coordinate.
     return '<a href="https://www.google.com/maps?q='+p.lat+','+p.lon+'" target="_blank" rel="noopener" title="'+title+'" '+
-      'style="position:absolute;left:'+x.toFixed(2)+'%;top:'+y.toFixed(2)+'%;width:11px;height:11px;margin:-5.5px 0 0 -5.5px;border-radius:50%;background:'+st.c+';border:2px solid var(--bg);box-sizing:content-box;cursor:pointer"></a>';
+      'style="position:absolute;left:'+x.toFixed(2)+'%;top:'+y.toFixed(2)+'%;margin:-'+_GEO_PIN_H+'px 0 0 -'+(_GEO_PIN_W/2)+'px;line-height:0;cursor:pointer">'+
+      _geoPinSvg(st.c)+'</a>';
   }).join('');
   // Rough scale bar: how wide the plotted area is on the ground.
   let widthMi=0;
@@ -249,10 +269,10 @@ function renderGeoMap(){
       'linear-gradient(0deg,var(--bg2) 0%,var(--bg) 100%);overflow:hidden;margin-bottom:10px">'+
       // A faint grid so the plot reads as a spatial field rather than free-floating dots.
       '<div style="position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:25% 25%;opacity:.4"></div>'+
-      '<div style="position:absolute;inset:10px">'+dots+'</div>'+
+      '<div style="position:absolute;top:'+(_GEO_PIN_H+2)+'px;left:12px;right:12px;bottom:12px">'+dots+'</div>'+
     '</div>'+
     '<div style="font-size:10px;color:var(--text3);line-height:1.6">'+
       (widthMi>0.1?'Area shown: about '+(widthMi<10?widthMi.toFixed(1):Math.round(widthMi))+' miles across. ':'')+
-      'Tap any dot to open it in Maps.'+
+      'Tap any pin to open it in Maps.'+
     '</div>';
 }
