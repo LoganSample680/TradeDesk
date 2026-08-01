@@ -108,7 +108,25 @@ test.describe('Places: a geo-stamped receipt becomes a supply house that survive
       ruleText: 'a contemporaneous, tight-fix receipt must create a real td_places row named after the vendor',
       expected: `td_places has a row named "${vendor}" with confirmedBy=expense`,
       act: async (p) => {
-        await p.evaluate(() => { detectPlacesFromExpenses(); saveAll(); });
+        // Capture WHY, not just whether. A bare "row missing" told me nothing on
+        // two runs; this reports which guard rejected it and whether the row
+        // existed locally but failed to upload, which are different bugs.
+        p.__diag = await p.evaluate((vendor) => {
+          const e = expenses.find(x => x.vendor === vendor);
+          const before = places.length;
+          const made = detectPlacesFromExpenses();
+          saveAll();
+          return {
+            expenseInMemory: !!e,
+            expenseHasCoords: !!(e && e.lat != null && e.lon != null),
+            expDate: e && e.date, expGeoAt: e && e.geoAt, expAcc: e && e.geoAcc,
+            contemporaneous: e ? _geoStampIsContemporaneous(e) : null,
+            localDayOfStamp: e && e.geoAt ? _geoLocalDayKey(e.geoAt) : null,
+            alreadyPlaced: e ? !!placeAt(e) : null,
+            made, placesBefore: before, placesAfter: places.length,
+            createdLocally: places.some(pl => pl.name === vendor),
+          };
+        }, vendor);
         await p.evaluate(() => _flushSaveNow && _flushSaveNow());
         return 1;
       },
@@ -121,7 +139,7 @@ test.describe('Places: a geo-stamped receipt becomes a supply house that survive
           await new Promise(r => setTimeout(r, 1500));
         }
         const ok = !!row && row.kind === 'supply' && row.confirmedBy === 'expense';
-        return { ok, got: JSON.stringify(row) };
+        return { ok, got: row ? JSON.stringify(row) : 'NO CLOUD ROW · DIAG ' + JSON.stringify(p.__diag) };
       },
     });
 
