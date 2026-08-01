@@ -184,41 +184,43 @@ function geoFeed(opts){
 }
 
 // ── The map ──────────────────────────────────────────────────────────────────
-// Deliberately NOT a tile map. A real basemap means an external tile host, which
-// the app's CSP forbids and which would put a per-view network cost on a page a
-// contractor might open twenty times a day. What actually answers "where does my
-// work happen" is the RELATIVE shape: a scatter plot in lat/lon space, normalised
-// to the data's own bounding box, with everything on one canvas so clusters are
-// obvious. Tapping a point opens the real map in the OS app, which is where
-// someone wants directions anyway.
-let _geoMapTypes=['estimate','job','expense','payment','place'];
+// Real Apple Maps tiles via MapKit JS, which the app already loads (index.html)
+// and already uses for Directions, Search and Geocoding. Annotations are
+// mapkit.MarkerAnnotation, i.e. the actual dropped pin Apple Maps uses, so the
+// pin is precise by construction rather than an SVG approximation of one.
+//
+// MapKit tokens are DOMAIN-LOCKED (see js/mileage.js): init is skipped on
+// localhost, 127.0.0.1 and the flow-test bridge, because mapkit.init throws an
+// origin-mismatch console.error on any unauthorised origin and that fails
+// assertNoErrors. So MapKit is genuinely unavailable in three real situations:
+// local development, the offline-mocked test suite, and a contractor with no
+// signal on a rural job site (the PWA still opens, the tiles cannot download).
+//
+// Hence the fallback plot below. It is not a lesser map, it is what renders when
+// there are no tiles to be had, and it still answers the only question this
+// screen exists to answer: where does my work cluster.
+let _geoMapTypes=['estimate','job','expense'];
 // Key order IS the legend order (owner: proposals, jobs, expenses), which also
 // happens to be the order the work actually happens in. 'estimate' stays the
 // internal key because that is what the bids array holds; the label is what a
-// contractor calls it.
+// contractor calls it. Payments and places are still stamped and still in
+// geoFeed, they are simply not on this map (owner call: three types, that is it).
 const _GEO_MAP_STYLE={
-  estimate:{c:'#2D5DA8', label:'Proposals'},
-  job:     {c:'#0E6B39', label:'Jobs'},
-  expense: {c:'#B45309', label:'Expenses'},
-  payment: {c:'#6D28D9', label:'Payments'},
-  place:   {c:'#A32D2D', label:'Places'},
+  estimate:{c:'#2D5DA8', label:'Proposals', glyph:'P'},
+  job:     {c:'#0E6B39', label:'Jobs',      glyph:'J'},
+  expense: {c:'#B45309', label:'Expenses',  glyph:'E'},
 };
-// A dropped pin, anchored at its TIP rather than its middle: the point is the
-// location, the balloon sits above it. Round dots centred on the coordinate read
-// as a scatter chart; this reads as a map, and it is what someone expects after
-// dropping a pin in Apple Maps.
-const _GEO_PIN_W=20,_GEO_PIN_H=26;
-function _geoPinSvg(color){
-  return '<svg width="'+_GEO_PIN_W+'" height="'+_GEO_PIN_H+'" viewBox="0 0 24 32" style="display:block;filter:drop-shadow(0 1.5px 2px rgba(0,0,0,.35))">'+
-    '<path d="M12 0.5C6.2 0.5 1.5 5.2 1.5 11c0 7.6 9.3 19.2 10.5 20.6C13.2 30.2 22.5 18.6 22.5 11 22.5 5.2 17.8 0.5 12 0.5z" '+
-      'fill="'+color+'" stroke="#fff" stroke-width="1.6"/>'+
-    '<circle cx="12" cy="11" r="4" fill="#fff" fill-opacity=".92"/>'+
-  '</svg>';
-}
 function toggleGeoMapType(t){
   _geoMapTypes=_geoMapTypes.includes(t)?_geoMapTypes.filter(x=>x!==t):_geoMapTypes.concat(t);
   renderGeoMap();
 }
+function _geoMapKitReady(){
+  return typeof mapkit!=='undefined'&&typeof _mapkitReady!=='undefined'&&_mapkitReady;
+}
+
+let _geoMapObj=null;      // the live mapkit.Map, reused across renders
+let _geoMapHost=null;     // the element it was constructed against
+
 function renderGeoMap(){
   const body=document.getElementById('tr-map-body');
   const filt=document.getElementById('tr-map-filters');
@@ -236,19 +238,82 @@ function renderGeoMap(){
   }
   if(cnt)cnt.textContent=pts.length?pts.length+' pinned':'';
   if(!pts.length){
+    _geoMapDestroy();
     body.innerHTML='<div style="padding:22px 4px;font-size:13px;color:var(--text3);line-height:1.6">'+
-      'Nothing pinned yet. Locations are recorded automatically when you log an expense, finish a job, or take a payment, as long as location is on.'+
+      'Nothing pinned yet. Locations are recorded automatically when you log an expense, finish a job, or send a proposal, as long as location is on.'+
       '</div>';
     return;
   }
-  // Normalise to the data's own bounds. A single point (or a perfectly straight
-  // line of them) would divide by zero, so the span floors at a small non-zero
-  // value and such a set simply renders centred.
+  if(_geoMapKitReady()){_geoRenderMapKit(body,pts);return;}
+  _geoMapDestroy();
+  _geoRenderFallback(body,pts);
+}
+
+function _geoMapDestroy(){
+  try{if(_geoMapObj&&_geoMapObj.destroy)_geoMapObj.destroy();}catch(_e){}
+  _geoMapObj=null;_geoMapHost=null;
+}
+
+// ── Real tiles ───────────────────────────────────────────────────────────────
+function _geoRenderMapKit(body,pts){
+  // Reuse the instance across filter toggles. Constructing a fresh mapkit.Map on
+  // every render leaks the old one's tile requests and DOM.
+  let host=document.getElementById('tr-map-canvas');
+  if(!host||_geoMapHost!==host){
+    body.innerHTML='<div id="tr-map-canvas" style="height:320px;border-radius:var(--r);overflow:hidden;border:1px solid var(--border)"></div>'+
+      '<div style="font-size:10px;color:var(--text3);line-height:1.6;margin-top:8px">Tap a pin for details, then the arrow for directions.</div>';
+    host=document.getElementById('tr-map-canvas');
+    _geoMapDestroy();
+    try{
+      _geoMapObj=new mapkit.Map(host,{
+        showsCompass:mapkit.FeatureVisibility.Hidden,
+        showsScale:mapkit.FeatureVisibility.Adaptive,
+        showsMapTypeControl:false,
+        showsZoomControl:true,
+        showsUserLocationControl:true,
+      });
+      _geoMapHost=host;
+    }catch(_e){_geoMapDestroy();_geoRenderFallback(body,pts);return;}
+  }
+  try{
+    _geoMapObj.removeAnnotations(_geoMapObj.annotations||[]);
+    const anns=pts.map(p=>{
+      const st=_GEO_MAP_STYLE[p.type]||{c:'#666',glyph:''};
+      const a=new mapkit.MarkerAnnotation(new mapkit.Coordinate(p.lat,p.lon),{
+        color:st.c,
+        glyphText:st.glyph||'',
+        title:p.label||p.type,
+        subtitle:p.date||'',
+      });
+      return a;
+    });
+    _geoMapObj.addAnnotations(anns);
+    // Frame everything with a little breathing room rather than hard-cropping to
+    // the outermost pins.
+    if(anns.length)_geoMapObj.showItems(anns,{animate:false,padding:new mapkit.Padding(40,24,40,24)});
+  }catch(_e){_geoMapDestroy();_geoRenderFallback(body,pts);}
+}
+
+// ── Fallback: no tiles available ─────────────────────────────────────────────
+// Local dev, the offline test suite, and a real contractor with no signal. Pins
+// are drawn to the same anchoring rule as MapKit's: the POINT is the location,
+// the head sits above it, and a ground shadow marks the exact spot so the
+// precision reads at a glance.
+const _GEO_PIN_W=22,_GEO_PIN_H=30;
+function _geoPinSvg(color){
+  return '<svg width="'+_GEO_PIN_W+'" height="'+_GEO_PIN_H+'" viewBox="0 0 22 30" style="display:block">'+
+    '<ellipse cx="11" cy="28.2" rx="3.1" ry="1.25" fill="rgba(0,0,0,.28)"/>'+
+    '<path d="M11 27.4 L8.25 15.2 h5.5 Z" fill="'+color+'"/>'+
+    '<circle cx="11" cy="9.6" r="8.1" fill="'+color+'" stroke="#fff" stroke-width="1.8"/>'+
+    '<circle cx="11" cy="9.6" r="3" fill="#fff" fill-opacity=".95"/>'+
+  '</svg>';
+}
+function _geoRenderFallback(body,pts){
   const lats=pts.map(p=>p.lat),lons=pts.map(p=>p.lon);
   const minLat=Math.min(...lats),maxLat=Math.max(...lats);
   const minLon=Math.min(...lons),maxLon=Math.max(...lons);
+  // A single point, or a perfectly straight line of them, would divide by zero.
   const spanLat=Math.max(maxLat-minLat,1e-4),spanLon=Math.max(maxLon-minLon,1e-4);
-  const H=280;
   // Draw north-first so southern pins overlap the ones behind them, the way a
   // real map stacks. Sorting a copy leaves the caller's feed order alone.
   const dots=pts.slice().sort((a,b)=>b.lat-a.lat).map(p=>{
@@ -256,20 +321,19 @@ function renderGeoMap(){
     const y=100-((p.lat-minLat)/spanLat)*100;   // north at the top
     const st=_GEO_MAP_STYLE[p.type]||{c:'var(--text3)'};
     const title=escHtml((p.label||p.type)+(p.date?' · '+p.date:''));
-    // margin pulls the pin up and left so the TIP lands on the coordinate.
+    // margin pulls the pin up its full height and left half its width, so the
+    // POINT lands on the coordinate rather than the middle of the head.
     return '<a href="https://www.google.com/maps?q='+p.lat+','+p.lon+'" target="_blank" rel="noopener" title="'+title+'" '+
       'style="position:absolute;left:'+x.toFixed(2)+'%;top:'+y.toFixed(2)+'%;margin:-'+_GEO_PIN_H+'px 0 0 -'+(_GEO_PIN_W/2)+'px;line-height:0;cursor:pointer">'+
       _geoPinSvg(st.c)+'</a>';
   }).join('');
-  // Rough scale bar: how wide the plotted area is on the ground.
   let widthMi=0;
   try{widthMi=_haversineMiles({lat:minLat,lng:minLon},{lat:minLat,lng:maxLon});}catch(_e){}
   body.innerHTML=
-    '<div style="position:relative;height:'+H+'px;border:1px solid var(--border);border-radius:var(--r);background:'+
+    '<div style="position:relative;height:280px;border:1px solid var(--border);border-radius:var(--r);background:'+
       'linear-gradient(0deg,var(--bg2) 0%,var(--bg) 100%);overflow:hidden;margin-bottom:10px">'+
-      // A faint grid so the plot reads as a spatial field rather than free-floating dots.
       '<div style="position:absolute;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:25% 25%;opacity:.4"></div>'+
-      '<div style="position:absolute;top:'+(_GEO_PIN_H+2)+'px;left:12px;right:12px;bottom:12px">'+dots+'</div>'+
+      '<div style="position:absolute;top:'+(_GEO_PIN_H+2)+'px;left:14px;right:14px;bottom:14px">'+dots+'</div>'+
     '</div>'+
     '<div style="font-size:10px;color:var(--text3);line-height:1.6">'+
       (widthMi>0.1?'Area shown: about '+(widthMi<10?widthMi.toFixed(1):Math.round(widthMi))+' miles across. ':'')+

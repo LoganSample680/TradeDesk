@@ -309,13 +309,14 @@ test.describe('Places, drive attribution and the map', () => {
     const out = await page.evaluate(() => {
       const today = todayKey();
       expenses.push({ id: 60, date: today, vendor: 'A', amount: 5, lat: 37.68, lon: -97.33, geoAcc: 10 });
-      savePlace({ name: 'P', kind: 'shop', lat: 37.72, lon: -97.37 });
+      jobs.push({ id: 61, client_name: 'J', start: today, lat: 37.72, lon: -97.37, geoAcc: 10 });
       renderGeoMap();
       const both = (document.getElementById('tr-map-body').innerHTML.match(/maps\?q=/g) || []).length;
       toggleGeoMapType('expense');
       const off = (document.getElementById('tr-map-body').innerHTML.match(/maps\?q=/g) || []).length;
       toggleGeoMapType('expense');
       const on = (document.getElementById('tr-map-body').innerHTML.match(/maps\?q=/g) || []).length;
+      jobs.length = 0;
       return { both, off, on };
     });
     expect(out.both).toBe(2);
@@ -323,7 +324,7 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.on).toBe(2);
   });
 
-  test('the legend reads Proposals, Jobs, Expenses in that order', async () => {
+  test('the legend is exactly Proposals, Jobs, Expenses, in that order', async () => {
     const out = await page.evaluate(() => {
       renderGeoMap();
       return [...document.querySelectorAll('#tr-map-filters button')]
@@ -331,7 +332,7 @@ test.describe('Places, drive attribution and the map', () => {
     });
     // Owner-specified order, and it happens to match the order work actually
     // happens in. 'estimate' stays the internal key; this is what it's called.
-    expect(out.slice(0, 3)).toEqual(['Proposals', 'Jobs', 'Expenses']);
+    expect(out).toEqual(['Proposals', 'Jobs', 'Expenses']);
   });
 
   test('pins are anchored at the TIP, not centred on the coordinate', async () => {
@@ -346,13 +347,19 @@ test.describe('Places, drive attribution and the map', () => {
         isSvgPin: /<svg/.test(a.innerHTML),
         marginTop: mt ? parseFloat(mt[1]) : 0,
         marginLeft: mt ? parseFloat(mt[2]) : 0,
+        // Assert the RELATIONSHIP, not the numbers: the pin can be resized
+        // without this test having to be edited (it was, and it wasn't).
+        pinH: _GEO_PIN_H, pinW: _GEO_PIN_W,
+        hasGroundShadow: /<ellipse/.test(a.innerHTML),
       };
     });
     expect(out.isSvgPin).toBe(true);
-    // Pulled up its full height and left by half its width, so the point of the
+    // Pulled up its full height and left by half its width, so the POINT of the
     // pin sits on the location. A centred dot would be half-height instead.
-    expect(out.marginTop).toBe(26);
-    expect(out.marginLeft).toBe(10);
+    expect(out.marginTop).toBe(out.pinH);
+    expect(out.marginLeft).toBe(out.pinW / 2);
+    // The ground shadow is what makes the precision read at a glance.
+    expect(out.hasGroundShadow).toBe(true);
   });
 
   test('southern pins draw last so they overlap the ones behind', async () => {
@@ -368,6 +375,100 @@ test.describe('Places, drive attribution and the map', () => {
     // North first means south paints over it, which is how a real map stacks.
     expect(out[0]).toContain('North');
     expect(out[1]).toContain('South');
+  });
+
+  test('payments and places are stamped and in the feed, but not on the map', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      payments.push({ id: 90, client_name: 'Pay', date: today, amount: 100, lat: 37.68, lon: -97.33, geoAcc: 10 });
+      savePlace({ name: 'Ferguson', kind: 'supply', lat: 37.69, lon: -97.34 });
+      const feedTypes = geoFeed({}).map(f => f.type).sort();
+      renderGeoMap();
+      const body = document.getElementById('tr-map-body').innerHTML;
+      const legend = [...document.querySelectorAll('#tr-map-filters button')].map(b => b.textContent);
+      payments.length = 0;
+      return { feedTypes, plotted: (body.match(/maps\?q=/g) || []).length, legendHasPlace: legend.some(l => /Place/.test(l)) };
+    });
+    // Still captured (drive attribution needs places; payments are real data)...
+    expect(out.feedTypes).toContain('payment');
+    expect(out.feedTypes).toContain('place');
+    // ...just not shown here.
+    expect(out.plotted).toBe(0);
+    expect(out.legendHasPlace).toBe(false);
+  });
+
+  // ── MapKit vs the fallback ────────────────────────────────────────────────
+  // MapKit tokens are domain-locked, so it never initialises on localhost and
+  // these tests always exercise the fallback unless the flag is forced.
+
+  test('with MapKit unavailable the fallback plot renders (local, offline, tests)', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      expenses.push({ id: 95, date: today, vendor: 'A', amount: 5, lat: 37.68, lon: -97.33, geoAcc: 10 });
+      renderGeoMap();
+      const body = document.getElementById('tr-map-body').innerHTML;
+      return { ready: _geoMapKitReady(), hasSvgPin: /<svg/.test(body), hasCanvas: /tr-map-canvas/.test(body) };
+    });
+    expect(out.ready).toBe(false);
+    expect(out.hasSvgPin).toBe(true);
+    expect(out.hasCanvas).toBe(false);
+  });
+
+  test('when MapKit IS ready the real map is built and annotated', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      expenses.push({ id: 96, date: today, vendor: 'A', amount: 5, lat: 37.68, lon: -97.33, geoAcc: 10 });
+      jobs.push({ id: 97, client_name: 'J', start: today, lat: 37.70, lon: -97.35, geoAcc: 10 });
+      const built = { annotations: [], shown: 0, colors: [] };
+      window.mapkit = {
+        FeatureVisibility: { Hidden: 'h', Adaptive: 'a' },
+        Coordinate: function (la, lo) { this.latitude = la; this.longitude = lo; },
+        Padding: function () {},
+        MarkerAnnotation: function (c, o) { this.coordinate = c; this.color = o.color; this.title = o.title; },
+        Map: function () {
+          this.annotations = [];
+          this.addAnnotations = (a) => { this.annotations = this.annotations.concat(a); built.annotations = this.annotations; built.colors = a.map(x => x.color); };
+          this.removeAnnotations = () => { this.annotations = []; };
+          this.showItems = (a) => { built.shown = a.length; };
+          this.destroy = () => {};
+        },
+      };
+      window._mapkitReady = true;
+      try { _mapkitReady = true; } catch (e) {}
+      renderGeoMap();
+      const body = document.getElementById('tr-map-body').innerHTML;
+      delete window.mapkit;
+      try { _mapkitReady = false; } catch (e) {}
+      _geoMapDestroy();
+      jobs.length = 0;
+      return { hasCanvas: /tr-map-canvas/.test(body), n: built.annotations.length, shown: built.shown, colors: built.colors.sort() };
+    });
+    expect(out.hasCanvas).toBe(true);
+    // Real Apple dropped pins, one per record, coloured by type.
+    expect(out.n).toBe(2);
+    expect(out.shown).toBe(2);
+    expect(out.colors).toEqual(['#0E6B39', '#B45309']);
+  });
+
+  test('a MapKit constructor failure falls back instead of leaving a blank pane', async () => {
+    const out = await page.evaluate(() => {
+      const today = todayKey();
+      expenses.push({ id: 98, date: today, vendor: 'A', amount: 5, lat: 37.68, lon: -97.33, geoAcc: 10 });
+      window.mapkit = {
+        FeatureVisibility: { Hidden: 'h', Adaptive: 'a' },
+        Map: function () { throw new Error('token rejected'); },
+      };
+      try { _mapkitReady = true; } catch (e) {}
+      let threw = false;
+      try { renderGeoMap(); } catch (e) { threw = true; }
+      const body = document.getElementById('tr-map-body').innerHTML;
+      delete window.mapkit;
+      try { _mapkitReady = false; } catch (e) {}
+      return { threw, hasSvgPin: /<svg/.test(body) };
+    });
+    // An expired or origin-mismatched token must degrade, never blank the screen.
+    expect(out.threw).toBe(false);
+    expect(out.hasSvgPin).toBe(true);
   });
 
   test('the map tab is wired into setTrTab', async () => {
