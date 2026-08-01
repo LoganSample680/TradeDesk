@@ -17,20 +17,20 @@
     "note": "First capture 2026-08-01 (chromium + webkit, self-hosted flow-local, real Supabase): log a stamped receipt 1 + place created 1 + settings-race probe 1 + sofa-paperwork negative 1 + sign out and back in 2. The negative case is load-bearing and must stay: paperwork done at home in the evening must NOT promote someone's living room to a supply house."
   },
   "places/drive-attribution": {
-    "clicks": 9,
-    "note": "First capture 2026-08-01 (chromium + webkit, self-hosted flow-local, real Supabase): fixtures 2 + shop-to-supply drive 3 + parked in the lot 2 + pull out 1 + commute-guard probe 1. Pings rather than taps, same as the other geo flows: the budget guards the automatic drive machine, not UI friction."
+    "clicks": 0,
+    "note": "ZERO on purpose (2026-08-01, chromium + webkit, self-hosted flow-local, real Supabase). An earlier capture counted simulated GPS pings as interactions; a ping is not one. The contractor never taps, clocks in, clocks out, or classifies a single minute of this, so the honest user cost is nothing at all. Zero is also the stronger gate: any tap ever added to the automatic path puts the flow over budget and fails CI. Covers a supply run out and back, plus the commute guard."
   },
   "crew/location-consent-is-real": {
     "clicks": 3,
     "note": "First capture 2026-08-01 (chromium + webkit, self-hosted flow-local, real Supabase): sign-in 1 + the acknowledgment tap 1 + owner roster read 1. Reading the notice costs 0 on purpose. This one must never ratchet DOWN to 0 on the tap: an acknowledgment that costs no interaction is an acknowledgment nobody made, which is the fabricated-consent bug this whole spec exists to prevent."
   },
   "places/full-8h-workday": {
-    "clicks": 16,
-    "note": "First capture 2026-08-01 (chromium + webkit, self-hosted flow-local, real Supabase): fixtures 2 + the day 14. The 14 are GPS pings, not taps: a contractor works this entire day (shop, job, supply house, lunch, job, shop) without clocking in, clocking out, or classifying a single minute. That is the product claim, so this number going UP means the app started asking the crew to do work the geofence should be doing. Only ever raise it for a deliberate new user-facing step."
+    "clicks": 0,
+    "note": "ZERO on purpose (2026-08-01, chromium + webkit, self-hosted flow-local, real Supabase). An earlier capture counted simulated GPS pings as interactions; a ping is not one. The contractor never taps, clocks in, clocks out, or classifies a single minute of this, so the honest user cost is nothing at all. Zero is also the stronger gate: any tap ever added to the automatic path puts the flow over budget and fails CI. Covers a whole day: shop, job, supply house, lunch, job, shop."
   },
   "places/full-day-drive-chain": {
-    "clicks": 14,
-    "note": "First capture 2026-08-01 (chromium, self-hosted flow-local): fixtures 3 + the chain 11. Same rule as full-8h-workday, these are pings rather than taps, so the budget guards the fully-automatic property of the drive machine rather than UI friction."
+    "clicks": 0,
+    "note": "ZERO on purpose (2026-08-01, chromium + webkit, self-hosted flow-local, real Supabase). An earlier capture counted simulated GPS pings as interactions; a ping is not one. The contractor never taps, clocks in, clocks out, or classifies a single minute of this, so the honest user cost is nothing at all. Zero is also the stronger gate: any tap ever added to the automatic path puts the flow over budget and fails CI. Covers the chain: home office, job, supply house, job, job, shop."
   },
   "fleet/vehicle-survives-resignin": {
     "clicks": 47,

@@ -111,7 +111,13 @@ test.describe('Full day of automatic drives: home office → job → supply → 
           saveAll();
         }, { HOME, SUPPLY, SHOP, JOB_A, JOB_B, JOB_C, HOME_NAME, SUPPLY_NAME, jobA, jobB, jobC });
         await p.evaluate(() => _flushSaveNow && _flushSaveNow());
-        return 3;
+        // ZERO. A GPS ping is not an interaction: the contractor did not tap,
+        // clock in, clock out, or classify a single minute of this. The ledger
+        // measures what the PERSON spends, so simulated pings must not be
+        // counted as friction, and the budget below is 0 on purpose: if anyone
+        // ever adds a tap to the automatic path, this flow goes over budget and
+        // CI says so.
+        return 0;
       },
       rule: async (p) => {
         const out = await p.evaluate((d) => {
@@ -153,7 +159,13 @@ test.describe('Full day of automatic drives: home office → job → supply → 
         await hop(SHOP, 26);       // job C → back to the shop
         await p.waitForTimeout(2000); // let the durable queue drain
         await p.evaluate(() => { if (window.__origJobs) { jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); } });
-        return 11;
+        // ZERO. A GPS ping is not an interaction: the contractor did not tap,
+        // clock in, clock out, or classify a single minute of this. The ledger
+        // measures what the PERSON spends, so simulated pings must not be
+        // counted as friction, and the budget below is 0 on purpose: if anyone
+        // ever adds a tap to the automatic path, this flow goes over budget and
+        // CI says so.
+        return 0;
       },
       rule: async (p) => {
         const out = await p.evaluate(async (d) => {
