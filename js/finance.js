@@ -2748,7 +2748,7 @@ async function _crewCostRender(range){
   // owner's rate/name under cid.
   const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(_supaUser&&_supaUser.id);
   const manualEnts=timeEntries.filter(e=>e.start_time&&_ctDateStr(new Date(e.start_time))>=sinceStr)
-    .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,source:'manual'}));
+    .map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,arrived_at:e.start_time,departed_at:e.end_time,source:'manual'}));
   const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
   const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
   if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
@@ -2779,9 +2779,34 @@ async function _crewCostRender(range){
     }
     const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
+  // The automatic shop-overhead clock and a manual job clock-in run on two
+  // separate streams that never talk to each other, and a person doing job-
+  // specific work (prefab, panel-building) AT the shop is inside both fences
+  // at once: the geofence logs shop_time_entries for attendance, the manual
+  // clock logs timeEntries for the job. Summed blind, that window gets paid
+  // twice, two hours of real work becomes four hours of paid time. The manual
+  // entry is the one that means something (it says WHICH job), so it wins:
+  // shop-overhead minutes are trimmed by however much a manual clock already
+  // covered the same uid over the same wall-clock window before either is
+  // added to paid totals. Only manual entries are checked against, geofence
+  // job/drive/place/stop entries fire at a different physical fence and can
+  // never genuinely overlap a shop dwell.
+  const manualWindows={};
+  manualEnts.forEach(en=>{
+    if(!en.employee_user_id||!en.arrived_at||!en.departed_at)return;
+    const a=Date.parse(en.arrived_at),b=Date.parse(en.departed_at);
+    if(!(b>a))return;
+    (manualWindows[en.employee_user_id]=manualWindows[en.employee_user_id]||[]).push([a,b]);
+  });
+  const _ccOverlapMs=(aStart,aEnd,windows)=>windows.reduce((sum,[bStart,bEnd])=>
+    sum+Math.max(0,Math.min(aEnd,bEnd)-Math.max(aStart,bStart)),0);
   shopEnts.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
-    const e=_emp(uid);const m=en.minutes||0;e.min+=m;e.shopMin+=m;
+    const e=_emp(uid);const raw=en.minutes||0;
+    const a=Date.parse(en.arrived_at),b=en.departed_at?Date.parse(en.departed_at):a+raw*60000;
+    const overlapMin=Math.round(_ccOverlapMs(a,b,manualWindows[uid]||[])/60000);
+    const m=Math.max(0,raw-Math.min(raw,overlapMin));   // never below 0, never over raw
+    e.min+=m;e.shopMin+=m;
     const day=_ctDateStr(new Date(en.arrived_at));e.dayMins[day]=(e.dayMins[day]||0)+m;
   });
   // Revenue attribution + overtime per employee

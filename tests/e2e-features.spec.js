@@ -3874,6 +3874,63 @@ test.describe('Workforce time intelligence', () => {
     if (r && !r.error) expect(r.html).not.toContain('No tracked time today');
   });
 
+  // Owner (2026-08-01): shop-based prefab/fab work is real job labor with
+  // nowhere to attach today. The fix lets a crew member manually clock into a
+  // job while the automatic tracker ALSO logs shop_time_entries for the same
+  // window (they are physically at the shop), and those are two independent
+  // streams with no shared knowledge of each other. Blind, that window gets
+  // paid twice: 2 real hours becomes 3 counted hours (1h shop + 2h "shop
+  // manually attributed to a job" double-billed). The manual entry should win
+  // (it says WHICH job), and the shop-overhead minutes should shrink by
+  // exactly the overlap, never below zero.
+  test('crew cost: a manual job clock-in overlapping automatic shop time is not paid twice', async () => {
+    const r = await page.evaluate(async () => {
+      if (typeof _crewCostRender !== 'function') return null;
+      const orig = { timeEntries, supa: window._supa, supaEnabled: window.supaEnabled, supaUser: window._supaUser };
+      const T0 = Date.now() - 3 * 3600000;   // 3h ago, safely inside "today"
+      const EMP = 'emp-shopoverlap-1';
+      // Shop dwell: 2 real hours, T0 to T0+120m.
+      const shopRow = { employee_user_id: EMP, minutes: 120, arrived_at: new Date(T0).toISOString() };
+      // A manual job clock-in fully INSIDE that dwell: T0+30m to T0+90m (1h),
+      // the crew member prefabbing for a specific job while physically there.
+      timeEntries = timeEntries.filter(e => e.id !== 8970099);
+      timeEntries.push({
+        id: 8970099, job_id: 1, date: new Date(T0).toISOString().slice(0, 10),
+        start_time: new Date(T0 + 30 * 60000).toISOString(), end_time: new Date(T0 + 90 * 60000).toISOString(),
+        minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew', scope_id: 'shop_prefab', scope_label: 'Shop / prefab',
+      });
+      const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
+      window._supa = {
+        from: (tbl) => {
+          if (tbl === 'team_members') return makeQ([{ employee_user_id: EMP, name: 'Test Crew', email: '', pay_type: 'hourly', pay_rate: 30 }]);
+          if (tbl === 'shop_time_entries') return makeQ([shopRow]);
+          return makeQ([]);   // job_time_entries: none, isolates the shop/manual overlap
+        },
+      };
+      window.supaEnabled = () => true;
+      window._supaUser = window._supaUser || { id: 'owner-test' };
+      document.getElementById('_crew-cost-ov')?.remove();
+      let paidMin = null, html = '';
+      try {
+        _openCrewCost(); await _crewCostRender('today');
+        html = document.getElementById('_crew-cost-body')?.innerHTML || '';
+      } catch (e) { return { error: e.message }; }
+      document.getElementById('_crew-cost-ov')?.remove();
+      timeEntries = orig.timeEntries; window._supa = orig.supa; window.supaEnabled = orig.supaEnabled; window._supaUser = orig.supaUser;
+      // 2h loaded cost at $30 wage would show as $60 wage-only; 3h (the bug)
+      // would show $90. Read the rendered hours figure directly rather than
+      // re-deriving it, so the test proves what the OWNER actually sees.
+      const hoursMatch = html.match(/(\d+(?:\.\d+)?)h/);
+      return { html, hours: hoursMatch ? parseFloat(hoursMatch[1]) : null };
+    });
+    if (r && !r.error) {
+      expect(r.hours, 'rendered hours, html=' + r.html).not.toBeNull();
+      // 2.0h exactly: the 1h overlap must be subtracted from the shop side
+      // once, never doubled and never dropped entirely.
+      expect(r.hours).toBeCloseTo(2.0, 1);
+    }
+  });
+
   // ── Job Profit: source filter excludes drive minutes from labor cost ─────
   test('_openJobProfit is a function', async () => {
     const ok = await page.evaluate(() => typeof _openJobProfit === 'function');

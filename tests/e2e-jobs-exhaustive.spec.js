@@ -1046,6 +1046,79 @@ test.describe('jobs.js: exhaustive coverage', () => {
     });
   });
 
+  // ── _shopPromptClockIn / _shopPromptDismiss (the "at the shop" dashboard
+  // prompt, js/dashboard.js) ──────────────────────────────────────────────────
+  test.describe('_shopPromptClockIn / _shopPromptDismiss', () => {
+    test('clocks in with the fixed shop_prefab scope, not the task-scope sheet', async () => {
+      const r = await page.evaluate(() => {
+        const origTimer = _activeTimer, origJobs = jobs.slice();
+        jobs.length = 0;
+        jobs.push({ id: 998001, name: 'Shop Test Job', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        if (_activeTimer) clockOut(false, true);
+        try {
+          _shopPromptClockIn(998001);
+          return {
+            jobId: _activeTimer && _activeTimer.jobId,
+            scopeId: _activeTimer && _activeTimer.scopeId,
+            scopeLabel: _activeTimer && _activeTimer.scopeLabel,
+            sheetOpen: !!document.getElementById('_cks-ov'),
+          };
+        } finally {
+          if (_activeTimer) clockOut(false, true);
+          _activeTimer = origTimer; jobs.length = 0; origJobs.forEach(j => jobs.push(j));
+        }
+      });
+      expect(r.jobId).toBe(998001);
+      expect(r.scopeId).toBe('shop_prefab');
+      expect(r.scopeLabel).toBe('Shop / prefab');
+      // One tap to clocked-in: the task-scope picker never opens for this path.
+      expect(r.sheetOpen).toBe(false);
+    });
+
+    test('a closed job silently does not clock in (same guard clockIn already has)', async () => {
+      const r = await page.evaluate(() => {
+        const origTimer = _activeTimer, origJobs = jobs.slice();
+        jobs.length = 0;
+        jobs.push({ id: 998002, name: 'Done Shop Job', client_id: null, eventType: 'job', status: 'done', completion_date: todayKey(), start: todayKey(), days: 1 });
+        if (_activeTimer) clockOut(false, true);
+        try {
+          _shopPromptClockIn(998002);
+          return { started: !!(_activeTimer && _activeTimer.jobId === 998002) };
+        } finally {
+          if (_activeTimer) clockOut(false, true);
+          _activeTimer = origTimer; jobs.length = 0; origJobs.forEach(j => jobs.push(j));
+        }
+      });
+      expect(r.started).toBe(false);
+    });
+
+    test('dismiss sets the dismissal to the CURRENT shop-arrival stamp, so a new arrival is a fresh offer', async () => {
+      const r = await page.evaluate(() => {
+        const orig = { shopAt: _geoShopArrivedAt, dismissedAt: window._shopPromptDismissedAt };
+        try {
+          _geoShopArrivedAt = '2026-01-01T12:00:00.000Z';
+          _shopPromptDismiss();
+          const firstDismiss = window._shopPromptDismissedAt;
+          _geoShopArrivedAt = '2026-01-01T15:00:00.000Z';   // left and came back: a new dwell
+          const staleMatchesNew = window._shopPromptDismissedAt === _geoShopArrivedAt;
+          return { firstDismiss, staleMatchesNew };
+        } finally { _geoShopArrivedAt = orig.shopAt; window._shopPromptDismissedAt = orig.dismissedAt; }
+      });
+      expect(r.firstDismiss).toBe('2026-01-01T12:00:00.000Z');
+      expect(r.staleMatchesNew).toBe(false);
+    });
+
+    test('null jobId does not throw', async () => {
+      const r = await page.evaluate(() => {
+        const origTimer = _activeTimer;
+        try { _shopPromptClockIn(null); return { ok: true }; }
+        catch (e) { return { ok: false, err: e.message }; }
+        finally { _activeTimer = origTimer; }
+      });
+      expect(r.ok).toBe(true);
+    });
+  });
+
   // ═══════════════════════════════════════════════════════════════════════════
   // _clockAddTask
   // ═══════════════════════════════════════════════════════════════════════════

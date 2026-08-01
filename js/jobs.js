@@ -56,6 +56,23 @@ function _nearbyClockIn(clientId,jobId){
   }
   openClockInSheet(jobId);
 }
+// One-tap clock-in from the "At the shop" dashboard prompt (js/dashboard.js).
+// Skips the task-scope sheet deliberately: the prompt already exists because
+// the automatic tracker cannot know intent, asking again which task within
+// the job would be a second guess piled on the first. 'shop_prefab' is a
+// fixed scope id (not per-job custom) so it aggregates consistently across
+// jobs in Job Profit and the Time Log, "how many prefab hours this month."
+function _shopPromptClockIn(jobId){
+  clockIn(jobId,'shop_prefab','Shop / prefab');
+  renderDash&&renderDash();
+}
+// Scoped to the CURRENT shop dwell (keyed by its own arrival stamp), not
+// persisted anywhere: leave the yard and come back and it is a fresh offer.
+// A permanent opt-out someone forgets they set is worse than a prompt they
+// see again tomorrow, geofence coordinates are the only memory this needs.
+function _shopPromptDismiss(){
+  window._shopPromptDismissedAt=(typeof _geoShopArrivedAt!=='undefined')?_geoShopArrivedAt:null;
+}
 // A job that's already complete/cancelled is not open for new time entries.
 // Matches the exact condition the automatic geofence tracker already uses
 // (_geoMyJobs, js/geo-track.js) so the manual "tap to clock in" path can't
