@@ -215,6 +215,34 @@ test.describe('Fleet persistence: td_vehicles sync fabric', () => {
     await restore(snap);
   });
 
+  test('a whole id-less fleet arriving at once gets ids that cannot collide', async () => {
+    // The test above is TWO rows, which the old generator got right roughly 999
+    // times in a thousand, so it was a coin flip dressed as an assertion and CI
+    // shard 6 eventually lost it. The old form was
+    // `Date.now()*1000 + random(0..998) + i`: the random draw and the loop index
+    // shared one number space, so any two rows whose randoms differed by exactly
+    // their index gap landed on the same id.
+    //
+    // Two hundred rows in a single call turns that from unlikely into certain,
+    // and it is not a synthetic size: a fleet restored from a backup or arriving
+    // on a first sync lands in one _setVehicles call.
+    //
+    // Why it matters more than a duplicate row: td_vehicles is keyed by id, so a
+    // collision means the second truck OVERWRITES the first on the next save.
+    // The vehicle vanishes, and with it the odometer readings, service history
+    // and the trips attributed to it.
+    const snap = await snapshot();
+    const r = await page.evaluate(() => {
+      const rows = Array.from({ length: 200 }, (_, i) => ({ name: 'Truck ' + i }));
+      _setVehicles(rows);
+      const vehs = getVehicles();
+      return { count: vehs.length, unique: new Set(vehs.map(v => String(v.id))).size };
+    });
+    expect(r.count).toBe(200);
+    expect(r.unique, 'a collision here silently deletes a truck on the next sync').toBe(200);
+    await restore(snap);
+  });
+
   // ── The one-time lift out of the settings blob ────────────────────────────
   test('migration lifts the legacy fleet AND folds its name-keyed odo readings onto each row', async () => {
     const snap = await snapshot();

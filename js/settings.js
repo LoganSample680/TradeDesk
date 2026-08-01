@@ -1078,7 +1078,18 @@ function _setVehicles(vehs){
     const o=(typeof v==='string')?{name:v,nickname:''}:{...v};
     // A row with no id can never sync (td_vehicles is keyed by id) and would be
     // re-created as a duplicate on every save.
-    if(!o.id)o.id=Date.now()*1000+Math.floor(Math.random()*999)+i;
+    //
+    // _newId, not a random offset plus the loop index. That older form was
+    // `Date.now()*1000 + random(0..998) + i`, which puts the random draw and the
+    // index in ONE number space, so two id-less rows in the same call collide
+    // whenever their randoms happen to differ by exactly their index gap: about
+    // one call in a thousand. Since td_vehicles is keyed by id, the collision is
+    // not cosmetic, the second truck overwrites the first on the next sync and a
+    // vehicle disappears from the fleet along with everything hanging off it.
+    // Caught by CI shard 6 finally losing that coin flip. _newId keeps a
+    // monotonic sequence within a millisecond, so it cannot collide by
+    // construction, however many rows arrive at once.
+    if(!o.id)o.id=(typeof _newId==='function')?_newId():Date.now()*1000+i;
     return o;
   });
   vehicles.length=0;next.forEach(v=>vehicles.push(v));

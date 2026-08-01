@@ -57,6 +57,28 @@ test.describe('Automatic mileage from drive legs', () => {
       vehicles.push({ id: 'v-truck', name: 'F-250', nickname: 'Big Blue', status: 'active' });
       vehicles.push({ id: 'v-van', name: 'Transit', status: 'active' });
       S.defaultVehicleId = 'v-truck';
+
+      // ── Re-seedable, because a fixture set once here does not stay put ──────
+      //
+      // Boot kicks _geoOfficeCoords() whenever S.officeLat is unset, and that
+      // function geocodes the business address and writes S.officeLat/officeLon
+      // AFTER its await resolves. So a promise already in flight when this
+      // beforeAll runs will happily land later and move the shop fence, in the
+      // middle of whichever test happens to be running.
+      //
+      // That is exactly how CI shard 3 failed on WebKit and not on Chromium:
+      // the resolution landed inside the first test, the SHOP ping stopped
+      // matching the fence, the leg had no origin and no trip was logged. The
+      // app was fine. The test was leaning on state it did not own.
+      //
+      // Every case now re-asserts what it depends on, and the kicker is stubbed
+      // so no further one can start.
+      window._geoOfficeCoords = async () => ({ lat: d.SHOP.lat, lng: d.SHOP.lon });
+      window.__seedGeo = () => {
+        S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon;
+        S.teamTracking = true;
+        _geoPingBusy = false;
+      };
     }, { SHOP, JOB, SUPPLY, HOMEOFF });
   });
   test.afterAll(async () => { await page.context().close(); });
@@ -80,6 +102,7 @@ test.describe('Automatic mileage from drive legs', () => {
       }
       const before = mileage.length;
       try {
+        __seedGeo();
         _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
         _geoShopArrivedAt = null; _geoDriveStartedAt = null;
         _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
@@ -401,6 +424,7 @@ test.describe('Automatic mileage from drive legs', () => {
         localStorage.setItem('emp_vehicle_' + todayKey(), 'personal');
         _geoEnqueue = (tbl, row) => legs.push(row);
         try {
+          __seedGeo();
           _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
           _geoShopArrivedAt = null; _geoDriveStartedAt = null;
           _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
@@ -484,6 +508,7 @@ test.describe('Automatic mileage from drive legs', () => {
     try {
       S.homeOffice = !!d.box;
       if (d.tagPlace) savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
+      __seedGeo();
       _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
       _geoShopArrivedAt = null; _geoDriveStartedAt = null;
       _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
@@ -574,6 +599,7 @@ test.describe('Automatic mileage from drive legs', () => {
         try {
           S.homeOffice = true;
           savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
+          __seedGeo();
           _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
           _geoShopArrivedAt = null; _geoDriveStartedAt = null;
           _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
@@ -609,6 +635,7 @@ test.describe('Automatic mileage from drive legs', () => {
         window._routeDistance = _routeDistance = async () => ({ miles: 9, mins: 15 });
         const before = mileage.length;
         try {
+          __seedGeo();
           _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
           _geoShopArrivedAt = null; _geoDriveStartedAt = null;
           _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
@@ -643,6 +670,7 @@ test.describe('Automatic mileage from drive legs', () => {
         window._routeDistance = _routeDistance = async () => ({ miles: 9, mins: 15 });
         const before = mileage.length;
         try {
+          __seedGeo();
           _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
           _geoShopArrivedAt = null; _geoDriveStartedAt = null;
           _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
@@ -700,6 +728,7 @@ test.describe('Automatic mileage from drive legs', () => {
         window._routeDistance = _routeDistance = async () => ({ miles: 7, mins: 12 });
         const before = mileage.length;
         try {
+          __seedGeo();
           _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
           _geoShopArrivedAt = null; _geoDriveStartedAt = null;
           _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
