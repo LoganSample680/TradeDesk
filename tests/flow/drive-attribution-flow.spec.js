@@ -187,17 +187,19 @@ test.describe('Drive attribution: a supply run logs real miles, parked time is n
       ruleText: 'home must never become a place: accepting it would log non-deductible commute miles as business trips',
       expected: 'a 9-hour dwell, repeated, produces zero suggestions',
       act: async (p) => {
-        await p.evaluate(() => {
+        // BASE_LAT/BASE_LON are NODE-side constants; the evaluate callback runs
+        // in the BROWSER, so they have to be passed in rather than closed over.
+        await p.evaluate(({ BASE_LAT, BASE_LON }) => {
           try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
           const home = { lat: BASE_LAT + 0.20, lon: BASE_LON - 0.20 }, overnight = 9 * 60 * 60 * 1000;
           recordUnknownStop(home, overnight);
           recordUnknownStop(home, overnight);
           recordUnknownStop(home, overnight);
-        });
+        }, { BASE_LAT, BASE_LON });
         return 1;
       },
       rule: async (p) => {
-        const out = await p.evaluate(() => {
+        const out = await p.evaluate(({ BASE_LAT, BASE_LON }) => {
           const n = pendingPlaceSuggestions().length;
           // And a genuine work stop of the same repetition IS still offered, so
           // the guard is narrow rather than switching detection off wholesale.
@@ -206,7 +208,7 @@ test.describe('Drive attribution: a supply run logs real miles, parked time is n
           recordUnknownStop(yard, normal);
           recordUnknownStop(yard, normal);
           return { afterHome: n, afterYard: pendingPlaceSuggestions().length };
-        });
+        }, { BASE_LAT, BASE_LON });
         return { ok: out.afterHome === 0 && out.afterYard === 1, got: JSON.stringify(out) };
       },
     });
