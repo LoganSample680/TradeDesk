@@ -2504,40 +2504,51 @@ function _checkEmployeeVehiclePicker(){
   const defId=(!_isEmployee&&typeof getDefaultVehicle==='function')?((getDefaultVehicle()||{}).id||''):'';
   // Usual truck first, so the common day is the top button.
   const ordered=defId?list.slice().sort((a,b)=>(String(b.id)===String(defId)?1:0)-(String(a.id)===String(defId)?1:0)):list;
+  // Centred prompt, not a bottom sheet (owner call 2026-08-01). It uses the
+  // shared .zmodal chrome every other popup in the app uses, so it inherits the
+  // §8.4 entrance, the 360px cap, and the overlay's own scrolling when a big
+  // fleet makes the list taller than the screen.
   const ov=document.createElement('div');ov.id='_vehicle-picker-ov';ov.className='zmodal-overlay';
   const sheet=document.createElement('div');
-  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  sheet.className='zmodal';
+  sheet.style.textAlign='center';
   const vehList=ordered.map(v=>{
     const label=[v.year,v.make,v.model].filter(Boolean).join(' ')||escHtml(v.name||v.id||'Vehicle');
     const isDef=defId&&String(v.id)===String(defId);
-    return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid '+(isDef?'var(--blue)':'var(--border2)')+';background:'+(isDef?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+
-      svgIcon('🚗')+'<span style="flex:1;min-width:0">'+escHtml(label)+'</span>'+
-      (isDef?'<span style="font-size:10px;font-weight:800;color:var(--blue);flex-shrink:0">USUAL</span>':'')+'</button>';
+    return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border-radius:var(--r);border:1px solid '+(isDef?'var(--blue)':'var(--border2)')+';background:'+(isDef?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px;color:var(--text)">'+
+      svgIcon('🚗')+'<span>'+escHtml(label)+'</span>'+
+      (isDef?'<span style="font-size:10px;font-weight:800;color:var(--blue)">USUAL</span>':'')+'</button>';
   }).join('');
   sheet.innerHTML=
-    '<div style="font-size:15px;font-weight:800;margin-bottom:4px">Which vehicle are you '+(_isEmployee?'in':'driving')+' today?</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">'+
+    '<div class="zmodal-title">Which vehicle are you '+(_isEmployee?'in':'driving')+' today?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">'+
       (_isEmployee
         ?'Drive time is only logged for company vehicles, personal vehicle trips stay private.'
         :'Your drives log themselves all day. This just puts the miles on the right truck.')+
     '</div>'+
     vehList+
-    (_isEmployee?'<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle, no mileage logged</button>':'')+
-    '<button onclick="_pickVehicle(\'none\',\'On foot\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚶')+' On foot / no vehicle</button>';
+    // No "on foot" row (owner call): moving between job sites without driving is
+    // not a real day, and an option nobody picks is a tap everybody reads past.
+    // Crew keep the personal-vehicle row, which is a different answer entirely,
+    // it is how they say "these miles are not the company's".
+    (_isEmployee?'<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle, no mileage logged</button>':'');
   ov.appendChild(sheet);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
 }
 function _pickVehicle(vid,label){
   const tk=todayKey();
   localStorage.setItem('emp_vehicle_'+tk,vid);
   document.getElementById('_vehicle-picker-ov')?.remove();
-  const icon=vid==='none'?'🚶':'🚗';
-  showToast(vid==='personal'?'No mileage logged for personal vehicle':'Logged to '+label,icon);
+  showToast(vid==='personal'?'No mileage logged for personal vehicle':'Logged to '+label,'🚗');
   const vd=document.getElementById('_emp-vehicle-display');
-  if(vd)vd.textContent=vid==='none'?'':vid==='personal'?'🚗 Personal vehicle':'🚗 Driving: '+label;
+  if(vd)vd.textContent=vid==='personal'?'🚗 Personal vehicle':'🚗 Driving: '+label;
 }
 // Returns true when the employee's shift vehicle should have mileage tracked (company vehicle)
+//
+// Still tests for 'none' even though the prompt no longer offers it. That value
+// can already be sitting in localStorage under TODAY's key on any device where
+// somebody picked "on foot" before this change, and reading it as a vehicle id
+// would attribute the whole day to a truck named "none".
 function _isCompanyVehicleToday(){
   const v=localStorage.getItem('emp_vehicle_'+todayKey());
   return !!(v&&v!=='none'&&v!=='personal');

@@ -517,10 +517,13 @@ function _autoTripPurpose(to){
 // deducted. 'none' (on foot) and 'personal' both mean no company miles.
 //
 // For the OWNER the daily picker is a refinement, not a gate. They are asked
-// only when they run two or more trucks, and dismissing the sheet has to cost
-// them nothing, so an unanswered day falls back to the Fleet default. 'none'
-// still means on foot and suppresses the trip: that is an explicit answer, not
-// an absent one, and it is the only way to say "I did not drive today."
+// only when they run two or more trucks, and dismissing the prompt has to cost
+// them nothing, so an unanswered day falls back to the Fleet default.
+//
+// 'none' is still honoured although the prompt no longer offers it. The value
+// can already be stored under today's key on a device where somebody picked
+// "on foot" before that row was removed, and treating it as a vehicle id would
+// bill the day to a truck named "none".
 function _autoTripVehicle(){
   const vehs=(typeof getVehicles==='function')?getVehicles():[];
   const id=localStorage.getItem('emp_vehicle_'+todayKey());

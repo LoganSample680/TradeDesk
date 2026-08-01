@@ -289,7 +289,112 @@ test.describe('Automatic mileage from drive legs', () => {
       // the vehicle belongs in Fleet.
       const out = await pickerFor({ vehicles: TWO, defaultId: 'v-truck' });
       expect(out.html).not.toContain('no mileage logged');
-      expect(out.labels.some(l => /On foot/.test(l))).toBe(true);
+    });
+
+    test('nobody is offered "on foot" any more, either role', async () => {
+      // Removed on the owner's call: moving between job sites without driving is
+      // not a real day, and an option nobody picks is a tap everybody reads past.
+      // Asserted gone rather than just unused (CLAUDE.md 7.1), and for BOTH
+      // roles, because it lived on the shared prompt.
+      const owner = await pickerFor({ vehicles: TWO, defaultId: 'v-truck' });
+      const crew = await pickerFor({ employee: true, vehicles: TWO });
+      expect(owner.html).not.toContain('On foot');
+      expect(crew.html).not.toContain('On foot');
+      expect(owner.labels.some(l => /On foot/.test(l))).toBe(false);
+      expect(crew.labels.some(l => /On foot/.test(l))).toBe(false);
+    });
+
+    test('the prompt is centred, using the shared modal chrome', async () => {
+      // Owner call: a centred prompt, not a bottom sheet. Checked as GEOMETRY
+      // rather than by reading the class name back, because "centred" is the
+      // thing that was asked for and a class can be present while the card sits
+      // at the bottom anyway.
+      const box = await page.evaluate(() => {
+        const keepVeh = vehicles.slice(), keepDef = S.defaultVehicleId, keepTr = S.teamTracking;
+        const keepEmp = _isEmployee;
+        try {
+          _isEmployee = false; S.teamTracking = true;
+          vehicles.length = 0;
+          vehicles.push({ id: 'a', name: 'A', status: 'active' }, { id: 'b', name: 'B', status: 'active' });
+          S.defaultVehicleId = 'a';
+          localStorage.removeItem('emp_vehicle_' + todayKey());
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          _checkEmployeeVehiclePicker();
+          const card = document.querySelector('#_vehicle-picker-ov .zmodal');
+          if (!card) return null;
+          const r = card.getBoundingClientRect();
+          const out = {
+            cx: r.left + r.width / 2, vw: window.innerWidth, vh: window.innerHeight,
+            top: r.top, bottom: r.bottom, right: r.right, left: r.left,
+            docW: document.documentElement.scrollWidth,
+          };
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          return out;
+        } finally {
+          vehicles.length = 0; keepVeh.forEach(v => vehicles.push(v));
+          S.defaultVehicleId = keepDef; S.teamTracking = keepTr; _isEmployee = keepEmp;
+          localStorage.removeItem('emp_vehicle_' + todayKey());
+        }
+      });
+      expect(box).not.toBeNull();
+      // Horizontally centred within a pixel.
+      expect(Math.abs(box.cx - box.vw / 2)).toBeLessThanOrEqual(1);
+      // Vertically centred, so it is not sitting on the bottom edge any more.
+      expect(box.top).toBeGreaterThan(0);
+      expect(box.bottom).toBeLessThan(box.vh);
+      // 15.1: nothing bleeds off-screen at 390px.
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(box.vw);
+      expect(box.docW).toBeLessThanOrEqual(box.vw + 1);
+    });
+
+    test('a big fleet scrolls instead of running off the screen', async () => {
+      // Twelve trucks is taller than a phone. The overlay scrolls (it owns
+      // overflow-y), and the page behind it still must not scroll sideways.
+      const out = await page.evaluate(() => {
+        const keepVeh = vehicles.slice(), keepTr = S.teamTracking, keepEmp = _isEmployee;
+        try {
+          _isEmployee = false; S.teamTracking = true;
+          vehicles.length = 0;
+          for (let i = 0; i < 12; i++) vehicles.push({ id: 'v' + i, name: '20' + (10 + i) + ' Ford F-250 Super Duty', status: 'active' });
+          localStorage.removeItem('emp_vehicle_' + todayKey());
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          _checkEmployeeVehiclePicker();
+          const ov = document.getElementById('_vehicle-picker-ov');
+          const card = ov && ov.querySelector('.zmodal');
+          const r = card && card.getBoundingClientRect();
+          const res = {
+            scrollable: ov ? getComputedStyle(ov).overflowY : '',
+            right: r ? r.right : 0, vw: window.innerWidth,
+            docW: document.documentElement.scrollWidth,
+          };
+          ov?.remove();
+          return res;
+        } finally {
+          vehicles.length = 0; keepVeh.forEach(v => vehicles.push(v));
+          S.teamTracking = keepTr; _isEmployee = keepEmp;
+          localStorage.removeItem('emp_vehicle_' + todayKey());
+        }
+      });
+      expect(['auto', 'scroll']).toContain(out.scrollable);
+      expect(out.right).toBeLessThanOrEqual(out.vw);
+      expect(out.docW).toBeLessThanOrEqual(out.vw + 1);
+    });
+
+    test("a stored 'on foot' from before the row was removed is still honoured", async () => {
+      // The value can already be sitting under today's key on a device that
+      // picked it yesterday. Reading it as a vehicle id would bill the day to a
+      // truck named "none".
+      const out = await page.evaluate(() => {
+        const keepDef = S.defaultVehicleId;
+        try {
+          S.defaultVehicleId = 'v-truck';
+          localStorage.setItem('emp_vehicle_' + todayKey(), 'none');
+          return { veh: _autoTripVehicle(), company: _isCompanyVehicleToday() };
+        } finally { S.defaultVehicleId = keepDef; localStorage.removeItem('emp_vehicle_' + todayKey()); }
+      });
+      expect(out.veh).toBe('none');
+      expect(out.company).toBe(false);
     });
 
     test('crew keep their personal-vehicle opt-out, and are asked with one truck', async () => {
