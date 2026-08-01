@@ -554,19 +554,24 @@ function _geoNoticeSheet(){
   const ov=document.createElement('div');ov.id='_geo-notice-ov';ov.className='zmodal-overlay';
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:22px 18px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
+  // Centered. The three-fact block is the ONE deliberate exception: a centred
+  // list with leading icons has a ragged left edge and reads badly, so its rows
+  // stay left-aligned inside a centred, width-capped container.
   sheet.innerHTML=
-    '<div style="font-size:30px;margin-bottom:8px">'+svgIcon('📍',{size:30})+'</div>'+
-    '<div style="font-size:17px;font-weight:800;margin-bottom:6px">'+biz+' logs your job time with location</div>'+
-    '<div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Your drive mileage and hours on each job record themselves, so you never fill out a timesheet or photograph an odometer.</div>'+
-    '<div style="background:var(--bg2);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">'+
-      '<div style="font-size:12px;color:var(--text2);line-height:1.7">'+
-        '<div>'+svgIcon('🕖',{size:12})+' <strong>Only during work hours ('+hrs+').</strong></div>'+
-        '<div>'+svgIcon('🚫',{size:12})+' Never nights, weekends, or your own time.</div>'+
-        '<div>'+svgIcon('👤',{size:12})+' Only your manager sees it, never your coworkers.</div>'+
+    '<div style="text-align:center;max-width:420px;margin:0 auto">'+
+      '<div style="font-size:30px;margin-bottom:8px">'+svgIcon('📍',{size:30})+'</div>'+
+      '<div style="font-size:17px;font-weight:800;margin-bottom:6px">'+biz+' logs your job time with location</div>'+
+      '<div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Your drive mileage and hours on each job record themselves, so you never fill out a timesheet or photograph an odometer.</div>'+
+      '<div style="background:var(--bg2);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;text-align:left;display:inline-block">'+
+        '<div style="font-size:12px;color:var(--text2);line-height:1.7">'+
+          '<div>'+svgIcon('🕖',{size:12})+' <strong>Only during work hours ('+hrs+').</strong></div>'+
+          '<div>'+svgIcon('🚫',{size:12})+' Never nights, weekends, or your own time.</div>'+
+          '<div>'+svgIcon('👤',{size:12})+' Only your manager sees it, never your coworkers.</div>'+
+        '</div>'+
       '</div>'+
-    '</div>'+
-    '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:16px">Location tracking during work hours is part of using TradeDesk at '+biz+'. Your phone will ask for permission next, and you can change it anytime in your phone settings.</div>'+
-    '<button id="_geo-notice-go" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Got it, continue</button>';
+      '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:16px">Location tracking during work hours is part of using TradeDesk at '+biz+'. Your phone will ask for permission next, and you can change it anytime in your phone settings.</div>'+
+      '<button id="_geo-notice-go" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Got it, continue</button>'+
+    '</div>';
   ov.appendChild(sheet);document.body.appendChild(ov);
   // The tap that acknowledges is the SAME gesture that opens the OS prompt.
   sheet.querySelector('#_geo-notice-go').onclick=()=>{
