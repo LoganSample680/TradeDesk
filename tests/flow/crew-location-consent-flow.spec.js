@@ -125,19 +125,28 @@ test.describe('Crew location consent: recorded by a tap, never fabricated', () =
       ruleText: 'the acknowledgment must be a REAL row change, timestamped and versioned, caused by the tap',
       expected: 'location_ack_at + location_ack_version land on the team_members row in Postgres',
       act: async (p) => {
-        await p.evaluate(async ({ uid }) => {
-          // Point the ack at this account's own row so the write is exercised
-          // against real RLS rather than a fabricated employee id.
+        // Never swallow the seed error. The first run reported only rows:0,
+        // which cannot distinguish "RLS refused the insert" from "the update ran
+        // but matched nothing" — different bugs with different fixes.
+        p.__seed = await p.evaluate(async ({ uid }) => {
           _supaUser.id = uid;
           _employeeRecord = { id: 'e2e-consent', location_ack_at: null };
-          // Ensure a row exists to update (idempotent, leaves seed data).
+          let upsertErr = null, selErr = null, seededRows = 0;
           try {
-            await _supa.from('team_members').upsert({
+            const { error } = await _supa.from('team_members').upsert({
               contractor_user_id: uid, email: 'e2e-consent@tradedesk.test',
               employee_user_id: uid, active: true,
             }, { onConflict: 'contractor_user_id,email' });
-          } catch (e) {}
+            upsertErr = error ? (error.code + ' ' + error.message) : null;
+          } catch (e) { upsertErr = 'threw: ' + e.message; }
+          try {
+            const { data, error } = await _supa.from('team_members')
+              .select('id,email,employee_user_id').eq('contractor_user_id', uid);
+            selErr = error ? (error.code + ' ' + error.message) : null;
+            seededRows = (data || []).length;
+          } catch (e) { selErr = 'threw: ' + e.message; }
           document.getElementById('_geo-notice-go')?.click();
+          return { upsertErr, selErr, seededRows };
         }, { uid });
         await page.waitForTimeout(1800); // let the update round-trip
         return 1;
@@ -159,7 +168,7 @@ test.describe('Crew location consent: recorded by a tap, never fabricated', () =
         }, { uid });
         // Versioned, so the record still means something after the copy changes.
         const ok = !!out.ackAt && !!out.version && out.version === out.localVersion && out.dismissed;
-        return { ok, got: JSON.stringify(out) };
+        return { ok, got: JSON.stringify(out) + ' · SEED ' + JSON.stringify(p.__seed) };
       },
     });
 
