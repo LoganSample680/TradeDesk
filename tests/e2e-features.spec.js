@@ -3894,10 +3894,11 @@ test.describe('Workforce time intelligence', () => {
       // A manual job clock-in fully INSIDE that dwell: T0+30m to T0+90m (1h),
       // the crew member prefabbing for a specific job while physically there.
       timeEntries = timeEntries.filter(e => e.id !== 8970099);
+      // No scope tag: a shop-prompt clock-in is untagged, it's just job time.
       timeEntries.push({
         id: 8970099, job_id: 1, date: new Date(T0).toISOString().slice(0, 10),
         start_time: new Date(T0 + 30 * 60000).toISOString(), end_time: new Date(T0 + 90 * 60000).toISOString(),
-        minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew', scope_id: 'shop_prefab', scope_label: 'Shop / prefab',
+        minutes: 60, logged_by_uid: EMP, logged_by_name: 'Test Crew',
       });
       const makeQ = (rows) => { const q = { _data: { data: rows } }; q.then = (res, rej) => Promise.resolve(q._data).then(res, rej); q.gte = () => q; q.eq = () => q; q.select = () => q; return q; };
       window._supa = {

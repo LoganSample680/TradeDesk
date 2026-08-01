@@ -1589,7 +1589,9 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         _nearbyJob = null; window._shopPromptDismissedAt = null;
         jobs.length = 0;
         jobs.push({ id: 556006, name: 'Panel Build 4', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
-        _activeTimer = { jobId: 556006, jobName: 'Panel Build 4', clientName: 'On the clock', scopeId: 'shop_prefab', scopeLabel: 'Shop / prefab', startTime: Date.now() - 60000, timerInterval: null, entryId: 999 };
+        // scopeId/scopeLabel null: a shop-prompt clock-in carries no special tag
+        // (owner: once it's on a job it's just job time).
+        _activeTimer = { jobId: 556006, jobName: 'Panel Build 4', clientName: 'On the clock', scopeId: null, scopeLabel: null, startTime: Date.now() - 60000, timerInterval: null, entryId: 999 };
         _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
         try {
           renderDash();

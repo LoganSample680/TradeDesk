@@ -610,9 +610,9 @@ function renderDash(){
       } else if(_shopPrompt){
         // AT THE SHOP, no job open: prefab/fab work here is real job labor with
         // nowhere to attach today. One tap clocks in via the SAME manual system
-        // job-site clock-ins already use (js/jobs.js clockIn), tagged so Job
-        // Profit and the Time Log show it as "Shop / prefab" on that job, no new
-        // table, no new report. Dismissible, never a nag, see _shopDwellMs above.
+        // job-site clock-ins already use (js/jobs.js clockIn), untagged: once
+        // it's on a job it's job time, no new table, no new report, no special
+        // "shop labor" category. Dismissible, never a nag, see _shopDwellMs above.
         const jobRows=_shopPromptJobs.map(j=>{
           const bid=j.bid_id?bids.find(b=>b.id===j.bid_id):null;
           const c=bid?getClientById(bid.client_id):getClientById(j.client_id);

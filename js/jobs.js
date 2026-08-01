@@ -59,11 +59,17 @@ function _nearbyClockIn(clientId,jobId){
 // One-tap clock-in from the "At the shop" dashboard prompt (js/dashboard.js).
 // Skips the task-scope sheet deliberately: the prompt already exists because
 // the automatic tracker cannot know intent, asking again which task within
-// the job would be a second guess piled on the first. 'shop_prefab' is a
-// fixed scope id (not per-job custom) so it aggregates consistently across
-// jobs in Job Profit and the Time Log, "how many prefab hours this month."
+// the job would be a second guess piled on the first.
+//
+// No scope tag (owner 2026-08-01: "agnostic, pure shop time no job is shop
+// time, shop time tagged with a job is job time"). WHERE the labor happened is
+// not a property of the job's cost, once it's attributed to a job it IS job
+// time, indistinguishable from clocking in on-site, no special "shop labor"
+// category living permanently on every job that ever got prefab work. This is
+// the exact same null-scope path a walk-up clock-in with no task picked
+// already uses (Time Log/Job Profit already render an empty scope cleanly).
 function _shopPromptClockIn(jobId){
-  clockIn(jobId,'shop_prefab','Shop / prefab');
+  clockIn(jobId,null,null);
   renderDash&&renderDash();
 }
 // Scoped to the CURRENT shop dwell (keyed by its own arrival stamp), not

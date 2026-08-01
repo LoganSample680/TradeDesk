@@ -1049,7 +1049,7 @@ test.describe('jobs.js: exhaustive coverage', () => {
   // ── _shopPromptClockIn / _shopPromptDismiss (the "at the shop" dashboard
   // prompt, js/dashboard.js) ──────────────────────────────────────────────────
   test.describe('_shopPromptClockIn / _shopPromptDismiss', () => {
-    test('clocks in with the fixed shop_prefab scope, not the task-scope sheet', async () => {
+    test('clocks in with no scope tag, not the task-scope sheet, once on a job it is just job time', async () => {
       const r = await page.evaluate(() => {
         const origTimer = _activeTimer, origJobs = jobs.slice();
         jobs.length = 0;
@@ -1069,8 +1069,11 @@ test.describe('jobs.js: exhaustive coverage', () => {
         }
       });
       expect(r.jobId).toBe(998001);
-      expect(r.scopeId).toBe('shop_prefab');
-      expect(r.scopeLabel).toBe('Shop / prefab');
+      // No scope tag: owner directive 2026-08-01, once shop time is on a job it
+      // IS job time, no special "shop labor" category distinguishing it from
+      // any other manually-clocked task.
+      expect(r.scopeId).toBe(null);
+      expect(r.scopeLabel).toBe(null);
       // One tap to clocked-in: the task-scope picker never opens for this path.
       expect(r.sheetOpen).toBe(false);
     });
