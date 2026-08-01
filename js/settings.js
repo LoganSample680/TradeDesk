@@ -1259,6 +1259,20 @@ function getVehicleFullLabel(v){
   const nick=v.nickname&&v.nickname.trim();
   return nick?nick+' ('+v.name+')':v.name||'';
 }
+// The label for CHOOSING a vehicle, as opposed to reading about one.
+//
+// Two white F-250s bought the same year are the same string in a list, and a
+// crew member picking the wrong one puts a day of miles (and the fuel and
+// service that hang off them) on the wrong truck. The plate is the identifier
+// already painted on the thing they are standing next to, so it goes on every
+// row the moment there is more than one vehicle to confuse.
+function getVehiclePickLabel(v){
+  if(!v)return '';
+  if(typeof v==='string')return v;
+  const base=[v.year,v.make,v.model].filter(Boolean).join(' ')||getVehicleLabel(v)||v.name||'Vehicle';
+  const plate=(v.plate||'').trim();
+  return plate?base+' · '+plate:base;
+}
 
 // ══════════════════════════════════════════════════════════════════
 // ANNUAL ODOMETER CHECK, IRS Publication 463 compliance

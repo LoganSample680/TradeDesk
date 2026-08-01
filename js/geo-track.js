@@ -664,6 +664,14 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc){
   // Personal vehicle trips stay private, drive TIME is still logged (it's
   // compensable labor) but the mileage flag is omitted.
   const companyVeh=typeof _isCompanyVehicleToday==='function'&&_isCompanyVehicleToday();
+  // A passenger in the company truck is not in a personal vehicle, and the row
+  // should not say they were. Same money outcome (no miles either way, drive
+  // time paid either way), but 'drive-rider' is what actually happened, and a
+  // time entry that misdescribes the day is the kind of thing that reads badly
+  // a year later in front of somebody asking questions. Still matches
+  // _geoIsDriveSource (/^drive/), so every money view treats it as drive.
+  const mode=(typeof _shiftVehicleMode==='function')?_shiftVehicleMode():'';
+  const kind=companyVeh?'drive':(mode==='rider'?'drive-rider':'drive-personal');
   // Minted here rather than inside _geoEnqueue so the SAME key lands on the time
   // entry and on the mileage row. That is what makes the mileage row idempotent:
   // one leg can only ever produce one trip, however many times this runs.
@@ -672,7 +680,7 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc){
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:jobId!=null?String(jobId):null,arrived_at:driveStartedAt,departed_at:arrived,minutes:mins,
     dest_place:destPlace||null,client_key:legKey,
-    source:(companyVeh?'drive':'drive-personal')+(gap?'-gap':'')
+    source:kind+(gap?'-gap':'')
   });
   _geoAutoMileage(_geoLegOrigin,destLoc,legKey,driveStartedAt,companyVeh);
 }

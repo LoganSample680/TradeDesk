@@ -2292,6 +2292,7 @@ function renderDispatch(){
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;padding:0 2px">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+rc+'">'+escHtml(emp.name)+'</div>'+optBtn+
       '</div>'+
+      _dispatchTruckRow(emp)+
       (empJobs.length?empJobs.map(j=>_jobCard(j,emp.id)).join('')
         :'<div style="font-size:12px;color:var(--text3);padding:8px;background:var(--bg2);border:1px dashed var(--border);border-radius:var(--r)">No jobs assigned</div>')+
     '</div>';
@@ -2311,6 +2312,75 @@ function renderDispatch(){
           '<div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px">'+empCols+'</div>'
         :'<div style="font-size:13px;color:var(--text3);padding:12px 0">No employees added yet. Add team members in the Team tab.</div>')+
     '</div>';
+}
+// ── The truck row on each crew column of the dispatch board ──────────────────
+// It sits on the screen the owner already opens every morning to hand out the
+// day's work, because "who is taking which truck" is decided in the same breath
+// as "who is going where", by the same person, standing in the same yard.
+function _dispatchTruckRow(emp){
+  const a=_truckDayFor(emp.id);
+  const label=_truckDayLabel(a);
+  const set=!!a;
+  return '<button onclick="_dispatchTruckPicker(\''+emp.id+'\')" style="display:flex;align-items:center;gap:6px;width:100%;text-align:left;padding:7px 10px;margin-bottom:8px;border-radius:var(--r);border:1px solid '+(set?'var(--border2)':'var(--border)')+';background:'+(set?'var(--bg2)':'none')+';cursor:pointer;font-family:inherit;font-size:12px;min-height:36px;color:'+(set?'var(--text)':'var(--text3)')+'">'+
+    svgIcon('🚗',{size:13})+'<span style="flex:1;min-width:0;font-weight:'+(set?'700':'500')+'">'+escHtml(label)+'</span>'+
+    '<span style="color:var(--text3);flex-shrink:0">›</span></button>';
+}
+function _truckDayLabel(a){
+  if(!a)return 'No truck assigned';
+  if(a.mode==='own')return 'Own vehicle';
+  if(a.mode==='rider'){
+    const d=(S.employees||[]).find(x=>String(x.id)===String(a.with));
+    return d?('Riding with '+d.name):'Riding along';
+  }
+  const v=(typeof getVehicles==='function'?getVehicles():[]).find(x=>String(x.id)===String(a.v));
+  return v?getVehiclePickLabel(v):'Truck';
+}
+// Which crew member is driving a given vehicle today, if anyone. This is the
+// whole one-driver-per-truck rule: it is enforced by the board never offering
+// a truck twice, not by asking people to remember.
+function _truckDriver(vehId,exceptEmpId){
+  return (S.employees||[]).find(e=>{
+    if(exceptEmpId!=null&&String(e.id)===String(exceptEmpId))return false;
+    const t=_truckDayFor(e.id);
+    return t&&t.mode==='truck'&&String(t.v)===String(vehId);
+  })||null;
+}
+function _dispatchTruckPicker(empId){
+  const emp=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  if(!emp)return;
+  const vehs=(typeof getVehicles==='function'?getVehicles():[]).filter(v=>(v.status||'active')==='active');
+  const cur=_truckDayFor(empId);
+  const ov=document.createElement('div');ov.id='_truck-picker-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';box.style.textAlign='center';
+  const row=(on,html,sel)=>'<button '+on+' style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border-radius:var(--r);border:1px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px;color:var(--text)">'+html+'</button>';
+  const list=vehs.map(v=>{
+    const driver=_truckDriver(v.id,empId);
+    const sel=cur&&cur.mode==='truck'&&String(cur.v)===String(v.id);
+    // Already spoken for, so the only honest thing left to offer is the
+    // passenger seat. Assigning the same truck twice is the double-count.
+    if(driver)return row('onclick="_dispatchSetTruck(\''+empId+'\',\'rider\',\'\',\''+driver.id+'\')"',
+      svgIcon('🚗')+'<span style="flex:1;min-width:0;text-align:left">'+escHtml(getVehiclePickLabel(v))+'<br><span style="font-size:11px;font-weight:500;color:var(--text3)">Riding with '+escHtml(driver.name)+'</span></span>',
+      cur&&cur.mode==='rider'&&String(cur.with)===String(driver.id));
+    return row('onclick="_dispatchSetTruck(\''+empId+'\',\'truck\',\''+v.id+'\')"',
+      svgIcon('🚗')+'<span>'+escHtml(getVehiclePickLabel(v))+'</span>',sel);
+  }).join('');
+  box.innerHTML='<div class="zmodal-title">What is '+escHtml(emp.name)+' driving today?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">One driver per truck. Anyone riding along is still paid for the drive, their miles just belong to the driver.</div>'+
+    (vehs.length?list:'<div style="font-size:13px;color:var(--text3);margin-bottom:12px">No active vehicles in Fleet yet.</div>')+
+    row('onclick="_dispatchSetTruck(\''+empId+'\',\'own\')"',svgIcon('🚗')+'<span>Own vehicle</span>',!!(cur&&cur.mode==='own'))+
+    (cur?'<button onclick="_dispatchSetTruck(\''+empId+'\',\'\')" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Clear</button>':'');
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _dispatchSetTruck(empId,mode,vehId,withId){
+  const e=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  if(!e)return;
+  if(mode)e.truckDay={day:todayKey(),mode,v:vehId||'',with:withId||''};
+  else delete e.truckDay;
+  S.settingsTs=Date.now();
+  saveAll();
+  document.getElementById('_truck-picker-ov')?.remove();
+  renderDispatch();
 }
 function _dispatchAssign(jobId){
   const emps=S.employees||[];
@@ -2494,6 +2564,10 @@ function _checkEmployeeVehiclePicker(){
   const tk=todayKey();
   const key='emp_vehicle_'+tk;
   if(localStorage.getItem(key))return;
+  // Dispatch already answered it. Asking again would invite a crew member to
+  // contradict the person holding the keys, which is how a carpool ends up
+  // logged as three separate trucks.
+  if(_isEmployee&&_myTruckToday())return;
   const vehs=(typeof getVehicles==='function')?getVehicles():[];
   const active=vehs.filter(v=>(v.status||'active')==='active');
   if(!_isEmployee){
@@ -2513,7 +2587,7 @@ function _checkEmployeeVehiclePicker(){
   sheet.className='zmodal';
   sheet.style.textAlign='center';
   const vehList=ordered.map(v=>{
-    const label=[v.year,v.make,v.model].filter(Boolean).join(' ')||escHtml(v.name||v.id||'Vehicle');
+    const label=getVehiclePickLabel(v)||'Vehicle';   // plate included: two white F-250s are one string without it
     const isDef=defId&&String(v.id)===String(defId);
     return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border-radius:var(--r);border:1px solid '+(isDef?'var(--blue)':'var(--border2)')+';background:'+(isDef?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px;color:var(--text)">'+
       svgIcon('🚗')+'<span>'+escHtml(label)+'</span>'+
@@ -2541,10 +2615,51 @@ function _pickVehicle(vid,label){
   const vd=document.getElementById('_emp-vehicle-display');
   if(vd)vd.textContent=vid==='personal'?'🚗 Personal vehicle':'🚗 Driving: '+label;
 }
+// ── Who is in which truck today ──────────────────────────────────────────────
+// Owner call (2026-08-01): dispatch assigns the truck, and the picker is the
+// fallback when dispatch did not.
+//
+// THE REASON IT HAS TO BE DISPATCH, and not just a nicety: three crew carpool
+// to a job in one truck. All three phones run the geofence and all three log
+// drive legs. If each one taps a truck in the picker, that single trip's miles
+// get deducted THREE TIMES. No crew member can prevent it, because none of them
+// knows what the other two tapped. Exactly one person knows three people are in
+// one truck, and it is whoever hands out the keys.
+//
+// So a truck has ONE driver per day. Everyone else in it is a rider: their
+// drive time still logs, because they are on the clock and being paid for the
+// ride, and their miles do not, because those miles already belong to the
+// driver's row.
+//
+// Stored as a single-day slot on the employee record rather than a new synced
+// table: it is overwritten each morning so it cannot grow, and it rides along
+// on the settings sync that already reaches every crew device, which means no
+// migration for something that is by nature ephemeral.
+//   truckDay = {day:'YYYY-MM-DD', mode:'truck'|'rider'|'own', v:<vehicleId>, with:<empId>}
+function _truckDayFor(empId){
+  if(empId==null)return null;
+  const e=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  const t=e&&e.truckDay;
+  return (t&&t.day===todayKey()&&t.mode)?t:null;   // yesterday's answer is not today's
+}
+// The signed-in crew member's own assignment, if dispatch made one.
+function _myTruckToday(){
+  const eid=(typeof _employeeRecord!=='undefined'&&_employeeRecord)?_employeeRecord.id:null;
+  return _truckDayFor(eid);
+}
+// What the person is riding in today: 'truck' | 'rider' | 'own' | 'none'.
+// One place decides it, so the mileage gate and the drive-leg label can never
+// disagree about the same day.
+function _shiftVehicleMode(){
+  const a=_myTruckToday();
+  if(a)return a.mode;
+  const v=localStorage.getItem('emp_vehicle_'+todayKey());
+  if(!v)return 'none';
+  return v==='personal'?'own':'truck';
+}
 // Returns true when the shift vehicle should have mileage tracked (company vehicle)
 function _isCompanyVehicleToday(){
-  const v=localStorage.getItem('emp_vehicle_'+todayKey());
-  return !!(v&&v!=='personal');
+  return _shiftVehicleMode()==='truck';
 }
 
 // ── Estimate access requests (owner side) ──────────────────────────────────

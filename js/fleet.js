@@ -870,6 +870,27 @@ function saveFleetVehicle() {
   const isEdit = _fleetEditIdx >= 0;
   const oldV = isEdit ? (vehs[_fleetEditIdx]||{}) : {};
 
+  // ── The plate is what makes two trucks tellable apart ──────────────────────
+  // Owner call (2026-08-01): once there are multiples, every vehicle needs a
+  // plate. Optional is fine for a one-truck shop, where "the truck" is
+  // unambiguous. It stops being fine the moment a crew member has to pick from
+  // a list, because two white F-250s bought the same year read as the SAME
+  // ENTRY on a phone screen, and picking the wrong one puts the day's miles,
+  // and the fuel and service costs that hang off them, on the wrong vehicle.
+  // The plate is the identifier already painted on the thing they are standing
+  // next to, which is why it beats a nickname nobody uses out loud.
+  //
+  // Counted over what the fleet will be AFTER this save, so adding a second
+  // vehicle is the moment the rule starts applying, not the third.
+  const plate = (document.getElementById('fv-plate')?document.getElementById('fv-plate').value:'').trim().toUpperCase();
+  const fleetAfter = isEdit ? vehs.length : vehs.length + 1;
+  if(fleetAfter > 1 && !plate) {
+    const el = document.getElementById('fv-plate');
+    if(el) { el.style.borderColor = '#A32D2D'; el.style.background = 'var(--red-lt)'; el.focus(); }
+    zAlert('Add the license plate. With more than one vehicle it is the only thing that tells them apart when your crew picks one.', {title:'Plate required'});
+    return;
+  }
+
   const deductEl = document.querySelector('input[name="fv-deduct"]:checked');
   const newV = {
     ...oldV,
@@ -880,7 +901,7 @@ function saveFleetVehicle() {
     name,
     nickname: (document.getElementById('fv-nick')?document.getElementById('fv-nick').value:'').trim(),
     color:    (document.getElementById('fv-color')?document.getElementById('fv-color').value:'').trim(),
-    plate:    (document.getElementById('fv-plate')?document.getElementById('fv-plate').value:'').trim().toUpperCase(),
+    plate,
     vin:      (document.getElementById('fv-vin')?document.getElementById('fv-vin').value:'').trim().toUpperCase(),
     bizUse:   oldV.bizUse||100, // updated by year-end odometer report, not manual entry
     gvwr:     document.getElementById('fv-gvwr')?document.getElementById('fv-gvwr').value:'',

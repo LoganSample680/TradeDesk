@@ -520,6 +520,12 @@ function _autoTripVehicle(){
   const vehs=(typeof getVehicles==='function')?getVehicles():[];
   const id=localStorage.getItem('emp_vehicle_'+todayKey());
   if(_isEmployee){
+    // Dispatch wins when it spoke. Only the person handing out keys can know
+    // that three people are in one truck, so their answer outranks anything
+    // tapped on a single phone. A rider logs no miles: those miles are already
+    // on the driver's row, and billing them twice is an inflated deduction.
+    const a=(typeof _myTruckToday==='function')?_myTruckToday():null;
+    if(a)return a.mode==='truck'?(vehs.find(v=>String(v.id)===String(a.v))||null):null;
     if(!id||id==='personal')return null;
     return vehs.find(v=>String(v.id)===String(id))||null;
   }
