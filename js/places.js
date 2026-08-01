@@ -495,6 +495,20 @@ function openPlaceModal(id,lat,lon){
   '</div>';
   document.body.appendChild(ov);
   setTimeout(()=>document.getElementById('place-name')?.focus(),80);
+  // Ask MapKit what business is standing at this pin and fill the name in.
+  // Only for a NEW place from a coordinate, never over an existing record and
+  // never over something already typed: the answer is a suggestion, and the
+  // contractor is the one who decides what their supplier is called.
+  if(!pl&&_lat!=null&&typeof _poiAt==='function'){
+    _poiAt({lat:Number(_lat),lng:Number(_lon)}).then(poi=>{
+      if(!poi||!poi.name)return;
+      const n=document.getElementById('place-name');
+      if(!n||n.value.trim())return;
+      n.value=poi.name;
+      const k=document.getElementById('place-kind');
+      if(k&&typeof _poiPlaceKind==='function')k.value=_poiPlaceKind(poi.category);
+    }).catch(()=>{});
+  }
 }
 function _savePlaceFromModal(id){
   const name=(document.getElementById('place-name')?.value||'').trim();

@@ -559,6 +559,58 @@ function _haversineMiles(c1,c2){
   const a=Math.sin(dLat/2)**2+Math.cos(c1.lat*toR)*Math.cos(c2.lat*toR)*Math.sin(dLon/2)**2;
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
+// ── What business is at this coordinate ──────────────────────────────────────
+// A repeat stop the app has learned is a bare lat/lon, and asking a contractor
+// to name it means typing "Home Depot" on a phone while standing in a parking
+// lot. MapKit already knows what building they parked at, so it answers instead
+// and they confirm.
+//
+// Two lookups, nearest-POI first: reverse geocoding a parking lot returns the
+// STREET ADDRESS, which is exactly the useless answer. A points-of-interest
+// search returns the tenant, which is the name that belongs on the record and
+// on every mileage row that ends there.
+//
+// Returns {name,category} or null, and null is a fine answer: the modal just
+// opens with an empty name, which is what it did before any of this.
+async function _poiAt(coord){
+  if(!_mapkitReady||typeof mapkit==='undefined'||!coord||coord.lat==null)return null;
+  const lat=coord.lat,lng=coord.lng!=null?coord.lng:coord.lon;
+  const near=new mapkit.Coordinate(lat,lng);
+  // ~250m box: big enough for a big-box store's lot, small enough that it can't
+  // return the shop next door.
+  try{
+    if(mapkit.PointsOfInterestSearch){
+      const region=new mapkit.CoordinateRegion(near,new mapkit.CoordinateSpan(0.0045,0.0045));
+      const res=await new Promise((resolve,reject)=>{
+        const s=new mapkit.PointsOfInterestSearch({region});
+        s.search((err,data)=>{ if(err||!data||!data.places||!data.places.length){reject(new Error('poi'));return;} resolve(data.places); });
+      });
+      const p=res[0];
+      if(p&&p.name)return {name:p.name,category:p.pointOfInterestCategory||''};
+    }
+  }catch(_e){}
+  try{
+    const p=await new Promise((resolve,reject)=>{
+      new mapkit.Geocoder().reverseLookup(near,(err,data)=>{
+        if(err||!data||!data.results||!data.results.length){reject(new Error('geo'));return;}
+        resolve(data.results[0]);
+      });
+    });
+    // Only a NAME, never the formatted address: "1100 SW Wanamaker Rd" tells the
+    // contractor nothing they did not already know from the pin.
+    if(p&&p.name&&p.name!==p.formattedAddress)return {name:p.name,category:p.pointOfInterestCategory||''};
+  }catch(_e){}
+  return null;
+}
+// Apple's POI categories mapped onto the four kinds a contractor cares about.
+// Anything unrecognised stays 'supply', which is the existing default and the
+// overwhelmingly common case for a place they keep stopping at.
+function _poiPlaceKind(category){
+  const c=String(category||'');
+  if(/Store|Hardware|Home|Building|Supply|Warehouse|Wholesale/i.test(c))return 'supply';
+  if(/Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(c))return 'other';
+  return 'supply';
+}
 async function _routeDistance(fromCoords,toCoords){
   // MapKit Directions, primary
   if(_mapkitReady){

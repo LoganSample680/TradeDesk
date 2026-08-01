@@ -43,42 +43,50 @@ test.describe('Automatic mileage from drive legs', () => {
     await waitForAppBoot(page);
     await page.evaluate(() => { window.supaLoadFromCloud = async () => {}; });
     await page.evaluate((d) => {
-      S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon;
-      S.teamTracking = true;
-      if (typeof places !== 'undefined') places.length = 0;
-      savePlace({ name: 'Ace Supply', kind: 'supply', lat: d.SUPPLY.lat, lon: d.SUPPLY.lon, confirmedBy: 'manual' });
-      savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOMEOFF.lat, lon: d.HOMEOFF.lon, confirmedBy: 'manual' });
-      clients.length = 0;
-      clients.push({ id: 7701, name: 'Miller Residence', addr: '400 Oak St' });
-      jobs.length = 0;
-      jobs.push({ id: 9901, name: 'Repaint', eventType: 'job', status: 'upcoming',
-                  start: todayKey(), days: 1, lat: d.JOB.lat, lon: d.JOB.lon, client_id: 7701, addr: '400 Oak St' });
-      vehicles.length = 0;
-      vehicles.push({ id: 'v-truck', name: 'F-250', nickname: 'Big Blue', status: 'active' });
-      vehicles.push({ id: 'v-van', name: 'Transit', status: 'active' });
-      S.defaultVehicleId = 'v-truck';
-
-      // ── Re-seedable, because a fixture set once here does not stay put ──────
+      // ── The ENTIRE fixture is re-seedable, because none of it stays put ─────
       //
-      // Boot kicks _geoOfficeCoords() whenever S.officeLat is unset, and that
-      // function geocodes the business address and writes S.officeLat/officeLon
-      // AFTER its await resolves. So a promise already in flight when this
-      // beforeAll runs will happily land later and move the shop fence, in the
-      // middle of whichever test happens to be running.
+      // Two things overwrite it from under a running test:
       //
-      // That is exactly how CI shard 3 failed on WebKit and not on Chromium:
-      // the resolution landed inside the first test, the SHOP ping stopped
-      // matching the fence, the leg had no origin and no trip was logged. The
-      // app was fine. The test was leaning on state it did not own.
+      //   1. supaLoadFromCloud. waitForAppBoot returns once the app is usable,
+      //      but a load already IN FLIGHT is not cancelled by stubbing the
+      //      function afterwards. When it lands it replaces the settings blob
+      //      AND the synced arrays, so jobs, clients, places and vehicles all
+      //      go with it.
+      //   2. _geoOfficeCoords, kicked at boot whenever S.officeLat is unset,
+      //      which writes the shop coordinates after its geocode resolves.
       //
-      // Every case now re-asserts what it depends on, and the kicker is stubbed
-      // so no further one can start.
+      // That is how CI shard 3 failed on WebKit and not on Chromium: the load
+      // landed inside the first test, `jobs` was empty so the destination never
+      // fenced, the leg was never logged and no trip existed. The app was fine.
+      // The test was leaning on state it did not own.
+      //
+      // An earlier version of this re-seeded only officeLat and teamTracking,
+      // which is why the failure survived that fix: the arrays were the part
+      // that mattered. Everything the tests depend on is restored here now.
       window._geoOfficeCoords = async () => ({ lat: d.SHOP.lat, lng: d.SHOP.lon });
       window.__seedGeo = () => {
         S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon;
         S.teamTracking = true;
+        S.defaultVehicleId = 'v-truck';
         _geoPingBusy = false;
+
+        places.length = 0;
+        savePlace({ name: 'Ace Supply', kind: 'supply', lat: d.SUPPLY.lat, lon: d.SUPPLY.lon, confirmedBy: 'manual' });
+        savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOMEOFF.lat, lon: d.HOMEOFF.lon, confirmedBy: 'manual' });
+
+        clients.length = 0;
+        clients.push({ id: 7701, name: 'Miller Residence', addr: '400 Oak St' });
+
+        jobs.length = 0;
+        jobs.push({ id: 9901, name: 'Repaint', eventType: 'job', status: 'upcoming',
+                    start: todayKey(), days: 1, lat: d.JOB.lat, lon: d.JOB.lon, client_id: 7701, addr: '400 Oak St' });
+        _geoJobCoords = {};   // the fence cache is keyed by job id; a fresh jobs array needs a fresh one
+
+        vehicles.length = 0;
+        vehicles.push({ id: 'v-truck', name: 'F-250', nickname: 'Big Blue', status: 'active' });
+        vehicles.push({ id: 'v-van', name: 'Transit', status: 'active' });
       };
+      __seedGeo();
     }, { SHOP, JOB, SUPPLY, HOMEOFF });
   });
   test.afterAll(async () => { await page.context().close(); });
@@ -599,9 +607,11 @@ test.describe('Automatic mileage from drive legs', () => {
     window._routeDistance = _routeDistance = async () => ({ miles: 9, mins: 15 });
     const before = mileage.length;
     try {
+      // Seed FIRST: __seedGeo rebuilds `places` from scratch, so this case's own
+      // home-office tag has to be added after it, not before.
+      __seedGeo();
       S.homeOffice = !!d.box;
       if (d.tagPlace) savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
-      __seedGeo();
       _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
       _geoShopArrivedAt = null; _geoDriveStartedAt = null;
       _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
@@ -690,9 +700,9 @@ test.describe('Automatic mileage from drive legs', () => {
         window._routeDistance = _routeDistance = async () => ({ miles: 6.2, mins: 11 });
         const before = mileage.length;
         try {
+          __seedGeo();   // rebuilds `places`, so the home-office tag goes after it
           S.homeOffice = true;
           savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
-          __seedGeo();
           _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
           _geoShopArrivedAt = null; _geoDriveStartedAt = null;
           _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
@@ -987,6 +997,150 @@ test.describe('Automatic mileage from drive legs', () => {
     test('every purpose has a colour, including the new one', async () => {
       const missing = await page.evaluate(() => MILE_PURPOSES.filter(p => !MILE_PURPOSE_COLORS[p]));
       expect(missing).toEqual([]);
+    });
+  });
+
+  // ── Naming the business at a pin ──────────────────────────────────────────
+  // A repeat stop the app has learned is a bare lat/lon. Asking a contractor to
+  // name it means typing "Home Depot" on a phone in a parking lot, so MapKit
+  // answers and they confirm.
+  //
+  // MapKit is stubbed here on purpose, and it has to be: its token is
+  // domain-locked to tradedeskpro.app and *.pages.dev, so on any test origin it
+  // never initialises at all. What these pin down is the plumbing, which lookup
+  // is preferred, what gets rejected, and what the answer turns into. Whether
+  // Apple actually knows that particular parking lot is a question only the
+  // live flow test on a preview URL can answer.
+  test.describe('what business is at this pin', () => {
+    // MapKit is stubbed from a plain CONFIG rather than injected source: the
+    // page runs under a CSP that forbids eval, which is the right setting for
+    // the real app and simply means the stub has to be built in-page.
+    const withMapkit = (cfg) => page.evaluate((c) => {
+      window.mapkit = {
+        Coordinate: function (a, b) { this.latitude = a; this.longitude = b; },
+        CoordinateSpan: function (a, b) { this.a = a; this.b = b; },
+        CoordinateRegion: function (co, sp) { this.co = co; this.sp = sp; },
+        PointsOfInterestSearch: function () {
+          this.search = (cb) => c.poiFails
+            ? cb(new Error('no poi'))
+            : cb(null, { places: [{ name: c.poiName, pointOfInterestCategory: c.poiCategory }] });
+        },
+        Geocoder: function () {
+          this.reverseLookup = (co, cb) => c.geoFails
+            ? cb(new Error('no geo'))
+            : cb(null, { results: [{ name: c.geoName, formattedAddress: c.geoAddr }] });
+        },
+      };
+      _mapkitReady = true;   // a script-scoped let, so window._mapkitReady would miss it
+    }, cfg);
+
+    test.afterEach(async () => {
+      await page.evaluate(() => { _mapkitReady = false; delete window.mapkit; });
+    });
+
+    test('prefers the nearest POI over reverse geocoding', async () => {
+      // Reverse geocoding a big-box parking lot returns the STREET ADDRESS,
+      // which is the one answer that helps nobody. The POI search returns the
+      // tenant, which is the name that belongs on every mileage row ending here.
+      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore',
+                         geoName: '1100 SW Wanamaker Rd', geoAddr: '1100 SW Wanamaker Rd' });
+      const out = await page.evaluate(() => _poiAt({ lat: 39.03, lng: -95.77 }));
+      expect(out.name).toBe('The Home Depot');
+      expect(out.category).toBe('MKPOICategoryStore');
+    });
+
+    test('falls back to reverse geocoding when there is no POI', async () => {
+      await withMapkit({ poiFails: true, geoName: 'Ferguson Plumbing Supply', geoAddr: '900 N Kansas Ave' });
+      const out = await page.evaluate(() => _poiAt({ lat: 39.06, lng: -95.67 }));
+      expect(out.name).toBe('Ferguson Plumbing Supply');
+    });
+
+    test('never names a supplier after its own street address', async () => {
+      // When the only thing Apple knows is the address, returning it would name
+      // the place "1100 SW Wanamaker Rd", which tells the contractor nothing
+      // they did not already know from the pin.
+      await withMapkit({ poiFails: true, geoName: '1100 SW Wanamaker Rd', geoAddr: '1100 SW Wanamaker Rd' });
+      const out = await page.evaluate(() => _poiAt({ lat: 39.06, lng: -95.67 }));
+      expect(out).toBeNull();
+    });
+
+    test('no MapKit, no answer, and no throw', async () => {
+      // The normal case on localhost and on any unauthorised origin, which is
+      // every origin the offline suite ever runs on.
+      const out = await page.evaluate(async () => {
+        _mapkitReady = false; delete window.mapkit;
+        return { poi: await _poiAt({ lat: 39.03, lng: -95.77 }), nul: await _poiAt(null), empty: await _poiAt({}) };
+      });
+      expect(out.poi).toBeNull();
+      expect(out.nul).toBeNull();
+      expect(out.empty).toBeNull();
+    });
+
+    test('both lookups failing is an answer, not an error', async () => {
+      await withMapkit({ poiFails: true, geoFails: true });
+      const out = await page.evaluate(() => _poiAt({ lat: 39.03, lng: -95.77 }));
+      expect(out).toBeNull();
+    });
+
+    test('a store category becomes a supply house, food does not', async () => {
+      const out = await page.evaluate(() => ({
+        store: _poiPlaceKind('MKPOICategoryStore'),
+        hardware: _poiPlaceKind('MKPOICategoryHardwareStore'),
+        food: _poiPlaceKind('MKPOICategoryRestaurant'),
+        cafe: _poiPlaceKind('MKPOICategoryCafe'),
+        unknown: _poiPlaceKind('MKPOICategoryZoo'),
+        blank: _poiPlaceKind(''),
+        nul: _poiPlaceKind(null),
+      }));
+      expect(out.store).toBe('supply');
+      expect(out.hardware).toBe('supply');
+      // Lunch is not a supply run, and mislabelling it would put a burrito in
+      // the materials column.
+      expect(out.food).toBe('other');
+      expect(out.cafe).toBe('other');
+      // Anything unrecognised keeps the existing default rather than inventing
+      // a behaviour for a category nobody anticipated.
+      expect(out.unknown).toBe('supply');
+      expect(out.blank).toBe('supply');
+      expect(out.nul).toBe('supply');
+    });
+
+    test('the name lands in the modal, and never over one already typed', async () => {
+      // The answer is a suggestion. What their supplier is called is theirs.
+      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore', geoFails: true });
+      const out = await page.evaluate(async () => {
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 39.03, -95.77);
+        await new Promise(r => setTimeout(r, 150));
+        const filled = document.getElementById('place-name').value;
+        const kind = document.getElementById('place-kind').value;
+        document.getElementById('place-modal')?.remove();
+
+        openPlaceModal(null, 39.03, -95.77);
+        const n = document.getElementById('place-name');
+        n.value = "Bob's Electric Supply";      // typed before the lookup lands
+        await new Promise(r => setTimeout(r, 150));
+        const kept = n.value;
+        document.getElementById('place-modal')?.remove();
+        return { filled, kind, kept };
+      });
+      expect(out.filled).toBe('The Home Depot');
+      expect(out.kind).toBe('supply');
+      expect(out.kept).toBe("Bob's Electric Supply");
+    });
+
+    test('editing an existing place is never overwritten by a lookup', async () => {
+      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore', geoFails: true });
+      const out = await page.evaluate(async () => {
+        const p = savePlace({ name: 'Ace Supply', kind: 'supply', lat: 39.03, lon: -95.77, confirmedBy: 'manual' });
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(p.id);
+        await new Promise(r => setTimeout(r, 150));
+        const v = document.getElementById('place-name').value;
+        document.getElementById('place-modal')?.remove();
+        return v;
+      });
+      expect(out).toBe('Ace Supply');
     });
   });
 
