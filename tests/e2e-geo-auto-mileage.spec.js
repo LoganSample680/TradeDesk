@@ -282,14 +282,157 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
-  test.describe('what must never be logged', () => {
-    test('the drive from home is a commute, not a business trip', async () => {
-      // The day starts at home, which is not a saved place and not the shop, so
-      // the machine sees an unknown stop. Logging that leg would be the app
-      // inflating a deduction on the contractor's behalf.
+  // ── Leaving home: the checkbox decides, not the app ────────────────────────
+  //
+  // Owner report (2026-08-01): "It should log the drive from home. For business
+  // owners with a home office the drive from home office to a shop is work
+  // related, same with home to a shop or home to supply and back."
+  //
+  // They were right, and the app had been LYING about it. Settings has a home
+  // office checkbox, and three separate screens promise what ticking it does:
+  // mileage.js ("your drives from home to job sites count as deductible
+  // business miles") and tax.js twice ("every drive from home to a job site
+  // counts as business mileage, not commuting"). Nothing read S.homeOffice.
+  // Ticking it changed the wording and logged exactly zero additional miles.
+  //
+  // The line these tests hold: without a declared home office the first drive
+  // out of the house is a commute and is refused, because the GPS cannot tell
+  // "home" from "business location" and guessing in the contractor's favour is
+  // the app inflating a deduction for them. WITH one declared, the residence is
+  // a business location and every drive out of it counts (Rev. Rul. 99-7). The
+  // declaration is the contractor's to make and theirs to defend. Ours is to
+  // honour it, in both directions.
+  const homeDeparture = (dest, opts) => page.evaluate(async (d) => {
+    const realUser = _supaUser, realRoute = _routeDistance;
+    const keepHo = S.homeOffice, keepPlaces = places.slice();
+    _supaUser = { id: 'u-mi' };
+    window._routeDistance = _routeDistance = async () => ({ miles: 9, mins: 15 });
+    const before = mileage.length;
+    try {
+      S.homeOffice = !!d.box;
+      if (d.tagPlace) savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
+      _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+      _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+      _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+      _geoLastFenceAt = null; _geoLegAtShop = false; _geoLastFenceLoc = null; _geoLegOrigin = null;
+      _geoHomeDwell = null; _geoWasAtHome = false;
+      try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+      const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+      // First fix of the day anchors the commute guard at home.
+      await ping(d.HOME);
+      await ping({ lat: d.HOME.lat + 0.00004, lon: d.HOME.lon });
+      if (_geoStopAnchor) {
+        _geoStopAnchor.at = new Date(Date.now() - 60 * 60000).toISOString();
+        _geoStopAnchor.lastAt = new Date(Date.now() - 25 * 60000).toISOString();
+      }
+      // A tagged home office is a place FENCE, so there is no stop anchor and no
+      // open drive clock: the departure is a single-ping fence-to-fence move
+      // whose leg start is _geoLastFenceAt.
+      if (_geoLastFenceAt) _geoLastFenceAt = new Date(Date.now() - 25 * 60000).toISOString();
+      await ping(d.dest);
+      await new Promise(r => setTimeout(r, 30));
+      const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+      return { added: rows.length, rows: rows.map(m => ({ from: m.from_name, to: m.to_name, purpose: m.purpose, miles: m.miles })) };
+    } finally {
+      _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+      S.homeOffice = keepHo; places.length = 0; keepPlaces.forEach(p => places.push(p));
+    }
+  }, { HOME: { lat: 38.3000, lon: -94.3000 }, dest, box: !!(opts && opts.box), tagPlace: !!(opts && opts.tagPlace) });
+
+  test.describe('leaving home', () => {
+    test('no home office declared: the drive to a job is a commute, refused', async () => {
+      const out = await homeDeparture(JOB, {});
+      expect(out.added).toBe(0);
+    });
+
+    test('no home office declared: the drive to the shop is refused too', async () => {
+      // The classic non-deductible commute: residence to the regular place of
+      // business. Refusing it is the whole reason the guard exists.
+      const out = await homeDeparture(SHOP, {});
+      expect(out.added).toBe(0);
+    });
+
+    test('home office checkbox ticked: home to the SHOP logs', async () => {
+      // The exact promise the Settings checkbox has always made on screen, and
+      // never kept until now. Red before this fix: 0 rows.
+      const out = await homeDeparture(SHOP, { box: true });
+      expect(out.added).toBe(1);
+      expect(out.rows[0].purpose).toBe('Shop');
+      // Named, not an anonymous "Stop". A mileage row has to read as a record
+      // somebody could defend a year later.
+      expect(out.rows[0].from).toBe('Home Office');
+      expect(out.rows[0].miles).toBe(9);
+    });
+
+    test('home office checkbox ticked: home to a SUPPLY HOUSE logs', async () => {
+      const out = await homeDeparture(SUPPLY, { box: true });
+      expect(out.added).toBe(1);
+      expect(out.rows[0].purpose).toBe('Supply run');
+      expect(out.rows[0].from).toBe('Home Office');
+    });
+
+    test('home office checkbox ticked: home to a JOB logs', async () => {
+      const out = await homeDeparture(JOB, { box: true });
+      expect(out.added).toBe(1);
+      expect(out.rows[0].purpose).toBe('Job site');
+      expect(out.rows[0].from).toBe('Home Office');
+    });
+
+    test('home tagged as a home office PLACE logs, with or without the box', async () => {
+      // The second, older route to the same declaration: saving the house as a
+      // place of kind home_office makes it a fence, so the departure is an
+      // ordinary fence-to-fence leg and never reaches the commute guard at all.
+      // Both routes have to work, because the app offers both.
+      const out = await homeDeparture(SUPPLY, { tagPlace: true });
+      expect(out.added).toBe(1);
+      expect(out.rows[0].from).toBe('Home Office');
+      expect(out.rows[0].purpose).toBe('Supply run');
+    });
+
+    test('and back: the return leg from a supply house home is measured too', async () => {
+      // "home to supply and back", the owner's words. The return trip is a
+      // separate leg and has to log on its own.
       const out = await page.evaluate(async (d) => {
         const realUser = _supaUser, realRoute = _routeDistance;
+        const keepHo = S.homeOffice, keepPlaces = places.slice();
         _supaUser = { id: 'u-mi' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 6.2, mins: 11 });
+        const before = mileage.length;
+        try {
+          S.homeOffice = true;
+          savePlace({ name: 'Home Office', kind: 'home_office', lat: d.HOME.lat, lon: d.HOME.lon, confirmedBy: 'manual' });
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLastFenceLoc = null; _geoLegOrigin = null;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+          const back = () => { if (_geoLastFenceAt) _geoLastFenceAt = new Date(Date.now() - 25 * 60000).toISOString(); };
+          await ping(d.HOME); back();
+          await ping(d.SUPPLY); back();
+          await ping(d.HOME);
+          await new Promise(r => setTimeout(r, 40));
+          const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+          return rows.map(m => m.from_name + ' -> ' + m.to_name).sort();
+        } finally {
+          _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+          S.homeOffice = keepHo; places.length = 0; keepPlaces.forEach(p => places.push(p));
+        }
+      }, { HOME: { lat: 38.3000, lon: -94.3000 }, SUPPLY });
+      expect(out).toEqual(['Ace Supply -> Home Office', 'Home Office -> Ace Supply']);
+    });
+
+    test("the owner's home office does not exempt an EMPLOYEE's driveway", async () => {
+      // S.homeOffice is one account-level flag describing ONE residence. Read
+      // for everybody, it would turn every crew member's morning commute into a
+      // company deduction because the owner ticked a box about their own spare
+      // room. Company truck here, so the vehicle rule is satisfied and the ONLY
+      // thing that can refuse this leg is the commute guard.
+      const out = await page.evaluate(async (d) => {
+        const realUser = _supaUser, realEmp = _isEmployee, realRoute = _routeDistance;
+        const keepHo = S.homeOffice;
+        _supaUser = { id: 'u-mi' }; _isEmployee = true; S.homeOffice = true;
+        localStorage.setItem('emp_vehicle_' + todayKey(), 'v-van');
         window._routeDistance = _routeDistance = async () => ({ miles: 9, mins: 15 });
         const before = mileage.length;
         try {
@@ -299,7 +442,6 @@ test.describe('Automatic mileage from drive legs', () => {
           _geoLastFenceAt = null; _geoLegAtShop = false; _geoLastFenceLoc = null; _geoLegOrigin = null;
           try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
           const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
-          // First fix of the day anchors the commute guard at home.
           await ping(d.HOME);
           await ping({ lat: d.HOME.lat + 0.00004, lon: d.HOME.lon });
           if (_geoStopAnchor) {
@@ -309,10 +451,50 @@ test.describe('Automatic mileage from drive legs', () => {
           await ping(d.JOB);
           await new Promise(r => setTimeout(r, 30));
           return { added: mileage.length - before };
-        } finally { _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; }
+        } finally {
+          _supaUser = realUser; _isEmployee = realEmp;
+          window._routeDistance = _routeDistance = realRoute; S.homeOffice = keepHo;
+        }
       }, { HOME: { lat: 38.3000, lon: -94.3000 }, JOB });
       expect(out.added).toBe(0);
     });
+
+    test('the checkbox never overrides the vehicle rule', async () => {
+      // A home office does not make an employee's own car deductible. The two
+      // rules are independent and both have to hold.
+      const out = await page.evaluate(async (d) => {
+        const realUser = _supaUser, realEmp = _isEmployee, realRoute = _routeDistance;
+        const keepHo = S.homeOffice;
+        _supaUser = { id: 'u-mi' }; _isEmployee = true; S.homeOffice = true;
+        localStorage.setItem('emp_vehicle_' + todayKey(), 'personal');
+        window._routeDistance = _routeDistance = async () => ({ miles: 9, mins: 15 });
+        const before = mileage.length;
+        try {
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false; _geoLastFenceLoc = null; _geoLegOrigin = null;
+          try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+          await ping(d.HOME);
+          await ping({ lat: d.HOME.lat + 0.00004, lon: d.HOME.lon });
+          if (_geoStopAnchor) {
+            _geoStopAnchor.at = new Date(Date.now() - 60 * 60000).toISOString();
+            _geoStopAnchor.lastAt = new Date(Date.now() - 25 * 60000).toISOString();
+          }
+          await ping(d.JOB);
+          await new Promise(r => setTimeout(r, 30));
+          return { added: mileage.length - before };
+        } finally {
+          _supaUser = realUser; _isEmployee = realEmp;
+          window._routeDistance = _routeDistance = realRoute; S.homeOffice = keepHo;
+        }
+      }, { HOME: { lat: 38.3000, lon: -94.3000 }, JOB });
+      expect(out.added).toBe(0);
+    });
+  });
+
+  test.describe('what must never be logged', () => {
 
     test('one leg can only ever bill once, however many times it replays', async () => {
       const out = await page.evaluate(async (d) => {

@@ -630,8 +630,13 @@ function _geoCloseStop(a){
   // the kerb they parked at, and the outbound leg starts from the same spot.
   // `likelyHome` rides along because a leg that STARTS at home is a commute,
   // and a commute is not a deductible mile however plainly the GPS saw it.
-  const stopLoc={lat:a.lat,lng:a.lng,name:'Stop',kind:'stop',
-                 likelyHome:(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:a.lat,lng:a.lng},ms)};
+  const atHome=(typeof _placeIsLikelyHome==='function')&&_placeIsLikelyHome({lat:a.lat,lng:a.lng},ms);
+  const stopLoc={lat:a.lat,lng:a.lng,kind:'stop',likelyHome:atHome,
+                 // A declared home office is a named business location on the
+                 // log, not an anonymous "Stop". The row has to read
+                 // "Home Office -> Ace Supply" or it is not a mileage record
+                 // anyone could defend a year later.
+                 name:(atHome&&S.homeOffice)?'Home Office':'Stop'};
   if(_geoDriveStartedAt)_geoDriveEntry(null,_geoDriveStartedAt,null,a.at,false,stopLoc);
   _geoDriveStartedAt=a.lastAt;
   _geoLegOrigin=stopLoc;
@@ -699,10 +704,29 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
     // the company's to deduct. The owner IS the business, so any vehicle counts,
     // which is the entire point of the standard mileage deduction.
     if(_isEmployee&&!companyVeh)return;
-    // A commute is not a business trip. The GPS cannot tell the difference and
-    // will happily hand us home -> first job; refusing it here is the app
-    // declining to inflate a deduction on the contractor's behalf.
-    if(from.likelyHome)return;
+    // A commute is not a business trip, and the GPS cannot tell the difference,
+    // so a departure from home is refused by default rather than inflating a
+    // deduction on the contractor's behalf.
+    //
+    // UNLESS they have declared a home office. Then the residence IS a business
+    // location and every drive out of it, to the yard, to a supply house, to a
+    // job, is deductible business travel rather than commuting (Rev. Rul. 99-7,
+    // on a home office qualifying under 280A(c)(1)(A)).
+    //
+    // Owner report (2026-08-01), and the app was outright lying about this: the
+    // Settings home-office checkbox promises exactly the above in three places
+    // (mileage.js "your drives from home to job sites count as deductible
+    // business miles", tax.js twice), and NOTHING read S.homeOffice. Ticking it
+    // changed the copy and not one logged mile. Declaring the home office is the
+    // contractor's call to make, and it is theirs to defend; once made, the app
+    // has to honour it.
+    //
+    // Scoped to the OWNER on purpose. S.homeOffice is one account-level flag
+    // describing ONE residence, the owner's. Reading it for everybody would
+    // exempt every employee's driveway too, quietly turning each crew member's
+    // morning commute into a company deduction on the strength of a checkbox
+    // the owner ticked about their own spare room.
+    if(from.likelyHome&&!(S.homeOffice&&!_isEmployee))return;
     autoLogDriveTrip({from,to,legKey,startedIso});
   }catch(_e){}
 }
