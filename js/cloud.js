@@ -1218,6 +1218,7 @@ const _TD_TABLES=[
   {t:'td_agreements',  get:()=>agreements,  set:v=>{agreements.length=0;v.forEach(r=>agreements.push(r));}, tx:null},
   {t:'td_maintenance', get:()=>maintenance, set:v=>{maintenance.length=0;v.forEach(r=>maintenance.push(r));}, tx:null},
   {t:'td_vehicles',    get:()=>vehicles,    set:v=>{vehicles.length=0;v.forEach(r=>vehicles.push(r));},     tx:null},
+  {t:'td_places',      get:()=>places,      set:v=>{places.length=0;v.forEach(r=>places.push(r));},         tx:null},
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
@@ -1831,6 +1832,7 @@ async function supaInit(){
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
+          places=[];   // same for geocoded locations (td_places)
           // Crew caches are keyed by EMAIL, so without this the next account's
           // roster renders the previous account's location status against any
           // matching address. Reset the loaded flags too or they never refetch.
@@ -4375,6 +4377,7 @@ function _wipeLocalAccountData(){
   // outgoing account's trucks stay in memory and render under the next login,
   // which is the exact cross-account bleed the S.vehicles reset below guarded.
   vehicles=[];
+  places=[];
   _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
   // the arrays above, the next account's Leads page would keep rendering this
@@ -6200,6 +6203,16 @@ async function supaLoadFromCloud({silent=false}={}){
         if(typeof _backfillVehicleLinks==='function'){
           const _n=_backfillVehicleLinks();
           if(_n>0){_logSave('vehicle-links-backfilled',{count:_n});saveAll();}
+        }
+      }catch(_e){}
+      // Promote geo-stamped receipts into named supply houses. Same shape as the
+      // backfill above: runs after expenses are in memory, idempotent (a
+      // coordinate already inside a known place is skipped), so a boot with
+      // nothing to promote costs one pass.
+      try{
+        if(typeof detectPlacesFromExpenses==='function'){
+          const _p=detectPlacesFromExpenses();
+          if(_p>0){_logSave('places-detected',{count:_p});saveAll();}
         }
       }catch(_e){}
     }

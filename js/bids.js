@@ -1316,6 +1316,9 @@ function logPayment(){
   }
   const storedAmount=isRefund?-a:a;
   payments.push({id:_newId(),bid_id:activePayBidId,client_id:bid.client_id,client_name:bid.client_name,date:pdate,loggedAt:new Date().toISOString(),type:type,amount:storedAmount,method:pmethod,ref:pref});
+  // Where it was collected: an on-site tap and an office cheque are different
+  // facts, and only the phone knows which this was.
+  if(typeof _stampGeo==='function')_stampGeo(payments[payments.length-1]);
   const _savedBidId=activePayBidId;
   saveAll();emitEvent('payment_received',bid.client_id,{bid_id:activePayBidId,amount:storedAmount});
   // Payments repeat, so they are not deduped. balance_settled fires once, when

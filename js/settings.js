@@ -790,7 +790,7 @@ function loadSettingsForm(){
   const bstateEl=document.getElementById('set-bstate-display');if(bstateEl)bstateEl.value=S.state||'KS';
   sf('set-sales-tax-rate',S.salesTaxRate||'');
   const powEl=document.getElementById('set-powered-by');if(powEl)powEl.checked=S.poweredBy!==false;
-  sf('set-track-start',S.trackStart||'07:00');sf('set-track-end',S.trackEnd||'18:00');sf('set-labor-burden',Math.round(((S.laborBurden||1.3)-1)*100));
+  sf('set-labor-burden',Math.round(((S.laborBurden||1.3)-1)*100));
   const _optEl=document.getElementById('set-owner-pay-type');if(_optEl)_optEl.value=S.ownerPayType||'hourly';sf('set-owner-pay-rate',S.ownerPayRate||'');
   const ctEl=document.getElementById('set-custom-terms');if(ctEl)ctEl.value=S.customTerms||'';
   const coEl=document.getElementById('set-co-terms');if(coEl)coEl.value=S.coTerms||'';
@@ -834,8 +834,6 @@ function saveSettings(){
     baddr:gs('set-baddr')||'',bcity:gs('set-bcity')||'',bzip:gs('set-bzip')||'',state:gs('set-bstate-display')||gs('set-state')||S.state||'',
     poweredBy:document.getElementById('set-powered-by')?.checked!==false,
     teamTracking:true, // crew tracking is always on, a condition of using TradeDesk
-    trackStart:gs('set-track-start')||'07:00',
-    trackEnd:gs('set-track-end')||'18:00',
     laborBurden:1+((parseFloat(v('set-labor-burden'))||0)/100),
     ownerPayType:gs('set-owner-pay-type')||'hourly',
     ownerPayRate:gf('set-owner-pay-rate')||0,

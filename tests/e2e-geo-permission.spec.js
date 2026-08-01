@@ -12,15 +12,17 @@
 //    the job stays the owner's call; manufacturing the paperwork does not.
 //
 // 2. A DEAD SETUP BUTTON. _geoRequestPermission called startGeoTracking, which
-//    returns early on !_geoBusinessHoursNow() before it ever reaches the
-//    geolocation API. So "Turn on location" tapped at 7pm did nothing at all: no
-//    OS prompt, no error, no feedback. Setup happens when people get around to
-//    it, which is usually after the truck is parked.
+//    returned early outside a 07:00-18:00 window before it ever reached the
+//    geolocation API, so "Turn on location" tapped at 7pm did nothing at all.
+//    That window has since been removed outright; the request path is asserted
+//    here regardless so it can never regress to being gated on anything.
 //
 // These assert the ARCHITECTURE, not the symptoms: consent is only ever written
 // by a real gesture, permission requests are reachable around the clock while
-// TRACKING stays hard-gated to business hours, and the roster's status light
-// tells the truth (including admitting when it does not know).
+// tracking is never gated on a wall clock (the 07:00-18:00 window was removed:
+// it silently dropped Saturday call-outs, evening supply runs and early starts),
+// and the roster's status light tells the truth, including admitting when it
+// does not know.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
 
 test.describe('Crew location permission', () => {
@@ -84,14 +86,11 @@ test.describe('Crew location permission', () => {
       const realStart = startGeoTracking;
       startGeoTracking = () => { started++; };
       _supaUser = _supaUser || { id: 'emp-test-1' };
-      const realHours = _geoBusinessHoursNow;
-      _geoBusinessHoursNow = () => true;   // pin: otherwise this bails before the branch under test
       _isEmployee = true;
       _employeeRecord = { id: 'e1', location_ack_at: null };
       S.teamTracking = true;
       try { _geoTrackInit(); } catch (e) {}
       startGeoTracking = realStart;
-      _geoBusinessHoursNow = realHours;
       return { started, needsAck: _geoNeedsAck(), sheet: !!document.getElementById('_geo-notice-ov') };
     });
     expect(out.needsAck).toBe(true);
@@ -104,14 +103,11 @@ test.describe('Crew location permission', () => {
       const realStart = startGeoTracking;
       startGeoTracking = () => { started++; };
       _supaUser = _supaUser || { id: 'emp-test-1' };
-      const realHours = _geoBusinessHoursNow;
-      _geoBusinessHoursNow = () => true;   // pin: otherwise this bails before the branch under test
       _isEmployee = true;
       _employeeRecord = { id: 'e1', location_ack_at: '2026-07-30T12:00:00Z' };
       S.teamTracking = true;
       try { _geoTrackInit(); } catch (e) {}
       startGeoTracking = realStart;
-      _geoBusinessHoursNow = realHours;
       return { started, needsAck: _geoNeedsAck(), sheet: !!document.getElementById('_geo-notice-ov') };
     });
     expect(out.needsAck).toBe(false);
@@ -164,11 +160,8 @@ test.describe('Crew location permission', () => {
 
   // ── 3. The dead-button bug: permission must be reachable off-hours ─────────
 
-  test('permission can be requested OUTSIDE business hours (the 7pm dead button)', async () => {
+  test('permission requests reach the geolocation API at any time of day', async () => {
     const out = await page.evaluate(async () => {
-      // Force "outside business hours" — the exact state that used to no-op.
-      const realHours = _geoBusinessHoursNow;
-      _geoBusinessHoursNow = () => false;
       let prompted = 0;
       const realGeo = navigator.geolocation;
       Object.defineProperty(navigator, 'geolocation', {
@@ -177,11 +170,9 @@ test.describe('Crew location permission', () => {
       });
       let reported = null;
       await new Promise(res => { _geoRequestPermission((st) => { reported = st; res(); }); });
-      _geoBusinessHoursNow = realHours;
       Object.defineProperty(navigator, 'geolocation', { configurable: true, value: realGeo });
       return { prompted, reported };
     });
-    // The OS prompt fires even at 7pm; this is what silently did nothing before.
     expect(out.prompted).toBe(1);
     expect(out.reported).toBe('granted');
   });
@@ -201,18 +192,25 @@ test.describe('Crew location permission', () => {
     expect(out).toBe('denied');
   });
 
-  test('tracking itself still honors business hours (the gate was NOT loosened)', async () => {
+  test('tracking is never gated on a clock (the time lock was removed)', async () => {
     const out = await page.evaluate(() => {
-      const realHours = _geoBusinessHoursNow;
-      _geoBusinessHoursNow = () => false;
+      const realGeo = navigator.geolocation;
+      let watched = 0;
+      Object.defineProperty(navigator, 'geolocation', {
+        configurable: true,
+        value: { watchPosition: () => { watched++; return 1; }, clearWatch: () => {} },
+      });
       _geoWatchId = null;
       startGeoTracking();
-      const watching = _geoWatchId != null;
-      _geoBusinessHoursNow = realHours;
-      return watching;
+      const res = { watched, gateGone: typeof _geoBusinessHoursNow === 'undefined' };
+      _geoWatchId = null;
+      Object.defineProperty(navigator, 'geolocation', { configurable: true, value: realGeo });
+      return res;
     });
-    // Requesting permission is 24/7; LOGGING location is not.
-    expect(out).toBe(false);
+    // A Saturday call-out, a 7pm supply run and a 5:30am start all used to log
+    // nothing at all. Tracking now starts whenever permission allows it.
+    expect(out.watched).toBe(1);
+    expect(out.gateGone).toBe(true);
   });
 
   // ── 4. The roster light tells the truth ────────────────────────────────────

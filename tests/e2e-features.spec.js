@@ -3435,25 +3435,23 @@ test.describe('Crew tracking + payroll + dispatch routing + job profit', () => {
     expect(r.b).toBe(600);
   });
 
-  test('_geoParseHM + business-hours window are sane', async () => {
-    const r = await page.evaluate(() => {
-      if (typeof _geoParseHM !== 'function' || typeof _geoBusinessHoursNow !== 'function') return { fnExists: false };
-      S.trackStart = '00:00'; S.trackEnd = '24:00'; // exclusive upper bound ⇒ every minute is inside
-      return {
-        fnExists: true,
-        p1: _geoParseHM('07:00'),
-        p2: _geoParseHM('18:30'),
-        pNull: _geoParseHM(''),
-        allDay: _geoBusinessHoursNow(), // full-day window ⇒ always inside
-        isBool: typeof _geoBusinessHoursNow() === 'boolean',
-      };
-    });
-    if (!r.fnExists) return;
-    expect(r.p1).toBe(420);
-    expect(r.p2).toBe(1110);
-    expect(r.pNull).toBe(null);
-    expect(r.allDay).toBe(true);
-    expect(r.isBool).toBe(true);
+  test('the business-hours time lock is gone, tracking is never gated on a clock', async () => {
+    const r = await page.evaluate(() => ({
+      predicateGone: typeof _geoBusinessHoursNow === 'undefined',
+      parserGone: typeof _geoParseHM === 'undefined',
+      timerGone: typeof _geoHoursTimer === 'undefined',
+      // The window silently deleted the miles contractors care about most.
+      startGoneFromDefaults: !('trackStart' in S) || S.trackStart === undefined,
+      endGoneFromDefaults: !('trackEnd' in S) || S.trackEnd === undefined,
+      // startGeoTracking must no longer consult any clock.
+      startSrcHasNoClock: !/BusinessHours|trackStart|trackEnd/.test(String(startGeoTracking)),
+    }));
+    expect(r.predicateGone).toBe(true);
+    expect(r.parserGone).toBe(true);
+    expect(r.timerGone).toBe(true);
+    expect(r.startGoneFromDefaults).toBe(true);
+    expect(r.endGoneFromDefaults).toBe(true);
+    expect(r.startSrcHasNoClock).toBe(true);
   });
 
   test('_geoDistFt matches haversine miles × 5280', async () => {
@@ -3503,31 +3501,25 @@ test.describe('Crew tracking + payroll + dispatch routing + job profit', () => {
     expect(r.jobProfit).toBe(true);
   });
 
-  test('Settings crew-tracking inputs exist and load from S (no toggle, always on)', async () => {
+  test('Settings crew tracking: no toggle, no fence input, and no hours inputs', async () => {
     const r = await page.evaluate(() => {
       if (typeof loadSettingsForm !== 'function') return { fnExists: false };
-      S.trackStart = '06:30'; S.trackEnd = '17:15';
       try { loadSettingsForm(); } catch (e) {}
-      const tt = document.getElementById('set-team-tracking');
-      const gf = document.getElementById('set-geofence-ft');
-      const ts = document.getElementById('set-track-start');
-      const te = document.getElementById('set-track-end');
       return {
         fnExists: true,
-        toggleGone: !tt,                 // checkbox removed, tracking is mandatory
-        fenceInputGone: !gf,             // geofence radius hardcoded, input removed
-        teamTracking: S.teamTracking,    // forced on
-        exist: !!(ts && te),
-        start: ts && ts.value, end: te && te.value,
+        toggleGone: !document.getElementById('set-team-tracking'),  // tracking is mandatory
+        fenceInputGone: !document.getElementById('set-geofence-ft'), // radius hardcoded
+        startGone: !document.getElementById('set-track-start'),      // time lock removed
+        endGone: !document.getElementById('set-track-end'),
+        teamTracking: S.teamTracking,
       };
     });
     if (!r.fnExists) return;
     expect(r.toggleGone).toBe(true);
     expect(r.fenceInputGone).toBe(true);
+    expect(r.startGone).toBe(true);
+    expect(r.endGone).toBe(true);
     expect(r.teamTracking).toBe(true);
-    expect(r.exist).toBe(true);
-    expect(r.start).toBe('06:30');
-    expect(r.end).toBe('17:15');
   });
 
   test('renameDevice exists and zPrompt pre-fills a value', async () => {

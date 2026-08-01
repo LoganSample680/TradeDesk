@@ -1,6 +1,6 @@
 // ── Submit guard, prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[],vehicles=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[],vehicles=[],places=[];
 // Expose all data arrays and employee record on window so Playwright E2E tests can read/write them.
 // All are module-scoped `let` variables (not on window by default in non-module scripts).
 Object.defineProperty(window,'bids',{get:()=>bids,set:v=>{bids=v;},configurable:true});
@@ -15,6 +15,9 @@ Object.defineProperty(window,'maintenance',{get:()=>maintenance,set:v=>{maintena
 // it is now a per-record synced table so one device can never clobber another's
 // fleet edit, and each vehicle carries its own odometer readings (v.odo[year]).
 Object.defineProperty(window,'vehicles',{get:()=>vehicles,set:v=>{vehicles=v;},configurable:true});
+// Contractor-owned geocoded locations (shop, supply houses). Same per-record
+// synced-table treatment as the fleet, never a settings key.
+Object.defineProperty(window,'places',{get:()=>places,set:v=>{places=v;},configurable:true});
 Object.defineProperty(window,'liens',{get:()=>liens,set:v=>{liens=v;},configurable:true});
 Object.defineProperty(window,'timeEntries',{get:()=>timeEntries,set:v=>{timeEntries=v;},configurable:true});
 Object.defineProperty(window,'photos',{get:()=>photos,set:v=>{photos=v;},configurable:true});
@@ -110,7 +113,7 @@ let gps={active:false,startCoords:null,endCoords:null,startTime:null,clientId:nu
 let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.25,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:'',teamTracking:true,trackStart:'07:00',trackEnd:'18:00',geofenceFt:300,officeLat:0,officeLon:0,laborBurden:1.3,ownerPayType:'hourly',ownerPayRate:0};
+let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.25,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:'',teamTracking:true,geofenceFt:300,officeLat:0,officeLon:0,laborBurden:1.3,ownerPayType:'hourly',ownerPayRate:0};
 
 // ZJ's logo, SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account, other accounts see plain business name text.
@@ -262,6 +265,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   localStorage.setItem('zp3_agreements',JSON.stringify(agreements));
   localStorage.setItem('zp3_maint',JSON.stringify(maintenance));
   localStorage.setItem('zp3_vehicles',JSON.stringify(vehicles));
+  localStorage.setItem('zp3_places',JSON.stringify(places));
   // Offline-pending: write synchronously so a force-quit can never outrun a timer.
   // Use the shared owner-stamped blob so this account's data can never be merged
   // into a different account on the next sign-in (cross-account-bleed guard).
@@ -294,6 +298,9 @@ function loadAll(){
     // records predating the id field get one now so they can ride the upload.
     maintenance.forEach((m,i)=>{if(!m.id)m.id=Date.now()+i;});
     vehicles=lp('zp3_vehicles',[]);
+    places=lp('zp3_places',[]);
+    places.forEach((pl,i)=>{if(!pl.id)pl.id=_newId()+i;}); // td_places is keyed by id
+
     // Same contract as maintenance above: td_vehicles is keyed by id, so any
     // record that predates the table (or arrived from the legacy S.vehicles
     // blob before _migrateVehiclesFromSettings ran) gets a stable one now.

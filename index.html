@@ -2305,7 +2305,15 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb" id="tr-t-expenses" onclick="setTrTab('expenses',this)">Expenses</button>
     <button type="button" class="fb" id="tr-t-mileage" onclick="setTrTab('mileage',this)">Mileage</button>
     <button type="button" class="fb" id="tr-t-jobs" onclick="setTrTab('jobs',this)">Jobs</button>
+    <button type="button" class="fb" id="tr-t-map" onclick="setTrTab('map',this)">Map</button>
     <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)"><span data-ico="👥" data-ico-size="14"></span> Hiring</button>
+  </div>
+  <div id="tr-map" style="display:none">
+    <div class="card">
+      <div class="card-hd">Where the work happens<span id="tr-map-count" style="font-size:11px;color:var(--text3);font-weight:600"></span></div>
+      <div id="tr-map-filters" style="display:flex;flex-wrap:wrap;gap:6px;padding:0 2px 10px"></div>
+      <div id="tr-map-body"></div>
+    </div>
   </div>
   <div id="tr-income" style="display:none">
     <input type="hidden" id="inc-date"><input type="hidden" id="inc-client-sel">
@@ -2698,19 +2706,9 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div class="set-form-ctrl"><input type="url" id="set-review-url" placeholder="https://g.page/r/…"></div>
         </div>
         <div class="set-form-row" style="border-top:2px solid var(--border);padding-top:14px;margin-top:6px">
-          <div><div class="set-form-lbl">Crew location tracking</div><div class="set-form-hint">Auto-logs drive mileage and time-on-site for dispatched crew during business hours only. Always on, a standard part of running your crew on TradeDesk.</div></div>
+          <div><div class="set-form-lbl">Crew location tracking</div><div class="set-form-hint">Auto-logs drive mileage and time-on-site for dispatched crew. Always on, a standard part of running your crew on TradeDesk.</div></div>
           <div class="set-form-ctrl">
-            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--green-mid);font-weight:700"><span data-ico="✓" data-ico-size="15"></span><span>Active during business hours</span></div>
-          </div>
-        </div>
-        <div class="set-form-row">
-          <div><div class="set-form-lbl">Business hours</div><div class="set-form-hint">Tracking runs only between these times. Nothing is recorded outside the window.</div></div>
-          <div class="set-form-ctrl">
-            <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center">
-              <input type="time" id="set-track-start">
-              <span style="font-size:13px;color:var(--text3)">to</span>
-              <input type="time" id="set-track-end">
-            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--green-mid);font-weight:700"><span data-ico="✓" data-ico-size="15"></span><span>Active</span></div>
           </div>
         </div>
         <div class="set-form-row">
@@ -3636,6 +3634,7 @@ document.querySelectorAll('[data-ico]').forEach(function(el){
 <script src="js/jobs.js"></script>
 <script src="js/mileage.js"></script>
 <script src="js/geo-track.js"></script>
+<script src="js/places.js"></script>
 <script src="js/legal.js"></script>
 <script src="js/proposals.js"></script>
 <script src="js/sales-tax.js"></script>

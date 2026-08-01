@@ -1,8 +1,7 @@
 // js/geo-track.js: Crew location tracking + geofence time-on-site.
 //
 // Consent model:
-//   1. The contractor enables S.teamTracking in Settings (business-hours window
-//      + geofence radius). Tracking during work hours is a condition of the job,
+//   1. S.teamTracking is on for the account. Tracking is a condition of the job,
 //      which is the OWNER's call to make.
 //   2. Crew are TOLD before anything is logged. _geoNoticeSheet states plainly
 //      what is captured; their tap records location_ack_at + the notice version
@@ -15,7 +14,10 @@
 //      (localStorage), since that is a preference, not an employment record.
 //   4. location_status/checked_at/device record what the DEVICE reported. That is
 //      a heartbeat for Fleet & Team, never a proxy for consent.
-// Tracking ONLY runs inside the business-hours window, never on personal time.
+// Tracking runs whenever location permission is granted. The 07:00-18:00 window
+// was removed (owner call): it silently dropped the miles that matter most, a
+// Saturday call-out, a 7pm supply run, a 5:30am start, all logged nothing. The
+// crew notice states plainly that location is logged; that is the contract.
 //
 // Writes:
 //   • location_pings   , throttled breadcrumb (lat/lon) for the live crew map
@@ -29,9 +31,10 @@ let _geoWatchId=null;
 let _geoCurrentJob=null;   // job id the employee is currently inside the fence of
 let _geoArrivedAt=null;    // ISO arrival timestamp for the open entry
 let _geoLastPingTs=0;      // throttle for location_pings inserts
-let _geoHoursTimer=null;   // periodic end-of-day / out-of-hours watcher
 let _geoJobCoords={};      // jobId -> {lat,lng} geocode cache (per session)
 let _geoWasInShop=false;   // currently inside office/shop geofence
+let _geoCurrentPlace=null; // id of the known place (supply house etc.) we're inside
+let _geoPlaceArrivedAt=null;// ISO arrival at that place, for dwell measurement
 let _geoShopArrivedAt=null;// ISO timestamp of shop arrival
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
 let _geoPingBusy=false;    // re-entrancy guard: _geoOnPing awaits geocodes, overlapping
@@ -181,18 +184,6 @@ function _geoPrunePings(){
   }catch(_e){}
 }
 
-// ── Business-hours window, device local time ─────────────────────────────────
-// S.trackStart/End are set by the contractor as local times (e.g. "07:00").
-// Employees work in the same market as the contractor, so the device's local
-// clock is the correct reference, no hardcoded timezone.
-function _geoNowMinLocal(){const d=new Date();return d.getHours()*60+d.getMinutes();}
-function _geoParseHM(s){const m=/^(\d{1,2}):(\d{2})$/.exec(s||'');return m?(+m[1])*60+(+m[2]):null;}
-function _geoBusinessHoursNow(){
-  const st=_geoParseHM(S.trackStart||'07:00'), en=_geoParseHM(S.trackEnd||'18:00');
-  if(st==null||en==null)return false;
-  const now=_geoNowMinLocal();
-  return en>st ? (now>=st&&now<en) : (now>=st||now<en); // en<=st ⇒ overnight window
-}
 // Hardcoded generous radius, big enough that GPS drift and street/driveway
 // parking always register as "on site" without a per-business setting to tune.
 // Not so big it catches a worker driving past or at the neighbor's (which would
@@ -239,7 +230,6 @@ async function _geoOnPing(pos){
   if(_geoPingBusy)return;
   _geoPingBusy=true;
   try{
-  if(!_geoBusinessHoursNow()){stopGeoTracking();return;}
   const here={lat:pos.coords.latitude,lng:pos.coords.longitude};
   const acc=pos.coords.accuracy||0;
   // Throttled breadcrumb (~60s)
@@ -262,6 +252,37 @@ async function _geoOnPing(pos){
       if(!_geoCurrentJob)_geoDriveStartedAt=new Date().toISOString();
     }
     _geoWasInShop=inShop;
+  }
+  // ── Known-place fence (supply houses etc.) ─────────────────────────────────
+  // Without this the truck sitting in a supply-house lot was contained by
+  // nothing, so the drive clock kept running and those parked minutes landed on
+  // the next job's drive leg. Arriving at a known place now CLOSES the drive leg
+  // exactly like arriving at a job does, and the leg is attributed to the place
+  // rather than silently absorbed. Leaving starts a fresh leg, which is what
+  // makes shop -> supply -> shop (previously zero miles) a real trip.
+  const atPlace=(typeof placeAt==='function')?placeAt({lat:here.lat,lon:here.lng}):null;
+  const atPlaceId=atPlace?String(atPlace.id):null;
+  if(atPlaceId!==_geoCurrentPlace){
+    if(_geoCurrentPlace&&_geoPlaceArrivedAt){
+      // A stop long enough to matter is a candidate location in its own right,
+      // which is how repeat visits to an un-named lot eventually get offered.
+      const dwellMs=Date.now()-new Date(_geoPlaceArrivedAt).getTime();
+      if(typeof recordUnknownStop==='function'&&!atPlace)recordUnknownStop(here,dwellMs);
+    }
+    if(atPlaceId){
+      if(_geoDriveStartedAt&&!_geoCurrentJob){
+        // Close the leg AT the place: the parked minutes that follow are not drive time.
+        _geoDriveEntry(null,_geoDriveStartedAt,atPlace.name);
+        _geoDriveStartedAt=null;
+      }
+      _geoPlaceArrivedAt=new Date().toISOString();
+    }else{
+      _geoPlaceArrivedAt=null;
+      // Leaving a known place with no job under us begins a new leg. This is the
+      // half that used to be missing entirely on a supply-run-and-back.
+      if(!_geoCurrentJob&&!_geoWasInShop&&!_geoDriveStartedAt)_geoDriveStartedAt=new Date().toISOString();
+    }
+    _geoCurrentPlace=atPlaceId;
   }
   // ── Job fence state machine ────────────────────────────────────────────────
   let inside=null,bestFt=Infinity;
@@ -336,7 +357,11 @@ function _geoCloseShopEntry(arrivedAt,departedIso){
     arrived_at:arrivedAt,departed_at:departed,minutes:mins
   });
 }
-function _geoDriveEntry(jobId,driveStartedAt){
+// destPlace names a non-job destination (a supply house). A leg ending at a
+// known place is a real deductible trip that used to vanish: shop -> supply ->
+// shop wrote nothing at all, because a drive entry was only ever written on
+// arriving at a JOB.
+function _geoDriveEntry(jobId,driveStartedAt,destPlace){
   if(!driveStartedAt)return;
   const arrived=new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(arrived)-Date.parse(driveStartedAt))/60000));
@@ -348,7 +373,8 @@ function _geoDriveEntry(jobId,driveStartedAt){
   const companyVeh=typeof _isCompanyVehicleToday==='function'&&_isCompanyVehicleToday();
   _geoEnqueue('job_time_entries',{
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-    job_id:String(jobId),arrived_at:driveStartedAt,departed_at:arrived,minutes:mins,
+    job_id:jobId!=null?String(jobId):null,arrived_at:driveStartedAt,departed_at:arrived,minutes:mins,
+    dest_place:destPlace||null,
     source:companyVeh?'drive':'drive-personal'
   });
 }
@@ -383,15 +409,9 @@ async function _geoPermissionBanner(){
     (denied?'':'<button onclick="_geoRequestPermission()" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:#DC2626;color:#fff;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Turn on location</button>')+
   '</div>';
 }
-// ── Permission request, DELIBERATELY independent of business hours ────────────
-// This used to be `startGeoTracking()`, which bails on `!_geoBusinessHoursNow()`
-// before it ever reaches watchPosition. So tapping "Turn on location" at 7pm did
-// NOTHING: no OS prompt, no error, no feedback, and the crew member reasonably
-// concluded the app was broken. Setup happens whenever a person gets around to
-// it, which is very often after the truck is parked, so the permission grant has
-// to be reachable 24/7 even though TRACKING itself stays hard-gated to the
-// business-hours window (that gate lives in startGeoTracking and _geoOnPing and
-// is untouched here).
+// ── Permission request ────────────────────────────────────────────────────────
+// Uses getCurrentPosition rather than startGeoTracking so it returns a definitive
+// allow/deny we can record.
 //
 // MUST be called from inside a real user gesture: browsers only surface the
 // geolocation prompt in response to a tap.
@@ -405,7 +425,7 @@ function _geoRequestPermission(cb){
   if(!navigator.geolocation){done('unsupported');return;}
   // getCurrentPosition triggers the OS prompt on its own and, unlike watchPosition,
   // hands back a definitive allow/deny we can record. Tracking is started
-  // separately below, only if we're actually inside business hours.
+  // separately below.
   try{
     navigator.geolocation.getCurrentPosition(
       ()=>{
@@ -523,11 +543,10 @@ function _geoRecordAck(){
 // ── Start / stop ───────────────────────────────────────────────────────────────
 function startGeoTracking(){
   if(_geoWatchId!=null)return;
-  if(!navigator.geolocation||!_geoBusinessHoursNow())return;
+  if(!navigator.geolocation)return;
   try{
     _geoWatchId=navigator.geolocation.watchPosition(_geoOnPing,()=>{},{enableHighAccuracy:true,maximumAge:30000,timeout:20000});
   }catch(_e){}
-  if(!_geoHoursTimer)_geoHoursTimer=setInterval(()=>{if(!_geoBusinessHoursNow())stopGeoTracking();},5*60000);
 }
 function stopGeoTracking(){
   if(_geoWatchId!=null){try{navigator.geolocation.clearWatch(_geoWatchId);}catch(_e){}_geoWatchId=null;}
@@ -536,14 +555,12 @@ function stopGeoTracking(){
   _geoCurrentJob=null;_geoArrivedAt=null;
   _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;
   _geoClearOpen();_geoWakeRelease();
-  if(_geoHoursTimer){clearInterval(_geoHoursTimer);_geoHoursTimer=null;}
 }
 
 // ── Init + two-layer consent ───────────────────────────────────────────────────
 function _geoTrackInit(){
   if(!S.teamTracking)return;                 // tracking not enabled for the company
   if(!_supaUser)return;
-  if(!_geoBusinessHoursNow())return;         // outside hours, nothing to do
   // Backgrounding mid-shift KEEPS the entry open (the old handler closed it, a
   // phone in a pocket all day logged only screen-on slivers, and any visit hidden
   // within 2 minutes of arrival was dropped entirely). Instead: snapshot the open
@@ -638,9 +655,8 @@ function _geoConsentPrompt(){
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:22px 18px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
   const biz=escHtml((typeof getBusinessName==='function'&&getBusinessName())||S.bname||'your employer');
-  const hrs=escHtml((S.trackStart||'07:00')+'–'+(S.trackEnd||'18:00'));
   const title='Track your own time on jobs?';
-  const sub='Logs your drive mileage and time on each job automatically so your own hours show up in Job Profit and Crew Cost, only during work hours ('+hrs+').';
+  const sub='Logs your drive mileage and time on each job automatically so your own hours show up in Job Profit and Crew Cost.';
   const note='You can turn this off anytime in Settings.';
   sheet.innerHTML=
     '<div style="font-size:30px;margin-bottom:8px">'+svgIcon('📍',{size:30})+'</div>'+
@@ -662,6 +678,6 @@ function _geoSetConsent(yes){
   localStorage.setItem('geo_owner_consent',yes?'1':'declined');
   if(typeof _renderDashSetupTodo==='function')try{_renderDashSetupTodo();}catch(_e){}
   if(!yes)return;
-  _geoRequestPermission(); // 24/7 reachable; tracking itself still honors business hours
+  _geoRequestPermission();
   if(typeof showToast==='function')showToast('Tracking your time on jobs during work hours','📍');
 }

@@ -1511,7 +1511,7 @@ function resetSched(){
 
 function setTrTab(tab,btn){
   trackerTab=tab;
-  ['income','expenses','mileage','jobs','summary','hiring'].forEach(t=>{
+  ['income','expenses','mileage','jobs','summary','hiring','map'].forEach(t=>{
     const el=document.getElementById('tr-'+t);if(el)el.style.display=t===tab?'block':'none';
     const tb=document.getElementById('tr-t-'+t);if(tb)tb.classList.toggle('active',t===tab);
   });
@@ -1521,6 +1521,7 @@ function setTrTab(tab,btn){
   if(tab==='jobs')renderJobsHistory();
   if(tab==='summary'){renderSummary();renderJobSummary();renderMonthlyPL();}
   if(tab==='hiring')renderHiringCalc();
+  if(tab==='map'&&typeof renderGeoMap==='function')renderGeoMap();
 }
 function getTrackerYears(){
   const allDates=[
@@ -2748,10 +2749,10 @@ async function _crewCostRender(range){
   const ents=data.entries.filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr).concat(manualEnts);
   const shopEnts=(data.shopEntries||[]).filter(en=>en.arrived_at&&_ctDateStr(new Date(en.arrived_at))>=sinceStr);
   if(!ents.length&&!shopEnts.length){body.innerHTML='<div style="padding:10px 0">No tracked time '+label+' yet. Crew time appears here once they\'re on site with sharing enabled.</div>';return;}
-  // Business day length for unaccounted estimate
-  const _phm=s=>{const m=/^(\d{1,2}):(\d{2})$/.exec(s||'');return m?(+m[1])*60+(+m[2]):null;};
-  const _bst=_phm(S.trackStart||'07:00'),_ben=_phm(S.trackEnd||'18:00');
-  const bizDayMins=(_bst!=null&&_ben!=null&&_ben>_bst)?(_ben-_bst):660;
+  // Nominal work day for the unaccounted-time estimate. This used to derive from
+  // the configurable tracking window; that window is gone (tracking no longer
+  // has a time lock at all), so this is simply a display baseline, 11 hours.
+  const bizDayMins=660;
   // Aggregate by employee
   const byEmp={};
   const _emp=uid=>{if(!byEmp[uid])byEmp[uid]={min:0,jobSiteMin:0,driveMin:0,shopMin:0,jobs:{},dayMins:{}};return byEmp[uid];};
