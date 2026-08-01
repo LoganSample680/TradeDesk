@@ -69,6 +69,7 @@ test.describe('Full day of automatic drives: home office → job → supply → 
     const HOME_NAME = `E2E Home Office ${tag}`;
     const SUPPLY_NAME = `E2E Supply ${tag}`;
     const jobA = Date.now() * 1000 + 1, jobB = Date.now() * 1000 + 2, jobC = Date.now() * 1000 + 3;
+    const runStart = new Date().toISOString();
 
     // The real ping entry point, the same one watchPosition calls.
     const ping = (p, c) => p.evaluate(async ({ lat, lon }) => {
@@ -106,7 +107,7 @@ test.describe('Full day of automatic drives: home office → job → supply → 
           // A clean state machine, or a leftover open leg contaminates leg one.
           _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
           _geoShopArrivedAt = null; _geoDriveStartedAt = null;
-          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
           saveAll();
         }, { HOME, SUPPLY, SHOP, JOB_A, JOB_B, JOB_C, HOME_NAME, SUPPLY_NAME, jobA, jobB, jobC });
         await p.evaluate(() => _flushSaveNow && _flushSaveNow());
@@ -159,10 +160,16 @@ test.describe('Full day of automatic drives: home office → job → supply → 
           const uid = _supaUser && _supaUser.id;
           const since = new Date(Date.now() - 6 * 3600 * 1000).toISOString();
           const { data, error } = await _supa.from('job_time_entries')
-            .select('minutes,source,dest_place,job_id,arrived_at')
+            .select('minutes,source,dest_place,job_id,arrived_at,created_at')
             .eq('contractor_user_id', uid).gte('arrived_at', since);
           if (error) return { err: error.code + ' ' + error.message };
-          const rows = data || [];
+          // Scope to THIS run. Live tests never clean up (§12.7), so a six-hour
+          // window on arrived_at alone sweeps in every earlier run's day and the
+          // counts become meaningless: driveCount read 27 and toShop 4 because
+          // four runs had each logged a leg home. toSupply and toJobs looked
+          // fine only because those identifiers are already unique per run,
+          // which is exactly what made the bug look like an app defect.
+          const rows = (data || []).filter(r => !r.created_at || r.created_at >= d.runStart);
           const drives = rows.filter(r => /^drive/.test(r.source || ''));
           const visits = rows.filter(r => !/^drive/.test(r.source || '')
                                        && [d.jobA, d.jobB, d.jobC].map(String).includes(String(r.job_id)));
@@ -177,7 +184,7 @@ test.describe('Full day of automatic drives: home office → job → supply → 
             // longest real leg means parked time leaked into driving.
             longestDrive: drives.reduce((m, r) => Math.max(m, r.minutes || 0), 0),
           };
-        }, { jobA, jobB, jobC, SUPPLY_NAME });
+        }, { jobA, jobB, jobC, SUPPLY_NAME, runStart });
         // No escape hatch on a missing column. dest_place now ships in a
         // migration, so its absence is a real failure: the previous "skip if the
         // column is missing" branch would have returned green while asserting
