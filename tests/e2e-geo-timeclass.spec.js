@@ -275,5 +275,48 @@ test.describe('Time classification', () => {
     expect(offenders).toEqual([]);
   });
 
+  test('the durable queue does not drop rows enqueued mid-drain', async () => {
+    // THE RACE: the drain used to read the queue once, then after each awaited
+    // network call shift that stale snapshot and store it. A row enqueued while
+    // the request was in flight was saved by _geoEnqueue and then erased when
+    // the drain wrote its old copy back. Two entries produced close together
+    // lost one, and which one depended purely on network timing.
+    //
+    // _geoCloseStop is the exact real-world trigger: it enqueues a drive leg and
+    // then the stop, back to back, so the stop was reliably destroyed. That is
+    // why a live 8-hour day logged one drive leg out of six and no lunch at all.
+    const out = await page.evaluate(async () => {
+      const landed = [];
+      const realSupa = _supa, realUser = _supaUser;
+      let release;
+      const gate = new Promise(r => { release = r; });
+      _supaUser = { id: 'u-race' };
+      // A backend whose FIRST write hangs until we let it go, which is the
+      // window a real network call leaves open.
+      let n = 0;
+      _supa = {
+        from: () => ({
+          upsert: async (row) => { n++; if (n === 1) await gate; landed.push(row.source); return { error: null }; },
+          insert: async (row) => { landed.push(row.source); return { error: null }; },
+        }),
+      };
+      try {
+        localStorage.removeItem('zp3_geo_queue');
+        _geoEnqueue('job_time_entries', { source: 'drive', minutes: 12 });   // starts the hanging drain
+        await new Promise(r => setTimeout(r, 30));
+        _geoEnqueue('job_time_entries', { source: 'stop', minutes: 45 });    // arrives mid-flight
+        release();
+        await new Promise(r => setTimeout(r, 250));
+        let leftover = [];
+        try { leftover = JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]'); } catch (e) {}
+        return { landed, leftover: leftover.length };
+      } finally { _supa = realSupa; _supaUser = realUser; }
+    });
+    // Both rows reach the backend, and nothing is stranded behind them.
+    expect(out.landed).toContain('drive');
+    expect(out.landed).toContain('stop');
+    expect(out.leftover).toBe(0);
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

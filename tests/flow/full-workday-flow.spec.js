@@ -269,6 +269,18 @@ test.describe('A full 8-hour day: shop → job → supply → job → lunch → 
             // The tell for bug #1: with lunch riding on a leg the longest drive
             // is 65 minutes instead of 25.
             longestDrive: drives.reduce((m, r) => Math.max(m, r.minutes || 0), 0),
+            // DIAGNOSTIC. Bucket totals say WHAT is missing but never WHY, and
+            // guessing at a state machine from five numbers is how a patch
+            // chain starts. This prints what actually landed, plus whether the
+            // durable queue is stuck: it is FIFO and breaks on the first error,
+            // so one rejected row silently strands every row behind it.
+            all: rows.map(r => (r.source || '?') + ':' + r.minutes).join(','),
+            queued: (() => {
+              try {
+                return JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')
+                  .map(q => q.tbl + '/' + (q.row && q.row.source || '?')).join(',');
+              } catch (e) { return 'unreadable'; }
+            })(),
             // The classification the money views actually use, exercised through
             // the real predicates rather than re-implemented here.
             paid: rows.filter(r => !_geoIsOffJobSource(r.source)).reduce((t, r) => t + (r.minutes || 0), 0) + sum(shopRows),

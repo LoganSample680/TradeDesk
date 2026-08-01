@@ -70,12 +70,27 @@ function _geoEnqueue(tbl,row){
   }catch(_e){}
   _geoDrainQueue();
 }
+// THE SNAPSHOT RULE: never write back a queue read before an await.
+//
+// This used to read the queue ONCE and then, after each network round trip,
+// shift that snapshot and store it. Any row enqueued while the request was in
+// flight was written to localStorage by _geoEnqueue and then immediately
+// ERASED when the drain saved its stale copy. Two entries produced close
+// together lost one, and the loser depended purely on network timing, so it
+// looked like a flaky backend rather than a bug. That is silent data loss in
+// the queue whose entire job is to not lose data: real drive legs and job time,
+// gone, feeding payroll and mileage.
+//
+// Now the queue is re-read on every iteration, and the drained row is removed
+// BY ITS client_key rather than by position, so a concurrent enqueue can never
+// be clobbered and a reordered queue can never drop the wrong row.
 async function _geoDrainQueue(){
   if(_geoDrainBusy||!_supa||!_supaUser)return;
   _geoDrainBusy=true;
   try{
-    let q=_geoQueueRead();
-    while(q.length){
+    for(;;){
+      const q=_geoQueueRead();
+      if(!q.length)break;
       const item=q[0];
       let error=null;
       try{
@@ -87,7 +102,11 @@ async function _geoDrainQueue(){
         if(error&&/client_key/i.test(String(error.message||''))){const{client_key,...plain}=item.row;({error}=await _supa.from(item.tbl).insert(plain));}
       }catch(_e){error=_e;}
       if(error)break; // offline / transient: stop; the next drain retries from the same head
-      q.shift();_geoQueueWrite(q);
+      const cur=_geoQueueRead();
+      const key=item.row&&item.row.client_key;
+      const i=key?cur.findIndex(x=>x&&x.row&&x.row.client_key===key):0;
+      if(i>=0)cur.splice(i,1); else break; // already gone: another drain took it
+      _geoQueueWrite(cur);
     }
   }catch(_e){}
   _geoDrainBusy=false;
