@@ -4570,7 +4570,7 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from, the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,ts:Date.now()});
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
@@ -4842,7 +4842,7 @@ function _paintCacheForDelta(uid){
   try{
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
-    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles};
+    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles,td_places:cc.places};
     const _ptTs=Date.now();
     for(const{t,set}of _TD_TABLES){
       // A cache written by an OLDER app version has no key for a table added
@@ -4871,7 +4871,7 @@ function _writeLocalCache(){
   try{
     const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,checksState,
+      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
     // Delta sidecar: the server-updated_at cursor + known-cloud hashes, owner-scoped.

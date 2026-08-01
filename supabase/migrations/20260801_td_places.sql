@@ -32,22 +32,29 @@ create table if not exists td_places (
 
 alter table td_places enable row level security;
 
-drop policy if exists td_places_owner on td_places;
-create policy td_places_owner on td_places
-  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+-- Both sides cast to text, exactly as td_vehicles does. auth.uid() can come back
+-- as text depending on the JWT path, and an uncast comparison fails at runtime
+-- as "operator does not exist: text = uuid", which silently denies every row
+-- rather than erroring loudly. There is a migration lint for this.
+drop policy if exists "owner" on td_places;
+create policy "owner" on td_places for all
+  using (auth.uid()::text = user_id::text)
+  with check (auth.uid()::text = user_id::text);
 
--- Crew read the contractor's places so their own device can resolve a stop to a
--- known location. Write stays owner-only: a place is business configuration.
-drop policy if exists td_places_crew_read on td_places;
-create policy td_places_crew_read on td_places
-  for select using (
-    exists (
-      select 1 from team_members tm
-      where tm.contractor_user_id = td_places.user_id
-        and tm.employee_user_id = auth.uid()
-        and tm.active
-    )
-  );
+-- Crew need places because the fence machine runs on THEIR device: without this
+-- a supply stop is unresolvable for the person actually driving. Uses the shared
+-- crew_perm helper rather than a hand-rolled team_members subquery so the
+-- casting and the active-link rule stay in one place. td_places is not in
+-- crew_perm's redaction list, so it falls to the permissive default, which is
+-- right: a place carries no money, only a name and a coordinate.
+do $$
+begin
+  drop policy if exists "crew" on td_places;
+  create policy "crew" on td_places for all to authenticated
+    using (crew_perm(user_id, 'td_places'))
+    with check (crew_perm(user_id, 'td_places'));
+exception when undefined_function then null;
+end $$;
 
 grant select, insert, update, delete on td_places to authenticated;
 
