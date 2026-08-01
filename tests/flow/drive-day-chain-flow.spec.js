@@ -178,10 +178,11 @@ test.describe('Full day of automatic drives: home office → job → supply → 
             longestDrive: drives.reduce((m, r) => Math.max(m, r.minutes || 0), 0),
           };
         }, { jobA, jobB, jobC, SUPPLY_NAME });
-        if (out.err && /dest_place|column/i.test(out.err)) {
-          return { ok: true, got: 'SKIP: job_time_entries.dest_place not provisioned in this env' };
-        }
-        const ok = out.driveCount === 5 && out.toSupply === 1 && out.toShop === 1
+        // No escape hatch on a missing column. dest_place now ships in a
+        // migration, so its absence is a real failure: the previous "skip if the
+        // column is missing" branch would have returned green while asserting
+        // nothing at all, which is worse than the bug it was hiding.
+        const ok = !out.err && out.driveCount === 5 && out.toSupply === 1 && out.toShop === 1
                    && out.toJobs === 3 && out.visitCount === 3 && out.longestDrive < 40;
         return { ok, got: JSON.stringify(out) };
       },

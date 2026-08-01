@@ -60,6 +60,11 @@ async function _timeLogRows(sinceISO){
   const crew=(typeof _fetchCrewLabor==='function')?await _fetchCrewLabor(sinceISO):{name:{},entries:[]};
   (crew.entries||[]).forEach(e=>{
     if(!e.arrived_at)return;
+    // Off-job stops (lunch, an errand) are captured so the day reconciles, but
+    // this is the HOURS record: every row here feeds the weekly total and the
+    // 40+hr overtime flag, so a lunch break appearing would be paid time and
+    // could push someone into overtime they never worked.
+    if(typeof _geoIsOffJobSource==='function'&&_geoIsOffJobSource(e.source))return;
     const info=_tlJobClientInfo(e.job_id);
     rows.push({
       id:'a'+e.job_id+'_'+e.employee_user_id+'_'+e.arrived_at,

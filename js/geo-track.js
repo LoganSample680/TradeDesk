@@ -37,6 +37,11 @@ let _geoCurrentPlace=null; // id of the known place (supply house etc.) we're in
 let _geoPlaceArrivedAt=null;// ISO arrival at that place, for dwell measurement
 let _geoShopArrivedAt=null;// ISO timestamp of shop arrival
 let _geoDriveStartedAt=null;// ISO timestamp when a drive leg began (leaving any fence)
+let _geoStopAnchor=null;   // {lat,lng,at,lastAt} while parked OUTSIDE every fence
+// Tighter than the 600ft place fence on purpose: at 600ft a slow crawl through
+// city traffic reads as parked. 350ft still absorbs parking-lot GPS jitter.
+const _GEO_STOP_FT=350;
+const _GEO_STOP_MS=5*60*1000;   // a stop, not a traffic light (matches PLACE_DWELL_MS)
 let _geoPingBusy=false;    // re-entrancy guard: _geoOnPing awaits geocodes, overlapping
                            // pings must never interleave the fence state machine
 let _geoGapHiddenAt=null;  // ISO of the last hidden/suspend moment with an entry open,
@@ -238,6 +243,28 @@ async function _geoOnPing(pos){
   // Throttled breadcrumb (~60s)
   const nowMs=Date.now();
   if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc);}
+  // ── Parked outside every fence: lunch, an errand, a wait ───────────────────
+  // Nothing contained the truck here, so the drive clock ran straight THROUGH
+  // it: an hour at lunch was written as an hour of DRIVING, with compensable
+  // minutes and mileage attached to it. The supply-house fence fixed exactly
+  // this for the places we know about; a lunch spot is the same bug for the
+  // ones we don't, and no fence will ever exist for it.
+  //
+  // This runs BEFORE the shop/place/job branches deliberately. Each of those
+  // closes the open leg on arrival, so by the time any of them has run the
+  // lunch-inclusive leg is already written and it is too late to split it.
+  // Reading the PREVIOUS fence state is what makes that ordering safe: if we
+  // were inside anything last ping, we were not parked on the street.
+  if(_geoWasInShop||_geoCurrentPlace||_geoCurrentJob){_geoStopAnchor=null;}
+  else{
+    const nowIso=new Date(nowMs).toISOString();
+    if(_geoStopAnchor&&_geoDistFt(here,_geoStopAnchor)<=_GEO_STOP_FT){
+      _geoStopAnchor.lastAt=nowIso;   // still parked: move the verified end forward
+    }else{
+      if(_geoStopAnchor)_geoCloseStop(_geoStopAnchor);   // pulled away: settle it
+      _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
+    }
+  }
   // ── Shop / office fence ────────────────────────────────────────────────────
   const shopC=(S.officeLat&&S.officeLon)?{lat:S.officeLat,lng:S.officeLon}:null;
   const inShop=shopC?(_geoDistFt(here,shopC)<=_geoFenceFt()):false;
@@ -277,12 +304,20 @@ async function _geoOnPing(pos){
   const atPlace=(typeof placeAt==='function')?placeAt({lat:here.lat,lon:here.lng}):null;
   const atPlaceId=atPlace?String(atPlace.id):null;
   if(atPlaceId!==_geoCurrentPlace){
-    if(_geoCurrentPlace&&_geoPlaceArrivedAt){
-      // A stop long enough to matter is a candidate location in its own right,
-      // which is how repeat visits to an un-named lot eventually get offered.
-      const dwellMs=Date.now()-new Date(_geoPlaceArrivedAt).getTime();
-      if(typeof recordUnknownStop==='function'&&!atPlace)recordUnknownStop(here,dwellMs);
-    }
+    // An unknown stop used to be recorded HERE, which could not work: this
+    // branch only fires on leaving a KNOWN place, and it passed the coordinate
+    // we are at NOW together with the dwell from the place we just LEFT. Wrong
+    // location, wrong duration, and genuine unknown stops (the only kind worth
+    // suggesting) were never seen at all, so repeat-detection never fired once.
+    // _geoCloseStop above records them properly, bounded at both ends.
+    //
+    // Leaving a known place also CLOSES its dwell. Twenty minutes loading
+    // material at a supply house is paid work, and it was logged nowhere: the
+    // fence stopped it counting as driving (the bug before this) but nothing
+    // ever recorded it, so those minutes just vanished out of the day. The
+    // !_geoCurrentJob guard stops a place that overlaps a job site from being
+    // billed twice.
+    if(_geoCurrentPlace&&_geoPlaceArrivedAt&&!_geoCurrentJob)_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt);
     if(atPlaceId){
       if(_geoDriveStartedAt&&!_geoCurrentJob){
         // Close the leg AT the place: the parked minutes that follow are not drive time.
@@ -375,9 +410,66 @@ function _geoCloseShopEntry(arrivedAt,departedIso){
 // known place is a real deductible trip that used to vanish: shop -> supply ->
 // shop wrote nothing at all, because a drive entry was only ever written on
 // arriving at a JOB.
-function _geoDriveEntry(jobId,driveStartedAt,destPlace){
+// ONE place decides what a job_time_entries row means. Three call sites in
+// finance.js tested `source==='drive'` exactly, so a personal-vehicle leg
+// ('drive-personal') fell through their else branch and was counted as ON-SITE
+// job labor: it inflated Job Profit's labor cost and the crew report's job-site
+// hours with time the person spent behind the wheel.
+function _geoIsDriveSource(s){return /^drive/.test(String(s||''));}
+// Time outside every fence that is not driving: lunch, an errand, waiting on a
+// gate. Neither job labor nor drive time, and never silently folded into either.
+function _geoIsOffJobSource(s){return String(s||'')==='stop';}
+// Time inside a known place's fence (a supply house). Paid work, but overhead
+// rather than labor on any one job, so it is grouped with drive time.
+function _geoIsPlaceSource(s){return String(s||'')==='place';}
+// Time at a known place, closed on departure. Bounded by a real fence at both
+// ends, so unlike an off-job stop this is verified work time.
+function _geoClosePlaceEntry(placeId,arrivedAt){
+  if(!arrivedAt)return;
+  const departed=new Date().toISOString();
+  const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
+  if(mins<2)return;              // a pass-through, not a stop
+  if(!_supaUser)return;
+  const pl=(typeof getPlaces==='function')?getPlaces().find(p=>String(p.id)===String(placeId)):null;
+  _geoEnqueue('job_time_entries',{
+    contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+    job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
+    dest_place:(pl&&pl.name)||null,source:'place'
+  });
+}
+// A stop is only real once they LEAVE it, which is also the first moment it can
+// be bounded at both ends. Both edges use a VERIFIED ping rather than now: the
+// same rule the hidden-gap close follows, never claim time nobody observed.
+function _geoCloseStop(a){
+  if(!a||!a.at||!a.lastAt)return;
+  const ms=Date.parse(a.lastAt)-Date.parse(a.at);
+  if(!(ms>=_GEO_STOP_MS))return;          // a light, not a stop
+  const mins=Math.max(0,Math.round(ms/60000));
+  // Split the leg at the kerb. Without this the parked minutes ride out on the
+  // drive entry, which is the entire defect.
+  if(_geoDriveStartedAt&&!_geoCurrentJob){
+    _geoDriveEntry(null,_geoDriveStartedAt,null,a.at);
+    _geoDriveStartedAt=a.lastAt;          // the next leg begins when they pulled out
+  }else if(!_geoCurrentJob&&!_geoWasInShop){
+    _geoDriveStartedAt=a.lastAt;          // leaving a real stop is the start of a drive
+  }
+  // Somewhere they park repeatedly is a candidate location in its own right,
+  // which is how an un-named supply yard eventually gets offered to them.
+  if(typeof recordUnknownStop==='function')recordUnknownStop({lat:a.lat,lng:a.lng},ms);
+  if(!_supaUser)return;
+  // Logged, and logged as ITSELF. Off-job time is neither job labor nor drive
+  // time; folding it into either is what made a lunch break bill to a job.
+  _geoEnqueue('job_time_entries',{
+    contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+    job_id:null,arrived_at:a.at,departed_at:a.lastAt,minutes:mins,
+    dest_place:null,source:'stop'
+  });
+}
+// `endedIso` closes the leg at an earlier verified moment than now: the moment
+// they parked, when the stop that follows is not driving.
+function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso){
   if(!driveStartedAt)return;
-  const arrived=new Date().toISOString();
+  const arrived=endedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(arrived)-Date.parse(driveStartedAt))/60000));
   if(mins<2)return;
   if(!_supaUser)return;
@@ -568,6 +660,7 @@ function stopGeoTracking(){
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
   _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;
+  _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;
   _geoClearOpen();_geoWakeRelease();
 }
 

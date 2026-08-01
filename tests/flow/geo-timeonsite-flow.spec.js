@@ -83,7 +83,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
     await step(page, {
       label: 'arrive at site, dwell ~12 min, depart → time-on-site logged', page: 'geo', role: 'contractor',
       suspect: 'geo-track.js _geoOnPing → _geoCloseEntry (job_time_entries insert, source geofence)',
-      ruleText: 'a real arrive→dwell→depart must write ONE geofence time entry with minutes>=2 (or skip if geo tables absent)',
+      ruleText: 'a real arrive→dwell→depart must write ONE geofence time entry with minutes>=2',
       expected: 'job_time_entries row source=geofence minutes>=2',
       act: async (p) => {
         const ok = await setup(jobOn, true);
@@ -108,7 +108,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
       },
       rule: async (p) => {
         const r = await geoEntries(p, jobOn);
-        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned in this env (pending geo migration)' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         const gf = (r.rows || []).find(x => x.source === 'geofence');
         return { ok: !!gf && gf.minutes >= 2, got: gf ? `minutes=${gf.minutes} source=${gf.source}` : `no geofence row, DIAG after arrive: ${JSON.stringify(p.__geoDiag)}` };
       },
@@ -141,7 +141,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
       rule: async (p) => {
         if (p.__gateGone !== true) return { ok: false, got: '_geoBusinessHoursNow still exists, the time lock is back' };
         const r = await geoEntries(p, jobHrs);
-        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned in this env' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         const gf = (r.rows || []).find(x => x.source === 'geofence');
         return { ok: p.__cur != null || !!gf, got: `currentJob=${p.__cur} rows=${(r.rows || []).length}` };
       },
@@ -163,7 +163,7 @@ test.describe('geo-fence time-on-site (UI-driven via the real ping handler)', ()
       },
       rule: async (p) => {
         const r = await geoEntries(p, jobPass);
-        if (r.absent) return { ok: true, got: 'SKIP: geo tables absent' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         return { ok: (r.rows || []).length === 0, got: `rows=${(r.rows || []).length} (expected 0)` };
       },
     });

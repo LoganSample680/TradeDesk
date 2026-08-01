@@ -126,10 +126,9 @@ test.describe('Drive attribution: a supply run logs real miles, parked time is n
           const leg = (data || []).find(r => r.dest_place === supplyName);
           return { rows: (data || []).length, leg: leg || null };
         }, { supplyName });
-        if (out.err && /dest_place|column/i.test(out.err)) {
-          return { ok: true, got: 'SKIP: job_time_entries.dest_place not provisioned in this env' };
-        }
-        const ok = !!out.leg && /^drive/.test(out.leg.source) && out.leg.minutes >= 2;
+        // dest_place ships in a migration now, so a missing column is a real
+        // failure rather than a silent green that asserted nothing.
+        const ok = !out.err && !!out.leg && /^drive/.test(out.leg.source) && out.leg.minutes >= 2;
         return { ok, got: JSON.stringify(out) };
       },
     });

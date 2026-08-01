@@ -2591,10 +2591,13 @@ async function _openJobProfit(){
   // invisible to Job Profit entirely, even though the time was really saved.
   // null logged_by_uid means the owner, whose rate already keys off cid above.
   entries=entries.concat(timeEntries.map(e=>({employee_user_id:e.logged_by_uid||cid,job_id:e.job_id,minutes:e.minutes||0,source:'manual'})));
-  // Labor $ by bid id (on-site time only; drive is overhead, not job labor)
+  // Labor $ by bid id (on-site time only; drive is overhead, not job labor).
+  // These tests were `source==='drive'` exactly, which missed 'drive-personal'
+  // and charged a job for time spent driving. Off-job stops (lunch) are not job
+  // labor either and must not land on a bid.
   const laborByBid={};
   entries.forEach(en=>{
-    if(en.source==='drive')return;
+    if(_geoIsDriveSource(en.source)||_geoIsOffJobSource(en.source)||_geoIsPlaceSource(en.source))return;
     const job=jobs.find(j=>String(j.id)===String(en.job_id));
     const bidId=job?job.bid_id:en.job_id;
     if(bidId==null)return;
@@ -2604,7 +2607,7 @@ async function _openJobProfit(){
   // On-site minutes per bid (drive excluded from on-site calc)
   const onSiteMinByBid={};
   entries.forEach(en=>{
-    if(en.source==='drive')return;
+    if(_geoIsDriveSource(en.source)||_geoIsOffJobSource(en.source)||_geoIsPlaceSource(en.source))return;
     const job=jobs.find(j=>String(j.id)===String(en.job_id));
     const bidId=job?job.bid_id:en.job_id;
     if(bidId==null)return;
@@ -2755,11 +2758,19 @@ async function _crewCostRender(range){
   const bizDayMins=660;
   // Aggregate by employee
   const byEmp={};
-  const _emp=uid=>{if(!byEmp[uid])byEmp[uid]={min:0,jobSiteMin:0,driveMin:0,shopMin:0,jobs:{},dayMins:{}};return byEmp[uid];};
+  const _emp=uid=>{if(!byEmp[uid])byEmp[uid]={min:0,jobSiteMin:0,driveMin:0,shopMin:0,offMin:0,placeMin:0,jobs:{},dayMins:{}};return byEmp[uid];};
   ents.forEach(en=>{
     const uid=en.employee_user_id;if(!uid)return;
-    const e=_emp(uid);const m=en.minutes||0;e.min+=m;
-    if(en.source==='drive'){e.driveMin+=m;}else{
+    const e=_emp(uid);const m=en.minutes||0;
+    // Off-job time (lunch, an errand) is shown but never PAID: it stays out of
+    // e.min, which drives loaded cost and wage, and out of dayMins, which drives
+    // the overtime flag. Counting a lunch break as either is a payroll error.
+    if(_geoIsOffJobSource(en.source)){e.offMin+=m;return;}
+    e.min+=m;
+    // Exact 'drive' missed 'drive-personal', so a personal-vehicle leg was
+    // counted as on-site labor and billed to whichever job it ended at.
+    if(_geoIsPlaceSource(en.source)){e.placeMin+=m;}
+    else if(_geoIsDriveSource(en.source)){e.driveMin+=m;}else{
       e.jobSiteMin+=m;
       const job=jobs.find(j=>String(j.id)===String(en.job_id));
       const bidId=job?job.bid_id:en.job_id;
@@ -2789,12 +2800,12 @@ async function _crewCostRender(range){
     const e=byEmp[uid];
     const hrs=e.min/60,loaded=hrs*(data.loaded[uid]||0),wage=hrs*(data.wage[uid]||0);
     grand+=loaded;
-    const jsHrs=e.jobSiteMin/60,drHrs=e.driveMin/60,shHrs=e.shopMin/60;
+    const jsHrs=e.jobSiteMin/60,drHrs=e.driveMin/60,shHrs=e.shopMin/60,offHrs=e.offMin/60,plHrs=e.placeMin/60;
     // Use actual days worked (days with any entry), not the full range length,
     // otherwise absent days inflate "unaccounted" for part-week workers.
     const workedDays=Math.max(1,Object.keys(e.dayMins).length);
     const unaccH=Math.max(0,(bizDayMins*workedDays-e.min)/60);
-    const hasBreakdown=e.driveMin>0||e.shopMin>0;
+    const hasBreakdown=e.driveMin>0||e.shopMin>0||e.offMin>0||e.placeMin>0;
     const otTag=e.otDays>0?'<span style="color:var(--c-amber);font-weight:700;margin-left:6px">'+svgIcon('⚠',{size:12})+' OT '+e.otDays+'d</span>':'';
     const rlTag=(e.revenue>0&&loaded>0)?'<span style="color:var(--green);font-weight:700;margin-left:6px">'+fmt(e.revenue)+' rev</span>':'';
     const jobLines=Object.keys(e.jobs).sort((a,b)=>e.jobs[b]-e.jobs[a]).map(bid=>{
@@ -2806,6 +2817,8 @@ async function _crewCostRender(range){
         '<span>'+svgIcon('🏗',{size:11})+' On-site '+jsHrs.toFixed(1)+'h</span>'+
         (drHrs>0.1?'<span>'+svgIcon('🚗',{size:11})+' Drive '+drHrs.toFixed(1)+'h</span>':'')+
         (shHrs>0.1?'<span>'+svgIcon('🏠',{size:11})+' Shop '+shHrs.toFixed(1)+'h</span>':'')+
+        (plHrs>0.1?'<span>'+svgIcon('📦',{size:11})+' Supply/other '+plHrs.toFixed(1)+'h</span>':'')+
+        (offHrs>0.1?'<span style="color:var(--text4)">Off-job '+offHrs.toFixed(1)+'h (unpaid)</span>':'')+
         (unaccH>0.5?'<span style="color:var(--text4)">~ '+unaccH.toFixed(1)+'h unaccounted</span>':'')+
       '</div>':'';
     return '<div style="padding:10px 0;border-bottom:1px solid var(--border)">'+

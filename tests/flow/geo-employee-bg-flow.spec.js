@@ -101,7 +101,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       },
       rule: async (p) => {
         const r = await jobRows(p, jobB);
-        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         const leg = (r.rows || []).find(x => x.source === 'drive-personal');
         return { ok: !!leg, got: leg ? `source=${leg.source} minutes=${leg.minutes}` : `no drive-personal leg (rows=${JSON.stringify(r.rows)})` };
       },
@@ -177,7 +177,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       },
       rule: async (p) => {
         const r = await jobRows(p, jobBg);
-        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         const mid = p.__mid || {}, end = p.__end || {};
         const gapRow = (r.rows || []).find(x => x.source === 'geofence-gap');
         const ok = mid.cur != null && mid.persisted === true    // hidden did NOT close/reset
