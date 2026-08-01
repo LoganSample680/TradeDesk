@@ -5,9 +5,9 @@
 //      + geofence radius). Tracking during work hours is a condition of the job,
 //      which is the OWNER's call to make.
 //   2. Crew are TOLD before anything is logged. _geoNoticeSheet states plainly
-//      what is captured, the hours window, and that off-hours is never touched;
-//      their tap records location_ack_at + the notice version and, in that same
-//      gesture, opens the OS permission prompt. Nothing is tracked before that.
+//      what is captured; their tap records location_ack_at + the notice version
+//      and, in that same gesture, opens the OS permission prompt. Nothing is
+//      tracked before that.
 //      We never write an agreement the person did not make: the old code set
 //      location_consent=true at sign-in without ever asking, which is a
 //      fabricated record, worse in a dispute than having none.
@@ -549,7 +549,6 @@ function _geoTrackInit(){
 // are higher this way than throwing a naked permission dialog at someone.
 function _geoNoticeSheet(){
   if(document.getElementById('_geo-notice-ov'))return;
-  const hrs=escHtml((S.trackStart||'07:00')+'–'+(S.trackEnd||'18:00'));
   const biz=escHtml((typeof getBusinessName==='function'&&getBusinessName())||S.bname||'your employer');
   const ov=document.createElement('div');ov.id='_geo-notice-ov';ov.className='zmodal-overlay';
   const sheet=document.createElement('div');
@@ -561,15 +560,8 @@ function _geoNoticeSheet(){
     '<div style="text-align:center;max-width:420px;margin:0 auto">'+
       '<div style="font-size:30px;margin-bottom:8px">'+svgIcon('📍',{size:30})+'</div>'+
       '<div style="font-size:17px;font-weight:800;margin-bottom:6px">'+biz+' logs your job time with location</div>'+
-      '<div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:12px">Your drive mileage and hours on each job record themselves, so you never fill out a timesheet or photograph an odometer.</div>'+
-      '<div style="background:var(--bg2);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;text-align:left;display:inline-block">'+
-        '<div style="font-size:12px;color:var(--text2);line-height:1.7">'+
-          '<div>'+svgIcon('🕖',{size:12})+' <strong>Only during work hours ('+hrs+').</strong></div>'+
-          '<div>'+svgIcon('🚫',{size:12})+' Never nights, weekends, or your own time.</div>'+
-          '<div>'+svgIcon('👤',{size:12})+' Only your manager sees it, never your coworkers.</div>'+
-        '</div>'+
-      '</div>'+
-      '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:16px">Location tracking during work hours is part of using TradeDesk at '+biz+'. Your phone will ask for permission next, and you can change it anytime in your phone settings.</div>'+
+      '<div style="font-size:13px;color:var(--text2);line-height:1.55;margin-bottom:16px">Your drive mileage and hours on each job record themselves, so you never fill out a timesheet or photograph an odometer.</div>'+
+      '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:16px">Your phone will ask for permission next.</div>'+
       '<button id="_geo-notice-go" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;min-height:44px">Got it, continue</button>'+
     '</div>';
   ov.appendChild(sheet);document.body.appendChild(ov);

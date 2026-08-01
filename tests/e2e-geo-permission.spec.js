@@ -140,7 +140,7 @@ test.describe('Crew location permission', () => {
     expect(String(out.wrote.location_ack_at)).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
-  test('the notice sheet states the hours window and does not ack until tapped', async () => {
+  test('the notice sheet says what is captured and does not ack until tapped', async () => {
     const out = await page.evaluate(() => {
       S.teamTracking = true; S.trackStart = '07:00'; S.trackEnd = '18:00';
       _employeeRecord = { id: 'e1', location_ack_at: null };
@@ -149,14 +149,14 @@ test.describe('Crew location permission', () => {
       const txt = ov ? ov.textContent : '';
       return {
         shown: !!ov,
-        mentionsHours: txt.includes('07:00') && txt.includes('18:00'),
-        saysNeverOffHours: /never/i.test(txt),
+        saysWhatIsCaptured: /mileage/i.test(txt) && /hours/i.test(txt),
+        saysPermissionNext: /permission/i.test(txt),
         ackedBeforeTap: !!_employeeRecord.location_ack_at,
       };
     });
     expect(out.shown).toBe(true);
-    expect(out.mentionsHours).toBe(true);
-    expect(out.saysNeverOffHours).toBe(true);
+    expect(out.saysWhatIsCaptured).toBe(true);
+    expect(out.saysPermissionNext).toBe(true);
     // Merely SEEING the notice is not agreement.
     expect(out.ackedBeforeTap).toBe(false);
     await page.evaluate(() => document.getElementById('_geo-notice-ov')?.remove());
