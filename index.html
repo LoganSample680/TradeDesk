@@ -2244,9 +2244,21 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="fbar" style="margin-bottom:16px;padding-left:2px">
     <button type="button" class="fb active" id="ft-t-fleet" onclick="setFleetTab('fleet')"><span data-ico="🚗" data-ico-size="14"></span> Fleet</button>
     <button type="button" class="fb" id="ft-t-team" onclick="setFleetTab('team')"><span data-ico="👷" data-ico-size="14"></span> Team</button>
+    <button type="button" class="fb" id="ft-t-places" onclick="setFleetTab('places')"><span data-ico="📍" data-ico-size="14"></span> Places</button>
   </div>
   <div id="ft-fleet">
     <div id="fleet-vehicle-list"></div>
+  </div>
+  <div id="ft-places" style="display:none">
+    <div id="place-suggestions"></div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Your locations</div>
+        <button class="btn btn-sm btn-p" onclick="openPlaceModal()">+ Add</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px">Your shop and the supply houses you use. Drive time between them logs itself, and time parked here stops counting as driving.</div>
+      <div id="place-list"></div>
+    </div>
   </div>
   <div id="ft-team" style="display:none">
     <div class="card">

@@ -232,6 +232,9 @@ async function _geoOnPing(pos){
   try{
   const here={lat:pos.coords.latitude,lng:pos.coords.longitude};
   const acc=pos.coords.accuracy||0;
+  // First fix of the day anchors the commute guard: wherever the working day
+  // started is where this person left FROM, and that leg is not deductible.
+  if(typeof noteDayStart==='function')noteDayStart(here);
   // Throttled breadcrumb (~60s)
   const nowMs=Date.now();
   if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc);}

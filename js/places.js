@@ -28,19 +28,29 @@
 //     obviously somewhere that matters, so after PLACE_REPEAT_MIN visits it is
 //     offered rather than assumed.
 //
-// WHAT IS DELIBERATELY NOT AUTOMATIC. Home. Commuting miles are not deductible,
-// and home-to-first-job is the single most common mileage adjustment in an
-// audit. A place is never auto-created from the day's first departure or last
-// arrival, so the app cannot quietly inflate someone's deduction on their
-// behalf. A contractor with a qualifying home office can mark it themselves,
-// which genuinely changes the answer, and that is their call to make with their
-// CPA, not ours to infer.
+// THE COMMUTE GUARD. Commuting miles are NOT deductible, and home-to-first-job
+// is the single most common mileage adjustment in an audit. Home is also, to a
+// dwell detector, the most obvious "place" there is: the truck sits there all
+// night, every night. Left alone this engine would offer someone their own house
+// as a supply house within three days, and accepting it would start logging
+// commute miles as business trips. So two rules, both enforced in
+// _placeIsLikelyHome:
+//
+//   1. Any dwell over PLACE_HOME_DWELL_MS (6h) is somewhere you sleep, not
+//      somewhere you buy conduit.
+//   2. The coordinate the working day STARTED at is where you left from, which
+//      for the overwhelming majority of contractors is home.
+//
+// A contractor with a qualifying home office can mark it themselves (kind:
+// 'home_office'), which genuinely changes the tax answer. That is a decision for
+// them and their CPA, never something inferred from GPS.
 
 const PLACE_DWELL_MS      = 5*60*1000; // a stop, not a traffic light
 const PLACE_MATCH_FT      = 600;       // same fence radius the job machine uses
 const PLACE_REPEAT_MIN    = 3;         // visits before an unknown stop is offered
 const PLACE_MAX_ACC_M     = 150;       // looser than this and the fix is meaningless
-const PLACE_KINDS = {shop:'Shop',supply:'Supply house',other:'Other'};
+const PLACE_HOME_DWELL_MS = 6*60*60*1000; // sleep, not a supply run
+const PLACE_KINDS = {shop:'Shop',supply:'Supply house',home_office:'Home office',other:'Other'};
 
 // ── Lookup ───────────────────────────────────────────────────────────────────
 function getPlaces(){return places;}
@@ -134,10 +144,38 @@ function detectPlacesFromExpenses(){
 const _PLACE_STOPS_KEY='zp3_place_stops';
 function _placeStopsRead(){try{return JSON.parse(localStorage.getItem(_PLACE_STOPS_KEY)||'[]');}catch(_e){return[];}}
 function _placeStopsWrite(a){try{localStorage.setItem(_PLACE_STOPS_KEY,JSON.stringify(a.slice(-200)));}catch(_e){}}
+// The coordinate the working day started at. Written by the first ping of each
+// day and read by the commute guard. Per-device on purpose: it describes where
+// this person left from, not account configuration.
+const _PLACE_DAY_KEY='zp3_place_day_anchor';
+function _placeDayAnchor(){
+  try{
+    const a=JSON.parse(localStorage.getItem(_PLACE_DAY_KEY)||'null');
+    return (a&&a.day===todayKey())?a:null;
+  }catch(_e){return null;}
+}
+function noteDayStart(coord){
+  if(!coord||coord.lat==null)return;
+  if(_placeDayAnchor())return;            // already anchored today
+  try{localStorage.setItem(_PLACE_DAY_KEY,JSON.stringify({
+    day:todayKey(),lat:coord.lat,lon:coord.lng!=null?coord.lng:coord.lon
+  }));}catch(_e){}
+}
+// True when a stop is almost certainly home. Either rule alone is enough.
+function _placeIsLikelyHome(coord,ms){
+  if(ms>=PLACE_HOME_DWELL_MS)return true;           // slept there
+  const a=_placeDayAnchor();
+  if(a&&_placeDistFt(coord,a)<=PLACE_MATCH_FT)return true; // left from there
+  return false;
+}
 function recordUnknownStop(coord,ms){
   if(!coord||coord.lat==null)return null;
   if(!(ms>=PLACE_DWELL_MS))return null;   // a light, not a stop
   if(placeAt(coord))return null;          // already a known place
+  // Never offer home. Accepting it would turn a non-deductible commute into a
+  // logged business trip, which is the app inflating a deduction on the
+  // contractor's behalf, silently.
+  if(_placeIsLikelyHome(coord,ms))return null;
   const stops=_placeStopsRead();
   const hit=stops.find(s=>_placeDistFt(coord,s)<=PLACE_MATCH_FT);
   if(hit){hit.n=(hit.n||1)+1;hit.lastAt=new Date().toISOString();}
@@ -339,4 +377,127 @@ function _geoRenderFallback(body,pts){
       (widthMi>0.1?'Area shown: about '+(widthMi<10?widthMi.toFixed(1):Math.round(widthMi))+' miles across. ':'')+
       'Tap any pin to open it in Maps.'+
     '</div>';
+}
+
+// ── The Places screen (Fleet & Team → Places) ────────────────────────────────
+// Owner-facing. Everything here is business configuration, so it lives beside
+// the fleet and the crew rather than in Books.
+const _PLACE_KIND_ICON={shop:'🏠',supply:'🧰',home_office:'🏡',other:'📍'};
+function _placeKindLabel(k){return PLACE_KINDS[k]||PLACE_KINDS.other;}
+
+// The shop was geocoded into S.officeLat/officeLon long before td_places
+// existed, and the fence machine still reads it from there. Lift it in once so a
+// contractor can actually see it, rename it, or correct the pin, and so it shows
+// up alongside everything else. Idempotent: guarded on a shop already existing.
+function _migrateShopToPlaces(){
+  if(!(S.officeLat&&S.officeLon))return null;
+  if((places||[]).some(p=>p.kind==='shop'))return null;
+  if(placeAt({lat:S.officeLat,lon:S.officeLon}))return null;
+  return savePlace({
+    name:(S.bname?S.bname+' shop':'Shop'),kind:'shop',
+    lat:S.officeLat,lon:S.officeLon,confirmedBy:'business-address',
+  });
+}
+
+function renderPlaces(){
+  _migrateShopToPlaces();
+  _renderPlaceSuggestions();
+  const el=document.getElementById('place-list');
+  if(!el)return;
+  const rows=(places||[]).slice().sort((a,b)=>
+    (a.kind==='shop'?0:a.kind==='home_office'?1:2)-(b.kind==='shop'?0:b.kind==='home_office'?1:2)
+    ||String(a.name||'').localeCompare(String(b.name||'')));
+  if(!rows.length){
+    el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:6px 0;line-height:1.6">'+
+      'No locations yet. They add themselves when you log a receipt at a supply house, or add one now.</div>';
+    return;
+  }
+  el.innerHTML=rows.map(pl=>{
+    const src=pl.confirmedBy==='expense'?'From a receipt'
+      :pl.confirmedBy==='business-address'?'From your business address'
+      :pl.confirmedBy==='repeat'?'From repeat visits':'Added by you';
+    return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div style="display:flex;align-items:center;gap:10px">'+
+        '<div style="width:32px;height:32px;flex-shrink:0;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:16px">'+svgIcon(_PLACE_KIND_ICON[pl.kind]||'📍',{size:16})+'</div>'+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:700">'+escHtml(pl.name||'Unnamed')+'</div>'+
+          '<div style="font-size:10px;color:var(--text3);margin-top:1px">'+escHtml(_placeKindLabel(pl.kind))+' · '+src+'</div>'+
+        '</div>'+
+        '<a href="https://www.google.com/maps?q='+pl.lat+','+pl.lon+'" target="_blank" rel="noopener" style="font-size:10px;font-weight:700;color:var(--blue);text-decoration:none;padding:5px 8px;white-space:nowrap">'+svgIcon('📍',{size:10})+' Map</a>'+
+        '<button onclick="openPlaceModal(\''+pl.id+'\')" style="font-size:11px;padding:4px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">Edit</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+// Repeat stops the device noticed. Offered, never assumed: we know someone stops
+// there, not what it is or whether it is business. Home is already filtered out
+// upstream by the commute guard.
+function _renderPlaceSuggestions(){
+  const el=document.getElementById('place-suggestions');
+  if(!el)return;
+  const sug=(typeof pendingPlaceSuggestions==='function')?pendingPlaceSuggestions():[];
+  if(!sug.length){el.innerHTML='';return;}
+  el.innerHTML=sug.map(s=>
+    '<div class="card" style="margin-bottom:10px;border:1px solid var(--blue);background:linear-gradient(135deg,rgba(45,93,168,.08),transparent)">'+
+      '<div style="font-size:13px;font-weight:800;margin-bottom:3px">'+svgIcon('📍',{size:13})+' You keep stopping here</div>'+
+      '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px">'+
+        s.n+' visits. Add it and the drive time to and from stops counting as time parked.'+
+      '</div>'+
+      '<div style="display:flex;gap:8px">'+
+        '<button onclick="openPlaceModal(null,'+s.lat+','+s.lon+')" style="flex:1;padding:9px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit">Add this place</button>'+
+        '<button onclick="dismissPlaceSuggestion('+s.lat+','+s.lon+');renderPlaces()" style="padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text3)">Not work</button>'+
+      '</div>'+
+    '</div>').join('');
+}
+
+// Add / edit. lat+lon are passed when promoting a suggestion, since that stop
+// already has coordinates and asking for an address would be absurd.
+function openPlaceModal(id,lat,lon){
+  const pl=id?(places||[]).find(p=>String(p.id)===String(id)):null;
+  const _lat=pl?pl.lat:lat,_lon=pl?pl.lon:lon;
+  document.getElementById('place-modal')?.remove();
+  const ov=document.createElement('div');
+  ov.id='place-modal';ov.className='zmodal-overlay';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const kindOpts=Object.keys(PLACE_KINDS).map(k=>
+    '<option value="'+k+'"'+((pl&&pl.kind===k)||(!pl&&k==='supply')?' selected':'')+'>'+PLACE_KINDS[k]+'</option>').join('');
+  ov.innerHTML='<div style="position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 18px 26px;max-width:520px;margin:0 auto;box-sizing:border-box">'+
+    '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(pl?'Edit location':'Add a location')+'</div>'+
+    '<div class="f" style="margin-bottom:12px"><label>Name</label>'+
+      '<input id="place-name" placeholder="Ferguson Plumbing" value="'+escHtml(pl?pl.name||'':'')+'" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
+    '<div class="f" style="margin-bottom:12px"><label>Type</label>'+
+      '<select id="place-kind" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+kindOpts+'</select></div>'+
+    // A home office changes whether the first trip of the day is deductible, so
+    // it is stated plainly rather than buried as a dropdown value.
+    '<div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
+    (_lat!=null
+      ? '<input type="hidden" id="place-lat" value="'+_lat+'"><input type="hidden" id="place-lon" value="'+_lon+'">'+
+        '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">'+svgIcon('📍',{size:11})+' Pinned at '+Number(_lat).toFixed(5)+', '+Number(_lon).toFixed(5)+'</div>'
+      : '<div style="font-size:11px;color:#A32D2D;margin-bottom:14px">No coordinates. Add this from a repeat stop, or log a receipt there.</div>')+
+    '<button onclick="_savePlaceFromModal('+(pl?"'"+pl.id+"'":'null')+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save</button>'+
+    (pl?'<button onclick="_deletePlaceFromModal(\''+pl.id+'\')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Delete</button>':'')+
+  '</div>';
+  document.body.appendChild(ov);
+  setTimeout(()=>document.getElementById('place-name')?.focus(),80);
+}
+function _savePlaceFromModal(id){
+  const name=(document.getElementById('place-name')?.value||'').trim();
+  const kind=document.getElementById('place-kind')?.value||'supply';
+  const lat=parseFloat(document.getElementById('place-lat')?.value);
+  const lon=parseFloat(document.getElementById('place-lon')?.value);
+  if(!name){showToast('Give it a name','⚠️');return;}
+  if(!isFinite(lat)||!isFinite(lon)){showToast('No coordinates for this location','⚠️');return;}
+  savePlace({id:id||undefined,name,kind,lat,lon,confirmedBy:id?undefined:'manual'});
+  if(typeof dismissPlaceSuggestion==='function')dismissPlaceSuggestion(lat,lon);
+  document.getElementById('place-modal')?.remove();
+  showToast(name+' saved','📍');
+  renderPlaces();
+}
+function _deletePlaceFromModal(id){
+  zConfirm('Delete this location? Drive legs already recorded keep their history.',()=>{
+    deletePlace(id);
+    document.getElementById('place-modal')?.remove();
+    renderPlaces();
+  },{title:'Delete location',yes:'Delete',danger:true});
 }

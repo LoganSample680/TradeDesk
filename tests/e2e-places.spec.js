@@ -36,10 +36,19 @@ test.describe('Places, drive attribution and the map', () => {
   });
   test.afterAll(async () => { await page.context().close(); });
 
+  // Full isolation. These are real globals and real localStorage keys, not
+  // fixtures, so anything a test sets leaks into the next one. S.officeLat in
+  // particular makes renderPlaces() lift a shop in and throws off every count.
   test.beforeEach(async () => {
     await page.evaluate(() => {
       places.length = 0; expenses.length = 0;
-      try { localStorage.removeItem('zp3_place_stops'); } catch (e) {}
+      jobs.length = 0; bids.length = 0; payments.length = 0;
+      S.officeLat = 0; S.officeLon = 0;
+      try {
+        localStorage.removeItem('zp3_place_stops');
+        localStorage.removeItem('zp3_place_day_anchor');
+      } catch (e) {}
+      document.getElementById('place-modal')?.remove();
     });
   });
 
@@ -507,6 +516,180 @@ test.describe('Places, drive attribution and the map', () => {
       return threw;
     });
     expect(out).toBe(false);
+  });
+
+
+  // ── The commute guard (this was documented but NOT implemented) ────────────
+
+  test('an overnight dwell is never offered as a place', async () => {
+    const out = await page.evaluate(() => {
+      const c = { lat: 37.55, lon: -97.55 }, overnight = 9 * 60 * 60 * 1000;
+      recordUnknownStop(c, overnight);
+      recordUnknownStop(c, overnight);
+      recordUnknownStop(c, overnight);
+      return pendingPlaceSuggestions().length;
+    });
+    // Home. Accepting it would start logging non-deductible commute miles as
+    // business trips, silently, on the contractor's behalf.
+    expect(out).toBe(0);
+  });
+
+  test('the coordinate the day STARTED at is never offered as a place', async () => {
+    const out = await page.evaluate(() => {
+      const home = { lat: 37.56, lon: -97.56 };
+      noteDayStart(home);
+      const dwell = 6 * 60 * 1000; // a normal stop length, not overnight
+      recordUnknownStop(home, dwell);
+      recordUnknownStop(home, dwell);
+      recordUnknownStop(home, dwell);
+      const atHome = pendingPlaceSuggestions().length;
+      // Somewhere else entirely, same dwell, still offered normally.
+      const yard = { lat: 37.80, lon: -97.20 };
+      recordUnknownStop(yard, dwell); recordUnknownStop(yard, dwell); recordUnknownStop(yard, dwell);
+      const total = pendingPlaceSuggestions().length;
+      try { localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+      return { atHome, total };
+    });
+    expect(out.atHome).toBe(0);
+    expect(out.total).toBe(1); // only the yard
+  });
+
+  test('noteDayStart anchors once per day and does not drift', async () => {
+    const out = await page.evaluate(() => {
+      try { localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+      noteDayStart({ lat: 37.10, lon: -97.10 });
+      noteDayStart({ lat: 37.90, lon: -97.90 }); // later ping must not overwrite
+      const a = JSON.parse(localStorage.getItem('zp3_place_day_anchor') || 'null');
+      try { localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+      return a;
+    });
+    expect(out.lat).toBe(37.10);
+    expect(out.day).toBeTruthy();
+  });
+
+  // ── Proposals are stamped (the map layer used to be permanently empty) ─────
+
+  test('_commitProposalSent stamps the bid, so the Proposals layer is not always empty', async () => {
+    const out = await page.evaluate(() => {
+      const src = String(_commitProposalSent);
+      return {
+        // The stamp must live in the same function that sets sentAt, or a
+        // proposal sent from the driveway records no location and the map's
+        // Proposals layer reads zero forever.
+        stampsGeo: /_stampGeo/.test(src),
+        setsSentAt: /sentAt/.test(src),
+        // Fire-and-forget, never awaited: a slow GPS lock must not delay a send.
+        notAwaited: !/await\s+_stampGeo/.test(src),
+      };
+    });
+    expect(out.setsSentAt).toBe(true);
+    expect(out.stampsGeo).toBe(true);
+    expect(out.notAwaited).toBe(true);
+  });
+
+  // ── The Places screen ─────────────────────────────────────────────────────
+
+  test('the shop is lifted out of the business address into td_places, once', async () => {
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      S.officeLat = 37.705; S.officeLon = -97.352; S.bname = 'Sample Painting';
+      renderPlaces();
+      const after1 = places.length;
+      renderPlaces();
+      renderPlaces();
+      const shop = places.find(p => p.kind === 'shop');
+      return { after1, total: places.length, name: shop && shop.name, src: shop && shop.confirmedBy };
+    });
+    expect(out.after1).toBe(1);
+    expect(out.total).toBe(1); // idempotent
+    expect(out.name).toBe('Sample Painting shop');
+    expect(out.src).toBe('business-address');
+  });
+
+  test('the places list renders each location with its provenance', async () => {
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      savePlace({ name: 'Ferguson', kind: 'supply', lat: 1, lon: 2, confirmedBy: 'expense' });
+      savePlace({ name: 'The Shop', kind: 'shop', lat: 3, lon: 4, confirmedBy: 'business-address' });
+      renderPlaces();
+      const html = document.getElementById('place-list').innerHTML;
+      return {
+        hasFerguson: /Ferguson/.test(html),
+        fromReceipt: /From a receipt/.test(html),
+        fromAddress: /From your business address/.test(html),
+        // Shop sorts first so the anchor location is at the top.
+        shopFirst: html.indexOf('The Shop') < html.indexOf('Ferguson'),
+      };
+    });
+    expect(out.hasFerguson).toBe(true);
+    expect(out.fromReceipt).toBe(true);
+    expect(out.fromAddress).toBe(true);
+    expect(out.shopFirst).toBe(true);
+  });
+
+  test('a repeat stop surfaces a suggestion card that can be accepted', async () => {
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+      const c = { lat: 37.81, lon: -97.21 }, dwell = 6 * 60 * 1000;
+      recordUnknownStop(c, dwell); recordUnknownStop(c, dwell); recordUnknownStop(c, dwell);
+      renderPlaces();
+      const shown = /You keep stopping here/.test(document.getElementById('place-suggestions').innerHTML);
+      // Accept it through the real modal path.
+      openPlaceModal(null, 37.81, -97.21);
+      document.getElementById('place-name').value = 'Ferguson';
+      _savePlaceFromModal(null);
+      const gone = document.getElementById('place-suggestions').innerHTML === '';
+      return { shown, gone, saved: places.length, kind: places[0] && places[0].kind };
+    });
+    expect(out.shown).toBe(true);
+    expect(out.saved).toBe(1);
+    expect(out.kind).toBe('supply');
+    // Accepting clears the suggestion rather than leaving it to nag.
+    expect(out.gone).toBe(true);
+  });
+
+  test('a suggestion can be rejected as not-work and stays rejected', async () => {
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+      const c = { lat: 37.82, lon: -97.22 }, dwell = 6 * 60 * 1000;
+      recordUnknownStop(c, dwell); recordUnknownStop(c, dwell); recordUnknownStop(c, dwell);
+      dismissPlaceSuggestion(37.82, -97.22);
+      renderPlaces();
+      return { html: document.getElementById('place-suggestions').innerHTML, n: pendingPlaceSuggestions().length };
+    });
+    expect(out.html).toBe('');
+    expect(out.n).toBe(0);
+  });
+
+  test('the place modal refuses to save without a name or coordinates', async () => {
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      openPlaceModal(null, 37.9, -97.9);
+      document.getElementById('place-name').value = '';
+      _savePlaceFromModal(null);
+      const afterNoName = places.length;
+      document.getElementById('place-name').value = 'Real Place';
+      _savePlaceFromModal(null);
+      return { afterNoName, afterName: places.length };
+    });
+    expect(out.afterNoName).toBe(0);
+    expect(out.afterName).toBe(1);
+  });
+
+  test('the Places tab is wired into setFleetTab', async () => {
+    const out = await page.evaluate(() => {
+      setFleetTab('places');
+      return {
+        paneShown: document.getElementById('ft-places').style.display !== 'none',
+        tabActive: document.getElementById('ft-t-places').classList.contains('active'),
+        fleetHidden: document.getElementById('ft-fleet').style.display === 'none',
+      };
+    });
+    expect(out.paneShown).toBe(true);
+    expect(out.tabActive).toBe(true);
+    expect(out.fleetHidden).toBe(true);
   });
 
   test('zero console errors across the places suite', async () => {
