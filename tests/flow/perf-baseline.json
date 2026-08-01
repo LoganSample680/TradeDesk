@@ -12,6 +12,10 @@
     "clicks": 130,
     "note": "Lowered from 132 (2026-07-29): 'QR codes' is now a direct button on the Leads tbar instead of a link buried inside the 'Get leads' share-link modal (owner feedback: even the builder couldn't find it), removing 1 tap from each of the 2 navigations to pg-qr-leads in this flow. Breakdown: create source 28 + anon scan/form submit 89 + event/label verify 0 + promote 2 + log cost 11."
   },
+  "places/drive-attribution": {
+    "clicks": 9,
+    "note": "First capture 2026-08-01 (chromium + webkit, self-hosted flow-local, real Supabase): fixtures 2 + shop-to-supply drive 3 + parked in the lot 2 + pull out 1 + commute-guard probe 1. Pings rather than taps, same as the other geo flows: the budget guards the automatic drive machine, not UI friction."
+  },
   "crew/location-consent-is-real": {
     "clicks": 3,
     "note": "First capture 2026-08-01 (chromium + webkit, self-hosted flow-local, real Supabase): sign-in 1 + the acknowledgment tap 1 + owner roster read 1. Reading the notice costs 0 on purpose. This one must never ratchet DOWN to 0 on the tap: an acknowledgment that costs no interaction is an acknowledgment nobody made, which is the fabricated-consent bug this whole spec exists to prevent."
