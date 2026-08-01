@@ -36,6 +36,13 @@ create table if not exists td_places (
   data        jsonb        not null default '{}',
   updated_at  timestamptz  not null default now(),
   deleted_at  timestamptz  default null,
+  -- Required by the SHARED shape of get_account_delta / _lad_table, which select
+  -- archived_at for every td_ table. Omitting it made the delta RPC fail to
+  -- create with "column t.archived_at does not exist". Places are never actually
+  -- archived (a supply house is long-lived config, not a record that ages out,
+  -- so td_places is deliberately absent from archive_old_records) but the column
+  -- has to exist for the common query shape to compile.
+  archived_at timestamptz  default null,
   primary key (user_id, id)
 );
 
@@ -68,7 +75,7 @@ end $$;
 grant select, insert, update, delete on td_places to authenticated;
 
 create index if not exists td_places_hot_idx
-  on td_places (user_id) where deleted_at is null;
+  on td_places (user_id, updated_at) where deleted_at is null and archived_at is null;
 create index if not exists td_places_delta_idx
   on td_places (user_id, updated_at desc);
 
