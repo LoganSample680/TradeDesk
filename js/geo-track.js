@@ -754,17 +754,10 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
     // the company's to deduct. The owner IS the business, so any vehicle counts,
     // which is the entire point of the standard mileage deduction.
     if(_isEmployee&&!companyVeh)return;
-    // ONE DRIVE, ONE ROW. Tapping Drive on a client is the contractor saying
-    // they are logging this trip themselves, and the geofence is watching the
-    // same truck make the same journey: without this, arriving at the client
-    // wrote an automatic row and tapping End Drive wrote a second one, and two
-    // rows for one drive is a double deduction, which is a worse failure than a
-    // missing one. Scoped to a manual drive that was already running when this
-    // leg began, so a leg that started BEFORE they tapped Drive still logs.
-    if(typeof gps!=='undefined'&&gps&&gps.active){
-      const legStart=Date.parse(startedIso||'');
-      if(!gps.startTime||!legStart||gps.startTime<=legStart)return;
-    }
+    // The one-drive-one-row guard lives in autoLogDriveTrip, not here: it is a
+    // rule about the mileage log itself rather than about this account, so it
+    // has to hold for every caller, the same reason the endpoint validation
+    // sits down there too.
     // A commute is not a business trip, and the GPS cannot tell the difference,
     // so a departure from home is refused by default rather than inflating a
     // deduction on the contractor's behalf.

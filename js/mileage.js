@@ -486,6 +486,22 @@ function autoLogDriveTrip(opts){
   // Idempotent on the leg key: the drive leg and this trip carry the same one,
   // so a retried or replayed leg can never bill the same miles twice.
   if(mileage.some(m=>m.legKey===legKey))return null;
+  // ONE DRIVE, ONE ROW. Tapping Drive on a client is the contractor saying they
+  // are logging this trip themselves, and the geofence is watching the same
+  // truck make the same journey: without this, arriving at the client wrote an
+  // automatic row and tapping End Drive wrote a second one. Two rows for one
+  // drive is a double deduction, a worse failure than a missing row, because a
+  // missing row costs them money and a duplicated one is what an auditor finds.
+  //
+  // Scoped to a manual drive that was ALREADY RUNNING when this leg began, so a
+  // leg already under way when they tapped is a different journey and still
+  // logs. Here rather than in _geoAutoMileage because it is a rule about the
+  // mileage log rather than about the account, so it must hold for every caller,
+  // the same reason the endpoint validation above is not left to the caller.
+  if(typeof gps!=='undefined'&&gps&&gps.active){
+    const legStart=Date.parse(opts.startedIso||'');
+    if(!gps.startTime||!legStart||gps.startTime<=legStart)return null;
+  }
   const veh=_autoTripVehicle();
   // dateKey, not a slice of the ISO string. An ISO timestamp is UTC, so a 7pm
   // supply run in Central time slices to TOMORROW and lands the deduction in the
