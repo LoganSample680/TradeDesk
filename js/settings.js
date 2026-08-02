@@ -1115,6 +1115,22 @@ function getDefaultVehicle(){
   }
   return usable.length===1?usable[0]:null;
 }
+// ── The vehicles a crew member may be handed ─────────────────────────────────
+// A fleet is not all crew trucks. An owner can easily have their own truck, a
+// spouse's car and one work van on the same Fleet page, and dispatch offering
+// all three is the app volunteering somebody else's keys.
+//
+// OFF by default, by owner decision (2026-08-01), taking the conservative side
+// of a real trade: nothing is ever offered because the app assumed it, at the
+// cost of dispatch staying quiet about trucks until at least one is ticked.
+// That silence is signposted on the board rather than left to look broken.
+//
+// The OWNER's own pickers are deliberately NOT filtered by this: they can drive
+// anything they own, and this flag is about what they hand to other people.
+function getCrewVehicles(){
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  return vehs.filter(v=>(v.status||'active')==='active'&&v.crewDrivable);
+}
 function setDefaultVehicle(id){
   S.defaultVehicleId=id?String(id):'';
   S.settingsTs=Date.now();

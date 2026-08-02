@@ -52,8 +52,11 @@ test.describe('Truck assignment', () => {
       // the exact case under test. A saved place fences for everybody.
       savePlace({ name: 'Ace Supply', kind: 'supply', lat: d.JOB.lat, lon: d.JOB.lon, confirmedBy: 'manual' });
       vehicles.length = 0;
-      vehicles.push({ id: 'v-a', name: '2019 Ford F-250', year: '2019', make: 'Ford', model: 'F-250', plate: 'KS 7TR-441', status: 'active' });
-      vehicles.push({ id: 'v-b', name: '2019 Ford F-250', year: '2019', make: 'Ford', model: 'F-250', plate: 'KS 9BX-208', status: 'active' });
+      // crewDrivable is explicit, and OFF is the default (owner decision): a
+      // fleet is not all crew trucks. Everything below is about what happens
+      // once the owner has said these two may be handed out.
+      vehicles.push({ id: 'v-a', name: '2019 Ford F-250', year: '2019', make: 'Ford', model: 'F-250', plate: 'KS 7TR-441', status: 'active', crewDrivable: true });
+      vehicles.push({ id: 'v-b', name: '2019 Ford F-250', year: '2019', make: 'Ford', model: 'F-250', plate: 'KS 9BX-208', status: 'active', crewDrivable: true });
       S.employees = [
         { id: 'e-dave', name: 'Dave', role: 'lead' },
         { id: 'e-luis', name: 'Luis', role: 'tech' },
@@ -63,6 +66,7 @@ test.describe('Truck assignment', () => {
       window.__seed = () => {
         S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon;
         S.teamTracking = true; _geoPingBusy = false;
+        vehicles.forEach(v => { v.crewDrivable = true; v.status = 'active'; });
         (S.employees || []).forEach(e => { delete e.truckDay; });
         localStorage.removeItem('emp_vehicle_' + todayKey());
       };
@@ -503,6 +507,164 @@ test.describe('Truck assignment', () => {
       }));
       expect(out.assigned).toBe('e-sam');
       expect(out.truck).toBeNull();
+    });
+  });
+
+  // ── Which vehicles a crew member may be handed ─────────────────────────────
+  // Owner call (2026-08-01): "this tag is important so multiple vehicles for
+  // the business owner don't prompt a dispatch prompt for trucks a business
+  // owner wouldn't let them drive."
+  //
+  // A fleet is not all crew trucks. An owner can have their own truck, a
+  // spouse's car and one work van on the same Fleet page, and offering all
+  // three is the app volunteering somebody else's keys. OFF by default, the
+  // conservative side of the trade: nothing is ever offered because the app
+  // assumed it, at the cost of dispatch staying quiet until one is ticked, and
+  // that silence is signposted rather than left to look broken.
+  test.describe('the crew-drivable tag', () => {
+    test.beforeEach(async () => { await page.evaluate(() => __seed()); });
+
+    test('an untagged fleet is never offered to crew', async () => {
+      const out = await page.evaluate(() => {
+        vehicles.forEach(v => { v.crewDrivable = false; });
+        document.getElementById('_truck-picker-ov')?.remove();
+        _dispatchTruckPicker('e-dave');
+        const ov = document.getElementById('_truck-picker-ov');
+        const html = ov ? ov.innerHTML : '';
+        ov?.remove();
+        return { html, crewCount: getCrewVehicles().length };
+      });
+      expect(out.crewCount).toBe(0);
+      expect(out.html).not.toContain('KS 7TR-441');
+      expect(out.html).not.toContain('KS 9BX-208');
+      expect(out.html).toContain('No active vehicles');
+    });
+
+    test('assigning a job raises no truck question when nothing is tagged', async () => {
+      // The case the owner named: an owner with vehicles crew may not drive
+      // must not be prompted about them every morning.
+      const out = await page.evaluate(async () => {
+        vehicles.forEach(v => { v.crewDrivable = false; });
+        jobs.length = 0;
+        jobs.push({ id: 7101, name: 'J', eventType: 'job', status: 'upcoming', start: todayKey(), days: 1, client_id: 5501 });
+        _dispatchDoAssign(7101, 'e-dave');
+        await new Promise(r => setTimeout(r, 400));
+        const ov = document.getElementById('_truck-picker-ov');
+        const asked = !!ov; ov?.remove();
+        return { asked, assigned: String((jobs.find(j => j.id === 7101) || {}).assignedTo || '') };
+      });
+      expect(out.asked).toBe(false);
+      // and the job is still assigned, which is the part that must not regress
+      expect(out.assigned).toBe('e-dave');
+    });
+
+    test('crew are not asked on their own phone either', async () => {
+      const out = await page.evaluate(() => {
+        vehicles.forEach(v => { v.crewDrivable = false; });
+        const realEmp = _isEmployee, realRec = _employeeRecord;
+        _isEmployee = true; _employeeRecord = { id: 'e-luis' };
+        try {
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          _checkEmployeeVehiclePicker();
+          const on = !!document.getElementById('_vehicle-picker-ov');
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          return on;
+        } finally { _isEmployee = realEmp; _employeeRecord = realRec; }
+      });
+      expect(out).toBe(false);
+    });
+
+    test('tagging one vehicle makes exactly that one available', async () => {
+      const out = await page.evaluate(() => {
+        vehicles.forEach(v => { v.crewDrivable = false; });
+        vehicles.find(v => v.id === 'v-b').crewDrivable = true;
+        document.getElementById('_truck-picker-ov')?.remove();
+        _dispatchTruckPicker('e-dave');
+        const ov = document.getElementById('_truck-picker-ov');
+        const html = ov ? ov.innerHTML : '';
+        ov?.remove();
+        return html;
+      });
+      expect(out).toContain('KS 9BX-208');
+      expect(out).not.toContain('KS 7TR-441');
+    });
+
+    test('the owner still sees their WHOLE fleet on their own prompt', async () => {
+      // The flag is about what gets handed out, not about what they own. An
+      // owner filtered by it could not pick the truck they are sitting in.
+      const out = await page.evaluate(() => {
+        vehicles.forEach(v => { v.crewDrivable = false; });
+        const realEmp = _isEmployee;
+        _isEmployee = false;
+        S.defaultVehicleId = 'v-a';
+        try {
+          localStorage.removeItem('emp_vehicle_' + todayKey());
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          _checkEmployeeVehiclePicker();
+          const ov = document.getElementById('_vehicle-picker-ov');
+          const html = ov ? ov.innerHTML : '';
+          ov?.remove();
+          return html;
+        } finally { _isEmployee = realEmp; localStorage.removeItem('emp_vehicle_' + todayKey()); }
+      });
+      expect(out).toContain('KS 7TR-441');
+      expect(out).toContain('KS 9BX-208');
+    });
+
+    test('a sold truck is not crew-drivable however it is tagged', async () => {
+      const n = await page.evaluate(() => {
+        vehicles.forEach(v => { v.crewDrivable = true; v.status = 'sold'; });
+        return getCrewVehicles().length;
+      });
+      expect(n).toBe(0);
+    });
+
+    test('the board signposts the untagged state instead of going quiet', async () => {
+      // Off by default means EVERY account starts here, so it has to read as a
+      // next step rather than as a control that does nothing.
+      const out = await page.evaluate(() => {
+        vehicles.forEach(v => { v.crewDrivable = false; });
+        const withFleet = _dispatchTruckRow(S.employees.find(e => e.id === 'e-dave'));
+        const keep = vehicles.slice();
+        vehicles.length = 0;
+        const noFleet = _dispatchTruckRow(S.employees.find(e => e.id === 'e-dave'));
+        keep.forEach(v => vehicles.push(v));
+        return { withFleet, noFleet };
+      });
+      expect(out.withFleet).toContain('Crew can drive this');
+      // With no fleet at all there is nothing to signpost: Fleet's own empty
+      // state already covers it, and two prompts for one problem is noise.
+      expect(out.noFleet).toBe('');
+    });
+
+    test('the toggle flips the tag and is reversible', async () => {
+      const out = await page.evaluate(() => {
+        vehicles.forEach(v => { v.crewDrivable = false; });
+        toggleCrewVehicle('v-a');
+        const on = getCrewVehicles().map(v => v.id);
+        toggleCrewVehicle('v-a');
+        const off = getCrewVehicles().map(v => v.id);
+        toggleCrewVehicle('nope-not-a-vehicle');   // must not throw
+        return { on, off };
+      });
+      expect(out.on).toEqual(['v-a']);
+      expect(out.off).toEqual([]);
+    });
+
+    test('the assign sheet shows each person\'s truck while you assign', async () => {
+      // Rolling people and trucks together: who is already in what, and who
+      // still needs keys, readable WHILE assigning rather than after.
+      const out = await page.evaluate(() => {
+        _dispatchSetTruck('e-dave', 'truck', 'v-a');
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        _dispatchAssign(7001);
+        const ov = document.querySelector('.zmodal-overlay');
+        const html = ov ? ov.innerHTML : '';
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return html;
+      });
+      expect(out).toContain('KS 7TR-441');     // Dave, already in his truck
+      expect(out).toContain('Needs a truck');  // the other two
     });
   });
 

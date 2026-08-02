@@ -162,11 +162,33 @@ function _fleetDefaultPill(v, status) {
   if(_isEmployee) return '';                 // crew answer this with the daily picker
   if(status !== 'active') return '';         // never attribute new trips to a sold truck
   const actives = getVehicles().filter(x=>(x.status||'active')==='active');
-  if(actives.length < 2) return '';
+  const pill = (on, fn, label, icon) => on
+    ? `<button onclick="event.stopPropagation();${fn}" style="display:inline-flex;align-items:center;gap:4px;margin:5px 5px 0 0;font-size:10px;font-weight:800;color:var(--blue);background:var(--blue-lt);border:1px solid var(--blue);border-radius:999px;padding:2px 8px;cursor:pointer;font-family:inherit">${icon||''}${label}</button>`
+    : `<button onclick="event.stopPropagation();${fn}" style="margin:5px 5px 0 0;font-size:10px;font-weight:700;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:999px;padding:2px 8px;cursor:pointer;font-family:inherit">${label}</button>`;
+  // The crew tag shows at ANY fleet size. A one-truck shop still has to say
+  // whether crew may drive it, because it is off by default and dispatch stays
+  // silent until something is ticked.
+  const crew = pill(!!v.crewDrivable, `toggleCrewVehicle('${v.id}')`,
+                    v.crewDrivable ? 'Crew truck' : 'Crew can drive');
+  // "My truck" is only a question once there are two. With one active vehicle
+  // getDefaultVehicle already falls through to it, so asking would be noise.
+  if(actives.length < 2) return crew;
   const isDefault = String(S.defaultVehicleId||'') === String(v.id);
-  return isDefault
-    ? `<div style="display:inline-flex;align-items:center;gap:4px;margin-top:5px;font-size:10px;font-weight:800;color:var(--blue);background:var(--blue-lt);border-radius:999px;padding:2px 8px">${svgIcon('🚛',{size:10})} My truck</div>`
-    : `<button onclick="event.stopPropagation();setDefaultVehicle('${v.id}')" style="margin-top:5px;font-size:10px;font-weight:700;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:999px;padding:2px 8px;cursor:pointer;font-family:inherit">Set as my truck</button>`;
+  return crew + (isDefault
+    ? `<span style="display:inline-flex;align-items:center;gap:4px;margin:5px 5px 0 0;font-size:10px;font-weight:800;color:var(--blue);background:var(--blue-lt);border:1px solid var(--blue);border-radius:999px;padding:2px 8px">${svgIcon('🚛',{size:10})} My truck</span>`
+    : `<button onclick="event.stopPropagation();setDefaultVehicle('${v.id}')" style="margin:5px 5px 0 0;font-size:10px;font-weight:700;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:999px;padding:2px 8px;cursor:pointer;font-family:inherit">Set as my truck</button>`);
+}
+function toggleCrewVehicle(id){
+  const v = getVehicles().find(x => String(x.id) === String(id));
+  if(!v) return;
+  v.crewDrivable = !v.crewDrivable;
+  saveAll();
+  renderFleetVehicles();
+  if(typeof showToast === 'function') {
+    showToast(v.crewDrivable
+      ? (getVehicleLabel(v) || 'Vehicle') + ' can be dispatched to crew'
+      : (getVehicleLabel(v) || 'Vehicle') + ' is yours only', '🚛');
+  }
 }
 
 /* ── Due service alerts ──────────────────────────────────────────────────────── */
@@ -792,6 +814,16 @@ function openAddVehicleModal(idx) {
         <div class="f"><label>VIN <span style="font-size:10px;color:var(--text3)">(17 chars)</span></label>
           <input id="fv-vin" placeholder="1FTFW1ET..." maxlength="17" value="${escHtml(v.vin||'')}" style="font-family:monospace;font-size:13px">
         </div>
+        <!-- Owner call (2026-08-01): a fleet is not all crew trucks. Off by
+             default, deliberately: nothing is ever offered to somebody else's
+             hands because the app assumed it. -->
+        <label style="display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;margin-top:2px">
+          <input type="checkbox" id="fv-crew" ${v.crewDrivable?'checked':''} style="margin-top:2px;accent-color:var(--blue);width:16px;height:16px;flex-shrink:0">
+          <span style="min-width:0">
+            <span style="display:block;font-size:13px;font-weight:700;color:var(--text)">Crew can drive this</span>
+            <span style="display:block;font-size:11px;color:var(--text3);line-height:1.45">Only vehicles ticked here are offered when you dispatch a crew member. Leave it off for anything only you drive.</span>
+          </span>
+        </label>
       </div>
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Purchase info</div>
@@ -902,6 +934,7 @@ function saveFleetVehicle() {
     nickname: (document.getElementById('fv-nick')?document.getElementById('fv-nick').value:'').trim(),
     color:    (document.getElementById('fv-color')?document.getElementById('fv-color').value:'').trim(),
     plate,
+    crewDrivable: !!(document.getElementById('fv-crew') && document.getElementById('fv-crew').checked),
     vin:      (document.getElementById('fv-vin')?document.getElementById('fv-vin').value:'').trim().toUpperCase(),
     bizUse:   oldV.bizUse||100, // updated by year-end odometer report, not manual entry
     gvwr:     document.getElementById('fv-gvwr')?document.getElementById('fv-gvwr').value:'',

@@ -261,8 +261,12 @@ test.describe('Automatic mileage from drive legs', () => {
   }, opts);
 
   test.describe('the daily vehicle popup', () => {
-    const TWO = [{ id: 'v-truck', name: 'F-250', status: 'active' },
-                 { id: 'v-van', name: 'Transit', status: 'active' }];
+    // crewDrivable is set here because these cases are about the CREW picker,
+    // and crew are only ever offered vehicles the owner has said they may drive
+    // (getCrewVehicles, off by default). The owner's own prompt ignores the tag,
+    // which the 'owner' cases below exercise without it.
+    const TWO = [{ id: 'v-truck', name: 'F-250', status: 'active', crewDrivable: true },
+                 { id: 'v-van', name: 'Transit', status: 'active', crewDrivable: true }];
 
     test('owner with two trucks is asked', async () => {
       const out = await pickerFor({ vehicles: TWO, defaultId: 'v-truck' });
@@ -420,8 +424,9 @@ test.describe('Automatic mileage from drive legs', () => {
 
     test('crew keep their personal-vehicle opt-out, and are asked with one truck', async () => {
       // Regression guard: the employee path is what existed before and must not
-      // have moved. One vehicle still asks them, because the real question for
-      // crew is company vs their own car, which exists at any fleet size.
+      // have moved. One CREW-DRIVABLE vehicle still asks them, because the real
+      // question for crew is company truck vs their own car, and that exists at
+      // any fleet size.
       const out = await pickerFor({ employee: true, vehicles: [TWO[0]] });
       expect(out.shown).toBe(true);
       expect(out.html).toContain('Which vehicle are you in today?');

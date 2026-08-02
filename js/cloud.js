@@ -2318,6 +2318,16 @@ function renderDispatch(){
 // day's work, because "who is taking which truck" is decided in the same breath
 // as "who is going where", by the same person, standing in the same yard.
 function _dispatchTruckRow(emp){
+  // No crew-drivable vehicle exists yet. The tag is off by default (owner
+  // decision), so this is the expected first state for every account and it has
+  // to read as a next step rather than as a broken control. Nothing to tap
+  // through to here: it says where to go and gets out of the way.
+  if(!(typeof getCrewVehicles==='function'?getCrewVehicles():[]).length){
+    const anyVeh=(typeof getVehicles==='function'?getVehicles():[]).some(v=>(v.status||'active')==='active');
+    if(!anyVeh)return '';   // no fleet at all: Fleet's own empty state covers it
+    return '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;margin-bottom:8px;border-radius:var(--r);border:1px dashed var(--border2);font-size:11px;color:var(--text3);line-height:1.4">'+
+      svgIcon('🚗',{size:12})+'<span style="flex:1;min-width:0">No crew vehicles yet. Tick <strong>Crew can drive this</strong> on a vehicle in Fleet.</span></div>';
+  }
   const a=_truckDayFor(emp.id);
   const label=_truckDayLabel(a);
   const set=!!a;
@@ -2348,7 +2358,9 @@ function _truckDriver(vehId,exceptEmpId){
 function _dispatchTruckPicker(empId){
   const emp=(S.employees||[]).find(x=>String(x.id)===String(empId));
   if(!emp)return;
-  const vehs=(typeof getVehicles==='function'?getVehicles():[]).filter(v=>(v.status||'active')==='active');
+  // Crew-drivable only. This picker hands somebody else the keys, so it can
+  // only ever show what the owner has said crew may drive.
+  const vehs=(typeof getCrewVehicles==='function')?getCrewVehicles():[];
   const cur=_truckDayFor(empId);
   const ov=document.createElement('div');ov.id='_truck-picker-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';box.style.textAlign='center';
@@ -2390,7 +2402,17 @@ function _dispatchAssign(jobId){
   const sheet=document.createElement('div');
   sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
   sheet.innerHTML='<div style="font-size:15px;font-weight:800;margin-bottom:14px">Assign to Employee</div>'+
-    emps.map(e=>'<button onclick="_dispatchDoAssign('+jobId+',\''+e.id+'\');this.closest(\'.zmodal-overlay\').remove()" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+escHtml(e.name)+' <span style="font-size:11px;font-weight:400;color:var(--text3)">'+escHtml(e.role||'')+'</span></button>').join('')+
+    // Each person carries their truck for the day, so the whole yard's
+    // allocation is readable WHILE assigning rather than after: who is already
+    // in what, and who still needs keys.
+    emps.map(e=>{
+      const t=_truckDayFor(e.id);
+      const sub=t?_truckDayLabel(t):(((typeof getCrewVehicles==='function'?getCrewVehicles():[]).length)?'Needs a truck':'');
+      return '<button onclick="_dispatchDoAssign('+jobId+',\''+e.id+'\');this.closest(\'.zmodal-overlay\').remove()" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+
+        escHtml(e.name)+' <span style="font-size:11px;font-weight:400;color:var(--text3)">'+escHtml(e.role||'')+'</span>'+
+        (sub?'<span style="display:block;font-size:11px;font-weight:500;color:'+(t?'var(--text2)':'var(--text3)')+';margin-top:2px">'+svgIcon('🚗',{size:11})+' '+escHtml(sub)+'</span>':'')+
+      '</button>';
+    }).join('')+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">Cancel</button>';
   ov.appendChild(sheet);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2431,7 +2453,7 @@ function _dispatchDoAssign(jobId,empId){
   // Only when the question is real: crew tracking on, a fleet to choose from,
   // and nobody has answered yet today.
   if(!_truckDayFor(empId)&&S.teamTracking&&
-     (typeof getVehicles==='function'?getVehicles():[]).some(v=>(v.status||'active')==='active')){
+     (typeof getCrewVehicles==='function'?getCrewVehicles():[]).length){
     setTimeout(()=>{try{_dispatchTruckPicker(empId);}catch(_e){}},260);
   }
 }
@@ -2584,8 +2606,14 @@ function _checkEmployeeVehiclePicker(){
   // contradict the person holding the keys, which is how a carpool ends up
   // logged as three separate trucks.
   if(_isEmployee&&_myTruckToday())return;
-  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  // Crew see only what they may drive; the owner sees their whole fleet,
+  // because the flag is about what gets handed out, not about what they own.
+  const vehs=_isEmployee
+    ?((typeof getCrewVehicles==='function')?getCrewVehicles():[])
+    :((typeof getVehicles==='function')?getVehicles():[]);
   const active=vehs.filter(v=>(v.status||'active')==='active');
+  // Nothing a crew member may drive, so there is nothing to ask them.
+  if(_isEmployee&&!active.length)return;
   if(!_isEmployee){
     if(!S.teamTracking)return;      // nothing is being logged, so nothing to ask
     if(active.length<2)return;      // one truck answers itself

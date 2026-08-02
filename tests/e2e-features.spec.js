@@ -2732,7 +2732,10 @@ test.describe('Employee dispatch and daily view', () => {
       // Seed a vehicle
       if (typeof S !== 'undefined') {
         if (!getVehicles().find(v => String(v.id) === 'veh-test-1')) {
-          _setVehicles([...getVehicles(), { id: 'veh-test-1', year: '2023', make: 'Ford', model: 'F-150' }]);
+          // crewDrivable: crew are only ever offered vehicles the owner has said
+          // they may drive (getCrewVehicles, off by default since 2026-08-01).
+          // Without the tag the picker correctly has nothing to show them.
+          _setVehicles([...getVehicles(), { id: 'veh-test-1', year: '2023', make: 'Ford', model: 'F-150', crewDrivable: true }]);
         }
       }
       // Clear today's vehicle selection
