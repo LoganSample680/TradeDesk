@@ -1894,5 +1894,93 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── The tax table has to cover the year we are in ─────────────────────────
+  // Owner (2026-08-02): "how can we do a live test that updates the IRS tax
+  // brackets and shit every year automatically?"
+  //
+  // It cannot. A test verifies; it cannot teach the app a number nobody has told
+  // it. There is no authoritative machine-readable IRS feed, and scraping the
+  // figures would trade a visibly stale number for a confidently wrong one,
+  // which is the failure you do not catch until April.
+  //
+  // What a test CAN do is make the deadline impossible to miss. The IRS
+  // publishes the mileage rate in a Notice each December and the inflation
+  // adjustments in a Revenue Procedure each autumn, so the numbers are knowable
+  // before the year starts. These fail the build the moment the table stops
+  // covering the year the app is running in, which turns a silent wrong
+  // deduction into a red shard in early January.
+  test.describe('the tax table against the calendar', () => {
+    test('THIS YEAR is on file: if this fails, TAX_HISTORY needs the new IRS figures', async () => {
+      const out = await page.evaluate(() => {
+        const yr = new Date().getFullYear();
+        return { yr, covered: taxRatesAreCurrent(yr), last: _taxTableLastYear(),
+                 years: Object.keys(TAX_HISTORY).map(Number).sort() };
+      });
+      // Deliberately blunt: the message IS the maintenance instruction.
+      expect(out.covered,
+        `TAX_HISTORY has no entry for ${out.yr}. It stops at ${out.last}. ` +
+        `Until it is updated, every deduction in the app is calculated at ${out.last} rates. ` +
+        `The mileage rate comes from the IRS Notice published each December, the brackets from ` +
+        `the Revenue Procedure published each autumn. Add ${out.yr} to js/constants.js.`).toBe(true);
+    });
+
+    test('a year on file is served its OWN figures, never a neighbour\'s', async () => {
+      const out = await page.evaluate(() => {
+        const yrs = Object.keys(TAX_HISTORY).map(Number).sort();
+        return yrs.map(y => ({ y, rate: TAX_HISTORY[y].irsRate, got: _getBracketsForYear(y).irsRate }));
+      });
+      // Past years read straight from the table. The current year may be
+      // overridden per contractor, so it is allowed to differ and is checked
+      // separately below.
+      const thisYear = new Date().getFullYear();
+      out.filter(r => r.y !== thisYear).forEach(r => {
+        expect(r.got, `${r.y} should use its own rate`).toBe(r.rate);
+      });
+    });
+
+    test('the current year defaults to the table, not to a copy of it', async () => {
+      // These defaults were duplicated as literals next to the table, so on
+      // 1 January the app served the previous year's numbers as the new year's.
+      const out = await page.evaluate(() => {
+        const yr = new Date().getFullYear();
+        const keep = { r: S.irsRate, s: S.fedSingle };
+        try {
+          delete S.irsRate; delete S.fedSingle;
+          const b = _getBracketsForYear(yr);
+          return { rate: b.irsRate, single: b.fedSingle,
+                   tableRate: (TAX_HISTORY[yr] || {}).irsRate,
+                   tableSingle: (TAX_HISTORY[yr] || {}).fedSingle };
+        } finally { if (keep.r != null) S.irsRate = keep.r; if (keep.s != null) S.fedSingle = keep.s; }
+      });
+      expect(out.rate).toBe(out.tableRate);
+      expect(out.single).toBe(out.tableSingle);
+    });
+
+    test('a year past the table falls back to the NEWEST on file', async () => {
+      // It used to fall back to a hardcoded 2025, which aged worse every time
+      // the table was updated: a request for a future year answered two years
+      // stale while the right figures sat in the same object.
+      const out = await page.evaluate(() => {
+        const last = _taxTableLastYear();
+        return { got: _getBracketsForYear(last + 40).irsRate, newest: TAX_HISTORY[last].irsRate, last };
+      });
+      expect(out.got).toBe(out.newest);
+    });
+
+    test('every year on file carries a complete set of figures', async () => {
+      // A half-filled row is worse than a missing one: it reads as authoritative
+      // and silently zeroes whichever bracket was forgotten.
+      const missing = await page.evaluate(() => {
+        const need = ['fedSingle','fedMFJ','fedMFS','fedHOH','b10','b12','b22','b24','b32','b35','irsRate'];
+        const out = [];
+        Object.keys(TAX_HISTORY).forEach(y => {
+          need.forEach(k => { if (typeof TAX_HISTORY[y][k] !== 'number') out.push(y + '.' + k); });
+        });
+        return out;
+      });
+      expect(missing).toEqual([]);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

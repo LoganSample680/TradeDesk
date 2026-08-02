@@ -201,11 +201,39 @@ let STD_DED={single:14600,mfj:29200,mfs:14600,hoh:21900};
 let KS_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let KS_STD={single:3500,mfj:8000,mfs:4000,hoh:6000};
 // IRS published values, 7-year rolling history for historical tax reports
+// The last year the published figures actually cover. TAX_HISTORY is maintained
+// by hand, because there is no authoritative machine-readable IRS feed and a
+// confidently WRONG tax number is a worse failure than a visibly stale one.
+function _taxTableLastYear(){
+  return Math.max.apply(null,Object.keys(TAX_HISTORY).map(Number));
+}
+// Does the table actually cover this year, or is the app about to serve last
+// year's figures as though they were this year's? Asserted by the suite so the
+// answer is a red build in early January rather than a wrong deduction nobody
+// notices until April (owner, 2026-08-02).
+function taxRatesAreCurrent(yr){
+  const n=parseInt(yr||new Date().getFullYear());
+  return !!TAX_HISTORY[n];
+}
 function _getBracketsForYear(yr){
   const n=parseInt(yr);
   const thisYear=new Date().getFullYear();
-  if(n===thisYear)return{fedSingle:S.fedSingle||15000,fedMFJ:S.fedMFJ||30000,fedMFS:S.fedMFS||15000,fedHOH:S.fedHOH||22500,b10:S.b10||11925,b12:S.b12||48475,b22:S.b22||103350,b24:S.b24||197300,b32:S.b32||250525,b35:S.b35||626350,irsRate:S.irsRate||.725};
-  return TAX_HISTORY[n]||TAX_HISTORY[2025];
+  // The FALLBACK is the newest year on file, not a year somebody typed once.
+  // This used to read TAX_HISTORY[2025], which quietly aged worse every time the
+  // table was updated: by 2026 a request for a future year answered with figures
+  // two years stale while the correct ones sat in the same object.
+  const latest=TAX_HISTORY[_taxTableLastYear()];
+  if(n===thisYear){
+    // The current year's defaults come from the TABLE, not from literals copied
+    // beside them. They were duplicated here, so on 1 January the app served the
+    // previous year's numbers as the new year's with nothing to notice: one
+    // place to update now, and taxRatesAreCurrent says when it is overdue.
+    const d=TAX_HISTORY[n]||latest;
+    return{fedSingle:S.fedSingle||d.fedSingle,fedMFJ:S.fedMFJ||d.fedMFJ,fedMFS:S.fedMFS||d.fedMFS,fedHOH:S.fedHOH||d.fedHOH,
+           b10:S.b10||d.b10,b12:S.b12||d.b12,b22:S.b22||d.b22,b24:S.b24||d.b24,b32:S.b32||d.b32,b35:S.b35||d.b35,
+           irsRate:S.irsRate||d.irsRate};
+  }
+  return TAX_HISTORY[n]||latest;
 }
 function _getFedBracketsForYear(yr){
   const b=_getBracketsForYear(yr);
