@@ -77,6 +77,11 @@ test.describe('A full Topeka day', () => {
           S.homeOffice = true;
           const h = window.__day.HOME;
           if (h) { S.officeLat = h.lat; S.officeLon = h.lng; }
+          // The yard IS the home office in this day, so the business address on
+          // file has to say so. Without it the shop end of the first and last
+          // legs has no street address to travel as, and the row falls back to
+          // the bare word "Shop", which is the thing being fixed.
+          S.baddr = '2015 SW Randolph Ave'; S.bcity = 'Topeka'; S.state = 'KS'; S.bzip = '66604';
           if (typeof places !== 'undefined') {
             places.length = 0;
             if (h) savePlace({ name: 'Home Office ' + a.tag, kind: 'home_office', lat: h.lat, lon: h.lng, confirmedBy: 'manual' });
@@ -310,7 +315,82 @@ test.describe('A full Topeka day', () => {
       },
     });
 
+    // ── 1b. THE ADDRESS ON EVERY ROW ─────────────────────────────────────────
+    // Owner, 2026-08-02: the address has to SAVE, not just the miles. A row
+    // reading "Shop -> Stop" is not a record anyone could defend a year later,
+    // and neither is one whose address column is blank. The distance is measured
+    // between the coordinates; this is about what the row SAYS.
+    await step(page, {
+      label: 'every leg saves a real street address at both ends',
+      page: 'mileage', role: 'contractor',
+      suspect: 'geo-track.js _geoShopAddr / curLoc addr → mileage.js autoLogDriveTrip',
+      ruleText: 'both endpoints of every automatic trip carry a street address, and the yard travels as the business address on file',
+      expected: 'no endpoint left as a bare "Shop" or "Stop"',
+      act: async () => 0,
+      rule: async (p) => {
+        const out = await p.evaluate((prior) => {
+          const seen = new Set(prior);
+          return {
+            shopAddr: (typeof _geoShopAddr === 'function') ? _geoShopAddr() : '',
+            trips: mileage.filter(m => m.gps && m.legKey && !seen.has(m.id))
+              .map(m => ({ from: m.from, to: m.to, fromName: m.from_name, toName: m.to_name })),
+          };
+        }, priorTrips);
+        // A street address has a number in it. "Shop", "Stop" and "Place" do not,
+        // which is exactly the set this is meant to catch.
+        const bare = out.trips.filter(t => !/\d/.test(t.from || '') || !/\d/.test(t.to || ''));
+        console.log('[topeka-day] addresses on the log:\n' + out.trips.map(t =>
+          `   ${t.fromName} → ${t.toName}\n        "${t.from}" → "${t.to}"`).join('\n'));
+        // The yard is only ever as good as the business address in Settings, so
+        // an empty one is reported as itself rather than as a mystery blank row.
+        if (!out.shopAddr) return { ok: false, got: 'no business address on file, so the yard has none to travel as' };
+        const shopLegs = out.trips.filter(t => t.fromName === 'Shop' || t.toName === 'Shop');
+        const shopWrong = shopLegs.filter(t => (t.fromName === 'Shop' ? t.from : t.to) !== out.shopAddr);
+        return {
+          ok: out.trips.length > 0 && !bare.length && !shopWrong.length,
+          got: bare.length ? `${bare.length} endpoint(s) with no street address: ` +
+                 bare.map(t => `"${t.from}" → "${t.to}"`).join(', ')
+             : shopWrong.length ? `the yard did not travel as "${out.shopAddr}"`
+             : `${out.trips.length} trips, every endpoint addressed`,
+        };
+      },
+    });
+
     // ── 2. THE TIME ──────────────────────────────────────────────────────────
+    // Owner, 2026-08-02: time has to save correctly too. Each leg was driven for
+    // a stated number of minutes, so each leg's entry must carry that number, not
+    // zero and not the drive plus however long the truck was parked at either
+    // end. Asserted as a multiset because the ORDER rows land in is not part of
+    // the promise, but every duration is.
+    await step(page, {
+      label: 'each drive saves the minutes it actually took',
+      page: 'mileage', role: 'contractor',
+      suspect: 'geo-track.js _geoDriveEntry minutes / _geoCloseStop leg split',
+      ruleText: 'the six legs log 12, 14, 9, 11, 13 and 10 minutes of drive time',
+      expected: 'every leg to the minute',
+      act: async () => 0,
+      rule: async (p) => {
+        const mins = await p.evaluate(async () => {
+          const cid = (typeof _contractorUserId !== 'undefined' && _contractorUserId) || _supaUser.id;
+          const since = new Date(Date.now() - 20 * 60000).toISOString();
+          const { data } = await _supa.from('job_time_entries')
+            .select('source,minutes,created_at').eq('contractor_user_id', cid).gte('created_at', since);
+          return (data || []).filter(r => /^drive/.test(r.source || '')).map(r => r.minutes).sort((a, b) => a - b);
+        });
+        const want = [9, 10, 11, 12, 13, 14];
+        console.log('[topeka-day] drive minutes saved:', mins.join(', '), '| wanted:', want.join(', '));
+        // Every wanted duration present at least once. The window is 20 minutes
+        // so a previous run's rows cannot be counted, but a re-run inside that
+        // window could add duplicates, which is why this is a containment check
+        // rather than an equality one.
+        const missing = want.filter(w => !mins.some(m => Math.abs(m - w) <= 1));
+        return {
+          ok: missing.length === 0,
+          got: missing.length ? `saved [${mins.join(', ')}], missing ${missing.join(', ')}` : `all six legs to the minute: ${mins.join(', ')}`,
+        };
+      },
+    });
+
     await step(page, {
       label: 'lunch is off-job time, not drive time and not job labor',
       page: 'mileage', role: 'contractor',

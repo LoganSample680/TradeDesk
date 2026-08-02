@@ -536,21 +536,39 @@ async function _autoNameStopTrip(rec,to){
     // and last legs of the day deductible in the first place.
     if(to.likelyHome)return;
     const poi=await _poiAt({lat:to.lat,lng:to.lng});
+    if(!poi||(!poi.name&&!poi.addr))return;
+    // Stamp the DESCRIPTOR first, not just this row. The very same object is the
+    // ORIGIN of the leg out of this stop (geo-track.js _geoCloseStop assigns it
+    // to _geoLegOrigin), so answering once names both ends of the pair. Naming
+    // only the arrival left the log reading "... -> The Home Depot" followed by
+    // "Stop -> ...", which is the same stop described two ways.
+    if(poi.name)to.name=poi.name;
+    if(poi.addr)to.addr=poi.addr;
+    const personal=!!(poi.name&&_poiIsPersonal(poi.category));
+    // And patch a leg out of here that was ALREADY written. Which of the two
+    // landed first depends on how long Apple took against how long they were
+    // parked, and a record must not depend on that race.
+    mileage.forEach(m=>{
+      if(!m.gps||!m.fromCoord||m.from_name!=='Stop')return;
+      if(Math.abs(m.fromCoord.lat-to.lat)>1e-5||Math.abs(m.fromCoord.lng-to.lng)>1e-5)return;
+      if(poi.name)m.from_name=poi.name;
+      if(poi.addr)m.from=poi.addr;
+    });
     const saved=mileage.find(m=>m.id===rec.id);
-    if(!saved||!poi)return;
-    if(!poi.name){
+    if(!saved){saveAll();return;}
+    if(personal){
+      // Taken back out rather than flagged: a personal errand on the mileage log
+      // is clutter the contractor has to read past every time, and the row is
+      // seconds old, so nothing has been looked at yet. Only the leg TO lunch
+      // goes; the leg from lunch back to a job site is business travel and
+      // stays, now with the restaurant's address on it rather than "Stop".
+      const i=mileage.indexOf(saved);
+      if(i>=0)mileage.splice(i,1);
+    }else if(!poi.name){
       // Apple knows the address but not a tenant. The stop stays "Stop", which
       // is honest, and the row gains the street address, which is what makes it
       // readable a year later.
-      if(!poi.addr)return;
       saved.to=poi.addr;
-    }else if(_poiIsPersonal(poi.category)){
-      // Taken back out rather than flagged: a personal errand on the mileage log
-      // is clutter the contractor has to read past every time, and the row is
-      // seconds old, so nothing has been looked at yet.
-      const i=mileage.indexOf(saved);
-      if(i<0)return;
-      mileage.splice(i,1);
     }else{
       // Name and address both, the shape an IRS log wants: WHO they went to,
       // and WHERE that is. `to_name` is what reads on the row, `to` is the

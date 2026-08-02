@@ -1204,6 +1204,39 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out[0].purpose).toBe('Supply run');
     });
 
+    test('the leg OUT of a named stop is named too, whichever landed first', async () => {
+      // One stop, two legs: in and out. Naming only the arrival left the log
+      // reading "... → The Home Depot" followed by "Stop → ...", the same
+      // parking lot described two ways. Which leg is written first depends on
+      // how long Apple takes against how long they were parked, so both orders
+      // are driven here.
+      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore',
+                         poiAddr: '1100 SW Wanamaker Rd, Topeka, KS 66604', geoFails: true });
+      const out = await page.evaluate(async () => {
+        const stop = { lat: 39.03, lng: -95.77, name: 'Stop', kind: 'stop' };
+        const job = { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job', addr: '9 Elm St' };
+        mileage.length = 0;
+        // OUT written first: the descriptor is still the anonymous "Stop".
+        autoLogDriveTrip({ from: job, to: stop, legKey: 'pair-in', startedIso: new Date().toISOString() });
+        autoLogDriveTrip({ from: stop, to: job, legKey: 'pair-out', startedIso: new Date().toISOString() });
+        await new Promise(r => setTimeout(r, 250));
+        const first = mileage.map(m => ({ k: m.legKey, from: m.from_name, to: m.to_name }));
+        // IN written, lookup lands, THEN the leg out: the descriptor itself
+        // carries the name by now, so no patching is needed at all.
+        mileage.length = 0;
+        const stop2 = { lat: 39.03, lng: -95.77, name: 'Stop', kind: 'stop' };
+        autoLogDriveTrip({ from: job, to: stop2, legKey: 'seq-in', startedIso: new Date().toISOString() });
+        await new Promise(r => setTimeout(r, 250));
+        autoLogDriveTrip({ from: stop2, to: job, legKey: 'seq-out', startedIso: new Date().toISOString() });
+        await new Promise(r => setTimeout(r, 100));
+        return { first, second: mileage.map(m => ({ k: m.legKey, from: m.from_name, to: m.to_name })) };
+      });
+      const outLeg = out.first.find(t => t.k === 'pair-out');
+      expect(outLeg.from).toBe('The Home Depot');
+      const seqOut = out.second.find(t => t.k === 'seq-out');
+      expect(seqOut.from).toBe('The Home Depot');
+    });
+
     test('a nameless stop still gets its street address', async () => {
       // Apple knows the building but not the tenant. "Stop" is honest about what
       // the app knows; the address is what makes the row readable.
