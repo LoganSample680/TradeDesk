@@ -379,11 +379,21 @@ test.describe('A full Topeka day', () => {
         });
         const want = [9, 10, 11, 12, 13, 14];
         console.log('[topeka-day] drive minutes saved:', mins.join(', '), '| wanted:', want.join(', '));
-        // Every wanted duration present at least once. The window is 20 minutes
-        // so a previous run's rows cannot be counted, but a re-run inside that
-        // window could add duplicates, which is why this is a containment check
-        // rather than an equality one.
-        const missing = want.filter(w => !mins.some(m => Math.abs(m - w) <= 1));
+        // Each wanted duration must claim its OWN row, and claim it exactly.
+        // This started as "present within a minute", which is not an assertion
+        // at all: [9, 11, 12, 14] satisfied all six, because 9 covered 10 and 12
+        // covered 13, and the run went green with two legs' times still missing
+        // (2026-08-02). Six legs were driven, so six rows have to exist, each
+        // saying what its own leg took. The window is 20 minutes so an older
+        // run's rows cannot be borrowed to fill a gap; a re-run inside that
+        // window can only ADD rows, which is why a claimed row is consumed
+        // rather than counted.
+        const pool = mins.slice();
+        const missing = [];
+        for (const w of want) {
+          const i = pool.indexOf(w);
+          if (i < 0) missing.push(w); else pool.splice(i, 1);
+        }
         return {
           ok: missing.length === 0,
           got: missing.length ? `saved [${mins.join(', ')}], missing ${missing.join(', ')}` : `all six legs to the minute: ${mins.join(', ')}`,

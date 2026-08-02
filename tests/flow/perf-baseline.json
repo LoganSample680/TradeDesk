@@ -35,5 +35,9 @@
   "fleet/vehicle-survives-resignin": {
     "clicks": 47,
     "note": "First capture 2026-07-31 (chromium, self-hosted flow-local): add vehicle 20 + odometer 1 + rename 23 + settings-race 1 + sign-out/in 2. The 23-click rename is inflated by retyping the whole name (the type() helper clears the field), and 20 of the add is typing the vehicle name, so the real nav cost here is small. Standing streamline target: reaching Fleet & Team on a phone still costs 2 taps through the More menu."
+  },
+  "topeka-day": {
+    "clicks": 1,
+    "note": "A whole working day, captured live 2026-08-02: home office to client to Home Depot to lunch to client to estimate to home. ONE tap for the entire day, confirming the suggested name for the supply stop. Every leg, every mileage row and every minute is logged with no interaction at all, which is the point: the day costs the contractor one tap."
   }
 }
