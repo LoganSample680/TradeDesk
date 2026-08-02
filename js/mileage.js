@@ -419,7 +419,20 @@ async function _retryPendingTrips(){
   let filled=0;
   for(const rec of pending){
     try{
-      const auto=rec.calc_method==='pending_auto';
+      // RE-READ the row, never trust the snapshot. This loop awaits a geocode and
+      // a route per trip, and an automatic trip has its OWN route call already in
+      // flight from autoLogDriveTrip: so a row that was pending when the list was
+      // built can settle to 'auto_route' while an EARLIER row in the same list is
+      // still awaiting. Reading the stale snapshot then classified that settled
+      // row as a manual one and sent it down the address path, which geocodes the
+      // endpoint's NAME. Automatic endpoints are named "Shop" and "Stop", not
+      // addresses, so a correct 2-mile leg was overwritten with whatever business
+      // called "Shop" the geocoder found first: 65.7 miles, and 885 for "Stop",
+      // on a day that never left Topeka (owner's Topeka day, live, 2026-08-02).
+      // A trip that already answered needs nothing from this sweep.
+      const method=rec.calc_method;
+      if(method!=='pending'&&method!=='pending_auto')continue;
+      const auto=method==='pending_auto';
       const fc=auto?rec.fromCoord:await _resolveCoords(rec.from);
       const tc=auto?rec.toCoord:await _resolveCoords(rec.to);
       if(!fc||!tc)continue;

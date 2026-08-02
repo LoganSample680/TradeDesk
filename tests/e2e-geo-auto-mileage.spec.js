@@ -1243,5 +1243,83 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── The sweep that overwrote correct miles with garbage ───────────────────
+  // Found by the owner's Topeka day on a live preview (2026-08-02). Three of
+  // five legs came back routed from their NAME instead of their coordinates:
+  // "Shop" geocoded to a business 65.7 miles away and "Stop" to one 885 miles
+  // away, on a day that never left one city. Both rows had their coordinates
+  // the whole time.
+  test.describe('the pending sweep and the trip that answers mid-sweep', () => {
+    test('a trip that settles while the sweep is running is left alone', async () => {
+      const out = await page.evaluate(async () => {
+        const origRoute = window._routeDistance, origResolve = window._resolveCoords;
+        mileage.length = 0;
+        const row = (legKey) => ({
+          id: _newId(), date: todayKey(), gps: true, legKey,
+          from: 'Shop', to: 'Stop', from_name: 'Shop', to_name: 'Stop',
+          fromCoord: { lat: 39.05, lng: -95.68 }, toCoord: { lat: 39.06, lng: -95.67 },
+          miles: 0, purpose: 'Job site', calc_method: 'pending_auto',
+        });
+        mileage.push(row('sweep-a'), row('sweep-b'));
+        // Whatever the sweep routes comes back long, so a leg it should not have
+        // touched is unmistakable.
+        let n = 0;
+        window._resolveCoords = async () => ({ lat: 41.0, lng: -96.0 });
+        window._routeDistance = async () => {
+          n++;
+          if (n === 1) {
+            // The second row's OWN route call, fired by autoLogDriveTrip, lands
+            // while the sweep is still awaiting the first. This is the real
+            // sequence, not a contrived one: both calls are in flight together.
+            const b = mileage.find(m => m.legKey === 'sweep-b');
+            b.miles = 2.1; b.calc_method = 'auto_route';
+          }
+          return { miles: 900, mins: 30 };
+        };
+        try { await _retryPendingTrips(); }
+        finally { window._routeDistance = origRoute; window._resolveCoords = origResolve; }
+        return mileage.map(m => ({ k: m.legKey, miles: m.miles, method: m.calc_method }));
+      });
+      const b = out.find(t => t.k === 'sweep-b');
+      // The number its own router already produced, still there and still
+      // labelled as coordinate-routed.
+      expect(b.miles).toBe(2.1);
+      expect(b.method).toBe('auto_route');
+      // And the row that really was still pending got swept, so the fix did not
+      // simply switch the sweep off.
+      const a = out.find(t => t.k === 'sweep-a');
+      expect(a.method).toBe('auto_route');
+      expect(a.miles).toBe(900);
+    });
+
+    test('an automatic trip is never routed from its endpoint names', async () => {
+      // The endpoints of an automatic trip are "Shop", "Stop", "The Home Depot",
+      // never street addresses, so geocoding them is guaranteed to answer with
+      // the wrong building. Both coordinates are already on the row.
+      const out = await page.evaluate(async () => {
+        const origRoute = window._routeDistance, origResolve = window._resolveCoords;
+        mileage.length = 0;
+        mileage.push({
+          id: _newId(), date: todayKey(), gps: true, legKey: 'coords-only',
+          from: 'Shop', to: 'Stop', from_name: 'Shop', to_name: 'Stop',
+          fromCoord: { lat: 39.05, lng: -95.68 }, toCoord: { lat: 39.06, lng: -95.67 },
+          miles: 0, purpose: 'Job site', calc_method: 'pending_auto',
+        });
+        let geocoded = 0;
+        const seen = [];
+        window._resolveCoords = async () => { geocoded++; return { lat: 41.0, lng: -96.0 }; };
+        window._routeDistance = async (fc, tc) => { seen.push([fc, tc]); return { miles: 2.4, mins: 9 }; };
+        try { await _retryPendingTrips(); }
+        finally { window._routeDistance = origRoute; window._resolveCoords = origResolve; }
+        return { geocoded, seen, method: mileage[0].calc_method, miles: mileage[0].miles };
+      });
+      expect(out.geocoded).toBe(0);
+      expect(out.seen[0][0]).toEqual({ lat: 39.05, lng: -95.68 });
+      expect(out.seen[0][1]).toEqual({ lat: 39.06, lng: -95.67 });
+      expect(out.method).toBe('auto_route');
+      expect(out.miles).toBe(2.4);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });
