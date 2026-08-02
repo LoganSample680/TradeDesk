@@ -79,9 +79,34 @@ test.describe('Drive matrix: every origin to every destination', () => {
                   start: todayKey(), days: 1, lat: d.JOB1.lat, lon: d.JOB1.lon });
       jobs.push({ id: 8802, name: 'Matrix Job 2', eventType: 'job', status: 'upcoming',
                   start: todayKey(), days: 1, lat: d.JOB2.lat, lon: d.JOB2.lon });
+      // ── Why the places fixture went missing, when it goes missing ──────────
+      // `shop → place` failed once on WebKit with places:0 and then passed on a
+      // re-run (2026-08-02), so something empties this array intermittently and
+      // a bare count cannot say what. Two suspects, and they leave different
+      // fingerprints:
+      //   • the sync fabric's td_places setter clears IN PLACE and refills, so
+      //     the array object survives and this tag is still on it
+      //   • the account-switch and sign-out paths REASSIGN places=[], so the
+      //     tagged array is thrown away entirely
+      // The sampler catches an emptiness that lasts long enough for a test to
+      // read it, which is exactly the case that fails. A wipe and refill inside
+      // one synchronous turn is invisible to it AND to the test, so it is not
+      // the bug being hunted.
+      places.__matrixTag = 'seed';
+      window.__placeLog = [{ n: places.length, tagged: true, t: Date.now() }];
+      window.__placeWatch = setInterval(() => {
+        const arr = (typeof places !== 'undefined' && places) ? places : null;
+        const n = arr ? arr.length : -1;
+        const tagged = !!(arr && arr.__matrixTag === 'seed');
+        const last = window.__placeLog[window.__placeLog.length - 1];
+        if (!last || last.n !== n || last.tagged !== tagged) window.__placeLog.push({ n, tagged, t: Date.now() });
+      }, 25);
     }, { SHOP, PLACE, JOB1, JOB2, DAY_SUPPLY });
   });
-  test.afterAll(async () => { await page.context().close(); });
+  test.afterAll(async () => {
+    try { await page.evaluate(() => clearInterval(window.__placeWatch)); } catch (e) {}
+    await page.context().close();
+  });
 
   // Drive one ordered pair and return the drive rows it produced.
   //   from/to: 'shop' | 'place' | 'job1' | 'job2' | 'stop'
@@ -170,6 +195,12 @@ test.describe('Drive matrix: every origin to every destination', () => {
           // 0" costs a full CI round trip per guess. The machine state names the
           // link that broke: no fence matched, no origin recorded, no leg opened.
           dbg: { shop: [S.officeLat, S.officeLon], jobs: jobs.length, places: (places || []).length,
+                 // 'seed' means the array the fixture filled is still the live
+                 // one and something emptied it in place; 'REPLACED' means the
+                 // whole array was swapped out, which only the account-switch
+                 // and sign-out paths do.
+                 placesTag: (places && places.__matrixTag) || 'REPLACED',
+                 placeLog: (window.__placeLog || []).slice(-6),
                  fenceJob: _geoCurrentJob, inShop: _geoWasInShop, place: _geoCurrentPlace,
                  legOrigin: _geoLegOrigin && _geoLegOrigin.kind, lastFence: !!_geoLastFenceLoc,
                  driveOpen: !!_geoDriveStartedAt, pingBusy: _geoPingBusy, user: !!_supaUser },
