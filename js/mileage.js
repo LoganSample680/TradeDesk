@@ -744,9 +744,22 @@ function deductibleTrips(list){
 function reimbursableTrips(list){
   return (list||[]).filter(m=>m&&m.reimbursable);
 }
-// What the business owes its crew for driving their own cars, this year.
-// Deliberately at the same IRS rate: it is the rate the states point at, and a
-// contractor paying less than it is the one who ends up explaining why.
+// What the crew drove in their own cars this year, priced at the IRS rate.
+//
+// AN ESTIMATE, NOT AN AMOUNT LEGALLY OWED, and the distinction matters enough to
+// state here because an earlier version of this comment got it wrong. There is
+// no federal mileage reimbursement mandate at all: the IRS rate is a TAX figure,
+// the ceiling on what can be reimbursed without becoming taxable wages. The
+// states that do require reimbursement (California Labor Code 2802, Illinois
+// 820 ILCS 115/9.5, Massachusetts) require "necessary expenditures", not a named
+// rate. California case law (Gattuso v. Harte-Hanks, 2007) allows the IRS rate
+// as a presumptively reasonable METHOD, and even there an employee may show
+// their actual costs ran higher.
+//
+// So the IRS rate is a defensible default and a starting point for a written
+// policy, not a number the app should tell a contractor they owe. The figure is
+// labelled as an estimate wherever it renders, and what they actually pay is
+// theirs to set with their own advisor.
 function crewMilesOwed(yr){
   const y=String(yr||trackerYear||new Date().getFullYear());
   const rows=reimbursableTrips(mileage).filter(m=>m.date&&String(m.date).startsWith(y));
@@ -1638,9 +1651,11 @@ function renderAllMileage(){
           // one exists. Hidden entirely when nobody is owed anything.
           (()=>{const o=(typeof crewMilesOwed==='function')?crewMilesOwed(yr):null;
             return (o&&o.miles>0)?'<div class="mil-meta" style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.14)">'+
-              '<span>Owed to crew <b style="color:#fff">'+fmt(o.owed)+'</b></span>'+
+              '<span>Crew personal vehicles <b style="color:#fff">'+o.miles.toFixed(1)+' mi</b></span>'+
               '<span>·</span>'+
-              '<span>'+o.miles.toFixed(1)+' mi in their own vehicles, not deducted</span>'+
+              '<span>'+fmt(o.owed)+' at the IRS rate, estimate only</span>'+
+              '<span>·</span>'+
+              '<span>reimbursement rules vary by state, not part of your deduction</span>'+
             '</div>':'';})()+
           (totalDriven>0?
             '<div class="mil-bar">'+

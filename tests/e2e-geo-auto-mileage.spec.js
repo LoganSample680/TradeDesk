@@ -1866,7 +1866,10 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.trips).toBe(3);
       expect(out.by.Danny).toBe(20);
       expect(out.by.Rosa).toBe(5);
-      // At the IRS rate, which is the rate the reimbursement statutes point at.
+      // Priced at the IRS rate, which is a defensible DEFAULT and not a legal
+      // mandate: no federal law requires reimbursing mileage at all, and the
+      // states that require it require "necessary expenditures" rather than a
+      // named rate. The figure is an estimate and the UI says so.
       expect(out.owed).toBeCloseTo(25 * out.rate, 5);
     });
 
