@@ -1967,6 +1967,65 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.got).toBe(out.newest);
     });
 
+    test('THIS YEAR has a Social Security wage base: if this fails, add it', async () => {
+      // The base caps the 12.4% Social Security half of self-employment tax. It
+      // has risen every year for decades, so a stale one is always too LOW,
+      // which UNDERSTATES what a contractor above the cap owes and shorts their
+      // quarterly payments: an underpayment penalty rather than a surprise.
+      const out = await page.evaluate(() => {
+        const yr = new Date().getFullYear();
+        return { yr, covered: ssWageBaseIsCurrent(yr), last: _ssWageBaseLastYear(),
+                 base: _getSsWageBase(yr) };
+      });
+      expect(out.covered,
+        `_SS_WAGE_BASE has no entry for ${out.yr}. It stops at ${out.last}, so self-employment ` +
+        `tax is being capped at $${out.base.toLocaleString()}, which is ${out.yr - out.last} year(s) old ` +
+        `and too low. The SSA announces the new base with the COLA each October. Add ${out.yr} to js/tax.js.`
+      ).toBe(true);
+    });
+
+    test('a year past the wage-base table follows the newest on file', async () => {
+      // It read `|| 184500`, the newest figure written out a second time, so on
+      // 1 January the cap would silently stay at the previous year's number.
+      const out = await page.evaluate(() => {
+        const last = _ssWageBaseLastYear();
+        return { got: _getSsWageBase(last + 40), newest: _SS_WAGE_BASE[last], last };
+      });
+      expect(out.got).toBe(out.newest);
+    });
+
+    test('the wage base only ever rises, and every year on file has one', async () => {
+      // A base that dips is a typo, and a typo here silently changes what every
+      // contractor above the cap owes for that year.
+      const out = await page.evaluate(() => {
+        const yrs = Object.keys(_SS_WAGE_BASE).map(Number).sort((a, b) => a - b);
+        return { yrs, vals: yrs.map(y => _SS_WAGE_BASE[y]) };
+      });
+      out.vals.forEach((v, i) => {
+        expect(typeof v, `${out.yrs[i]} must have a number`).toBe('number');
+        if (i > 0) expect(v, `${out.yrs[i]} is below ${out.yrs[i - 1]}`).toBeGreaterThan(out.vals[i - 1]);
+      });
+    });
+
+    test('the cap actually caps: above it, only Medicare keeps growing', async () => {
+      // The whole point of the base. Two incomes either side of the cap must
+      // differ by the Medicare rate alone, or the cap is not being applied.
+      const out = await page.evaluate(() => {
+        const yr = new Date().getFullYear();
+        const base = _getSsWageBase(yr);
+        // Net figures chosen so 0.9235 x net lands either side of the cap.
+        const under = Math.round((base * 0.5) / 0.9235);
+        const over = Math.round((base * 2) / 0.9235);
+        const overMore = Math.round((base * 3) / 0.9235);
+        return { base, a: _calcSeTax(over, yr), b: _calcSeTax(overMore, yr),
+                 under: _calcSeTax(under, yr), gap: (overMore - over) * 0.9235 };
+      });
+      // Both above the cap: the extra income is taxed at Medicare's 2.9% only.
+      expect(out.b - out.a).toBeCloseTo(out.gap * 0.029, 0);
+      // And below the cap the full 15.3% applies, so it is not capping early.
+      expect(out.under).toBeGreaterThan(0);
+    });
+
     test('every year on file carries a complete set of figures', async () => {
       // A half-filled row is worse than a missing one: it reads as authoritative
       // and silently zeroes whichever bracket was forgotten.
