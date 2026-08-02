@@ -102,7 +102,7 @@ test.describe('Truck assignment', () => {
       await new Promise(r => setTimeout(r, 30));
       const rows = mileage.slice(0, Math.max(0, mileage.length - before));
       return {
-        trips: rows.map(m => ({ veh: m.vehicleId, miles: m.miles })),
+        trips: rows.map(m => ({ veh: m.vehicleId, miles: m.miles, reimbursable: !!m.reimbursable })),
         drives: legs.filter(l => /^drive/.test(l.source || '')).map(l => ({ source: l.source, minutes: l.minutes })),
       };
     } finally {
@@ -287,10 +287,21 @@ test.describe('Truck assignment', () => {
       expect(out.company).toBe(false);
     });
 
-    test('no truck available: "own vehicle" logs time but no miles', async () => {
+    test('no truck available: "own vehicle" is owed to them, never deducted', async () => {
+      // This asserted trips.length === 0 until 2026-08-02, and it was right about
+      // the thing it protected: an employee's own car is not the owner's to
+      // deduct. But dropping the row lost the FACT along with the deduction, and
+      // some states require reimbursing them for those miles, so a contractor in
+      // one of them had no record of what they owed. The trip is written now and
+      // flagged, and the guarantee that mattered here is unchanged and asserted
+      // directly: it contributes nothing to the deduction.
       await assign('e-sam', 'own');
       const sam = await driveAs('e-sam');
-      expect(sam.trips.length).toBe(0);
+      expect(sam.trips.length).toBe(1);
+      expect(sam.trips[0].reimbursable).toBe(true);
+      const ded = await page.evaluate(() => deductibleTrips(mileage).length);
+      expect(ded).toBe(0);
+      // Paid for the time either way: that never depended on whose car it was.
       expect(sam.drives.length).toBe(1);
       expect(sam.drives[0].source).toBe('drive-personal');
     });

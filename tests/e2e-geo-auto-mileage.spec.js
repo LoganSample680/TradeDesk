@@ -513,14 +513,34 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(rows[0].vehicleId).not.toBe('v-truck');
     });
 
-    test('employee in their OWN car: no mileage row at all', async () => {
+    // WHAT THESE TWO USED TO ASSERT, and why it changed (2026-08-02).
+    //
+    // They asserted no mileage row at all for an employee in their own car, and
+    // that was right about the thing it was protecting: those miles are not the
+    // owner's to deduct, and a row that reached the deduction total would inflate
+    // it with miles the owner's vehicles never drove.
+    //
+    // But dropping the row threw away the fact as well as the deduction. Some
+    // states require reimbursing an employee for driving their own car, and a
+    // contractor in one of them was left with no record of a debt they already
+    // had. The row is written now and flagged reimbursable, and deductibleTrips
+    // is what keeps it out of every deduction total, which is the guarantee these
+    // tests were really defending. So they now assert both halves rather than
+    // just the absence.
+    test('employee in their OWN car: logged for reimbursement, never for the deduction', async () => {
       const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: 'personal' });
-      expect(rows.length).toBe(0);
+      expect(rows.length).toBe(1);
+      expect(rows[0].reimbursable).toBe(true);
+      const ded = await page.evaluate(() => deductibleTrips(mileage).length);
+      expect(ded).toBe(0);
     });
 
-    test('employee who picked no vehicle: no mileage row', async () => {
+    test('employee who picked no vehicle: same answer, owed not deducted', async () => {
       const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: '' });
-      expect(rows.length).toBe(0);
+      expect(rows.length).toBe(1);
+      expect(rows[0].reimbursable).toBe(true);
+      const ded = await page.evaluate(() => deductibleTrips(mileage).length);
+      expect(ded).toBe(0);
     });
 
     test('an employee in their own car is still PAID for the drive', async () => {
