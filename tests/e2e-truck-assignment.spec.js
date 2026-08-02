@@ -431,7 +431,14 @@ test.describe('Truck assignment', () => {
 
     const assignJob = async (jobId, empId) => {
       await page.evaluate((a) => _dispatchDoAssign(a.jobId, a.empId), { jobId, empId });
-      await page.waitForTimeout(400);   // the picker follows on a short delay
+      // POLL, do not sleep. The picker follows the assignment on a short delay,
+      // and a fixed 400ms wait is a bet on how loaded the runner is: it came up
+      // short on WebKit and reported the question was never asked when it was
+      // simply late (2026-08-02). Waits for the overlay, and still gives a real
+      // absence three seconds to prove itself.
+      try {
+        await page.waitForFunction(() => !!document.getElementById('_truck-picker-ov'), null, { timeout: 3000 });
+      } catch (e) { /* genuinely never appeared: the assertion below says so */ }
       return page.evaluate(() => {
         const ov = document.getElementById('_truck-picker-ov');
         const html = ov ? ov.innerHTML : '';
