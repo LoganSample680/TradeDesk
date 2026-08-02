@@ -98,6 +98,10 @@ test.describe('A full Topeka day', () => {
       rule: async (p) => {
         const d = await p.evaluate(() => window.__day);
         const missing = Object.entries(d).filter(([, v]) => !v || v.lat == null).map(([k]) => k);
+        // Printed so the numbers are checkable by hand. Paste a pair into Apple
+        // Maps and you get the same route the app asked for.
+        console.log('[topeka-day] resolved coordinates:\n' + Object.entries(d)
+          .map(([k, v]) => `   ${k.padEnd(7)} ${v && v.lat != null ? `${v.lat}, ${v.lng}` : 'UNRESOLVED'}`).join('\n'));
         return { ok: missing.length === 0, got: missing.length ? 'unresolved: ' + missing.join(',') : 'all four resolved' };
       },
     });
@@ -257,7 +261,7 @@ test.describe('A full Topeka day', () => {
             .filter(m => m.gps && m.legKey && !seen.has(m.id))
             .map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles, method: m.calc_method,
                          purpose: m.purpose, fromRaw: m.from, toRaw: m.to,
-                         fc: !!m.fromCoord, tc: !!m.toCoord })));
+                         fc: m.fromCoord, tc: m.toCoord })));
         }, priorTrips);
         const measured = out.filter(t => t.miles > 0);
         const stuck = out.filter(t => t.method === 'pending_auto');
@@ -266,9 +270,11 @@ test.describe('A full Topeka day', () => {
         // endpoint's NAME instead: geocoding the literal word "Shop" is what put
         // a 65.6-mile leg on a day that never left Topeka (2026-08-02).
         const byName = out.filter(t => t.method === 'address');
+        const pt = (c) => c ? `${c.lat}, ${c.lng}` : 'NO COORDINATE';
         console.log('[topeka-day] trips:\n' + out.map(t =>
-          `   ${t.from} → ${t.to}  ${t.miles} mi  ${t.purpose}  (${t.method}, coords ${t.fc ? 'y' : 'n'}/${t.tc ? 'y' : 'n'})` +
-          `\n        raw: "${t.fromRaw}" → "${t.toRaw}"`).join('\n'));
+          `   ${t.from} → ${t.to}  ${t.miles} mi  ${t.purpose}  (${t.method})` +
+          `\n        raw:    "${t.fromRaw}" → "${t.toRaw}"` +
+          `\n        routed: ${pt(t.fc)}  →  ${pt(t.tc)}`).join('\n'));
         // Real Topeka distances: every one of these hops is inside the city, so
         // a leg over 30 miles means the route resolved to the wrong point.
         const absurd = measured.filter(t => t.miles > 30);
