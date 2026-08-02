@@ -6705,6 +6705,15 @@ async function supaLoadFromCloud({silent=false}={}){
           const _p=detectPlacesFromExpenses();
           if(_p>0){_logSave('places-detected',{count:_p});saveAll();}
         }
+        // Same pass for the other thing a receipt decides: whether a stop that
+        // was passed through as a personal detour was really a crew lunch run.
+        // Here as well as on the expense save because the receipt may have been
+        // entered on another device, and this is the first moment those rows
+        // exist on this one.
+        if(typeof reviewDetourReceipts==='function'){
+          const _d=reviewDetourReceipts();
+          if(_d>0)_logSave('detours-restored',{count:_d});
+        }
       }catch(_e){}
     }
 

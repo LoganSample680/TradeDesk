@@ -1378,6 +1378,107 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.nul).toBe(false);
     });
 
+    test('the nearest tenant wins, not whichever Apple lists first', async () => {
+      // The owner's Home Depot stop came back as "I Sold It On Ebay", two units
+      // down the same parking lot, carrying Home Depot's street address
+      // (2026-08-02). The box has to stay wide enough to cover a big-box car
+      // park, so the box cannot be what disambiguates. Distance has to.
+      const out = await page.evaluate(async () => {
+        window.mapkit = {
+          Coordinate: function (a, b) { this.latitude = a; this.longitude = b; },
+          CoordinateSpan: function (a, b) { this.a = a; this.b = b; },
+          CoordinateRegion: function (co, sp) { this.co = co; this.sp = sp; },
+          PointsOfInterestSearch: function () {
+            this.search = (cb) => cb(null, { places: [
+              // Listed FIRST, but 180m away.
+              { name: 'I Sold It On Ebay', pointOfInterestCategory: 'MKPOICategoryStore',
+                formattedAddress: '5900 SW Huntoon St', coordinate: { latitude: 39.0465, longitude: -95.7583 } },
+              // Listed second, and the one they actually parked at.
+              { name: 'The Home Depot', pointOfInterestCategory: 'MKPOICategoryStore',
+                formattedAddress: '5900 SW Huntoon St', coordinate: { latitude: 39.04493, longitude: -95.75828 } },
+            ] });
+          },
+          Geocoder: function () { this.reverseLookup = (co, cb) => cb(new Error('no geo')); },
+        };
+        _mapkitReady = true;
+        const near = await _poiAt({ lat: 39.0449259, lng: -95.7582808 });
+        // Nothing rankable: a stub with no coordinates at all must still answer
+        // rather than going silent, which is what the rest of this suite relies on.
+        window.mapkit.PointsOfInterestSearch = function () {
+          this.search = (cb) => cb(null, { places: [{ name: 'Ace Supply', pointOfInterestCategory: 'MKPOICategoryStore' }] });
+        };
+        const blind = await _poiAt({ lat: 39.0449259, lng: -95.7582808 });
+        _mapkitReady = false; delete window.mapkit;
+        return { near: near && near.name, blind: blind && blind.name };
+      });
+      expect(out.near).toBe('The Home Depot');
+      expect(out.blind).toBe('Ace Supply');
+    });
+
+    test('a receipt logged the next morning still fixes the day', async () => {
+      // The hole the owner found: the call is made when the truck pulls out, but
+      // receipts get done in the truck at 5pm or at the kitchen table on Sunday.
+      // Worse, _stampGeo records where they were WHEN THEY LOGGED IT, so a late
+      // receipt carries the kitchen's coordinate and can never geo-match the
+      // diner. The vendor name and the date they put on it are what survive.
+      await withMapkit({ poiName: "Bobo's Drive In", poiCategory: 'MKPOICategoryRestaurant', geoFails: true });
+      const out = await page.evaluate(async () => {
+        if (typeof expenses !== 'undefined') expenses.length = 0;
+        if (typeof _geoLegOrigin !== 'undefined') _geoLegOrigin = null;
+        mileage.length = 0;
+        const depot = { lat: 39.03, lng: -95.77, name: 'Ace Supply', kind: 'supply', addr: '400 Depot Rd' };
+        const job = { lat: 39.06, lng: -95.67, name: 'Miller residence', kind: 'job', addr: '9 Elm St' };
+        const stop = { lat: 39.05, lng: -95.68, name: 'Stop', kind: 'stop', prevOrigin: depot };
+        autoLogDriveTrip({ from: depot, to: stop, legKey: 'late-in', startedIso: new Date().toISOString() });
+        autoLogDriveTrip({ from: stop, to: job, legKey: 'late-out', startedIso: new Date().toISOString() });
+        await new Promise(r => setTimeout(r, 300));
+        const before = mileage.map(m => ({ k: m.legKey, from: m.from_name }));
+        // Sunday at the kitchen table: right vendor, right date, and a
+        // coordinate that is nowhere near the diner. Exactly what a real late
+        // receipt looks like.
+        expenses.push({ id: _newId(), date: todayKey(), vendor: "Bobo's Drive-In", amount: 84.20,
+                        cat: 'Meals', lat: 39.99, lon: -96.99, geoAt: new Date().toISOString(), geoAcc: 10 });
+        const restored = reviewDetourReceipts();
+        await new Promise(r => setTimeout(r, 300));
+        const after = mileage.map(m => ({ k: m.legKey, from: m.from_name, to: m.to_name }));
+        // Second sweep must be a no-op, or every load re-adds the leg.
+        const again = reviewDetourReceipts();
+        return { before, after, restored, again, count: mileage.length };
+      });
+      // Before: the detour, one leg, starting at the supply house.
+      expect(out.before.find(t => t.k === 'late-in')).toBeUndefined();
+      expect(out.before.find(t => t.k === 'late-out').from).toBe('Ace Supply');
+      // After: both legs back, the stop named from the receipt's business.
+      expect(out.restored).toBe(1);
+      const inLeg = out.after.find(t => t.k === 'late-in');
+      expect(inLeg).toBeDefined();
+      expect(inLeg.to).toBe("Bobo's Drive In");
+      expect(out.after.find(t => t.k === 'late-out').from).toBe("Bobo's Drive In");
+      // Idempotent: running it again changes nothing and adds nothing.
+      expect(out.again).toBe(0);
+      expect(out.count).toBe(2);
+    });
+
+    test('a vendor is matched on its letters, not its punctuation', async () => {
+      const out = await page.evaluate(() => ({
+        punctuation: _expenseVendorMatches("Bobo's Drive-In", 'Bobos Drive In'),
+        leadingThe: _expenseVendorMatches('Pennant', 'The Pennant'),
+        contains: _expenseVendorMatches('The Home Depot #1234', 'The Home Depot'),
+        different: _expenseVendorMatches('Ace Hardware', 'The Home Depot'),
+        tooShort: _expenseVendorMatches('A', 'A'),
+        empty: _expenseVendorMatches('', 'The Home Depot'),
+        nul: _expenseVendorMatches(null, null),
+      }));
+      expect(out.punctuation).toBe(true);
+      expect(out.leadingThe).toBe(true);
+      expect(out.contains).toBe(true);
+      expect(out.different).toBe(false);
+      // Two-letter vendors would match half the map.
+      expect(out.tooShort).toBe(false);
+      expect(out.empty).toBe(false);
+      expect(out.nul).toBe(false);
+    });
+
     test('a receipt at the pin only counts if it is from that day', async () => {
       // The stamp has to be contemporaneous. A receipt entered on the sofa that
       // evening carries the living room's coordinate, and yesterday's lunch is

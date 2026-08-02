@@ -488,6 +488,10 @@ function autoLogDriveTrip(opts){
     client_id:to.clientId||null,
     client_name:to.clientId&&typeof getClientById==='function'?((getClientById(to.clientId)||{}).name||''):'',
     notes:'',gps:true,legKey,
+    // Carried from the origin descriptor: this leg replaced a personal stop that
+    // was passed through, and this is what it takes to put that stop back if a
+    // receipt turns up for it later.
+    passedThrough:(from.passedThrough||undefined),
     created_at:new Date().toISOString(),calc_method:'pending_auto'
   };
   if(_isEmployee&&typeof _supaUser!=='undefined'&&_supaUser){
@@ -550,7 +554,8 @@ async function _autoNameStopTrip(rec,to){
     // contractor already has to keep, so this costs them no extra taps. No
     // receipt at that pin today, it was their own lunch.
     const personal=!!(poi.name&&_poiIsPersonal(poi.category)&&
-                      !(typeof expenseAt==='function'&&expenseAt({lat:to.lat,lon:to.lng})));
+                      !(typeof expenseForStop==='function'&&
+                        expenseForStop({lat:to.lat,lng:to.lng,name:poi.name,day:todayKey()})));
     // And patch a leg out of here that was ALREADY written. Which of the two
     // landed first depends on how long Apple took against how long they were
     // parked, and a record must not depend on that race.
@@ -570,17 +575,26 @@ async function _autoNameStopTrip(rec,to){
       // eat. Their own Topeka day: the restaurant sat four doors from the job,
       // so the two-leg version billed 0.7 miles for a 6.5 mile trip.
       const i=mileage.indexOf(saved);
-      if(i>=0)mileage.splice(i,1);
+      const dropped=i>=0?mileage.splice(i,1)[0]:null;
       const back=to.prevOrigin;
       // Nothing to pass through to (the day began at this stop): it stays the
       // origin, because a leg with no start is worse than one starting at lunch.
       if(back&&back.lat!=null){
+        // The breadcrumb that makes this reversible. Receipts do not get done at
+        // the counter, they get done in the truck at 5pm or at the kitchen table
+        // on Sunday, and by then this trip is already recorded as a detour. The
+        // dropped leg rides along on whatever row replaces it, so the day can be
+        // rebuilt exactly when the receipt finally lands (owner, 2026-08-02).
+        const crumb={stop:{lat:to.lat,lng:to.lng,name:poi.name,addr:poi.addr||'',kind:'stop'},
+                     day:(dropped&&dropped.date)||todayKey(),leg:dropped,origin:back};
+        back.passedThrough=crumb;
         const restored=(typeof _geoPassThroughStop==='function')&&_geoPassThroughStop(to);
         // Not restored means they already reached the next fence and that leg
         // was measured from here, so it is that row that needs re-pointing.
         if(!restored)mileage.forEach(m=>{
           if(!m.gps||!m.fromCoord)return;
           if(Math.abs(m.fromCoord.lat-to.lat)>1e-5||Math.abs(m.fromCoord.lng-to.lng)>1e-5)return;
+          m.passedThrough=crumb;
           _reoriginTrip(m,back);
         });
       }
@@ -601,6 +615,45 @@ async function _autoNameStopTrip(rec,to){
     if(document.getElementById('mil-table'))renderAllMileage();
     if(typeof renderDash==='function')renderDash();
   }catch(_e){}
+}
+// ── The receipt that turns up later ──────────────────────────────────────────
+// A stop is judged the moment the truck pulls out, because that is when the leg
+// has to be written. But receipts are not done at the counter. They are done in
+// the truck at the end of the day, or at the kitchen table on Sunday, and by
+// then the trip is already on the log as a detour with the crew's lunch run
+// billed as a personal errand (owner, 2026-08-02).
+//
+// So every pass-through leaves the dropped leg attached to the row that replaced
+// it, and this puts the day back the moment the receipt appears. Idempotent: the
+// restored leg carries its original leg key, which autoLogDriveTrip refuses to
+// duplicate, and the crumb is cleared once it is spent.
+//
+// Runs on every expense save and once on load, because the receipt may have been
+// entered on a different device.
+function reviewDetourReceipts(){
+  if(typeof mileage==='undefined'||typeof expenseForStop!=='function')return 0;
+  let n=0;
+  mileage.filter(m=>m&&m.passedThrough&&m.passedThrough.stop).forEach(m=>{
+    const c=m.passedThrough,s=c.stop;
+    if(!expenseForStop({lat:s.lat,lng:s.lng,name:s.name,day:c.day}))return;
+    // It WAS for the business after all. The leg in goes back, exactly as it was
+    // written, and this leg goes back to starting at the stop.
+    if(c.leg&&!mileage.some(x=>x.legKey===c.leg.legKey)){
+      const back=Object.assign({},c.leg);
+      back.to_name=s.name;back.to=s.addr||s.name;
+      back.purpose=_autoTripPurpose({kind:'supply'});
+      mileage.unshift(back);
+      _reoriginTrip(back,c.origin);
+    }
+    delete m.passedThrough;
+    _reoriginTrip(m,s);
+    n++;
+  });
+  if(!n)return 0;
+  saveAll();
+  if(document.getElementById('mil-table'))renderAllMileage();
+  if(typeof renderDash==='function')renderDash();
+  return n;
 }
 // Re-point a trip that was already written from the wrong end, and re-measure
 // it. Only ever used to undo a personal stop: the row was measured from the
@@ -700,6 +753,18 @@ function _haversineMiles(c1,c2){
 //
 // Returns {name,category} or null, and null is a fine answer: the modal just
 // opens with an empty name, which is what it did before any of this.
+// The tenant standing closest to the pin. A result with no coordinate cannot be
+// ranked, so it only wins when nothing else can be measured at all: better a
+// name Apple offered than no name.
+function _poiNearest(list,pin){
+  let best=null,bestFt=Infinity;
+  (list||[]).forEach(x=>{
+    if(!x||!x.name||!x.coordinate)return;
+    const ft=_haversineMiles(pin,{lat:x.coordinate.latitude,lng:x.coordinate.longitude})*5280;
+    if(ft<bestFt){bestFt=ft;best=x;}
+  });
+  return best||(list||[]).find(x=>x&&x.name)||null;
+}
 async function _poiAt(coord){
   if(!_mapkitReady||typeof mapkit==='undefined'||!coord||coord.lat==null)return null;
   const lat=coord.lat,lng=coord.lng!=null?coord.lng:coord.lon;
@@ -713,7 +778,14 @@ async function _poiAt(coord){
         const s=new mapkit.PointsOfInterestSearch({region});
         s.search((err,data)=>{ if(err||!data||!data.places||!data.places.length){reject(new Error('poi'));return;} resolve(data.places); });
       });
-      const p=res[0];
+      // NEAREST, not first. The results are not ordered by distance from the
+      // pin, so taking res[0] in a shopping centre returns whichever tenant
+      // Apple felt like listing first: the owner's own Home Depot stop came
+      // back as "I Sold It On Ebay" two units down, carrying Home Depot's
+      // street address (2026-08-02). The box has to stay big enough to cover a
+      // big-box store's car park, so the box cannot be what disambiguates; the
+      // distance has to.
+      const p=_poiNearest(res,{lat,lng});
       if(p&&p.name)return {name:p.name,category:p.pointOfInterestCategory||'',addr:p.formattedAddress||''};
     }
   }catch(_e){}

@@ -90,6 +90,37 @@ function expenseAt(coord){
     _geoStampIsContemporaneous(e)&&
     _placeDistFt(coord,e)<=PLACE_MATCH_FT)||null;
 }
+// Two businesses are the same business. Receipts get typed as "Bobo's Drive-In"
+// and Apple calls it "Bobos Drive In", so compare on letters and digits only,
+// and let either one contain the other: "Pennant" on a receipt is the same
+// place Apple returned as "The Pennant".
+function _expenseVendorMatches(vendor,name){
+  const norm=s=>String(s||'').toLowerCase().replace(/^the\s+/,'').replace(/[^a-z0-9]+/g,'');
+  const a=norm(vendor),b=norm(name);
+  if(a.length<3||b.length<3)return false;
+  return a===b||a.indexOf(b)>=0||b.indexOf(a)>=0;
+}
+// Did the contractor buy something for the business at this stop? Two signals,
+// and it takes only one, because they answer at different times:
+//
+//   • GEO, the receipt was logged AT the counter, so its stamp lands on the pin.
+//     This is the only signal available the moment the stop closes.
+//   • VENDOR + DATE, the receipt was logged later. And later is the normal case:
+//     receipts get done in the truck at 5pm, or Sunday at the kitchen table.
+//
+// The second is not a convenience, it is a correctness fix. _stampGeo records
+// where they were WHEN THEY LOGGED IT, so a receipt entered the next morning
+// carries the kitchen's coordinate, not the diner's. Geo-matching a late receipt
+// cannot work even in principle: the coordinate is honest about the wrong thing.
+// The vendor name and the date they put on it are what survive the delay.
+function expenseForStop(o){
+  if(!o||typeof expenses==='undefined')return null;
+  const byGeo=(o.lat!=null)?expenseAt({lat:o.lat,lon:o.lng!=null?o.lng:o.lon}):null;
+  if(byGeo)return byGeo;
+  if(!o.name||!o.day)return null;
+  return (expenses||[]).find(e=>e&&String(e.date||'').slice(0,10)===String(o.day).slice(0,10)&&
+    _expenseVendorMatches(e.vendor,o.name))||null;
+}
 
 // ── Create / update ──────────────────────────────────────────────────────────
 function savePlace(pl){
