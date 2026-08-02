@@ -72,7 +72,11 @@ test.describe('The Drive button against the geofence', () => {
     }));
     console.log(`[manual-drive] routing engine: ${engine.mapkitReady ? 'MapKit (Apple Maps)' : 'Valhalla/OSRM fallback'} on ${engine.host}`);
 
-    const priorTrips = await page.evaluate(() => mileage.filter(m => m.gps && m.legKey).map(m => m.id));
+    // EVERY id, not just the automatic ones. The account is never cleaned up
+    // (CLAUDE.md 12.7), and a snapshot of only gps rows made every hand-entered
+    // trip from every previous run look new to the final check: the first live
+    // run reported six rows for a one-leg drive, five of them months old.
+    const priorTrips = await page.evaluate(() => mileage.map(m => m.id));
 
     // ── Pull out of the yard, tap Drive ten minutes in, arrive ──────────────
     await step(page, {
@@ -154,7 +158,7 @@ test.describe('The Drive button against the geofence', () => {
       rule: async (p) => {
         const out = await p.evaluate((prior) => {
           const seen = new Set(prior);
-          const mine = mileage.filter(m => !seen.has(m.id) && (m.gps || m.calc_method === 'gps_time'));
+          const mine = mileage.filter(m => !seen.has(m.id));
           return {
             rows: mine.map(m => ({ miles: m.miles, method: m.calc_method })),
             driveRunning: !!gps.active,
