@@ -753,7 +753,18 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
     // car the drive TIME is still theirs to be paid for, but the mileage is not
     // the company's to deduct. The owner IS the business, so any vehicle counts,
     // which is the entire point of the standard mileage deduction.
-    if(_isEmployee&&!companyVeh)return;
+    // An employee in their own car: the miles are NOT the owner's to deduct, but
+    // they are still miles the business may owe them for. California Labor Code
+    // 2802 and its equivalents make that a legal obligation, and dropping the row
+    // (which is what used to happen here) left the contractor with no record of
+    // what they owed (owner, 2026-08-02). Logged and flagged instead, and
+    // deductibleTrips keeps it out of every deduction total.
+    //
+    // Only the DRIVER. A passenger in someone else's car put no miles on their
+    // own vehicle and is owed nothing for them; they are still paid for the time.
+    const mode=(typeof _shiftVehicleMode==='function')?_shiftVehicleMode():'';
+    const reimbursable=!!(_isEmployee&&!companyVeh);
+    if(reimbursable&&mode==='rider')return;
     // The one-drive-one-row guard lives in autoLogDriveTrip, not here: it is a
     // rule about the mileage log itself rather than about this account, so it
     // has to hold for every caller, the same reason the endpoint validation
@@ -781,7 +792,7 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
     // morning commute into a company deduction on the strength of a checkbox
     // the owner ticked about their own spare room.
     if(from.likelyHome&&!(S.homeOffice&&!_isEmployee))return;
-    autoLogDriveTrip({from,to,legKey,startedIso});
+    autoLogDriveTrip({from,to,legKey,startedIso,reimbursable});
   }catch(_e){}
 }
 

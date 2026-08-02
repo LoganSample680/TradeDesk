@@ -1796,5 +1796,79 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Two pots of money ─────────────────────────────────────────────────────
+  // Owner (2026-08-02): an employee driving their own car should not put miles
+  // on the owner's deduction, but some states require reimbursing them, so the
+  // miles still have to be recorded. Before this they were dropped entirely,
+  // which was right for the deduction and left a contractor in California with
+  // no record of a debt they already owed.
+  test.describe('an employee driving their own car', () => {
+    const seed = (rows) => page.evaluate((rs) => {
+      mileage.length = 0;
+      rs.forEach(r => mileage.push(Object.assign({
+        id: _newId(), date: todayKey(), miles: 10, gps: true, legKey: 'k' + Math.random(),
+        calc_method: 'auto_route',
+      }, r)));
+      return mileage.length;
+    }, rows);
+
+    test('their miles never reach the deduction, at any of the five sites', async () => {
+      await seed([
+        { miles: 10 },                                        // owner's truck
+        { miles: 40, reimbursable: true, logged_by_name: 'Danny' },
+      ]);
+      const out = await page.evaluate((yr) => {
+        const ded = deductibleTrips(mileage).reduce((s, m) => s + m.miles, 0);
+        const reimb = reimbursableTrips(mileage).reduce((s, m) => s + m.miles, 0);
+        // The Schedule C path is the one that actually prints on a tax return.
+        const sched = (typeof _vehSchedC === 'function') ? _vehSchedC(yr) : null;
+        return { ded, reimb, schedMiles: sched ? sched.deductedMiles : null };
+      }, new Date().getFullYear());
+      expect(out.ded).toBe(10);
+      expect(out.reimb).toBe(40);
+      // 50 would mean the crew's 40 landed in the owner's Schedule C.
+      if (out.schedMiles !== null) expect(out.schedMiles).toBe(10);
+    });
+
+    test('what the business owes is totalled and attributed by name', async () => {
+      await seed([
+        { miles: 12, reimbursable: true, logged_by_name: 'Danny' },
+        { miles: 8, reimbursable: true, logged_by_name: 'Danny' },
+        { miles: 5, reimbursable: true, logged_by_name: 'Rosa' },
+        { miles: 100 },                                        // owner's truck
+      ]);
+      const out = await page.evaluate(() => {
+        const o = crewMilesOwed(new Date().getFullYear());
+        return { miles: o.miles, trips: o.trips, by: o.by, owed: o.owed, rate: IRS() };
+      });
+      expect(out.miles).toBe(25);
+      expect(out.trips).toBe(3);
+      expect(out.by.Danny).toBe(20);
+      expect(out.by.Rosa).toBe(5);
+      // At the IRS rate, which is the rate the reimbursement statutes point at.
+      expect(out.owed).toBeCloseTo(25 * out.rate, 5);
+    });
+
+    test('nobody owed anything means no total to show', async () => {
+      await seed([{ miles: 30 }]);
+      const out = await page.evaluate(() => crewMilesOwed(new Date().getFullYear()));
+      expect(out.miles).toBe(0);
+      expect(out.trips).toBe(0);
+      expect(out.owed).toBe(0);
+    });
+
+    test('an ordinary trip is untouched by the flag', async () => {
+      // The filter defaults to INCLUDING a row, so a legacy trip written before
+      // any of this existed still deducts exactly as it did.
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        mileage.push({ id: _newId(), date: todayKey(), miles: 22 });   // no flag at all
+        return { ded: deductibleTrips(mileage).length, reimb: reimbursableTrips(mileage).length };
+      });
+      expect(out.ded).toBe(1);
+      expect(out.reimb).toBe(0);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

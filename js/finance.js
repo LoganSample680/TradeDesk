@@ -1574,7 +1574,9 @@ function renderMonthlyPL(){
   income.forEach(r=>{if(r.date)addMonth(mKey(r.date),'inc',r.amount);});
   payments.filter(p=>p.amount!==0&&p.date).forEach(p=>{addMonth(mKey(p.date),'inc',p.amount);});
   expenses.forEach(r=>{if(r.date)addMonth(mKey(r.date),'exp',r.amount);});
-  mileage.forEach(r=>{if(r.date)addMonth(mKey(r.date),'miles',r.miles||0);});
+  // deductibleTrips: an employee's own-car miles are owed to THEM, not deducted
+  // by the owner (mileage.js). Same filter at every one of these five sites.
+  deductibleTrips(mileage).forEach(r=>{if(r.date)addMonth(mKey(r.date),'miles',r.miles||0);});
 
   const keys=Object.keys(months).sort().reverse();
   if(!keys.length){el.innerHTML='<div class="empty">No data yet, log income and expenses to see monthly P&L.</div>';return;}
@@ -2180,7 +2182,7 @@ function exportPLCSV(){
   const filterYr=arr=>(yr==='all'?arr:arr.filter(r=>r.date?.startsWith(yr)));
   const yrInc=filterYr(income).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const yrExp=filterYr(expenses).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const yrMil=filterYr(mileage);
+  const yrMil=deductibleTrips(filterYr(mileage));   // owner's vehicles only
   const yrPay=filterYr(payments).filter(p=>p.amount!==0).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const tIncBase=yrInc.reduce((s,r)=>s+(r.amount||0),0);
   const tIncPay=yrPay.reduce((s,p)=>s+(p.amount||0),0);
@@ -2211,7 +2213,7 @@ function exportTaxPDF(){
   const status=S.txStatus||'single';
   const yrIncome=income.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>a.date.localeCompare(b.date));
   const yrExp=expenses.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
-  const yrMiles=mileage.filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const yrMiles=deductibleTrips(mileage).filter(r=>r.date&&r.date.startsWith(yr)).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const tInc=yrIncome.reduce((s,r)=>s+r.amount,0);
   const _vdX=(typeof _vehSchedC==='function')?_vehSchedC(yr):null; // one method per vehicle (IRS)
   const tExp=yrExp.reduce((s,r)=>s+r.amount,0)-(_vdX?_vdX.expAdjust:0);

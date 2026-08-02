@@ -528,6 +528,9 @@ function autoLogDriveTrip(opts){
     client_id:to.clientId||null,
     client_name:to.clientId&&typeof getClientById==='function'?((getClientById(to.clientId)||{}).name||''):'',
     notes:'',gps:true,legKey,
+    // The employee's own car. Owed to THEM, never the owner's deduction, and
+    // deductibleTrips is what enforces that everywhere it matters.
+    reimbursable:(opts.reimbursable?true:undefined),
     // WHEN THE LEG BEGAN, not just when it was written. loggedAt is the arrival,
     // so on its own it cannot say whether this journey was already under way
     // when somebody tapped Drive, which is exactly what End Drive has to know.
@@ -720,6 +723,40 @@ function _reoriginTrip(m,from){
       if(typeof renderDash==='function')renderDash();
     }catch(_e){}
   })();
+}
+// ── Two pots of money, and they must never touch ─────────────────────────────
+// The owner's standard-mileage deduction is miles driven in the OWNER'S
+// vehicles. An employee driving their own car generates miles too, and in the
+// states that require reimbursing them (California Labor Code 2802 is the one
+// everybody knows, Illinois and Massachusetts have their own) the business owes
+// that money. It is a business expense, and a real obligation, but it is not the
+// owner's mileage deduction and putting it there inflates the deduction with
+// miles the owner's vehicles never drove.
+//
+// Before this, those miles were simply not recorded at all: correct for the
+// deduction, and it left a contractor in a reimbursement state with no record of
+// what they already owed (owner, 2026-08-02). Now they are recorded and flagged,
+// and every place that turns miles into a deduction goes through this filter, so
+// there is ONE definition of whose miles those are rather than five.
+function deductibleTrips(list){
+  return (list||[]).filter(m=>m&&!m.reimbursable);
+}
+function reimbursableTrips(list){
+  return (list||[]).filter(m=>m&&m.reimbursable);
+}
+// What the business owes its crew for driving their own cars, this year.
+// Deliberately at the same IRS rate: it is the rate the states point at, and a
+// contractor paying less than it is the one who ends up explaining why.
+function crewMilesOwed(yr){
+  const y=String(yr||trackerYear||new Date().getFullYear());
+  const rows=reimbursableTrips(mileage).filter(m=>m.date&&String(m.date).startsWith(y));
+  const miles=rows.reduce((s,m)=>s+(m.miles||0),0);
+  const by={};
+  rows.forEach(m=>{
+    const who=m.logged_by_name||m.logged_by_id||'Crew';
+    by[who]=(by[who]||0)+(m.miles||0);
+  });
+  return {miles:Math.round(miles*10)/10,owed:miles*IRS(),trips:rows.length,by};
 }
 // What the destination IS decides the business purpose. This is the whole reason
 // automatic mileage can be IRS-complete without asking anyone anything: the
@@ -1555,7 +1592,7 @@ function saveLoggedTrip(){
 function renderAllMileage(){
   const yr=String(trackerYear||new Date().getFullYear());
   const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
-  const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
+  const filtered=deductibleTrips(_mileSrc).filter(m=>m.date&&m.date.startsWith(yr));
   const irsRate=IRS();
   const tot=filtered.reduce((s,r)=>s+(r.miles||0),0);
   const deduction=tot*irsRate;
@@ -1595,6 +1632,16 @@ function renderAllMileage(){
             '<span>·</span>'+
             '<span>'+filtered.length+' trip'+(filtered.length!==1?'s':'')+' logged</span>'+
           '</div>'+
+          // What the crew is owed for driving their own cars, kept visibly
+          // OUTSIDE the deduction figure above it: two different pots of money,
+          // and a contractor in a reimbursement state needs to see the second
+          // one exists. Hidden entirely when nobody is owed anything.
+          (()=>{const o=(typeof crewMilesOwed==='function')?crewMilesOwed(yr):null;
+            return (o&&o.miles>0)?'<div class="mil-meta" style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.14)">'+
+              '<span>Owed to crew <b style="color:#fff">'+fmt(o.owed)+'</b></span>'+
+              '<span>·</span>'+
+              '<span>'+o.miles.toFixed(1)+' mi in their own vehicles, not deducted</span>'+
+            '</div>':'';})()+
           (totalDriven>0?
             '<div class="mil-bar">'+
               '<div class="mil-bar-seg mil-bar-business" style="flex:'+Math.max(tot,0.1)+'"><span>Business '+bizPct+'%</span></div>'+
@@ -1665,7 +1712,7 @@ function setMilFilter(f){
   });
   const yr=String(trackerYear||new Date().getFullYear());
   const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
-  const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
+  const filtered=deductibleTrips(_mileSrc).filter(m=>m.date&&m.date.startsWith(yr));
   const unclassified=filtered.filter(m=>!m.purpose);
   const shown=f==='unclassified'?unclassified:f==='classified'?filtered.filter(m=>m.purpose):filtered;
   _milRenderTripList(shown,yr);

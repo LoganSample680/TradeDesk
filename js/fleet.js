@@ -328,7 +328,9 @@ function _vehSchedC(yr){
   const rate=(typeof _getIrsRateForYear==='function')?_getIrsRateForYear(yr):((S&&S.irsRate)||0.7);
   const out={yr,hasVehicles:false,perVehicle:[],mileDed:0,deductedMiles:0,excludedMiles:0,
              vehExpTotal:0,vehExpDed:0,expAdjust:0,excludedIds:[],untagged:0,untaggedTotal:0};
-  const trips=mileage.filter(r=>r.date&&r.date.startsWith(yr));
+  // Owner's vehicles only: crew driving their own cars is a reimbursement, and
+  // attributing those miles to a company truck would deduct them twice over.
+  const trips=(typeof deductibleTrips==='function'?deductibleTrips(mileage):mileage).filter(r=>r.date&&r.date.startsWith(yr));
   const vehExp=expenses.filter(e=>e.date&&e.date.startsWith(yr)&&_isVehicleExpense(e));
   const vehs=(typeof getVehicles==='function')?getVehicles():[];
   if(!vehs.length){

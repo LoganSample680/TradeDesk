@@ -70,7 +70,9 @@ test.describe('Drive matrix: every origin to every destination', () => {
       S.officeLat = d.SHOP.lat; S.officeLon = d.SHOP.lon;
       S.teamTracking = true;
       if (typeof places !== 'undefined') places.length = 0;
-      savePlace({ name: 'Matrix Supply', kind: 'supply', lat: d.PLACE.lat, lon: d.PLACE.lon, confirmedBy: 'manual' });
+      // Explicit id so the per-leg rebuild below can top this same row up
+      // rather than stacking a duplicate at the same coordinate.
+      savePlace({ id: 'matrix-supply', name: 'Matrix Supply', kind: 'supply', lat: d.PLACE.lat, lon: d.PLACE.lon, confirmedBy: 'manual' });
       // The all-day run drives its own widely-spaced waypoints, so its supply
       // house needs a row of its own or that dwell resolves to nothing.
       savePlace({ name: 'All-day Supply', kind: 'supply', lat: d.DAY_SUPPLY.lat, lon: d.DAY_SUPPLY.lon, confirmedBy: 'manual' });
@@ -154,6 +156,18 @@ test.describe('Drive matrix: every origin to every destination', () => {
                     start: todayKey(), days: 1, lat: C.JOB1.lat, lon: C.JOB1.lon });
         jobs.push({ id: 8802, name: 'Matrix Job 2', eventType: 'job', status: 'upcoming',
                     start: todayKey(), days: 1, lat: C.JOB2.lat, lon: C.JOB2.lon });
+        // PLACES TOO. This rebuild already covered jobs and the shop fence for
+        // exactly the reason in the comment above, and places were the one
+        // fixture left out: `shop → place` failed once on WebKit with places:0
+        // and passed on a straight re-run (2026-08-02). The app empties this
+        // array on an account switch or a sign-out, which is correct behaviour,
+        // and the beforeAll seeds it once, so anything that fires between the
+        // two leaves every later place leg with nothing to arrive at. Idempotent:
+        // savePlace updates in place when the id already exists.
+        if (typeof places !== 'undefined' && !places.some(p => String(p.id) === 'matrix-supply')) {
+          savePlace({ id: 'matrix-supply', name: 'Matrix Supply', kind: 'supply',
+                      lat: C.PLACE.lat, lon: C.PLACE.lon, confirmedBy: 'manual' });
+        }
         _geoJobCoords = {};        // keyed by job id, so a rebuilt jobs array needs a fresh cache
         _geoPingBusy = false;      // a ping dropped by the re-entrancy guard logs nothing at all
         _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
