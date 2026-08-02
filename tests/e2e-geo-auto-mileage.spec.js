@@ -300,7 +300,9 @@ test.describe('Automatic mileage from drive legs', () => {
       // opt-out would quietly bin a real deduction; the honest answer is that
       // the vehicle belongs in Fleet.
       const out = await pickerFor({ vehicles: TWO, defaultId: 'v-truck' });
-      expect(out.html).not.toContain('no mileage logged');
+      // Keyed off the ACTION, not the wording: the row's job is to write
+      // 'personal', and copy gets rewritten.
+      expect(out.html).not.toContain("_pickVehicle('personal'");
     });
 
     test('nobody is offered "on foot", and no code path answers it', async () => {
@@ -430,7 +432,8 @@ test.describe('Automatic mileage from drive legs', () => {
       const out = await pickerFor({ employee: true, vehicles: [TWO[0]] });
       expect(out.shown).toBe(true);
       expect(out.html).toContain('Which vehicle are you in today?');
-      expect(out.html).toContain('no mileage logged');
+      expect(out.html).toContain("_pickVehicle('personal'");
+      expect(out.html).toContain('No mileage logged');
     });
 
     test('nobody is asked twice in one day', async () => {

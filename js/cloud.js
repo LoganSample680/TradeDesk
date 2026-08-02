@@ -2355,6 +2355,37 @@ function _truckDriver(vehId,exceptEmpId){
     return t&&t.mode==='truck'&&String(t.v)===String(vehId);
   })||null;
 }
+// ── One row, in both truck pickers ───────────────────────────────────────────
+// Owner report (2026-08-01, screenshot): the icon drifted left and right down
+// the list and a long plate wrapped in the middle of itself ("KS 4RD-" / "982").
+// Both came from centring the row: with centred content the icon's position is
+// a function of the label's length, so no two rows line up, and the plate is
+// just more text on the same line waiting to break.
+//
+// So the row is a fixed icon gutter plus left-aligned text, and the plate gets
+// its own line underneath in smaller type. The icon now sits at the same x on
+// every row, the name reads as the name, and the plate cannot split. The modal
+// itself stays centred; it is the ROWS that are left-aligned, which is what
+// makes a list scannable.
+function _vehPickRow(o){
+  const sel=!!o.selected;
+  return '<button '+(o.on||'')+' style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border-radius:var(--r);border:1px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;margin-bottom:8px;min-height:48px;color:var(--text)">'+
+    '<span style="width:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text2)">'+svgIcon('\ud83d\ude97',{size:16})+'</span>'+
+    '<span style="flex:1;min-width:0">'+
+      '<span style="display:block;font-size:14px;font-weight:600;line-height:1.3">'+escHtml(o.title||'')+'</span>'+
+      (o.sub?'<span style="display:block;font-size:11px;font-weight:500;color:var(--text3);line-height:1.35;margin-top:2px">'+escHtml(o.sub)+'</span>':'')+
+    '</span>'+
+    (o.badge?'<span style="font-size:10px;font-weight:800;color:var(--blue);flex-shrink:0">'+escHtml(o.badge)+'</span>':'')+
+  '</button>';
+}
+// The name half of a vehicle, without the plate. getVehiclePickLabel keeps them
+// joined for single-line contexts (the board row, the assign sheet).
+function getVehiclePickName(v){
+  if(!v)return '';
+  if(typeof v==='string')return v;
+  return [v.year,v.make,v.model].filter(Boolean).join(' ')||
+         ((typeof getVehicleLabel==='function')?getVehicleLabel(v):'')||v.name||'Vehicle';
+}
 function _dispatchTruckPicker(empId){
   const emp=(S.employees||[]).find(x=>String(x.id)===String(empId));
   if(!emp)return;
@@ -2364,22 +2395,24 @@ function _dispatchTruckPicker(empId){
   const cur=_truckDayFor(empId);
   const ov=document.createElement('div');ov.id='_truck-picker-ov';ov.className='zmodal-overlay';
   const box=document.createElement('div');box.className='zmodal';box.style.textAlign='center';
-  const row=(on,html,sel)=>'<button '+on+' style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border-radius:var(--r);border:1px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px;color:var(--text)">'+html+'</button>';
   const list=vehs.map(v=>{
     const driver=_truckDriver(v.id,empId);
     const sel=cur&&cur.mode==='truck'&&String(cur.v)===String(v.id);
     // Already spoken for, so the only honest thing left to offer is the
     // passenger seat. Assigning the same truck twice is the double-count.
-    if(driver)return row('onclick="_dispatchSetTruck(\''+empId+'\',\'rider\',\'\',\''+driver.id+'\')"',
-      svgIcon('🚗')+'<span style="flex:1;min-width:0;text-align:left">'+escHtml(getVehiclePickLabel(v))+'<br><span style="font-size:11px;font-weight:500;color:var(--text3)">Riding with '+escHtml(driver.name)+'</span></span>',
-      cur&&cur.mode==='rider'&&String(cur.with)===String(driver.id));
-    return row('onclick="_dispatchSetTruck(\''+empId+'\',\'truck\',\''+v.id+'\')"',
-      svgIcon('🚗')+'<span>'+escHtml(getVehiclePickLabel(v))+'</span>',sel);
+    if(driver)return _vehPickRow({
+      on:'onclick="_dispatchSetTruck(\''+empId+'\',\'rider\',\'\',\''+driver.id+'\')"',
+      title:getVehiclePickName(v),
+      sub:[(v.plate||'').trim(),'Riding with '+driver.name].filter(Boolean).join(' \u00b7 '),
+      selected:cur&&cur.mode==='rider'&&String(cur.with)===String(driver.id)});
+    return _vehPickRow({
+      on:'onclick="_dispatchSetTruck(\''+empId+'\',\'truck\',\''+v.id+'\')"',
+      title:getVehiclePickName(v),sub:(v.plate||'').trim(),selected:sel});
   }).join('');
   box.innerHTML='<div class="zmodal-title">What is '+escHtml(emp.name)+' driving today?</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">One driver per truck. Anyone riding along is still paid for the drive, their miles just belong to the driver.</div>'+
     (vehs.length?list:'<div style="font-size:13px;color:var(--text3);margin-bottom:12px">No active vehicles in Fleet yet.</div>')+
-    row('onclick="_dispatchSetTruck(\''+empId+'\',\'own\')"',svgIcon('🚗')+'<span>Own vehicle</span>',!!(cur&&cur.mode==='own'))+
+    _vehPickRow({on:'onclick="_dispatchSetTruck(\''+empId+'\',\'own\')"',title:'Own vehicle',selected:!!(cur&&cur.mode==='own')})+
     (cur?'<button onclick="_dispatchSetTruck(\''+empId+'\',\'\')" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Clear</button>':'');
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2631,11 +2664,13 @@ function _checkEmployeeVehiclePicker(){
   sheet.className='zmodal';
   sheet.style.textAlign='center';
   const vehList=ordered.map(v=>{
-    const label=getVehiclePickLabel(v)||'Vehicle';   // plate included: two white F-250s are one string without it
     const isDef=defId&&String(v.id)===String(defId);
-    return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border-radius:var(--r);border:1px solid '+(isDef?'var(--blue)':'var(--border2)')+';background:'+(isDef?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px;color:var(--text)">'+
-      svgIcon('🚗')+'<span>'+escHtml(label)+'</span>'+
-      (isDef?'<span style="font-size:10px;font-weight:800;color:var(--blue)">USUAL</span>':'')+'</button>';
+    return _vehPickRow({
+      on:'onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(getVehiclePickName(v))+'\')"',
+      title:getVehiclePickName(v),
+      sub:(v.plate||'').trim(),
+      badge:isDef?'USUAL':'',
+      selected:!!isDef});
   }).join('');
   sheet.innerHTML=
     '<div class="zmodal-title">Which vehicle are you '+(_isEmployee?'in':'driving')+' today?</div>'+
@@ -2647,7 +2682,8 @@ function _checkEmployeeVehiclePicker(){
     vehList+
     // Crew keep the personal-vehicle row. It is not an "I didn't drive" escape
     // hatch, it is how they say these miles are theirs and not the company's.
-    (_isEmployee?'<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle, no mileage logged</button>':'');
+    (_isEmployee?_vehPickRow({on:'onclick="_pickVehicle(\'personal\',\'Personal vehicle\')"',
+       title:'My personal vehicle',sub:'No mileage logged'}):'');
   ov.appendChild(sheet);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }

@@ -668,5 +668,113 @@ test.describe('Truck assignment', () => {
     });
   });
 
+  // ── The row itself ─────────────────────────────────────────────────────────
+  // Owner report with a screenshot (2026-08-01): the car icon drifted left and
+  // right down the list, and a long plate wrapped in the middle of itself,
+  // "KS 4RD-" / "982". Both came from centring the row: with centred content the
+  // icon's x is a function of the label's length, so no two rows line up, and
+  // the plate is just more text on one line waiting to break.
+  //
+  // Measured as GEOMETRY, not by reading styles back. "Aligned" is a claim about
+  // where things land on screen, and a style string can be right while the
+  // layout is not.
+  test.describe('picker rows line up', () => {
+    test.beforeEach(async () => { await page.evaluate(() => __seed()); });
+
+    const openPicker = () => page.evaluate(() => {
+      document.getElementById('_truck-picker-ov')?.remove();
+      _dispatchTruckPicker('e-dave');
+      const rows = Array.from(document.querySelectorAll('#_truck-picker-ov button'));
+      const out = rows.map(b => {
+        const icon = b.querySelector('svg');
+        const r = b.getBoundingClientRect();
+        const ir = icon ? icon.getBoundingClientRect() : null;
+        const spans = Array.from(b.querySelectorAll('span > span'));
+        return {
+          iconLeft: ir ? Math.round(ir.left) : null,
+          iconCy: ir ? Math.round(ir.top + ir.height / 2) : null,
+          rowCy: Math.round(r.top + r.height / 2),
+          right: r.right,
+          lines: spans.map(sp => sp.textContent.trim()).filter(Boolean),
+        };
+      });
+      const vw = window.innerWidth, docW = document.documentElement.scrollWidth;
+      document.getElementById('_truck-picker-ov')?.remove();
+      return { out, vw, docW };
+    });
+
+    test('every icon sits at the same x, whatever the label length', async () => {
+      // Three vehicles of very different name lengths plus "Own vehicle".
+      await page.evaluate(() => {
+        vehicles.push({ id: 'v-long', name: 'x', year: '2021', make: 'Ford',
+                        model: 'Transit 250 Extended High Roof', plate: 'KS 4RD-982',
+                        status: 'active', crewDrivable: true });
+      });
+      const { out } = await openPicker();
+      const lefts = [...new Set(out.map(r => r.iconLeft).filter(v => v !== null))];
+      expect(out.length).toBeGreaterThanOrEqual(4);
+      expect(lefts.length).toBe(1);   // one x for every icon in the list
+    });
+
+    test('the icon is centred against the row even when the text wraps', async () => {
+      // The Transit row in the screenshot was two lines tall with the icon
+      // floating against the first one.
+      await page.evaluate(() => {
+        vehicles.push({ id: 'v-long', name: 'x', year: '2021', make: 'Ford',
+                        model: 'Transit 250 Extended High Roof', plate: 'KS 4RD-982',
+                        status: 'active', crewDrivable: true });
+      });
+      const { out } = await openPicker();
+      out.filter(r => r.iconCy !== null).forEach(r => {
+        expect(Math.abs(r.iconCy - r.rowCy)).toBeLessThanOrEqual(2);
+      });
+    });
+
+    test('the plate is its own line under the make and model, never inline', async () => {
+      const { out } = await openPicker();
+      const truck = out.find(r => r.lines[0] && r.lines[0].includes('F-250'));
+      expect(truck).toBeTruthy();
+      // Two lines: the vehicle, then the plate. Not one line joined by a dot,
+      // which is what let it wrap mid-plate.
+      expect(truck.lines[0]).toBe('2019 Ford F-250');
+      expect(truck.lines[1]).toBe('KS 7TR-441');
+      expect(truck.lines[0]).not.toContain('KS');
+    });
+
+    test('a long name plus a plate still fits the screen', async () => {
+      await page.evaluate(() => {
+        vehicles.push({ id: 'v-long', name: 'x', year: '2021', make: 'Ford',
+                        model: 'Transit 250 Extended High Roof Cargo', plate: 'KS 4RD-982',
+                        status: 'active', crewDrivable: true });
+      });
+      const { out, vw, docW } = await openPicker();
+      out.forEach(r => expect(r.right).toBeLessThanOrEqual(vw));
+      expect(docW).toBeLessThanOrEqual(vw + 1);
+    });
+
+    test('the crew picker uses the same row, so both lists match', async () => {
+      const out = await page.evaluate(() => {
+        const realEmp = _isEmployee, realRec = _employeeRecord;
+        _isEmployee = true; _employeeRecord = { id: 'e-sam' };
+        try {
+          localStorage.removeItem('emp_vehicle_' + todayKey());
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          _checkEmployeeVehiclePicker();
+          const rows = Array.from(document.querySelectorAll('#_vehicle-picker-ov button'));
+          const lefts = [...new Set(rows.map(b => {
+            const i = b.querySelector('svg');
+            return i ? Math.round(i.getBoundingClientRect().left) : null;
+          }).filter(v => v !== null))];
+          const first = rows[0];
+          const lines = Array.from(first.querySelectorAll('span > span')).map(s => s.textContent.trim()).filter(Boolean);
+          document.getElementById('_vehicle-picker-ov')?.remove();
+          return { lefts, lines };
+        } finally { _isEmployee = realEmp; _employeeRecord = realRec; }
+      });
+      expect(out.lefts.length).toBe(1);
+      expect(out.lines[1]).toMatch(/^KS /);   // plate on its own line here too
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });
