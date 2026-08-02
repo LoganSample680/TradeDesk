@@ -117,10 +117,26 @@ test.describe('Drive matrix: every origin to every destination', () => {
       const DWELL = 40;
       try {
         // Clean machine, or the previous pair's open leg bleeds into this one.
+        //
+        // Later tests in this file PUSH jobs and rewrite S.officeLat, and every
+        // one of them depends on the shop fence and today's job list still being
+        // what beforeAll set. Rebuilding the fixture per leg costs nothing and
+        // removes a whole class of "this passed alone and failed in the suite".
+        S.officeLat = C.SHOP.lat; S.officeLon = C.SHOP.lon;
+        S.teamTracking = true;
+        jobs.length = 0;
+        jobs.push({ id: 8801, name: 'Matrix Job 1', eventType: 'job', status: 'upcoming',
+                    start: todayKey(), days: 1, lat: C.JOB1.lat, lon: C.JOB1.lon });
+        jobs.push({ id: 8802, name: 'Matrix Job 2', eventType: 'job', status: 'upcoming',
+                    start: todayKey(), days: 1, lat: C.JOB2.lat, lon: C.JOB2.lon });
+        _geoJobCoords = {};        // keyed by job id, so a rebuilt jobs array needs a fresh cache
+        _geoPingBusy = false;      // a ping dropped by the re-entrancy guard logs nothing at all
         _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
         _geoShopArrivedAt = null; _geoDriveStartedAt = null;
         _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
         _geoLastFenceAt = null; _geoLegAtShop = false;
+        _geoLastFenceLoc = null; _geoLegOrigin = null;
+        _geoHomeDwell = null; _geoWasAtHome = false;
         try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
 
         // ── establish the origin ──
@@ -149,6 +165,14 @@ test.describe('Drive matrix: every origin to every destination', () => {
         }
         return {
           drives: rows.filter(r => /^drive/.test(r.source || '')).map(r => ({ m: r.minutes, dest: r.dest_place, job: r.job_id })),
+          // Self-diagnosing on purpose: this spec has failed on WebKit only,
+          // which cannot be run in the dev container, so a bare "expected 1 got
+          // 0" costs a full CI round trip per guess. The machine state names the
+          // link that broke: no fence matched, no origin recorded, no leg opened.
+          dbg: { shop: [S.officeLat, S.officeLon], jobs: jobs.length, places: (places || []).length,
+                 fenceJob: _geoCurrentJob, inShop: _geoWasInShop, place: _geoCurrentPlace,
+                 legOrigin: _geoLegOrigin && _geoLegOrigin.kind, lastFence: !!_geoLastFenceLoc,
+                 driveOpen: !!_geoDriveStartedAt, pingBusy: _geoPingBusy, user: !!_supaUser },
           all: rows.map(r => r.source + ':' + r.minutes),
         };
       } finally { _geoEnqueue = realEnq; _supaUser = realUser; }
@@ -169,7 +193,12 @@ test.describe('Drive matrix: every origin to every destination', () => {
     for (const viaRoad of modes) {
       test(`${from} → ${to} ${viaRoad ? 'via the road' : 'DIRECT (no ping in between)'} logs the leg`, async () => {
         const out = await leg(from, to, viaRoad, 17);
-        expect(out.drives.length, `expected one drive leg, got ${JSON.stringify(out.all)}`).toBe(1);
+        // Self-diagnosing on purpose: this assertion has failed on WebKit only,
+        // which cannot be run in the dev container, so a bare "expected 1 got 0"
+        // costs a whole CI round trip per guess. The machine state says which
+        // link broke: no fence matched, no origin recorded, or no leg opened.
+        expect(out.drives.length,
+          `expected one drive leg.\n  rows=${JSON.stringify(out.all)}\n  state=${JSON.stringify(out.dbg)}`).toBe(1);
         // To the minute: a 17-minute drive is 17 minutes, not 0 and not 17 plus
         // however long the truck was parked at either end.
         expect(out.drives[0].m, `leg minutes, rows=${JSON.stringify(out.all)}`).toBe(17);

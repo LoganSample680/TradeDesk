@@ -2961,8 +2961,16 @@ test.describe('clients.js: exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('client-record audit timeline', () => {
     const AB = 96019001;
-    test('timeline shows lead/sent/opened/signed events with time + captured IP', async () => {
-      const r = await page.evaluate((bidId) => {
+
+    // Every case seeds its own client and bid. They used to share the first
+    // test's leftovers: only the first one built the fixture and the three after
+    // it just re-rendered whatever was still lying around. That holds right up
+    // until something clears the arrays between tests, and then they fail as a
+    // group with empty timelines and a blank certificate, which reads as a
+    // rendering bug rather than as the missing setup it is. A test that cannot
+    // run on its own is not really asserting what it claims to.
+    test.beforeEach(async () => {
+      await page.evaluate((bidId) => {
         clients = clients.filter(c => c.id !== 96019).concat([{ id: 96019, name: 'Audit Client', source: 'Referral', created: '2026-07-08T09:12:00Z' }]);
         bids = bids.filter(b => b.client_id !== 96019).concat([{
           id: bidId, client_id: 96019, client_name: 'Audit Client', status: 'Closed Won', amount: 6400,
@@ -2970,8 +2978,21 @@ test.describe('clients.js: exhaustive coverage', () => {
           signedName: 'Audit Client', paymentMethod: 'card', signIp: '73.202.114.9', signUa: 'iPhone Safari' }]);
         window._proposalViewsByBidClient = { [bidId]: '2026-07-11T19:08:00Z' };
         window._proposalViewsByBidClientIp = { [bidId]: { ip: '73.202.114.9', ua: 'iPhone Safari' } };
+        window._proposalAuditEventsByBid = {};
         window.currentClientId = 96019;
         window._cdTimelineOpen = true;
+        // #cd-timeline-mount lives on pg-client-detail, and two cases below read
+        // the rendered rows with innerText, which is EMPTY for anything on a page
+        // that is not active. They passed only because an earlier test happened
+        // to leave that page open. Activating it here makes the whole block
+        // independent of what ran before it.
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-client-detail')?.classList.add('active');
+      }, AB);
+    });
+
+    test('timeline shows lead/sent/opened/signed events with time + captured IP', async () => {
+      const r = await page.evaluate((bidId) => {
         renderCDTimeline();
         return document.getElementById('cd-timeline-mount').innerHTML;
       }, AB);
