@@ -316,7 +316,15 @@ async function _geoJobLatLng(j){
 // S.officeLat/officeLon is that same address geocoded once (_geoOfficeCoords),
 // so the point and the text describe one place by construction.
 function _geoShopAddr(){
-  try{return [S.baddr,S.bcity,S.state,S.bzip].filter(Boolean).join(', ');}catch(_e){return '';}
+  // "Topeka, KS 66604", not "Topeka, KS, 66604". The state and the zip are one
+  // field to anyone reading it, and a comma between them is the tell that a
+  // machine wrote the address. Every other joiner of these four settings in the
+  // app has the same comma; those print on invoices, so they are not changed
+  // here without the owner seeing it first.
+  try{
+    const cityLine=[S.bcity,[S.state,S.bzip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    return [S.baddr,cityLine].filter(Boolean).join(', ');
+  }catch(_e){return '';}
 }
 function _geoLocOfJob(j){
   if(!j)return null;

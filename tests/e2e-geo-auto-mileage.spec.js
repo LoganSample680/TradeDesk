@@ -1321,6 +1321,31 @@ test.describe('Automatic mileage from drive legs', () => {
       });
       expect(out).toBe('');
     });
+
+    test('a half-filled business address still reads like an address', async () => {
+      // The comma between the state and the zip is the tell that a machine wrote
+      // it. Whatever is missing, what remains has to read the way a person
+      // writes an address.
+      const out = await page.evaluate(() => {
+        const prev = { a: S.baddr, c: S.bcity, s: S.state, z: S.bzip };
+        const at = (o) => { delete S.baddr; delete S.bcity; delete S.state; delete S.bzip;
+                            Object.assign(S, o); return _geoShopAddr(); };
+        const r = {
+          full: at({ baddr: '12 Main St', bcity: 'Topeka', state: 'KS', bzip: '66604' }),
+          noZip: at({ baddr: '12 Main St', bcity: 'Topeka', state: 'KS' }),
+          noState: at({ baddr: '12 Main St', bcity: 'Topeka', bzip: '66604' }),
+          streetOnly: at({ baddr: '12 Main St' }),
+          cityOnly: at({ bcity: 'Topeka', state: 'KS' }),
+        };
+        Object.assign(S, { baddr: prev.a, bcity: prev.c, state: prev.s, bzip: prev.z });
+        return r;
+      });
+      expect(out.full).toBe('12 Main St, Topeka, KS 66604');
+      expect(out.noZip).toBe('12 Main St, Topeka, KS');
+      expect(out.noState).toBe('12 Main St, Topeka, 66604');
+      expect(out.streetOnly).toBe('12 Main St');
+      expect(out.cityOnly).toBe('Topeka, KS');
+    });
   });
 
   // ── The sweep that overwrote correct miles with garbage ───────────────────
