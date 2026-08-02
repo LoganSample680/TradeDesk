@@ -39,15 +39,24 @@ const ESTIM  = '3125 SW 17th St, Topeka, KS 66604';
 const DEPOT  = 'Home Depot, Topeka, KS';
 // Lunch is deliberately NOT an address the app knows or can learn: it is one
 // visit, so it never reaches the repeat-stop threshold, which is exactly the
-// "God knows where" in the script.
+// "God knows where" in the script. The coordinate is only the fallback for a
+// run with no MapKit; where MapKit is up, the test asks Apple for a real
+// restaurant downtown and eats there, because "the app must not bill lunch"
+// only means something if lunch is somewhere Apple actually calls a restaurant.
 const LUNCH  = { lat: 39.0330, lon: -95.6900 };
-
-const runTag = Date.now();
+// Downtown Topeka, the box the lunch search runs in.
+const DOWNTOWN = { lat: 39.0473, lng: -95.6752 };
 
 test.describe('A full Topeka day', () => {
   test.beforeEach(async ({ page }) => { resetLedger(); await signIn(page); });
 
   test('home office → client → Home Depot → lunch → client → estimate → home', async ({ page }) => {
+    // Per RUN, not per module. At module scope both browser projects share one
+    // value (workers:1 loads the file once), so chromium and webkit seeded two
+    // clients with the SAME id into one account and each read the other's
+    // mileage rows back: the first live run reported "8 trips" for a six-leg
+    // day (2026-08-02).
+    const runTag = Date.now();
     // ── Fixtures: the real addresses, resolved by the app's own geocoder ─────
     const geo = await step(page, {
       label: 'resolve the day\'s four addresses',
@@ -97,11 +106,51 @@ test.describe('A full Topeka day', () => {
     // Reported, never silently assumed. On a preview this says mapkit and the
     // "from Apple Maps" requirement is genuinely met; on localhost it says
     // fallback and the distances are real but not Apple's.
+    // `_mapkitReady` is a script-scoped `let`, so it is NOT a window property:
+    // reading window._mapkitReady reported "fallback" on the preview where
+    // MapKit was in fact answering, which is the one place the answer matters.
+    // evaluate() runs inside the page realm, so the bare name resolves.
     const engine = await page.evaluate(() => ({
-      mapkitReady: !!window._mapkitReady,
+      mapkitReady: typeof _mapkitReady !== 'undefined' && !!_mapkitReady,
       host: location.hostname,
     }));
     console.log(`[topeka-day] routing engine: ${engine.mapkitReady ? 'MapKit (Apple Maps)' : 'Valhalla/OSRM fallback'} on ${engine.host}`);
+
+    // ── Where lunch actually is ──────────────────────────────────────────────
+    // Asked of Apple rather than picked by me. The rule under test is "a stop
+    // Apple calls a restaurant is a personal errand and is not billed", and
+    // pointing it at a coordinate I chose would test my guess about downtown
+    // Topeka instead of the rule. No MapKit, no restaurant: the fallback pin is
+    // an anonymous stop, which the app is right to keep, and the expected trip
+    // count below says so out loud rather than quietly passing either way.
+    const lunch = await page.evaluate(async (fb) => {
+      if (typeof _mapkitReady === 'undefined' || !_mapkitReady || typeof mapkit === 'undefined') return { lat: fb.pin.lat, lng: fb.pin.lon, named: false };
+      try {
+        const region = new mapkit.CoordinateRegion(new mapkit.Coordinate(fb.at.lat, fb.at.lng), new mapkit.CoordinateSpan(0.06, 0.06));
+        const places = await new Promise((resolve, reject) => {
+          new mapkit.Search({ region }).search('restaurant', (err, data) => {
+            const list = data && (data.places || data.results);
+            if (err || !list || !list.length) { reject(new Error('no restaurant')); return; }
+            resolve(list);
+          });
+        });
+        const food = places.find(p => p.coordinate && /Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(String(p.pointOfInterestCategory || '')));
+        const p = food || places.find(x => x.coordinate);
+        if (!p) return { lat: fb.pin.lat, lng: fb.pin.lon, named: false };
+        return { lat: p.coordinate.latitude, lng: p.coordinate.longitude,
+                 name: p.name || '', category: p.pointOfInterestCategory || '', named: !!food };
+      } catch (_e) { return { lat: fb.pin.lat, lng: fb.pin.lon, named: false }; }
+    }, { pin: LUNCH, at: DOWNTOWN });
+    console.log(`[topeka-day] lunch: ${lunch.named ? `${lunch.name} (${lunch.category})` : 'an unnamed pin, Apple could not name one'}`);
+    // Six legs get driven. Five of them are business travel. The sixth is only
+    // recognisable as lunch if Apple names the pin, so a run without MapKit
+    // honestly expects six rather than pretending the app knew.
+    const wantTrips = lunch.named ? 5 : 6;
+
+    // Every gps trip already in this account, so the day is measured against
+    // what THIS run wrote. The account is never cleaned up (§12.7), so an
+    // unscoped count reads every previous run's rows too.
+    const priorTrips = await page.evaluate(() => mileage.filter(m => m.gps && m.legKey).map(m => m.id));
 
     // ── Drive the day ────────────────────────────────────────────────────────
     // Each hop: a ping at the origin, a ping out on the road, the clock wound
@@ -113,10 +162,25 @@ test.describe('A full Topeka day', () => {
       if (_geoLastFenceAt) _geoLastFenceAt = new Date(Date.now() - a.minutes * 60000).toISOString();
       await ping(a.to);
       // Sit there for the stated dwell, so time-on-site is a real number.
+      //
+      // Two different clocks, because the app closes the two kinds of arrival at
+      // different moments. Arriving inside a FENCE opens a visit that is closed
+      // when they leave, so winding the arrival back is enough. Arriving
+      // somewhere the app does not recognise only becomes a stop when they pull
+      // out, and the leg IN is not written until that moment either: so "now" is
+      // the departure, the arrival was `dwell` ago, and the drive started
+      // `minutes` before THAT. Winding only the anchor back would date the
+      // arrival before the drive that produced it, and a leg with negative
+      // minutes is dropped, which is exactly how the Home Depot leg went missing
+      // on the first live run (2026-08-02).
       if (a.dwell) {
         if (_geoArrivedAt) _geoArrivedAt = new Date(Date.now() - a.dwell * 60000).toISOString();
         if (_geoPlaceArrivedAt) _geoPlaceArrivedAt = new Date(Date.now() - a.dwell * 60000).toISOString();
         if (_geoShopArrivedAt) _geoShopArrivedAt = new Date(Date.now() - a.dwell * 60000).toISOString();
+        if (_geoStopAnchor) {
+          _geoStopAnchor.at = new Date(Date.now() - a.dwell * 60000).toISOString();
+          _geoDriveStartedAt = new Date(Date.now() - (a.dwell + a.minutes) * 60000).toISOString();
+        }
       }
     }, { to: toKey, minutes, dwell: dwellMinutes || 0 });
 
@@ -167,7 +231,7 @@ test.describe('A full Topeka day', () => {
         expected: 'a drive leg, and a mileage row unless the destination is the lunch stop',
         act: async (p) => {
           const dest = await p.evaluate((k) => (k === 'LUNCH' ? null : window.__day[k]), leg.key);
-          await hop(p, dest || LUNCH, leg.mins, leg.dwell);
+          await hop(p, dest || lunch, leg.mins, leg.dwell);
           return 0;   // the whole point is that the day costs the contractor zero taps
         },
         rule: async (p) => {
@@ -182,26 +246,61 @@ test.describe('A full Topeka day', () => {
       label: 'every drive between known points is measured',
       page: 'mileage', role: 'contractor',
       suspect: 'mileage.js autoLogDriveTrip / _routeDistance',
-      ruleText: 'six legs were driven; the five between known points log measured trips, the lunch leg does not',
-      expected: '5 measured trips, none of them zero miles',
+      ruleText: 'six legs were driven; the five between business points log measured trips, the lunch leg does not',
+      expected: `${wantTrips} measured trips, none of them zero miles, none routed by name`,
       act: async () => 0,
       rule: async (p) => {
-        const out = await p.evaluate(() => {
+        const out = await p.evaluate((prior) => {
+          const seen = new Set(prior);
           // Give any in-flight route calls a moment, then sweep the stragglers.
           return _retryPendingTrips().then(() => mileage
-            .filter(m => m.gps && m.legKey)
-            .map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles, method: m.calc_method, purpose: m.purpose })));
-        });
+            .filter(m => m.gps && m.legKey && !seen.has(m.id))
+            .map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles, method: m.calc_method,
+                         purpose: m.purpose, fromRaw: m.from, toRaw: m.to,
+                         fc: !!m.fromCoord, tc: !!m.toCoord })));
+        }, priorTrips);
         const measured = out.filter(t => t.miles > 0);
-        const pending = out.filter(t => t.calc_method === 'pending_auto');
-        console.log('[topeka-day] trips:\n' + out.map(t => `   ${t.from} → ${t.to}  ${t.miles} mi  ${t.purpose}  (${t.method})`).join('\n'));
+        const stuck = out.filter(t => t.method === 'pending_auto');
+        // An automatic trip has BOTH geocodes by construction, so it must never
+        // reach the address path. When it does, the router is handed the
+        // endpoint's NAME instead: geocoding the literal word "Shop" is what put
+        // a 65.6-mile leg on a day that never left Topeka (2026-08-02).
+        const byName = out.filter(t => t.method === 'address');
+        console.log('[topeka-day] trips:\n' + out.map(t =>
+          `   ${t.from} → ${t.to}  ${t.miles} mi  ${t.purpose}  (${t.method}, coords ${t.fc ? 'y' : 'n'}/${t.tc ? 'y' : 'n'})` +
+          `\n        raw: "${t.fromRaw}" → "${t.toRaw}"`).join('\n'));
         // Real Topeka distances: every one of these hops is inside the city, so
         // a leg over 30 miles means the route resolved to the wrong point.
         const absurd = measured.filter(t => t.miles > 30);
         return {
-          ok: out.length === 5 && measured.length === 5 && !absurd.length && !pending.length,
-          got: `${out.length} trips, ${measured.length} measured, ${pending.length} still pending, ${absurd.length} implausible`,
+          ok: out.length === wantTrips && measured.length === wantTrips && !absurd.length && !stuck.length && !byName.length,
+          got: `${out.length} trips, ${measured.length} measured, ${stuck.length} still pending, ` +
+               `${byName.length} routed by name, ${absurd.length} implausible`,
         };
+      },
+    });
+
+    // The supply stop only drops off the log because Apple named the restaurant.
+    // Without MapKit the app cannot know who is at a pin, keeps the leg as an
+    // honest unnamed stop, and six is the correct answer: stated here rather
+    // than branching silently, so a run that quietly lost MapKit cannot pass by
+    // matching the weaker number.
+    await step(page, {
+      label: 'the lunch leg is the one that did not bill',
+      page: 'mileage', role: 'contractor',
+      suspect: 'mileage.js _autoNameStopTrip / _poiIsPersonal',
+      ruleText: 'a stop Apple calls a restaurant is a personal errand and never reaches the mileage log',
+      expected: lunch.named ? 'no trip ends at the lunch pin' : 'MapKit absent, so lunch stays an unnamed stop',
+      act: async () => 0,
+      rule: async (p) => {
+        const hit = await p.evaluate((a) => {
+          const seen = new Set(a.prior);
+          return mileage.filter(m => m.gps && m.legKey && !seen.has(m.id) && m.toCoord &&
+            Math.abs(m.toCoord.lat - a.lunch.lat) < 0.0005 && Math.abs(m.toCoord.lng - a.lunch.lng) < 0.0005)
+            .map(m => `${m.from_name} → ${m.to_name}`);
+        }, { prior: priorTrips, lunch });
+        const want = lunch.named ? 0 : 1;
+        return { ok: hit.length === want, got: hit.length ? 'billed: ' + hit.join(', ') : 'nothing billed to the lunch pin' };
       },
     });
 
@@ -259,6 +358,34 @@ test.describe('A full Topeka day', () => {
     });
 
     // ── 3. HOME DEPOT, BY NAME ───────────────────────────────────────────────
+    // First on the MILEAGE ROW, before anybody saves a place. This is the row
+    // that has to survive a question a year later, and "Kansas Ave Client →
+    // Stop, 3.1 mi" answers nothing. Nobody typed the name: the leg ended at a
+    // pin the app had never seen, and Apple was asked who was standing there.
+    await step(page, {
+      label: 'the supply leg names the store on the mileage row itself',
+      page: 'mileage', role: 'contractor',
+      suspect: 'mileage.js _autoNameStopTrip / _poiAt',
+      ruleText: 'a leg ending at an unknown pin is named from the business at that pin, and priced as a supply run',
+      expected: engine.mapkitReady ? 'a trip to Home Depot, purpose Supply run' : 'MapKit absent, so the stop stays unnamed',
+      act: async () => 0,
+      rule: async (p) => {
+        const hit = await p.evaluate((prior) => {
+          const seen = new Set(prior);
+          const d = window.__day.DEPOT;
+          return mileage.filter(m => m.gps && m.legKey && !seen.has(m.id) && m.toCoord &&
+            Math.abs(m.toCoord.lat - d.lat) < 0.0005 && Math.abs(m.toCoord.lng - d.lng) < 0.0005)
+            .map(m => ({ to: m.to_name, purpose: m.purpose, miles: m.miles }));
+        }, priorTrips);
+        const t = hit[0];
+        if (!engine.mapkitReady) return { ok: !!t, got: t ? `unnamed stop, ${t.miles} mi` : 'no leg to the supply pin at all' };
+        return {
+          ok: !!t && /home\s*depot/i.test(t.to || '') && t.purpose === 'Supply run',
+          got: t ? `"${t.to}" (${t.purpose}) ${t.miles} mi` : 'no leg to the supply pin at all',
+        };
+      },
+    });
+
     await step(page, {
       label: 'the supply stop comes back as Home Depot and saves as a supply place',
       page: 'places', role: 'contractor',

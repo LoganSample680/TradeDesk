@@ -494,7 +494,53 @@ function autoLogDriveTrip(opts){
       if(typeof renderDash==='function')renderDash();
     }catch(_e){}   // stays pending_auto, _retryPendingTrips sweeps it later
   })();
+  // A leg that ended nowhere the app recognises is only anonymous until we ask.
+  if(to.kind==='stop')_autoNameStopTrip(rec,to);
   return rec;
+}
+// ── Who were they actually parked at ─────────────────────────────────────────
+// A leg ending at an unrecognised stop writes "Stop" for the destination, and a
+// mileage row reading "Shop -> Stop" is not a record anyone could defend a year
+// later. It is not what the contractor would have typed either: they parked at
+// Home Depot, and MapKit already knows the tenant at that pin.
+//
+// This also decides whether the trip belongs on the log AT ALL. Lunch is the
+// case the owner called out (2026-08-02) walking a real Topeka day: the drive to
+// wherever they ate is a personal errand, not business travel, and billing it
+// inflates a deduction they would be the one defending. Food is the only
+// category that disqualifies a stop, and only when Apple actually names it.
+//
+// Everything else STAYS, including a stop nobody can name. A contractor parked
+// mid-workday is far more often at a supply yard or a gate than at a sandwich
+// counter, and dropping a real leg costs them money in a way that keeping an
+// unnamed one does not. Silence from the router is not evidence of lunch.
+async function _autoNameStopTrip(rec,to){
+  try{
+    if(typeof _poiAt!=='function')return;
+    // A stop the geofence already recognised as the declared home office keeps
+    // that name. Asking Apple who is at a residential pin gets the business
+    // across the street, and "Home Office" is the answer that makes the first
+    // and last legs of the day deductible in the first place.
+    if(to.likelyHome)return;
+    const poi=await _poiAt({lat:to.lat,lng:to.lng});
+    const saved=mileage.find(m=>m.id===rec.id);
+    if(!saved||!poi||!poi.name)return;
+    if(_poiIsPersonal(poi.category)){
+      // Taken back out rather than flagged: a personal errand on the mileage log
+      // is clutter the contractor has to read past every time, and the row is
+      // seconds old, so nothing has been looked at yet.
+      const i=mileage.indexOf(saved);
+      if(i<0)return;
+      mileage.splice(i,1);
+    }else{
+      saved.to_name=poi.name;
+      saved.to=poi.name;
+      saved.purpose=_autoTripPurpose({kind:_poiPlaceKind(poi.category)});
+    }
+    saveAll();
+    if(document.getElementById('mil-table'))renderAllMileage();
+    if(typeof renderDash==='function')renderDash();
+  }catch(_e){}
 }
 // What the destination IS decides the business purpose. This is the whole reason
 // automatic mileage can be IRS-complete without asking anyone anything: the
@@ -608,8 +654,17 @@ async function _poiAt(coord){
 function _poiPlaceKind(category){
   const c=String(category||'');
   if(/Store|Hardware|Home|Building|Supply|Warehouse|Wholesale/i.test(c))return 'supply';
-  if(/Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(c))return 'other';
+  if(_poiIsPersonal(c))return 'other';
   return 'supply';
+}
+// The one category that makes a stop PERSONAL rather than a work errand, and so
+// the one that keeps a leg off the mileage log entirely. Deliberately narrow: it
+// only ever subtracts a trip, so a loose pattern here silently costs the
+// contractor deductions they earned. Kept as its own predicate rather than read
+// off _poiPlaceKind's 'other', because that function's catch-all is 'supply' and
+// a future category landing in 'other' must not start deleting trips.
+function _poiIsPersonal(category){
+  return /Restaurant|Cafe|Food|Bakery|Brewery|Bar/i.test(String(category||''));
 }
 async function _routeDistance(fromCoords,toCoords){
   // MapKit Directions, primary

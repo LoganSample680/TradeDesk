@@ -1150,6 +1150,97 @@ test.describe('Automatic mileage from drive legs', () => {
       });
       expect(out).toBe('Ace Supply');
     });
+
+    // ── The leg that ended nowhere the app knew ─────────────────────────────
+    // Found by the owner's Topeka day on a live preview (2026-08-02): the drive
+    // to Home Depot logged as "Kansas Ave Client → Stop", because a supply house
+    // the app has not learned yet is just a coordinate. Nobody is going to type
+    // that name standing in a parking lot, and a row reading "Stop" is not a
+    // record anyone could defend a year later.
+    const stopTrip = (legKey, at) => page.evaluate((a) => {
+      mileage.length = 0;
+      autoLogDriveTrip({
+        from: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
+        to: { lat: a.at.lat, lng: a.at.lng, name: 'Stop', kind: 'stop' },
+        legKey: a.legKey, startedIso: new Date().toISOString(),
+      });
+      return new Promise(r => setTimeout(() => r(mileage.map(m =>
+        ({ to: m.to_name, raw: m.to, purpose: m.purpose }))), 200));
+    }, { legKey, at });
+
+    test('an unknown stop is named from the business standing at it', async () => {
+      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore', geoFails: true });
+      const out = await stopTrip('leg-stop-depot', { lat: 39.03, lng: -95.77 });
+      expect(out.length).toBe(1);
+      expect(out[0].to).toBe('The Home Depot');
+      // Both fields, because the log renders `to` and reports read `to_name`.
+      expect(out[0].raw).toBe('The Home Depot');
+      // What it IS decides what it cost: a store is a supply run.
+      expect(out[0].purpose).toBe('Supply run');
+    });
+
+    test('lunch never reaches the mileage log', async () => {
+      // The owner's rule, walking a real day: "then I'm going God knows where to
+      // get lunch (this shouldn't count)". A drive to a restaurant is a personal
+      // errand, and billing it inflates a deduction they would be defending.
+      await withMapkit({ poiName: "Bobo's Drive In", poiCategory: 'MKPOICategoryRestaurant', geoFails: true });
+      const out = await stopTrip('leg-stop-lunch', { lat: 39.04, lng: -95.70 });
+      expect(out).toEqual([]);
+    });
+
+    test('a stop nobody can name is kept, not binned', async () => {
+      // Silence from Apple is not evidence of lunch. A contractor parked
+      // mid-workday is far more often at a gate or a yard than at a sandwich
+      // counter, and dropping a real leg costs them money that keeping an
+      // unnamed one does not.
+      await withMapkit({ poiFails: true, geoFails: true });
+      const out = await stopTrip('leg-stop-anon', { lat: 39.05, lng: -95.60 });
+      expect(out.length).toBe(1);
+      expect(out[0].to).toBe('Stop');
+      expect(out[0].purpose).toBe('Other');
+    });
+
+    test('a known destination is never sent for a lookup', async () => {
+      // Only kind:'stop' is anonymous. A job, the yard, or a saved place already
+      // carries the name the contractor gave it, and Apple must not rename it.
+      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore', geoFails: true });
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        autoLogDriveTrip({
+          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
+          to: { lat: 39.03, lng: -95.77, name: 'Ace Supply', kind: 'supply' },
+          legKey: 'leg-known-dest', startedIso: new Date().toISOString(),
+        });
+        return new Promise(r => setTimeout(() => r(mileage.map(m => m.to_name)), 200));
+      });
+      expect(out).toEqual(['Ace Supply']);
+    });
+
+    test('food is the only category that deletes a trip', async () => {
+      // Narrow on purpose: this predicate only ever SUBTRACTS a deduction, so a
+      // loose pattern here quietly costs the contractor money. Kept separate
+      // from _poiPlaceKind, whose catch-all is 'supply', so a category landing
+      // in 'other' later cannot start binning legs.
+      const out = await page.evaluate(() => ({
+        restaurant: _poiIsPersonal('MKPOICategoryRestaurant'),
+        cafe: _poiIsPersonal('MKPOICategoryCafe'),
+        bakery: _poiIsPersonal('MKPOICategoryBakery'),
+        store: _poiIsPersonal('MKPOICategoryStore'),
+        hardware: _poiIsPersonal('MKPOICategoryHardwareStore'),
+        gas: _poiIsPersonal('MKPOICategoryGasStation'),
+        blank: _poiIsPersonal(''),
+        nul: _poiIsPersonal(null),
+      }));
+      expect(out.restaurant).toBe(true);
+      expect(out.cafe).toBe(true);
+      expect(out.bakery).toBe(true);
+      expect(out.store).toBe(false);
+      expect(out.hardware).toBe(false);
+      // Fuel is a work cost, not lunch.
+      expect(out.gas).toBe(false);
+      expect(out.blank).toBe(false);
+      expect(out.nul).toBe(false);
+    });
   });
 
   test('no console errors', async () => { await assertNoErrors(page); });
