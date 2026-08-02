@@ -162,21 +162,39 @@ function _fleetDefaultPill(v, status) {
   if(_isEmployee) return '';                 // crew answer this with the daily picker
   if(status !== 'active') return '';         // never attribute new trips to a sold truck
   const actives = getVehicles().filter(x=>(x.status||'active')==='active');
-  const pill = (on, fn, label, icon) => on
-    ? `<button onclick="event.stopPropagation();${fn}" style="display:inline-flex;align-items:center;gap:4px;margin:5px 5px 0 0;font-size:10px;font-weight:800;color:var(--blue);background:var(--blue-lt);border:1px solid var(--blue);border-radius:999px;padding:2px 8px;cursor:pointer;font-family:inherit">${icon||''}${label}</button>`
-    : `<button onclick="event.stopPropagation();${fn}" style="margin:5px 5px 0 0;font-size:10px;font-weight:700;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:999px;padding:2px 8px;cursor:pointer;font-family:inherit">${label}</button>`;
+  // ── One pill, two states, no exceptions ────────────────────────────────────
+  // Owner report (2026-08-01): these did not match and did not line up. Three
+  // reasons, all structural: the on state was inline-flex and the off state was
+  // a default-display button (different baselines), "My truck" carried a truck
+  // icon nobody else had (different width and height), and it was a <span>
+  // while its neighbours were <button>s (different box entirely).
+  //
+  // So ONE style string drives every pill and only the colours change with
+  // state. Fixed line-height and min-height mean an icon could never change a
+  // pill's height again, and the row is a flex container with a gap rather than
+  // margins on individual pills, which is what actually gets them in line.
+  const pillStyle = (on) =>
+    'display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;'+
+    'border-radius:999px;font-size:10px;line-height:1;font-family:inherit;white-space:nowrap;'+
+    (on ? 'font-weight:800;color:var(--blue);background:var(--blue-lt);border:1px solid var(--blue);'
+        : 'font-weight:700;color:var(--text3);background:none;border:1px solid var(--border2);');
+  const pill = (on, label, fn) => fn
+    ? `<button onclick="event.stopPropagation();${fn}" style="${pillStyle(on)}cursor:pointer">${label}</button>`
+    : `<span style="${pillStyle(on)}">${label}</span>`;
   // The crew tag shows at ANY fleet size. A one-truck shop still has to say
   // whether crew may drive it, because it is off by default and dispatch stays
   // silent until something is ticked.
-  const crew = pill(!!v.crewDrivable, `toggleCrewVehicle('${v.id}')`,
-                    v.crewDrivable ? 'Crew truck' : 'Crew can drive');
+  const pills = [pill(!!v.crewDrivable, v.crewDrivable ? 'Crew truck' : 'Crew can drive',
+                      `toggleCrewVehicle('${v.id}')`)];
   // "My truck" is only a question once there are two. With one active vehicle
   // getDefaultVehicle already falls through to it, so asking would be noise.
-  if(actives.length < 2) return crew;
-  const isDefault = String(S.defaultVehicleId||'') === String(v.id);
-  return crew + (isDefault
-    ? `<span style="display:inline-flex;align-items:center;gap:4px;margin:5px 5px 0 0;font-size:10px;font-weight:800;color:var(--blue);background:var(--blue-lt);border:1px solid var(--blue);border-radius:999px;padding:2px 8px">${svgIcon('🚛',{size:10})} My truck</span>`
-    : `<button onclick="event.stopPropagation();setDefaultVehicle('${v.id}')" style="margin:5px 5px 0 0;font-size:10px;font-weight:700;color:var(--text3);background:none;border:1px solid var(--border2);border-radius:999px;padding:2px 8px;cursor:pointer;font-family:inherit">Set as my truck</button>`);
+  if(actives.length >= 2) {
+    const isDefault = String(S.defaultVehicleId||'') === String(v.id);
+    pills.push(isDefault
+      ? pill(true, 'My truck', '')                                   // already the answer, nothing to tap
+      : pill(false, 'Set as my truck', `setDefaultVehicle('${v.id}')`));
+  }
+  return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px">${pills.join('')}</div>`;
 }
 function toggleCrewVehicle(id){
   const v = getVehicles().find(x => String(x.id) === String(id));

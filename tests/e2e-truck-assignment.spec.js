@@ -776,5 +776,133 @@ test.describe('Truck assignment', () => {
     });
   });
 
+  // ── The pills, and the sheet that hands off to the truck prompt ────────────
+  // Owner report (2026-08-01): "My truck / Crew truck buttons aren't styled the
+  // same or in line, assign to employee needs to be center aligned."
+  //
+  // Both measured as geometry. "Same" and "in line" are claims about pixels, and
+  // a style string can read correctly while the boxes do not match.
+  test.describe('fleet pills and the assign sheet', () => {
+    const pillBoxes = (crewOn, isDefault) => page.evaluate((a) => {
+      const keepVeh = vehicles.slice(), keepDef = S.defaultVehicleId, keepEmp = _isEmployee;
+      try {
+        _isEmployee = false;
+        vehicles.length = 0;
+        vehicles.push({ id: 'p1', name: '2019 Ford F-250', status: 'active', crewDrivable: a.crewOn });
+        vehicles.push({ id: 'p2', name: '2021 Ford Transit', status: 'active', crewDrivable: true });
+        S.defaultVehicleId = a.isDefault ? 'p1' : 'p2';
+        const host = document.createElement('div');
+        host.style.cssText = 'position:fixed;top:0;left:0;width:360px';
+        host.innerHTML = _fleetDefaultPill(vehicles[0], 'active');
+        document.body.appendChild(host);
+        const els = Array.from(host.querySelectorAll('button,span')).filter(e => e.textContent.trim());
+        const out = els.map(e => {
+          const r = e.getBoundingClientRect();
+          return { text: e.textContent.trim(), tag: e.tagName,
+                   h: Math.round(r.height), top: Math.round(r.top), bottom: Math.round(r.bottom),
+                   pl: getComputedStyle(e).paddingLeft, fs: getComputedStyle(e).fontSize,
+                   radius: getComputedStyle(e).borderTopLeftRadius };
+        });
+        host.remove();
+        return out;
+      } finally {
+        vehicles.length = 0; keepVeh.forEach(v => vehicles.push(v));
+        S.defaultVehicleId = keepDef; _isEmployee = keepEmp;
+      }
+    }, { crewOn, isDefault });
+
+    test('both pills are the same height and sit on one line', async () => {
+      const out = await pillBoxes(true, true);
+      expect(out.length).toBe(2);
+      // Same box: equal height, and the two tops line up.
+      expect(out[0].h).toBe(out[1].h);
+      expect(Math.abs(out[0].top - out[1].top)).toBeLessThanOrEqual(1);
+      expect(Math.abs(out[0].bottom - out[1].bottom)).toBeLessThanOrEqual(1);
+    });
+
+    test('the same in every combination of states', async () => {
+      // The on state used to be inline-flex and the off state a default-display
+      // button, so they only misaligned in the mixed cases.
+      for (const [crew, def] of [[true, true], [true, false], [false, true], [false, false]]) {
+        const out = await pillBoxes(crew, def);
+        expect(out.length).toBe(2);
+        expect(out[0].h, `crew=${crew} default=${def}`).toBe(out[1].h);
+        expect(Math.abs(out[0].top - out[1].top), `crew=${crew} default=${def}`).toBeLessThanOrEqual(1);
+      }
+    });
+
+    test('same padding, type size and corner radius, whatever the state', async () => {
+      const out = await pillBoxes(true, true);
+      expect(out[0].pl).toBe(out[1].pl);
+      expect(out[0].fs).toBe(out[1].fs);
+      expect(out[0].radius).toBe(out[1].radius);
+    });
+
+    test('the active "My truck" pill carries no icon its neighbours lack', async () => {
+      // It used to, which is exactly why it was taller and wider than the pill
+      // beside it.
+      const icons = await page.evaluate(() => {
+        const keepVeh = vehicles.slice(), keepDef = S.defaultVehicleId, keepEmp = _isEmployee;
+        try {
+          _isEmployee = false;
+          vehicles.length = 0;
+          vehicles.push({ id: 'p1', name: 'A', status: 'active', crewDrivable: true });
+          vehicles.push({ id: 'p2', name: 'B', status: 'active', crewDrivable: true });
+          S.defaultVehicleId = 'p1';
+          const host = document.createElement('div');
+          host.innerHTML = _fleetDefaultPill(vehicles[0], 'active');
+          const n = host.querySelectorAll('svg').length;
+          return n;
+        } finally {
+          vehicles.length = 0; keepVeh.forEach(v => vehicles.push(v));
+          S.defaultVehicleId = keepDef; _isEmployee = keepEmp;
+        }
+      });
+      expect(icons).toBe(0);
+    });
+
+    test('the assign sheet is centred, like the truck prompt it hands off to', async () => {
+      // It was the last bottom sheet in this flow, so assigning slid up from the
+      // bottom and the truck question that followed appeared in the middle: two
+      // halves of one gesture arriving from different directions.
+      const box = await page.evaluate(() => {
+        jobs.length = 0;
+        jobs.push({ id: 7401, name: 'J', eventType: 'job', status: 'upcoming', start: todayKey(), days: 1, client_id: 5501 });
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        _dispatchAssign(7401);
+        const card = document.querySelector('#_assign-ov .zmodal');
+        if (!card) return null;
+        const r = card.getBoundingClientRect();
+        const out = { cx: r.left + r.width / 2, vw: window.innerWidth, vh: window.innerHeight,
+                      top: r.top, bottom: r.bottom, left: r.left, right: r.right,
+                      docW: document.documentElement.scrollWidth };
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return out;
+      });
+      expect(box).not.toBeNull();
+      expect(Math.abs(box.cx - box.vw / 2)).toBeLessThanOrEqual(1);
+      expect(box.top).toBeGreaterThan(0);           // not pinned to an edge
+      expect(box.bottom).toBeLessThan(box.vh);
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(box.vw);
+      expect(box.docW).toBeLessThanOrEqual(box.vw + 1);
+    });
+
+    test('and its rows use the same icon gutter as the truck prompt', async () => {
+      const out = await page.evaluate(() => {
+        jobs.length = 0;
+        jobs.push({ id: 7402, name: 'J', eventType: 'job', status: 'upcoming', start: todayKey(), days: 1, client_id: 5501 });
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        _dispatchAssign(7402);
+        const rows = Array.from(document.querySelectorAll('#_assign-ov button')).filter(b => b.querySelector('svg'));
+        const lefts = [...new Set(rows.map(b => Math.round(b.querySelector('svg').getBoundingClientRect().left)))];
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+        return { rows: rows.length, lefts };
+      });
+      expect(out.rows).toBeGreaterThanOrEqual(3);
+      expect(out.lefts.length).toBe(1);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

@@ -2430,26 +2430,34 @@ function _dispatchSetTruck(empId,mode,vehId,withId){
 function _dispatchAssign(jobId){
   const emps=S.employees||[];
   if(!emps.length){zAlert('No employees added yet. Add team members in the Team tab first.');return;}
-  const tk=todayKey();
-  const ov=document.createElement('div');ov.className='zmodal-overlay';
-  const sheet=document.createElement('div');
-  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
-  sheet.innerHTML='<div style="font-size:15px;font-weight:800;margin-bottom:14px">Assign to Employee</div>'+
-    // Each person carries their truck for the day, so the whole yard's
-    // allocation is readable WHILE assigning rather than after: who is already
-    // in what, and who still needs keys.
+  // Centred, on the shared .zmodal chrome, matching the truck prompt it hands
+  // off to (owner call 2026-08-01). It was the last bottom sheet in this flow,
+  // so assigning a job slid up from the bottom and the truck question that
+  // followed it appeared in the middle: two halves of one gesture arriving from
+  // different directions.
+  const ov=document.createElement('div');ov.id='_assign-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';box.style.textAlign='center';
+  // Each person carries their truck for the day, so the whole yard's allocation
+  // is readable WHILE assigning rather than after: who is already in what, and
+  // who still needs keys. Same row shape as the truck prompt, fixed icon gutter
+  // and all, so the two screens read as one flow.
+  const crewCount=(typeof getCrewVehicles==='function'?getCrewVehicles():[]).length;
+  box.innerHTML='<div class="zmodal-title">Assign to employee</div>'+
     emps.map(e=>{
       const t=_truckDayFor(e.id);
-      const sub=t?_truckDayLabel(t):(((typeof getCrewVehicles==='function'?getCrewVehicles():[]).length)?'Needs a truck':'');
-      return '<button onclick="_dispatchDoAssign('+jobId+',\''+e.id+'\');this.closest(\'.zmodal-overlay\').remove()" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+
-        escHtml(e.name)+' <span style="font-size:11px;font-weight:400;color:var(--text3)">'+escHtml(e.role||'')+'</span>'+
-        (sub?'<span style="display:block;font-size:11px;font-weight:500;color:'+(t?'var(--text2)':'var(--text3)')+';margin-top:2px">'+svgIcon('🚗',{size:11})+' '+escHtml(sub)+'</span>':'')+
+      const sub=t?_truckDayLabel(t):(crewCount?'Needs a truck':'');
+      return '<button onclick="_dispatchDoAssign('+jobId+',\''+e.id+'\');this.closest(\'.zmodal-overlay\').remove()" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:8px;min-height:48px;color:var(--text)">'+
+        '<span style="width:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text2)">'+svgIcon('👤',{size:16})+'</span>'+
+        '<span style="flex:1;min-width:0">'+
+          '<span style="display:block;font-size:14px;font-weight:600;line-height:1.3">'+escHtml(e.name)+
+            (e.role?' <span style="font-size:11px;font-weight:400;color:var(--text3)">'+escHtml(e.role)+'</span>':'')+'</span>'+
+          (sub?'<span style="display:block;font-size:11px;font-weight:500;color:'+(t?'var(--text2)':'var(--text3)')+';line-height:1.35;margin-top:2px">'+escHtml(sub)+'</span>':'')+
+        '</span>'+
       '</button>';
     }).join('')+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">Cancel</button>';
-  ov.appendChild(sheet);document.body.appendChild(ov);
+  ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
 }
 function _dispatchDoAssign(jobId,empId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
