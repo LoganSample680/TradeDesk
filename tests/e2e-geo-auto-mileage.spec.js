@@ -1589,6 +1589,99 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── One drive, one row ────────────────────────────────────────────────────
+  // Owner (2026-08-02): "what happens if somebody hits drive manually, is this
+  // smart enough to only log the one?" It was not. Tapping Drive on a client and
+  // arriving at that client produced a manual row AND an automatic one for the
+  // same journey, which is a double deduction: a worse failure than a missing
+  // row, because it is the kind an auditor finds.
+  test.describe('a manual drive and the geofence watching the same truck', () => {
+    test.afterEach(async () => {
+      await page.evaluate(() => { gps.active = false; gps.startTime = null; });
+    });
+
+    test('the geofence stands down while a manual drive is running', async () => {
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        gps.active = true; gps.startTime = Date.now() - 20 * 60000;
+        // Leg began AFTER they tapped Drive: the same journey they are logging.
+        autoLogDriveTrip({
+          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
+          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
+          legKey: 'manual-overlap', startedIso: new Date(Date.now() - 15 * 60000).toISOString(),
+        });
+        return mileage.length;
+      });
+      expect(out).toBe(0);
+    });
+
+    test('a leg that began before they tapped Drive still logs', async () => {
+      // Not everything that happens during a manual drive IS that drive. A leg
+      // already under way when they tapped is a different journey and suppressing
+      // it would quietly bin a real deduction.
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        gps.active = true; gps.startTime = Date.now();
+        autoLogDriveTrip({
+          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
+          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
+          legKey: 'manual-earlier', startedIso: new Date(Date.now() - 30 * 60000).toISOString(),
+        });
+        return mileage.map(m => m.legKey);
+      });
+      expect(out).toEqual(['manual-earlier']);
+    });
+
+    test('with no manual drive running the geofence logs as normal', async () => {
+      const out = await page.evaluate(() => {
+        mileage.length = 0;
+        gps.active = false; gps.startTime = null;
+        autoLogDriveTrip({
+          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
+          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
+          legKey: 'no-manual', startedIso: new Date().toISOString(),
+        });
+        return mileage.map(m => m.legKey);
+      });
+      expect(out).toEqual(['no-manual']);
+    });
+
+    test('tapping Drive late removes the automatic row it duplicates', async () => {
+      // The geofence cannot stand down for a leg that already closed. Ending the
+      // manual drive is the moment both rows exist, so that is where the
+      // duplicate goes, and the contractor's own number is the one kept.
+      const out = await page.evaluate(async () => {
+        mileage.length = 0;
+        // Automatic row, logged a minute ago.
+        autoLogDriveTrip({
+          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
+          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
+          legKey: 'late-tap', startedIso: new Date(Date.now() - 20 * 60000).toISOString(),
+        });
+        // An older automatic row from earlier in the day must survive untouched.
+        const old = { id: _newId(), date: todayKey(), gps: true, legKey: 'this-morning',
+                      miles: 4.2, loggedAt: new Date(Date.now() - 5 * 3600000).toISOString(),
+                      calc_method: 'auto_route' };
+        mileage.push(old);
+        gps.active = true; gps.startTime = Date.now() - 60000;
+        gps.vehicle = 'Truck'; gps.purpose = 'Job site'; gps.clientId = null;
+        document.getElementById('end-miles-modal')?.remove();
+        const inp = document.createElement('input');
+        inp.id = 'end-miles-modal'; inp.value = '7.5';
+        document.body.appendChild(inp);
+        saveEndDriveModal();
+        inp.remove();
+        await new Promise(r => setTimeout(r, 50));
+        return mileage.map(m => ({ k: m.legKey || 'manual', miles: m.miles, method: m.calc_method }));
+      });
+      // The duplicate is gone, the manual number stands, and the morning's
+      // automatic row is untouched.
+      expect(out.find(t => t.k === 'late-tap')).toBeUndefined();
+      expect(out.find(t => t.k === 'manual').miles).toBe(7.5);
+      expect(out.find(t => t.k === 'this-morning').miles).toBe(4.2);
+    });
+  });
+
   // ── The sweep that overwrote correct miles with garbage ───────────────────
   // Found by the owner's Topeka day on a live preview (2026-08-02). Three of
   // five legs came back routed from their NAME instead of their coordinates:

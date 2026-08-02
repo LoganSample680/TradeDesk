@@ -322,6 +322,20 @@ function saveEndDriveModal(){
     start_coords:gps.startCoords||null,
     calc_method:'gps_time'
   });
+  // The other half of "one drive, one row". The geofence stands down while a
+  // manual drive is running (geo-track.js _geoAutoMileage), but it cannot stand
+  // down for a leg that closed BEFORE they tapped Drive. Tapping Drive late and
+  // then End Drive would leave the automatic row and this one describing the
+  // same journey. The contractor's own number wins, so the automatic duplicate
+  // comes out: they made a deliberate entry, and two rows for one drive is a
+  // double deduction.
+  if(gps.startTime)mileage.forEach((m,i)=>{
+    if(!m||!m.gps||!m.legKey||!m.loggedAt)return;
+    const at=Date.parse(m.loggedAt);
+    if(!at||at<gps.startTime||at>Date.now())return;
+    mileage[i]=null;
+  });
+  for(let i=mileage.length-1;i>=0;i--)if(mileage[i]===null)mileage.splice(i,1);
   gps.active=false;gps.startTime=null;gps.startCoords=null;
   clearInterval(gps.timerInt);
   window._wakeLockRelease&&window._wakeLockRelease();
