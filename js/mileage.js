@@ -314,6 +314,35 @@ function saveEndDriveModal(){
   if(!miles||miles<=0){zAlert('Enter the miles driven.',{title:'Required'});return;}
   if(miles>500){if(!confirm('That\'s '+miles+' miles: does that look right?'))return;}
   const c=getClientById(gps.clientId);
+  // ── Did the geofence already log this journey, better? ────────────────────
+  // The automatic row runs geocode to geocode across the WHOLE drive and Apple
+  // measures it. This one is a number typed from memory across however much of
+  // the drive they remembered to tap through. So when both describe the same
+  // journey the automatic one stays and this entry is not written: two rows for
+  // one drive is a double deduction, and of the two, the measured one is the
+  // record worth defending.
+  //
+  // Owner's case (2026-08-02): tapping Drive MID-drive. The leg began before the
+  // tap and closed after it, so comparing arrival times alone would call it a
+  // different journey and keep both, or keep the shorter one. The leg's START is
+  // what settles it, which is why the automatic row now carries startedIso.
+  const auto=(gps.startTime?mileage.find(m=>{
+    if(!m||!m.gps||!m.legKey||!m.loggedAt)return false;
+    const end=Date.parse(m.loggedAt),start=Date.parse(m.startedIso||m.loggedAt);
+    if(!end||!start)return false;
+    return end>=gps.startTime&&start<=Date.now();   // the two windows overlap
+  }):null);
+  if(auto){
+    gps.active=false;gps.startTime=null;gps.startCoords=null;
+    clearInterval(gps.timerInt);
+    window._wakeLockRelease&&window._wakeLockRelease();
+    closeTopModal();
+    hideDriveBanner();
+    renderDash();
+    showToast('Already logged automatically: '+(auto.miles||0).toFixed(1)+' mi'+
+      (auto.miles?' · '+fmt(auto.miles*IRS())+' deduction':''),'🛰️');
+    return;
+  }
   mileage.unshift({
     id:_newId(),date:todayKey(),vehicle:gps.vehicle,vehicleId:_vehIdForName(gps.vehicle),purpose:gps.purpose,
     loggedAt:new Date().toISOString(),
@@ -322,20 +351,6 @@ function saveEndDriveModal(){
     start_coords:gps.startCoords||null,
     calc_method:'gps_time'
   });
-  // The other half of "one drive, one row". The geofence stands down while a
-  // manual drive is running (geo-track.js _geoAutoMileage), but it cannot stand
-  // down for a leg that closed BEFORE they tapped Drive. Tapping Drive late and
-  // then End Drive would leave the automatic row and this one describing the
-  // same journey. The contractor's own number wins, so the automatic duplicate
-  // comes out: they made a deliberate entry, and two rows for one drive is a
-  // double deduction.
-  if(gps.startTime)mileage.forEach((m,i)=>{
-    if(!m||!m.gps||!m.legKey||!m.loggedAt)return;
-    const at=Date.parse(m.loggedAt);
-    if(!at||at<gps.startTime||at>Date.now())return;
-    mileage[i]=null;
-  });
-  for(let i=mileage.length-1;i>=0;i--)if(mileage[i]===null)mileage.splice(i,1);
   gps.active=false;gps.startTime=null;gps.startCoords=null;
   clearInterval(gps.timerInt);
   window._wakeLockRelease&&window._wakeLockRelease();
@@ -486,22 +501,17 @@ function autoLogDriveTrip(opts){
   // Idempotent on the leg key: the drive leg and this trip carry the same one,
   // so a retried or replayed leg can never bill the same miles twice.
   if(mileage.some(m=>m.legKey===legKey))return null;
-  // ONE DRIVE, ONE ROW. Tapping Drive on a client is the contractor saying they
-  // are logging this trip themselves, and the geofence is watching the same
-  // truck make the same journey: without this, arriving at the client wrote an
-  // automatic row and tapping End Drive wrote a second one. Two rows for one
-  // drive is a double deduction, a worse failure than a missing row, because a
-  // missing row costs them money and a duplicated one is what an auditor finds.
+  // ONE DRIVE, ONE ROW, and the AUTOMATIC one is the row worth keeping. It runs
+  // geocode to geocode over the whole journey and Apple measures it; a manual
+  // entry is a number typed from memory over however much of the drive they
+  // remembered to tap through. So this always writes, and End Drive is where the
+  // duplicate is resolved (saveEndDriveModal), because that is the only moment
+  // both rows exist however the tap was timed.
   //
-  // Scoped to a manual drive that was ALREADY RUNNING when this leg began, so a
-  // leg already under way when they tapped is a different journey and still
-  // logs. Here rather than in _geoAutoMileage because it is a rule about the
-  // mileage log rather than about the account, so it must hold for every caller,
-  // the same reason the endpoint validation above is not left to the caller.
-  if(typeof gps!=='undefined'&&gps&&gps.active){
-    const legStart=Date.parse(opts.startedIso||'');
-    if(!gps.startTime||!legStart||gps.startTime<=legStart)return null;
-  }
+  // This used to suppress the automatic row whenever a manual drive was running,
+  // which was backwards for the case the owner asked about (2026-08-02): tapping
+  // Drive MID-drive would have thrown away the longer, measured record and kept
+  // the partial hand-typed one.
   const veh=_autoTripVehicle();
   // dateKey, not a slice of the ISO string. An ISO timestamp is UTC, so a 7pm
   // supply run in Central time slices to TOMORROW and lands the deduction in the
@@ -518,6 +528,10 @@ function autoLogDriveTrip(opts){
     client_id:to.clientId||null,
     client_name:to.clientId&&typeof getClientById==='function'?((getClientById(to.clientId)||{}).name||''):'',
     notes:'',gps:true,legKey,
+    // WHEN THE LEG BEGAN, not just when it was written. loggedAt is the arrival,
+    // so on its own it cannot say whether this journey was already under way
+    // when somebody tapped Drive, which is exactly what End Drive has to know.
+    startedIso:startedIso||undefined,
     // Carried from the origin descriptor: this leg replaced a personal stop that
     // was passed through, and this is what it takes to put that stop back if a
     // receipt turns up for it later.

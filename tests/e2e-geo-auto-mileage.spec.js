@@ -1589,96 +1589,132 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
-  // ── One drive, one row ────────────────────────────────────────────────────
-  // Owner (2026-08-02): "what happens if somebody hits drive manually, is this
-  // smart enough to only log the one?" It was not. Tapping Drive on a client and
-  // arriving at that client produced a manual row AND an automatic one for the
-  // same journey, which is a double deduction: a worse failure than a missing
-  // row, because it is the kind an auditor finds.
+  // ── One drive, one row, and the measured one wins ─────────────────────────
+  // Owner (2026-08-02), two questions a week apart. First: "is this smart enough
+  // to only log the one?" It was not, and tapping Drive on a client produced a
+  // manual row AND an automatic one for the same journey, which is a double
+  // deduction. Then: "is the manual drive smart enough to persist the longer
+  // automated record if somebody starts it mid drive?" It was not that either,
+  // and the first fix made it worse by throwing the measured row away.
+  //
+  // The rule that answers both: the AUTOMATIC row is the record worth keeping.
+  // It runs geocode to geocode across the whole drive and Apple measures it. A
+  // manual entry is a number typed from memory across however much of the drive
+  // they remembered to tap through. So the automatic row always writes, and End
+  // Drive resolves the duplicate, because that is the only moment both rows
+  // exist however the tap was timed.
   test.describe('a manual drive and the geofence watching the same truck', () => {
+    const endDrive = (miles) => page.evaluate((m) => {
+      document.getElementById('end-miles-modal')?.remove();
+      const inp = document.createElement('input');
+      inp.id = 'end-miles-modal'; inp.value = String(m);
+      document.body.appendChild(inp);
+      saveEndDriveModal();
+      inp.remove();
+      return mileage.map(r => ({ k: r.legKey || 'manual', miles: r.miles, method: r.calc_method }));
+    }, miles);
+
+    test.beforeEach(async () => {
+      await page.evaluate(() => {
+        mileage.length = 0;
+        gps.vehicle = 'Truck'; gps.purpose = 'Job site'; gps.clientId = null;
+      });
+    });
     test.afterEach(async () => {
       await page.evaluate(() => { gps.active = false; gps.startTime = null; });
     });
 
-    test('the geofence stands down while a manual drive is running', async () => {
+    test('starting the drive MID-drive keeps the longer measured record', async () => {
+      // The leg began at 8:00 and they tapped Drive at 8:10. The automatic row
+      // covers the whole journey; their typed number covers the tail of it.
       const out = await page.evaluate(() => {
-        mileage.length = 0;
-        gps.active = true; gps.startTime = Date.now() - 20 * 60000;
-        // Leg began AFTER they tapped Drive: the same journey they are logging.
         autoLogDriveTrip({
           from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
           to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
-          legKey: 'manual-overlap', startedIso: new Date(Date.now() - 15 * 60000).toISOString(),
+          legKey: 'mid-drive', startedIso: new Date(Date.now() - 20 * 60000).toISOString(),
         });
+        mileage[0].miles = 12.4; mileage[0].calc_method = 'auto_route';
+        gps.active = true; gps.startTime = Date.now() - 10 * 60000;
         return mileage.length;
       });
-      expect(out).toBe(0);
+      expect(out).toBe(1);
+      const rows = await endDrive(5);
+      // One row, and it is the measured one, not the 5 they typed.
+      expect(rows.length).toBe(1);
+      expect(rows[0].k).toBe('mid-drive');
+      expect(rows[0].miles).toBe(12.4);
+      expect(rows[0].method).toBe('auto_route');
     });
 
-    test('a leg that began before they tapped Drive still logs', async () => {
-      // Not everything that happens during a manual drive IS that drive. A leg
-      // already under way when they tapped is a different journey and suppressing
-      // it would quietly bin a real deduction.
-      const out = await page.evaluate(() => {
-        mileage.length = 0;
-        gps.active = true; gps.startTime = Date.now();
+    test('tapping Drive before setting off is the same answer', async () => {
+      const rows = await page.evaluate(() => {
+        gps.active = true; gps.startTime = Date.now() - 15 * 60000;
         autoLogDriveTrip({
           from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
           to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
-          legKey: 'manual-earlier', startedIso: new Date(Date.now() - 30 * 60000).toISOString(),
+          legKey: 'tapped-first', startedIso: new Date(Date.now() - 14 * 60000).toISOString(),
         });
-        return mileage.map(m => m.legKey);
+        mileage[0].miles = 9.1; mileage[0].calc_method = 'auto_route';
+        return mileage.length;
       });
-      expect(out).toEqual(['manual-earlier']);
+      // The automatic row is written either way now: suppressing it was the
+      // thing that lost the measured record when the tap came mid-drive.
+      expect(rows).toBe(1);
+      const after = await endDrive(4);
+      expect(after.length).toBe(1);
+      expect(after[0].miles).toBe(9.1);
     });
 
-    test('with no manual drive running the geofence logs as normal', async () => {
-      const out = await page.evaluate(() => {
-        mileage.length = 0;
-        gps.active = false; gps.startTime = null;
-        autoLogDriveTrip({
-          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
-          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
-          legKey: 'no-manual', startedIso: new Date().toISOString(),
-        });
-        return mileage.map(m => m.legKey);
+    test('with no automatic row the manual entry is the record', async () => {
+      // Tracking off, or a leg the geofence never saw. Their number is all there
+      // is and must not be discarded.
+      const rows = await page.evaluate(() => {
+        gps.active = true; gps.startTime = Date.now() - 10 * 60000;
+        return mileage.length;
       });
-      expect(out).toEqual(['no-manual']);
+      expect(rows).toBe(0);
+      const after = await endDrive(7.5);
+      expect(after.length).toBe(1);
+      expect(after[0].k).toBe('manual');
+      expect(after[0].miles).toBe(7.5);
+      expect(after[0].method).toBe('gps_time');
     });
 
-    test('tapping Drive late removes the automatic row it duplicates', async () => {
-      // The geofence cannot stand down for a leg that already closed. Ending the
-      // manual drive is the moment both rows exist, so that is where the
-      // duplicate goes, and the contractor's own number is the one kept.
-      const out = await page.evaluate(async () => {
-        mileage.length = 0;
-        // Automatic row, logged a minute ago.
-        autoLogDriveTrip({
-          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
-          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
-          legKey: 'late-tap', startedIso: new Date(Date.now() - 20 * 60000).toISOString(),
-        });
-        // An older automatic row from earlier in the day must survive untouched.
-        const old = { id: _newId(), date: todayKey(), gps: true, legKey: 'this-morning',
-                      miles: 4.2, loggedAt: new Date(Date.now() - 5 * 3600000).toISOString(),
-                      calc_method: 'auto_route' };
-        mileage.push(old);
-        gps.active = true; gps.startTime = Date.now() - 60000;
-        gps.vehicle = 'Truck'; gps.purpose = 'Job site'; gps.clientId = null;
+    test('an automatic row from earlier in the day is not mistaken for this drive', async () => {
+      const after = await page.evaluate(async () => {
+        mileage.push({ id: _newId(), date: todayKey(), gps: true, legKey: 'this-morning',
+                       miles: 4.2, calc_method: 'auto_route',
+                       startedIso: new Date(Date.now() - 6 * 3600000).toISOString(),
+                       loggedAt: new Date(Date.now() - 5 * 3600000).toISOString() });
+        gps.active = true; gps.startTime = Date.now() - 10 * 60000;
         document.getElementById('end-miles-modal')?.remove();
         const inp = document.createElement('input');
-        inp.id = 'end-miles-modal'; inp.value = '7.5';
+        inp.id = 'end-miles-modal'; inp.value = '6';
         document.body.appendChild(inp);
         saveEndDriveModal();
         inp.remove();
-        await new Promise(r => setTimeout(r, 50));
-        return mileage.map(m => ({ k: m.legKey || 'manual', miles: m.miles, method: m.calc_method }));
+        return mileage.map(r => ({ k: r.legKey || 'manual', miles: r.miles }));
       });
-      // The duplicate is gone, the manual number stands, and the morning's
-      // automatic row is untouched.
-      expect(out.find(t => t.k === 'late-tap')).toBeUndefined();
-      expect(out.find(t => t.k === 'manual').miles).toBe(7.5);
-      expect(out.find(t => t.k === 'this-morning').miles).toBe(4.2);
+      // Both survive: they are different journeys hours apart.
+      expect(after.length).toBe(2);
+      expect(after.find(t => t.k === 'this-morning').miles).toBe(4.2);
+      expect(after.find(t => t.k === 'manual').miles).toBe(6);
+    });
+
+    test('the automatic row records when the leg BEGAN, not just when it landed', async () => {
+      // loggedAt is the arrival. Without the start there is no way to tell a
+      // journey already under way from one that began after the tap, which is
+      // the whole question.
+      const out = await page.evaluate(() => {
+        const iso = new Date(Date.now() - 25 * 60000).toISOString();
+        autoLogDriveTrip({
+          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
+          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
+          legKey: 'has-start', startedIso: iso,
+        });
+        return { stored: mileage[0].startedIso, iso };
+      });
+      expect(out.stored).toBe(out.iso);
     });
   });
 
