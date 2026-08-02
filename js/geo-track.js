@@ -312,6 +312,12 @@ async function _geoJobLatLng(j){
 // used, so the mileage row and the geofence can never disagree about where a
 // job is. Name prefers the client, because "Miller residence" is what reads on
 // a mileage log; the job's own name is the fallback.
+// The yard's street address, the one already on file as the business address.
+// S.officeLat/officeLon is that same address geocoded once (_geoOfficeCoords),
+// so the point and the text describe one place by construction.
+function _geoShopAddr(){
+  try{return [S.baddr,S.bcity,S.state,S.bzip].filter(Boolean).join(', ');}catch(_e){return '';}
+}
 function _geoLocOfJob(j){
   if(!j)return null;
   const c=_geoJobCoords[j.id];
@@ -420,10 +426,16 @@ async function _geoOnPing(pos){
   // The GEOCODE of whatever contains us, resolved while the fixtures that
   // produced `cur` are still in scope. Everything downstream measures distance
   // between two of these, never between two raw fixes.
+  // The `addr` on each is what READS on the mileage row. It is never what gets
+  // measured: the distance always comes from the two coordinates above, because
+  // an address has to be guessed back into a point and these endpoints are not
+  // all addresses to begin with. But an IRS log that says "Shop -> Stop" is not
+  // a log, so every endpoint that HAS a street address carries it (owner,
+  // 2026-08-02: "shouldn't it do address to address?").
   const curLoc=!cur?null
     :cur.k==='job'?_geoLocOfJob(insideJob)
-    :cur.k==='shop'?{lat:shopC.lat,lng:shopC.lng,name:'Shop',kind:'shop'}
-    :{lat:atPlace.lat,lng:atPlace.lon,name:atPlace.name||'Place',kind:atPlace.kind||'other',placeId:atPlaceId};
+    :cur.k==='shop'?{lat:shopC.lat,lng:shopC.lng,name:'Shop',kind:'shop',addr:_geoShopAddr()}
+    :{lat:atPlace.lat,lng:atPlace.lon,name:atPlace.name||'Place',kind:atPlace.kind||'other',placeId:atPlaceId,addr:atPlace.addr||''};
   const prev=_geoCurrentJob?{k:'job',id:String(_geoCurrentJob)}
             :_geoLegAtShop?{k:'shop',id:'shop'}
             :_geoCurrentPlace?{k:'place',id:String(_geoCurrentPlace)}

@@ -537,8 +537,14 @@ async function _autoNameStopTrip(rec,to){
     if(to.likelyHome)return;
     const poi=await _poiAt({lat:to.lat,lng:to.lng});
     const saved=mileage.find(m=>m.id===rec.id);
-    if(!saved||!poi||!poi.name)return;
-    if(_poiIsPersonal(poi.category)){
+    if(!saved||!poi)return;
+    if(!poi.name){
+      // Apple knows the address but not a tenant. The stop stays "Stop", which
+      // is honest, and the row gains the street address, which is what makes it
+      // readable a year later.
+      if(!poi.addr)return;
+      saved.to=poi.addr;
+    }else if(_poiIsPersonal(poi.category)){
       // Taken back out rather than flagged: a personal errand on the mileage log
       // is clutter the contractor has to read past every time, and the row is
       // seconds old, so nothing has been looked at yet.
@@ -546,8 +552,11 @@ async function _autoNameStopTrip(rec,to){
       if(i<0)return;
       mileage.splice(i,1);
     }else{
+      // Name and address both, the shape an IRS log wants: WHO they went to,
+      // and WHERE that is. `to_name` is what reads on the row, `to` is the
+      // address column the manual log already uses for the same thing.
       saved.to_name=poi.name;
-      saved.to=poi.name;
+      saved.to=poi.addr||poi.name;
       saved.purpose=_autoTripPurpose({kind:_poiPlaceKind(poi.category)});
     }
     saveAll();
@@ -645,7 +654,7 @@ async function _poiAt(coord){
         s.search((err,data)=>{ if(err||!data||!data.places||!data.places.length){reject(new Error('poi'));return;} resolve(data.places); });
       });
       const p=res[0];
-      if(p&&p.name)return {name:p.name,category:p.pointOfInterestCategory||''};
+      if(p&&p.name)return {name:p.name,category:p.pointOfInterestCategory||'',addr:p.formattedAddress||''};
     }
   }catch(_e){}
   try{
@@ -656,8 +665,14 @@ async function _poiAt(coord){
       });
     });
     // Only a NAME, never the formatted address: "1100 SW Wanamaker Rd" tells the
-    // contractor nothing they did not already know from the pin.
-    if(p&&p.name&&p.name!==p.formattedAddress)return {name:p.name,category:p.pointOfInterestCategory||''};
+    // contractor nothing they did not already know from the pin, so it must not
+    // be offered as what the place is CALLED. It is still worth having as the
+    // address though, which is why it comes back on its own field with a null
+    // name rather than as nothing at all: every caller already guards on
+    // poi.name, so a nameless answer reads the same as no answer to them, and
+    // the mileage row gets a street address it otherwise would not have.
+    if(p&&p.name&&p.name!==p.formattedAddress)return {name:p.name,category:p.pointOfInterestCategory||'',addr:p.formattedAddress||''};
+    if(p&&p.formattedAddress)return {name:null,category:'',addr:p.formattedAddress};
   }catch(_e){}
   return null;
 }

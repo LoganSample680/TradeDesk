@@ -375,13 +375,17 @@ test.describe('A full Topeka day', () => {
           const d = window.__day.DEPOT;
           return mileage.filter(m => m.gps && m.legKey && !seen.has(m.id) && m.toCoord &&
             Math.abs(m.toCoord.lat - d.lat) < 0.0005 && Math.abs(m.toCoord.lng - d.lng) < 0.0005)
-            .map(m => ({ to: m.to_name, purpose: m.purpose, miles: m.miles }));
+            .map(m => ({ to: m.to_name, addr: m.to, purpose: m.purpose, miles: m.miles }));
         }, priorTrips);
         const t = hit[0];
         if (!engine.mapkitReady) return { ok: !!t, got: t ? `unnamed stop, ${t.miles} mi` : 'no leg to the supply pin at all' };
+        // A street address too, not just the name. The distance is measured
+        // between coordinates, but the ROW has to read like a record: who they
+        // went to, and where that is.
+        const hasStreet = /\d/.test(t && t.addr || '') && (t.addr || '') !== (t.to || '');
         return {
-          ok: !!t && /home\s*depot/i.test(t.to || '') && t.purpose === 'Supply run',
-          got: t ? `"${t.to}" (${t.purpose}) ${t.miles} mi` : 'no leg to the supply pin at all',
+          ok: !!t && /home\s*depot/i.test(t.to || '') && t.purpose === 'Supply run' && hasStreet,
+          got: t ? `"${t.to}" at "${t.addr}" (${t.purpose}) ${t.miles} mi` : 'no leg to the supply pin at all',
         };
       },
     });

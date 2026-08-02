@@ -1031,7 +1031,7 @@ test.describe('Automatic mileage from drive legs', () => {
         PointsOfInterestSearch: function () {
           this.search = (cb) => c.poiFails
             ? cb(new Error('no poi'))
-            : cb(null, { places: [{ name: c.poiName, pointOfInterestCategory: c.poiCategory }] });
+            : cb(null, { places: [{ name: c.poiName, pointOfInterestCategory: c.poiCategory, formattedAddress: c.poiAddr }] });
         },
         Geocoder: function () {
           this.reverseLookup = (co, cb) => c.geoFails
@@ -1069,7 +1069,29 @@ test.describe('Automatic mileage from drive legs', () => {
       // they did not already know from the pin.
       await withMapkit({ poiFails: true, geoName: '1100 SW Wanamaker Rd', geoAddr: '1100 SW Wanamaker Rd' });
       const out = await page.evaluate(() => _poiAt({ lat: 39.06, lng: -95.67 }));
-      expect(out).toBeNull();
+      // This used to be a bare null and the address was discarded with it. The
+      // rule it was protecting is unchanged, the NAME is still null and every
+      // caller guards on that, so nothing offers a street address as what a
+      // supplier is called. The address itself now comes back, because a mileage
+      // row reading "Shop -> Stop" is not a record anyone could defend and the
+      // address is the one thing Apple did know (owner, 2026-08-02).
+      expect(out.name).toBeNull();
+      expect(out.addr).toBe('1100 SW Wanamaker Rd');
+    });
+
+    test('the modal still offers nothing when all Apple has is an address', async () => {
+      // The above changed _poiAt's shape, so prove the place modal is unmoved:
+      // it guards on poi.name, and a nameless answer must read as no answer.
+      await withMapkit({ poiFails: true, geoName: '1100 SW Wanamaker Rd', geoAddr: '1100 SW Wanamaker Rd' });
+      const out = await page.evaluate(async () => {
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 39.06, -95.67);
+        await new Promise(r => setTimeout(r, 150));
+        const v = document.getElementById('place-name').value;
+        document.getElementById('place-modal')?.remove();
+        return v;
+      });
+      expect(out).toBe('');
     });
 
     test('no MapKit, no answer, and no throw', async () => {
@@ -1169,14 +1191,27 @@ test.describe('Automatic mileage from drive legs', () => {
     }, { legKey, at });
 
     test('an unknown stop is named from the business standing at it', async () => {
-      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore', geoFails: true });
+      await withMapkit({ poiName: 'The Home Depot', poiCategory: 'MKPOICategoryStore',
+                        poiAddr: '1100 SW Wanamaker Rd, Topeka, KS 66604', geoFails: true });
       const out = await stopTrip('leg-stop-depot', { lat: 39.03, lng: -95.77 });
       expect(out.length).toBe(1);
       expect(out[0].to).toBe('The Home Depot');
-      // Both fields, because the log renders `to` and reports read `to_name`.
-      expect(out[0].raw).toBe('The Home Depot');
+      // WHO they went to and WHERE that is, the shape an IRS log wants. The
+      // distance is still measured between the two coordinates, never between
+      // these two strings.
+      expect(out[0].raw).toBe('1100 SW Wanamaker Rd, Topeka, KS 66604');
       // What it IS decides what it cost: a store is a supply run.
       expect(out[0].purpose).toBe('Supply run');
+    });
+
+    test('a nameless stop still gets its street address', async () => {
+      // Apple knows the building but not the tenant. "Stop" is honest about what
+      // the app knows; the address is what makes the row readable.
+      await withMapkit({ poiFails: true, geoName: '900 N Kansas Ave', geoAddr: '900 N Kansas Ave' });
+      const out = await stopTrip('leg-stop-addr', { lat: 39.07, lng: -95.66 });
+      expect(out.length).toBe(1);
+      expect(out[0].to).toBe('Stop');
+      expect(out[0].raw).toBe('900 N Kansas Ave');
     });
 
     test('lunch never reaches the mileage log', async () => {
@@ -1240,6 +1275,51 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.gas).toBe(false);
       expect(out.blank).toBe(false);
       expect(out.nul).toBe(false);
+    });
+  });
+
+  // ── What READS on the row, versus what gets MEASURED ──────────────────────
+  // Owner, 2026-08-02: "shouldn't it do address to address?" Not for the
+  // distance, no: an address has to be guessed back into a point, and half of
+  // these endpoints are not addresses at all. But the ROW has to read like a
+  // record, so every endpoint that has a street address carries it.
+  test.describe('street addresses on an automatic trip', () => {
+    test('the yard travels as its business address', async () => {
+      const out = await page.evaluate(() => {
+        const prev = { a: S.baddr, c: S.bcity, s: S.state, z: S.bzip };
+        S.baddr = '2015 SW Randolph Ave'; S.bcity = 'Topeka'; S.state = 'KS'; S.bzip = '66604';
+        const addr = _geoShopAddr();
+        mileage.length = 0;
+        autoLogDriveTrip({
+          from: { lat: 39.03, lng: -95.71, name: 'Shop', kind: 'shop', addr },
+          to: { lat: 39.05, lng: -95.67, name: 'Miller residence', kind: 'job', addr: '309 S Kansas Ave, Topeka, KS' },
+          legKey: 'leg-shop-addr', startedIso: new Date().toISOString(),
+        });
+        const row = { from: mileage[0].from, fromName: mileage[0].from_name, to: mileage[0].to,
+                      fc: mileage[0].fromCoord, tc: mileage[0].toCoord };
+        Object.assign(S, { baddr: prev.a, bcity: prev.c, state: prev.s, bzip: prev.z });
+        return { addr, row };
+      });
+      expect(out.addr).toBe('2015 SW Randolph Ave, Topeka, KS 66604');
+      expect(out.row.from).toBe('2015 SW Randolph Ave, Topeka, KS 66604');
+      // The friendly name is still what the row is labelled with.
+      expect(out.row.fromName).toBe('Shop');
+      expect(out.row.to).toBe('309 S Kansas Ave, Topeka, KS');
+      // And the coordinates are on the row regardless, because THEY are what
+      // the distance is measured between.
+      expect(out.row.fc).toEqual({ lat: 39.03, lng: -95.71 });
+      expect(out.row.tc).toEqual({ lat: 39.05, lng: -95.67 });
+    });
+
+    test('no business address on file is not an error', async () => {
+      const out = await page.evaluate(() => {
+        const prev = { a: S.baddr, c: S.bcity, s: S.state, z: S.bzip };
+        delete S.baddr; delete S.bcity; delete S.state; delete S.bzip;
+        const addr = _geoShopAddr();
+        Object.assign(S, { baddr: prev.a, bcity: prev.c, state: prev.s, bzip: prev.z });
+        return addr;
+      });
+      expect(out).toBe('');
     });
   });
 
