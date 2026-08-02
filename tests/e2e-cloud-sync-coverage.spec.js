@@ -269,62 +269,56 @@ test.describe('Cloud sync core, uncovered function coverage', () => {
     expect(r.storedNone).toBe('none');
   });
 
-  // ── _dispatch reorder, seed jobs, assert precise order + boundary no-ops ──
-  test('_dispatchMoveUp / _dispatchMoveDown: reorder dispatchOrder with boundary no-ops', async () => {
+  // ── _dispatch reorder ─────────────────────────────────────────────────────
+  // The arrows are GONE, replaced by dragging a grip (CLAUDE.md §7: deleted, not
+  // hidden). This used to drive _dispatchMoveUp/_dispatchMoveDown, and because
+  // it self-skipped when they were missing it went on "passing" the moment they
+  // were removed, which is the failure mode §7.1 exists to prevent. It now
+  // asserts they are gone and tests what replaced them.
+  test('the reorder arrows are gone, and dragging writes the same order', async () => {
     const r = await page.evaluate(() => {
-      if (typeof _dispatchMoveUp !== 'function' || typeof _dispatchMoveDown !== 'function'
-        || typeof jobs === 'undefined' || typeof S === 'undefined' || typeof todayKey !== 'function') return { skip: true };
-      try {
-        const tk = todayKey();
-        const empId = 'emp-dispatch-1';
-        S.employees = S.employees || [];
-        if (!S.employees.some(e => e.id === empId)) S.employees.push({ id: empId, name: 'Reorder Tester', role: 'tech' });
-        // Seed 3 assigned jobs in known order 0,1,2
-        const ids = [770001, 770002, 770003];
-        ids.forEach((id, i) => {
-          if (!jobs.some(j => j.id === id)) jobs.push({ id });
-          const j = jobs.find(x => x.id === id);
-          j.assignedTo = empId; j.assignedDate = tk; j.dispatchOrder = i;
-          j.client_id = null; j.clientName = 'Reorder ' + i; j.start = tk; j.days = 1;
-        });
-        const orderOf = () => jobs.filter(j => String(j.assignedTo) === String(empId) && j.assignedDate === tk)
-          .sort((a, b) => (a.dispatchOrder || 0) - (b.dispatchOrder || 0)).map(j => j.id);
+      const tk = todayKey();
+      const empId = 'emp-dispatch-1';
+      S.employees = S.employees || [];
+      if (!S.employees.some(e => e.id === empId)) S.employees.push({ id: empId, name: 'Reorder Tester', role: 'tech' });
+      const ids = [770001, 770002, 770003];
+      ids.forEach((id, i) => {
+        if (!jobs.some(j => j.id === id)) jobs.push({ id });
+        const j = jobs.find(x => x.id === id);
+        j.assignedTo = empId; j.dispatchOrder = i;
+        j.client_id = null; j.clientName = 'Reorder ' + i; j.start = tk; j.days = 1;
+      });
+      const orderOf = () => jobs.filter(j => String(j.assignedTo) === String(empId))
+        .sort((a, b) => (a.dispatchOrder || 0) - (b.dispatchOrder || 0)).map(j => j.id);
 
-        const initial = orderOf();                                  // [770001,770002,770003]
-        _dispatchMoveDown(770001, empId);                           // first → second
-        const afterDown = orderOf();                                // [770002,770001,770003]
-        _dispatchMoveUp(770001, empId);                             // back to first
-        const afterUp = orderOf();                                  // [770001,770002,770003]
-
-        // Boundary: moving the top item up is a no-op
-        const beforeTopUp = orderOf();
-        _dispatchMoveUp(770001, empId);
-        const afterTopUp = orderOf();
-        // Boundary: moving the bottom item down is a no-op
-        const beforeBotDown = orderOf();
-        _dispatchMoveDown(770003, empId);
-        const afterBotDown = orderOf();
-        // Unknown job id → no throw, no change
-        _dispatchMoveUp(999999, empId);
-        _dispatchMoveDown(999999, empId);
-        const afterUnknown = orderOf();
-
-        return {
-          ok: true, initial, afterDown, afterUp,
-          topNoop: JSON.stringify(beforeTopUp) === JSON.stringify(afterTopUp),
-          botNoop: JSON.stringify(beforeBotDown) === JSON.stringify(afterBotDown),
-          unknownNoop: JSON.stringify(afterUnknown) === JSON.stringify(afterBotDown),
-        };
-      } catch (e) { return { ok: false, error: e.message }; }
+      const initial = orderOf();
+      _dispatchSetOrder(['770002', '770001', '770003'], empId);
+      const afterDrag = orderOf();
+      // A job belonging to somebody else is never reordered by another person's
+      // list, however the ids arrive.
+      const other = 770004;
+      if (!jobs.some(j => j.id === other)) jobs.push({ id: other, assignedTo: 'someone-else', dispatchOrder: 9, start: tk, days: 1 });
+      _dispatchSetOrder(['770004'], empId);
+      const otherUntouched = jobs.find(j => j.id === other).dispatchOrder === 9;
+      // Unknown ids and junk input are no-ops, not throws.
+      let threw = false;
+      try { _dispatchSetOrder(['999999'], empId); _dispatchSetOrder(null, empId); _dispatchSetOrder(); }
+      catch (e) { threw = true; }
+      return {
+        gone: typeof window._dispatchMoveUp === 'undefined' && typeof window._dispatchMoveDown === 'undefined',
+        hasSetter: typeof _dispatchSetOrder === 'function',
+        initial, afterDrag, otherUntouched, threw,
+        afterJunk: orderOf(),
+      };
     });
-    if (r.skip) return;
-    expect(r.ok).toBe(true);
+    // §7.1: the old entry points must be absent, not merely unused.
+    expect(r.gone).toBe(true);
+    expect(r.hasSetter).toBe(true);
     expect(r.initial).toEqual([770001, 770002, 770003]);
-    expect(r.afterDown).toEqual([770002, 770001, 770003]);
-    expect(r.afterUp).toEqual([770001, 770002, 770003]);
-    expect(r.topNoop).toBe(true);
-    expect(r.botNoop).toBe(true);
-    expect(r.unknownNoop).toBe(true);
+    expect(r.afterDrag).toEqual([770002, 770001, 770003]);
+    expect(r.otherUntouched).toBe(true);
+    expect(r.threw).toBe(false);
+    expect(r.afterJunk).toEqual([770002, 770001, 770003]);
   });
 
   test('_dispatchUnassign: clears assignment via zConfirm without throwing', async () => {

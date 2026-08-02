@@ -2239,8 +2239,108 @@ function _copyInviteLink(link){
 }
 
 // ── Dispatch Board ───────────────────────────────────────────────────────────
+// ── What is actually happening out there, right now ─────────────────────────
+// Every competitor sells "real-time status from the field" and on every one of
+// them a technician has to TAP en route and arrived. Our geofence already knows:
+// arrivals and departures are logged with no tap at all. It was simply never
+// read back onto the board it belongs on.
+//
+//   • on site now  , a breadcrumb ping in the last 10 minutes carrying this job
+//   • arrived / left / total , closed geofence visits for today
+//
+// Drive and stop rows are excluded on purpose. They can carry a job_id (a leg
+// that ENDED at a job is attributed to it), and counting them as time on site
+// would put the drive there inside the visit.
+let _dispatchStatus={};        // jobId -> {onSite,first,last,mins,who}
+let _dispatchDay={};           // empId -> [{jobId,start,end}] for the timeline
+let _dispatchStatusAt=0;
+let _dispatchStatusBusy=false;
+const _DISPATCH_ONSITE_MS=10*60*1000;
+function _dispatchDayStartIso(){
+  const d=new Date();d.setHours(0,0,0,0);return d.toISOString();
+}
+async function _dispatchLoadStatus(force){
+  if(_dispatchStatusBusy)return;
+  if(!force&&Date.now()-_dispatchStatusAt<20000)return;   // one read per 20s, not per render
+  // No backend to ask, so KEEP what was last known rather than blanking it.
+  // Clearing here would wipe the board the moment a phone loses signal, which
+  // is exactly when a dispatcher most wants to see where everyone last was.
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supa||!_supaUser)return;
+  _dispatchStatusBusy=true;
+  try{
+    const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+    const since=_dispatchDayStartIso();
+    const [entRes,pingRes]=await Promise.all([
+      _supa.from('job_time_entries').select('job_id,employee_user_id,arrived_at,departed_at,minutes,source')
+        .eq('contractor_user_id',cid).gte('arrived_at',since),
+      _supa.from('location_pings').select('employee_user_id,job_id,ts')
+        .eq('contractor_user_id',cid).gte('ts',new Date(Date.now()-_DISPATCH_ONSITE_MS).toISOString()),
+    ]);
+    const ents=(entRes&&entRes.data)||[];
+    const pings=(pingRes&&pingRes.data)||[];
+    const st={},day={};
+    ents.forEach(r=>{
+      if(!r.job_id||!/^geofence/.test(r.source||''))return;
+      const k=String(r.job_id);
+      const s=st[k]||(st[k]={onSite:false,first:null,last:null,mins:0,who:''});
+      s.mins+=r.minutes||0;
+      if(!s.first||r.arrived_at<s.first)s.first=r.arrived_at;
+      if(r.departed_at&&(!s.last||r.departed_at>s.last))s.last=r.departed_at;
+      const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===String(r.employee_user_id));
+      if(emp){
+        if(!s.who)s.who=emp.name;
+        (day[emp.id]||(day[emp.id]=[])).push({jobId:k,start:r.arrived_at,end:r.departed_at||new Date().toISOString()});
+      }
+    });
+    pings.forEach(p=>{
+      if(!p.job_id)return;
+      const k=String(p.job_id);
+      const s=st[k]||(st[k]={onSite:false,first:null,last:null,mins:0,who:''});
+      s.onSite=true;
+      if(!s.who){
+        const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===String(p.employee_user_id));
+        if(emp)s.who=emp.name;
+      }
+    });
+    _dispatchStatus=st;_dispatchDay=day;_dispatchStatusAt=Date.now();
+  }catch(_e){}
+  _dispatchStatusBusy=false;
+}
+function _dispatchClock(iso){
+  try{return new Date(iso).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){return '';}
+}
+function _dispatchDur(mins){
+  const m=Math.max(0,Math.round(mins||0));
+  return m>=60?(Math.floor(m/60)+'h'+(m%60?' '+(m%60)+'m':'')):(m+'m');
+}
+// The one line on a job card that says where that job actually stands today.
+// Absent when nothing has happened yet, rather than a row of dashes: an empty
+// state that says nothing is quieter than one that says "nothing".
+function _dispatchStatusLine(jobId){
+  const s=_dispatchStatus[String(jobId)];
+  if(!s||(!s.onSite&&!s.first))return '';
+  if(s.onSite)
+    return '<div style="display:flex;align-items:center;gap:5px;margin-top:5px;font-size:11px;font-weight:700;color:var(--green-mid)">'+
+      '<span style="width:7px;height:7px;border-radius:50%;background:var(--green-mid);flex-shrink:0"></span>'+
+      'On site now'+(s.who?' · '+escHtml(s.who):'')+(s.mins?' · '+_dispatchDur(s.mins)+' today':'')+'</div>';
+  return '<div style="margin-top:5px;font-size:11px;color:var(--text3)">'+
+    escHtml(_dispatchClock(s.first))+(s.last?' – '+escHtml(_dispatchClock(s.last)):'')+
+    (s.mins?' · '+_dispatchDur(s.mins):'')+'</div>';
+}
+
 function renderDispatch(){
   const el=document.getElementById('pg-dispatch');if(!el)return;
+  // Kicked, not awaited: the board paints immediately from whatever was last
+  // read and repaints when the network answers. A dispatch board that waits on
+  // Supabase before showing anything is a blank screen every morning.
+  //
+  // The repaint is gated on the read having actually produced something new.
+  // Repainting unconditionally would call this again, which would kick another
+  // load, which would repaint: a render loop that never lets the page settle.
+  const _stAt=_dispatchStatusAt;
+  _dispatchLoadStatus().then(()=>{
+    if(_dispatchStatusAt!==_stAt&&document.getElementById('pg-dispatch'))renderDispatch();
+  });
   const tk=todayKey();
   const emps=S.employees||[];
   // Today's active jobs: start<=today AND start+days-1>=today
@@ -2262,16 +2362,27 @@ function renderDispatch(){
     const assignBtn=empId
       ?'<button onclick="_dispatchUnassign('+j.id+')" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit;min-height:36px">Unassign</button>'
       :'<button onclick="_dispatchAssign('+j.id+')" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;cursor:pointer;font-family:inherit;min-height:36px">Assign →</button>';
-    const orderBtns='<div style="display:flex;gap:4px">'+
-      '<button onclick="_dispatchMoveUp('+j.id+(empId?',\''+empId+'\'':'')+',\''+empId+'\')" style="font-size:13px;width:30px;height:30px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer">↑</button>'+
-      '<button onclick="_dispatchMoveDown('+j.id+(empId?',\''+empId+'\'':'')+',\''+empId+'\')" style="font-size:13px;width:30px;height:30px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer">↓</button>'+
-      '</div>';
-    return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
-      '<div style="font-size:13px;font-weight:700;margin-bottom:3px">'+escHtml(c.name)+'</div>'+
-      (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+addr+'</div>':'')+
-      (note?'<div style="margin-bottom:6px">'+note+'</div>':'')+
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px">'+
-        orderBtns+assignBtn+
+    // A GRIP, not two arrows. The arrows were unlabelled (nothing on screen said
+    // they reordered the day), and moving a job from fourth to first cost three
+    // taps each way. Every product in this category reorders by dragging, and it
+    // is the one control on this board that would read as dated in a demo.
+    //
+    // touch-action:none on the handle ONLY: the page must still scroll normally
+    // everywhere else, and a card you cannot scroll past is worse than arrows.
+    const grip=empId
+      ?'<div class="dsp-grip" data-job="'+j.id+'" title="Drag to reorder the day" style="touch-action:none;cursor:grab;padding:6px 8px;margin:-6px -4px -6px -8px;color:var(--text3);flex-shrink:0;line-height:0">'+
+         '<svg width="14" height="18" viewBox="0 0 14 18" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="9" r="1.6"/><circle cx="10" cy="9" r="1.6"/><circle cx="4" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.6"/></svg></div>'
+      :'';
+    return '<div class="dsp-card" data-job="'+j.id+'" data-emp="'+(empId||'')+'" style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div style="display:flex;align-items:flex-start;gap:8px">'+
+        grip+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:700;margin-bottom:3px">'+escHtml(c.name)+'</div>'+
+          (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+addr+'</div>':'')+
+          (note?'<div style="margin-bottom:6px">'+note+'</div>':'')+
+          _dispatchStatusLine(j.id)+
+        '</div>'+
+        '<div style="flex-shrink:0">'+assignBtn+'</div>'+
       '</div>'+
     '</div>';
   }
@@ -2302,6 +2413,7 @@ function renderDispatch(){
         :'<div style="font-size:12px;color:var(--text3);padding:8px;background:var(--bg2);border:1px dashed var(--border);border-radius:var(--r)">No jobs assigned</div>')+
     '</div>';
   }).join('');
+  const tab=(id,label)=>'<button type="button" class="fb'+(_dispatchView===id?' active':'')+'" onclick="setDispatchView(\''+id+'\')">'+label+'</button>';
   el.innerHTML=
     '<div class="tbar"><div class="tbar-title">'+svgIcon('📋')+' Dispatch Board</div>'+
       '<div style="display:flex;gap:6px">'+
@@ -2309,13 +2421,84 @@ function renderDispatch(){
         '<button onclick="goPg(\'pg-jobs\')" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">← Jobs</button>'+
       '</div>'+
     '</div>'+
-    '<div style="padding:0 12px 12px">'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px">'+tab('crew','By crew')+tab('timeline','Timeline')+'</div>'+
+    '<div id="_dispatch-body" style="padding:0 12px 12px">'+
+      (_dispatchView==='timeline'?_dispatchTimelineHtml(emps,todayJobs):
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Unassigned</div>'+
       '<div id="dispatch-unassigned" style="margin-bottom:20px">'+unassignedHtml+'</div>'+
       (emps.length
         ?'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">By Employee</div>'+
           '<div style="display:flex;flex-wrap:wrap;gap:12px;padding-bottom:8px">'+empCols+'</div>'
-        :'<div style="font-size:13px;color:var(--text3);padding:12px 0">No employees added yet. Add team members in the Team tab.</div>')+
+        :'<div style="font-size:13px;color:var(--text3);padding:12px 0">No employees added yet. Add team members in the Team tab.</div>'))+
+    '</div>';
+  _initDispatchDrag();
+}
+let _dispatchView='crew';
+function setDispatchView(v){_dispatchView=(v==='timeline'?'timeline':'crew');renderDispatch();}
+
+// ── The day, by the clock ───────────────────────────────────────────────────
+// One strip per crew member across the working day, built from the times the
+// geofence actually recorded rather than from what somebody meant to happen.
+// The value is the SHAPE: who is full, who has a hole after lunch, who has not
+// started. That is the question a dispatch board gets asked at 10am.
+//
+// Deliberately not a drag-and-drop calendar grid. That is where ServiceTitan
+// gets complicated enough that people take a course to avoid creating conflicts
+// with it, and complexity is the thing their own users complain about.
+function _dispatchTimelineHtml(emps,todayJobs){
+  if(!emps.length)return '<div style="font-size:13px;color:var(--text3);padding:12px 0">No employees added yet. Add team members in the Team tab.</div>';
+  // The window is derived, not fixed at 7-6: a 5:30am start or an 8pm callout
+  // must not fall off the end of its own strip.
+  let lo=7,hi=18;
+  Object.values(_dispatchDay).forEach(segs=>(segs||[]).forEach(g=>{
+    const a=new Date(g.start),b=new Date(g.end);
+    if(!isNaN(a))lo=Math.min(lo,a.getHours());
+    if(!isNaN(b))hi=Math.max(hi,b.getHours()+1);
+  }));
+  lo=Math.max(0,lo);hi=Math.min(24,Math.max(hi,lo+4));
+  const span=(hi-lo)*60;
+  const pct=(d)=>{
+    const t=new Date(d);
+    if(isNaN(t))return null;
+    return Math.max(0,Math.min(100,((t.getHours()*60+t.getMinutes())-lo*60)/span*100));
+  };
+  const now=new Date();
+  const nowPct=pct(now);
+  const hourMarks=[];
+  for(let h=lo;h<=hi;h+=Math.max(1,Math.round((hi-lo)/5)))hourMarks.push(h);
+  const label=(h)=>(h%12===0?12:h%12)+(h<12?'a':'p');
+  const rows=emps.map(emp=>{
+    const segs=(_dispatchDay[emp.id]||[]).slice().sort((a,b)=>String(a.start).localeCompare(String(b.start)));
+    const mine=todayJobs.filter(j=>String(j.assignedTo)===String(emp.id));
+    const blocks=segs.map(g=>{
+      const a=pct(g.start),b=pct(g.end);
+      if(a==null||b==null)return '';
+      const j=jobs.find(x=>String(x.id)===String(g.jobId));
+      const c=j&&clients.find(x=>x.id===j.client_id);
+      const live=_dispatchStatus[String(g.jobId)]&&_dispatchStatus[String(g.jobId)].onSite;
+      return '<div class="dsp-block" title="'+escHtml((c&&c.name)||'Job')+' '+escHtml(_dispatchClock(g.start))+'" '+
+        'style="position:absolute;left:'+a.toFixed(2)+'%;width:'+Math.max(1.5,b-a).toFixed(2)+'%;top:3px;bottom:3px;'+
+        'border-radius:4px;background:'+(live?'var(--green-mid)':'var(--blue)')+';opacity:'+(live?'1':'.85')+'"></div>';
+    }).join('');
+    const logged=segs.reduce((n,g)=>n+Math.max(0,(new Date(g.end)-new Date(g.start))/60000),0);
+    return '<div class="dsp-row" style="margin-bottom:12px">'+
+      '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+((ROLE_COLORS&&ROLE_COLORS[emp.role])||'var(--text2)')+'">'+escHtml(emp.name)+'</div>'+
+        '<div style="font-size:10px;color:var(--text3)">'+(segs.length?_dispatchDur(logged)+' on site':(mine.length?mine.length+' job'+(mine.length>1?'s':'')+', not started':'No jobs'))+'</div>'+
+      '</div>'+
+      '<div class="dsp-strip" style="position:relative;height:26px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden">'+
+        blocks+
+        (nowPct!=null?'<div class="dsp-now" style="position:absolute;left:'+nowPct.toFixed(2)+'%;top:0;bottom:0;width:2px;background:var(--red);opacity:.7"></div>':'')+
+      '</div>'+
+    '</div>';
+  }).join('');
+  return '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:6px;padding:0 1px">'+
+      hourMarks.map(h=>'<span>'+label(h)+'</span>').join('')+
+    '</div>'+rows+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--text3);margin-top:2px">'+
+      '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--green-mid);margin-right:4px"></span>On site now</span>'+
+      '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--blue);margin-right:4px"></span>Logged today</span>'+
+      '<span><span style="display:inline-block;width:2px;height:8px;background:var(--red);margin-right:4px"></span>Now</span>'+
     '</div>';
 }
 // ── The truck row on each crew column of the dispatch board ──────────────────
@@ -2510,28 +2693,88 @@ function _dispatchUnassign(jobId){
     saveAll();renderDispatch();showToast('Job unassigned','↩️');
   },{title:'Unassign Job',yes:'Unassign',danger:false});
 }
-function _dispatchMoveUp(jobId,empId){
-  const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk)).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
-  const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<=0)return;
-  // Normalize to 0..n-1 in current sorted order BEFORE swapping (mirrors _dispatchMoveDown).
-  // Doing the forEach reindex AFTER the swap clobbered it, it overwrote dispatchOrder from
-  // the pre-swap array positions, so the up-arrow never actually moved the job up.
-  empJobs.forEach((j,i)=>{j.dispatchOrder=i;});
-  const temp=empJobs[idx-1].dispatchOrder;
-  empJobs[idx-1].dispatchOrder=empJobs[idx].dispatchOrder;
-  empJobs[idx].dispatchOrder=temp;
-  saveAll();renderDispatch();
+// ── Drag a job to move it in the day ────────────────────────────────────────
+// Replaces _dispatchMoveUp/_dispatchMoveDown, which are gone (CLAUDE.md §7:
+// deleted, not hidden). They wrote the same dispatchOrder this does; the
+// difference is that a grip says what it does and one gesture moves a job any
+// distance, where the arrows were unlabelled and cost a tap per position.
+//
+// Pointer events, so one implementation covers finger, stylus and mouse. The
+// dragged card is reordered IN PLACE in the DOM as the pointer crosses each
+// neighbour's midpoint, so what you see during the drag is the result.
+let _dspDrag=null;
+function _initDispatchDrag(){
+  const host=document.getElementById('pg-dispatch');
+  if(!host||host._dspBound)return;
+  host._dspBound=true;
+
+  host.addEventListener('pointerdown',e=>{
+    const grip=e.target.closest&&e.target.closest('.dsp-grip');
+    if(!grip)return;
+    const card=grip.closest('.dsp-card');
+    const list=card&&card.parentElement;
+    if(!card||!list)return;
+    e.preventDefault();
+    const r=card.getBoundingClientRect();
+    _dspDrag={card,list,empId:card.getAttribute('data-emp'),offY:e.clientY-r.top,moved:false};
+    try{grip.setPointerCapture(e.pointerId);}catch(_e){}
+    card.style.transition='none';
+    card.style.opacity='.9';
+    card.style.boxShadow='0 6px 20px rgba(0,0,0,.18)';
+    card.style.position='relative';
+    card.style.zIndex='5';
+    navigator.vibrate&&navigator.vibrate(20);
+  });
+
+  host.addEventListener('pointermove',e=>{
+    if(!_dspDrag)return;
+    e.preventDefault();
+    _dspDrag.moved=true;
+    const {card,list}=_dspDrag;
+    const cards=[...list.querySelectorAll(':scope > .dsp-card')];
+    const i=cards.indexOf(card);
+    const y=e.clientY;
+    // Swap past whichever neighbour's midpoint the pointer has crossed. One
+    // step per move keeps it stable when a card is taller than its neighbour.
+    const prev=cards[i-1],next=cards[i+1];
+    if(prev){
+      const pr=prev.getBoundingClientRect();
+      if(y<pr.top+pr.height/2){list.insertBefore(card,prev);return;}
+    }
+    if(next){
+      const nr=next.getBoundingClientRect();
+      if(y>nr.top+nr.height/2){list.insertBefore(next,card);return;}
+    }
+  });
+
+  const end=()=>{
+    if(!_dspDrag)return;
+    const {card,list,empId,moved}=_dspDrag;
+    _dspDrag=null;
+    card.style.opacity='';card.style.boxShadow='';card.style.zIndex='';
+    card.style.position='';card.style.transition='';
+    if(!moved)return;
+    // The DOM is the order now, so read it back rather than tracking indices.
+    const ids=[...list.querySelectorAll(':scope > .dsp-card')].map(c=>c.getAttribute('data-job'));
+    _dispatchSetOrder(ids,empId);
+  };
+  host.addEventListener('pointerup',end);
+  host.addEventListener('pointercancel',end);
 }
-function _dispatchMoveDown(jobId,empId){
-  const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk)).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
-  const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<0||idx>=empJobs.length-1)return;
-  empJobs.forEach((j,i)=>{j.dispatchOrder=i;});
-  const temp=empJobs[idx+1].dispatchOrder;
-  empJobs[idx+1].dispatchOrder=empJobs[idx].dispatchOrder;
-  empJobs[idx].dispatchOrder=temp;
-  saveAll();renderDispatch();
+// Writes the order the board is showing. Same field the arrows wrote and the
+// same field _dispatchOptimizeRoute writes, so a hand-tuned day and an
+// optimised one are the same kind of thing.
+function _dispatchSetOrder(jobIds,empId){
+  if(!Array.isArray(jobIds))return;
+  let n=0;
+  jobIds.forEach((id,i)=>{
+    const j=jobs.find(x=>String(x.id)===String(id));
+    if(!j)return;
+    if(empId&&String(j.assignedTo)!==String(empId))return;   // never reorder someone else's day
+    j.dispatchOrder=i;n++;
+  });
+  if(!n)return;
+  saveAll();
 }
 
 // ── Route optimization (office → ordered job sites, nearest-neighbor) ─────────
