@@ -531,16 +531,17 @@ test.describe('Automatic mileage from drive legs', () => {
       const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: 'personal' });
       expect(rows.length).toBe(1);
       expect(rows[0].reimbursable).toBe(true);
-      const ded = await page.evaluate(() => deductibleTrips(mileage).length);
-      expect(ded).toBe(0);
+      // The flag is what this drive controls. That the flag actually keeps a row
+      // out of every deduction total is proven in "two pots of money" below,
+      // against an array this test does not have to own: asserting it here on
+      // the whole of `mileage` counted every row the rest of the file had
+      // already left behind.
     });
 
     test('employee who picked no vehicle: same answer, owed not deducted', async () => {
       const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: '' });
       expect(rows.length).toBe(1);
       expect(rows[0].reimbursable).toBe(true);
-      const ded = await page.evaluate(() => deductibleTrips(mileage).length);
-      expect(ded).toBe(0);
     });
 
     test('an employee in their own car is still PAID for the drive', async () => {
