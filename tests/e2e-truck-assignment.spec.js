@@ -396,5 +396,115 @@ test.describe('Truck assignment', () => {
     });
   });
 
+  // ── One dispatch, not two ──────────────────────────────────────────────────
+  // Owner call: "dispatch should be daily, truck covers all the jobs for that
+  // day, fold it that way." Handing someone their first job IS handing them the
+  // keys, so the truck question follows that gesture instead of waiting to be
+  // remembered as a separate press.
+  test.describe('the truck question follows the job assignment', () => {
+    test.beforeEach(async () => {
+      await page.evaluate(() => {
+        __seed();
+        jobs.length = 0;
+        [1, 2, 3].forEach(n => jobs.push({
+          id: 7000 + n, name: 'Job ' + n, eventType: 'job', status: 'upcoming',
+          start: todayKey(), days: 1, client_id: 5501,
+        }));
+        document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove());
+      });
+    });
+
+    const assignJob = async (jobId, empId) => {
+      await page.evaluate((a) => _dispatchDoAssign(a.jobId, a.empId), { jobId, empId });
+      await page.waitForTimeout(400);   // the picker follows on a short delay
+      return page.evaluate(() => {
+        const ov = document.getElementById('_truck-picker-ov');
+        const html = ov ? ov.innerHTML : '';
+        ov?.remove();
+        return { asked: !!ov, html };
+      });
+    };
+
+    test('the first job of the day asks for the truck', async () => {
+      const out = await assignJob(7001, 'e-dave');
+      expect(out.asked).toBe(true);
+      expect(out.html).toContain('What is Dave driving today?');
+    });
+
+    test('the second and third jobs do not ask again', async () => {
+      await assignJob(7001, 'e-dave');
+      await page.evaluate(() => _dispatchSetTruck('e-dave', 'truck', 'v-a'));
+      const second = await assignJob(7002, 'e-dave');
+      const third = await assignJob(7003, 'e-dave');
+      expect(second.asked).toBe(false);
+      expect(third.asked).toBe(false);
+    });
+
+    test('and that one truck covers every job of the day', async () => {
+      // The point of the truck living on the DAY: three jobs, one answer, and
+      // every drive between them is attributed to it, including the legs that
+      // belong to no job at all.
+      await page.evaluate(() => _dispatchSetTruck('e-dave', 'truck', 'v-a'));
+      await page.evaluate(() => { [7001, 7002, 7003].forEach(id => _dispatchDoAssign(id, 'e-dave')); });
+      await page.waitForTimeout(400);
+      await page.evaluate(() => document.querySelectorAll('.zmodal-overlay').forEach(o => o.remove()));
+      const out = await page.evaluate(() => {
+        const mine = jobs.filter(j => String(j.assignedTo) === 'e-dave').length;
+        const t = _truckDayFor('e-dave');
+        return { mine, v: t && t.v };
+      });
+      expect(out.mine).toBe(3);
+      expect(out.v).toBe('v-a');
+    });
+
+    test('someone who already has a truck is never re-asked', async () => {
+      await page.evaluate(() => _dispatchSetTruck('e-luis', 'rider', '', 'e-dave'));
+      const out = await assignJob(7001, 'e-luis');
+      expect(out.asked).toBe(false);
+    });
+
+    test('no fleet, no question', async () => {
+      // Nothing to choose from, so asking would be a dead end.
+      const out = await page.evaluate(async () => {
+        const keep = vehicles.slice();
+        try {
+          vehicles.length = 0;
+          _dispatchDoAssign(7001, 'e-sam');
+          await new Promise(r => setTimeout(r, 400));
+          const ov = document.getElementById('_truck-picker-ov');
+          const asked = !!ov; ov?.remove();
+          return asked;
+        } finally { vehicles.length = 0; keep.forEach(v => vehicles.push(v)); }
+      });
+      expect(out).toBe(false);
+    });
+
+    test('tracking off, no question', async () => {
+      const out = await page.evaluate(async () => {
+        const keep = S.teamTracking;
+        try {
+          S.teamTracking = false;
+          _dispatchDoAssign(7001, 'e-sam');
+          await new Promise(r => setTimeout(r, 400));
+          const ov = document.getElementById('_truck-picker-ov');
+          const asked = !!ov; ov?.remove();
+          return asked;
+        } finally { S.teamTracking = keep; }
+      });
+      expect(out).toBe(false);
+    });
+
+    test('the job still gets assigned even if the truck question is dismissed', async () => {
+      // Swiping the prompt away must never cost the assignment that triggered it.
+      await assignJob(7001, 'e-sam');   // assignJob removes the overlay without answering
+      const out = await page.evaluate(() => ({
+        assigned: String((jobs.find(j => j.id === 7001) || {}).assignedTo || ''),
+        truck: _truckDayFor('e-sam'),
+      }));
+      expect(out.assigned).toBe('e-sam');
+      expect(out.truck).toBeNull();
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

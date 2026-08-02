@@ -2418,6 +2418,22 @@ function _dispatchDoAssign(jobId,empId){
     }
   }
   saveAll();renderDispatch();showToast('Job assigned','📋');
+  // ── One dispatch, not two ────────────────────────────────────────────────
+  // Owner call (2026-08-01): "dispatch should be daily, truck covers all the
+  // jobs for that day, fold it that way."
+  //
+  // Handing someone their first job of the day is the same gesture as handing
+  // them the keys, so the truck question follows it instead of waiting to be
+  // remembered as a separate press. It fires ONCE per person per day: their
+  // second and third job find the answer already there, which is the whole
+  // point of the truck living on the day rather than on the job.
+  //
+  // Only when the question is real: crew tracking on, a fleet to choose from,
+  // and nobody has answered yet today.
+  if(!_truckDayFor(empId)&&S.teamTracking&&
+     (typeof getVehicles==='function'?getVehicles():[]).some(v=>(v.status||'active')==='active')){
+    setTimeout(()=>{try{_dispatchTruckPicker(empId);}catch(_e){}},260);
+  }
 }
 function _dispatchUnassign(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
