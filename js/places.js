@@ -477,8 +477,12 @@ function openPlaceModal(id,lat,lon){
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   const kindOpts=Object.keys(PLACE_KINDS).map(k=>
     '<option value="'+k+'"'+((pl&&pl.kind===k)||(!pl&&k==='supply')?' selected':'')+'>'+PLACE_KINDS[k]+'</option>').join('');
-  ov.innerHTML='<div style="position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 18px 26px;max-width:520px;margin:0 auto;box-sizing:border-box">'+
-    '<div style="font-size:17px;font-weight:800;margin-bottom:14px">'+(pl?'Edit location':'Add a location')+'</div>'+
+  // Centred on the shared .zmodal chrome, like every other prompt in this flow
+  // (owner call 2026-08-01). It was the last bottom sheet left in Places, so
+  // naming a location slid up from the bottom while the truck and vehicle
+  // prompts it sits beside appear in the middle.
+  ov.innerHTML='<div class="zmodal">'+
+    '<div class="zmodal-title" style="text-align:center">'+(pl?'Edit location':'Add a location')+'</div>'+
     '<div class="f" style="margin-bottom:12px"><label>Name</label>'+
       '<input id="place-name" placeholder="Ferguson Plumbing" value="'+escHtml(pl?pl.name||'':'')+'" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box"></div>'+
     '<div class="f" style="margin-bottom:12px"><label>Type</label>'+

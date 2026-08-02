@@ -904,5 +904,92 @@ test.describe('Truck assignment', () => {
     });
   });
 
+  // ── Nothing off the edge of a phone ────────────────────────────────────────
+  // Owner report (2026-08-01): "Dispatch board cutoff on mobile, add a location
+  // should be centered."
+  //
+  // The crew columns were min-width:200px in a horizontally scrolling row. Two
+  // crew plus a gap is 412px, which does not fit a 390px phone, so the board
+  // scrolled sideways and the second column was clipped mid-word. A flex BASIS
+  // wraps instead of overflowing: one full-width column per person on a phone,
+  // several abreast on a tablet.
+  test.describe('the board fits the phone', () => {
+    const boardBoxes = (w) => page.evaluate(async (width) => {
+      const keepEmp = _isEmployee;
+      try {
+        _isEmployee = false;
+        jobs.length = 0;
+        jobs.push({ id: 7601, name: 'J', eventType: 'job', status: 'upcoming', start: todayKey(), days: 1, client_id: 5501, assignedTo: 'e-dave' });
+        jobs.push({ id: 7602, name: 'K', eventType: 'job', status: 'upcoming', start: todayKey(), days: 1, client_id: 5501, assignedTo: 'e-luis' });
+        goPg('pg-dispatch');
+        renderDispatch();
+        await new Promise(r => setTimeout(r, 120));
+        const el = document.getElementById('pg-dispatch');
+        const cols = Array.from(el.querySelectorAll('div')).filter(d =>
+          /^(flex: 1 1 240px|flex: 1 1 auto)/.test(d.style.cssText) || d.style.flex === '1 1 240px');
+        const boxes = cols.map(c => { const r = c.getBoundingClientRect(); return { left: Math.round(r.left), right: Math.round(r.right), w: Math.round(r.width) }; });
+        return { boxes, vw: window.innerWidth, docW: document.documentElement.scrollWidth,
+                 scrollW: el.scrollWidth, clientW: el.clientWidth };
+      } finally { _isEmployee = keepEmp; }
+    }, w);
+
+    test('two crew columns do not run off a 390px screen', async () => {
+      const out = await boardBoxes(390);
+      expect(out.boxes.length).toBeGreaterThanOrEqual(2);
+      out.boxes.forEach(b => {
+        expect(b.left).toBeGreaterThanOrEqual(0);
+        expect(b.right).toBeLessThanOrEqual(out.vw);
+      });
+    });
+
+    test('and they stack rather than scrolling sideways', async () => {
+      // The columns wrap, so on a phone each sits on its own row: same left
+      // edge, and no horizontal scroll anywhere on the page.
+      const out = await boardBoxes(390);
+      const lefts = [...new Set(out.boxes.map(b => b.left))];
+      expect(lefts.length).toBe(1);
+      expect(out.docW).toBeLessThanOrEqual(out.vw + 1);
+      expect(out.scrollW).toBeLessThanOrEqual(out.clientW + 1);
+    });
+
+    test('three crew still fit, which is where it broke worst', async () => {
+      const out = await page.evaluate(async () => {
+        jobs.length = 0;
+        ['e-dave', 'e-luis', 'e-sam'].forEach((e, i) => jobs.push({
+          id: 7610 + i, name: 'J' + i, eventType: 'job', status: 'upcoming',
+          start: todayKey(), days: 1, client_id: 5501, assignedTo: e }));
+        goPg('pg-dispatch'); renderDispatch();
+        await new Promise(r => setTimeout(r, 120));
+        const el = document.getElementById('pg-dispatch');
+        return { docW: document.documentElement.scrollWidth, vw: window.innerWidth,
+                 scrollW: el.scrollWidth, clientW: el.clientWidth };
+      });
+      expect(out.docW).toBeLessThanOrEqual(out.vw + 1);
+      expect(out.scrollW).toBeLessThanOrEqual(out.clientW + 1);
+    });
+
+    test('the location modal is centred, like every other prompt here', async () => {
+      const box = await page.evaluate(() => {
+        document.getElementById('place-modal')?.remove();
+        openPlaceModal(null, 39.03, -95.77);
+        const card = document.querySelector('#place-modal .zmodal');
+        if (!card) return null;
+        const r = card.getBoundingClientRect();
+        const out = { cx: r.left + r.width / 2, vw: window.innerWidth, vh: window.innerHeight,
+                      top: r.top, bottom: r.bottom, left: r.left, right: r.right,
+                      docW: document.documentElement.scrollWidth };
+        document.getElementById('place-modal')?.remove();
+        return out;
+      });
+      expect(box).not.toBeNull();
+      expect(Math.abs(box.cx - box.vw / 2)).toBeLessThanOrEqual(1);
+      expect(box.top).toBeGreaterThan(0);          // no longer pinned to the bottom edge
+      expect(box.bottom).toBeLessThan(box.vh);
+      expect(box.left).toBeGreaterThanOrEqual(0);
+      expect(box.right).toBeLessThanOrEqual(box.vw);
+      expect(box.docW).toBeLessThanOrEqual(box.vw + 1);
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

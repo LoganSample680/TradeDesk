@@ -2288,7 +2288,12 @@ function renderDispatch(){
     const optBtn=empJobs.length>=2
       ?'<button onclick="_dispatchOptimizeRoute(\''+emp.id+'\')" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);cursor:pointer;font-family:inherit">'+svgIcon('⚡')+' Optimize route</button>'
       :'';
-    return '<div style="min-width:200px;flex:1;max-width:320px">'+
+    // flex-basis, not min-width. A 200px minimum plus a gap overflows a 390px
+    // phone with two crew, so the board scrolled sideways and the second column
+    // was cut off mid-word (owner report 2026-08-01). A basis WRAPS instead:
+    // one full-width column per crew member on a phone, two or three abreast on
+    // a tablet or desktop, and nothing ever sits off the edge.
+    return '<div style="flex:1 1 240px;min-width:0;max-width:100%">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;padding:0 2px">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+rc+'">'+escHtml(emp.name)+'</div>'+optBtn+
       '</div>'+
@@ -2309,7 +2314,7 @@ function renderDispatch(){
       '<div id="dispatch-unassigned" style="margin-bottom:20px">'+unassignedHtml+'</div>'+
       (emps.length
         ?'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">By Employee</div>'+
-          '<div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px">'+empCols+'</div>'
+          '<div style="display:flex;flex-wrap:wrap;gap:12px;padding-bottom:8px">'+empCols+'</div>'
         :'<div style="font-size:13px;color:var(--text3);padding:12px 0">No employees added yet. Add team members in the Team tab.</div>')+
     '</div>';
 }
