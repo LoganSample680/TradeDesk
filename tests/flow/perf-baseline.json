@@ -39,5 +39,9 @@
   "topeka-day": {
     "clicks": 1,
     "note": "A whole working day, captured live 2026-08-02: home office to client to Home Depot to lunch to client to estimate to home. ONE tap for the entire day, confirming the suggested name for the supply stop. Every leg, every mileage row and every minute is logged with no interaction at all, which is the point: the day costs the contractor one tap."
+  },
+  "crew-lunch": {
+    "clicks": 1,
+    "note": "Buying the crew lunch, captured live 2026-08-02. Job to supply house to lunch to job: the whole drive logs itself with no taps. The single interaction is logging the receipt, which the contractor keeps anyway, and it is that receipt that turns the stop from a personal detour into business miles."
   }
 }
