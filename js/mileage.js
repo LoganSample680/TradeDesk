@@ -600,9 +600,15 @@ async function _autoNameStopTrip(rec,to){
     // (owner's CPA, 2026-08-02), and the receipt that proves it is one the
     // contractor already has to keep, so this costs them no extra taps. No
     // receipt at that pin today, it was their own lunch.
+    // The LEG's date, not today's. A stop entered at 11:50pm and left at 12:05am
+    // closes on the following calendar day, so asking for today's receipts
+    // missed one dated to the drive. The later sweep already used the trip's own
+    // date and would have healed it on the next load; this makes the first
+    // answer right instead of the second.
+    const legDay=(rec&&rec.date)||todayKey();
     const personal=!!(poi.name&&_poiIsPersonal(poi.category)&&
                       !(typeof expenseForStop==='function'&&
-                        expenseForStop({lat:to.lat,lng:to.lng,name:poi.name,day:todayKey()})));
+                        expenseForStop({lat:to.lat,lng:to.lng,name:poi.name,day:legDay})));
     // And patch a leg out of here that was ALREADY written. Which of the two
     // landed first depends on how long Apple took against how long they were
     // parked, and a record must not depend on that race.
@@ -633,7 +639,7 @@ async function _autoNameStopTrip(rec,to){
         // dropped leg rides along on whatever row replaces it, so the day can be
         // rebuilt exactly when the receipt finally lands (owner, 2026-08-02).
         const crumb={stop:{lat:to.lat,lng:to.lng,name:poi.name,addr:poi.addr||'',kind:'stop'},
-                     day:(dropped&&dropped.date)||todayKey(),leg:dropped,origin:back};
+                     day:(dropped&&dropped.date)||legDay,leg:dropped,origin:back};
         back.passedThrough=crumb;
         const restored=(typeof _geoPassThroughStop==='function')&&_geoPassThroughStop(to);
         // Not restored means they already reached the next fence and that leg
@@ -762,7 +768,15 @@ function reimbursableTrips(list){
 // theirs to set with their own advisor.
 function crewMilesOwed(yr){
   const y=String(yr||trackerYear||new Date().getFullYear());
-  const rows=reimbursableTrips(mileage).filter(m=>m.date&&String(m.date).startsWith(y));
+  // SCOPED TO WHO IS LOOKING. Unscoped, this totalled every crew member's miles
+  // and showed it to whichever one opened the page: one employee could read what
+  // the whole crew was owed, which is money data they have no business seeing.
+  // The rest of this page has always narrowed to the viewer's own rows for
+  // exactly that reason, and this line was reading straight past it.
+  const src=(typeof _isEmployee!=='undefined'&&_isEmployee)
+    ? mileage.filter(m=>m.logged_by_id&&m.logged_by_id===(typeof _supaUser!=='undefined'&&_supaUser&&_supaUser.id))
+    : mileage;
+  const rows=reimbursableTrips(src).filter(m=>m.date&&String(m.date).startsWith(y));
   const miles=rows.reduce((s,m)=>s+(m.miles||0),0);
   const by={};
   rows.forEach(m=>{
@@ -1605,9 +1619,14 @@ function saveLoggedTrip(){
 function renderAllMileage(){
   const yr=String(trackerYear||new Date().getFullYear());
   const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
-  const filtered=deductibleTrips(_mileSrc).filter(m=>m.date&&m.date.startsWith(yr));
+  // The LIST is every trip the viewer is allowed to see. The DEDUCTION is only
+  // the deductible ones. Filtering the list itself hid an employee's own-car
+  // trips from the employee who drove them, and hid the crew's trips from the
+  // owner who has to verify what they owe: both could see a total and neither
+  // could see what it was made of.
+  const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
   const irsRate=IRS();
-  const tot=filtered.reduce((s,r)=>s+(r.miles||0),0);
+  const tot=deductibleTrips(filtered).reduce((s,r)=>s+(r.miles||0),0);
   const deduction=tot*irsRate;
   const unclassified=filtered.filter(m=>!m.purpose);
 
@@ -1651,7 +1670,7 @@ function renderAllMileage(){
           // one exists. Hidden entirely when nobody is owed anything.
           (()=>{const o=(typeof crewMilesOwed==='function')?crewMilesOwed(yr):null;
             return (o&&o.miles>0)?'<div class="mil-meta" style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.14)">'+
-              '<span>Crew personal vehicles <b style="color:#fff">'+o.miles.toFixed(1)+' mi</b></span>'+
+              '<span>'+(_isEmployee?'Your personal vehicle':'Crew personal vehicles')+' <b style="color:#fff">'+o.miles.toFixed(1)+' mi</b></span>'+
               '<span>·</span>'+
               '<span>'+fmt(o.owed)+' at the IRS rate, estimate only</span>'+
               '<span>·</span>'+
@@ -1727,7 +1746,9 @@ function setMilFilter(f){
   });
   const yr=String(trackerYear||new Date().getFullYear());
   const _mileSrc=_isEmployee?mileage.filter(m=>!m.logged_by_id||m.logged_by_id===_supaUser?.id):mileage;
-  const filtered=deductibleTrips(_mileSrc).filter(m=>m.date&&m.date.startsWith(yr));
+  // Same rule as the summary above: the list shows everything the viewer may
+  // see, and only the totals narrow to what is deductible.
+  const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
   const unclassified=filtered.filter(m=>!m.purpose);
   const shown=f==='unclassified'?unclassified:f==='classified'?filtered.filter(m=>m.purpose):filtered;
   _milRenderTripList(shown,yr);
