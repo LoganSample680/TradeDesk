@@ -306,12 +306,48 @@ test.describe('A full Topeka day', () => {
       rule: async (p) => {
         const hit = await p.evaluate((a) => {
           const seen = new Set(a.prior);
-          return mileage.filter(m => m.gps && m.legKey && !seen.has(m.id) && m.toCoord &&
-            Math.abs(m.toCoord.lat - a.lunch.lat) < 0.0005 && Math.abs(m.toCoord.lng - a.lunch.lng) < 0.0005)
+          const at = (c) => c && Math.abs(c.lat - a.lunch.lat) < 0.0005 && Math.abs(c.lng - a.lunch.lng) < 0.0005;
+          // NEITHER end. A personal stop is a detour, so it is not a
+          // destination and it is not a starting point either.
+          return mileage.filter(m => m.gps && m.legKey && !seen.has(m.id) && (at(m.toCoord) || at(m.fromCoord)))
             .map(m => `${m.from_name} → ${m.to_name}`);
         }, { prior: priorTrips, lunch });
         const want = lunch.named ? 0 : 1;
         return { ok: hit.length === want, got: hit.length ? 'billed: ' + hit.join(', ') : 'nothing billed to the lunch pin' };
+      },
+    });
+
+    // ── 1c. THE DETOUR ───────────────────────────────────────────────────────
+    // The owner's CPA (2026-08-02): a lunch break in the middle of a supply-run
+    // to job-site trip does not make two trips out of one, it makes one trip
+    // with a detour in it, and only the direct miles between the two business
+    // points are deductible. This day is the case that proves why it matters:
+    // The Pennant sits four doors from the client on S Kansas Ave, so measuring
+    // from the restaurant billed 0.7 miles for a trip that was really 6.5.
+    if (lunch.named) await step(page, {
+      label: 'lunch is a detour, so the trip is measured supply house to job site',
+      page: 'mileage', role: 'contractor',
+      suspect: 'geo-track.js _geoPassThroughStop → mileage.js _reoriginTrip',
+      ruleText: 'a personal stop mid-trip does not split the trip; the leg is measured from the business point before it, most direct route',
+      expected: 'a leg from The Home Depot to the client, not from the restaurant',
+      act: async () => 0,
+      rule: async (p) => {
+        const out = await p.evaluate((prior) => {
+          const seen = new Set(prior);
+          const d = window.__day.DEPOT, c = window.__day.CLIENT;
+          const near = (a, b) => a && Math.abs(a.lat - b.lat) < 0.0005 && Math.abs(a.lng - b.lng) < 0.0005;
+          return mileage.filter(m => m.gps && m.legKey && !seen.has(m.id) &&
+              near(m.fromCoord, d) && near(m.toCoord, c))
+            .map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles, method: m.calc_method }));
+        }, priorTrips);
+        const t = out[0];
+        // Well clear of the 0.7 the two-leg version produced, and a real Topeka
+        // distance rather than a cross-country one.
+        const sane = !!t && t.miles >= 3 && t.miles <= 30;
+        return {
+          ok: !!t && /home\s*depot/i.test(t.from || '') && sane && t.method === 'auto_route',
+          got: t ? `"${t.from}" → "${t.to}" ${t.miles} mi (${t.method})` : 'no leg from the supply house to the client at all',
+        };
       },
     });
 

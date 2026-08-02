@@ -1256,6 +1256,74 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out).toEqual([]);
     });
 
+    // ── The detour, and the errand that looks exactly like it ───────────────
+    // Owner's CPA (2026-08-02): a lunch break in the middle of a supply-house to
+    // job-site run does not make two trips, it makes one trip with a detour, and
+    // only the direct miles between the two business points are deductible.
+    // BUT buying the crew lunch is a work errand and both legs count in full.
+    // The GPS sees the identical stop either way. The receipt is the only thing
+    // that separates them, and it is one the contractor already keeps.
+    const detour = (opts) => page.evaluate(async (a) => {
+      mileage.length = 0;
+      if (typeof expenses !== 'undefined') {
+        expenses.length = 0;
+        if (a.receipt) expenses.push({
+          id: _newId(), date: todayKey(), vendor: "Bobo's Drive In", amount: 84.20,
+          cat: 'Meals', lat: a.stop.lat, lon: a.stop.lng,
+          geoAt: new Date().toISOString(), geoAcc: 12,
+        });
+      }
+      const depot = { lat: 39.03, lng: -95.77, name: 'Ace Supply', kind: 'supply', addr: '400 Depot Rd' };
+      const job = { lat: 39.06, lng: -95.67, name: 'Miller residence', kind: 'job', addr: '9 Elm St' };
+      const stop = { lat: 39.05, lng: -95.68, name: 'Stop', kind: 'stop', prevOrigin: depot };
+      // The leg IN, exactly as the geofence writes it when they pull out.
+      autoLogDriveTrip({ from: depot, to: stop, legKey: a.tag + '-in', startedIso: new Date().toISOString() });
+      if (a.outFirst) {
+        // The leg OUT already written before Apple answered: a short stop, or a
+        // slow lookup. The row has to be re-pointed after the fact.
+        autoLogDriveTrip({ from: stop, to: job, legKey: a.tag + '-out', startedIso: new Date().toISOString() });
+        await new Promise(r => setTimeout(r, 300));
+      } else {
+        // Apple answers first, so the descriptor is already corrected and the
+        // leg out is measured from the right end to begin with.
+        await new Promise(r => setTimeout(r, 300));
+        autoLogDriveTrip({ from: (typeof _geoLegOrigin !== 'undefined' && _geoLegOrigin) || stop, to: job,
+                           legKey: a.tag + '-out', startedIso: new Date().toISOString() });
+        await new Promise(r => setTimeout(r, 100));
+      }
+      return mileage.map(m => ({ k: m.legKey, from: m.from_name, to: m.to_name, fromCoord: m.fromCoord }));
+    }, opts);
+
+    test('a personal lunch is a detour: one trip, direct, no lunch legs', async () => {
+      await withMapkit({ poiName: "Bobo's Drive In", poiCategory: 'MKPOICategoryRestaurant', geoFails: true });
+      // _geoLegOrigin has to BE the stop for the pass-through to fire, the same
+      // state the geofence leaves behind when it closes one.
+      await page.evaluate(() => { if (typeof _geoLegOrigin !== 'undefined') _geoLegOrigin = null; });
+      const out = await detour({ tag: 'detour', receipt: false, outFirst: true,
+                                 stop: { lat: 39.05, lng: -95.68 } });
+      // The leg to lunch is gone entirely.
+      expect(out.find(t => t.k === 'detour-in')).toBeUndefined();
+      // And the leg onward is measured from the supply house, not the diner.
+      const onward = out.find(t => t.k === 'detour-out');
+      expect(onward.from).toBe('Ace Supply');
+      expect(onward.fromCoord).toEqual({ lat: 39.03, lng: -95.77 });
+    });
+
+    test('lunch bought for the crew is an errand: both legs count', async () => {
+      // Same restaurant, same stop, same everything except a receipt logged at
+      // that pin today. That is the contractor saying it was for the business,
+      // and it is the evidence the deduction rests on.
+      await withMapkit({ poiName: "Bobo's Drive In", poiCategory: 'MKPOICategoryRestaurant', geoFails: true });
+      const out = await detour({ tag: 'crew', receipt: true, outFirst: true,
+                                 stop: { lat: 39.05, lng: -95.68 } });
+      const inLeg = out.find(t => t.k === 'crew-in');
+      expect(inLeg).toBeDefined();
+      expect(inLeg.to).toBe("Bobo's Drive In");
+      // The leg out still starts where they actually were.
+      const onward = out.find(t => t.k === 'crew-out');
+      expect(onward.fromCoord).toEqual({ lat: 39.05, lng: -95.68 });
+    });
+
     test('a stop nobody can name is kept, not binned', async () => {
       // Silence from Apple is not evidence of lunch. A contractor parked
       // mid-workday is far more often at a gate or a yard than at a sandwich
@@ -1307,6 +1375,45 @@ test.describe('Automatic mileage from drive legs', () => {
       // Fuel is a work cost, not lunch.
       expect(out.gas).toBe(false);
       expect(out.blank).toBe(false);
+      expect(out.nul).toBe(false);
+    });
+
+    test('a receipt at the pin only counts if it is from that day', async () => {
+      // The stamp has to be contemporaneous. A receipt entered on the sofa that
+      // evening carries the living room's coordinate, and yesterday's lunch is
+      // not evidence about today's stop. Same guard _placeFromExpense uses.
+      const out = await page.evaluate(() => {
+        const pin = { lat: 39.05, lon: -95.68 };
+        expenses.length = 0;
+        const mk = (o) => Object.assign({ id: _newId(), vendor: 'Diner', amount: 20,
+          lat: pin.lat, lon: pin.lon, geoAcc: 12 }, o);
+        const r = {};
+        expenses.push(mk({ date: todayKey(), geoAt: new Date().toISOString() }));
+        r.today = !!expenseAt(pin);
+        expenses.length = 0;
+        expenses.push(mk({ date: '2020-01-01', geoAt: new Date().toISOString() }));
+        r.staleDate = !!expenseAt(pin);
+        expenses.length = 0;
+        expenses.push(mk({ date: todayKey() }));           // no stamp at all
+        r.noStamp = !!expenseAt(pin);
+        expenses.length = 0;
+        expenses.push(mk({ date: todayKey(), geoAt: new Date().toISOString(), geoAcc: 4000 }));
+        r.junkFix = !!expenseAt(pin);
+        expenses.length = 0;
+        expenses.push(mk({ date: todayKey(), geoAt: new Date().toISOString(), lat: 40.5, lon: -96.9 }));
+        r.faraway = !!expenseAt(pin);
+        expenses.length = 0;
+        r.none = !!expenseAt(pin);
+        r.nul = !!expenseAt(null);
+        return r;
+      });
+      expect(out.today).toBe(true);
+      expect(out.staleDate).toBe(false);
+      expect(out.noStamp).toBe(false);
+      // A 4km fix cannot say which building they were in.
+      expect(out.junkFix).toBe(false);
+      expect(out.faraway).toBe(false);
+      expect(out.none).toBe(false);
       expect(out.nul).toBe(false);
     });
   });

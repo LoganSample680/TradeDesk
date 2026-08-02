@@ -72,6 +72,25 @@ function placeAt(coord){
   return best;
 }
 
+// A receipt logged AT this pin, on this day, is the contractor saying the stop
+// was for the business. It is also the exact evidence the deduction needs, so
+// nothing extra is being asked of them.
+//
+// This is what tells a crew lunch run from a personal one, and nothing else can
+// (owner's CPA, 2026-08-02). The GPS sees the same restaurant, the same forty
+// minutes parked, either way. Buying the guys lunch is a business errand and
+// both legs count; buying your own is a detour and the miles pass straight
+// through. Same rule as _placeFromExpense uses to learn a supply house: same-day
+// stamp, inside the fence.
+function expenseAt(coord){
+  if(!coord||coord.lat==null||typeof expenses==='undefined')return null;
+  return (expenses||[]).find(e=>
+    e&&e.lat!=null&&e.lon!=null&&
+    (e.geoAcc==null||e.geoAcc<=PLACE_MAX_ACC_M)&&
+    _geoStampIsContemporaneous(e)&&
+    _placeDistFt(coord,e)<=PLACE_MATCH_FT)||null;
+}
+
 // ── Create / update ──────────────────────────────────────────────────────────
 function savePlace(pl){
   if(!pl||pl.lat==null||pl.lon==null)return null;

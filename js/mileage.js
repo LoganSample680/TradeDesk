@@ -544,7 +544,13 @@ async function _autoNameStopTrip(rec,to){
     // "Stop -> ...", which is the same stop described two ways.
     if(poi.name)to.name=poi.name;
     if(poi.addr)to.addr=poi.addr;
-    const personal=!!(poi.name&&_poiIsPersonal(poi.category));
+    // A restaurant is only personal when nobody bought anything for the business
+    // there. Buying the crew lunch is a work errand and the drive counts in full
+    // (owner's CPA, 2026-08-02), and the receipt that proves it is one the
+    // contractor already has to keep, so this costs them no extra taps. No
+    // receipt at that pin today, it was their own lunch.
+    const personal=!!(poi.name&&_poiIsPersonal(poi.category)&&
+                      !(typeof expenseAt==='function'&&expenseAt({lat:to.lat,lon:to.lng})));
     // And patch a leg out of here that was ALREADY written. Which of the two
     // landed first depends on how long Apple took against how long they were
     // parked, and a record must not depend on that race.
@@ -557,13 +563,27 @@ async function _autoNameStopTrip(rec,to){
     const saved=mileage.find(m=>m.id===rec.id);
     if(!saved){saveAll();return;}
     if(personal){
-      // Taken back out rather than flagged: a personal errand on the mileage log
-      // is clutter the contractor has to read past every time, and the row is
-      // seconds old, so nothing has been looked at yet. Only the leg TO lunch
-      // goes; the leg from lunch back to a job site is business travel and
-      // stays, now with the restaurant's address on it rather than "Stop".
+      // A detour, not a destination. The leg IN comes back out of the log, and
+      // the leg OUT is measured from where they were before they stopped, so
+      // one supply-house-to-job-site trip stays one trip at its direct distance
+      // instead of becoming two legs whose total depends on where they chose to
+      // eat. Their own Topeka day: the restaurant sat four doors from the job,
+      // so the two-leg version billed 0.7 miles for a 6.5 mile trip.
       const i=mileage.indexOf(saved);
       if(i>=0)mileage.splice(i,1);
+      const back=to.prevOrigin;
+      // Nothing to pass through to (the day began at this stop): it stays the
+      // origin, because a leg with no start is worse than one starting at lunch.
+      if(back&&back.lat!=null){
+        const restored=(typeof _geoPassThroughStop==='function')&&_geoPassThroughStop(to);
+        // Not restored means they already reached the next fence and that leg
+        // was measured from here, so it is that row that needs re-pointing.
+        if(!restored)mileage.forEach(m=>{
+          if(!m.gps||!m.fromCoord)return;
+          if(Math.abs(m.fromCoord.lat-to.lat)>1e-5||Math.abs(m.fromCoord.lng-to.lng)>1e-5)return;
+          _reoriginTrip(m,back);
+        });
+      }
     }else if(!poi.name){
       // Apple knows the address but not a tenant. The stop stays "Stop", which
       // is honest, and the row gains the street address, which is what makes it
@@ -581,6 +601,28 @@ async function _autoNameStopTrip(rec,to){
     if(document.getElementById('mil-table'))renderAllMileage();
     if(typeof renderDash==='function')renderDash();
   }catch(_e){}
+}
+// Re-point a trip that was already written from the wrong end, and re-measure
+// it. Only ever used to undo a personal stop: the row was measured from the
+// restaurant and has to be measured from the business point before it instead.
+// Written back to pending first, so a sweep that races this cannot publish the
+// old distance against the new origin.
+function _reoriginTrip(m,from){
+  if(!m||!from||from.lat==null)return;
+  m.from=from.addr||from.name||'';
+  m.from_name=from.name||'';
+  m.fromCoord={lat:from.lat,lng:from.lng};
+  m.miles=0;m.calc_method='pending_auto';
+  (async()=>{
+    try{
+      const{miles}=await _routeDistance(m.fromCoord,m.toCoord);
+      if(m.calc_method!=='pending_auto')return;   // something else settled it
+      m.miles=Math.round(miles*10)/10;m.calc_method='auto_route';
+      saveAll();
+      if(document.getElementById('mil-table'))renderAllMileage();
+      if(typeof renderDash==='function')renderDash();
+    }catch(_e){}
+  })();
 }
 // What the destination IS decides the business purpose. This is the whole reason
 // automatic mileage can be IRS-complete without asking anyone anything: the

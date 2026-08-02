@@ -657,6 +657,14 @@ function _geoCloseStop(a){
                  // "Home Office -> Ace Supply" or it is not a mileage record
                  // anyone could defend a year later.
                  name:(atHome&&S.homeOffice)?'Home Office':'Stop'};
+  // Where the leg INTO this stop began, carried on the stop itself. If the stop
+  // turns out to be personal, that is the point the next leg has to be measured
+  // from: a lunch break in the middle of a supply-house-to-job-site run does not
+  // make two trips out of one, it makes one trip with a detour in it, and only
+  // the direct miles between the two business points are deductible (owner's
+  // CPA, 2026-08-02). Recorded before the reassignment below, which is the only
+  // moment it is still known.
+  stopLoc.prevOrigin=_geoLegOrigin||null;
   if(_geoDriveStartedAt)_geoDriveEntry(null,_geoDriveStartedAt,null,a.at,false,stopLoc);
   _geoDriveStartedAt=a.lastAt;
   _geoLegOrigin=stopLoc;
@@ -671,6 +679,20 @@ function _geoCloseStop(a){
     job_id:null,arrived_at:a.at,departed_at:a.lastAt,minutes:mins,
     dest_place:null,source:'stop'
   });
+}
+// A personal stop must not become the origin of the next leg. Called once the
+// business at the pin is known (mileage.js _autoNameStopTrip), which is always
+// AFTER the stop closed, because it takes a round trip to Apple to find out.
+//
+// Returns whether it actually restored anything: false means they have already
+// reached the next fence and the leg out of here was measured from the stop, so
+// the caller has to fix that row instead. Both paths exist because which one
+// happens depends on how long they were parked against how long Apple took, and
+// a deduction must not turn on that.
+function _geoPassThroughStop(stopLoc){
+  if(!stopLoc||_geoLegOrigin!==stopLoc)return false;
+  _geoLegOrigin=stopLoc.prevOrigin||null;
+  return true;
 }
 // `endedIso` closes the leg at an earlier verified moment than now: the moment
 // they parked, when the stop that follows is not driving.
