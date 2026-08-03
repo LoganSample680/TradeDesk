@@ -1974,6 +1974,44 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.ded).toBe(1);
       expect(out.reimb).toBe(0);
     });
+
+    // ── Who gets a screen for this ────────────────────────────────────────
+    // Owner (2026-08-03): "Don't want the employees to see it, will trust their
+    // business owner sees it and does the right thing."
+    //
+    // So this is deliberate, not an oversight: the crew's own-car miles are
+    // captured, attributed and synced, and the ONLY person with a screen for
+    // them is the person who has to pay them. The mileage view lives on the
+    // Tracker page, and nothing anywhere was asserting the crew cannot reach it,
+    // which means one helpful un-gating later would have quietly reversed the
+    // decision. It is a rule now, so it gets a test.
+    test('a crew member has no route to the mileage screen: the owner acts on it', async () => {
+      const out = await page.evaluate(() => {
+        const wasEmp = _isEmployee, wasRec = _employeeRecord;
+        try {
+          _isEmployee = true;
+          _employeeRecord = { name: 'Danny', role: 'tech', active: true,
+                              permissions: { mileage: true, expenses: true } };
+          if (typeof applyPermissions === 'function') applyPermissions();
+          goPg('pg-tracker');
+          const nav = document.getElementById('nb-tracker');
+          const more = document.getElementById('mmi-tracker');
+          return {
+            landed: (document.querySelector('.pg.active') || {}).id,
+            navHidden: !!nav && nav.style.display === 'none',
+            moreHidden: !!more && more.style.display === 'none',
+          };
+        } finally {
+          _isEmployee = wasEmp; _employeeRecord = wasRec;
+          if (typeof applyPermissions === 'function') applyPermissions();
+        }
+      });
+      // Asking for the page by name lands them on the dashboard instead.
+      expect(out.landed).toBe('pg-dash');
+      // And neither nav offers it, so they never ask in the first place.
+      expect(out.navHidden).toBe(true);
+      expect(out.moreHidden).toBe(true);
+    });
   });
 
   // ── The tax table has to cover the year we are in ─────────────────────────
