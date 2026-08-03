@@ -43,5 +43,21 @@
   "crew-lunch": {
     "clicks": 1,
     "note": "Buying the crew lunch, captured live 2026-08-02. Job to supply house to lunch to job: the whole drive logs itself with no taps. The single interaction is logging the receipt, which the contractor keeps anyway, and it is that receipt that turns the stop from a personal detour into business miles."
+  },
+  "two-device-drive": {
+    "clicks": 0,
+    "note": "Two trucks logging drives in the same minute, captured live 2026-08-03. ZERO taps is the whole point: the geofence writes both legs by itself and neither device's save removes the other's row. Any tap appearing here means a drive stopped logging itself."
+  },
+  "manual-drive": {
+    "clicks": 2,
+    "note": "Tapping Drive part-way through a journey the geofence is already watching, captured live 2026-08-02. Two taps, start and end. The measured geocode-to-geocode row is what survives; the typed number never becomes a second trip."
+  },
+  "crew-mileage-sync": {
+    "clicks": 1,
+    "note": "An employee's own-car trip syncing and staying out of the owner's deduction, captured live 2026-08-02. One tap to open the mileage page; the trip itself is logged by the geofence."
+  },
+  "crew-mileage-sync/employee-view": {
+    "clicks": 1,
+    "note": "What the crew member's own device is handed by the server, captured live 2026-08-03. One tap to open the mileage page."
   }
 }
