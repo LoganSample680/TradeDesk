@@ -316,6 +316,11 @@ function updateMilesPreview(){
     prev.textContent='';
   }
 }
+// How far from either end of an automatic leg a manual drive can have started
+// and still be the same journey. Five miles: generous enough that tapping Drive
+// part-way through still matches (the owner's case), tight enough that a
+// different trip across town never does.
+const _END_DRIVE_MATCH_FT=5*5280;
 function saveEndDriveModal(){
   const miles=parseFloat(document.getElementById('end-miles-modal')?.value)||0;
   if(!miles||miles<=0){zAlert('Enter the miles driven.',{title:'Required'});return;}
@@ -333,12 +338,35 @@ function saveEndDriveModal(){
   // tap and closed after it, so comparing arrival times alone would call it a
   // different journey and keep both, or keep the shorter one. The leg's START is
   // what settles it, which is why the automatic row now carries startedIso.
-  const auto=(gps.startTime?mileage.find(m=>{
+  //
+  // OVERLAPPING IN TIME IS NOT THE SAME AS BEING THE SAME DRIVE, and getting
+  // that wrong here DELETES what the contractor just typed. Time alone was the
+  // first version of this check and it was badly wrong: in a crew account
+  // another phone logs legs of its own all day, so any one of them landing in
+  // this ten-minute window silently threw away the owner's entry and told them
+  // it had "already been logged automatically". A trip that vanishes is
+  // invisible; a duplicate is visible and one tap to delete. So this branch has
+  // to be SURE, and every uncertainty resolves toward keeping what they typed.
+  const _sameDrive=(m)=>{
     if(!m||!m.gps||!m.legKey||!m.loggedAt)return false;
     const end=Date.parse(m.loggedAt),start=Date.parse(m.startedIso||m.loggedAt);
     if(!end||!start)return false;
-    return end>=gps.startTime&&start<=Date.now();   // the two windows overlap
-  }):null);
+    if(!(end>=gps.startTime&&start<=Date.now()))return false;   // windows must overlap
+    // WHOSE drive. A leg attributed to another crew member is never this one.
+    const me=(typeof _supaUser!=='undefined'&&_supaUser)?_supaUser.id:null;
+    if(m.logged_by_id&&me&&m.logged_by_id!==me)return false;
+    // WHERE they set off. When both ends are known, a start a long way from
+    // either end of the automatic leg is a different journey, whatever the
+    // clock says. gps.startCoords carries `lon`, the rows carry `lng`.
+    const sc=gps.startCoords;
+    if(sc&&typeof _geoDistFt==='function'&&(m.fromCoord||m.toCoord)){
+      const p={lat:sc.lat,lng:(sc.lng!=null?sc.lng:sc.lon)};
+      const near=(c)=>!!(c&&c.lat!=null&&c.lng!=null&&_geoDistFt(p,{lat:c.lat,lng:c.lng})<=_END_DRIVE_MATCH_FT);
+      if(!near(m.fromCoord)&&!near(m.toCoord))return false;
+    }
+    return true;
+  };
+  const auto=(gps.startTime?mileage.find(_sameDrive):null);
   if(auto){
     gps.active=false;gps.startTime=null;gps.startCoords=null;
     clearInterval(gps.timerInt);

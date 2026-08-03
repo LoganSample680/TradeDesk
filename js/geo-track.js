@@ -90,6 +90,9 @@ let _geoWasAtHome=false;         // was the PREVIOUS ping inside one? Keeps the 
 // Tighter than the 600ft place fence on purpose: at 600ft a slow crawl through
 // city traffic reads as parked. 350ft still absorbs parking-lot GPS jitter.
 const _GEO_STOP_FT=350;
+// The longest gap that can still be read as ONE drive. Past this, an inferred
+// leg start is not evidence of anything: it is a phone that was asleep.
+const _GEO_MAX_INFERRED_LEG_MS=4*60*60*1000;
 const _GEO_STOP_MS=5*60*1000;   // a stop, not a traffic light (matches PLACE_DWELL_MS)
 let _geoPingBusy=false;    // re-entrancy guard: _geoOnPing awaits geocodes, overlapping
                            // pings must never interleave the fence state machine
@@ -481,9 +484,22 @@ async function _geoOnPing(pos){
     // of departure is the last fix that still put them on site. Using it is what
     // stops the leg vanishing; tagging it keeps the row honest that one end is
     // inferred rather than seen.
-    let legStart=_geoDriveStartedAt,legGap=false;
+    let legStart=_geoDriveStartedAt,legGap=false,legStale=false;
     if(!legStart&&prev&&cur&&_geoLastFenceAt){
-      legStart=_geoLastFenceAt;legGap=true;
+      // OVERNIGHT. _geoLastFenceAt is only cleared when tracking stops, so a
+      // truck parked at the yard at 5pm with the phone asleep, driven to a job
+      // at 7:30 the next morning, inferred a FOURTEEN HOUR drive: billed as job
+      // time into Job Profit and crew cost, with the mileage row dated to
+      // yesterday (and at New Year, the wrong tax year). The persisted job entry
+      // already guards its day boundary; this in-memory timestamp did not.
+      //
+      // Owner's call (2026-08-03): keep the miles, drop the hours. The DISTANCE
+      // is real and measured geocode to geocode, so the deduction stands. The
+      // DURATION is a number nobody observed, and it feeds payroll, so it is not
+      // claimed at all. _geoDriveEntry logs the mileage and skips the time entry
+      // when it sees this flag.
+      legStale=(Date.parse(nowIso)-Date.parse(_geoLastFenceAt))>_GEO_MAX_INFERRED_LEG_MS;
+      legStart=legStale?nowIso:_geoLastFenceAt;legGap=true;
       // Single ping across the whole trip, so the drive never "opened" and no
       // origin was recorded. The fence we were last inside is the origin, and
       // it is exactly as good a geocode as the two-ping case would have given.
@@ -492,8 +508,8 @@ async function _geoOnPing(pos){
     // ── 3. Enter the new one ────────────────────────────────────────────────
     if(cur){
       if(legStart){
-        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,null,legGap,curLoc);
-        else _geoDriveEntry(null,legStart,cur.name,null,legGap,curLoc);
+        if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,null,legGap,curLoc,legStale);
+        else _geoDriveEntry(null,legStart,cur.name,null,legGap,curLoc,legStale);
       }
       _geoDriveStartedAt=null;
       _geoStopAnchor=null;
@@ -696,11 +712,18 @@ function _geoPassThroughStop(stopLoc){
 }
 // `endedIso` closes the leg at an earlier verified moment than now: the moment
 // they parked, when the stop that follows is not driving.
-function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc){
+function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stale){
   if(!driveStartedAt)return;
   const arrived=endedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(arrived)-Date.parse(driveStartedAt))/60000));
-  if(mins<2)return;
+  // `stale` = the departure could not be inferred (the phone was asleep across
+  // the gap, see _GEO_MAX_INFERRED_LEG_MS). The two halves of a leg are split
+  // deliberately here: the DISTANCE is measured geocode to geocode and is real
+  // whatever the clock did, so the deduction stands; the DURATION is a number
+  // nobody observed and it feeds payroll, so none is claimed. The mins<2 floor
+  // is skipped for the mileage half because a stale leg is stamped zero-length
+  // on purpose, and dropping it there would throw away a real drive.
+  if(!stale&&mins<2)return;
   if(!_supaUser)return;
   // Only flag for mileage when employee is in a company vehicle for this shift.
   // Personal vehicle trips stay private, drive TIME is still logged (it's
@@ -718,13 +741,17 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc){
   // entry and on the mileage row. That is what makes the mileage row idempotent:
   // one leg can only ever produce one trip, however many times this runs.
   const legKey=_geoClientKey();
-  _geoEnqueue('job_time_entries',{
-    contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
-    job_id:jobId!=null?String(jobId):null,arrived_at:driveStartedAt,departed_at:arrived,minutes:mins,
-    dest_place:destPlace||null,client_key:legKey,
-    source:kind+(gap?'-gap':'')
-  });
-  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,driveStartedAt,companyVeh);
+  if(!stale){
+    _geoEnqueue('job_time_entries',{
+      contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+      job_id:jobId!=null?String(jobId):null,arrived_at:driveStartedAt,departed_at:arrived,minutes:mins,
+      dest_place:destPlace||null,client_key:legKey,
+      source:kind+(gap?'-gap':'')
+    });
+  }
+  // Dated to the ARRIVAL for a stale leg: the day we actually saw them, never
+  // the day the phone last happened to report a fence.
+  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh);
 }
 
 // ── Automatic mileage: the leg we just timed, measured ───────────────────────

@@ -2100,6 +2100,168 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── The truck that sat at the yard overnight ───────────────────────────────
+  // _geoLastFenceAt is how a leg's start is inferred when the whole trip lands
+  // in one ping, and it is only ever cleared when tracking stops. Parked at the
+  // yard at 5pm with the phone asleep, driven to a job at 7:30 the next morning,
+  // it inferred a FOURTEEN HOUR drive: billed as job time into Job Profit and
+  // crew cost, mileage dated to yesterday, and at New Year the wrong tax year.
+  // The persisted job entry already guards its day boundary; this in-memory
+  // timestamp did not.
+  //
+  // Owner's call (2026-08-03): keep the miles, drop the hours.
+  test.describe('a leg inferred across an overnight gap', () => {
+    const overnightLeg = (hoursAgo) => page.evaluate(async (h) => {
+      const realUser = _supaUser, realRoute = _routeDistance;
+      const queued = [];
+      const realEnq = window._geoEnqueue;
+      _supaUser = { id: 'u-overnight' };
+      window._routeDistance = _routeDistance = async () => ({ miles: 9.4, mins: 18 });
+      window._geoEnqueue = (tbl, row) => queued.push({ tbl, row });
+      const before = mileage.length;
+      try {
+        __seedGeo();
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+        _geoLastFenceAt = null; _geoLegAtShop = false;
+        _geoLastFenceLoc = null; _geoLegOrigin = null;
+        _geoHomeDwell = null; _geoWasAtHome = false;
+        const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+        await ping(h.SHOP);                       // parked at the yard, evening
+        _geoLastFenceAt = new Date(Date.now() - h.hours * 3600000).toISOString();
+        await ping(h.JOB);                        // first fix of the next morning
+        await new Promise(r => setTimeout(r, 50));
+        const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+        return {
+          rows: rows.map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles, date: m.date })),
+          timeEntries: queued.filter(q => q.tbl === 'job_time_entries').map(q => q.row.minutes),
+          today: todayKey(),
+        };
+      } finally {
+        _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
+        window._geoEnqueue = realEnq;
+      }
+    }, { SHOP, JOB, hours: hoursAgo });
+
+    test('fourteen hours asleep: the miles are kept, the hours are not', async () => {
+      const out = await overnightLeg(14);
+      expect(out.rows.length, 'the drive is real and must still be logged').toBe(1);
+      expect(out.rows[0].miles).toBe(9.4);
+      // Dated to the morning we SAW them, never to yesterday's last fence ping.
+      expect(out.rows[0].date).toBe(out.today);
+      // And no invented shift lands in payroll.
+      expect(out.timeEntries, 'a duration nobody observed must not be claimed').toEqual([]);
+    });
+
+    test('a normal twenty-minute leg still logs its time', async () => {
+      // The guard must not swallow ordinary legs: this is the case that keeps
+      // "drop the hours" from quietly becoming "never log hours".
+      const out = await overnightLeg(20 / 60);
+      expect(out.rows.length).toBe(1);
+      expect(out.rows[0].date).toBe(out.today);
+      expect(out.timeEntries.length).toBe(1);
+      expect(out.timeEntries[0]).toBeGreaterThanOrEqual(19);
+      expect(out.timeEntries[0]).toBeLessThanOrEqual(21);
+    });
+  });
+
+  // ── The End Drive match, and what it is allowed to throw away ──────────────
+  // Caught by the FULL live suite on the local runner, and it was mine: the
+  // duplicate-resolution I added matched an automatic row on TIME ALONE. Any
+  // automatic leg overlapping the window counted as "this same drive", so what
+  // the contractor typed was discarded and they were told it had already been
+  // logged. In a crew account another phone logs legs all day, so the trip that
+  // vanished need not even have been theirs.
+  //
+  // Direction of error matters here and it was backwards: a duplicate row is
+  // visible and one tap to delete, a vanished trip is invisible. Every
+  // uncertainty now resolves toward keeping what they typed.
+  test.describe('ending a drive next to somebody else\'s leg', () => {
+    const endDrive = (miles) => page.evaluate((m) => {
+      document.getElementById('end-miles-modal')?.remove();
+      const inp = document.createElement('input');
+      inp.id = 'end-miles-modal'; inp.value = String(m);
+      document.body.appendChild(inp);
+      saveEndDriveModal();
+      inp.remove();
+      return mileage.map(r => ({ k: r.legKey || 'manual', miles: r.miles, method: r.calc_method }));
+    }, miles);
+
+    test.beforeEach(async () => {
+      await page.evaluate(() => {
+        mileage.length = 0;
+        gps.vehicle = 'Truck'; gps.purpose = 'Job site'; gps.clientId = null;
+        gps.active = true; gps.startTime = Date.now() - 10 * 60000;
+        gps.startCoords = { lat: 37.6872, lon: -97.3301 };   // Wichita
+      });
+    });
+    test.afterEach(async () => {
+      await page.evaluate(() => { gps.active = false; gps.startTime = null; gps.startCoords = null; });
+    });
+
+    test('an overlapping leg 130 miles away is a DIFFERENT drive, and is kept', async () => {
+      await page.evaluate(() => {
+        // A Topeka leg, logged in the same ten minutes. Same account, same
+        // clock, nothing to do with the drive being ended in Wichita.
+        mileage.push({ id: _newId(), date: todayKey(), gps: true, legKey: 'topeka-leg',
+                       miles: 4.2, calc_method: 'auto_route',
+                       fromCoord: { lat: 39.0307, lng: -95.7113 }, toCoord: { lat: 39.0556, lng: -95.6720 },
+                       startedIso: new Date(Date.now() - 8 * 60000).toISOString(),
+                       loggedAt: new Date(Date.now() - 1 * 60000).toISOString() });
+      });
+      const after = await endDrive(12.4);
+      // Both survive. Before the fix the typed 12.4 was silently dropped.
+      expect(after.length).toBe(2);
+      expect(after.find(t => t.k === 'manual').miles).toBe(12.4);
+      expect(after.find(t => t.k === 'topeka-leg').miles).toBe(4.2);
+    });
+
+    test('another crew member\'s leg never swallows the owner\'s entry', async () => {
+      await page.evaluate(() => {
+        mileage.push({ id: _newId(), date: todayKey(), gps: true, legKey: 'dannys-leg',
+                       miles: 9, calc_method: 'auto_route', logged_by_id: 'danny-uid',
+                       startedIso: new Date(Date.now() - 8 * 60000).toISOString(),
+                       loggedAt: new Date(Date.now() - 1 * 60000).toISOString() });
+      });
+      const after = await endDrive(12.4);
+      expect(after.length).toBe(2);
+      expect(after.find(t => t.k === 'manual').miles).toBe(12.4);
+    });
+
+    test('the SAME journey still collapses to the measured row', async () => {
+      // The behaviour the match exists for, unchanged: an automatic leg from
+      // where they set off, overlapping in time, is this drive.
+      await page.evaluate(() => {
+        mileage.push({ id: _newId(), date: todayKey(), gps: true, legKey: 'my-leg',
+                       miles: 15.8, calc_method: 'auto_route',
+                       fromCoord: { lat: 37.6872, lng: -97.3301 },       // where the tap happened
+                       toCoord: { lat: 37.7000, lng: -97.2000 },
+                       startedIso: new Date(Date.now() - 22 * 60000).toISOString(),
+                       loggedAt: new Date().toISOString() });
+      });
+      const after = await endDrive(3);
+      expect(after.length).toBe(1);
+      expect(after[0].k).toBe('my-leg');
+      expect(after[0].miles).toBe(15.8);   // the measured one wins, not the typed 3
+    });
+
+    test('with no start fix recorded it still collapses on time alone', async () => {
+      // Location refused or unavailable: startCoords is all we lose, and the
+      // mid-drive tap must still work. Time is then the only evidence there is.
+      await page.evaluate(() => {
+        gps.startCoords = null;
+        mileage.push({ id: _newId(), date: todayKey(), gps: true, legKey: 'no-fix-leg',
+                       miles: 11.1, calc_method: 'auto_route',
+                       startedIso: new Date(Date.now() - 22 * 60000).toISOString(),
+                       loggedAt: new Date().toISOString() });
+      });
+      const after = await endDrive(3);
+      expect(after.length).toBe(1);
+      expect(after[0].k).toBe('no-fix-leg');
+    });
+  });
+
   // ── Written to the cache, but read back from it? ───────────────────────────
   // Found by reading the sync engine rather than by suspecting anything.
   //
