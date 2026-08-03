@@ -2005,9 +2005,24 @@ test.describe('Automatic mileage from drive legs', () => {
       const dir = path.join(__dirname, '..', 'js');
       const offenders = [];
       for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.js'))) {
-        fs.readFileSync(path.join(dir, f), 'utf8').split('\n').forEach((line, i) => {
-          if (!/mileage[\s\S]*?\.reduce\([^;]*\.miles/.test(line)) return;
-          if (/deductibleTrips\(|reimbursableTrips\(|miles-not-deduction/.test(line)) return;
+        const text = fs.readFileSync(path.join(dir, f), 'utf8');
+        const lines = text.split('\n');
+        lines.forEach((line, i) => {
+          const exempt = (t) => /deductibleTrips\(|reimbursableTrips\(|miles-not-deduction/.test(t);
+          // (a) the total is written on one line
+          const oneLine = /mileage[\s\S]*?\.reduce\([^;]*\.miles/.test(line);
+          // (b) the total SPANS lines, or a slice of mileage is taken here and
+          //     summed further down. fleet.js does both, and the single-line
+          //     form above could not see either: it took `mileage.filter(...)`
+          //     on one line and `.reduce(... .miles ...)` on the next, or passed
+          //     the slice into a function that summed it. Five sites hid there,
+          //     two of them deduction inputs. Look at the line PLUS the two
+          //     after it, which is where the reduce lands in practice.
+          const window3 = lines.slice(i, i + 3).join('\n');
+          const spans = /\bmileage\b\s*\.\s*(filter|map|slice)\s*\(/.test(line) &&
+                        /\.reduce\([^;]*\.miles/.test(window3);
+          if (!oneLine && !spans) return;
+          if (exempt(oneLine ? line : window3)) return;
           offenders.push(`${f}:${i + 1}  ${line.trim().slice(0, 120)}`);
         });
       }

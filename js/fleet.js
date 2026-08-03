@@ -84,7 +84,7 @@ function renderFleetVehicles() {
   const totalCost = vehs.reduce((s,v)=>s+(v.purchasePrice||0),0);
   const yr = new Date().getFullYear().toString();
   const ytdMiles = vehs.reduce((s,v)=>{
-    return s + mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
+    return s + deductibleTrips(mileage).filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                       .reduce((ss,t)=>ss+(t.miles||0),0);
   },0);
   const maintYTD = maintenance.filter(m=>(m.date||'').startsWith(yr))
@@ -106,7 +106,9 @@ function _fleetCard(v, idx) {
   const statusLabels = {active:'● Active',down:svgIcon('🔴',{size:12})+' Down',sold:svgIcon('📦',{size:12})+' Sold'};
   const statusColor = statusColors[status] || statusColors.active;
   const yr = new Date().getFullYear().toString();
-  const trips = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr));
+  // deductibleTrips: this feeds _fleetPnLCalc below, so a crew member's own-car
+  // miles reaching it would deduct against the company truck.
+  const trips = deductibleTrips(mileage).filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr));
   const ytdMi = Math.round(trips.reduce((s,t)=>s+(t.miles||0),0));
   const maint = maintenance.filter(m=>_vehLinkMatches(m,v));
   const lastMaint = maint.slice().sort((a,b)=>b.date>a.date?1:-1)[0];
@@ -286,7 +288,12 @@ function _fleetPnLCalc(v, maintRecords, trips, year) {
     // personal share and understated the deduction vs the Schedule C engine
     // (_vehSchedC), which has always computed miles × rate. Aligned 2026-07-03 so
     // every surface shows the same, correct number. Maintenance is records-only here.
-    const irsDeduction = +(totalMiles * (S.irsRate||0.67)).toFixed(2);
+    // IRS(year), not S.irsRate. This function is handed the YEAR and was still
+    // pricing every year at whatever rate was last fetched, with a hardcoded
+    // 2024 fallback underneath it. Viewing 2024's fleet P&L showed 2024 miles at
+    // today's rate, which is the same defect fixed in IRS() and this is the one
+    // place that still had its own copy of it.
+    const irsDeduction = +(totalMiles * IRS(year)).toFixed(2);
     // "Real" cost per mile based on actual maintenance spend (for awareness, not deduction)
     const costPerMile = totalMiles > 0 ? +(maintCostYTD / totalMiles).toFixed(2) : 0;
     return {method:'mileage',totalMiles,irsDeduction,maintCostYTD,deductibleMaint:0,annualDeprec:0,totalDeduction:irsDeduction,totalCost:maintCostYTD,costPerMile,netPosition:irsDeduction};
@@ -430,7 +437,11 @@ function _renderFleetDetailModal() {
   if(!box) return;
 
   const yr = new Date().getFullYear().toString();
-  const trips = mileage.filter(t=>t.vehicle===v.name);
+  // deductibleTrips first. A crew member's own-car miles are owed to THEM and
+  // are not this truck's deduction, so they must never reach a fleet P&L. Today
+  // the name match happens to exclude them; relying on that is relying on a
+  // coincidence, and this is a deduction.
+  const trips = deductibleTrips(mileage).filter(t=>t.vehicle===v.name);
   const maint = maintenance.filter(m=>_vehLinkMatches(m,v)).slice().sort((a,b)=>b.date>a.date?1:-1);
   const pnl = _fleetPnLCalc(v, maint, trips.filter(t=>(t.date||'').startsWith(yr)), yr);
   const downDays = _fleetDownDays(v, yr);
@@ -489,7 +500,7 @@ function setFleetDetailTab(tab) {
 function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
   const due = _fleetDueAlerts(v, maint);
   const status = v.status || 'active';
-  const allTrips = mileage.filter(t=>t.vehicle===v.name);
+  const allTrips = deductibleTrips(mileage).filter(t=>t.vehicle===v.name);
   const lifetimeMi = Math.round(allTrips.reduce((s,t)=>s+(t.miles||0),0));
   const bizPct = v.bizUse||100;
 
@@ -653,7 +664,7 @@ function _fleetDetailPnLHtml(v, pnl, maint, trips) {
         <div style="border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:12px">
           <div style="display:flex;align-items:center;margin-bottom:10px"><span style="font-size:13px;font-weight:800">${yr}</span>${methodBadge}</div>
           <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">Business miles</span><span style="font-size:12px;font-weight:600">${Math.round(p.totalMiles).toLocaleString()} mi</span></div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">IRS rate (${((S.irsRate||0.67)*100).toFixed(0)}¢/mi × ${v.bizUse||100}% biz)</span><span style="font-size:12px;font-weight:600;color:var(--green)">$${p.irsDeduction.toLocaleString()}</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">IRS rate (${(IRS(yr)*100).toFixed(0)}¢/mi × ${v.bizUse||100}% biz)</span><span style="font-size:12px;font-weight:600;color:var(--green)">$${p.irsDeduction.toLocaleString()}</span></div>
           <div style="border-top:1px solid var(--border);margin:6px 0"></div>
           <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:8px">
             <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:3px">${svgIcon('📋',{size:11})} Maintenance, records only</div>
@@ -703,7 +714,10 @@ function _renderOdometerReport() {
   if(!v) return;
   const yr = String(_odoReportYear);
   const rec = _vehOdo(v, yr);
-  const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
+  // Business-use % is a DEDUCTION input: the actual-expense method multiplies
+  // this truck's costs by it. Somebody else's personal miles inflating it
+  // inflates the deduction.
+  const loggedMiles = deductibleTrips(mileage).filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                              .reduce((s,t)=>s+(t.miles||0),0);
   const startOdo = rec.start || 0;
   const endOdo = rec.end || 0;
@@ -782,7 +796,10 @@ function saveOdometerReport() {
   if(start>0) patch.start = start;
   if(end>0)   patch.end   = end;
   // Auto-calculate and save business use %
-  const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
+  // Business-use % is a DEDUCTION input: the actual-expense method multiplies
+  // this truck's costs by it. Somebody else's personal miles inflating it
+  // inflates the deduction.
+  const loggedMiles = deductibleTrips(mileage).filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                              .reduce((s,t)=>s+(t.miles||0),0);
   const totalDriven = end>start ? end-start : 0;
   if(totalDriven>0 && loggedMiles>0) {
@@ -876,7 +893,7 @@ function openAddVehicleModal(idx) {
               <input type="radio" name="fv-deduct" value="mileage" style="margin-top:3px;accent-color:var(--blue);pointer-events:none;width:16px;height:16px" ${(v.deductionMethod||'mileage')==='mileage'?'checked':''}>
               <div>
                 <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;line-height:1.3">Standard mileage rate</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct ${((S.irsRate||0.67)*100).toFixed(0)}¢ per business mile. Simpler: no need to track every expense. Maintenance records are for your info only.</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct ${(IRS()*100).toFixed(0)}¢ per business mile. Simpler: no need to track every expense. Maintenance records are for your info only.</div>
               </div>
             </div>
             <div onclick="this.querySelector('input').click()" style="display:grid;grid-template-columns:18px 1fr;align-items:start;column-gap:10px;padding:10px 12px;border:1.5px solid ${v.deductionMethod==='actual'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${v.deductionMethod==='actual'?'rgba(45,93,168,.06)':'var(--bg2)'}">
