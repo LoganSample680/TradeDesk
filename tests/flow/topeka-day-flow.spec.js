@@ -385,7 +385,21 @@ test.describe('A full Topeka day', () => {
         }, priorTrips);
         // A street address has a number in it. "Shop", "Stop" and "Place" do not,
         // which is exactly the set this is meant to catch.
-        const bare = out.trips.filter(t => !/\d/.test(t.from || '') || !/\d/.test(t.to || ''));
+        //
+        // EXCEPT an endpoint that stayed an unnamed stop. The app only learns a
+        // street address for a bare pin when Apple names the business standing
+        // there, so demanding one asks it to invent an address it has no source
+        // for. On the cloud preview MapKit answers and these become "Home Depot"
+        // with a real address, which is why this never showed up there; the
+        // token is not valid for localhost, so on the local runner they stay
+        // "Stop" and there is nothing to demand. The strong form of the rule is
+        // asserted below wherever MapKit is actually up.
+        const addressed = (nm, addr) => nm === 'Stop' || /\d/.test(addr || '');
+        const bare = out.trips.filter(t => !addressed(t.fromName, t.from) || !addressed(t.toName, t.to));
+        // Where Apple IS answering, no endpoint may be left as a bare "Stop" at
+        // all: that is the original promise of this step and it still holds.
+        const unnamed = engine.mapkitReady
+          ? out.trips.filter(t => t.fromName === 'Stop' || t.toName === 'Stop') : [];
         console.log('[topeka-day] addresses on the log:\n' + out.trips.map(t =>
           `   ${t.fromName} → ${t.toName}\n        "${t.from}" → "${t.to}"`).join('\n'));
         // The yard is only ever as good as the business address in Settings, so
@@ -394,9 +408,11 @@ test.describe('A full Topeka day', () => {
         const shopLegs = out.trips.filter(t => t.fromName === 'Shop' || t.toName === 'Shop');
         const shopWrong = shopLegs.filter(t => (t.fromName === 'Shop' ? t.from : t.to) !== out.shopAddr);
         return {
-          ok: out.trips.length > 0 && !bare.length && !shopWrong.length,
+          ok: out.trips.length > 0 && !bare.length && !shopWrong.length && !unnamed.length,
           got: bare.length ? `${bare.length} endpoint(s) with no street address: ` +
                  bare.map(t => `"${t.from}" → "${t.to}"`).join(', ')
+             : unnamed.length ? `MapKit is up, so ${unnamed.length} endpoint(s) should have been named: ` +
+                 unnamed.map(t => `${t.fromName} → ${t.toName}`).join(', ')
              : shopWrong.length ? `the yard did not travel as "${out.shopAddr}"`
              : `${out.trips.length} trips, every endpoint addressed`,
         };
