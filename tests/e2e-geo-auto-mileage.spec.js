@@ -538,10 +538,25 @@ test.describe('Automatic mileage from drive legs', () => {
       // already left behind.
     });
 
-    test('employee who picked no vehicle: same answer, owed not deducted', async () => {
+    test('employee who picked no vehicle: NO mileage claim at all', async () => {
+      // CHANGED 2026-08-03, owner's call, and the old assertion was mine from
+      // earlier in this same PR.
+      //
+      // Old behaviour: no pick was treated as "their own car", so it logged one
+      // reimbursable row. The reasoning was that an unrecorded drive is more
+      // likely personal than company, so recording the debt was the safe side.
+      //
+      // Why that was wrong: no pick does not mean personal car. It means nobody
+      // said anything. They may have been in the company truck, riding with
+      // somebody, or not driving at all. Booking a reimbursement off that
+      // invents a debt from a blank, and it contradicted the rule this codebase
+      // already states in _autoTripVehicle: no pick, no mileage. 'rider' two
+      // cases down has always claimed nothing for exactly this reason.
+      //
+      // New behaviour: the TIME still logs, because the drive happened and is
+      // compensable. The money claim waits until somebody records a vehicle.
       const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: '' });
-      expect(rows.length).toBe(1);
-      expect(rows[0].reimbursable).toBe(true);
+      expect(rows.length).toBe(0);
     });
 
     test('an employee in their own car is still PAID for the drive', async () => {
