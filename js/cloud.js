@@ -2307,7 +2307,19 @@ async function _dispatchLoadStatus(force){
   _dispatchStatusBusy=false;
 }
 function _dispatchClock(iso){
-  try{return new Date(iso).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){return '';}
+  // The try/catch here was doing nothing for the case it was written for.
+  // new Date('nonsense') does NOT throw: it produces an Invalid Date, and
+  // toLocaleTimeString on that returns the literal string "Invalid Date". So a
+  // missing or malformed timestamp (a crew phone writing a bad value, a field
+  // that never landed) printed the words "Invalid Date" onto the job card in
+  // the position where the crew reads an arrival time. Check the date is real
+  // instead of hoping it throws.
+  try{
+    if(!iso)return '';
+    const d=new Date(iso);
+    if(isNaN(d.getTime()))return '';
+    return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  }catch(_e){return '';}
 }
 function _dispatchDur(mins){
   const m=Math.max(0,Math.round(mins||0));
