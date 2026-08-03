@@ -2100,6 +2100,90 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── The four the suite never reached ───────────────────────────────────────
+  // A mechanical sweep of this PR's 112 new or rewritten functions found four
+  // with no path from any test, directly or through a caller a test drives.
+  // Three were cosmetic. One was not, and it is the reason this block exists
+  // rather than being waved off: _geoPassThroughStop is in the money path.
+  test.describe('the functions no test was reaching', () => {
+    test('_geoPassThroughStop restores the origin a personal stop replaced', async () => {
+      // When a stop turns out to be lunch, the leg it interrupted has to be
+      // re-pointed at wherever the truck REALLY came from, which is the origin
+      // that was current before the stop was opened. Get this wrong and the
+      // detour rule silently measures from the sandwich counter.
+      const out = await page.evaluate(() => {
+        const keepOrigin = _geoLegOrigin;
+        try {
+          const supply = { lat: 38.12, lng: -94.12, name: 'Ace Supply', kind: 'supply' };
+          _geoLegOrigin = supply;
+          // Opening the stop stashes whatever the origin was, the way
+          // _geoCloseStop does when it parks somewhere unrecognised.
+          const stop = { lat: 38.24, lng: -94.24, name: 'Stop', kind: 'stop' };
+          stop.prevOrigin = _geoLegOrigin || null;
+          _geoLegOrigin = stop;
+          const restored = _geoPassThroughStop(stop);
+          const after = _geoLegOrigin;
+          // Called again with a stop that is NOT the current origin: must refuse,
+          // or a stale descriptor could re-point a leg that has moved on.
+          const other = { lat: 39.0, lng: -95.0, name: 'Elsewhere', kind: 'stop', prevOrigin: null };
+          const refused = _geoPassThroughStop(other);
+          return { restored, refused, name: after && after.name, sameObject: after === supply,
+                   originUnchanged: _geoLegOrigin === after };
+        } finally { _geoLegOrigin = keepOrigin; }
+      });
+      expect(out.restored).toBe(true);
+      expect(out.name).toBe('Ace Supply');
+      expect(out.sameObject, 'the ORIGINAL origin descriptor comes back, not a copy').toBe(true);
+      expect(out.refused, 'a stop that is not the current origin must not re-point anything').toBe(false);
+      expect(out.originUnchanged).toBe(true);
+    });
+
+    test('_geoPassThroughStop with nothing to restore leaves the leg alone', async () => {
+      const out = await page.evaluate(() => {
+        const keep = _geoLegOrigin;
+        try {
+          // Null, undefined, and a stop with no stashed origin: the first drive
+          // of the day has nothing behind it, and that is not an error.
+          const a = _geoPassThroughStop(null);
+          const b = _geoPassThroughStop(undefined);
+          const stop = { name: 'Stop', kind: 'stop' };
+          _geoLegOrigin = stop;
+          const c = _geoPassThroughStop(stop);
+          return { a, b, c, after: _geoLegOrigin };
+        } finally { _geoLegOrigin = keep; }
+      });
+      expect(out.a).toBe(false);
+      expect(out.b).toBe(false);
+      expect(out.c, 'it WAS the current origin, so it is consumed').toBe(true);
+      expect(out.after, 'with nothing stashed behind it, the leg has no origin').toBe(null);
+    });
+
+    test('_dispatchDur and _dispatchClock survive the inputs a real day hands them', async () => {
+      const out = await page.evaluate(() => ({
+        dur: [null, undefined, 0, -5, 1, 59, 60, 61, 90, 120, 1439, 0.4, NaN].map(v => _dispatchDur(v)),
+        clock: ['', null, undefined, 'not a date', new Date('2026-08-03T14:05:00Z').toISOString()].map(v => _dispatchClock(v)),
+      }));
+      // Negative and NaN come from clock skew between two phones, which is
+      // ordinary, and must never render as "-3m" or "NaNm" on a job card.
+      expect(out.dur).toEqual(['0m', '0m', '0m', '0m', '1m', '59m', '1h', '1h 1m', '1h 30m', '2h', '23h 59m', '0m', '0m']);
+      // A bad timestamp yields an empty string, never the word "Invalid Date".
+      out.clock.slice(0, 4).forEach(v => expect(v).toBe(''));
+      expect(out.clock[4]).toMatch(/\d/);
+    });
+
+    test('_geoPinSvg renders a real pin for any colour it is handed', async () => {
+      const out = await page.evaluate(() => {
+        const svg = _geoPinSvg('#0E6B39');
+        return { has: svg.includes('<svg'), closed: svg.trim().endsWith('</svg>'),
+                 colour: (svg.match(/#0E6B39/g) || []).length, empty: _geoPinSvg('') };
+      });
+      expect(out.has).toBe(true);
+      expect(out.closed, 'an unclosed svg breaks every marker after it on the map').toBe(true);
+      expect(out.colour).toBeGreaterThan(0);
+      expect(out.empty).toContain('<svg');
+    });
+  });
+
   // ── Ordinary days, walked end to end ───────────────────────────────────────
   // Owner (2026-08-03): "prove the last 5." This is the third. Every transition
   // pair is tested on its own elsewhere; what was never walked is a real day,
