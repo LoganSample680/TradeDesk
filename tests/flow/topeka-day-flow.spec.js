@@ -312,8 +312,19 @@ test.describe('A full Topeka day', () => {
           return mileage.filter(m => m.gps && m.legKey && !seen.has(m.id) && (at(m.toCoord) || at(m.fromCoord)))
             .map(m => `${m.from_name} → ${m.to_name}`);
         }, { prior: priorTrips, lunch });
-        const want = lunch.named ? 0 : 1;
-        return { ok: hit.length === want, got: hit.length ? 'billed: ' + hit.join(', ') : 'nothing billed to the lunch pin' };
+        // Named as food: ZERO. It is a personal detour, so it is neither a
+        // destination nor a starting point, and both legs collapse into one
+        // direct leg between the two business stops.
+        //
+        // Not named (no MapKit, or Apple has nobody at the pin): TWO. The stop
+        // stays on the log as an honest waypoint, so the leg IN to it and the
+        // leg OUT of it both touch the pin. This asserted 1, which no behaviour
+        // ever produced: an unnamed stop is never half-kept. It failed on the
+        // local runner because MapKit's token is domain-locked and localhost is
+        // not an authorised origin, so that branch had simply never run.
+        const want = lunch.named ? 0 : 2;
+        return { ok: hit.length === want,
+                 got: (hit.length ? hit.join(' | ') : 'nothing') + ` touches the lunch pin, expected ${want}` };
       },
     });
 
