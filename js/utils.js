@@ -41,7 +41,31 @@ const _moneyVal=id=>parseFloat((document.getElementById(id)?.value||'').replace(
 // Comma+cents string for programmatically pre-filling a money input (no $ sign,
 // the field's own label/prefix already shows that).
 const _moneyStr=n=>(Number(n)||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2});
-const IRS=()=>S.irsRate||.725;
+// THE RATE FOR A GIVEN YEAR, not "the rate".
+//
+// This used to be S.irsRate||.725: one stored number with no year attached, so
+// every screen priced every trip at whatever rate was fetched last. Two things
+// were wrong with that, and the first one is wrong TODAY, not someday:
+//
+//   · Open 2024 on the tracker and those trips were priced at the CURRENT rate.
+//     2024 was 67.0 cents and 2026 is 72.5, so a closed year's deduction read
+//     8% high on the very screen a contractor would check it on.
+//   · The tax page never used this. It reads _getIrsRateForYear, which knows the
+//     year table. So the mileage page and the tax page could put two different
+//     numbers on the same trips, and neither one said which year it meant.
+//
+// Routing through _getIrsRateForYear fixes both at the root instead of at 29
+// call sites. That function still honours a per-contractor S.irsRate override
+// for the CURRENT year (which is what the yearly auto-refresh writes), and reads
+// the published table for every year that is already closed.
+//
+// Accepts a year, a 'YYYY-MM-DD' date (so a per-trip figure can price itself off
+// the trip's own date), or nothing at all, meaning this calendar year.
+const IRS=(when)=>{
+  const y=when==null?new Date().getFullYear():parseInt(String(when).slice(0,4),10);
+  if(!y||typeof _getIrsRateForYear!=='function')return S.irsRate||.725;
+  return _getIrsRateForYear(y);
+};
 function fmtTime(t){if(!t)return'';const[h,m]=t.split(':').map(Number);const ampm=h>=12?'PM':'AM';const h12=h%12||12;return h12+':'+(m<10?'0':'')+m+' '+ampm;}
 const COVERAGE=()=>S.cov||350;
 const MARGIN=()=>(S.margin||25)/100;

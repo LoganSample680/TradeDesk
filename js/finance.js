@@ -1882,7 +1882,6 @@ function _xlsByYear(headers,colWidths,items,getDate,buildDataRow,sumCols){
 function exportAllXLSX(){
   if(typeof XLSX==='undefined'){showToast('Export library loading, try again','⏳');return;}
   const biz=S.bname||'TradeDesk';
-  const rate=IRS();
   const wb=XLSX.utils.book_new();
 
   XLSX.utils.book_append_sheet(wb,_xlsByYear(
@@ -1930,7 +1929,7 @@ function exportAllXLSX(){
       {v:_xlsClean(m.from),t:'s',s:_xS.left},
       {v:_xlsClean(m.to),t:'s',s:_xS.left},
       {v:m.miles||0,t:'n',s:_xS.mi},
-      {v:(m.miles||0)*rate,t:'n',s:_xS.cur},
+      {v:(m.miles||0)*IRS(m.date),t:'n',s:_xS.cur},
       {v:_xlsClean(m.purpose),t:'s',s:_xS.left},
       {v:_xlsClean(m.client_name),t:'s',s:_xS.left},
     ],
@@ -1988,7 +1987,6 @@ function exportMileageCSV(){
   if(typeof XLSX==='undefined'){showToast('Export library loading, try again','⏳');return;}
   const yr=getExportYear();
   const biz=S.bname||'TradeDesk';
-  const rate=IRS();
   const filtered=(yr==='all'?mileage:mileage.filter(m=>m.date?.startsWith(yr)))
     .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const n=filtered.length;
@@ -1998,7 +1996,7 @@ function exportMileageCSV(){
     {v:_xlsClean(m.from),t:'s',s:_xS.left},
     {v:_xlsClean(m.to),t:'s',s:_xS.left},
     {v:m.miles||0,t:'n',s:_xS.mi},
-    {v:(m.miles||0)*rate,t:'n',s:_xS.cur},
+    {v:(m.miles||0)*IRS(m.date),t:'n',s:_xS.cur},
     {v:_xlsClean(m.purpose),t:'s',s:_xS.left},
     {v:_xlsClean(m.client_name),t:'s',s:_xS.left},
   ]);
@@ -2114,12 +2112,11 @@ function exportAllDataCSV(){
   );
 
   // Mileage: grouped by year, newest first
-  const rate=IRS();
   secByYear('MILEAGE',
     ['Date','Vehicle','From','To','Miles','IRS Deduction','Purpose','Client'],
     mileage, m=>m.date,
     m=>[q(m.date),q(m.vehicle),q(m.from),q(m.to),
-        (m.miles||0).toFixed(1),((m.miles||0)*rate).toFixed(2),q(m.purpose),q(m.client_name)].join(',')
+        (m.miles||0).toFixed(1),((m.miles||0)*IRS(m.date)).toFixed(2),q(m.purpose),q(m.client_name)].join(',')
   );
 
   // Time Entries
@@ -2188,7 +2185,7 @@ function exportPLCSV(){
   const tIncPay=yrPay.reduce((s,p)=>s+(p.amount||0),0);
   const tInc=tIncBase+tIncPay;
   const tExp=yrExp.reduce((s,r)=>s+(r.amount||0),0);
-  const tMil=yrMil.reduce((s,m)=>s+(m.miles||0),0)*IRS();
+  const tMil=yrMil.reduce((s,m)=>s+(m.miles||0)*IRS(m.date),0);
   const net=tInc-tExp;
   const lines=[
     '"'+biz+', Profit & Loss, '+label+'"','',
@@ -2200,7 +2197,7 @@ function exportPLCSV(){
     ...yrExp.map(e=>{const c=IRS_EXPENSE_CATS.find(x=>x.id===e.cat)||{label:e.cat||'Other'};return[e.date||'','"'+(e.vendor||'').replace(/"/g,'""')+'"','"'+c.label+'"',(e.amount||0).toFixed(2)].join(',');}),
     ',,TOTAL EXPENSES,'+tExp.toFixed(2),'',
     '"MILEAGE DEDUCTION"','Miles,IRS Rate,Deduction,',
-    tMil>0?tMil.toFixed(1)+','+IRS().toFixed(3)+','+(tMil).toFixed(2)+',':'(none)','',
+    tMil>0?tMil.toFixed(1)+','+IRS(yr).toFixed(3)+','+(tMil).toFixed(2)+',':'(none)','',
     '"NET PROFIT"','"'+label+'",,'+net.toFixed(2),
   ];
   downloadFile((biz+' P&L '+label+'.csv').replace(/\s+/g,'_'),lines.join('\n'),'text/csv');
@@ -2307,7 +2304,7 @@ function exportTaxPDF(){
   h+='<div class="box"><div class="bl">Mileage Deduction</div><div class="bv red">('+fmt(mileDed)+')</div></div>';
   h+='<div class="box"><div class="bl">Net SE Income</div><div class="bv blue">'+fmt(net)+'</div></div>';
   h+='<div class="box"><div class="bl">Miles Driven</div><div class="bv">'+tMiles.toFixed(1)+' mi</div></div>';
-  h+='<div class="box"><div class="bl">IRS Rate</div><div class="bv">$'+IRS().toFixed(3)+'/mi</div></div>';
+  h+='<div class="box"><div class="bl">IRS Rate</div><div class="bv">$'+IRS(yr).toFixed(3)+'/mi</div></div>';
   h+='</div></div>';
   // Tax breakdown
   const _pdfHomeStateName=(STATE_TAX[_pdfHome]?.name||_pdfHome||'State');
@@ -2368,9 +2365,9 @@ function exportTaxPDF(){
   });
   h+='<tr class="tr"><td colspan="5">Total</td><td style="text-align:right">('+fmt(tExp)+')</td></tr></tbody></table></div>';
   // Mileage
-  h+='<div class="sec"><div class="sec-t">Mileage Log, '+yrMiles.length+' trips at $'+IRS().toFixed(3)+'/mi</div>';
+  h+='<div class="sec"><div class="sec-t">Mileage Log, '+yrMiles.length+' trips at $'+IRS(yr).toFixed(3)+'/mi</div>';
   h+='<table><thead><tr><th>Date</th><th>Vehicle</th><th>Route</th><th>Purpose</th><th style="text-align:right">Miles</th><th style="text-align:right">Deduction</th></tr></thead><tbody>';
-  yrMiles.forEach(m=>{h+='<tr><td>'+(m.date||'')+'</td><td>'+(m.vehicle||'')+'</td><td>'+(m.from||'')+' - '+(m.to||'')+'</td><td>'+(m.purpose||'')+(m.client_name?' - '+m.client_name:'')+'</td><td style="text-align:right">'+((m.miles||0).toFixed(1))+'</td><td style="text-align:right;color:#791F1F">('+fmt((m.miles||0)*IRS())+')</td></tr>';});
+  yrMiles.forEach(m=>{h+='<tr><td>'+(m.date||'')+'</td><td>'+(m.vehicle||'')+'</td><td>'+(m.from||'')+' - '+(m.to||'')+'</td><td>'+(m.purpose||'')+(m.client_name?' - '+m.client_name:'')+'</td><td style="text-align:right">'+((m.miles||0).toFixed(1))+'</td><td style="text-align:right;color:#791F1F">('+fmt((m.miles||0)*IRS(m.date))+')</td></tr>';});
   h+='<tr class="tr"><td colspan="4">Total</td><td style="text-align:right">'+tMiles.toFixed(1)+'</td><td style="text-align:right">('+fmt(mileDed)+')</td></tr></tbody></table></div>';
   h+='<div class="note">Estimates only. Verify with a CPA before filing. Federal SE tax at 15.3% on 92.35% of net per Schedule SE.</div>';
   h+='</div></body></html>';

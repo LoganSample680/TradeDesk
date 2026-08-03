@@ -330,9 +330,9 @@ function renderDash(){
   const prevExp=expenses.filter(e=>e.date&&e.date.startsWith(prevYrStr)).reduce((s,e)=>s+e.amount,0);
   const prevMi=deductibleTrips(mileage).filter(m=>m.date&&m.date.startsWith(prevYrStr)).reduce((s,m)=>s+(m.miles||0),0);
   const showTrends=dashPeriod==='year';
-  const net=tInc-tExp-(tMi*IRS());
+  const net=tInc-tExp-(tMi*IRS(yr));
 
-  const mileDed=Math.round(tMi*IRS());
+  const mileDed=Math.round(tMi*IRS(yr));
   const netBeforeTax=Math.max(0,tInc-tExp-mileDed);
   const ytdTaxEst=estimateTax(netBeforeTax);
   const ytdTrueProfit=Math.round(tInc-tExp-ytdTaxEst);
@@ -442,7 +442,7 @@ function renderDash(){
       '</div>';
   } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
-    const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS()))):0;
+    const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS(yr-1)))):0;
     const prevProfit=showTrends?Math.round(prevInc-prevExp-prevTax):0;
     kpiEl.innerHTML='<div class="mets" id="dash-mets-inner">'+
       '<div class="met" data-kpi="revenue" style="cursor:pointer" onclick="goToTrackerTab(\'income\')">'+

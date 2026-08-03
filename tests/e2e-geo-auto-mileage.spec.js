@@ -2100,6 +2100,173 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── When Apple answers badly, or not at all ────────────────────────────────
+  // Owner (2026-08-03): "prove the last 5." This is the fourth: the router and
+  // the POI lookup are network calls to somebody else's service, and a rural
+  // pin, a dead cell, or a wrong tenant are ordinary Tuesday events on a job
+  // site, not exotic ones. The rule throughout: a leg is never lost and never
+  // guessed. It waits, unpriced, until something can measure it.
+  test.describe('the router and the POI lookup misbehaving', () => {
+    const leg = (opts) => page.evaluate(async (a) => {
+      const realRoute = window._routeDistance, realPoi = window._poiAt;
+      const before = mileage.length;
+      if (a.routeMode === 'reject') window._routeDistance = async () => { throw new Error('network'); };
+      if (a.routeMode === 'hang') window._routeDistance = () => new Promise(() => {});
+      if (a.routeMode === 'garbage') window._routeDistance = async () => ({ miles: null, mins: null });
+      if (a.poiMode === 'null') window._poiAt = async () => null;
+      if (a.poiMode === 'throw') window._poiAt = async () => { throw new Error('mapkit blew up'); };
+      if (a.poiMode === 'food') window._poiAt = async () => ({ name: 'Taco House', category: 'Restaurant' });
+      try {
+        autoLogDriveTrip({
+          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
+          to: { lat: 38.06, lng: -94.06, name: a.toStop ? 'Stop' : 'Miller residence',
+                kind: a.toStop ? 'stop' : 'job' },
+          legKey: 'apple-' + a.tag, startedIso: new Date().toISOString(),
+        });
+        await new Promise(r => setTimeout(r, 60));
+        const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+        return rows.map(m => ({ to: m.to_name, miles: m.miles, method: m.calc_method }));
+      } finally { window._routeDistance = realRoute; window._poiAt = realPoi; }
+    }, opts);
+
+    test('the router refusing leaves the leg recorded but UNPRICED, never guessed', async () => {
+      const out = await leg({ tag: 'reject', routeMode: 'reject' });
+      expect(out.length).toBe(1);
+      // 0 miles and still pending is the correct state: the drive happened, we
+      // just cannot say how far yet. Inventing a number here is how a deduction
+      // becomes indefensible.
+      expect(out[0].miles).toBe(0);
+      expect(out[0].method).toBe('pending_auto');
+    });
+
+    test('a router that never answers at all does not hold up the row', async () => {
+      const out = await leg({ tag: 'hang', routeMode: 'hang' });
+      expect(out.length).toBe(1);
+      expect(out[0].method).toBe('pending_auto');
+    });
+
+    test('an unpriced leg is picked up and settled by the next sweep', async () => {
+      // The other half of the promise: pending is a waiting room, not a grave.
+      const out = await page.evaluate(async () => {
+        const realRoute = window._routeDistance;
+        try {
+          const pending = mileage.filter(m => m.calc_method === 'pending_auto' && m.fromCoord && m.toCoord);
+          if (!pending.length) return { skipped: true };
+          window._routeDistance = async () => ({ miles: 7.7, mins: 15 });
+          await _retryPendingTrips();
+          return { settled: pending.map(m => ({ miles: m.miles, method: m.calc_method })) };
+        } finally { window._routeDistance = realRoute; }
+      });
+      expect(out.skipped, 'the tests above must have left pending rows to sweep').toBeFalsy();
+      out.settled.forEach(r => {
+        expect(r.method).toBe('auto_route');
+        expect(r.miles).toBe(7.7);
+      });
+    });
+
+    test('a router answering with nonsense does not write nonsense', async () => {
+      const out = await leg({ tag: 'garbage', routeMode: 'garbage' });
+      expect(out.length).toBe(1);
+      // NaN miles on a mileage row is worse than no miles: it survives the sweep
+      // (it is no longer pending) and prints as a real figure on a tax export.
+      expect(Number.isFinite(out[0].miles)).toBe(true);
+      expect(out[0].miles).toBe(0);
+      expect(out[0].method).toBe('pending_auto');
+    });
+
+    test('Apple not knowing who is at the pin KEEPS the leg', async () => {
+      // A contractor parked mid-workday is far more often at a supply yard or a
+      // gate than at a sandwich counter. Silence is not evidence of lunch, and
+      // dropping a real leg costs them money.
+      const out = await leg({ tag: 'poinull', toStop: true, poiMode: 'null' });
+      expect(out.length).toBe(1);
+      expect(out[0].to).toBe('Stop');
+    });
+
+    test('the POI lookup throwing keeps the leg too, and stays off the console', async () => {
+      const out = await leg({ tag: 'poithrow', toStop: true, poiMode: 'throw' });
+      expect(out.length).toBe(1);
+      expect(out[0].to).toBe('Stop');
+    });
+
+    test('only a NAMED food stop disqualifies a leg', async () => {
+      // The one case that removes it, and it takes a positive identification to
+      // do so. Contrast with the two tests above: uncertainty keeps the leg.
+      const out = await leg({ tag: 'poifood', toStop: true, poiMode: 'food' });
+      expect(out.length).toBe(0);
+    });
+
+    test('no console errors from any of it', async () => {
+      await assertNoErrors(page);
+    });
+  });
+
+  // ── The rate belongs to a YEAR ─────────────────────────────────────────────
+  // Owner (2026-08-03): "prove the last 5." This was the fifth, and it turned
+  // out to be wrong today rather than wrong someday.
+  //
+  // IRS() was `S.irsRate||.725`: one stored number with no year on it. So the
+  // mileage page priced a 2024 trip at the CURRENT rate (67.0 cents becoming
+  // 72.5, an 8% overstatement of a closed year), and the tax page disagreed with
+  // it about the same trips because that side always read the year table.
+  test.describe('the rate that gets applied to a trip', () => {
+    test('every closed year is priced at ITS published rate', async () => {
+      const out = await page.evaluate(() => {
+        const now = new Date().getFullYear();
+        return Object.keys(TAX_HISTORY).map(Number).filter(y => y < now)
+          .map(y => ({ y, table: TAX_HISTORY[y].irsRate, byYear: IRS(y), byDate: IRS(y + '-06-15') }));
+      });
+      expect(out.length).toBeGreaterThan(0);
+      out.forEach(r => {
+        expect(r.byYear, `${r.y} must price at the ${r.y} rate`).toBe(r.table);
+        // A per-trip figure prices off the trip's own date, so a mixed-year
+        // export cannot silently apply one rate to all of it.
+        expect(r.byDate, `a trip dated in ${r.y} must price at the ${r.y} rate`).toBe(r.table);
+      });
+    });
+
+    test('a rate set for this year never leaks into a closed one', async () => {
+      // The contractor override (and the yearly auto-refresh that writes it) is
+      // about the year we are IN. Applying it backwards is what re-prices a year
+      // that is already filed.
+      const out = await page.evaluate(() => {
+        const keep = S.irsRate;
+        try {
+          S.irsRate = 0.999;
+          return { current: IRS(new Date().getFullYear()), past: IRS(2024), table: TAX_HISTORY[2024].irsRate };
+        } finally { S.irsRate = keep; }
+      });
+      expect(out.current).toBe(0.999);      // still honoured where it belongs
+      expect(out.past).toBe(out.table);     // and nowhere else
+    });
+
+    test('the mileage page itself shows the viewed year\'s rate, not today\'s', async () => {
+      // The helper being right is not the same as the screen being right. This
+      // reads the rate off the rendered hero, which is where a contractor would
+      // actually catch it.
+      const out = await page.evaluate(() => {
+        const keepYr = trackerYear, keepVeh = vehicles.slice();
+        try {
+          if (!getVehicles().length) vehicles.push({ id: 'v-rate-test', name: 'Test Truck', year: 2020 });
+          mileage.length = 0;
+          mileage.push({ id: _newId(), date: '2024-06-15', miles: 100, purpose: 'Job site' });
+          trackerYear = '2024';
+          renderAllMileage();
+          const html = (document.getElementById('mil-hero-wrap') || {}).innerHTML || '';
+          const m = html.match(/IRS \$([0-9.]+)\/mi/);
+          return { shown: m && m[1], table2024: TAX_HISTORY[2024].irsRate, today: IRS(), rendered: html.length };
+        } finally {
+          trackerYear = keepYr; vehicles.length = 0; keepVeh.forEach(v => vehicles.push(v));
+        }
+      });
+      expect(out.rendered, 'the hero must have rendered for this to mean anything').toBeGreaterThan(0);
+      expect(out.shown, 'the hero must state a rate').toBeTruthy();
+      expect(Number(out.shown)).toBeCloseTo(out.table2024, 3);
+      // And it must actually differ from today's, or the test proves nothing.
+      expect(out.table2024).not.toBe(out.today);
+    });
+  });
+
   // ── The tax table has to cover the year we are in ─────────────────────────
   // Owner (2026-08-02): "how can we do a live test that updates the IRS tax
   // brackets and shit every year automatically?"

@@ -486,6 +486,7 @@ async function _retryPendingTrips(){
       // the old origin as final and the correction would bail on seeing it.
       if(rec.calc_method!==method)continue;
       if(auto&&(rec.fromCoord!==fc||rec.toCoord!==tc))continue;
+      if(!(miles>0))continue;   // not a measurement: leave it pending for the next sweep
       rec.miles=Math.round(miles*10)/10;rec.calc_method=auto?'auto_route':'address';
       filled++;
     }catch(e){}
@@ -583,6 +584,11 @@ function autoLogDriveTrip(opts){
       // correcting call would then bail on seeing a settled row, so the wrong
       // number would win. Whoever re-pointed it owns the answer.
       if(saved.fromCoord!==_fc||saved.toCoord!==_tc)return;
+      // A router that answers with null/NaN/0 has not measured anything. Writing
+      // it stamps the row 'auto_route', which takes it out of the sweep's reach
+      // FOREVER: a silent zero-mile trip that still prints on a tax export as a
+      // real one. Staying pending is the honest state and the recoverable one.
+      if(!(miles>0))return;
       saved.miles=Math.round(miles*10)/10;saved.calc_method='auto_route';
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();
@@ -758,6 +764,7 @@ function _reoriginTrip(m,from){
       // A LATER correction re-pointed this leg again while we measured. Same rule
       // as everywhere else that measures: the most recent origin owns the answer.
       if(m.fromCoord!==fc||m.toCoord!==tc)return;
+      if(!(miles>0))return;     // not a measurement: leave it pending for the sweep
       m.miles=Math.round(miles*10)/10;m.calc_method='auto_route';
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();
@@ -818,7 +825,7 @@ function crewMilesOwed(yr){
     const who=m.logged_by_name||m.logged_by_id||'Crew';
     by[who]=(by[who]||0)+(m.miles||0);
   });
-  return {miles:Math.round(miles*10)/10,owed:miles*IRS(),trips:rows.length,by};
+  return {miles:Math.round(miles*10)/10,owed:miles*IRS(y),trips:rows.length,by};
 }
 // What the destination IS decides the business purpose. This is the whole reason
 // automatic mileage can be IRS-complete without asking anyone anything: the
@@ -1660,7 +1667,7 @@ function renderAllMileage(){
   // owner who has to verify what they owe: both could see a total and neither
   // could see what it was made of.
   const filtered=_mileSrc.filter(m=>m.date&&m.date.startsWith(yr));
-  const irsRate=IRS();
+  const irsRate=IRS(yr);
   const tot=deductibleTrips(filtered).reduce((s,r)=>s+(r.miles||0),0);
   const deduction=tot*irsRate;
   const unclassified=filtered.filter(m=>!m.purpose);
@@ -1911,7 +1918,7 @@ function _milRenderTripList(shown,yr){
     return;
   }
   const _hasMultiDriver=!_isEmployee&&mileage.some(m=>m.logged_by_name);
-  const irsRate=IRS();
+  const irsRate=IRS(yr);
   const byDay={};
   [...shown].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).forEach(r=>{
     if(!byDay[r.date])byDay[r.date]=[];
