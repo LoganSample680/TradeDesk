@@ -2100,6 +2100,200 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Ordinary days, walked end to end ───────────────────────────────────────
+  // Owner (2026-08-03): "prove the last 5." This is the third. Every transition
+  // pair is tested on its own elsewhere; what was never walked is a real day,
+  // where one leg's END has to become the next leg's START four and six times
+  // running. That chain is where a stale origin hides: each leg looks fine in
+  // isolation and the day quietly measures from the wrong place.
+  //
+  // The assertion that matters is CONTIGUITY. A day is a chain, so every leg
+  // must start exactly where the one before it finished, with no gaps and no
+  // repeats. A single stale origin breaks the chain and this catches it
+  // wherever in the day it happens.
+  test.describe('a whole day, leg after leg', () => {
+    const walkDay = (seq) => page.evaluate(async (a) => {
+      const realUser = _supaUser, realRoute = _routeDistance;
+      _supaUser = { id: 'u-day' };
+      let n = 0;
+      window._routeDistance = _routeDistance = async () => { n++; return { miles: 4 + n, mins: 12 }; };
+      const before = mileage.length;
+      try {
+        __seedGeo();
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+        _geoLastFenceAt = null; _geoLegAtShop = false;
+        _geoHomeDwell = null; _geoWasAtHome = false;
+        _geoLastFenceLoc = null; _geoLegOrigin = null;
+        try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+        const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+        for (let i = 0; i < a.seq.length; i++) {
+          await ping(a.seq[i]);
+          if (i === a.seq.length - 1) break;
+          // Twenty minutes parked at this fence before pulling out for the next
+          // one. Every hop here is fence to fence, so the leg clock is
+          // _geoLastFenceAt and the move is a single ping.
+          const t = new Date(Date.now() - 20 * 60000).toISOString();
+          if (_geoDriveStartedAt) _geoDriveStartedAt = t;
+          if (_geoLastFenceAt) _geoLastFenceAt = t;
+        }
+        await new Promise(r => setTimeout(r, 80));
+        const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+        // mileage is unshifted, so newest first: reverse into travel order.
+        return rows.map(m => ({ from: m.from_name, to: m.to_name, purpose: m.purpose })).reverse();
+      } finally { _supaUser = realUser; window._routeDistance = _routeDistance = realRoute; }
+    }, { seq });
+
+    // Every leg begins where the last one ended. Reported as the whole chain on
+    // failure, so a break says WHICH hop went stale instead of just "expected 4".
+    const expectChain = (rows, names) => {
+      const drawn = rows.map(r => `${r.from} → ${r.to}`).join('  |  ');
+      expect(rows.length, `expected ${names.length - 1} legs, got: ${drawn}`).toBe(names.length - 1);
+      rows.forEach((r, i) => {
+        expect(r.from, `leg ${i + 1} must start at ${names[i]}: ${drawn}`).toBe(names[i]);
+        expect(r.to, `leg ${i + 1} must end at ${names[i + 1]}: ${drawn}`).toBe(names[i + 1]);
+      });
+    };
+
+    test('yard, job, supply run, back to the job, home to the yard', async () => {
+      const rows = await walkDay([SHOP, JOB, SUPPLY, JOB, SHOP]);
+      expectChain(rows, ['Shop', 'Miller Residence', 'Ace Supply', 'Miller Residence', 'Shop']);
+    });
+
+    test('two supply runs off the same job in one day', async () => {
+      // Returning to a place already visited earlier the same day is the case
+      // that breaks a fence machine keeping one "current" anything.
+      const rows = await walkDay([SHOP, JOB, SUPPLY, JOB, SUPPLY, JOB, SHOP]);
+      expectChain(rows, ['Shop', 'Miller Residence', 'Ace Supply', 'Miller Residence',
+                         'Ace Supply', 'Miller Residence', 'Shop']);
+    });
+
+    test('back to the yard mid-afternoon and out to the job again', async () => {
+      const rows = await walkDay([SHOP, JOB, SHOP, JOB, SHOP]);
+      expectChain(rows, ['Shop', 'Miller Residence', 'Shop', 'Miller Residence', 'Shop']);
+    });
+
+    test('a six-leg day logs six trips and not one more', async () => {
+      // Idempotency across a long chain: the leg key is what stops a replayed or
+      // re-entered ping from billing the same miles twice, and a long day is
+      // where a duplicate would first show up.
+      const rows = await walkDay([SHOP, JOB, SUPPLY, JOB, SUPPLY, JOB, SHOP]);
+      expect(rows.length).toBe(6);
+      const seen = rows.map(r => `${r.from}>${r.to}@${rows.indexOf(r)}`);
+      expect(new Set(seen).size).toBe(6);
+    });
+
+    test('no console errors across a full day', async () => {
+      await assertNoErrors(page);
+    });
+  });
+
+  // ── Losing signal in the middle of a leg ───────────────────────────────────
+  // Owner (2026-08-03): "prove the last 5." This is the second. A crew truck
+  // drops to no bars in a basement, a metal building, or twenty miles out, and
+  // it does so DURING the leg, not politely between them. Nothing about a drive
+  // may depend on the network being up at the moment it ends.
+  test.describe('a leg that ends with no signal', () => {
+    const offlineLeg = (tag) => page.evaluate(async (a) => {
+      const realRoute = window._routeDistance, realSupa = _supa;
+      const before = mileage.length;
+      try { localStorage.removeItem('zp3_geo_queue'); } catch (e) {}
+      // No bars: the router cannot be reached and the backend client is gone.
+      window._routeDistance = async () => { throw new Error('offline'); };
+      _supa = null;
+      try {
+        autoLogDriveTrip({
+          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
+          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
+          legKey: 'offline-' + a.tag, startedIso: new Date().toISOString(),
+        });
+        // The job time entry for the same leg takes the queue, not the wire.
+        _geoEnqueue('job_time_entries', { job_id: 9901, leg_key: 'offline-' + a.tag,
+                                          arrived_at: new Date().toISOString() });
+        await new Promise(r => setTimeout(r, 50));
+        const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+        return {
+          rows: rows.map(m => ({ miles: m.miles, method: m.calc_method, legKey: m.legKey })),
+          queued: _geoQueueRead().length,
+        };
+      } finally { window._routeDistance = realRoute; _supa = realSupa; }
+    }, { tag });
+
+    test('the drive is still recorded, and its time entry is still held', async () => {
+      const out = await offlineLeg('a');
+      // The row is LOCAL. It does not need the network to exist, only to be
+      // priced. Losing the drive because the cell tower was out would be the
+      // worst possible failure here: the one record nobody can reconstruct.
+      expect(out.rows.length).toBe(1);
+      expect(out.rows[0].method).toBe('pending_auto');
+      expect(out.queued).toBe(1);
+    });
+
+    test('coming back into signal prices the leg and empties the queue', async () => {
+      const out = await page.evaluate(async () => {
+        const realRoute = window._routeDistance, realSupa = _supa;
+        try {
+          const pend = mileage.filter(m => String(m.legKey || '').startsWith('offline-'));
+          window._routeDistance = async () => ({ miles: 9.1, mins: 18 });
+          const sent = [];
+          _supa = { from: () => ({
+            upsert: async (row) => { sent.push(row); return { error: null }; },
+            insert: async (row) => { sent.push(row); return { error: null }; },
+          }) };
+          await _retryPendingTrips();
+          await _geoDrainQueue();
+          return { priced: pend.map(m => ({ miles: m.miles, method: m.calc_method })),
+                   sent: sent.length, left: _geoQueueRead().length };
+        } finally { window._routeDistance = realRoute; _supa = realSupa; }
+      });
+      expect(out.priced.length).toBeGreaterThan(0);
+      out.priced.forEach(r => { expect(r.method).toBe('auto_route'); expect(r.miles).toBe(9.1); });
+      expect(out.sent).toBeGreaterThan(0);
+      expect(out.left, 'the queue must be empty once it has drained').toBe(0);
+    });
+
+    test('two legs closed back to back offline both survive the drain', async () => {
+      // The queue's own failure mode, and the one that looked like a flaky
+      // backend: a drain that snapshots the queue before an await and writes
+      // that stale copy back erases anything enqueued while the request was in
+      // flight. One of the two legs vanishes, and which one depends on network
+      // timing. Guarding it here because this PR puts real drive legs through
+      // that queue on every stop.
+      const out = await page.evaluate(async () => {
+        const realSupa = _supa;
+        try { localStorage.removeItem('zp3_geo_queue'); } catch (e) {}
+        try {
+          const sent = [];
+          let resolveFirst;
+          _supa = { from: () => ({
+            upsert: (row) => {
+              sent.push(row.leg_key);
+              // The first send hangs just long enough for a second leg to close
+              // underneath it, which is exactly what a slow tower does.
+              if (sent.length === 1) return new Promise(r => { resolveFirst = () => r({ error: null }); });
+              return Promise.resolve({ error: null });
+            },
+            insert: async (row) => { sent.push(row.leg_key); return { error: null }; },
+          }) };
+          _geoEnqueue('job_time_entries', { job_id: 1, leg_key: 'race-leg-1' });
+          await new Promise(r => setTimeout(r, 10));
+          _geoEnqueue('job_time_entries', { job_id: 2, leg_key: 'race-leg-2' });
+          resolveFirst();
+          await new Promise(r => setTimeout(r, 80));
+          return { sent, left: _geoQueueRead().length };
+        } finally { _supa = realSupa; }
+      });
+      expect(out.sent, 'both legs must reach the backend').toContain('race-leg-1');
+      expect(out.sent).toContain('race-leg-2');
+      expect(out.left).toBe(0);
+    });
+
+    test('no console errors while offline', async () => {
+      await assertNoErrors(page);
+    });
+  });
+
   // ── When Apple answers badly, or not at all ────────────────────────────────
   // Owner (2026-08-03): "prove the last 5." This is the fourth: the router and
   // the POI lookup are network calls to somebody else's service, and a rural
