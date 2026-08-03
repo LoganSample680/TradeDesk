@@ -748,7 +748,12 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // a year later in front of somebody asking questions. Still matches
   // _geoIsDriveSource (/^drive/), so every money view treats it as drive.
   const mode=(typeof _shiftVehicleMode==='function')?_shiftVehicleMode():'';
-  const kind=companyVeh?'drive':(mode==='rider'?'drive-rider':'drive-personal');
+  // 'drive-unassigned', not 'drive-personal'. The time entry has to say what
+  // actually happened, and what happened is that nobody recorded a vehicle.
+  // Calling it personal is the same wrong assumption the mileage side used to
+  // make, and it is the row somebody reads a year later. Still matches
+  // _geoIsDriveSource (/^drive/), so every money view treats it as drive time.
+  const kind=companyVeh?'drive':(mode==='rider'?'drive-rider':(mode==='own'?'drive-personal':'drive-unassigned'));
   // Minted here rather than inside _geoEnqueue so the SAME key lands on the time
   // entry and on the mileage row. That is what makes the mileage row idempotent:
   // one leg can only ever produce one trip, however many times this runs.
@@ -803,7 +808,18 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
     // own vehicle and is owed nothing for them; they are still paid for the time.
     const mode=(typeof _shiftVehicleMode==='function')?_shiftVehicleMode():'';
     const reimbursable=!!(_isEmployee&&!companyVeh);
-    if(reimbursable&&mode==='rider')return;
+    // 'none' IS NOT 'own'. It means nobody said what they were in: no truck
+    // assigned on the dispatch board and no pick made on their phone. Treating
+    // that as a personal car booked a reimbursement the business never agreed
+    // to, off a drive where the app cannot say whether they were in the company
+    // truck, riding with somebody, or on a bus. It invents a debt out of a
+    // blank, which is the opposite of how 'rider' is handled two lines up.
+    //
+    // The rule this file already states elsewhere: no pick, no mileage. The TIME
+    // still logs (it is compensable and _geoDriveEntry has already enqueued it);
+    // only the money claim is withheld until somebody says what was driven.
+    // Owner's call, 2026-08-03.
+    if(reimbursable&&(mode==='rider'||mode==='none'||!mode))return;
     // The one-drive-one-row guard lives in autoLogDriveTrip, not here: it is a
     // rule about the mileage log itself rather than about this account, so it
     // has to hold for every caller, the same reason the endpoint validation

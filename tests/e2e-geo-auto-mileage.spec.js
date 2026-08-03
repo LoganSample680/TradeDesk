@@ -2115,6 +2115,74 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Nobody said what they were driving ─────────────────────────────────────
+  // Owner (2026-08-03): "treat none like rider". The vehicle mode has four
+  // states and only three were handled. 'none' means no truck assigned on the
+  // dispatch board AND no pick made on the phone, and it fell through to
+  // reimbursable, booking money the business never agreed to off a drive where
+  // the app cannot say whether they were in the company truck, riding with
+  // somebody, or on a bus. It invented a debt out of a blank.
+  test.describe('a crew member with no vehicle recorded', () => {
+    const legAs = (mode) => page.evaluate(async (m) => {
+      const realUser = _supaUser, realEmp = _isEmployee, realRoute = _routeDistance, realMode = window._shiftVehicleMode;
+      const queued = [];
+      const realEnq = window._geoEnqueue;
+      _supaUser = { id: 'u-mode' }; _isEmployee = true;
+      window._routeDistance = _routeDistance = async () => ({ miles: 6.2, mins: 14 });
+      window._shiftVehicleMode = () => m;
+      window._geoEnqueue = (tbl, row) => queued.push({ tbl, row });
+      const before = mileage.length;
+      try {
+        _geoLegOrigin = { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' };
+        _geoDriveEntry(9901, new Date(Date.now() - 20 * 60000).toISOString(), null, null, false,
+                       { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' });
+        await new Promise(r => setTimeout(r, 50));
+        const rows = mileage.slice(0, Math.max(0, mileage.length - before));
+        return {
+          miles: rows.map(r => ({ reimbursable: !!r.reimbursable })),
+          timeEntries: queued.filter(q => q.tbl === 'job_time_entries').map(q => q.row.source),
+        };
+      } finally {
+        _supaUser = realUser; _isEmployee = realEmp;
+        window._routeDistance = _routeDistance = realRoute;
+        window._shiftVehicleMode = realMode; window._geoEnqueue = realEnq;
+        _geoLegOrigin = null;
+      }
+    }, mode);
+
+    test("'none' logs the time and claims no miles", async () => {
+      const out = await legAs('none');
+      // The drive happened and it is compensable, so the time entry stands.
+      expect(out.timeEntries.length).toBe(1);
+      // But no reimbursement claim off a vehicle nobody named.
+      expect(out.miles).toEqual([]);
+    });
+
+    test("'none' is recorded as unassigned, never as personal", async () => {
+      // The time entry is what somebody reads a year later. Calling an unknown
+      // vehicle "personal" is the same wrong assumption the mileage side made.
+      const out = await legAs('none');
+      expect(out.timeEntries[0]).toBe('drive-unassigned');
+      expect(out.timeEntries[0]).toMatch(/^drive/);   // still drive time to every money view
+    });
+
+    test("'own' still books the reimbursement, which is the point of the split", async () => {
+      const out = await legAs('own');
+      expect(out.miles.length).toBe(1);
+      expect(out.miles[0].reimbursable).toBe(true);
+      expect(out.timeEntries[0]).toBe('drive-personal');
+    });
+
+    test("'truck' still deducts, and 'rider' still claims nothing", async () => {
+      const truck = await legAs('truck');
+      expect(truck.miles.length).toBe(1);
+      expect(truck.miles[0].reimbursable).toBe(false);
+      const rider = await legAs('rider');
+      expect(rider.miles).toEqual([]);
+      expect(rider.timeEntries[0]).toBe('drive-rider');
+    });
+  });
+
   // ── Correcting a job's address mid-shift ───────────────────────────────────
   // The job-coordinate cache was keyed on the job id alone and never
   // invalidated, so a cached point outlived the address it came from. Fixing a
