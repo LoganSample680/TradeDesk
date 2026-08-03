@@ -2100,6 +2100,68 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Correcting a job's address mid-shift ───────────────────────────────────
+  // The job-coordinate cache was keyed on the job id alone and never
+  // invalidated, so a cached point outlived the address it came from. Fixing a
+  // typo'd address, or moving a job to the back entrance, left the fence on the
+  // OLD point for the rest of the session: the crew drove to the new address and
+  // nothing fired. This PR raised the stakes on it, because those coordinates
+  // are no longer only fence membership, they are the endpoints the mileage row
+  // is measured between.
+  test.describe('a job whose address is corrected', () => {
+    test('the fence follows the new address, not the cached one', async () => {
+      const out = await page.evaluate(async () => {
+        _geoJobCoords = {};
+        const j = { id: 55501, name: 'Moved job', client_id: null, addr: '400 Oak St' };
+        const asked = [];
+        const realResolve = window._resolveCoords;
+        window._resolveCoords = async (a) => { asked.push(a); return a === '400 Oak St'
+          ? { lat: 38.06, lng: -94.06 } : { lat: 39.99, lng: -95.99 }; };
+        try {
+          const first = await _geoJobLatLng(j);
+          // The contractor fixes the address. Same job, same id.
+          j.addr = '77 Back Entrance Rd';
+          const second = await _geoJobLatLng(j);
+          // And asking again with nothing changed must NOT re-geocode: the cache
+          // still has to be a cache.
+          const third = await _geoJobLatLng(j);
+          return { first, second, third, asked };
+        } finally { window._resolveCoords = realResolve; }
+      });
+      expect(out.first.lat).toBeCloseTo(38.06, 4);
+      // Before the fix this came back as the ORIGINAL point.
+      expect(out.second.lat).toBeCloseTo(39.99, 4);
+      expect(out.asked).toEqual(['400 Oak St', '77 Back Entrance Rd']);
+      // Third call is a hit, so no third geocode.
+      expect(out.third.lat).toBeCloseTo(39.99, 4);
+    });
+
+    test('a job carrying its own lat/lon follows those when they move', async () => {
+      const out = await page.evaluate(async () => {
+        _geoJobCoords = {};
+        const j = { id: 55502, name: 'Pinned job', client_id: null, lat: 38.00, lon: -94.00 };
+        const a = await _geoJobLatLng(j);
+        j.lat = 38.50; j.lon = -94.50;          // dragged to the right spot
+        const b = await _geoJobLatLng(j);
+        return { a, b };
+      });
+      expect(out.a.lat).toBeCloseTo(38.00, 4);
+      expect(out.b.lat).toBeCloseTo(38.50, 4);
+    });
+
+    test('signing out drops the cache with the rest of the geofence state', async () => {
+      // stopGeoTracking cleared every other piece of geofence state and left
+      // this one behind, and sign-out is exactly when a second account signs in
+      // on the same device.
+      const out = await page.evaluate(() => {
+        _geoJobCoords = { 999: { lat: 1, lng: 2, src: 'x' } };
+        stopGeoTracking();
+        return Object.keys(_geoJobCoords).length;
+      });
+      expect(out).toBe(0);
+    });
+  });
+
   // ── The truck that sat at the yard overnight ───────────────────────────────
   // _geoLastFenceAt is how a leg's start is inferred when the whole trip lands
   // in one ping, and it is only ever cleared when tracking stops. Parked at the

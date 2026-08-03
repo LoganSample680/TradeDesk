@@ -302,12 +302,24 @@ function _geoMyJobs(){
   return jobs.filter(j=>_jobActiveOn(j,tk));
 }
 async function _geoJobLatLng(j){
-  if(_geoJobCoords[j.id])return _geoJobCoords[j.id];
-  if(j.lat&&j.lon){const c={lat:j.lat,lng:j.lon};_geoJobCoords[j.id]=c;return c;}
-  const c=clients.find(x=>x.id===j.client_id);
-  const addr=j.addr||(c&&c.addr)||'';
+  const c0=clients.find(x=>x.id===j.client_id);
+  const addr=j.addr||(c0&&c0.addr)||'';
+  // THE CACHE REMEMBERS WHERE IT GOT THE ANSWER. Keyed on the job id alone, a
+  // cached coordinate outlived the address it came from: correcting a job's
+  // address mid-shift (a typo, a back entrance, a site that moved) left the
+  // fence sitting on the OLD point for the rest of the session, so the crew
+  // drove to the new address and nothing fired. No arrival, no time on site,
+  // and the drive leg measured to a place they never went.
+  //
+  // That is worse in this PR than it was before it: these coordinates are no
+  // longer only fence membership, they are the ENDPOINTS the mileage row is
+  // measured between.
+  const src=(j.lat&&j.lon)?(j.lat+','+j.lon):addr;
+  const hit=_geoJobCoords[j.id];
+  if(hit&&hit.src===src)return hit;
+  if(j.lat&&j.lon){const c={lat:j.lat,lng:j.lon,src};_geoJobCoords[j.id]=c;return c;}
   if(!addr||typeof _resolveCoords!=='function')return null;
-  try{const r=await _resolveCoords(addr);if(r&&r.lat){_geoJobCoords[j.id]={lat:r.lat,lng:r.lng};return _geoJobCoords[j.id];}}catch(_e){}
+  try{const r=await _resolveCoords(addr);if(r&&r.lat){_geoJobCoords[j.id]={lat:r.lat,lng:r.lng,src};return _geoJobCoords[j.id];}}catch(_e){}
   return null;
 }
 
@@ -1000,6 +1012,12 @@ function stopGeoTracking(){
   _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoLastFenceLoc=null;_geoLegOrigin=null;
+  // The job-coordinate cache goes too. It is the ONE piece of geofence state
+  // this function used to leave behind, and sign-out is exactly when a second
+  // account can sign in on the same device (bug #39's scenario). A job id from
+  // the previous account matching one in the new account would fence the new
+  // crew at the old account's site.
+  _geoJobCoords={};
   _geoClearOpen();_geoWakeRelease();
 }
 
