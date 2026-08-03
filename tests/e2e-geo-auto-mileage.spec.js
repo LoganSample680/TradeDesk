@@ -1737,6 +1737,54 @@ test.describe('Automatic mileage from drive legs', () => {
       });
       expect(out.stored).toBe(out.iso);
     });
+
+    // ── Midnight ────────────────────────────────────────────────────────────
+    // A supply run that leaves at 11:52pm and gets back at 12:08am is ONE trip
+    // on ONE day, the day it started. Filing it under the day End Drive was
+    // tapped puts it in tomorrow, and on 31 December in the wrong TAX YEAR,
+    // where it silently deducts against income that has not been earned yet.
+    // The automatic row has followed the leg start since it was written; the
+    // hand-typed row was still stamping todayKey().
+    test('a drive that crosses midnight is filed on the day it STARTED', async () => {
+      const out = await page.evaluate(() => {
+        // 12:08am, with the drive begun at 11:52pm yesterday. Built from a real
+        // clock so the test means the same thing whatever day it runs.
+        const justAfterMidnight = new Date();
+        justAfterMidnight.setHours(0, 8, 0, 0);
+        const started = justAfterMidnight.getTime() - 16 * 60000;   // 11:52pm
+        gps.active = true; gps.startTime = started;
+        document.getElementById('end-miles-modal')?.remove();
+        const inp = document.createElement('input');
+        inp.id = 'end-miles-modal'; inp.value = '9';
+        document.body.appendChild(inp);
+        saveEndDriveModal();
+        inp.remove();
+        const row = mileage.find(r => !r.legKey);
+        return { date: row && row.date, expected: dateKey(new Date(started)), today: todayKey() };
+      });
+      expect(out.date).toBe(out.expected);
+      // The assertion above is only meaningful when the two days differ, which
+      // they do whenever the suite runs after 00:08 local. Say so rather than
+      // passing silently on a run that could not have caught the bug.
+      if (out.expected === out.today) {
+        console.log('[midnight] suite ran before 00:08 local, start and end fall on the same day');
+      }
+    });
+
+    test('the automatic row crossing midnight is filed the same way', async () => {
+      const out = await page.evaluate(() => {
+        const iso = new Date(new Date().setHours(23, 52, 0, 0) - 24 * 3600000).toISOString();
+        autoLogDriveTrip({
+          from: { lat: 38.00, lng: -94.00, name: 'Shop', kind: 'shop' },
+          to: { lat: 38.06, lng: -94.06, name: 'Miller residence', kind: 'job' },
+          legKey: 'midnight-auto', startedIso: iso,
+        });
+        const row = mileage.find(r => r.legKey === 'midnight-auto');
+        return { date: row && row.date, expected: dateKey(new Date(iso)), today: todayKey() };
+      });
+      expect(out.date).toBe(out.expected);
+      expect(out.date).not.toBe(out.today);   // yesterday's leg, filed yesterday
+    });
   });
 
   // ── The sweep that overwrote correct miles with garbage ───────────────────

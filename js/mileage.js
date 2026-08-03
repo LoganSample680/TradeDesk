@@ -351,7 +351,12 @@ function saveEndDriveModal(){
     return;
   }
   mileage.unshift({
-    id:_newId(),date:todayKey(),vehicle:gps.vehicle,vehicleId:_vehIdForName(gps.vehicle),purpose:gps.purpose,
+    // The day the DRIVE started, not the day End Drive was tapped. A run that
+    // leaves at 11:52pm and finishes at 12:08am is one trip on one day, and
+    // todayKey() here filed it under tomorrow: on New Year's Eve, under the wrong
+    // TAX YEAR. Same rule autoLogDriveTrip follows for the automatic row.
+    id:_newId(),date:gps.startTime?dateKey(new Date(gps.startTime)):todayKey(),
+    vehicle:gps.vehicle,vehicleId:_vehIdForName(gps.vehicle),purpose:gps.purpose,
     loggedAt:new Date().toISOString(),
     miles:Math.round(miles*10)/10,
     client_id:gps.clientId,client_name:c?c.name:'',
