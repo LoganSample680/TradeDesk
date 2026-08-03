@@ -2100,6 +2100,57 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Written to the cache, but read back from it? ───────────────────────────
+  // Found by reading the sync engine rather than by suspecting anything.
+  //
+  // Adding a synced table means touching SIX places that write it (the table
+  // list, the wipe, the offline blob, the delta repaint, the local cache, the
+  // sign-in reset) and FOUR that read it back out of the cache. td_places got
+  // all six writes and none of the four reads, so `places` was cached faithfully
+  // on every save and came back EMPTY on any boot that ran from cache: no
+  // session, or Supabase unreachable.
+  //
+  // That is the boot where it matters most. With no places, the geofence has no
+  // supply-house or home-office fences at all, so the drive that should read
+  // "Ace Supply" logs as an anonymous "Stop", and the code that turns an
+  // unrecognised stop into a place can create a SECOND record for a yard that
+  // was already known, which then syncs up as a duplicate.
+  //
+  // A per-array test would only ever cover the arrays somebody remembered, which
+  // is exactly how this happened. The symmetry itself is the invariant.
+  test.describe('every synced array survives a cache-only boot', () => {
+    test('each table written to the local cache is also restored from it', () => {
+      const fs = require('fs'), path = require('path');
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+      // The tables the sync fabric owns, read from the fabric itself so this
+      // cannot drift from the real list.
+      const tables = [...src.matchAll(/\{t:'td_([a-z_]+)'/g)].map(m => m[1]);
+      expect(tables.length).toBeGreaterThan(10);
+      const camel = (s) => s.replace(/_([a-z])/g, (_m, c) => c.toUpperCase());
+      // Every restore block reads _cd.clients, so counting those counts the
+      // blocks. Any array read fewer times is missing from one of them.
+      const blocks = (src.match(/_cd\.clients\b/g) || []).length;
+      expect(blocks).toBeGreaterThan(0);
+      const short = tables
+        .map(t => ({ t, key: camel(t), n: (src.match(new RegExp('_cd\\.' + camel(t) + '\\b', 'g')) || []).length }))
+        .filter(x => x.n < blocks);
+      expect(short.map(x => `td_${x.t} restored in ${x.n}/${blocks} cache-restore blocks`),
+        'a table written to the cache but not read back comes home EMPTY on an offline boot').toEqual([]);
+    });
+
+    test('the offline-pending blob carries every synced table', () => {
+      const fs = require('fs'), path = require('path');
+      const src = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+      const blob = (src.match(/function _offlinePendingBlob\(\)[\s\S]*?\n\}/) || [''])[0];
+      const tables = [...src.matchAll(/\{t:'td_([a-z_]+)'/g)].map(m => m[1]);
+      const camel = (s) => s.replace(/_([a-z])/g, (_m, c) => c.toUpperCase());
+      // The read side derives its keys from _TD_TABLES, so the blob is the only
+      // half that can silently omit one.
+      const missing = tables.map(camel).filter(k => !new RegExp('\\b' + k + '\\b').test(blob));
+      expect(missing, 'a table absent here is lost outright if the app is force-quit offline').toEqual([]);
+    });
+  });
+
   // ── The four the suite never reached ───────────────────────────────────────
   // A mechanical sweep of this PR's 112 new or rewritten functions found four
   // with no path from any test, directly or through a caller a test drives.

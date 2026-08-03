@@ -1781,6 +1781,7 @@ async function supaInit(){
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -2003,6 +2004,7 @@ async function supaInit(){
         if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -4563,6 +4565,7 @@ function _enterOfflineMode(){
       if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
       if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
     }catch(_ce){}
@@ -6978,6 +6981,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED, fallback)');applySettings();_refillSettingsFormUnlessEditing();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;
