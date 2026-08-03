@@ -33,8 +33,8 @@
     "note": "ZERO on purpose (2026-08-01, chromium + webkit, self-hosted flow-local, real Supabase). An earlier capture counted simulated GPS pings as interactions; a ping is not one. The contractor never taps, clocks in, clocks out, or classifies a single minute of this, so the honest user cost is nothing at all. Zero is also the stronger gate: any tap ever added to the automatic path puts the flow over budget and fails CI. Covers the chain: home office, job, supply house, job, job, shop."
   },
   "fleet/vehicle-survives-resignin": {
-    "clicks": 47,
-    "note": "First capture 2026-07-31 (chromium, self-hosted flow-local): add vehicle 20 + odometer 1 + rename 23 + settings-race 1 + sign-out/in 2. The 23-click rename is inflated by retyping the whole name (the type() helper clears the field), and 20 of the add is typing the vehicle name, so the real nav cost here is small. Standing streamline target: reaching Fleet & Team on a phone still costs 2 taps through the More menu."
+    "clicks": 55,
+    "note": "First capture 2026-07-31 (chromium, self-hosted flow-local): add vehicle 20 + odometer 1 + rename 23 + settings-race 1 + sign-out/in 2. Raised 2026-08-03 by the license plate, which this PR made REQUIRED once a fleet holds more than one vehicle: the plate is now typed as part of adding a truck, so the cost is real and deliberate rather than a regression. The 23-click rename is inflated by retyping the whole name (the type() helper clears the field), and 20 of the add is typing the vehicle name, so the real nav cost here is still small. Standing streamline target: reaching Fleet & Team on a phone still costs 2 taps through the More menu."
   },
   "topeka-day": {
     "clicks": 1,
