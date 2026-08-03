@@ -12,7 +12,11 @@ function _showOdometerModal(tasks,hardBlock){
 
     // Calculate logged miles for this vehicle+year for context
     const yrStr=String(t.year);
-    const loggedMi=mileage.filter(m=>m.date&&m.date.startsWith(yrStr)&&(!m.vehicle||m.vehicle.toLowerCase().includes((t.veh.nickname||t.veh.name||'').split(' ')[0].toLowerCase()))).reduce((s,m)=>s+(m.miles||0),0);
+    // deductibleTrips: a crew member's own car is not this truck. Their rows come
+    // through with a blank vehicle when nobody picked one, and a blank vehicle
+    // matches EVERY truck in the clause below, so without this filter somebody
+    // else's personal miles get counted against this odometer.
+    const loggedMi=deductibleTrips(mileage).filter(m=>m.date&&m.date.startsWith(yrStr)&&(!m.vehicle||m.vehicle.toLowerCase().includes((t.veh.nickname||t.veh.name||'').split(' ')[0].toLowerCase()))).reduce((s,m)=>s+(m.miles||0),0);
 
     ov.innerHTML=`
     <div style="background:var(--bg);border-radius:var(--rl);width:100%;max-width:440px;padding:24px 20px 28px;box-sizing:border-box">
@@ -60,7 +64,10 @@ function _showOdometerModal(tasks,hardBlock){
       // Cross-check: logged miles vs total miles
       const yrStr=String(t.year);
       const totalDriven=raw-(existing.start||0);
-      const logged=mileage.filter(m=>m.date&&m.date.startsWith(yrStr)).reduce((s,m)=>s+(m.miles||0),0);
+      // This is a DEDUCTION path, not a display: bizUse below is what the
+      // actual-expense method multiplies the truck's costs by. Crew own-car miles
+      // in here inflate the business-use percentage on the owner's vehicle.
+      const logged=deductibleTrips(mileage).filter(m=>m.date&&m.date.startsWith(yrStr)).reduce((s,m)=>s+(m.miles||0),0);
       if(totalDriven>0){
         const bizPct=Math.min(100,Math.round(logged/totalDriven*100));
         // Match on the stable row id, not a name slug: renaming the truck used to

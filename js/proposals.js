@@ -1087,7 +1087,7 @@ function showKpiChart(type){
     if(type==='profit'){
       const mInc=income.filter(r=>r.date&&r.date.startsWith(key)).reduce((s,r)=>s+r.amount,0);
       const mExp=expenses.filter(e=>e.date&&e.date.startsWith(key)).reduce((s,e)=>s+e.amount,0);
-      const mMi=mileage.filter(m=>m.date&&m.date.startsWith(key)).reduce((s,m)=>s+(m.miles||0),0);
+      const mMi=deductibleTrips(mileage).filter(m=>m.date&&m.date.startsWith(key)).reduce((s,m)=>s+(m.miles||0),0);
       val=Math.round(mInc-mExp-(mMi*IRS()));
     } else if(type==='close'){
       const mWon=bids.filter(b=>b.status==='Closed Won'&&b.bid_date&&b.bid_date.startsWith(key)).length;

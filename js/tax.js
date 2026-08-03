@@ -238,7 +238,12 @@ function calcTax(){
   const tIn=income.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0)
            +payments.filter(p=>p.amount!==0&&p.date&&p.date.startsWith(_taxYr)).reduce((s,p)=>s+p.amount,0);
   const _tExRaw=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0);
-  const tMi=mileage.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+(r.miles||0),0);
+  // deductibleTrips, not the raw array. A crew member's own-car miles are owed to
+  // THEM at the IRS rate; they are not the business's vehicle deduction, and
+  // counting them here would cut the owner's taxable income by money they still
+  // have to pay out. _vehSchedC already narrows the same way, so this fallback
+  // (used when the vehicle engine has nothing to say) has to agree with it.
+  const tMi=deductibleTrips(mileage).filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+(r.miles||0),0);
   const _yrIrsRate=_getIrsRateForYear(_taxYr);
   // Vehicle deduction engine, enforces the IRS one-method-per-vehicle rule.
   // Mileage-method vehicles: miles deduct, their vehicle expenses don't (expAdjust).

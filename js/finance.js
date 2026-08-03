@@ -3012,7 +3012,7 @@ function renderJobSummary(){
   const rows=wonBids.map(b=>{
     const rev=getClientIncome(b.client_id).reduce((s,i)=>s+i.amount,0);
     const exp=expenses.filter(e=>e.job_id===b.id).reduce((s,e)=>s+e.amount,0);
-    const miles=mileage.filter(m=>m.client_id===b.client_id).reduce((s,m)=>s+(m.miles||0),0);
+    const miles=/*miles-not-deduction*/mileage.filter(m=>m.client_id===b.client_id).reduce((s,m)=>s+(m.miles||0),0);
     const net=rev-exp;
     grandRev+=rev;grandExp+=exp;
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">'+

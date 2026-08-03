@@ -317,14 +317,18 @@ function renderDash(){
   const _paymentsSum=payments.filter(p=>p.date&&_dashInRange(p.date)&&p.amount!==0).reduce((s,p)=>s+p.amount,0);
   const tInc=_incomeSum+_paymentsSum;
   const tExp=expenses.filter(e=>e.date&&_dashInRange(e.date)).reduce((s,e)=>s+e.amount,0);
-  const tMi=mileage.filter(m=>m.date&&_dashInRange(m.date)).reduce((s,m)=>s+(m.miles||0),0);
+  // Deductible only. tMi feeds mileDed, net, and the tax estimate below, so a
+  // crew member's own-car miles landing here would show the owner a profit lower
+  // than the truth twice over: once as a deduction that isn't theirs, and again
+  // because the money is still owed to the driver.
+  const tMi=deductibleTrips(mileage).filter(m=>m.date&&_dashInRange(m.date)).reduce((s,m)=>s+(m.miles||0),0);
   // Prior-year totals for trend arrows (year mode only)
   const prevYrStr=String(yr-1);
   const _pInc=income.filter(r=>r.date&&r.date.startsWith(prevYrStr)).reduce((s,r)=>s+r.amount,0);
   const _pPay=payments.filter(p=>p.date&&p.date.startsWith(prevYrStr)&&p.amount!==0).reduce((s,p)=>s+p.amount,0);
   const prevInc=_pInc+_pPay;
   const prevExp=expenses.filter(e=>e.date&&e.date.startsWith(prevYrStr)).reduce((s,e)=>s+e.amount,0);
-  const prevMi=mileage.filter(m=>m.date&&m.date.startsWith(prevYrStr)).reduce((s,m)=>s+(m.miles||0),0);
+  const prevMi=deductibleTrips(mileage).filter(m=>m.date&&m.date.startsWith(prevYrStr)).reduce((s,m)=>s+(m.miles||0),0);
   const showTrends=dashPeriod==='year';
   const net=tInc-tExp-(tMi*IRS());
 
@@ -482,7 +486,7 @@ function renderDash(){
       const _yrs=String(_cy-_yi);
       const _yi2=income.filter(r=>r.date&&r.date.startsWith(_yrs)).reduce((s,r)=>s+r.amount,0);
       const _ye=expenses.filter(e=>e.date&&e.date.startsWith(_yrs)).reduce((s,e)=>s+e.amount,0);
-      const _ym=mileage.filter(m=>m.date&&m.date.startsWith(_yrs)).reduce((s,m)=>s+(m.miles||0),0);
+      const _ym=deductibleTrips(mileage).filter(m=>m.date&&m.date.startsWith(_yrs)).reduce((s,m)=>s+(m.miles||0),0);
       if(_yi2-_ye-(_ym*_getIrsRateForYear(_yrs))<0)_lossYears++;
     }
     if(_lossYears>=3){

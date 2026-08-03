@@ -1833,7 +1833,7 @@ test.describe('Automatic mileage from drive legs', () => {
       return mileage.length;
     }, rows);
 
-    test('their miles never reach the deduction, at any of the five sites', async () => {
+    test('their miles never reach the deduction or the Schedule C', async () => {
       await seed([
         { miles: 10 },                                        // owner's truck
         { miles: 40, reimbursable: true, logged_by_name: 'Danny' },
@@ -1849,6 +1849,40 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.reimb).toBe(40);
       // 50 would mean the crew's 40 landed in the owner's Schedule C.
       if (out.schedMiles !== null) expect(out.schedMiles).toBe(10);
+    });
+
+    // ── THE GUARD, and the reason it is a source scan and not another case ────
+    //
+    // The test above used to be called "at any of the five sites" and checked
+    // two of them. Five more were found by hand afterwards, in the tax estimate,
+    // the dashboard's profit and tax figures, the five-year hobby-loss check,
+    // the bid-save recalculation, the monthly profit trend, and two more in the
+    // odometer prompt, one of which sets the business-use percentage the
+    // actual-expense method multiplies the truck's costs by.
+    //
+    // Enumerating call sites in a test only ever proves the ones somebody
+    // remembered. This reads the source instead and fails on ANY line that totals
+    // .miles off the raw array, so the eighth site cannot be added quietly. A
+    // line that legitimately shows raw miles (a per-job "3.4mi" label, not a
+    // deduction) opts out with the marker, which makes the exemption a deliberate,
+    // reviewable act rather than an oversight.
+    test('no line anywhere totals raw miles into money', () => {
+      const fs = require('fs'), path = require('path');
+      const dir = path.join(__dirname, '..', 'js');
+      const offenders = [];
+      for (const f of fs.readdirSync(dir).filter(n => n.endsWith('.js'))) {
+        fs.readFileSync(path.join(dir, f), 'utf8').split('\n').forEach((line, i) => {
+          if (!/mileage[\s\S]*?\.reduce\([^;]*\.miles/.test(line)) return;
+          if (/deductibleTrips\(|reimbursableTrips\(|miles-not-deduction/.test(line)) return;
+          offenders.push(`${f}:${i + 1}  ${line.trim().slice(0, 120)}`);
+        });
+      }
+      expect(offenders,
+        'These lines total .miles straight off the mileage array. If the number becomes a ' +
+        'deduction or a profit figure, route it through deductibleTrips(mileage): a crew ' +
+        'member\'s own-car miles are owed TO them and are not the business\'s deduction. If it ' +
+        'is only a display of distance driven, mark the line /*miles-not-deduction*/.\n' +
+        offenders.join('\n')).toEqual([]);
     });
 
     test('what the business owes is totalled and attributed by name', async () => {

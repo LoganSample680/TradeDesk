@@ -154,11 +154,26 @@ test.describe('Crew mileage across accounts', () => {
     expect(rep.overBudget).toBe(false);
   });
 
-  // ── 3. THE EMPLOYEE'S OWN VIEW, FROM THE EMPLOYEE'S OWN ACCOUNT ───────────
+  // ── 3. THE EMPLOYEE'S OWN VIEW ────────────────────────────────────────────
   // The half that cannot be checked from the owner's account at all: the RPC
-  // never redacts the owner, and _isEmployee is false, so the entire permission
-  // path is dead code on A's session. B is a real second login, linked as A's
-  // crew, loading A's account the way a crew member's phone does.
+  // never redacts the owner, and _isEmployee is false there, so the entire
+  // permission path is dead code on A's session.
+  //
+  // WHAT IS REAL HERE AND WHAT IS NOT, stated plainly, because the first version
+  // of this test overstated it. B is a real second login and a real linked crew
+  // member of A, and the miles B is handed come from the SERVER: signed in as B,
+  // load_account_data(A) is what the database is willing to give this identity,
+  // gated by the team link and the mileage permission. That half is genuine.
+  //
+  // What cannot be genuine on these accounts: the app's crew SESSION. Both dev
+  // logins own a business, and loadAccountData takes the `u.account_id` branch
+  // first and explicitly sets _isEmployee=false (cloud.js:271), because an
+  // account that owns a business is never somebody else's crew. That is correct
+  // behaviour, and it means no cloud dev account can reach _linkAsCrew. So the
+  // session flags are set here to exactly what _linkAsCrew would have set, and
+  // the client filters are then run over the SERVER'S OWN payload. The only
+  // simulated thing is the branch the app skipped; the rows, the permissions and
+  // the redaction are all real.
   test('the driver sees their own miles, and only their own', async ({ page }) => {
     const pair = accountPair();
     test.skip(!pair, 'the employee half needs a real second login (E2E_DEV2_* or a local pool of 2+)');
@@ -244,38 +259,72 @@ test.describe('Crew mileage across accounts', () => {
 
     const ids = await page.evaluate(() => window.__ids);
 
-    // ── B: sign in for real and open the mileage page ────────────────────────
+    // ── B: sign in for real and ask the SERVER what it will give this crew member ──
+    // This is the load a crew member's phone performs. Everything asserted here is
+    // the database's answer to B's own JWT: the team link, crew_perm's RLS, and the
+    // redaction list inside load_account_data. Nothing is simulated yet.
     await authAs(B);
     await step(page, {
-      label: 'the crew member signs in and loads the owner account',
+      label: 'the crew member loads the owner account from the server',
       page: 'mileage', role: 'employee',
-      suspect: 'cloud.js employee sign-in path + load_account_data redaction',
-      ruleText: 'a linked crew member loads the contractor account as an employee and their own trip comes down with it',
-      expected: 'employee session on the owner account, own trip present',
+      suspect: 'load_account_data td_mileage crew permission + crew_perm RLS',
+      ruleText: 'a linked crew member with mileage permission receives the owner\'s trips with the miles and the new fields intact',
+      expected: 'both trips returned, unredacted, reimbursable and startedIso present',
       act: async () => 0,
       rule: async (p) => {
         const out = await p.evaluate(async ({ ids, Auid }) => {
-          for (let i = 0; i < 60 && !(typeof _supaCloudLoaded !== 'undefined' && _supaCloudLoaded); i++) {
-            await new Promise(r => setTimeout(r, 200));
-          }
-          const mine = mileage.find(m => String(m.id) === String(ids.mine));
+          const { data, error } = await _supa.rpc('load_account_data', { target_uid: Auid });
+          if (error) return { rpcErr: (error.code || '?') + ': ' + (error.message || String(error)) };
+          const rows = (data && data.td_mileage) || [];
+          const find = (id) => rows.find(r => String(r.id) === String(id));
+          const mine = find(ids.mine), other = find(ids.other);
+          // Stash the server's own payload for the client-filter steps below, so
+          // what the filters run over is what the server actually handed B.
+          window.__serverRows = rows.map(r => r.data).filter(Boolean);
+          // Vehicles too: renderAllMileage shows the "add a vehicle first" card
+          // and returns early when the fleet is empty, so without these the trip
+          // list would never render and the scoping check would pass vacuously.
+          window.__serverVehicles = ((data && data.td_vehicles) || []).map(r => r.data).filter(Boolean);
           return {
-            isEmp: typeof _isEmployee !== 'undefined' && !!_isEmployee,
-            onOwner: (typeof _contractorUserId !== 'undefined' && _contractorUserId) === Auid,
-            mineDown: !!mine,
-            // The fields this PR added, read on a DIFFERENT device than wrote them.
-            flag: !!(mine && mine.reimbursable),
-            started: !!(mine && mine.startedIso),
-            rows: mileage.length,
+            n: rows.length,
+            mineDown: !!mine, otherDown: !!other,
+            // miles survives only when the mileage permission is honoured: without
+            // it the RPC strips 'miles' and this reads undefined, not 12.
+            miles: mine && mine.data && mine.data.miles,
+            flag: !!(mine && mine.data && mine.data.reimbursable),
+            started: !!(mine && mine.data && mine.data.startedIso),
           };
         }, { ids, Auid: A.uid });
+        if (out.rpcErr) return { ok: false, got: `the server refused this crew member: ${out.rpcErr}` };
         return {
-          ok: out.isEmp && out.onOwner && out.mineDown && out.flag && out.started,
-          got: `employee session:${out.isEmp} on the owner account:${out.onOwner}, ` +
-               `own trip down:${out.mineDown} (flag ${out.flag}, leg start ${out.started}), ${out.rows} rows visible`,
+          ok: out.mineDown && out.otherDown && out.miles === 12 && out.flag && out.started,
+          got: `${out.n} trips returned; own trip down:${out.mineDown} at ${out.miles} mi ` +
+               `(flag ${out.flag}, leg start ${out.started}), other driver's row down:${out.otherDown}`,
         };
       },
     });
+
+    // ── Become the crew SESSION the app would have created ───────────────────
+    // _linkAsCrew (cloud.js:297) sets exactly these three, and it is unreachable
+    // on a dev login that owns a business. Set them by hand and hydrate the
+    // arrays from the server's payload, so the client filters below are reading
+    // real rows under the real flags. The save path is stubbed out first: with
+    // A's rows in memory under B's session, a stray autosave would write them
+    // into B's own account.
+    await page.evaluate((Auid) => {
+      window.supaSaveToCloud = async () => {};
+      window._flushSaveNow = () => Promise.resolve();
+      window._isEmployee = true;
+      window._contractorUserId = Auid;
+      window._employeeRecord = { name: 'Crew B', role: 'tech', active: true,
+                                 permissions: { mileage: true, expenses: true, schedule: true } };
+      mileage.length = 0;
+      (window.__serverRows || []).forEach(r => mileage.push(r));
+      if (typeof vehicles !== 'undefined' && (window.__serverVehicles || []).length) {
+        vehicles.length = 0;
+        window.__serverVehicles.forEach(v => vehicles.push(v));
+      }
+    }, A.uid);
 
     // ── The list: their own trip on screen, the other driver's not ───────────
     await step(page, {

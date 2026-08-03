@@ -1353,7 +1353,7 @@ function logPayment(){
 
   const tIn=income.reduce((s,r)=>s+(r.amount||0),0)+a;
   const tEx=expenses.reduce((s,r)=>s+(r.amount||0),0);
-  const tMi=mileage.reduce((s,r)=>s+(r.miles||0),0);
+  const tMi=deductibleTrips(mileage).reduce((s,r)=>s+(r.miles||0),0);
   const netSelf=Math.max(0,tIn-tEx-(tMi*IRS()));
   const seBase=netSelf*.9235,seTax=seBase*.153,seDed=seTax/2;
   const status=v('tx-status')||S.txStatus||'single';
