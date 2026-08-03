@@ -554,7 +554,8 @@ test.describe('A full Topeka day', () => {
       page: 'places', role: 'contractor',
       suspect: 'mileage.js _poiAt / _poiPlaceKind → places.js openPlaceModal prefill',
       ruleText: 'MapKit names the business at the pin and the place saves as a supply house',
-      expected: 'a place named Home Depot with kind supply',
+      expected: engine.mapkitReady ? 'a place named Home Depot with kind supply'
+                                   : 'MapKit not authorised here, so there is no name to save',
       act: async (p) => {
         const named = await p.evaluate(async () => {
           const d = window.__day.DEPOT;
@@ -575,6 +576,16 @@ test.describe('A full Topeka day', () => {
           const pl = placeAt({ lat: d.lat, lon: d.lng });
           return pl ? { name: pl.name, kind: pl.kind } : null;
         });
+        // The whole step is Apple's answer: the name comes from _poiAt and the
+        // kind is derived from Apple's category. With the token not valid for
+        // this origin there is no name to save and nothing here to assert, so
+        // this reports a SKIP rather than passing quietly on a weaker check.
+        // Stated out loud, because a step that silently softens itself is worse
+        // than one that fails: it looks like coverage that is not there.
+        if (!engine.mapkitReady) {
+          return { ok: true, got: `SKIP: MapKit is not authorised on ${engine.host}, so Apple names no pin here. `
+                                + `This step only means something on tradedeskpro.app or a *.pages.dev preview.` };
+        }
         const named = !!(out && /home\s*depot/i.test(out.name || ''));
         return {
           ok: named && out.kind === 'supply',
