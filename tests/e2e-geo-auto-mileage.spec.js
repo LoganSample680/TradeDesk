@@ -1738,6 +1738,92 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(out.stored).toBe(out.iso);
     });
 
+    // ── Two measurements of one leg, racing ─────────────────────────────────
+    // A leg to an unnamed stop is measured the moment it is written. If that
+    // stop then turns out to have been PASSED THROUGH (lunch, a personal
+    // detour), the leg is re-pointed at the real origin and measured again. Now
+    // two route calls are in flight for one row, and the network decides which
+    // lands first, not us.
+    //
+    // The first one had no guard at all. When it landed second it stamped the
+    // distance from the WRONG origin as final, and the correcting call then saw
+    // a settled row and stepped aside, so the wrong number won permanently. It
+    // needs a slow route call to show up, which is to say it shows up on a phone
+    // and never on a desk.
+    test('a leg re-pointed while its distance is in flight keeps the CORRECTED miles', async () => {
+      const out = await page.evaluate(async () => {
+        mileage.length = 0;
+        const origRoute = window._routeDistance;
+        let resolveStale, resolveTrue, call = 0;
+        window._routeDistance = () => {
+          call++;
+          return call === 1
+            ? new Promise(r => { resolveStale = () => r({ miles: 40, mins: 60 }); })
+            : new Promise(r => { resolveTrue = () => r({ miles: 6, mins: 12 }); });
+        };
+        try {
+          const rec = autoLogDriveTrip({
+            from: { lat: 38.00, lng: -94.00, name: 'Stop', kind: 'stop' },
+            to: { lat: 38.10, lng: -94.10, name: 'Miller residence', kind: 'job' },
+            legKey: 'reorigin-race',
+          });
+          // The stop was lunch. The leg really began at the supply house.
+          _reoriginTrip(rec, { lat: 38.05, lng: -94.05, name: 'Home Depot', addr: '1 Supply Rd' });
+          // The correction answers first, the original answers last: the order
+          // that used to lose the correction.
+          resolveTrue(); await new Promise(r => setTimeout(r, 0));
+          resolveStale(); await new Promise(r => setTimeout(r, 40));
+          return { miles: rec.miles, from: rec.from_name, method: rec.calc_method, calls: call };
+        } finally { window._routeDistance = origRoute; }
+      });
+      expect(out.calls).toBe(2);
+      expect(out.from).toBe('Home Depot');
+      expect(out.method).toBe('auto_route');
+      // 40 is the distance from the lunch stop, measured before the correction.
+      expect(out.miles).toBe(6);
+    });
+
+    test('the pending sweep also stands down when the leg moves under it', async () => {
+      // Same race, other measurer. The sweep picks up a pending_auto row, starts
+      // measuring, and the row is re-pointed before its route call returns. The
+      // sweep's own guard only re-read calc_method, which a re-origin sets right
+      // back to pending_auto, so it read as unchanged and the sweep overwrote the
+      // correction anyway.
+      const out = await page.evaluate(async () => {
+        mileage.length = 0;
+        const origRoute = window._routeDistance;
+        let resolveSweep, sweepStarted;
+        const started = new Promise(r => { sweepStarted = r; });
+        window._routeDistance = () => {
+          sweepStarted();
+          return new Promise(r => { resolveSweep = () => r({ miles: 40, mins: 60 }); });
+        };
+        try {
+          const rec = {
+            id: _newId(), date: todayKey(), gps: true, legKey: 'sweep-race',
+            from: 'Stop', to: 'Miller residence', from_name: 'Stop', to_name: 'Miller residence',
+            fromCoord: { lat: 38.00, lng: -94.00 }, toCoord: { lat: 38.10, lng: -94.10 },
+            miles: 0, calc_method: 'pending_auto',
+          };
+          mileage.push(rec);
+          const sweep = _retryPendingTrips();
+          await started;
+          // Re-pointed mid-sweep. Its own measurement is stubbed to the same
+          // pending promise, so the only number that can land is the sweep's 40.
+          rec.fromCoord = { lat: 38.05, lng: -94.05 };
+          rec.from_name = 'Home Depot';
+          resolveSweep();
+          await sweep;
+          return { miles: rec.miles, method: rec.calc_method, from: rec.from_name };
+        } finally { window._routeDistance = origRoute; }
+      });
+      expect(out.from).toBe('Home Depot');
+      // The sweep must NOT have written its stale 40 onto the moved leg. The row
+      // stays pending, which the next sweep resolves against the new origin.
+      expect(out.miles).toBe(0);
+      expect(out.method).toBe('pending_auto');
+    });
+
     // ── Midnight ────────────────────────────────────────────────────────────
     // A supply run that leaves at 11:52pm and gets back at 12:08am is ONE trip
     // on ONE day, the day it started. Filing it under the day End Drive was

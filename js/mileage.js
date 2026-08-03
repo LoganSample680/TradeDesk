@@ -478,6 +478,14 @@ async function _retryPendingTrips(){
       const tc=auto?rec.toCoord:await _resolveCoords(rec.to);
       if(!fc||!tc)continue;
       const{miles}=await _routeDistance(fc,tc);
+      // SECOND re-read, after the route call. The one above catches a row that
+      // had already settled when we reached it; this catches one that changed
+      // WHILE we were measuring. A leg gets re-origined mid-flight when a stop
+      // turns out to have been passed through, and the corrected measurement is
+      // the one that must survive: writing ours would stamp the distance from
+      // the old origin as final and the correction would bail on seeing it.
+      if(rec.calc_method!==method)continue;
+      if(auto&&(rec.fromCoord!==fc||rec.toCoord!==tc))continue;
       rec.miles=Math.round(miles*10)/10;rec.calc_method=auto?'auto_route':'address';
       filled++;
     }catch(e){}
@@ -559,11 +567,22 @@ function autoLogDriveTrip(opts){
   }
   mileage.unshift(rec);
   saveAll();
+  // The endpoints THIS measurement is for, captured before the await. The row can
+  // be re-origined while the route call is in flight (_autoNameStopTrip restores
+  // a passed-through stop's true origin and re-measures from it), and identity on
+  // the coordinate objects is what tells us that happened: _reoriginTrip assigns
+  // a NEW fromCoord object, so a changed reference means this result is stale.
+  const _fc=rec.fromCoord,_tc=rec.toCoord;
   (async()=>{
     try{
-      const{miles}=await _routeDistance(rec.fromCoord,rec.toCoord);
+      const{miles}=await _routeDistance(_fc,_tc);
       const saved=mileage.find(m=>m.id===rec.id);
       if(!saved)return;
+      // Stale: something re-pointed this leg while we were measuring. Writing now
+      // would stamp the distance from the WRONG origin as auto_route, and the
+      // correcting call would then bail on seeing a settled row, so the wrong
+      // number would win. Whoever re-pointed it owns the answer.
+      if(saved.fromCoord!==_fc||saved.toCoord!==_tc)return;
       saved.miles=Math.round(miles*10)/10;saved.calc_method='auto_route';
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();
@@ -729,12 +748,16 @@ function _reoriginTrip(m,from){
   if(!m||!from||from.lat==null)return;
   m.from=from.addr||from.name||'';
   m.from_name=from.name||'';
-  m.fromCoord={lat:from.lat,lng:from.lng};
+  const fc=m.fromCoord={lat:from.lat,lng:from.lng};
+  const tc=m.toCoord;
   m.miles=0;m.calc_method='pending_auto';
   (async()=>{
     try{
-      const{miles}=await _routeDistance(m.fromCoord,m.toCoord);
+      const{miles}=await _routeDistance(fc,tc);
       if(m.calc_method!=='pending_auto')return;   // something else settled it
+      // A LATER correction re-pointed this leg again while we measured. Same rule
+      // as everywhere else that measures: the most recent origin owns the answer.
+      if(m.fromCoord!==fc||m.toCoord!==tc)return;
       m.miles=Math.round(miles*10)/10;m.calc_method='auto_route';
       saveAll();
       if(document.getElementById('mil-table'))renderAllMileage();
