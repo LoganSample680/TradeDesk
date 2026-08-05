@@ -538,7 +538,7 @@ test.describe('Automatic mileage from drive legs', () => {
       // already left behind.
     });
 
-    test('employee who picked no vehicle: NO mileage claim at all', async () => {
+    test('employee who picked no vehicle: recorded, claimed by nobody', async () => {
       // CHANGED 2026-08-03, owner's call, and the old assertion was mine from
       // earlier in this same PR.
       //
@@ -556,7 +556,11 @@ test.describe('Automatic mileage from drive legs', () => {
       // New behaviour: the TIME still logs, because the drive happened and is
       // compensable. The money claim waits until somebody records a vehicle.
       const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true, asEmployee: true, empVehicle: '' });
-      expect(rows.length).toBe(0);
+      // Recorded, not discarded (revised again 2026-08-03): one row, marked
+      // unattributed, counted by neither side until somebody says what he drove.
+      expect(rows.length).toBe(1);
+      expect(rows[0].vehicleUnknown).toBe(true);
+      expect(!!rows[0].reimbursable).toBe(false);
     });
 
     test('an employee in their own car is still PAID for the drive', async () => {
@@ -2130,6 +2134,176 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── The standing vehicle, and the truck that is in the shop ────────────────
+  // Owner (2026-08-03): "I want this to be easy and bulletproof and force easy
+  // automated clean data", and then the part that makes it safe rather than
+  // merely convenient: "flag to dispatch if Danny's vehicle he usually uses is
+  // down for maintenance, what's Danny going to drive?"
+  //
+  // Auto-filling a usual truck WITHOUT checking the shop would have introduced a
+  // new bug rather than fixing one: miles deducted on a vehicle sitting on a
+  // lift. A false deduction is worse than a blank, because a blank claims
+  // nothing and a false one goes on the return.
+  test.describe('the vehicle answer that survives midnight', () => {
+    const setup = (o) => page.evaluate((a) => {
+      S.employees = [{ id: 'e-danny', name: 'Danny' }, { id: 'e-sam', name: 'Sam' }];
+      vehicles.length = 0;
+      vehicles.push({ id: 'v-250', name: 'F-250', status: 'active', crewDrivable: true, downtimeLog: a.down || [] });
+      vehicles.push({ id: 'v-van', name: 'Transit', status: 'active', crewDrivable: !!a.vanDrivable, downtimeLog: a.vanDown || [] });
+      if (a.usual) S.employees[0].usualVehicle = a.usual;
+      jobs.length = 0;
+      jobs.push({ id: 8801, name: 'Job', status: 'upcoming', start: todayKey(), days: 1, assignedTo: 'e-danny' });
+      return true;
+    }, o);
+
+    test('a usual truck answers for today with nobody touching anything', async () => {
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' } });
+      const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
+      expect(r.mode).toBe('truck');
+      expect(r.vehicleId).toBe('v-250');
+      expect(r.reason).toBe('usual');
+    });
+
+    test('the usual truck being in the shop does NOT quietly keep deducting', async () => {
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
+                    down: [{ start: todayKey(), end: null }] });   // open end = still in
+      const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
+      // Not 'truck'. This is the whole point.
+      expect(r.mode).toBe('none');
+      expect(r.reason).toBe('usual-down');
+      expect(r.downVehicleName).toBe('F-250');
+    });
+
+    test('with the truck down and another free, dispatch offers that one', async () => {
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
+                    down: [{ start: todayKey(), end: null }], vanDrivable: true });
+      const need = await page.evaluate(() => crewNeedingVehicleAnswer());
+      expect(need.length).toBe(1);
+      expect(need[0].name).toBe('Danny');
+      expect(need[0].reason).toBe('usual-down');
+      expect(need[0].options).toContain('truck');
+      expect(need[0].offer.map(v => v.name)).toContain('Transit');
+    });
+
+    test('with EVERY truck down, no truck is offered at all', async () => {
+      // Only what is true. Their own vehicle or riding with somebody are the
+      // honest answers left, and the board must not pretend otherwise.
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
+                    down: [{ start: todayKey(), end: null }],
+                    vanDrivable: true, vanDown: [{ start: todayKey(), end: null }] });
+      const need = await page.evaluate(() => crewNeedingVehicleAnswer());
+      expect(need[0].options).toEqual(['own', 'rider']);
+      expect(need[0].offer).toEqual([]);
+    });
+
+    test('a truck out of the shop yesterday is available again today', async () => {
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
+                    down: [{ start: '2020-01-01', end: '2020-01-05' }] });
+      const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
+      expect(r.mode).toBe('truck');   // standing answer resumes on its own
+      expect(r.reason).toBe('usual');
+    });
+
+    test('a usual of "own vehicle" answers too, and claims the reimbursement', async () => {
+      await setup({ usual: { mode: 'own' } });
+      const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
+      expect(r.mode).toBe('own');
+      expect(r.reason).toBe('usual');
+    });
+
+    test('nobody set yet is reported as unset, not guessed', async () => {
+      await setup({});
+      const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
+      expect(r.reason).toBe('unset');
+      const need = await page.evaluate(() => crewNeedingVehicleAnswer());
+      expect(need.map(n => n.name)).toEqual(['Danny']);
+    });
+
+    test('somebody not working today is not a gap', async () => {
+      await setup({});
+      const need = await page.evaluate(() => crewNeedingVehicleAnswer());
+      expect(need.map(n => n.name)).not.toContain('Sam');
+    });
+
+    test('a usual truck deleted out from under it reads unset, never stale', async () => {
+      await setup({ usual: { mode: 'truck', vehicleId: 'v-gone' } });
+      const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
+      expect(r.reason).toBe('unset');
+      expect(r.mode).toBe('none');
+    });
+  });
+
+  // ── Three pots, not two ────────────────────────────────────────────────────
+  // An unattributed drive is neither the owner's deduction nor the crew's debt.
+  // Recorded, so the answer is still worth something on Thursday.
+  test.describe('a drive nobody has attributed yet', () => {
+    const seed = () => page.evaluate(() => {
+      mileage.length = 0;
+      const mk = (o) => Object.assign({ id: _newId(), date: todayKey(), miles: 10 }, o);
+      mileage.push(mk({ miles: 10 }));                        // owner truck
+      mileage.push(mk({ miles: 20, reimbursable: true }));    // crew own car
+      mileage.push(mk({ miles: 40, vehicleUnknown: true, id: 'unattrib' }));
+      return true;
+    });
+
+    test('it is in neither total', async () => {
+      await seed();
+      const out = await page.evaluate(() => ({
+        ded: deductibleTrips(mileage).reduce((s, m) => s + m.miles, 0),
+        reimb: reimbursableTrips(mileage).reduce((s, m) => s + m.miles, 0),
+        un: unattributedTrips(mileage).reduce((s, m) => s + m.miles, 0),
+      }));
+      expect(out.ded).toBe(10);     // 50 would mean the unknown 40 was deducted
+      expect(out.reimb).toBe(20);   // 60 would mean it was billed to the crew
+      expect(out.un).toBe(40);
+    });
+
+    test('answering "company truck" moves it into the deduction', async () => {
+      await seed();
+      const out = await page.evaluate(() => {
+        vehicles.length = 0; vehicles.push({ id: 'v-250', name: 'F-250', status: 'active' });
+        attributeTrip('unattrib', 'truck', 'v-250');
+        const m = mileage.find(x => x.id === 'unattrib');
+        return { ded: deductibleTrips(mileage).reduce((s, r) => s + r.miles, 0),
+                 unknown: !!m.vehicleUnknown, vehicle: m.vehicle };
+      });
+      expect(out.unknown).toBe(false);
+      expect(out.ded).toBe(50);
+      expect(out.vehicle).toBe('F-250');
+    });
+
+    test('answering "own vehicle" moves it into what they are owed', async () => {
+      await seed();
+      const out = await page.evaluate(() => {
+        attributeTrip('unattrib', 'own');
+        return { ded: deductibleTrips(mileage).reduce((s, r) => s + r.miles, 0),
+                 reimb: reimbursableTrips(mileage).reduce((s, r) => s + r.miles, 0) };
+      });
+      expect(out.ded).toBe(10);
+      expect(out.reimb).toBe(60);
+    });
+
+    test('answering "riding with somebody" removes it, because it is nobody\'s', async () => {
+      await seed();
+      const out = await page.evaluate(() => {
+        attributeTrip('unattrib', 'rider');
+        return { gone: !mileage.find(x => x.id === 'unattrib'), total: mileage.length };
+      });
+      expect(out.gone).toBe(true);
+      expect(out.total).toBe(2);
+    });
+
+    test('an already-answered trip is not re-answerable', async () => {
+      await seed();
+      const out = await page.evaluate(() => {
+        const before = mileage.filter(m => m.reimbursable).length;
+        attributeTrip(mileage[0].id, 'own');       // a settled owner trip
+        return { before, after: mileage.filter(m => m.reimbursable).length };
+      });
+      expect(out.after).toBe(out.before);
+    });
+  });
+
   // ── Nobody said what they were driving ─────────────────────────────────────
   // Owner (2026-08-03): "treat none like rider". The vehicle mode has four
   // states and only three were handled. 'none' means no truck assigned on the
@@ -2154,7 +2328,7 @@ test.describe('Automatic mileage from drive legs', () => {
         await new Promise(r => setTimeout(r, 50));
         const rows = mileage.slice(0, Math.max(0, mileage.length - before));
         return {
-          miles: rows.map(r => ({ reimbursable: !!r.reimbursable })),
+          miles: rows.map(r => ({ reimbursable: !!r.reimbursable, unknown: !!r.vehicleUnknown })),
           timeEntries: queued.filter(q => q.tbl === 'job_time_entries').map(q => q.row.source),
         };
       } finally {
@@ -2165,12 +2339,17 @@ test.describe('Automatic mileage from drive legs', () => {
       }
     }, mode);
 
-    test("'none' logs the time and claims no miles", async () => {
+    test("'none' records the drive and claims nothing on either side", async () => {
+      // CHANGED 2026-08-03: this asserted zero rows. Discarding it meant that
+      // when somebody remembered on Thursday that Danny was in his own truck,
+      // there was nothing left to correct. The row is kept and marked
+      // unattributed instead: out of the deduction, out of what the crew are
+      // owed, and one tap from being either.
       const out = await legAs('none');
-      // The drive happened and it is compensable, so the time entry stands.
-      expect(out.timeEntries.length).toBe(1);
-      // But no reimbursement claim off a vehicle nobody named.
-      expect(out.miles).toEqual([]);
+      expect(out.timeEntries.length).toBe(1);       // the drive is compensable
+      expect(out.miles.length).toBe(1);             // and it is on the record
+      expect(out.miles[0].unknown).toBe(true);
+      expect(out.miles[0].reimbursable).toBe(false);
     });
 
     test("'none' is recorded as unassigned, never as personal", async () => {

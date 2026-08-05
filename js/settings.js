@@ -1127,9 +1127,26 @@ function getDefaultVehicle(){
 //
 // The OWNER's own pickers are deliberately NOT filtered by this: they can drive
 // anything they own, and this flag is about what they hand to other people.
-function getCrewVehicles(){
+// IS THIS TRUCK OFF THE ROAD ON THIS DAY. The fleet already keeps a dated
+// downtime log (start, and an end that is open while it is still in the shop);
+// nothing outside the fleet report ever read it. Dispatch has to, because
+// filling a crew member's usual truck without checking would deduct miles on a
+// vehicle sitting on a lift. A false deduction is worse than a blank one: a
+// blank claims nothing, a false one goes on the return.
+function _vehDownOn(v,day){
+  const d=day||todayKey();
+  if(!v)return false;
+  if((v.status||'active')!=='active')return true;
+  return (v.downtimeLog||[]).some(x=>{
+    if(!x||!x.start)return false;
+    return x.start<=d&&(!x.end||x.end>=d);   // no end yet = still down
+  });
+}
+// Vehicles a crew member may be handed ON A GIVEN DAY. Same list as before,
+// minus anything in the shop that day.
+function getCrewVehicles(day){
   const vehs=(typeof getVehicles==='function')?getVehicles():[];
-  return vehs.filter(v=>(v.status||'active')==='active'&&v.crewDrivable);
+  return vehs.filter(v=>(v.status||'active')==='active'&&v.crewDrivable&&!_vehDownOn(v,day));
 }
 function setDefaultVehicle(id){
   S.defaultVehicleId=id?String(id):'';

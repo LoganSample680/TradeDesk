@@ -819,7 +819,14 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
     // still logs (it is compensable and _geoDriveEntry has already enqueued it);
     // only the money claim is withheld until somebody says what was driven.
     // Owner's call, 2026-08-03.
-    if(reimbursable&&(mode==='rider'||mode==='none'||!mode))return;
+    // RIDER still logs nothing: they were a passenger, the miles are somebody
+    // else's and there is no question left to ask.
+    if(reimbursable&&mode==='rider')return;
+    // NOBODY SAID. Record the drive, claim nothing. It is excluded from the
+    // owner's deduction AND from what the crew are owed until somebody answers,
+    // and because the row exists that answer is still worth something on
+    // Thursday. Dropping it left nothing to correct (owner, 2026-08-03).
+    const unknown=!!(reimbursable&&(mode==='none'||!mode));
     // The one-drive-one-row guard lives in autoLogDriveTrip, not here: it is a
     // rule about the mileage log itself rather than about this account, so it
     // has to hold for every caller, the same reason the endpoint validation
@@ -847,7 +854,7 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
     // morning commute into a company deduction on the strength of a checkbox
     // the owner ticked about their own spare room.
     if(from.likelyHome&&!(S.homeOffice&&!_isEmployee))return;
-    autoLogDriveTrip({from,to,legKey,startedIso,reimbursable});
+    autoLogDriveTrip({from,to,legKey,startedIso,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown});
   }catch(_e){}
 }
 

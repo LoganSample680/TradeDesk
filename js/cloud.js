@@ -2986,6 +2986,79 @@ function _pickVehicle(vid,label){
 // on the settings sync that already reaches every crew device, which means no
 // migration for something that is by nature ephemeral.
 //   truckDay = {day:'YYYY-MM-DD', mode:'truck'|'rider'|'own', v:<vehicleId>, with:<empId>}
+// ── The standing answer, and whether it still holds today ────────────────────
+// Owner (2026-08-03): "I want this to be easy and bulletproof and force easy
+// automated clean data."
+//
+// The chore this replaces: dispatch threw the vehicle answer away at midnight,
+// so the same question came back every morning forever. Nobody answers a
+// question forever, and an unanswered day used to invent a debt (it guessed
+// personal) and then, once that was fixed, silently lose one. Both are the same
+// mistake: treating a question nobody answered as an answer.
+//
+// So the answer is captured ONCE, when it is already known: at hire. Day to day
+// is an override, not a requirement.
+//
+// usualVehicle on the crew record is {mode:'truck',vehicleId} or {mode:'own'}.
+// Absent means nobody has said yet, which is a state the hire flow and the
+// one-time migration card exist to make unreachable.
+function _usualVehicleFor(empId){
+  if(empId==null)return null;
+  const e=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  const u=e&&e.usualVehicle;
+  if(!u||!u.mode)return null;
+  if(u.mode==='own')return {mode:'own'};
+  if(u.mode==='truck'&&u.vehicleId)return {mode:'truck',vehicleId:String(u.vehicleId)};
+  return null;
+}
+// WHAT IS THIS PERSON DRIVING TODAY, and if we cannot say, why not. The `reason`
+// is what the dispatch board needs in order to ask a useful question instead of
+// a blank one.
+//
+//   set          , an explicit answer for today, from the board or their phone
+//   usual        , their standing vehicle, confirmed on the road today
+//   usual-down   , their standing truck is in the shop. THIS is the case that
+//                  makes the whole feature safe rather than merely convenient.
+//   unset        , nobody has ever said. New hire, or pre-migration crew.
+function _crewVehicleForDay(empId,day){
+  const d=day||todayKey();
+  const t=_truckDayFor(empId);
+  if(t)return {mode:t.mode,vehicleId:t.vehicleId?String(t.vehicleId):null,reason:'set'};
+  const u=_usualVehicleFor(empId);
+  if(!u)return {mode:'none',vehicleId:null,reason:'unset'};
+  if(u.mode==='own')return {mode:'own',vehicleId:null,reason:'usual'};
+  const v=(typeof getVehicles==='function'?getVehicles():[]).find(x=>String(x.id)===u.vehicleId);
+  if(!v)return {mode:'none',vehicleId:null,reason:'unset'};      // truck deleted out from under it
+  if(typeof _vehDownOn==='function'&&_vehDownOn(v,d))
+    return {mode:'none',vehicleId:null,reason:'usual-down',downVehicleId:u.vehicleId,downVehicleName:v.name||''};
+  return {mode:'truck',vehicleId:u.vehicleId,reason:'usual'};
+}
+// Everyone dispatch cannot answer for today, with the reason, so the board can
+// ask the right question: "the F-250 is in the shop, what is Danny in?" rather
+// than an empty dropdown. Scheduled crew only: somebody not working today is
+// not a gap.
+function crewNeedingVehicleAnswer(day){
+  const d=day||todayKey();
+  const working=new Set();
+  (jobs||[]).forEach(j=>{
+    if(!j||j.status==='canceled'||j.assignedTo==null)return;
+    const span=parseInt(j.days)||1;
+    for(let i=0;i<span;i++){if(typeof addDays==='function'&&addDays(j.start,i)===d)working.add(String(j.assignedTo));}
+  });
+  return [...working].map(id=>{
+    const r=_crewVehicleForDay(id,d);
+    if(r.reason!=='usual-down'&&r.reason!=='unset')return null;
+    const e=(S.employees||[]).find(x=>String(x.id)===String(id));
+    // ONLY WHAT IS TRUE. With every crew-drivable truck in the shop there is no
+    // truck to offer, so the board must not pretend there is: their own vehicle
+    // or riding with somebody are the only honest answers left.
+    const free=(typeof getCrewVehicles==='function')?getCrewVehicles(d):[];
+    return {empId:String(id),name:(e&&e.name)||'Crew',reason:r.reason,
+            downVehicleName:r.downVehicleName||'',
+            options:free.length?['truck','own','rider']:['own','rider'],
+            offer:free.map(v=>({id:String(v.id),name:v.name||''}))};
+  }).filter(Boolean);
+}
 function _truckDayFor(empId){
   if(empId==null)return null;
   const e=(S.employees||[]).find(x=>String(x.id)===String(empId));
@@ -3004,8 +3077,18 @@ function _shiftVehicleMode(){
   const a=_myTruckToday();
   if(a)return a.mode;
   const v=localStorage.getItem('emp_vehicle_'+todayKey());
-  if(!v)return 'none';
-  return v==='personal'?'own':'truck';
+  if(v)return v==='personal'?'own':'truck';
+  // No answer for today, so fall back to the STANDING one. This is what removes
+  // the daily chore: a crew member with a usual vehicle needs nobody to touch
+  // anything, and their miles attribute correctly on their own. It is checked
+  // against the shop each time, so a usual truck that is down does NOT quietly
+  // keep deducting.
+  const eid=(typeof _employeeRecord!=='undefined'&&_employeeRecord)?_employeeRecord.id:null;
+  if(eid!=null&&typeof _crewVehicleForDay==='function'){
+    const r=_crewVehicleForDay(eid);
+    if(r&&(r.reason==='usual'))return r.mode;
+  }
+  return 'none';
 }
 // Returns true when the shift vehicle should have mileage tracked (company vehicle)
 function _isCompanyVehicleToday(){

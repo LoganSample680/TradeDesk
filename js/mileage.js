@@ -580,6 +580,8 @@ function autoLogDriveTrip(opts){
     // The employee's own car. Owed to THEM, never the owner's deduction, and
     // deductibleTrips is what enforces that everywhere it matters.
     reimbursable:(opts.reimbursable?true:undefined),
+    // Nobody said what they were in. Kept off BOTH money totals until they do.
+    vehicleUnknown:(opts.vehicleUnknown?true:undefined),
     // WHEN THE LEG BEGAN, not just when it was written. loggedAt is the arrival,
     // so on its own it cannot say whether this journey was already under way
     // when somebody tapped Drive, which is exactly what End Drive has to know.
@@ -814,11 +816,45 @@ function _reoriginTrip(m,from){
 // what they already owed (owner, 2026-08-02). Now they are recorded and flagged,
 // and every place that turns miles into a deduction goes through this filter, so
 // there is ONE definition of whose miles those are rather than five.
+// THREE POTS, not two. A trip whose vehicle nobody recorded belongs to neither
+// side: it is not the owner's deduction, because we cannot say the company
+// vehicle drove it, and it is not a debt to the crew member either, because we
+// cannot say their own car did. It is a real drive, measured, waiting on one
+// answer. Excluded from BOTH totals until it gets one.
+//
+// Recorded rather than discarded (owner, 2026-08-03) so the answer is still
+// worth something later: drop the row and there is nothing left to fix when
+// somebody remembers on Thursday that Danny was in his own truck.
+function unattributedTrips(list){
+  return (list||[]).filter(m=>m&&m.vehicleUnknown);
+}
 function deductibleTrips(list){
-  return (list||[]).filter(m=>m&&!m.reimbursable);
+  return (list||[]).filter(m=>m&&!m.reimbursable&&!m.vehicleUnknown);
 }
 function reimbursableTrips(list){
-  return (list||[]).filter(m=>m&&m.reimbursable);
+  return (list||[]).filter(m=>m&&m.reimbursable&&!m.vehicleUnknown);
+}
+// The one tap that settles an unattributed drive. 'truck' moves it into the
+// deduction, 'own' into what the business owes them, 'rider' means they were a
+// passenger and it is neither, so the row goes.
+function attributeTrip(id,mode,vehicleId){
+  const m=mileage.find(x=>String(x.id)===String(id));
+  if(!m||!m.vehicleUnknown)return null;
+  // Passenger: the drive was real but it is nobody's mileage, so the row goes.
+  // Through _userDelete so the id is recorded as an EXPLICIT delete, which is
+  // what lets the sweep remove it on the other devices instead of resurrecting
+  // it (js/cloud.js _recordLocalDelete).
+  if(mode==='rider'){_userDelete(()=>{mileage=mileage.filter(x=>x!==m);saveAll();});return null;}
+  delete m.vehicleUnknown;
+  if(mode==='own'){m.reimbursable=true;}
+  else{
+    delete m.reimbursable;
+    const v=(typeof getVehicles==='function'?getVehicles():[]).find(x=>String(x.id)===String(vehicleId));
+    if(v){m.vehicle=v.name||m.vehicle;m.vehicleId=v.id;}
+  }
+  saveAll();
+  if(document.getElementById('mil-table'))renderAllMileage();
+  return m;
 }
 // What the crew drove in their own cars this year, priced at the IRS rate.
 //
