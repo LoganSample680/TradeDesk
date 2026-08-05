@@ -2145,6 +2145,14 @@ test.describe('Automatic mileage from drive legs', () => {
   // lift. A false deduction is worse than a blank, because a blank claims
   // nothing and a false one goes on the return.
   test.describe('the vehicle answer that survives midnight', () => {
+    // todayKey() is a BROWSER global. These fixtures are built in Node, where it
+    // does not exist, so the date has to be computed here. Matches dateKey()'s
+    // LOCAL-time construction rather than toISOString(), which is UTC and would
+    // disagree with the app for part of every day.
+    const todayLocal = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
     const setup = (o) => page.evaluate((a) => {
       S.employees = [{ id: 'e-danny', name: 'Danny' }, { id: 'e-sam', name: 'Sam' }];
       vehicles.length = 0;
@@ -2152,7 +2160,7 @@ test.describe('Automatic mileage from drive legs', () => {
       vehicles.push({ id: 'v-van', name: 'Transit', status: 'active', crewDrivable: !!a.vanDrivable, downtimeLog: a.vanDown || [] });
       if (a.usual) S.employees[0].usualVehicle = a.usual;
       jobs.length = 0;
-      jobs.push({ id: 8801, name: 'Job', status: 'upcoming', start: todayKey(), days: 1, assignedTo: 'e-danny' });
+      jobs.push({ id: 8801, name: 'Job', status: 'upcoming', start: todayLocal(), days: 1, assignedTo: 'e-danny' });
       return true;
     }, o);
 
@@ -2166,7 +2174,7 @@ test.describe('Automatic mileage from drive legs', () => {
 
     test('the usual truck being in the shop does NOT quietly keep deducting', async () => {
       await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
-                    down: [{ start: todayKey(), end: null }] });   // open end = still in
+                    down: [{ start: todayLocal(), end: null }] });   // open end = still in
       const r = await page.evaluate(() => _crewVehicleForDay('e-danny'));
       // Not 'truck'. This is the whole point.
       expect(r.mode).toBe('none');
@@ -2176,7 +2184,7 @@ test.describe('Automatic mileage from drive legs', () => {
 
     test('with the truck down and another free, dispatch offers that one', async () => {
       await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
-                    down: [{ start: todayKey(), end: null }], vanDrivable: true });
+                    down: [{ start: todayLocal(), end: null }], vanDrivable: true });
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
       expect(need.length).toBe(1);
       expect(need[0].name).toBe('Danny');
@@ -2189,8 +2197,8 @@ test.describe('Automatic mileage from drive legs', () => {
       // Only what is true. Their own vehicle or riding with somebody are the
       // honest answers left, and the board must not pretend otherwise.
       await setup({ usual: { mode: 'truck', vehicleId: 'v-250' },
-                    down: [{ start: todayKey(), end: null }],
-                    vanDrivable: true, vanDown: [{ start: todayKey(), end: null }] });
+                    down: [{ start: todayLocal(), end: null }],
+                    vanDrivable: true, vanDown: [{ start: todayLocal(), end: null }] });
       const need = await page.evaluate(() => crewNeedingVehicleAnswer());
       expect(need[0].options).toEqual(['own', 'rider']);
       expect(need[0].offer).toEqual([]);
