@@ -3429,6 +3429,9 @@ function _employeeModalHTML(emp,idx){
   const _legacyMap={employee:'tech',estimator:'tech',foreman:'manager',painter:'tech'};
   const _eRole=_legacyMap[e.role]||e.role||'tech';
   const _eClass=e.classification||'';
+  // '' = nobody has said yet. 'own' = their own vehicle. Otherwise a vehicle id.
+  const _eUsual=(e.usualVehicle&&e.usualVehicle.mode==='own')?'own'
+               :(e.usualVehicle&&e.usualVehicle.vehicleId)?String(e.usualVehicle.vehicleId):'';
   const _eComp=_teamComp[(e.email||'').toLowerCase()]||{pay_type:'hourly',pay_rate:0};
   return '<div style="font-size:17px;font-weight:800;margin-bottom:'+(isNew?'4px':'14px')+'">'+(isNew?'Add W-2 Employee':'Edit '+escHtml(e.name||''))+'</div>'+
     (isNew?'<div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.4">You control how, when, and where they work, you set the hours, direct the job, provide the tools. That\'s an employee.</div>':'')+
@@ -3453,6 +3456,21 @@ function _employeeModalHTML(emp,idx){
           _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'"'+(c===_eClass?' selected':'')+'>'+escHtml(c||'- None -')+'</option>').join('')+
         '</select></div>'+
     '</div>'+
+    // ── Which vehicle, asked ONCE ────────────────────────────────────────────
+    // Asked here because this is the moment the answer is already known, and
+    // asking once at hire is what stops dispatch asking every morning forever.
+    // Hidden entirely when no vehicle is marked crew-drivable: there is nothing
+    // to choose between, so the answer is their own vehicle and the question is
+    // noise.
+    ((typeof getCrewVehicles==='function'&&getCrewVehicles().length)?
+      '<div class="f" style="margin-bottom:12px"><label>Usual vehicle</label>'+
+        '<select id="emp-usual-vehicle" style="font-size:14px;padding:10px">'+
+          '<option value=""'+(!_eUsual?' selected':'')+'>Not set yet</option>'+
+          '<option value="own"'+(_eUsual==='own'?' selected':'')+'>Their own vehicle</option>'+
+          getCrewVehicles().map(v=>'<option value="'+escHtml(String(v.id))+'"'+(_eUsual===String(v.id)?' selected':'')+'>'+escHtml(v.name||'Vehicle')+'</option>').join('')+
+        '</select>'+
+        '<div style="font-size:10px;color:var(--text3);margin-top:4px">Filled in for them every day. Change it on the dispatch board when a day is different, and we will ask if this one is in the shop.</div>'+
+      '</div>':'')+
     (_canViewComp()?
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Pay</div>'+
@@ -3535,7 +3553,23 @@ async function _saveEmployee(idx){
   const _canComp=_canViewComp();
   const _payType=_canComp?(document.getElementById('emp-pay-type')?.value||'hourly'):null;
   const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
-  const emp={id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms};
+  // START FROM THE EXISTING RECORD. This rebuilt the employee from the form
+  // alone, so every field the form does not show was dropped on save: editing
+  // somebody's phone number mid-morning silently wiped truckDay, their vehicle
+  // for the day, and would have wiped usualVehicle the moment it was added.
+  // Fields keep arriving on this record (truckDay, location_ack_*, usualVehicle),
+  // and a save that only knows about today's form will keep losing them.
+  const _prev=(!isNew&&S.employees[idx])?S.employees[idx]:{};
+  const _usualEl=document.getElementById('emp-usual-vehicle');
+  const _usualVal=_usualEl?_usualEl.value:'';
+  const emp=Object.assign({},_prev,{id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms});
+  // The standing vehicle answer. '' means nobody has said yet, which the
+  // dispatch board reports as a gap rather than guessing.
+  if(_usualEl){
+    if(_usualVal==='own')emp.usualVehicle={mode:'own'};
+    else if(_usualVal)emp.usualVehicle={mode:'truck',vehicleId:_usualVal};
+    else delete emp.usualVehicle;
+  }
   if(!S.employees)S.employees=[];
   // Captured before the push so it reflects the roster as it was walking in,
   // picks the prompt's framing: first-ever hire gets full business setup,

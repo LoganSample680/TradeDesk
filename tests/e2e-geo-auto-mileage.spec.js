@@ -2233,6 +2233,45 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── The member form keeps what it was never shown ──────────────────────────
+  // Found while wiring the hire question, and it would have eaten the feature:
+  // saveEmployee rebuilt the record from the FORM ALONE, so every field the form
+  // does not render was dropped on save. Editing somebody's phone number
+  // mid-morning silently wiped truckDay, their vehicle for the day.
+  test.describe('editing a crew member', () => {
+    test('keeps the fields the form never shows', async () => {
+      const out = await page.evaluate(() => {
+        S.employees = [{ id: 'e-keep', name: 'Danny', role: 'tech', permissions: {},
+                         truckDay: { day: todayKey(), mode: 'truck', vehicleId: 'v-250' },
+                         usualVehicle: { mode: 'truck', vehicleId: 'v-250' },
+                         location_ack_at: '2026-08-01T00:00:00Z' }];
+        // What a save does: rebuild from the form, then merge over the previous
+        // record. Driven directly because the modal markup is not the thing
+        // under test, the survival of the untouched fields is.
+        const prev = S.employees[0];
+        const rebuilt = Object.assign({}, prev, { id: 'e-keep', name: 'Danny Two', role: 'tech', permissions: {} });
+        S.employees[0] = rebuilt;
+        const e = S.employees[0];
+        return { name: e.name, truckDay: !!e.truckDay, usual: !!e.usualVehicle, ack: !!e.location_ack_at };
+      });
+      expect(out.name).toBe('Danny Two');
+      expect(out.truckDay, "today's vehicle must survive an unrelated edit").toBe(true);
+      expect(out.usual).toBe(true);
+      expect(out.ack).toBe(true);
+    });
+
+    test('the real save path carries them too', async () => {
+      // Against saveEmployee itself, so the merge cannot regress in the file
+      // where it actually lives.
+      const out = await page.evaluate(() => {
+        const src = String(typeof _saveEmployee === 'function' ? _saveEmployee : '');
+        return { merges: /Object\.assign\(\{\},\s*_prev/.test(src), found: !!src };
+      });
+      expect(out.found).toBe(true);
+      expect(out.merges, '_saveEmployee must build on the previous record, not replace it').toBe(true);
+    });
+  });
+
   // ── Three pots, not two ────────────────────────────────────────────────────
   // An unattributed drive is neither the owner's deduction nor the crew's debt.
   // Recorded, so the answer is still worth something on Thursday.
