@@ -856,6 +856,14 @@ function attributeTrip(id,mode,vehicleId){
   if(document.getElementById('mil-table'))renderAllMileage();
   return m;
 }
+// The select's one handler: routes the three answers into attributeTrip and
+// repaints, so the panel row disappears the moment it is settled.
+function _milAttrib(id,val){
+  if(!val)return;
+  if(val==='own'||val==='rider')attributeTrip(id,val);
+  else attributeTrip(id,'truck',val);
+  renderAllMileage();
+}
 // What the crew drove in their own cars this year, priced at the IRS rate.
 //
 // AN ESTIMATE, NOT AN AMOUNT LEGALLY OWED, and the distinction matters enough to
@@ -1735,6 +1743,43 @@ function renderAllMileage(){
   const tot=deductibleTrips(filtered).reduce((s,r)=>s+(r.miles||0),0);
   const deduction=tot*irsRate;
   const unclassified=filtered.filter(m=>!m.purpose);
+
+  // ── Drives waiting on one answer ──────────────────────────────────────────
+  // The settle path for unattributed rows. Without this panel, attributeTrip
+  // was a function no screen could reach and "answer it later" was a promise
+  // with no later: the row sat outside both money totals forever. Owner side
+  // only; crew have no mileage screen at all (owner call, 2026-08-03).
+  const _unattrib=(typeof _isEmployee!=='undefined'&&_isEmployee)?[]:unattributedTrips(filtered);
+  let _uw=document.getElementById('mil-unattrib-wrap');
+  const _tblEl=document.getElementById('mil-table');
+  if(!_unattrib.length){if(_uw)_uw.remove();}
+  else{
+    if(!_uw&&_tblEl&&_tblEl.parentNode){_uw=document.createElement('div');_uw.id='mil-unattrib-wrap';_tblEl.parentNode.insertBefore(_uw,_tblEl);}
+    if(_uw){
+      const _vopts=(typeof getVehicles==='function'?getVehicles():[]).filter(v=>(v.status||'active')==='active')
+        .map(v=>'<option value="'+escHtml(String(v.id))+'">'+escHtml(v.name||'Vehicle')+'</option>').join('');
+      _uw.innerHTML='<div style="background:#FFF8E7;border:1.5px solid #D4A017;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
+        '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:2px">'+svgIcon('🚗',{size:12})+' '+_unattrib.length+' drive'+(_unattrib.length===1?'':'s')+' with no vehicle recorded</div>'+
+        '<div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:6px">Real and measured, but counted for nobody: not your deduction, not money owed to the crew. Say what was driven and each one files itself.</div>'+
+        _unattrib.map(m=>{
+          // Sanitized, not JSON.stringify'd: double quotes inside a
+          // double-quoted attribute terminate it and leave a dead control.
+          const _sid=String(m.id).replace(/[^0-9a-zA-Z_.-]/g,'');
+          return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">'+
+            '<div style="flex:1;min-width:0">'+
+              '<div style="font-size:12px;font-weight:700">'+escHtml(m.from_name||m.from||'Start')+' → '+escHtml(m.to_name||m.to||'End')+'</div>'+
+              '<div style="font-size:11px;color:var(--text3)">'+escHtml(m.date||'')+' · '+(m.miles||0).toFixed(1)+' mi'+(m.logged_by_name?' · '+escHtml(m.logged_by_name):'')+'</div>'+
+            '</div>'+
+            '<select onchange="_milAttrib(\''+_sid+'\',this.value)" style="font-size:12px;padding:6px 8px;border-radius:var(--r);max-width:170px">'+
+              '<option value="">Whose miles?</option>'+_vopts+
+              '<option value="own">Their own vehicle</option>'+
+              '<option value="rider">Riding with somebody</option>'+
+            '</select>'+
+          '</div>';
+        }).join('')+
+      '</div>';
+    }
+  }
 
   // ── Hero ──
   const heroEl=document.getElementById('mil-hero-wrap');

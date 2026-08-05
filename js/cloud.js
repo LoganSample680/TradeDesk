@@ -3105,7 +3105,14 @@ function _dispatchVehicleGapHtml(){
         '<div style="font-size:13px;font-weight:700">'+escHtml(g.name)+'</div>'+
         '<div style="font-size:11px;color:var(--text3)">'+why+'</div>'+
       '</div>'+
-      '<select onchange="setUsualVehicle('+JSON.stringify(g.empId)+',this.value)" style="font-size:12px;padding:6px 8px;border-radius:var(--r);max-width:150px">'+opts+'</select>'+
+      // Single quotes around the id, escHtml'd. JSON.stringify here emitted
+      // DOUBLE quotes inside a double-quoted onchange attribute, so the
+      // attribute terminated at the first quote and the handler was
+      // setUsualVehicle( , a syntax error: the select rendered fine and did
+      // NOTHING when answered. The tests passed because they called
+      // setUsualVehicle directly and asserted on the HTML as a string; the DOM
+      // wiring test added with this fix dispatches a real change event.
+      '<select onchange="setUsualVehicle(\''+escHtml(String(g.empId))+'\',this.value)" style="font-size:12px;padding:6px 8px;border-radius:var(--r);max-width:150px">'+opts+'</select>'+
     '</div>';
   };
   return '<div style="background:#FFF8E7;border:1.5px solid #D4A017;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+

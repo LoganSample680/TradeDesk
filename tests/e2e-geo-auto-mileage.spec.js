@@ -2327,6 +2327,34 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(html).toBe('');
     });
 
+    test('answering from the RENDERED card actually works', async () => {
+      // The test that would have caught the dead select. The card passed every
+      // string assertion while its onchange attribute, built with
+      // JSON.stringify, terminated at the first double quote and did nothing
+      // when a real person picked an answer. So this one parses the HTML into
+      // the DOM and dispatches a real change event; asserting on the markup is
+      // not asserting on the control.
+      await seed({});
+      const out = await page.evaluate(() => {
+        const realRD = window.renderDispatch;
+        window.renderDispatch = () => {};   // setUsualVehicle repaints the board; not under test here
+        try {
+          const d = document.createElement('div');
+          d.innerHTML = _dispatchVehicleGapHtml();
+          document.body.appendChild(d);
+          const sel = d.querySelector('select');
+          const opts = Array.from(sel.options).map(o => o.value);
+          sel.value = 'v-250';
+          sel.dispatchEvent(new Event('change'));
+          d.remove();
+          return { opts, usual: S.employees[0].usualVehicle || null };
+        } finally { window.renderDispatch = realRD; }
+      });
+      expect(out.opts).toContain('v-250');
+      expect(out.opts).toContain('own');
+      expect(out.usual).toEqual({ mode: 'truck', vehicleId: 'v-250' });
+    });
+
     test('setting a vehicle for somebody who does not exist is a no-op', async () => {
       await seed({});
       const out = await page.evaluate(() => setUsualVehicle('nobody', 'v-250'));
@@ -2431,6 +2459,39 @@ test.describe('Automatic mileage from drive legs', () => {
       });
       expect(out.gone).toBe(true);
       expect(out.total).toBe(2);
+    });
+
+    test('the owner SEES the waiting drives, and one answer files them', async () => {
+      // attributeTrip existed with zero callers: the settle path was
+      // unreachable from any screen. This drives the panel end to end through
+      // the rendered select, change event and all.
+      await page.evaluate(() => {
+        mileage.length = 0; vehicles.length = 0;
+        vehicles.push({ id: 'v-250', name: 'F-250', status: 'active' });
+        trackerYear = String(new Date().getFullYear());
+        mileage.push({ id: 'un-ui', date: todayKey(), miles: 7.5, vehicleUnknown: true, gps: true,
+                       from_name: 'Shop', to_name: 'Miller residence', logged_by_name: 'Danny' });
+        renderAllMileage();
+      });
+      const out = await page.evaluate(() => {
+        const w = document.getElementById('mil-unattrib-wrap');
+        if (!w) return { panel: false };
+        const shows = w.textContent.includes('7.5') && w.textContent.includes('Danny');
+        const sel = w.querySelector('select');
+        sel.value = 'v-250';
+        sel.dispatchEvent(new Event('change'));
+        const m = mileage.find(x => x.id === 'un-ui');
+        return { panel: true, shows,
+                 unknown: !!(m && m.vehicleUnknown), veh: m && m.vehicle,
+                 ded: deductibleTrips(mileage).some(x => x.id === 'un-ui'),
+                 cleared: !document.getElementById('mil-unattrib-wrap') };
+      });
+      expect(out.panel, 'the panel must render for an unattributed drive').toBe(true);
+      expect(out.shows).toBe(true);
+      expect(out.unknown).toBe(false);
+      expect(out.veh).toBe('F-250');
+      expect(out.ded).toBe(true);
+      expect(out.cleared, 'a settled panel disappears rather than lingering empty').toBe(true);
     });
 
     test('an already-answered trip is not re-answerable', async () => {
