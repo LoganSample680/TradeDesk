@@ -2153,6 +2153,10 @@ test.describe('Automatic mileage from drive legs', () => {
       const d = new Date();
       return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     };
+    // The day is computed ONCE in Node and passed in, so nothing inside the
+    // browser body reaches for a date function at all. Two commits in a row
+    // broke on this boundary: first todayKey() called in Node, then todayLocal()
+    // called in the browser. Passing the value removes the question.
     const setup = (o) => page.evaluate((a) => {
       S.employees = [{ id: 'e-danny', name: 'Danny' }, { id: 'e-sam', name: 'Sam' }];
       vehicles.length = 0;
@@ -2160,9 +2164,9 @@ test.describe('Automatic mileage from drive legs', () => {
       vehicles.push({ id: 'v-van', name: 'Transit', status: 'active', crewDrivable: !!a.vanDrivable, downtimeLog: a.vanDown || [] });
       if (a.usual) S.employees[0].usualVehicle = a.usual;
       jobs.length = 0;
-      jobs.push({ id: 8801, name: 'Job', status: 'upcoming', start: todayLocal(), days: 1, assignedTo: 'e-danny' });
+      jobs.push({ id: 8801, name: 'Job', status: 'upcoming', start: a.today, days: 1, assignedTo: 'e-danny' });
       return true;
-    }, o);
+    }, Object.assign({ today: todayLocal() }, o));
 
     test('a usual truck answers for today with nobody touching anything', async () => {
       await setup({ usual: { mode: 'truck', vehicleId: 'v-250' } });
