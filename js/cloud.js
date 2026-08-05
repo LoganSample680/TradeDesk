@@ -2437,6 +2437,7 @@ function renderDispatch(){
     '</div>'+
     '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px">'+tab('crew','By crew')+tab('timeline','Timeline')+'</div>'+
     '<div id="_dispatch-body" style="padding:0 12px 12px">'+
+      _dispatchVehicleGapHtml()+
       (_dispatchView==='timeline'?_dispatchTimelineHtml(emps,todayJobs):
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Unassigned</div>'+
       '<div id="dispatch-unassigned" style="margin-bottom:20px">'+unassignedHtml+'</div>'+
@@ -3058,6 +3059,60 @@ function crewNeedingVehicleAnswer(day){
             options:free.length?['truck','own','rider']:['own','rider'],
             offer:free.map(v=>({id:String(v.id),name:v.name||''}))};
   }).filter(Boolean);
+}
+// Answer the standing question for somebody, from wherever it was asked.
+// '' clears it back to unset, which is a legitimate answer meaning "I do not
+// know yet" rather than a guess.
+function setUsualVehicle(empId,val){
+  const e=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  if(!e)return null;
+  if(!val)delete e.usualVehicle;
+  else if(val==='own')e.usualVehicle={mode:'own'};
+  else e.usualVehicle={mode:'truck',vehicleId:String(val)};
+  if(typeof _settingsChanged==='function')_settingsChanged();else saveAll();
+  if(document.getElementById('pg-dispatch'))renderDispatch();
+  return e.usualVehicle||null;
+}
+// ── The gap card ─────────────────────────────────────────────────────────────
+// Two jobs in one, because they are the same question:
+//
+//   • THE ONE-TIME MIGRATION. Crew who predate this feature have no standing
+//     answer. Their default cannot be guessed in either direction: defaulting
+//     to personal starts booking reimbursements for people who drive the
+//     company's trucks, defaulting to truck deducts miles on personal cars. So
+//     the app does not choose, it asks once, and until then those drives sit
+//     unattributed and claim nothing, which is the honest state.
+//   • THE DAILY EXCEPTION. Somebody whose usual truck is in the shop.
+//
+// Absent entirely when there is nothing to ask, which after the first answer is
+// most days.
+function _dispatchVehicleGapHtml(){
+  if(typeof crewNeedingVehicleAnswer!=='function')return '';
+  let gaps=[];
+  try{gaps=crewNeedingVehicleAnswer()||[];}catch(_e){return '';}
+  if(!gaps.length)return '';
+  const row=(g)=>{
+    const why=g.reason==='usual-down'
+      ? escHtml(g.downVehicleName||'Their usual truck')+' is in the shop'
+      : 'No usual vehicle set yet';
+    // Only what is true: with every crew truck down there is no truck option,
+    // so the list is built from what is actually free rather than from the fleet.
+    const opts='<option value="">Pick one</option>'+
+      g.offer.map(v=>'<option value="'+escHtml(v.id)+'">'+escHtml(v.name)+'</option>').join('')+
+      '<option value="own">Their own vehicle</option>';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:700">'+escHtml(g.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+why+'</div>'+
+      '</div>'+
+      '<select onchange="setUsualVehicle('+JSON.stringify(g.empId)+',this.value)" style="font-size:12px;padding:6px 8px;border-radius:var(--r);max-width:150px">'+opts+'</select>'+
+    '</div>';
+  };
+  return '<div style="background:#FFF8E7;border:1.5px solid #D4A017;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
+    '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:2px">'+svgIcon('🚚',{size:12})+' '+gaps.length+' '+(gaps.length===1?'person needs':'people need')+' a vehicle</div>'+
+    '<div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:6px">Their driving today is recorded but counts for nobody until this is answered. Answer once and it fills in every day after.</div>'+
+    gaps.map(row).join('')+
+  '</div>';
 }
 function _truckDayFor(empId){
   if(empId==null)return null;

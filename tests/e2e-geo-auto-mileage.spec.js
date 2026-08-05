@@ -2245,6 +2245,95 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Answering the gap, once ────────────────────────────────────────────────
+  // The card does two jobs because they are the same question: the ONE-TIME
+  // migration for crew who predate this feature, and the daily exception when
+  // somebody's usual truck is in the shop. Existing crew cannot be defaulted in
+  // either direction (personal books reimbursements for people driving company
+  // trucks, truck deducts miles on personal cars), so the app asks rather than
+  // guesses, and until it is answered those drives claim nothing.
+  test.describe('the dispatch gap card', () => {
+    const dayLocal = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    };
+    const seed = (o) => page.evaluate((a) => {
+      S.employees = [{ id: 'e-danny', name: 'Danny' }];
+      vehicles.length = 0;
+      vehicles.push({ id: 'v-250', name: 'F-250', status: 'active', crewDrivable: true, downtimeLog: a.down || [] });
+      if (a.usual) S.employees[0].usualVehicle = a.usual;
+      jobs.length = 0;
+      jobs.push({ id: 8811, name: 'Job', status: 'upcoming', start: a.today, days: 1, assignedTo: 'e-danny' });
+      return true;
+    }, Object.assign({ today: dayLocal() }, o));
+
+    test('somebody with no answer shows on the card', async () => {
+      await seed({});
+      const html = await page.evaluate(() => _dispatchVehicleGapHtml());
+      expect(html).toContain('Danny');
+      expect(html).toContain('No usual vehicle set yet');
+      expect(html).toContain('1 person needs');
+    });
+
+    test('answering it once clears the card', async () => {
+      await seed({});
+      const out = await page.evaluate(() => {
+        setUsualVehicle('e-danny', 'v-250');
+        const e = S.employees[0];
+        return { usual: e.usualVehicle, html: _dispatchVehicleGapHtml() };
+      });
+      expect(out.usual).toEqual({ mode: 'truck', vehicleId: 'v-250' });
+      expect(out.html).toBe('');   // nothing left to ask
+    });
+
+    test('"their own vehicle" is a real answer, not an absence', async () => {
+      await seed({});
+      const out = await page.evaluate(() => {
+        setUsualVehicle('e-danny', 'own');
+        return { usual: S.employees[0].usualVehicle, html: _dispatchVehicleGapHtml() };
+      });
+      expect(out.usual).toEqual({ mode: 'own' });
+      expect(out.html).toBe('');
+    });
+
+    test('clearing it back to unset is allowed, and reopens the question', async () => {
+      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' } });
+      const out = await page.evaluate(() => {
+        setUsualVehicle('e-danny', '');
+        return { usual: S.employees[0].usualVehicle, html: _dispatchVehicleGapHtml() };
+      });
+      expect(out.usual).toBeUndefined();
+      expect(out.html).toContain('Danny');
+    });
+
+    test('a usual truck in the shop shows WHY, by name', async () => {
+      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, down: [{ start: dayLocal(), end: null }] });
+      const html = await page.evaluate(() => _dispatchVehicleGapHtml());
+      expect(html).toContain('F-250 is in the shop');
+    });
+
+    test('with every truck down the card offers no truck at all', async () => {
+      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' }, down: [{ start: dayLocal(), end: null }] });
+      const html = await page.evaluate(() => _dispatchVehicleGapHtml());
+      expect(html).toContain('Their own vehicle');
+      // The only crew-drivable truck is the one in the shop, so it must not be
+      // offered as the answer to its own absence.
+      expect(html).not.toContain('>F-250<');
+    });
+
+    test('nothing to ask means no card', async () => {
+      await seed({ usual: { mode: 'truck', vehicleId: 'v-250' } });
+      const html = await page.evaluate(() => _dispatchVehicleGapHtml());
+      expect(html).toBe('');
+    });
+
+    test('setting a vehicle for somebody who does not exist is a no-op', async () => {
+      await seed({});
+      const out = await page.evaluate(() => setUsualVehicle('nobody', 'v-250'));
+      expect(out).toBeNull();
+    });
+  });
+
   // ── The member form keeps what it was never shown ──────────────────────────
   // Found while wiring the hire question, and it would have eaten the feature:
   // saveEmployee rebuilt the record from the FORM ALONE, so every field the form
