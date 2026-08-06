@@ -731,7 +731,8 @@ test.describe('Places, drive attribution and the map', () => {
         hasAddrField: !!document.getElementById('place-addr'),
         hasSuggBox: !!document.getElementById('place-addr-sugg'),
         hasHiddenLat: !!document.getElementById('place-lat'),
-        noteAsksForAddress: /Pick an address/.test(document.getElementById('place-pin-note')?.innerHTML || ''),
+        noteAsksForAddress: /Search a name or address/.test(document.getElementById('place-pin-note')?.innerHTML || ''),
+        labelLeadsWithName: /Business name or address/.test(document.getElementById('place-modal').innerHTML),
         deadEndGone: !/No coordinates\. Add this from a repeat stop/.test(document.getElementById('place-modal').innerHTML),
       };
     });
@@ -739,6 +740,7 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.hasSuggBox).toBe(true);
     expect(out.hasHiddenLat).toBe(true);
     expect(out.noteAsksForAddress).toBe(true);
+    expect(out.labelLeadsWithName, 'the field leads with business name, address is the fallback').toBe(true);
     expect(out.deadEndGone).toBe(true);
   });
 

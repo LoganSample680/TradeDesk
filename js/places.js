@@ -547,15 +547,17 @@ function openPlaceModal(id,lat,lon){
     '<input type="hidden" id="place-lat" value="'+(_lat!=null?_lat:'')+'"><input type="hidden" id="place-lon" value="'+(_lon!=null?_lon:'')+'">'+
     (_lat!=null
       ? '<div id="place-pin-note" style="font-size:11px;color:var(--text3);margin-bottom:14px">'+svgIcon('📍',{size:11})+' Pinned at '+Number(_lat).toFixed(5)+', '+Number(_lon).toFixed(5)+'</div>'
-      // No pin yet: search the address instead of dead-ending. Promoted stops and
-      // receipt-born places arrive with coordinates; a hand-added supply house or
-      // home office arrives with nothing but a name, and the address is how the
-      // contractor says where it is.
-      : '<div class="f" style="margin-bottom:12px;position:relative"><label>Address</label>'+
-          '<input id="place-addr" placeholder="Search the address or business name" autocomplete="off" oninput="_placeAddrSearch(this.value)" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+
+      // No pin yet: search instead of dead-ending. Promoted stops and receipt-born
+      // places arrive with coordinates; a hand-added supply house or home office
+      // arrives with nothing. Business name leads, address is the fallback, that
+      // is the order someone actually thinks in ("Ferguson", not "2121 E Douglas"),
+      // and MapKit's search covers both, a point-of-interest name or a street
+      // address, off the same query.
+      : '<div class="f" style="margin-bottom:12px;position:relative"><label>Business name or address</label>'+
+          '<input id="place-addr" placeholder="Ferguson Plumbing, or 2121 E Douglas Ave" autocomplete="off" oninput="_placeAddrSearch(this.value)" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+
           '<div id="place-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--bg);border:1px solid var(--border2);border-radius:9px;margin-top:4px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.14)"></div>'+
         '</div>'+
-        '<div id="place-pin-note" style="font-size:11px;color:var(--text3);margin-bottom:14px">Pick an address above to drop the pin.</div>')+
+        '<div id="place-pin-note" style="font-size:11px;color:var(--text3);margin-bottom:14px">Search a name or address above to drop the pin.</div>')+
     '<button onclick="_savePlaceFromModal('+(pl?"'"+pl.id+"'":'null')+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save</button>'+
     (pl?'<button onclick="_deletePlaceFromModal(\''+pl.id+'\')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Delete</button>':'')+
   '</div>';
