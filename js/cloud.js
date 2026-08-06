@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.06.26.15';
+const APP_VERSION='08.06.26.16';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -2848,6 +2848,18 @@ async function _dispatchOptimizeRoute(empId){
   showToast('Route optimized · ~'+miTxt+' mi from office','🗺');
 }
 
+// Resolves an employee_user_id to a display name from data already loaded
+// locally (S.employees, the synced team_members cache), no extra fetch. The
+// account owner isn't in S.employees (they're not their own team member row),
+// so their own uid is matched separately, the same fallback chain
+// _fetchCrewLabor (js/finance.js) uses for the owner's name on cost reports.
+function _crewMemberName(uid){
+  if(!uid)return'';
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(_supaUser&&_supaUser.id);
+  if(cid&&String(uid)===String(cid))return S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)';
+  const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===String(uid));
+  return (emp&&emp.name)||'';
+}
 // ── Crew live map (manager view of last-known location per employee) ──────────
 async function _renderCrewMap(){
   document.getElementById('_crew-map-ov')?.remove();
@@ -2875,8 +2887,7 @@ async function _renderCrewMap(){
   if(!keys.length){b.innerHTML='<div style="padding:8px 0">No location pings yet today. Crew appear here once they\'re on the clock with sharing enabled.</div>';return;}
   b.innerHTML=keys.map(uid=>{
     const r=latest[uid];
-    const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===uid)||{};
-    const nm=escHtml(emp.name||'Crew member');
+    const nm=escHtml(_crewMemberName(uid)||'Crew member');
     const ago=_timeAgo(r.ts);
     const mapUrl='https://www.google.com/maps?q='+r.lat+','+r.lon;
     return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
@@ -6301,14 +6312,14 @@ async function _fetchProposalViews(){
     try{
       const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
       const{data:_jte}=await _supa.from('job_time_entries')
-        .select('job_id,arrived_at,departed_at,minutes,source')
+        .select('job_id,employee_user_id,arrived_at,departed_at,minutes,source')
         .eq('contractor_user_id',cid)
         .not('job_id','is',null)
         .order('arrived_at',{ascending:false})
         .limit(1500);
       if(_jte){
         const _byJob={};
-        _jte.forEach(r=>{if(!r.job_id)return;(_byJob[r.job_id]||(_byJob[r.job_id]=[])).push({arrivedAt:r.arrived_at,departedAt:r.departed_at||null,minutes:r.minutes||0,source:r.source||null});});
+        _jte.forEach(r=>{if(!r.job_id)return;(_byJob[r.job_id]||(_byJob[r.job_id]=[])).push({arrivedAt:r.arrived_at,departedAt:r.departed_at||null,minutes:r.minutes||0,source:r.source||null,employeeName:_crewMemberName(r.employee_user_id)}));});
         _jobTimeEntriesByJob=_byJob;
       }
     }catch(_e){}

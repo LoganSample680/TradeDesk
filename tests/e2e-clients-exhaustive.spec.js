@@ -3417,6 +3417,50 @@ test.describe('clients.js: exhaustive coverage', () => {
       expect(r).not.toContain('GPS geofence');
     });
 
+    test('a named crew member on a multi-crew job shows their name on both the arrival and departure row', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970711, jobId = 970712;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Crew Job Client', created: '2026-08-01' }]);
+        bids = bids.filter(b => b.client_id !== cid);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: jobId, client_id: cid, name: 'Two-person crew', start: '2026-08-09', days: 1, value: 4000 }]);
+        window._jobTimeEntriesByJob = { [jobId]: [
+          { arrivedAt: '2026-08-09T08:00:00Z', departedAt: '2026-08-09T16:00:00Z', minutes: 480, source: 'geofence', employeeName: 'Mike Torres' },
+          { arrivedAt: '2026-08-09T08:15:00Z', departedAt: '2026-08-09T15:45:00Z', minutes: 450, source: 'geofence', employeeName: 'Dana Cole' }] };
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return document.getElementById('cd-timeline-mount').innerHTML;
+      });
+      expect(r).toContain('Mike Torres Arrived on site');
+      expect(r).toContain('Mike Torres Left job site');
+      expect(r).toContain('Dana Cole Arrived on site');
+      expect(r).toContain('Dana Cole Left job site');
+    });
+
+    test('_crewMemberName resolves the owner by id and an employee from S.employees, with no throw on an unknown id', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof _crewMemberName !== 'function') return { skip: true };
+        const cid = (typeof _contractorUserId !== 'undefined' && _contractorUserId) || (_supaUser && _supaUser.id) || 'owner-test-uid';
+        const origContractorId = window._contractorUserId, origEmployees = S.employees, origOwnerName = S.ownerName;
+        window._contractorUserId = cid;
+        S.ownerName = 'Pat Owner';
+        S.employees = [{ employee_user_id: 'emp-uid-1', name: 'Sam Crew' }];
+        const owner = _crewMemberName(cid);
+        const emp = _crewMemberName('emp-uid-1');
+        const unknown = _crewMemberName('nobody-here');
+        const empty = _crewMemberName(null);
+        window._contractorUserId = origContractorId; S.employees = origEmployees; S.ownerName = origOwnerName;
+        return { skip: false, owner, emp, unknown, empty };
+      });
+      if (r.skip) return;
+      expect(r.owner).toBe('Pat Owner');
+      expect(r.emp).toBe('Sam Crew');
+      expect(r.unknown).toBe('');
+      expect(r.empty).toBe('');
+    });
+
     test('a still-open entry (no departedAt) shows arrival only, never "Left job site"', async () => {
       const r = await page.evaluate(() => {
         const cid = 970705, jobId = 970706;

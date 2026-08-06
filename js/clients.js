@@ -1761,8 +1761,12 @@ function renderCDTimeline(){
     const _tEntries=(typeof _jobTimeEntriesByJob!=='undefined'&&_jobTimeEntriesByJob)?_jobTimeEntriesByJob[String(j.id)]:null;
     if(_tEntries)_tEntries.forEach(t=>{
       if(!t.arrivedAt)return;
-      events.push({date:String(t.arrivedAt).slice(0,10),ts:t.arrivedAt,type:'onsite',label:'Arrived on site',meta:t.source==='manual'?'Clocked in':'GPS geofence',color:'mile'});
-      if(t.departedAt)events.push({date:String(t.departedAt).slice(0,10),ts:t.departedAt,type:'offsite',label:'Left job site',meta:(t.minutes&&typeof _dispatchDur==='function'?_dispatchDur(t.minutes)+' on site':'')+(t.source==='manual'?' · clocked out':' · GPS geofence'),color:'mile'});
+      // Named when the account has a crew (multiple phones can hit the same
+      // job's fence independently); a solo owner-only account has no name to
+      // resolve, so the generic label is exactly right there.
+      const who=t.employeeName?escHtml(t.employeeName)+' ':'';
+      events.push({date:String(t.arrivedAt).slice(0,10),ts:t.arrivedAt,type:'onsite',label:who+'Arrived on site',meta:t.source==='manual'?'Clocked in':'GPS geofence',color:'mile'});
+      if(t.departedAt)events.push({date:String(t.departedAt).slice(0,10),ts:t.departedAt,type:'offsite',label:who+'Left job site',meta:(t.minutes&&typeof _dispatchDur==='function'?_dispatchDur(t.minutes)+' on site':'')+(t.source==='manual'?' · clocked out':' · GPS geofence'),color:'mile'});
     });
   });
   cmiles.forEach(m=>events.push({date:m.date||'',ts:_cdEventTs(m.date,{iso:m.ts,id:m.id,logged:m.loggedAt}),type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`+_cdLoggedNote(m.date,m.loggedAt,m.id),color:'mile'}));
