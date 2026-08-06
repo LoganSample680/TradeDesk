@@ -32,7 +32,16 @@ test.describe('mileage drive logger (UI-driven)', () => {
           clients.push({ id: clientId, name: cName, _e2e: 'mileage' });
           gps.active = true; gps.vehicle = 'E2E Truck'; gps.purpose = 'Work drive';
           gps.clientId = clientId; gps.clientName = cName;
-          gps.startTime = Date.now() - 10 * 60000; gps.startCoords = { lat: 37.6872, lon: -97.3301 };
+          // Deliberately NOT the shared Wichita test coordinate (37.6872,-97.3301) other
+          // live geo specs (geo-edges-flow, geo-employee-bg-flow, geo-timeonsite-flow) use
+          // as their "job site". saveEndDriveModal's _sameDrive dedup check matches any
+          // recent automatic row within 5mi + an overlapping time window, so a genuine
+          // automatic leg one of those specs logs near that shared point (this suite has
+          // no per-test cleanup, and specs can run close together) reads as "already
+          // logged automatically" and this test's manual entry is silently skipped, not
+          // written at all: a false-positive collision between unrelated tests, not a
+          // product bug. A coordinate far from every other geo fixture can never collide.
+          gps.startTime = Date.now() - 10 * 60000; gps.startCoords = { lat: 40.7128, lon: -74.0060 };
           showEndDrive();                                  // 1 tap, open End-Drive modal
         }, { clientId, cName });
         await p.waitForSelector('#end-miles-modal', { timeout: 10000 });

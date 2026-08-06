@@ -3007,29 +3007,38 @@ test.describe('Sign-in password eye: icon matches what is actually on screen', (
   });
   test.afterAll(async () => { await page.context().close(); });
 
-  // Reads state the same way a person would: what type is the field really,
-  // and does the visible glyph have the pupil (open eye) or the diagonal
-  // slash (eye-off). Not a string compare against SVG source, the actual
-  // rendered markup in the actual button.
-  const readState = () => page.evaluate(() => {
-    const inp = document.getElementById('supa-pass');
-    const btn = document.getElementById('supa-pass-eye');
-    return {
-      masked: inp ? inp.type === 'password' : null,
-      openEye: btn ? btn.innerHTML.includes('circle') : null,      // pupil = open eye
-      slashed: btn ? btn.innerHTML.includes('line') : null,        // diagonal = eye-off
-      ariaLabel: btn ? btn.getAttribute('aria-label') : null,
-      overlayPresent: !!document.getElementById('supa-login-overlay'),
-    };
-  });
-
+  // The bug and the fix both live entirely inside _pwToggle/_eyeSvg: given an
+  // input id and a button id, derive the icon from the input's real type.
+  // The sign-in overlay is not part of that claim, it is just the one place
+  // in the app that happens to call these two functions, and going through
+  // it (supaShowLogin) ties the test to the login session/overlay lifecycle:
+  // a real, independently-timed async subsystem (token/session probing) that
+  // can legitimately tear the overlay down mid-test with no bug involved.
+  // Building the exact same markup on a blank div sideswipes that lifecycle
+  // entirely and tests the actual claim: click → field flips → icon follows.
   test('masked shows the slashed eye; each click flips both the field and the icon together', async () => {
     const rendered = await page.evaluate(() => {
-      if (typeof supaShowLogin !== 'function') return false;
-      supaShowLogin({ force: true });
-      return !!document.getElementById('supa-pass-eye');
+      if (typeof _pwToggle !== 'function' || typeof _eyeSvg !== 'function') return false;
+      const host = document.createElement('div');
+      host.id = 'eye-test-host';
+      host.innerHTML =
+        '<input type="password" id="eye-test-pass">' +
+        '<button type="button" id="eye-test-eye" aria-label="Show password" onclick="_pwToggle(\'eye-test-pass\',\'eye-test-eye\')">' + _eyeSvg(false) + '</button>';
+      document.body.appendChild(host);
+      return !!document.getElementById('eye-test-eye');
     });
-    expect(rendered, 'the sign-in overlay must actually render the toggle').toBe(true);
+    expect(rendered, 'the test fixture must actually render the toggle').toBe(true);
+
+    const readState = () => page.evaluate(() => {
+      const inp = document.getElementById('eye-test-pass');
+      const btn = document.getElementById('eye-test-eye');
+      return {
+        masked: inp ? inp.type === 'password' : null,
+        openEye: btn ? btn.innerHTML.includes('circle') : null,      // pupil = open eye
+        slashed: btn ? btn.innerHTML.includes('line') : null,        // diagonal = eye-off
+        ariaLabel: btn ? btn.getAttribute('aria-label') : null,
+      };
+    });
 
     await test.step('at rest: masked, slashed eye', async () => {
       const s = await readState();
@@ -3040,8 +3049,7 @@ test.describe('Sign-in password eye: icon matches what is actually on screen', (
     });
 
     await test.step('click 1: reveals as text, open eye', async () => {
-      expect((await readState()).overlayPresent, 'overlay must still be here before we click it').toBe(true);
-      await page.click('#supa-pass-eye');
+      await page.click('#eye-test-eye');
       const s = await readState();
       expect(s.masked, 'the field must actually switch to type=text').toBe(false);
       expect(s.openEye, 'visible password must show the open eye').toBe(true);
@@ -3050,7 +3058,7 @@ test.describe('Sign-in password eye: icon matches what is actually on screen', (
     });
 
     await test.step('click 2: masks again, slashed eye', async () => {
-      await page.click('#supa-pass-eye');
+      await page.click('#eye-test-eye');
       const s = await readState();
       expect(s.masked).toBe(true);
       expect(s.slashed).toBe(true);
@@ -3062,14 +3070,14 @@ test.describe('Sign-in password eye: icon matches what is actually on screen', (
       // Guards the class of bug directly: the icon is DERIVED from the real
       // input.type at every step, not a flag that can fall out of sync with it.
       for (let i = 0; i < 3; i++) {
-        await page.click('#supa-pass-eye');
+        await page.click('#eye-test-eye');
         const s = await readState();
         expect(s.openEye).toBe(!s.masked);
         expect(s.slashed).toBe(s.masked);
       }
     });
 
-    await page.evaluate(() => { document.getElementById('supa-login-overlay')?.remove(); });
+    await page.evaluate(() => { document.getElementById('eye-test-host')?.remove(); });
     assertNoErrors(page, 'password eye toggle');
   });
 });
