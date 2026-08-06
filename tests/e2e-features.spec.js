@@ -3042,7 +3042,10 @@ test.describe('Sign-in password eye: icon matches what is actually on screen', (
       return {
         masked: inp ? inp.type === 'password' : null,
         openEye: btn ? btn.innerHTML.includes('circle') : null,      // pupil = open eye
-        slashed: btn ? btn.innerHTML.includes('line') : null,        // diagonal = eye-off
+        // The literal <line> element, not the bare substring: both icon variants
+        // carry stroke-linecap/stroke-linejoin attributes, which also contain
+        // "line" and made this always true regardless of which icon was shown.
+        slashed: btn ? btn.innerHTML.includes('<line') : null,       // diagonal = eye-off
         ariaLabel: btn ? btn.getAttribute('aria-label') : null,
       };
     });
