@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.06.26.13';
+const APP_VERSION='08.06.26.14';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1423,6 +1423,11 @@ let _proposalViewsByBidHubIp={};       // bid_id → {ip, ua} the hub (client.ht
 // open + sign-flow step (hub_opened, proposal_opened, approved, signature_ready,
 // payment_viewed, method_selected, signed) with its own timestamp + captured IP.
 let _proposalAuditEventsByBid={};
+// Verified on-site presence for the client Activity timeline: job_id → [{arrivedAt,
+// departedAt, minutes, source}, …] newest-first. Sourced from job_time_entries, the
+// same geofence-close writes that feed the dispatch board's on-site status, just read
+// back further than dispatch's "today only" window so the full job history has it.
+let _jobTimeEntriesByJob={};
 // Expose on window so Playwright E2E tests can inject test data via page.evaluate()
 // (let declarations are not window properties in browser scripts)
 Object.defineProperty(window,'_proposalViewsByBidHubClient',{get:()=>_proposalViewsByBidHubClient,set:v=>{_proposalViewsByBidHubClient=v;},configurable:true});
@@ -1435,6 +1440,7 @@ Object.defineProperty(window,'_proposalViewsByBidStepAt',{get:()=>_proposalViews
 Object.defineProperty(window,'_proposalViewsByBidClientIp',{get:()=>_proposalViewsByBidClientIp,set:v=>{_proposalViewsByBidClientIp=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidHubIp',{get:()=>_proposalViewsByBidHubIp,set:v=>{_proposalViewsByBidHubIp=v;},configurable:true});
 Object.defineProperty(window,'_proposalAuditEventsByBid',{get:()=>_proposalAuditEventsByBid,set:v=>{_proposalAuditEventsByBid=v;},configurable:true});
+Object.defineProperty(window,'_jobTimeEntriesByJob',{get:()=>_jobTimeEntriesByJob,set:v=>{_jobTimeEntriesByJob=v;},configurable:true});
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
@@ -6289,6 +6295,23 @@ async function _fetchProposalViews(){
         _proposalAuditEventsByBid=_byBid;
       }
     }catch(_e){}
+    // Verified on-site presence (arrival/departure) for the client Activity timeline.
+    // Only geofence/manual entries carry a job_id; the place-linked rows (source:'place',
+    // job_id:null, a supply-house stop) don't belong to any one client and are skipped.
+    try{
+      const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+      const{data:_jte}=await _supa.from('job_time_entries')
+        .select('job_id,arrived_at,departed_at,minutes,source')
+        .eq('contractor_user_id',cid)
+        .not('job_id','is',null)
+        .order('arrived_at',{ascending:false})
+        .limit(1500);
+      if(_jte){
+        const _byJob={};
+        _jte.forEach(r=>{if(!r.job_id)return;(_byJob[r.job_id]||(_byJob[r.job_id]=[])).push({arrivedAt:r.arrived_at,departedAt:r.departed_at||null,minutes:r.minutes||0,source:r.source||null});});
+        _jobTimeEntriesByJob=_byJob;
+      }
+    }catch(_e){}
   }catch(e){}
 }
 // Sign-flow warmth badge, one line telling the contractor how far the client
@@ -7272,6 +7295,7 @@ function _initRealtimeSubscriptions(uid){
     _supa.channel('sig-feed-'+_supaUser.id)
       .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures('push');})
       .on('postgres_changes',{event:'*',schema:'public',table:'proposal_views',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
+      .on('postgres_changes',{event:'*',schema:'public',table:'job_time_entries',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
       .subscribe(_sigFeedStatus);
   }catch(_sf){}
   try{

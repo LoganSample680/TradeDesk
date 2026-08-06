@@ -1602,14 +1602,14 @@ const CD_AUDIT_LABELS={hub_opened:'Client opened hub',proposal_opened:'Client op
 // back to rendering the raw character, which would look broken.
 const CD_TL_ICON={lead:'👤',bid:'📋',sent:'📤',audit:'👁',signed:'✍',expense:'🧾',
   won:'🤝',declined:'❌',lost:'❌',coll:'🔔',complete:'🏁',payment:'💵',
-  estimate:'📅',job:'🔨',mile:'🚗'};
+  estimate:'📅',job:'🔨',mile:'🚗',onsite:'📍',offsite:'📍'};
 // The job lifecycle, in the order it actually happens. Used only to place events
 // that carry a date but no clock time, so they land beside the stage they belong
 // to rather than defaulting to midday. Drives and expenses sit mid-job because
 // that is when they occur.
 const CD_TL_STAGE={lead:10,estimate:20,bid:30,sent:40,hub:50,opened:60,audit:70,
-  signed:80,won:85,payment:90,mile:95,expense:96,job:100,complete:110,coll:120,
-  declined:130,lost:130,_default:75};
+  signed:80,won:85,payment:90,mile:95,expense:96,job:100,onsite:101,offsite:102,
+  complete:110,coll:120,declined:130,lost:130,_default:75};
 function _cdEventIcon(e){
   // A refund is money going the other way, so it must not wear the payment icon.
   if(e.type==='payment'&&e.color==='lost')return '💸';
@@ -1754,6 +1754,16 @@ function renderCDTimeline(){
     } else {
       events.push({date:j.start||'',ts:_cdEventTs(j.start,{time:j.time,id:j.id,logged:j.loggedAt}),type:'job',label:'Job scheduled, '+j.days+' day'+(j.days>1?'s':''),meta:fmt(j.value||0)+_cdLoggedNote(j.start,j.loggedAt,j.id),color:'active'});
     }
+    // Verified on-site presence: geofence arrival/departure, so "did we actually
+    // show up, and when did we leave" has a real timestamp instead of a guess.
+    // Manual clock-ins count too; only the placeless supply-house rows (job_id
+    // null, filtered out before this dict was even built) are excluded.
+    const _tEntries=(typeof _jobTimeEntriesByJob!=='undefined'&&_jobTimeEntriesByJob)?_jobTimeEntriesByJob[String(j.id)]:null;
+    if(_tEntries)_tEntries.forEach(t=>{
+      if(!t.arrivedAt)return;
+      events.push({date:String(t.arrivedAt).slice(0,10),ts:t.arrivedAt,type:'onsite',label:'Arrived on site',meta:t.source==='manual'?'Clocked in':'GPS geofence',color:'mile'});
+      if(t.departedAt)events.push({date:String(t.departedAt).slice(0,10),ts:t.departedAt,type:'offsite',label:'Left job site',meta:(t.minutes&&typeof _dispatchDur==='function'?_dispatchDur(t.minutes)+' on site':'')+(t.source==='manual'?' · clocked out':' · GPS geofence'),color:'mile'});
+    });
   });
   cmiles.forEach(m=>events.push({date:m.date||'',ts:_cdEventTs(m.date,{iso:m.ts,id:m.id,logged:m.loggedAt}),type:'mile',label:`Drive: ${(m.miles||0).toFixed(1)} mi${m.gps?' (GPS)':''}`,meta:`${escHtml(m.purpose||'Trip')}${m.from?' · from '+escHtml(m.from):''}`+_cdLoggedNote(m.date,m.loggedAt,m.id),color:'mile'}));
   // Expenses logged against this client belong in the trail too: they're part of
