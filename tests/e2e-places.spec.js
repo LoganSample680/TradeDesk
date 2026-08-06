@@ -704,6 +704,44 @@ test.describe('Places, drive attribution and the map', () => {
       expect(out.opts, `"${k}" is client-specific, it belongs to a scheduled job/estimate, not a Place`).not.toContain(k));
   });
 
+  // Owner-reported: the home-office tax disclaimer showed under every Type,
+  // not just Home office, so a Shop or Supply house got a CPA warning about
+  // a decision that has nothing to do with it.
+  test('the home-office disclaimer shows only when Home office is the selected Type', async () => {
+    const out = await page.evaluate(() => {
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal(null, 1, 2);               // defaults to Type=supply
+      const hiddenBySupplyDefault = document.getElementById('place-ho-note').style.display === 'none';
+      // Real select-and-fire, not a direct function call: the onchange
+      // wiring itself is what's under test.
+      const sel = document.getElementById('place-kind');
+      sel.value = 'home_office';
+      sel.dispatchEvent(new Event('change'));
+      const shownForHomeOffice = document.getElementById('place-ho-note').style.display === 'block';
+      sel.value = 'business_meeting';
+      sel.dispatchEvent(new Event('change'));
+      const hiddenAgainAfterSwitch = document.getElementById('place-ho-note').style.display === 'none';
+      document.getElementById('place-modal')?.remove();
+      return { hiddenBySupplyDefault, shownForHomeOffice, hiddenAgainAfterSwitch };
+    });
+    expect(out.hiddenBySupplyDefault, 'not shown for the default Type').toBe(true);
+    expect(out.shownForHomeOffice, 'shows once Home office is picked').toBe(true);
+    expect(out.hiddenAgainAfterSwitch, 'hides again switching away from Home office').toBe(true);
+  });
+
+  test('editing an existing home-office place opens with the disclaimer already visible', async () => {
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      const pl = savePlace({ name: 'My Office', kind: 'home_office', lat: 5, lon: 6, confirmedBy: 'manual' });
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal(pl.id);
+      const shown = document.getElementById('place-ho-note').style.display === 'block';
+      document.getElementById('place-modal')?.remove();
+      return { shown };
+    });
+    expect(out.shown, 'no onchange has fired yet, the note has to reflect the SAVED kind on open').toBe(true);
+  });
+
   test('every remaining place kind tags its automatic trips into the matching mileage-report purpose', async () => {
     const out = await page.evaluate(() => {
       const cases = [

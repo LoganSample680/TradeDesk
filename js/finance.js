@@ -899,8 +899,8 @@ function _scheduleTypeChooser(){
     '<span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+title+'</span><span style="display:block;font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4">'+sub+'</span></span>'+
   '</button>';
   ov.innerHTML='<div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px;padding:18px 16px 24px;box-sizing:border-box">'+
-    '<div style="font-size:17px;font-weight:800;color:var(--text);margin-bottom:4px">What do you want to schedule?</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Both land on your calendar.</div>'+
+    '<div style="font-size:17px;font-weight:800;color:var(--text);margin-bottom:4px;text-align:center">What do you want to schedule?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px;text-align:center">Both land on your calendar.</div>'+
     opt('📋','Estimate visit','Book a walkthrough with a client or lead.',"document.getElementById('sched-type-chooser').remove();_scheduleEstimateQuick()")+
     opt('✓','Job','Pull from a won proposal and pick a start date.',"document.getElementById('sched-type-chooser').remove();_scheduleJobQuick()")+
   '</div>';

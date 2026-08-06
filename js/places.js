@@ -552,6 +552,13 @@ function _renderPlaceSuggestions(){
     '</div>').join('');
 }
 
+// Live toggle for the Type field: the home-office tax disclaimer is only
+// relevant to that one kind, so it shows and hides as the picker changes
+// rather than sitting under every type regardless of what's selected.
+function _placeKindChanged(kind){
+  const note=document.getElementById('place-ho-note');
+  if(note)note.style.display=(kind==='home_office')?'block':'none';
+}
 // Add / edit. lat+lon are passed when promoting a suggestion, since that stop
 // already has coordinates and asking for an address would be absurd.
 function openPlaceModal(id,lat,lon){
@@ -585,10 +592,12 @@ function openPlaceModal(id,lat,lon){
     '<div class="zmodal-title" style="text-align:center">'+(pl?'Edit location':'Add a location')+'</div>'+
     (_lat==null?searchFieldHtml:nameFieldHtml)+
     '<div class="f" style="margin-bottom:12px"><label>Type</label>'+
-      '<select id="place-kind" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+kindOpts+'</select></div>'+
+      '<select id="place-kind" onchange="_placeKindChanged(this.value)" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+kindOpts+'</select></div>'+
     // A home office changes whether the first trip of the day is deductible, so
-    // it is stated plainly rather than buried as a dropdown value.
-    '<div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
+    // it is stated plainly rather than buried as a dropdown value, but only
+    // when that is actually the type picked: every other kind got a home-
+    // office tax disclaimer nobody asked for.
+    '<div id="place-ho-note" style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px;display:'+((pl?pl.kind:'supply')==='home_office'?'block':'none')+'">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
     '<input type="hidden" id="place-lat" value="'+(_lat!=null?_lat:'')+'"><input type="hidden" id="place-lon" value="'+(_lon!=null?_lon:'')+'">'+
     (_lat!=null
       // Raw lat/lon means nothing to a contractor, the address (when there is

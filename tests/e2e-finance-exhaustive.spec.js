@@ -1625,6 +1625,28 @@ test.describe('finance.js: exhaustive coverage', () => {
         expect(r.noQuickPickerYet).toBe(true);
       });
 
+      // Owner-reported: the title/subtitle were left-aligned, out of step with
+      // the rest of the app's prompts (e.g. the Add-a-location modal's title,
+      // explicitly centered to match "every other prompt in this flow").
+      test('the title and subtitle are center-aligned, matching every other prompt', async () => {
+        const r = await page.evaluate(() => {
+          quickAction('schedule');
+          const ov = document.getElementById('sched-type-chooser');
+          // Leaf divs only: querySelectorAll('div') also returns every
+          // ANCESTOR wrapper, whose textContent inherits the same text from
+          // its descendants, and find() returns the first (outermost, never
+          // styled) match rather than the actual title/subtitle element.
+          const title = [...ov.querySelectorAll('div')].find(d => /what do you want to schedule/i.test(d.textContent) && d.children.length === 0);
+          const sub = [...ov.querySelectorAll('div')].find(d => /both land on your calendar/i.test(d.textContent) && d.children.length === 0);
+          return {
+            titleCentered: title ? getComputedStyle(title).textAlign === 'center' : false,
+            subCentered: sub ? getComputedStyle(sub).textAlign === 'center' : false,
+          };
+        });
+        expect(r.titleCentered).toBe(true);
+        expect(r.subCentered).toBe(true);
+      });
+
       test('"Estimate visit" lands on pg-schedule with the Estimate tab active and Job tab still reachable', async () => {
         const r = await page.evaluate(() => new Promise(resolve => {
           goPg('pg-dash');
