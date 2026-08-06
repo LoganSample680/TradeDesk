@@ -2973,6 +2973,28 @@ test.describe('Employee dispatch and daily view', () => {
 // rendered element. Same shape of bug, so this drives the real DOM: renders
 // the actual sign-in overlay via supaShowLogin, clicks the actual button, and
 // reads the actual input.type and rendered SVG back off the page.
+// ONE test, not four. It was four, split across separate test() blocks that
+// shared one overlay left open between them, and that is what actually broke
+// on CI: mockAllExternal's session reads as authenticated, and the moment a
+// real signed-in user is detected the app itself removes #supa-login-overlay
+// (js/cloud.js, the SIGNED_IN handler and the reconnect probe both call
+// document.getElementById('supa-login-overlay')?.remove()). That is correct
+// app behaviour, never leave a fake login screen open on a real session, and
+// it has nothing to do with the eye icon. But it means the overlay this test
+// forces open is living on borrowed time from the moment it exists, and the
+// unpredictable gap BETWEEN separate test() blocks (reporter overhead, CI
+// scheduling, whatever ran before) was long enough for it to lose the race:
+// shard 5 and shard 2 both died on the SECOND test, at the SAME line, with
+// the button resolved but "not visible" (removed out from under it), and
+// Playwright then reports every later test in the file as "context closed"
+// once the hung click exhausts its own 60s timeout.
+//
+// The fix is not to patch around the removal (that would hide a bug if the
+// removal ever became unconditional); it is to stop leaving state exposed to
+// an unbounded gap. Everything here runs back-to-back inside one test, so the
+// only elapsed time between "overlay exists" and "last click lands" is a
+// handful of fast, real Playwright actions, not whatever CI feels like taking
+// between two separate test() entries.
 test.describe('Sign-in password eye: icon matches what is actually on screen', () => {
   let page;
 
@@ -2997,50 +3019,56 @@ test.describe('Sign-in password eye: icon matches what is actually on screen', (
       openEye: btn ? btn.innerHTML.includes('circle') : null,      // pupil = open eye
       slashed: btn ? btn.innerHTML.includes('line') : null,        // diagonal = eye-off
       ariaLabel: btn ? btn.getAttribute('aria-label') : null,
+      overlayPresent: !!document.getElementById('supa-login-overlay'),
     };
   });
 
-  test('at rest: password masked, icon is the SLASHED eye (eye is OFF, matches reality)', async () => {
+  test('masked shows the slashed eye; each click flips both the field and the icon together', async () => {
     const rendered = await page.evaluate(() => {
       if (typeof supaShowLogin !== 'function') return false;
       supaShowLogin({ force: true });
       return !!document.getElementById('supa-pass-eye');
     });
     expect(rendered, 'the sign-in overlay must actually render the toggle').toBe(true);
-    const s = await readState();
-    expect(s.masked).toBe(true);
-    expect(s.slashed, 'masked password must show the eye-OFF icon').toBe(true);
-    expect(s.openEye).toBe(false);
-    expect(s.ariaLabel).toBe('Show password');
-  });
 
-  test('clicking it: password becomes readable text, icon becomes the OPEN eye', async () => {
-    await page.click('#supa-pass-eye');
-    const s = await readState();
-    expect(s.masked, 'the field must actually switch to type=text').toBe(false);
-    expect(s.openEye, 'visible password must show the open eye').toBe(true);
-    expect(s.slashed).toBe(false);
-    expect(s.ariaLabel).toBe('Hide password');
-  });
+    await test.step('at rest: masked, slashed eye', async () => {
+      const s = await readState();
+      expect(s.masked).toBe(true);
+      expect(s.slashed, 'masked password must show the eye-OFF icon').toBe(true);
+      expect(s.openEye).toBe(false);
+      expect(s.ariaLabel).toBe('Show password');
+    });
 
-  test('clicking it again: masks the password and reverts to the slashed eye', async () => {
-    await page.click('#supa-pass-eye');
-    const s = await readState();
-    expect(s.masked).toBe(true);
-    expect(s.slashed).toBe(true);
-    expect(s.openEye).toBe(false);
-    expect(s.ariaLabel).toBe('Show password');
-  });
-
-  test('three clicks: state and icon never drift apart from each other', async () => {
-    // Guards the class of bug directly: the icon is a FUNCTION of the field's
-    // real type at every step, not a flag that can fall out of sync with it.
-    for (let i = 0; i < 3; i++) {
+    await test.step('click 1: reveals as text, open eye', async () => {
+      expect((await readState()).overlayPresent, 'overlay must still be here before we click it').toBe(true);
       await page.click('#supa-pass-eye');
       const s = await readState();
-      expect(s.openEye).toBe(!s.masked);
-      expect(s.slashed).toBe(s.masked);
-    }
+      expect(s.masked, 'the field must actually switch to type=text').toBe(false);
+      expect(s.openEye, 'visible password must show the open eye').toBe(true);
+      expect(s.slashed).toBe(false);
+      expect(s.ariaLabel).toBe('Hide password');
+    });
+
+    await test.step('click 2: masks again, slashed eye', async () => {
+      await page.click('#supa-pass-eye');
+      const s = await readState();
+      expect(s.masked).toBe(true);
+      expect(s.slashed).toBe(true);
+      expect(s.openEye).toBe(false);
+      expect(s.ariaLabel).toBe('Show password');
+    });
+
+    await test.step('three more clicks: icon is a function of the field, never drifts from it', async () => {
+      // Guards the class of bug directly: the icon is DERIVED from the real
+      // input.type at every step, not a flag that can fall out of sync with it.
+      for (let i = 0; i < 3; i++) {
+        await page.click('#supa-pass-eye');
+        const s = await readState();
+        expect(s.openEye).toBe(!s.masked);
+        expect(s.slashed).toBe(s.masked);
+      }
+    });
+
     await page.evaluate(() => { document.getElementById('supa-login-overlay')?.remove(); });
     assertNoErrors(page, 'password eye toggle');
   });
