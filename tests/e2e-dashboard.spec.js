@@ -1581,6 +1581,13 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         jobs.push({ id: 556002, name: 'Panel Build 2', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
         _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 30000).toISOString();
         try {
+          // A prior test in this file may have left the card visible; hiding it
+          // now animates (CLAUDE.md §8, tdNearbyOut fade), it's no longer an
+          // instant display:none. Start from a known-hidden state so this test
+          // proves the RENDER decision (never shown), not a leftover fade timer.
+          const _el0 = document.getElementById('dash-nearby');
+          if (_el0) { _el0.style.display = 'none'; _el0.style.animation = ''; }
+          if (typeof _nearbyHideTimer !== 'undefined' && _nearbyHideTimer) { clearTimeout(_nearbyHideTimer); _nearbyHideTimer = null; }
           renderDash();
           const el = document.getElementById('dash-nearby');
           return { ok: true, display: el ? el.style.display : '' };
@@ -1649,6 +1656,12 @@ test.describe('dashboard.js: exhaustive coverage', () => {
         jobs.push({ id: 556008, name: 'Done Job', client_id: null, eventType: 'job', status: 'done', completion_date: todayKey(), start: todayKey(), days: 1 });
         _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
         try {
+          // See the '2-minute dwell floor' test above: hiding now animates
+          // (CLAUDE.md §8), so start from a known-hidden state rather than
+          // whatever a prior test in the file left the card showing.
+          const _el0 = document.getElementById('dash-nearby');
+          if (_el0) { _el0.style.display = 'none'; _el0.style.animation = ''; }
+          if (typeof _nearbyHideTimer !== 'undefined' && _nearbyHideTimer) { clearTimeout(_nearbyHideTimer); _nearbyHideTimer = null; }
           renderDash();
           const el = document.getElementById('dash-nearby');
           return { ok: true, display: el ? el.style.display : '' };
