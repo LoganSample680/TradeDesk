@@ -1647,10 +1647,46 @@ test.describe('finance.js: exhaustive coverage', () => {
         expect(r.subCentered).toBe(true);
       });
 
+      // The first fix only centered the TEXT inside the box; the box itself
+      // was still a hand-built bottom sheet (align-items:flex-end), which is
+      // why it still read as "down at the bottom" after that fix. The real
+      // "everything else" is the app's actual centered-modal convention,
+      // .zmodal-overlay/.zmodal (index.html: align-items:center by default),
+      // the same pair openPlaceModal uses. This checks the real class and the
+      // real computed position, not just a style attribute.
+      test('the chooser is the app\'s real centered modal (.zmodal-overlay), not a bottom sheet', async () => {
+        const r = await page.evaluate(() => {
+          quickAction('schedule');
+          const ov = document.getElementById('sched-type-chooser');
+          const box = ov ? ov.querySelector('.zmodal') : null;
+          const ovRect = ov ? ov.getBoundingClientRect() : null;
+          const boxRect = box ? box.getBoundingClientRect() : null;
+          return {
+            isZmodalOverlay: ov ? ov.classList.contains('zmodal-overlay') : false,
+            hasZmodalBox: !!box,
+            alignItems: ov ? getComputedStyle(ov).alignItems : null,
+            // Vertically centered: roughly equal gap above and below the box,
+            // not a box glued to the viewport's bottom edge.
+            roughlyCentered: (ovRect && boxRect)
+              ? Math.abs(boxRect.top - (ovRect.height - boxRect.bottom)) < 60
+              : false,
+          };
+        });
+        expect(r.isZmodalOverlay).toBe(true);
+        expect(r.hasZmodalBox).toBe(true);
+        expect(r.alignItems).toBe('center');
+        expect(r.roughlyCentered).toBe(true);
+      });
+
       test('"Estimate visit" lands on pg-schedule with the Estimate tab active and Job tab still reachable', async () => {
         const r = await page.evaluate(() => new Promise(resolve => {
           goPg('pg-dash');
           quickAction('schedule');
+          // Mirrors the real button's onclick: it removes the chooser BEFORE
+          // calling either function. Skipping that here left the chooser's
+          // .zmodal-overlay stacked underneath whatever _scheduleJobQuick
+          // opens next, once the chooser started using that same class pair.
+          document.getElementById('sched-type-chooser')?.remove();
           _scheduleEstimateQuick();
           setTimeout(() => {
             resolve({
@@ -1681,6 +1717,7 @@ test.describe('finance.js: exhaustive coverage', () => {
           clients.push({ id: cid, name: 'Won No Job Yet', addr: '9 Untouched Ln' });
           bids.push({ id: bidId, client_id: cid, amount: 4200, status: 'Closed Won', draft: false });
           quickAction('schedule');
+          document.getElementById('sched-type-chooser')?.remove();   // mirrors the real onclick
           _scheduleJobQuick();
           const picker = document.querySelector('.zmodal-overlay .zmodal');
           const out = {
@@ -1705,6 +1742,7 @@ test.describe('finance.js: exhaustive coverage', () => {
           const origGate = window.showWorkflowGate;
           window.showWorkflowGate = (msg) => { gateMsg = msg; };
           quickAction('schedule');
+          document.getElementById('sched-type-chooser')?.remove();   // mirrors the real onclick
           _scheduleJobQuick();
           window.showWorkflowGate = origGate;
           bids.length = 0; savedBids.forEach(b => bids.push(b));

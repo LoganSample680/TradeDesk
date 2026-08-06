@@ -890,20 +890,27 @@ function quickAction(type){
 // which tab.
 function _scheduleTypeChooser(){
   document.getElementById('sched-type-chooser')?.remove();
+  // .zmodal-overlay/.zmodal, not a hand-built bottom sheet: that class pair is
+  // what every OTHER prompt in the app uses and centers on screen by default
+  // (index.html, align-items:center). The first version copied the setup
+  // checklist's "Add your crew" chooser, which is itself a bottom sheet, an
+  // exception rather than the norm, and it showed: this one needed to match
+  // openPlaceModal's centered .zmodal instead.
   const ov=document.createElement('div');
-  ov.id='sched-type-chooser';
-  ov.style.cssText='position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center';
+  ov.id='sched-type-chooser';ov.className='zmodal-overlay';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const box=document.createElement('div');
+  box.className='zmodal';
   const opt=(icon,title,sub,onclick)=>'<button onclick="'+onclick+'" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:15px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:10px">'+
     '<span style="width:36px;height:36px;flex-shrink:0;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px">'+svgIcon(icon,{size:18})+'</span>'+
     '<span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+title+'</span><span style="display:block;font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4">'+sub+'</span></span>'+
   '</button>';
-  ov.innerHTML='<div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px;padding:18px 16px 24px;box-sizing:border-box">'+
-    '<div style="font-size:17px;font-weight:800;color:var(--text);margin-bottom:4px;text-align:center">What do you want to schedule?</div>'+
+  box.innerHTML=
+    '<div class="zmodal-title" style="text-align:center">What do you want to schedule?</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:16px;text-align:center">Both land on your calendar.</div>'+
     opt('📋','Estimate visit','Book a walkthrough with a client or lead.',"document.getElementById('sched-type-chooser').remove();_scheduleEstimateQuick()")+
-    opt('✓','Job','Pull from a won proposal and pick a start date.',"document.getElementById('sched-type-chooser').remove();_scheduleJobQuick()")+
-  '</div>';
+    opt('✓','Job','Pull from a won proposal and pick a start date.',"document.getElementById('sched-type-chooser').remove();_scheduleJobQuick()");
+  ov.appendChild(box);
   document.body.appendChild(ov);
 }
 // General estimate-visit entry point, no client pre-picked: lands on the
