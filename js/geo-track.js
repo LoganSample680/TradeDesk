@@ -111,6 +111,17 @@ let _geoGapExitPending=null;
 // A fix worse than this can't be used to declare someone gone after a gap;
 // it's simply ignored and the entry stays open until a tighter fix arrives.
 const _GEO_GAP_EXIT_MAX_ACC_M=100;
+// A single ping inside a job/shop/place fence looks identical whether someone
+// parked there or just drove through it at 40mph (owner report, 2026-08-06:
+// "the mileage hits itself on all geofences the moment you cross without
+// stopping"). Ending the drive and starting a dwell the instant a fence is
+// touched split one continuous trip into a fragment per fence it happened to
+// pass near. {k,id,atMs} of the first sighting of a not-yet-confirmed fence;
+// it only counts as a real stop once it holds for _GEO_ARRIVE_MIN_MS. A
+// pass-through never gets that long, so the drive it was part of is never
+// interrupted at all.
+let _geoArriveCandidate=null;
+const _GEO_ARRIVE_MIN_MS=60*1000;
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
@@ -485,6 +496,7 @@ async function _geoOnPing(pos){
     // reading from a moment ago was wrong, drop it rather than let it confirm
     // a later, unrelated exit against a stale timestamp.
     _geoGapExitPending=null;
+    _geoArriveCandidate=null;
     if(cur&&cur.k==='job')_geoWakeAcquire();   // hidden-gap STAY: the unseen time counts
     if(!cur){
       // Still outside everything: accumulate the dwell that makes this a STOP.
@@ -508,6 +520,24 @@ async function _geoOnPing(pos){
         return;
       }
       _geoGapExitPending=null;
+    }
+    // ENTRY CONFIRMATION: a fence crossing isn't a real stop (and doesn't end
+    // the drive) until it holds for _GEO_ARRIVE_MIN_MS. First sighting just
+    // remembers it and keeps driving; a DIFFERENT fence sighted next replaces
+    // the candidate (another pass-by, still driving). Once confirmed, arrival
+    // is stamped at THIS (confirming) ping, not the original sighting: the
+    // few seconds to a minute of confirmation delay is a rounding error
+    // against a real stop's dwell, far cheaper than threading a backdated
+    // timestamp through the leg-end/leg-start math below.
+    if(cur){
+      const sameCandidate=_geoArriveCandidate&&_geoArriveCandidate.k===cur.k&&_geoArriveCandidate.id===cur.id;
+      if(!sameCandidate||(nowMs-_geoArriveCandidate.atMs)<_GEO_ARRIVE_MIN_MS){
+        if(!sameCandidate)_geoArriveCandidate={k:cur.k,id:cur.id,atMs:nowMs};
+        return;
+      }
+      _geoArriveCandidate=null;
+    }else{
+      _geoArriveCandidate=null;
     }
     // ── 1. Close whatever contained us ──────────────────────────────────────
     if(prev){
@@ -1104,7 +1134,7 @@ function stopGeoTracking(){
   if(_geoCurrentJob&&_geoArrivedAt)_geoCloseEntry(_geoCurrentJob);
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
-  _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;_geoGapExitPending=null;
+  _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;_geoGapExitPending=null;_geoArriveCandidate=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoLastFenceLoc=null;_geoLegOrigin=null;
   // The job-coordinate cache goes too. It is the ONE piece of geofence state

@@ -1,5 +1,9 @@
 let _renderDashRunning=false;
 Object.defineProperty(window,'_renderDashRunning',{get:()=>_renderDashRunning,set:v=>{_renderDashRunning=v;},configurable:true});
+// Pending #dash-nearby fade-out timer (slide/fade instead of an abrupt
+// display:none, CLAUDE.md §8), cleared if the card reappears mid-fade.
+let _nearbyHideTimer=null;
+Object.defineProperty(window,'_nearbyHideTimer',{get:()=>_nearbyHideTimer,set:v=>{_nearbyHideTimer=v;},configurable:true});
 
 function _trendHtml(curr,prev,reverseColor){
   if(!prev||prev===0)return '';
@@ -611,6 +615,7 @@ function renderDash(){
         // A radar-ping (concentric rings expanding from the pin) + a live status dot
         // read as "on site, right now", the GPS moment made visible.
         _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
+          '@keyframes tdNearbyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(6px)}}'+
           '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
           '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}';
         document.head.appendChild(_s);
@@ -619,6 +624,8 @@ function renderDash(){
       const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
       const _fmtDur=(ms)=>{const s=Math.max(0,Math.floor((Date.now()-ms)/1000));const h=Math.floor(s/3600),m=Math.floor((s%3600)/60);return (h?h+'h ':'')+m+'m';};
       const _wasHidden=_nearbyEl.style.display==='none'||!_nearbyEl.style.display;
+      if(_nearbyHideTimer){clearTimeout(_nearbyHideTimer);_nearbyHideTimer=null;} // a re-appearance mid-fade-out must not get hidden out from under it
+      _nearbyEl.style.animation='';
       _nearbyEl.style.display='block';
       const _cardShell=(inner)=>'<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(22,163,74,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(22,163,74,.16),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f6fbf7 100%);box-shadow:0 10px 30px -12px rgba(14,107,57,.35),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+inner+'</div>';
       const _cardHead=(name,addr,extra)=>'<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
@@ -693,7 +700,17 @@ function renderDash(){
         const _extra=hasBalance?'<div style="font-size:12px;color:#B45309;font-weight:700;margin-top:3px">'+fmt(nb.balance)+' owed</div>':'';
         _nearbyEl.innerHTML=_cardShell(_cardHead(nb.clientName,nb.addr,_extra)+_nbNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+nbBtns.join('')+'</div>');
       }
-    }else{_nearbyEl.style.display='none';}
+    }else if(_nearbyEl.style.display!=='none'&&_nearbyEl.innerHTML.trim()){
+      // Slide/fade out instead of an abrupt display:none (CLAUDE.md §8): the
+      // card keeps its content and animates itself away, hard-hidden only
+      // once that's actually finished. Mirrors the .22s entrance (tdNearbyIn).
+      _nearbyEl.style.animation='tdNearbyOut .18s ease both';
+      _nearbyHideTimer=setTimeout(()=>{
+        _nearbyHideTimer=null;
+        _nearbyEl.style.display='none';
+        _nearbyEl.style.animation='';
+      },180);
+    }
   }
   // Update new nav badges
   const _owing=bids.filter(b=>b.status==='Closed Won'&&!b.clientCancelled&&getBidBalance(b)>0.01);

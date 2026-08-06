@@ -1032,7 +1032,8 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_open');
     localStorage.removeItem('zp3_geo_manual'); localStorage.removeItem('zp3_geo_prune_day');
     _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoGapExitPending = null; _geoLastPingTs = 0; _geoPingBusy = false;
+    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoGapExitPending = null; _geoArriveCandidate = null;
+    _geoLastPingTs = 0; _geoPingBusy = false;
     window._isEmployee = false;
     window._supaUser = { id: 'geo-hard-user-1', email: 'g@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [] };
@@ -1382,6 +1383,88 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     });
     expect(r.count).toBeGreaterThanOrEqual(1);
     expect(r.maxAge).toBe(0);
+    await geoRestore();
+  });
+
+  // Regression (owner report, 2026-08-06): "the mileage hits itself on all
+  // geofences the moment you cross without stopping". A single ping inside a
+  // job/shop/place fence used to end the drive and start a dwell instantly,
+  // splitting one continuous trip into a fragment per fence merely passed
+  // near. A fence crossing now has to hold for _GEO_ARRIVE_MIN_MS before it
+  // counts as a real stop; a lone or replaced sighting just keeps driving.
+  test('entry confirmation: a single ping inside a job fence does not commit arrival (drive-by, not a stop)', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883101;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      _geoDriveStartedAt = new Date(Date.now() - 5 * 60000).toISOString(); // already mid-drive
+      await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8 } }); // lands right on the job
+      await new Promise(res => setTimeout(res, 50));
+      const out = {
+        cur: _geoCurrentJob, arrivedAt: _geoArrivedAt,
+        candidate: _geoArriveCandidate && { k: _geoArriveCandidate.k, id: String(_geoArriveCandidate.id) },
+        driveStillOpen: _geoDriveStartedAt != null,
+        wroteEntry: window.__rec.upserts.some(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)),
+      };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(r.cur).toBeNull();                          // never treated as arrived
+    expect(r.arrivedAt).toBeNull();
+    expect(r.candidate).toEqual({ k: 'job', id: '883101' }); // noted, not yet confirmed
+    expect(r.driveStillOpen, 'the original drive leg was never ended').toBe(true);
+    expect(r.wroteEntry).toBe(false);
+    await geoRestore();
+  });
+
+  test('entry confirmation: holding the SAME fence past the minimum dwell confirms the arrival', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883102;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      _geoDriveStartedAt = new Date(Date.now() - 5 * 60000).toISOString();
+      await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8 } }); // 1st: candidate noted
+      _geoArriveCandidate.atMs -= 61000; // simulate the dwell threshold having passed
+      await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8 } }); // 2nd: confirms
+      await new Promise(res => setTimeout(res, 50));
+      const out = { cur: _geoCurrentJob, arrivedAt: _geoArrivedAt != null, candidate: _geoArriveCandidate, driveClosed: _geoDriveStartedAt == null };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(String(r.cur)).toBe('883102');
+    expect(r.arrivedAt).toBe(true);
+    expect(r.candidate).toBeNull();                    // consumed on confirmation
+    expect(r.driveClosed, 'the drive that led here is now closed, a real stop').toBe(true);
+    await geoRestore();
+  });
+
+  test('entry confirmation: a DIFFERENT fence sighted next replaces the candidate, the first never confirms', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883103;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.officeLat = 37.7100; S.officeLon = -97.3500; // a shop fence some distance from the job
+      S.trackStart = '00:00'; S.trackEnd = '23:59';
+      _geoDriveStartedAt = new Date(Date.now() - 5 * 60000).toISOString();
+      await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8 } });      // drove past the job
+      const afterJob = _geoArriveCandidate && _geoArriveCandidate.k;
+      await _geoOnPing({ coords: { latitude: 37.7100, longitude: -97.3500, accuracy: 8 } });      // then past the shop
+      const out = {
+        afterJob, afterShop: _geoArriveCandidate && _geoArriveCandidate.k,
+        cur: _geoCurrentJob, driveStillOpen: _geoDriveStartedAt != null,
+      };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(r.afterJob).toBe('job');
+    expect(r.afterShop).toBe('shop');                  // replaced, the job sighting is gone
+    expect(r.cur).toBeNull();                           // neither ever confirmed
+    expect(r.driveStillOpen, 'still one continuous drive, never split at either fence').toBe(true);
     await geoRestore();
   });
 
