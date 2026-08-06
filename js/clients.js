@@ -53,7 +53,7 @@ function _cdActionSheet(title,rows){
 function _cdMoreMenu(){
   const c=getClientById(currentClientId);if(!c)return;
   const rows=[];
-  rows.push({icon:'📅',label:'Schedule proposal',act:'schedForClient()'});
+  rows.push({icon:'📅',label:'Schedule estimate',act:'schedForClient()'});
   rows.push({icon:'🔧',label:'Diagnostic / trip charge',act:'openDiagnosticCharge('+c.id+')'});
   if(!(typeof gps!=='undefined'&&gps.active))rows.push({icon:'🚗',label:'Drive there',act:'startDriveToClient()'});
   rows.push({icon:'🔗',label:'Client hub',act:'showHubMenu('+c.id+')'});

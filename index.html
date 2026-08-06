@@ -1677,7 +1677,7 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div id="cdt-jobs-content" style="display:none">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <span style="font-size:13px;font-weight:700">Proposals &amp; jobs</span>
-      <button class="btn btn-p btn-sm" onclick="schedForClient()">+ Schedule proposal</button>
+      <button class="btn btn-p btn-sm" onclick="schedForClient()">+ Schedule estimate</button>
     </div>
     <div id="cd-jobs-list"></div>
   </div>
@@ -2089,11 +2089,11 @@ body.dark .cal-cell.other{background:var(--cream)}
 
   
   <div class="sf-seg">
-    <button type="button" class="sf-seg-btn active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Proposal</button>
+    <button type="button" class="sf-seg-btn active" id="sched-tab-est" onclick="setSchedType('estimate',this)">Estimate</button>
     <button type="button" class="sf-seg-btn" id="sched-tab-job" onclick="setSchedType('job',this)">Job</button>
   </div>
 
-  <div id="sched-tip" class="tip" style="margin-bottom:12px">Pick a client and date for the proposal walkthrough.</div>
+  <div id="sched-tip" class="tip" style="margin-bottom:12px">Pick a client and date for the estimate visit.</div>
 
   <div class="sf-card">
     <div class="sf-cap">Job</div>
@@ -2135,7 +2135,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div class="sf-cap">Timing</div>
     <div class="sf-list">
       <div class="sf-row">
-        <div class="sf-body"><span class="sf-lbl" id="s-time-label">Proposal visits</span>
+        <div class="sf-body"><span class="sf-lbl" id="s-time-label">Estimate visits</span>
           <input id="s-time" type="time" value="09:00" onchange="validateEstimateTime()">
         </div>
       </div>

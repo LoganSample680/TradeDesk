@@ -8245,8 +8245,50 @@ test.describe('Schedule page cleanup (owner: "cut out all the fluff")', () => {
       const jobLbl = document.getElementById('s-time-label').textContent;
       return { estLbl, jobLbl };
     });
-    expect(r.estLbl).toBe('Proposal visits');
+    expect(r.estLbl).toBe('Estimate visits');
     expect(r.jobLbl.toLowerCase()).toContain('start time');
+  });
+
+  // Owner-reported: booking a visit to give someone an estimate was hard to
+  // find, because every entry point into that flow said "Proposal" instead of
+  // "Estimate". A contractor thinking "I need to go give an estimate" has no
+  // reason to look for the word "proposal", that's the DOCUMENT stage, not the
+  // in-person visit. Renamed every entry point + the schedule page's own tab
+  // to say what it actually does. "Won proposal" (picking an accepted bid to
+  // turn into a scheduled JOB) is a real, different, correct use of the word
+  // and is deliberately untouched, as is the on-site "Proposal" quick-action
+  // button (jumps straight into writing the estimate right now, a different
+  // action from booking a future visit).
+  test('every entry point to scheduling an estimate visit says "Estimate", not "Proposal"', async () => {
+    const r = await page.evaluate(() => {
+      document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      goPg('pg-schedule');
+      const tabText = document.getElementById('sched-tab-est').textContent.trim();
+      goPg('pg-dash');
+      // The client-detail "Proposals & jobs" tab button.
+      const cdBtn = document.getElementById('cdt-jobs-content')
+        ? [...document.getElementById('cdt-jobs-content').querySelectorAll('button')].find(b => /schedule/i.test(b.textContent))
+        : null;
+      // The client-detail "More" action-sheet row. A fresh, known-good client
+      // rather than reaching into clients[0]: thousands of tests run before
+      // this one in this shared-page file and clients[0] is whatever the last
+      // of them left behind, not something this test controls or should rely on.
+      const _tcId = Date.now() * 1000 + 771;
+      clients.push({ id: _tcId, name: 'Schedule-Label Test Client' });
+      currentClientId = _tcId;
+      let moreLabel = null;
+      if (typeof _cdMoreMenu === 'function' && currentClientId) {
+        _cdMoreMenu();
+        const sheet = document.querySelector('.zmodal-overlay .zmodal');
+        const row = sheet ? [...sheet.querySelectorAll('button')].find(b => /schedule/i.test(b.textContent)) : null;
+        moreLabel = row ? row.textContent.trim() : null;
+        document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+      }
+      return { tabText, cdBtnText: cdBtn ? cdBtn.textContent.trim() : null, moreLabel };
+    });
+    expect(r.tabText).toBe('Estimate');
+    expect(r.cdBtnText).toBe('+ Schedule estimate');
+    expect(r.moreLabel).toBe('Schedule estimate');
   });
 
   test('buildColorRow / selColor / #s-color-row: the permanently-hidden dead color picker is gone', async () => {
