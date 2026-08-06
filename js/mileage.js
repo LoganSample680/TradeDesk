@@ -904,19 +904,20 @@ function crewMilesOwed(yr){
 // geofence already knows it arrived at a job, the yard, or a saved place, and a
 // saved place's kind carries the SAME vocabulary the mileage log reports trips
 // by (MILE_PURPOSES, js/constants.js), so a drive to Ferguson's tags "Supply
-// run" and a drive to a client's office tags "Client Consult", not a bucket of
-// "Other" trips reporting can't break down. 'job' is the geofence's own kind
-// for a scheduled job (never a place's kind), kept as its own branch rather
-// than folded into the map below.
+// run" and a drive to the shop tags "Shop", not a bucket of "Other" trips
+// reporting can't break down. 'job' is the geofence's own kind for a scheduled
+// job (never a place's kind), kept as its own branch rather than folded into
+// the map below; 'Job site' and 'Estimate' purposes reach every trip that
+// needs them through that branch alone, PLACE_KINDS (js/places.js) never
+// offers those as a place type. 'Client Consult' and 'Payment Collection'
+// are still real, pickable purposes on a manually-logged trip (MILE_PURPOSES
+// is not scoped down), they just never arrive here automatically, a Place
+// carries no client_id to know WHICH client's consult or collection it was.
 const _PLACE_KIND_TO_PURPOSE={
   shop:'Shop',
   supply:'Supply run',
   home_office:'Home Office',
-  job_site:'Job site',
-  client_consult:'Client Consult',
   business_meeting:'Business meeting',
-  payment_collection:'Payment Collection',
-  estimate:'Estimate',
 };
 function _autoTripPurpose(to){
   const k=(to&&to.kind)||'';

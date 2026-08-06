@@ -50,32 +50,37 @@ const PLACE_MATCH_FT      = 600;       // same fence radius the job machine uses
 const PLACE_REPEAT_MIN    = 3;         // visits before an unknown stop is offered
 const PLACE_MAX_ACC_M     = 150;       // looser than this and the fix is meaningless
 const PLACE_HOME_DWELL_MS = 6*60*60*1000; // sleep, not a supply run
-// The same vocabulary the mileage log reports trips by (MILE_PURPOSES,
-// js/constants.js), so a place tags its trips into the SAME buckets the
-// Books/Mileage breakdown already groups and colors by, rather than every
-// place that isn't the shop, a supply house, or the home office collapsing
-// into an uninformative "Other" (owner: "job site, client consult, those
-// kinds of things need to carry over to places"). Kept as its own map (not a
-// direct read of MILE_PURPOSES) because a Place also needs 'shop' and
-// 'home_office' to keep meaning exactly what they mean today: 'home_office'
-// is the one value _geoAtHomeOffice checks for the commute-deduction rule,
-// and 'shop' is what _migrateShopToPlaces guards against duplicating. New
-// keys are additive; nothing already saved with the four original kinds
-// changes meaning.
+// The kinds a PLACE can genuinely be: a fixed point in the day that belongs
+// to NO ONE client (owner 2026-08-06). A Place record carries no client_id,
+// so anything inherently tied to one specific customer, a job site, a client
+// consult, a payment pickup, belongs to that client's own record (the job/
+// estimate scheduling system, which already auto-fences it) rather than a
+// generic named location that can never actually link back to who it's for.
+// Job sites in particular already fence automatically off the real jobs
+// array; a job_site PLACE would have been a second, disconnected way to
+// describe the same thing.
+//
+// 'home_office' and 'shop' mean exactly what they mean elsewhere in this
+// file: 'home_office' is the one value _geoAtHomeOffice checks for the
+// commute-deduction rule, and 'shop' is what _migrateShopToPlaces guards
+// against duplicating.
+//
+// This is deliberately a SUBSET of MILE_PURPOSES (js/constants.js), not a
+// mirror of it: the trip-purpose picker on a manually-logged mileage row
+// still offers the full vocabulary (Job site, Client Consult, Payment
+// Collection, Estimate included), those stay valid ways to categorize a
+// trip by hand. Only the automatic PLACE side is scoped down to what a
+// place, not a client, can actually be.
 const PLACE_KINDS = {
   shop:'Shop',
   home_office:'Home office',
   supply:'Supply house',
-  job_site:'Job site',
-  client_consult:'Client consult',
   // NOT a customer. Somewhere the owner goes to work ON the business rather
   // than in it: an advisor's place, the CPA, the bank, a GC about work that
   // does not exist yet. Deductible all the same, and it needed its own kind
   // because 'Client consult' means a paying customer and putting these there
   // would quietly overstate what customer work costs to win.
   business_meeting:'Business meeting',
-  payment_collection:'Payment collection',
-  estimate:'Estimate site',
   other:'Other',
 };
 
@@ -478,7 +483,7 @@ function _geoRenderFallback(body,pts){
 // ── The Places screen (Fleet & Team → Places) ────────────────────────────────
 // Owner-facing. Everything here is business configuration, so it lives beside
 // the fleet and the crew rather than in Books.
-const _PLACE_KIND_ICON={shop:'🏠',supply:'🧰',home_office:'🏡',job_site:'🔨',client_consult:'💬',business_meeting:'🤝',payment_collection:'💵',estimate:'📋',other:'📍'};
+const _PLACE_KIND_ICON={shop:'🏠',supply:'🧰',home_office:'🏡',business_meeting:'🤝',other:'📍'};
 function _placeKindLabel(k){return PLACE_KINDS[k]||PLACE_KINDS.other;}
 
 // The shop was geocoded into S.officeLat/officeLon long before td_places

@@ -679,31 +679,35 @@ test.describe('Places, drive attribution and the map', () => {
   // as a client-consult site or a payment-collection stop tags into that real
   // bucket instead of collapsing into "Other" the way anything but the shop,
   // a supply house, or the home office used to.
-  test('the Type picker offers the full mileage-purpose vocabulary, not just the original four', async () => {
+  // Owner 2026-08-06, after seeing the first (wider) version of this picker:
+  // a Place carries no client_id, so anything inherently tied to ONE specific
+  // customer, a job site, a client consult, a payment pickup, can never
+  // actually link back to who it's for, and job sites already fence
+  // automatically off the real jobs array besides. Scoped down to the fixed
+  // points that belong to no client at all. The wider vocabulary (Job site,
+  // Client Consult, Payment Collection, Estimate included) stays available
+  // on a MANUALLY logged trip, MILE_PURPOSES itself is untouched, only the
+  // automatic PLACE side was narrowed.
+  test('the Type picker offers only the client-independent kinds, not the full mileage-purpose list', async () => {
     const out = await page.evaluate(() => {
       document.getElementById('place-modal')?.remove();
       openPlaceModal(null, 1, 2);
-      const opts = [...document.querySelectorAll('#place-kind option')].map(o => ({ value: o.value, text: o.textContent }));
+      const opts = [...document.querySelectorAll('#place-kind option')].map(o => o.value);
       document.getElementById('place-modal')?.remove();
       return { opts, kinds: Object.keys(PLACE_KINDS) };
     });
-    const values = out.opts.map(o => o.value);
-    ['shop', 'home_office', 'supply', 'job_site', 'client_consult', 'business_meeting', 'payment_collection', 'estimate', 'other']
-      .forEach(k => expect(values, `Type picker is missing "${k}"`).toContain(k));
+    expect(out.opts.sort()).toEqual(['business_meeting', 'home_office', 'other', 'shop', 'supply'].sort());
     // Every PLACE_KINDS entry renders as an actual <option>, the picker is not
     // hand-maintained separately from the source of truth it reads from.
-    expect(values.sort()).toEqual(out.kinds.sort());
+    expect(out.opts.sort()).toEqual(out.kinds.sort());
+    ['job_site', 'client_consult', 'payment_collection', 'estimate'].forEach(k =>
+      expect(out.opts, `"${k}" is client-specific, it belongs to a scheduled job/estimate, not a Place`).not.toContain(k));
   });
 
-  test('a place saved as each new kind tags its automatic trips into the matching mileage-report purpose', async () => {
+  test('every remaining place kind tags its automatic trips into the matching mileage-report purpose', async () => {
     const out = await page.evaluate(() => {
       const cases = [
-        { kind: 'job_site', want: 'Job site' },
-        { kind: 'client_consult', want: 'Client Consult' },
         { kind: 'business_meeting', want: 'Business meeting' },
-        { kind: 'payment_collection', want: 'Payment Collection' },
-        { kind: 'estimate', want: 'Estimate' },
-        // The two pre-existing kinds this session didn't touch, still correct.
         { kind: 'supply', want: 'Supply run' },
         { kind: 'home_office', want: 'Home Office' },
         { kind: 'shop', want: 'Shop' },
@@ -711,6 +715,14 @@ test.describe('Places, drive attribution and the map', () => {
       return cases.map(c => ({ kind: c.kind, want: c.want, got: _autoTripPurpose({ kind: c.kind }) }));
     });
     out.forEach(r => expect(r.got, `place kind "${r.kind}"`).toBe(r.want));
+  });
+
+  test('a removed place kind (e.g. a stale saved record) falls back to "Other", never throws', async () => {
+    // Belt-and-suspenders for the trim: a place saved under an OLD session's
+    // wider vocabulary before this scope-down (or any future removal) must
+    // degrade gracefully, not crash the automatic drive log.
+    const out = await page.evaluate(() => _autoTripPurpose({ kind: 'client_consult' }));
+    expect(out).toBe('Other');
   });
 
   // Owner 2026-08-06: driving to an advisor's place to talk strategy or work on
@@ -730,7 +742,10 @@ test.describe('Places, drive attribution and the map', () => {
       distinctFromConsult:
         MILE_PURPOSE_COLORS['Business meeting'].dot !== MILE_PURPOSE_COLORS['Client Consult'].dot,
       fromPlace: _autoTripPurpose({ kind: 'business_meeting' }),
-      consultUnchanged: _autoTripPurpose({ kind: 'client_consult' }),
+      // Client Consult is scoped out of PLACE_KINDS (client-specific, no
+      // client_id on a Place to attach it to), but the PURPOSE itself is
+      // untouched, still real, still colored, still pickable by hand.
+      consultStillAPurpose: MILE_PURPOSES.includes('Client Consult') && !!MILE_PURPOSE_COLORS['Client Consult'],
       // Every existing purpose survives: renaming or dropping one orphans every
       // mileage row already saved against that exact string.
       legacyIntact: ['Estimate', 'Job site', 'Client Consult', 'Supply run', 'Home Office',
@@ -741,11 +756,11 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.colored, 'it needs a color or it renders blank on the breakdown').toBe(true);
     expect(out.distinctFromConsult, 'Business meeting and Client Consult must not share a color').toBe(true);
     expect(out.fromPlace).toBe('Business meeting');
-    expect(out.consultUnchanged, 'a paying customer still tags Client Consult').toBe('Client Consult');
+    expect(out.consultStillAPurpose, 'Client Consult stays real for manual trip entry').toBe(true);
     expect(out.legacyIntact, 'no existing purpose string may be renamed or removed').toBe(true);
   });
 
-  test('every new place-kind purpose is a real bucket the mileage report already colors and groups by', async () => {
+  test('every remaining place-kind purpose is a real bucket the mileage report already colors and groups by', async () => {
     // A purpose _autoTripPurpose can now produce that MILE_PURPOSE_COLORS does
     // not recognize would render on the mileage breakdown with no color and no
     // group, exactly the "does not tag in reporting" failure this was built to
@@ -763,14 +778,14 @@ test.describe('Places, drive attribution and the map', () => {
     });
   });
 
-  test('a saved client-consult place fences an automatic drive as "Client Consult", not "Other"', async () => {
+  test('a saved business-meeting place fences an automatic drive as "Business meeting", not "Other"', async () => {
     const out = await page.evaluate(async () => {
       const realUser = _supaUser, realRoute = _routeDistance;
       _supaUser = { id: 'u-consult' };
       window._routeDistance = _routeDistance = async () => ({ miles: 3, mins: 9 });
       try {
         places.length = 0;
-        savePlace({ name: "Miller's Office", kind: 'client_consult', lat: 39.10, lon: -95.10, confirmedBy: 'manual' });
+        savePlace({ name: "Advisor's Office", kind: 'business_meeting', lat: 39.10, lon: -95.10, confirmedBy: 'manual' });
         S.officeLat = 39.00; S.officeLon = -95.00; S.teamTracking = true;
         _geoJobCoords = {};
         _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
@@ -793,7 +808,7 @@ test.describe('Places, drive attribution and the map', () => {
         // time (mileageAdded came back empty: _geoAutoMileage refuses a null
         // "from"). Same pattern e2e-geo-auto-mileage.spec.js's drive() helper uses.
         if (_geoLastFenceAt) _geoLastFenceAt = new Date(Date.now() - 20 * 60000).toISOString();
-        await ping({ lat: 39.10, lon: -95.10 });     // arrive at the consult site
+        await ping({ lat: 39.10, lon: -95.10 });     // arrive at the advisor's office
         await new Promise(r => setTimeout(r, 30));
         const row = mileage.slice(0, Math.max(0, mileage.length - before))[0];
         return { purpose: row && row.purpose, toName: row && row.to_name };
@@ -802,8 +817,8 @@ test.describe('Places, drive attribution and the map', () => {
         window._routeDistance = _routeDistance = realRoute;
       }
     });
-    expect(out.toName).toBe("Miller's Office");
-    expect(out.purpose).toBe('Client Consult');
+    expect(out.toName).toBe("Advisor's Office");
+    expect(out.purpose).toBe('Business meeting');
   });
 
   test('a repeat stop surfaces a suggestion card that can be accepted', async () => {
