@@ -723,25 +723,36 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.afterName).toBe(1);
   });
 
-  test('Add-a-location with no pin offers an address search, not a dead end', async () => {
+  test('Add-a-location with no pin leads with search, no upfront Name field, not a dead end', async () => {
     const out = await page.evaluate(() => {
       document.getElementById('place-modal')?.remove();
       openPlaceModal();   // the real "+ Add" button path: no coordinates at all
+      const modal = document.getElementById('place-modal');
+      const inputs = [...modal.querySelectorAll('input:not([type=hidden]), select')].map(el => el.id);
       return {
         hasAddrField: !!document.getElementById('place-addr'),
         hasSuggBox: !!document.getElementById('place-addr-sugg'),
         hasHiddenLat: !!document.getElementById('place-lat'),
-        noteAsksForAddress: /Search a name or address/.test(document.getElementById('place-pin-note')?.innerHTML || ''),
-        labelLeadsWithName: /Business name or address/.test(document.getElementById('place-modal').innerHTML),
-        deadEndGone: !/No coordinates\. Add this from a repeat stop/.test(document.getElementById('place-modal').innerHTML),
+        searchPlaceholder: document.getElementById('place-addr')?.placeholder,
+        // The search box is the FIRST real field, before Name and before Type,
+        // there is nothing to type a name into until something's been searched.
+        searchIsFirst: inputs[0] === 'place-addr',
+        noteAsksToSearch: /Search a name or address/.test(document.getElementById('place-pin-note')?.innerHTML || ''),
+        deadEndGone: !/No coordinates\. Add this from a repeat stop/.test(modal.innerHTML),
       };
     });
     expect(out.hasAddrField).toBe(true);
     expect(out.hasSuggBox).toBe(true);
     expect(out.hasHiddenLat).toBe(true);
-    expect(out.noteAsksForAddress).toBe(true);
-    expect(out.labelLeadsWithName, 'the field leads with business name, address is the fallback').toBe(true);
+    expect(out.searchPlaceholder, 'search leads with business name, address is the fallback').toBe('Business name or address');
+    expect(out.searchIsFirst, 'search is the first field, ahead of Name and Type').toBe(true);
+    expect(out.noteAsksToSearch).toBe(true);
     expect(out.deadEndGone).toBe(true);
+    // Focus lands on the search box, not a Name field the contractor has no
+    // reason to type into before they've searched anything.
+    await page.waitForTimeout(120);
+    const focused = await page.evaluate(() => document.activeElement?.id);
+    expect(focused).toBe('place-addr');
   });
 
   test('searching an address stamps the pin, autofills the name, and the place saves', async () => {
