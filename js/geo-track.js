@@ -130,7 +130,7 @@ const _GEO_GAP_EXIT_MAX_ACC_M=100;
 // needed, and silently a no-op wherever the device doesn't report speed
 // (most existing fixtures and plenty of real devices), so nothing that used
 // to arrive correctly stops arriving.
-const _GEO_DRIVEBY_SPEED_MPS=4.5; // ~10mph
+const _GEO_DRIVEBY_SPEED_MPS=3.6; // ~8mph
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
