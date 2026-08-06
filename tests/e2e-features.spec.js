@@ -3021,6 +3021,13 @@ test.describe('Sign-in password eye: icon matches what is actually on screen', (
       if (typeof _pwToggle !== 'function' || typeof _eyeSvg !== 'function') return false;
       const host = document.createElement('div');
       host.id = 'eye-test-host';
+      // Fixed + top layer: appended to the end of body with no positioning, this
+      // sits in normal flow UNDER the app's real fixed mobile-tabbar (still
+      // rendered underneath, untouched, since the app itself was never navigated
+      // away from). The tabbar pins to the bottom of the viewport and intercepts
+      // the click there regardless of DOM order. Taking the fixture out of flow
+      // and above everything else is what actually isolates it from the live app.
+      host.style.cssText = 'position:fixed;top:8px;left:8px;z-index:2147483647;background:#fff;padding:8px';
       host.innerHTML =
         '<input type="password" id="eye-test-pass">' +
         '<button type="button" id="eye-test-eye" aria-label="Show password" onclick="_pwToggle(\'eye-test-pass\',\'eye-test-eye\')">' + _eyeSvg(false) + '</button>';
