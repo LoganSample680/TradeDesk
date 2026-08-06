@@ -1,13 +1,32 @@
 // 'Shop' exists because the automatic mileage log produces return-to-yard legs
 // in volume (owner call 2026-08-01). Without it every drive back from a job
 // landed in 'Other' next to genuinely uncategorized trips, which is where a
-// bucket goes to stop being useful. Appended, never inserted: the order is what
-// the picker renders and what existing records were saved against.
-const MILE_PURPOSES=['Estimate','Job site','Client Consult','Supply run','Home Office','Payment Collection','Shop','Other'];
+// bucket goes to stop being useful.
+//
+// 'Business meeting' is the same gap one step out from the customer (owner
+// 2026-08-06): driving to talk strategy or branding with an advisor, to the
+// CPA, the bank, or a GC about work that does not exist yet, is a deductible
+// business trip with no customer attached to it. 'Client Consult' cannot hold
+// those, it means a paying customer, so without this they all landed in
+// 'Other' and stopped being countable.
+//
+// ORDER IS THE PICKER'S RENDER ORDER, AND NOTHING ELSE. A record stores the
+// purpose STRING (mileage rows carry `purpose`, the <option> value is the
+// label itself), and nothing indexes into this array positionally, verified
+// across js/ and tests/ before inserting rather than appending. So a new entry
+// goes where it reads best and 'Other', the catch-all, stays terminal. What is
+// NOT safe is renaming or removing an existing string: that orphans every row
+// already saved against it.
+const MILE_PURPOSES=['Estimate','Job site','Client Consult','Business meeting','Supply run','Home Office','Payment Collection','Shop','Other'];
 const MILE_PURPOSE_COLORS={
   'Estimate':          {bg:'#eff6ff',text:'#1d4ed8',dot:'#1d4ed8'},
   'Job site':          {bg:'#f0fdf4',text:'#15803d',dot:'#15803d'},
   'Client Consult':    {bg:'#f5f3ff',text:'#7c3aed',dot:'#7c3aed'},
+  // Teal: the one hue not already spoken for. It has to be told apart from
+  // Client Consult's violet at a glance, since those two are the pair most
+  // easily confused on the report and the whole point of the split is that
+  // they are different money.
+  'Business meeting':  {bg:'#f0fdfa',text:'#0f766e',dot:'#0f766e'},
   'Supply run':        {bg:'#fffbeb',text:'#b45309',dot:'#b45309'},
   'Home Office':       {bg:'#f0f9ff',text:'#0369a1',dot:'#0369a1'},
   'Payment Collection':{bg:'#f0fdf4',text:'#15803d',dot:'#15803d'},

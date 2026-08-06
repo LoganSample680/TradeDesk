@@ -688,7 +688,7 @@ test.describe('Places, drive attribution and the map', () => {
       return { opts, kinds: Object.keys(PLACE_KINDS) };
     });
     const values = out.opts.map(o => o.value);
-    ['shop', 'home_office', 'supply', 'job_site', 'client_consult', 'payment_collection', 'estimate', 'other']
+    ['shop', 'home_office', 'supply', 'job_site', 'client_consult', 'business_meeting', 'payment_collection', 'estimate', 'other']
       .forEach(k => expect(values, `Type picker is missing "${k}"`).toContain(k));
     // Every PLACE_KINDS entry renders as an actual <option>, the picker is not
     // hand-maintained separately from the source of truth it reads from.
@@ -700,6 +700,7 @@ test.describe('Places, drive attribution and the map', () => {
       const cases = [
         { kind: 'job_site', want: 'Job site' },
         { kind: 'client_consult', want: 'Client Consult' },
+        { kind: 'business_meeting', want: 'Business meeting' },
         { kind: 'payment_collection', want: 'Payment Collection' },
         { kind: 'estimate', want: 'Estimate' },
         // The two pre-existing kinds this session didn't touch, still correct.
@@ -710,6 +711,38 @@ test.describe('Places, drive attribution and the map', () => {
       return cases.map(c => ({ kind: c.kind, want: c.want, got: _autoTripPurpose({ kind: c.kind }) }));
     });
     out.forEach(r => expect(r.got, `place kind "${r.kind}"`).toBe(r.want));
+  });
+
+  // Owner 2026-08-06: driving to an advisor's place to talk strategy or work on
+  // the brand is a real deductible trip with NO customer attached. It had
+  // nowhere to go but 'Other', and 'Client Consult' cannot absorb it without
+  // overstating what customer work costs to win. These two must stay separable
+  // all the way through to the report, which means distinct labels AND
+  // distinct colors, since the breakdown is read by color at a glance.
+  test('Business meeting is its own reportable bucket, never folded into Client Consult', async () => {
+    const out = await page.evaluate(() => ({
+      inPurposes: MILE_PURPOSES.includes('Business meeting'),
+      // 'Other' is the catch-all and has to stay last in the picker.
+      otherIsLast: MILE_PURPOSES[MILE_PURPOSES.length - 1] === 'Other',
+      colored: !!MILE_PURPOSE_COLORS['Business meeting'],
+      // The pair most easily confused on the report: same shape of trip, very
+      // different money. If these ever collide the split stops being readable.
+      distinctFromConsult:
+        MILE_PURPOSE_COLORS['Business meeting'].dot !== MILE_PURPOSE_COLORS['Client Consult'].dot,
+      fromPlace: _autoTripPurpose({ kind: 'business_meeting' }),
+      consultUnchanged: _autoTripPurpose({ kind: 'client_consult' }),
+      // Every existing purpose survives: renaming or dropping one orphans every
+      // mileage row already saved against that exact string.
+      legacyIntact: ['Estimate', 'Job site', 'Client Consult', 'Supply run', 'Home Office',
+                     'Payment Collection', 'Shop', 'Other'].every(p => MILE_PURPOSES.includes(p)),
+    }));
+    expect(out.inPurposes, 'Business meeting must be a real mileage purpose').toBe(true);
+    expect(out.otherIsLast, '"Other" must remain the last option in the picker').toBe(true);
+    expect(out.colored, 'it needs a color or it renders blank on the breakdown').toBe(true);
+    expect(out.distinctFromConsult, 'Business meeting and Client Consult must not share a color').toBe(true);
+    expect(out.fromPlace).toBe('Business meeting');
+    expect(out.consultUnchanged, 'a paying customer still tags Client Consult').toBe('Client Consult');
+    expect(out.legacyIntact, 'no existing purpose string may be renamed or removed').toBe(true);
   });
 
   test('every new place-kind purpose is a real bucket the mileage report already colors and groups by', async () => {

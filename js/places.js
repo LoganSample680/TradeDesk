@@ -68,6 +68,12 @@ const PLACE_KINDS = {
   supply:'Supply house',
   job_site:'Job site',
   client_consult:'Client consult',
+  // NOT a customer. Somewhere the owner goes to work ON the business rather
+  // than in it: an advisor's place, the CPA, the bank, a GC about work that
+  // does not exist yet. Deductible all the same, and it needed its own kind
+  // because 'Client consult' means a paying customer and putting these there
+  // would quietly overstate what customer work costs to win.
+  business_meeting:'Business meeting',
   payment_collection:'Payment collection',
   estimate:'Estimate site',
   other:'Other',
@@ -472,7 +478,7 @@ function _geoRenderFallback(body,pts){
 // ── The Places screen (Fleet & Team → Places) ────────────────────────────────
 // Owner-facing. Everything here is business configuration, so it lives beside
 // the fleet and the crew rather than in Books.
-const _PLACE_KIND_ICON={shop:'🏠',supply:'🧰',home_office:'🏡',job_site:'🔨',client_consult:'💬',payment_collection:'💵',estimate:'📋',other:'📍'};
+const _PLACE_KIND_ICON={shop:'🏠',supply:'🧰',home_office:'🏡',job_site:'🔨',client_consult:'💬',business_meeting:'🤝',payment_collection:'💵',estimate:'📋',other:'📍'};
 function _placeKindLabel(k){return PLACE_KINDS[k]||PLACE_KINDS.other;}
 
 // The shop was geocoded into S.officeLat/officeLon long before td_places

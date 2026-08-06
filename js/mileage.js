@@ -914,6 +914,7 @@ const _PLACE_KIND_TO_PURPOSE={
   home_office:'Home Office',
   job_site:'Job site',
   client_consult:'Client Consult',
+  business_meeting:'Business meeting',
   payment_collection:'Payment Collection',
   estimate:'Estimate',
 };
