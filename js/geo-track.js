@@ -541,6 +541,19 @@ async function _geoOnPing(pos){
     _geoPlaceArrivedAt=(cur&&cur.k==='place')?nowIso:null;
     if(cur&&cur.k==='job'){_geoPersistOpen();_geoWakeAcquire();}
     else{_geoClearOpen();_geoWakeRelease();}
+    // The dashboard's "ON SITE" card (renderDash, js/dashboard.js) reads
+    // _geoCurrentJob/_geoCurrentPlace/_geoWasInShop straight off this module,
+    // but nothing in this handler ever told it those changed. Every OTHER path
+    // that touches this state calls renderDash itself; the automatic geofence
+    // never did, so the card sat stale (still showing "On site" after leaving,
+    // or never appearing on arrival) until something unrelated re-rendered the
+    // page, an owner tapping a different tab and back. Only on a REAL
+    // transition (this branch), and only while the dashboard is actually the
+    // page on screen, a full re-render on every 20-30s ping while elsewhere in
+    // the app would be wasted work nobody sees.
+    if(typeof renderDash==='function'&&typeof document!=='undefined'&&document.getElementById('pg-dash')?.classList.contains('active')){
+      renderDash();
+    }
   }
   // The last fix that still put them inside something. This is the only
   // departure evidence a single-ping transition ever has.

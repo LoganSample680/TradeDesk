@@ -3445,5 +3445,61 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // The dashboard's "ON SITE" card (js/dashboard.js renderDash) reads the fence
+  // state straight off this module's own variables, but nothing in the ping
+  // handler ever told it those changed: an owner leaving a job saw the card
+  // stay up until something UNRELATED re-rendered the dashboard (switching
+  // tabs and back), which read as the tracker not noticing they had left.
+  test.describe('the dashboard refreshes the instant the fence changes, not on the next unrelated render', () => {
+    async function pingTransitions() {
+      return page.evaluate(async (a) => {
+        const realRoute = _routeDistance, realUser = _supaUser;
+        _supaUser = { id: 'u-render' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 1, mins: 1 });
+        let calls = 0;
+        const realRenderDash = window.renderDash;
+        window.renderDash = (...args) => { calls++; return realRenderDash.apply(this, args); };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          _geoLastFenceLoc = null; _geoLegOrigin = null;
+          const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+          await ping(a.shop);                      // arrive at the shop: a real transition
+          const afterArrive = calls;
+          await ping(a.shop);                      // still at the shop: NOT a transition
+          const afterSameFence = calls;
+          await ping(a.job);                       // shop -> job: a real transition (the leave)
+          const afterLeave = calls;
+          return { afterArrive, afterSameFence, afterLeave };
+        } finally {
+          window.renderDash = realRenderDash;
+          _supaUser = realUser;
+          window._routeDistance = _routeDistance = realRoute;
+        }
+      }, { shop: SHOP, job: JOB });
+    }
+
+    test('renderDash fires on arrival and on leaving, not on a repeated same-fence ping, while pg-dash is on screen', async () => {
+      await page.evaluate(() => { goPg('pg-dash'); });
+      const r = await pingTransitions();
+      expect(r.afterArrive, 'arriving at the shop is a transition').toBeGreaterThan(0);
+      expect(r.afterSameFence, 'a repeat ping inside the same fence must not trigger another render').toBe(r.afterArrive);
+      expect(r.afterLeave, 'leaving the shop for the job is a second transition').toBeGreaterThan(r.afterSameFence);
+    });
+
+    test('renderDash does NOT fire on a fence transition while a different page is on screen', async () => {
+      await page.evaluate(() => { goPg('pg-tracker'); });
+      const r = await pingTransitions();
+      expect(r.afterArrive).toBe(0);
+      expect(r.afterSameFence).toBe(0);
+      expect(r.afterLeave, 'still zero, nobody is looking at the dashboard').toBe(0);
+      await page.evaluate(() => { goPg('pg-dash'); });
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });
