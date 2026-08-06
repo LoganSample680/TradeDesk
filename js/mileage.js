@@ -901,14 +901,26 @@ function crewMilesOwed(yr){
 }
 // What the destination IS decides the business purpose. This is the whole reason
 // automatic mileage can be IRS-complete without asking anyone anything: the
-// geofence already knows it arrived at a job, the yard, or a supply house.
+// geofence already knows it arrived at a job, the yard, or a saved place, and a
+// saved place's kind carries the SAME vocabulary the mileage log reports trips
+// by (MILE_PURPOSES, js/constants.js), so a drive to Ferguson's tags "Supply
+// run" and a drive to a client's office tags "Client Consult", not a bucket of
+// "Other" trips reporting can't break down. 'job' is the geofence's own kind
+// for a scheduled job (never a place's kind), kept as its own branch rather
+// than folded into the map below.
+const _PLACE_KIND_TO_PURPOSE={
+  shop:'Shop',
+  supply:'Supply run',
+  home_office:'Home Office',
+  job_site:'Job site',
+  client_consult:'Client Consult',
+  payment_collection:'Payment Collection',
+  estimate:'Estimate',
+};
 function _autoTripPurpose(to){
   const k=(to&&to.kind)||'';
   if(k==='job')return 'Job site';
-  if(k==='shop')return 'Shop';
-  if(k==='supply')return 'Supply run';
-  if(k==='home_office')return 'Home Office';
-  return 'Other';
+  return _PLACE_KIND_TO_PURPOSE[k]||'Other';
 }
 // Whoever is driving, today's answer wins over the standing one.
 //

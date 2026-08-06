@@ -672,6 +672,107 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.shopFirst).toBe(true);
   });
 
+  // Owner: "the trip types under Mileage in Books, job site, client consult,
+  // those kinds of things need to carry over to places, so those tag in
+  // reporting correctly." A place's kind now covers the SAME vocabulary the
+  // mileage log reports by (MILE_PURPOSES), so a drive to/from a place saved
+  // as a client-consult site or a payment-collection stop tags into that real
+  // bucket instead of collapsing into "Other" the way anything but the shop,
+  // a supply house, or the home office used to.
+  test('the Type picker offers the full mileage-purpose vocabulary, not just the original four', async () => {
+    const out = await page.evaluate(() => {
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal(null, 1, 2);
+      const opts = [...document.querySelectorAll('#place-kind option')].map(o => ({ value: o.value, text: o.textContent }));
+      document.getElementById('place-modal')?.remove();
+      return { opts, kinds: Object.keys(PLACE_KINDS) };
+    });
+    const values = out.opts.map(o => o.value);
+    ['shop', 'home_office', 'supply', 'job_site', 'client_consult', 'payment_collection', 'estimate', 'other']
+      .forEach(k => expect(values, `Type picker is missing "${k}"`).toContain(k));
+    // Every PLACE_KINDS entry renders as an actual <option>, the picker is not
+    // hand-maintained separately from the source of truth it reads from.
+    expect(values.sort()).toEqual(out.kinds.sort());
+  });
+
+  test('a place saved as each new kind tags its automatic trips into the matching mileage-report purpose', async () => {
+    const out = await page.evaluate(() => {
+      const cases = [
+        { kind: 'job_site', want: 'Job site' },
+        { kind: 'client_consult', want: 'Client Consult' },
+        { kind: 'payment_collection', want: 'Payment Collection' },
+        { kind: 'estimate', want: 'Estimate' },
+        // The two pre-existing kinds this session didn't touch, still correct.
+        { kind: 'supply', want: 'Supply run' },
+        { kind: 'home_office', want: 'Home Office' },
+        { kind: 'shop', want: 'Shop' },
+      ];
+      return cases.map(c => ({ kind: c.kind, want: c.want, got: _autoTripPurpose({ kind: c.kind }) }));
+    });
+    out.forEach(r => expect(r.got, `place kind "${r.kind}"`).toBe(r.want));
+  });
+
+  test('every new place-kind purpose is a real bucket the mileage report already colors and groups by', async () => {
+    // A purpose _autoTripPurpose can now produce that MILE_PURPOSE_COLORS does
+    // not recognize would render on the mileage breakdown with no color and no
+    // group, exactly the "does not tag in reporting" failure this was built to
+    // fix. Every place kind's purpose has to round-trip through the real table.
+    const out = await page.evaluate(() => {
+      const kinds = Object.keys(PLACE_KINDS).filter(k => k !== 'other');
+      return kinds.map(k => {
+        const purpose = _autoTripPurpose({ kind: k });
+        return { kind: k, purpose, known: MILE_PURPOSES.includes(purpose), colored: !!MILE_PURPOSE_COLORS[purpose] };
+      });
+    });
+    out.forEach(r => {
+      expect(r.known, `"${r.purpose}" (from place kind "${r.kind}") is not in MILE_PURPOSES`).toBe(true);
+      expect(r.colored, `"${r.purpose}" has no entry in MILE_PURPOSE_COLORS`).toBe(true);
+    });
+  });
+
+  test('a saved client-consult place fences an automatic drive as "Client Consult", not "Other"', async () => {
+    const out = await page.evaluate(async () => {
+      const realUser = _supaUser, realRoute = _routeDistance;
+      _supaUser = { id: 'u-consult' };
+      window._routeDistance = _routeDistance = async () => ({ miles: 3, mins: 9 });
+      try {
+        places.length = 0;
+        savePlace({ name: "Miller's Office", kind: 'client_consult', lat: 39.10, lon: -95.10, confirmedBy: 'manual' });
+        S.officeLat = 39.00; S.officeLon = -95.00; S.teamTracking = true;
+        _geoJobCoords = {};
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+        _geoLastFenceAt = null; _geoLegAtShop = false;
+        _geoHomeDwell = null; _geoWasAtHome = false;
+        _geoLastFenceLoc = null; _geoLegOrigin = null;
+        _geoPingBusy = false;
+        const before = mileage.length;
+        const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+        await ping({ lat: 39.00, lon: -95.00 });     // at the shop
+        // Rewind ONLY _geoLastFenceAt, never _geoDriveStartedAt (arriving at the
+        // shop already cleared it back to null): a single ping spanning the whole
+        // trip is what the app actually sees on a backgrounded phone, and it is
+        // the overnight-style inference branch in _geoOnPing that supplies the
+        // leg's origin (_geoLegOrigin) FROM this timestamp. Pre-setting
+        // _geoDriveStartedAt here would skip that branch and leave the origin
+        // null, which is exactly the mistake that made this test fail the first
+        // time (mileageAdded came back empty: _geoAutoMileage refuses a null
+        // "from"). Same pattern e2e-geo-auto-mileage.spec.js's drive() helper uses.
+        if (_geoLastFenceAt) _geoLastFenceAt = new Date(Date.now() - 20 * 60000).toISOString();
+        await ping({ lat: 39.10, lon: -95.10 });     // arrive at the consult site
+        await new Promise(r => setTimeout(r, 30));
+        const row = mileage.slice(0, Math.max(0, mileage.length - before))[0];
+        return { purpose: row && row.purpose, toName: row && row.to_name };
+      } finally {
+        _supaUser = realUser;
+        window._routeDistance = _routeDistance = realRoute;
+      }
+    });
+    expect(out.toName).toBe("Miller's Office");
+    expect(out.purpose).toBe('Client Consult');
+  });
+
   test('a repeat stop surfaces a suggestion card that can be accepted', async () => {
     const out = await page.evaluate(() => {
       places.length = 0;
@@ -862,20 +963,24 @@ test.describe('Places, drive attribution and the map', () => {
       document.getElementById('place-modal')?.remove();
       // A promoted repeat-stop: has a pin, has never had an address searched.
       openPlaceModal(null, 37.81, -97.21);
-      const promotedNote = document.getElementById('place-pin-note').innerHTML;
+      // textContent, never innerHTML: the pin note's leading pin SVG has its own
+      // decimal path-data numbers (e.g. "4.993", "10.193") that satisfy a loose
+      // coordinate pattern just as well as a real lat/lon would, a false
+      // positive that has nothing to do with what the note actually SHOWS.
+      const promotedNote = document.getElementById('place-pin-note').textContent;
       document.getElementById('place-modal')?.remove();
       // An existing place saved WITH an address (through the search flow).
       places.length = 0;
       const withAddr = savePlace({ name: 'Ferguson', kind: 'supply', lat: 1, lon: 2, addr: '2121 E Douglas Ave, Wichita, KS', confirmedBy: 'manual' });
       openPlaceModal(withAddr.id);
-      const editNoteWithAddr = document.getElementById('place-pin-note').innerHTML;
+      const editNoteWithAddr = document.getElementById('place-pin-note').textContent;
       document.getElementById('place-modal')?.remove();
       // An older place saved with no address on record at all (pre-dates the
       // search flow, e.g. lifted from an expense receipt's GPS stamp).
       places.length = 0;
       const noAddr = savePlace({ name: 'Old Supply Stop', kind: 'supply', lat: 3, lon: 4, confirmedBy: 'expense' });
       openPlaceModal(noAddr.id);
-      const editNoteNoAddr = document.getElementById('place-pin-note').innerHTML;
+      const editNoteNoAddr = document.getElementById('place-pin-note').textContent;
       document.getElementById('place-modal')?.remove();
       const coordPattern = /\d{1,3}\.\d{3,}/;
       return {
