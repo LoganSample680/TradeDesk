@@ -2196,14 +2196,14 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.hasOldBtn).toBe(false);
   });
 
-  test('_mmtNewLeads returns only brand-new clients with no bid and no estimate job', async () => {
+  test('_mmtNewLeads returns only brand-new clients with no bid and no UPCOMING estimate job', async () => {
     const r = await page.evaluate(() => {
       const cA = 780101, cB = 780102, cC = 780103;
       clients.unshift({ id: cA, name: 'NewLead Bare', addr: '1 Bare St', created: todayKey() });
       clients.unshift({ id: cB, name: 'NewLead HasBid', addr: '2 Bid St', created: todayKey() });
       clients.unshift({ id: cC, name: 'NewLead HasEstJob', addr: '3 Est St', created: todayKey() });
       bids.unshift({ id: 780201, client_id: cB, status: 'Pending', amount: 100, bid_date: todayKey() });
-      jobs.unshift({ id: 780301, client_id: cC, eventType: 'estimate', date: todayKey() });
+      jobs.unshift({ id: 780301, client_id: cC, eventType: 'estimate', start: todayKey() });
       const ids = _mmtNewLeads().map(c => c.id);
       bids = bids.filter(b => b.id !== 780201);
       jobs = jobs.filter(j => j.id !== 780301);
@@ -2212,7 +2212,33 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     });
     expect(r.hasBare).toBe(true);
     expect(r.hasBid).toBe(false);
-    expect(r.hasEstJob).toBe(false);
+    expect(r.hasEstJob).toBe(false);   // visit is today (upcoming): still its own next step
+  });
+
+  // Regression (owner report, 2026-08-06): a lead's estimate visit happening (or its
+  // date just passing) permanently removed the "build a bid" task from Make Money
+  // Today, even though no bid was ever written, no way back in. The visit itself is
+  // no longer the next step once its date has passed, the proposal is, so the lead
+  // must return to the "ready to build" list, not disappear for good.
+  test('_mmtNewLeads: a PAST estimate visit with still no bid returns to the list, a canceled one always does', async () => {
+    const r = await page.evaluate(() => {
+      const cPast = 780104, cCanceled = 780105, cFuture = 780106;
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      clients.unshift({ id: cPast, name: 'NewLead PastVisit', addr: '4 Past St', created: yesterday });
+      clients.unshift({ id: cCanceled, name: 'NewLead CanceledVisit', addr: '5 Canceled St', created: todayKey() });
+      clients.unshift({ id: cFuture, name: 'NewLead FutureVisit', addr: '6 Future St', created: todayKey() });
+      jobs.unshift({ id: 780302, client_id: cPast, eventType: 'estimate', start: yesterday, status: 'upcoming' });
+      jobs.unshift({ id: 780303, client_id: cCanceled, eventType: 'estimate', start: nextWeek, status: 'canceled' });
+      jobs.unshift({ id: 780304, client_id: cFuture, eventType: 'estimate', start: nextWeek, status: 'upcoming' });
+      const ids = _mmtNewLeads().map(c => c.id);
+      jobs = jobs.filter(j => ![780302, 780303, 780304].includes(j.id));
+      clients = clients.filter(c => ![cPast, cCanceled, cFuture].includes(c.id));
+      return { hasPast: ids.includes(cPast), hasCanceled: ids.includes(cCanceled), hasFuture: ids.includes(cFuture) };
+    });
+    expect(r.hasPast).toBe(true);       // visit happened, no bid written: build it now
+    expect(r.hasCanceled).toBe(true);   // canceled visit is no longer anyone's next step
+    expect(r.hasFuture).toBe(false);    // still upcoming: go to the visit first
   });
 
   test('_showNewLeadsPicker lists leads oldest-first (top) to newest (bottom)', async () => {

@@ -15,10 +15,18 @@ function _trendHtml(curr,prev,reverseColor){
 }
 
 function _mmtNewLeads(){
+  const tk=todayKey();
   return clients.filter(c=>{
     if(getClientStage(c.id).stage!=='new')return false;
     if(bids.some(b=>b.client_id===c.id))return false;
-    if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'))return false;
+    // Only an estimate visit that HASN'T happened yet is its own next step (go
+    // to the visit); this must match getClientStage's own definition of
+    // 'upcoming' (not canceled, start today or later). A visit whose date has
+    // passed with still no bid written is done, and the proposal is now the
+    // real next step, so the lead belongs back in this list, not gone for
+    // good (owner report 2026-08-06: leaving the visit made "build a bid"
+    // vanish from Make Money Today permanently, even though none was built).
+    if(jobs.some(j=>j.client_id===c.id&&j.eventType==='estimate'&&j.status!=='canceled'&&j.start>=tk))return false;
     return true;
   });
 }
