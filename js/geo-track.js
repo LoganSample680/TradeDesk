@@ -1070,6 +1070,26 @@ function _geoRecordAck(){
   try{_supa.from('team_members').update({location_ack_at:now,location_ack_version:GEO_NOTICE_VERSION}).eq('employee_user_id',_supaUser.id).then(()=>{},()=>{});}catch(_e){}
 }
 
+// Foreground return: don't wait for watchPosition to get around to it. The
+// watch runs with maximumAge:30000, so its first delivery after a wake can
+// legally be a CACHED fix from before the phone slept, reading "still on
+// site" while the user stands in their kitchen (owner report 2026-08-06:
+// banner didn't clear/appear in real time on arriving home). Ask for a fresh
+// fix NOW (maximumAge:0, cached positions not allowed), and a second one a
+// few seconds later so the two-fix gap-exit confirmation (_geoGapExitPending)
+// can settle within seconds of reopening the app instead of minutes.
+let _geoNudgeTimer=null;
+function _geoWakeNudge(){
+  if(_geoWatchId==null)return;              // tracking not running, nothing to resolve
+  if(!navigator.geolocation)return;
+  const fresh=()=>{try{navigator.geolocation.getCurrentPosition(_geoOnPing,()=>{},{enableHighAccuracy:true,maximumAge:0,timeout:15000});}catch(_e){}};
+  fresh();
+  if(_geoNudgeTimer)clearTimeout(_geoNudgeTimer);
+  _geoNudgeTimer=setTimeout(()=>{
+    _geoNudgeTimer=null;
+    if(!document.hidden&&_geoWatchId!=null)fresh();
+  },8000);
+}
 // ── Start / stop ───────────────────────────────────────────────────────────────
 function startGeoTracking(){
   if(_geoWatchId!=null)return;
@@ -1080,6 +1100,7 @@ function startGeoTracking(){
 }
 function stopGeoTracking(){
   if(_geoWatchId!=null){try{navigator.geolocation.clearWatch(_geoWatchId);}catch(_e){}_geoWatchId=null;}
+  if(_geoNudgeTimer){clearTimeout(_geoNudgeTimer);_geoNudgeTimer=null;}
   if(_geoCurrentJob&&_geoArrivedAt)_geoCloseEntry(_geoCurrentJob);
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
@@ -1116,6 +1137,7 @@ function _geoTrackInit(){
       }else{
         _geoDrainQueue();                      // back online-ish, flush queued entries
         if(_geoCurrentJob)_geoWakeAcquire();   // wake locks auto-release on hide
+        _geoWakeNudge();                       // resolve where we ARE now, not eventually
       }
     });
     // Queued entries also flush the moment connectivity returns.

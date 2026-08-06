@@ -1326,6 +1326,65 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     await geoRestore();
   });
 
+  // Regression (owner report, 2026-08-06): reopening the app after a drive left the
+  // ON SITE banner stale for however long watchPosition took to deliver, and its
+  // maximumAge:30000 means the first delivery can legally be a CACHED pre-sleep fix
+  // that still reads "on site". The foreground-return handler must actively request
+  // a FRESH fix (maximumAge:0) now, plus a follow-up so the two-fix gap-exit
+  // confirmation can settle within seconds.
+  test('wake nudge: foreground return requests a fresh maximumAge:0 fix and arms a follow-up', async () => {
+    await geoReset();
+    const r = await page.evaluate(() => {
+      const calls = [];
+      const origGeo = navigator.geolocation.getCurrentPosition;
+      navigator.geolocation.getCurrentPosition = (cb, err, opts) => { calls.push(opts || {}); };
+      const origWatch = _geoWatchId;
+      try {
+        _geoWatchId = 12345;                    // tracking running
+        _geoWakeNudge();
+        const afterRun = { count: calls.length, maxAge: calls[0] && calls[0].maximumAge, timerArmed: _geoNudgeTimer != null };
+        _geoWatchId = null;                     // tracking stopped → nudge must no-op
+        _geoWakeNudge();
+        const afterStopped = { count: calls.length };
+        return { afterRun, afterStopped };
+      } finally {
+        navigator.geolocation.getCurrentPosition = origGeo;
+        _geoWatchId = origWatch;
+        if (_geoNudgeTimer) { clearTimeout(_geoNudgeTimer); _geoNudgeTimer = null; }
+      }
+    });
+    expect(r.afterRun.count).toBe(1);
+    expect(r.afterRun.maxAge, 'cached pre-sleep fixes are not acceptable on wake').toBe(0);
+    expect(r.afterRun.timerArmed, 'a follow-up fix is scheduled for the two-fix confirmation').toBe(true);
+    expect(r.afterStopped.count, 'no tracking → no fix request').toBe(1);
+    await geoRestore();
+  });
+
+  test('wake nudge: visibilitychange to visible fires it through the real handler', async () => {
+    await geoReset();
+    const r = await page.evaluate(() => {
+      const calls = [];
+      const origGeo = navigator.geolocation.getCurrentPosition;
+      navigator.geolocation.getCurrentPosition = (cb, err, opts) => { calls.push(opts || {}); };
+      const origWatch = _geoWatchId;
+      try {
+        S.teamTracking = true;
+        if (typeof _geoTrackInit === 'function') _geoTrackInit();   // binds the handler (idempotent)
+        _geoWatchId = 12345;
+        try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); } catch (e) {}
+        document.dispatchEvent(new Event('visibilitychange'));
+        return { count: calls.length, maxAge: calls[0] && calls[0].maximumAge };
+      } finally {
+        navigator.geolocation.getCurrentPosition = origGeo;
+        _geoWatchId = origWatch;
+        if (_geoNudgeTimer) { clearTimeout(_geoNudgeTimer); _geoNudgeTimer = null; }
+      }
+    });
+    expect(r.count).toBeGreaterThanOrEqual(1);
+    expect(r.maxAge).toBe(0);
+    await geoRestore();
+  });
+
   test('no console errors during geo hardening tests', async () => {
     assertNoErrors(page, 'geo hardening');
   });
