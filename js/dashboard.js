@@ -135,9 +135,19 @@ function _renderDashSetupTodo(){
   // this account, or null before that, which cloud.js's post-load hook treats as
   // "go check" rather than a flash of "not done" on every single boot.
   const hasQrSource=typeof _qrHasSourceCached==='function'&&_qrHasSourceCached()===true;
+  // Places: done once the account has any location that took a real decision, a
+  // home office, a supply house (receipt-born counts, that IS setting one up), or
+  // anything added by hand. The shop auto-migrated from the business address does
+  // NOT count: it arrived free, and the item exists to get the contractor to mark
+  // the places only they know (where their day starts, where they buy), which is
+  // what makes the automatic drive log right from day one. Skippable: a shop-based
+  // solo op with no supply stops genuinely has nothing to add.
+  const hasPlaces=typeof places!=='undefined'&&(places||[]).some(p=>p&&(p.kind==='home_office'||p.kind==='supply'||p.confirmedBy==='manual'));
   const ALL=[
     {id:'vehicle',done:hasVehicle,icon:'🚗',title:'Add your vehicles',
       sub:'Mileage writes itself off at tax time, and it turns on the Drive button.',cta:'Add vehicle'},
+    {id:'places',done:hasPlaces,icon:'🏡',title:'Mark your home office & supply stops',
+      sub:'Drives log themselves once TradeDesk knows your places. A qualifying home office makes the first drive of the day deductible.',cta:'Add places'},
     {id:'getpaid',done:stripeOk,icon:'💳',title:'Turn on card payments',
       sub:'Get paid the day you finish the job, not weeks later. Cash & check still work without it.',cta:'Connect'},
     {id:'logo',done:hasLogo,icon:'🖼',title:'Add your logo',
@@ -258,6 +268,16 @@ function _setupTodoGo(id){
     return;
   }
   if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
+  if(id==='places'){
+    // Land on Fleet & Team → Places with the Add modal already open (address
+    // search ready), the list and any repeat-stop suggestions sit behind it.
+    if(typeof goPg==='function')goPg('pg-team');
+    setTimeout(()=>{
+      if(typeof setFleetTab==='function')setFleetTab('places');
+      if(typeof openPlaceModal==='function')openPlaceModal();
+    },160);
+    return;
+  }
   if(id==='getpaid'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('integrations');},160);return;}
   if(id==='logo'){if(typeof goPg==='function')goPg('pg-settings');setTimeout(()=>{if(typeof _openSetDetail==='function')_openSetDetail('biz');},160);return;}
   if(id==='team'){_setupTeamChooser();return;}

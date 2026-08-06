@@ -1359,8 +1359,10 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
       const _origQrCache = window._qrHasSourceCached;
+      const _savedPlaces = places.slice();
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
       _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      places.length = 0;   // fresh account: no saved places either
       window._qrHasSourceCached = () => false; // fresh account: no QR code created yet
       _renderDashSetupTodo();
       const card = document.getElementById('dash-setup-todo');
@@ -1369,6 +1371,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const out = {
         cardShown: card && card.style.display !== 'none',
         hasVehicleItem: !!(card && /add your vehicles/i.test(card.textContent) && /_setupTodoGo\('vehicle'\)/.test(card.innerHTML)),
+        hasPlacesItem: !!(card && /home office & supply stops/i.test(card.textContent) && /_setupTodoGo\('places'\)/.test(card.innerHTML)),
         hasGetPaidItem: !!(card && /card payments/i.test(card.textContent)),
         hasLogoItem: !!(card && /add your logo/i.test(card.textContent)),
         hasTeamItem: !!(card && /add your crew/i.test(card.textContent) && /_setupTodoGo\('team'\)/.test(card.innerHTML)),
@@ -1381,6 +1384,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
         driveGrayed: !!(drive && drive.style.pointerEvents === 'none' && parseFloat(drive.style.opacity) < 1),
       };
       _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      places.length = 0; _savedPlaces.forEach(p => places.push(p));
       window._qrHasSourceCached = _origQrCache;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
@@ -1388,6 +1392,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     if (r.skip) return;
     expect(r.cardShown, 'to-do card shows on a fresh account').toBe(true);
     expect(r.hasVehicleItem, 'Add-vehicle item present + wired').toBe(true);
+    expect(r.hasPlacesItem, 'Mark-your-places item present + wired').toBe(true);
     expect(r.hasGetPaidItem, 'Set-up-payments item present').toBe(true);
     expect(r.hasLogoItem, 'Add-logo item present').toBe(true);
     expect(r.hasTeamItem, 'Add-crew item present + wired to the chooser').toBe(true);
@@ -1404,10 +1409,12 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedVeh = S.veh, _savedSkip = S.setupSkipped, _savedLogo = S.logoData, _savedLogoU = S.logoUrl, _emp = (typeof _isEmployee !== 'undefined' ? _isEmployee : false);
       const _origQrCache = window._qrHasSourceCached;
+      const _savedPlaces = places.slice();
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = false; } catch (e) {}
       _setVehicles([]); S.vehiclesTs = 0; S.veh = ''; S.setupSkipped = []; S.logoData = ''; S.logoUrl = '';
+      places.length = 0;
       window._qrHasSourceCached = () => false;
-      // 'location' is the 6th item and, like QR, is noSkip: drive mileage and job
+      // 'location' is the 7th item and, like QR, is noSkip: drive mileage and job
       // hours are the whole time-tracking product and neither works without the
       // permission. Pin the cache to 'prompt' (not granted) so the fresh-account
       // case renders it as outstanding, the same way the QR cache is pinned.
@@ -1422,14 +1429,15 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
         hasTransition: !!(cs && cs.transitionDuration && cs.transitionDuration !== '0s'),
       };
       _setVehicles(_saved); S.vehiclesTs = _savedTs; S.veh = _savedVeh; S.setupSkipped = _savedSkip; S.logoData = _savedLogo; S.logoUrl = _savedLogoU;
+      places.length = 0; _savedPlaces.forEach(p => places.push(p));
       window._qrHasSourceCached = _origQrCache;
       _geoPermCache = _origPerm;
       try { if (typeof _isEmployee !== 'undefined') _isEmployee = _emp; } catch (e) {}
       return out;
     });
     if (r.skip) return;
-    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 6 CTAs (4 optional + QR + location)').toBe(6);
-    expect(r.allHaveClass, 'Add vehicle / Connect / Add logo / Set up / Create / Turn on all carry the transition class').toBe(true);
+    expect(r.ctaCount, 'sanity: the fresh-account checklist renders all 7 CTAs (5 optional + QR + location)').toBe(7);
+    expect(r.allHaveClass, 'Add vehicle / Add places / Connect / Add logo / Set up / Create / Turn on all carry the transition class').toBe(true);
     expect(r.hasTransition, 'the CTA button has a real, non-zero CSS transition').toBe(true);
   });
 
@@ -1467,11 +1475,11 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       const _saved = JSON.parse(JSON.stringify(vehicles)), _savedTs = S.vehiclesTs, _savedSkip = S.setupSkipped, _savedDone = S.setupDone, _origSave = window.saveAll;
       const _origQrCache = window._qrHasSourceCached;
       window.saveAll = () => {};
-      // Vehicle added (done); the three optional items skipped; QR and location
+      // Vehicle added (done); the four optional items skipped; QR and location
       // marked done via their caches (NEITHER can be skipped, so "everything
       // clear" requires done:true for both, not skipped) → nothing left.
       _setVehicles([{ id: 1, name: '2019 F-150' }]); S.vehiclesTs = Date.now();
-      S.setupSkipped = ['getpaid', 'logo', 'team']; S.setupDone = false;
+      S.setupSkipped = ['places', 'getpaid', 'logo', 'team']; S.setupDone = false;
       window._qrHasSourceCached = () => true;
       const _origPerm2 = _geoPermCache; _geoPermCache = 'granted';
       _renderDashSetupTodo();
@@ -1532,6 +1540,63 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     });
     if (r.skip) return;
     expect(r.skippedList, 'qrcode never lands in setupSkipped, no matter how it\'s invoked').not.toContain('qrcode');
+  });
+
+  test('_renderDashSetupTodo: the places item clears on a real place, but not on the auto-migrated shop', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof _renderDashSetupTodo !== 'function') return { skip: true };
+      const _savedPlaces = places.slice(), _savedSkip = S.setupSkipped, _origSave = window.saveAll;
+      window.saveAll = () => {};
+      S.setupSkipped = [];
+      const rowShown = () => {
+        _renderDashSetupTodo();
+        return /home office & supply stops/i.test(document.getElementById('dash-setup-todo').textContent || '');
+      };
+      // The shop lifted for free from the business address does NOT satisfy it.
+      places.length = 0;
+      places.push({ id: 1, name: 'Shop', kind: 'shop', lat: 1, lon: 2, confirmedBy: 'business-address' });
+      const shownWithAutoShop = rowShown();
+      // A receipt-born supply house DOES: that is a set-up place.
+      places.push({ id: 2, name: 'Ferguson', kind: 'supply', lat: 3, lon: 4, confirmedBy: 'expense' });
+      const shownWithSupply = rowShown();
+      // So does a hand-added home office on its own.
+      places.length = 0;
+      places.push({ id: 3, name: 'Home Office', kind: 'home_office', lat: 5, lon: 6, confirmedBy: 'manual' });
+      const shownWithHomeOffice = rowShown();
+      window.saveAll = _origSave; S.setupSkipped = _savedSkip;
+      places.length = 0; _savedPlaces.forEach(p => places.push(p));
+      _renderDashSetupTodo();
+      return { shownWithAutoShop, shownWithSupply, shownWithHomeOffice };
+    });
+    if (r.skip) return;
+    expect(r.shownWithAutoShop, 'the free auto-migrated shop alone leaves the item outstanding').toBe(true);
+    expect(r.shownWithSupply, 'a receipt-born supply house clears it').toBe(false);
+    expect(r.shownWithHomeOffice, 'a hand-added home office clears it').toBe(false);
+  });
+
+  test('_setupTodoGo("places"): lands on Fleet & Team → Places with the Add modal open', async () => {
+    const r = await page.evaluate(() => new Promise((resolve) => {
+      if (typeof _setupTodoGo !== 'function') return resolve({ skip: true });
+      goPg('pg-dash');
+      _setupTodoGo('places');
+      setTimeout(() => {
+        resolve({
+          onTeamPage: document.getElementById('pg-team')?.classList.contains('active'),
+          placesTabActive: document.getElementById('ft-t-places')?.classList.contains('active'),
+          placesPaneShown: document.getElementById('ft-places')?.style.display !== 'none',
+          modalOpen: !!document.getElementById('place-modal'),
+          addrSearchReady: !!document.getElementById('place-addr'),
+        });
+        document.getElementById('place-modal')?.remove();
+        goPg('pg-dash');
+      }, 300);
+    }));
+    if (r.skip) return;
+    expect(r.onTeamPage, 'lands on pg-team (Fleet & Team)').toBe(true);
+    expect(r.placesTabActive, 'the Places tab is selected').toBe(true);
+    expect(r.placesPaneShown, 'the Places pane is visible').toBe(true);
+    expect(r.modalOpen, 'the Add-a-location modal is already open').toBe(true);
+    expect(r.addrSearchReady, 'with the address search ready to type into').toBe(true);
   });
 
   test('_setupTodoGo("qrcode"): navigates to the QR codes page and focuses the label field', async () => {
