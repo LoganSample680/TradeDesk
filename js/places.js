@@ -126,7 +126,11 @@ function expenseForStop(o){
 function savePlace(pl){
   if(!pl||pl.lat==null||pl.lon==null)return null;
   const existing=pl.id?places.find(p=>String(p.id)===String(pl.id)):null;
-  if(existing){Object.assign(existing,pl);}
+  // Merge SKIPPING undefined: the edit modal passes confirmedBy:undefined (and
+  // addr:undefined when there is no address field), and Object.assign copies
+  // undefined over the stored value, so every edit silently erased the place's
+  // provenance. An undefined key means "not changing this", never "clear it".
+  if(existing){Object.keys(pl).forEach(k=>{if(pl[k]!==undefined)existing[k]=pl[k];});}
   else{
     pl.id=pl.id||_newId();
     pl.createdAt=pl.createdAt||new Date().toISOString();
@@ -540,10 +544,18 @@ function openPlaceModal(id,lat,lon){
     // A home office changes whether the first trip of the day is deductible, so
     // it is stated plainly rather than buried as a dropdown value.
     '<div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
+    '<input type="hidden" id="place-lat" value="'+(_lat!=null?_lat:'')+'"><input type="hidden" id="place-lon" value="'+(_lon!=null?_lon:'')+'">'+
     (_lat!=null
-      ? '<input type="hidden" id="place-lat" value="'+_lat+'"><input type="hidden" id="place-lon" value="'+_lon+'">'+
-        '<div style="font-size:11px;color:var(--text3);margin-bottom:14px">'+svgIcon('📍',{size:11})+' Pinned at '+Number(_lat).toFixed(5)+', '+Number(_lon).toFixed(5)+'</div>'
-      : '<div style="font-size:11px;color:#A32D2D;margin-bottom:14px">No coordinates. Add this from a repeat stop, or log a receipt there.</div>')+
+      ? '<div id="place-pin-note" style="font-size:11px;color:var(--text3);margin-bottom:14px">'+svgIcon('📍',{size:11})+' Pinned at '+Number(_lat).toFixed(5)+', '+Number(_lon).toFixed(5)+'</div>'
+      // No pin yet: search the address instead of dead-ending. Promoted stops and
+      // receipt-born places arrive with coordinates; a hand-added supply house or
+      // home office arrives with nothing but a name, and the address is how the
+      // contractor says where it is.
+      : '<div class="f" style="margin-bottom:12px;position:relative"><label>Address</label>'+
+          '<input id="place-addr" placeholder="Search the address or business name" autocomplete="off" oninput="_placeAddrSearch(this.value)" style="font-size:15px;padding:11px;border-radius:9px;border:1.5px solid var(--border2);background:var(--bg2);color:var(--text);width:100%;box-sizing:border-box">'+
+          '<div id="place-addr-sugg" style="display:none;position:absolute;left:0;right:0;top:100%;z-index:30;background:var(--bg);border:1px solid var(--border2);border-radius:9px;margin-top:4px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.14)"></div>'+
+        '</div>'+
+        '<div id="place-pin-note" style="font-size:11px;color:var(--text3);margin-bottom:14px">Pick an address above to drop the pin.</div>')+
     '<button onclick="_savePlaceFromModal('+(pl?"'"+pl.id+"'":'null')+')" style="width:100%;padding:14px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;font-size:15px;font-weight:700;cursor:pointer;font-family:inherit;margin-bottom:8px">Save</button>'+
     (pl?'<button onclick="_deletePlaceFromModal(\''+pl.id+'\')" style="width:100%;padding:11px;border-radius:var(--r);border:none;background:none;color:#A32D2D;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit">Delete</button>':'')+
   '</div>';
@@ -564,14 +576,62 @@ function openPlaceModal(id,lat,lon){
     }).catch(()=>{});
   }
 }
+// The address search behind a pinless Add. Debounced like every other address
+// field in the app, with a generation counter so a slow geocode can never paint
+// its answers over a newer keystroke's. Results are stashed by index because the
+// labels carry apostrophes and quotes (O'Reilly's) that must never be rebuilt
+// from an onclick attribute string.
+let _placeAddrTimer=null,_placeAddrGen=0,_placeAddrResults=[];
+function _placeAddrSearch(val){
+  clearTimeout(_placeAddrTimer);
+  const box=document.getElementById('place-addr-sugg');if(!box)return;
+  val=String(val||'').trim();
+  if(val.length<3){box.style.display='none';box.innerHTML='';return;}
+  _placeAddrTimer=setTimeout(async()=>{
+    const gen=++_placeAddrGen;
+    let results=[];
+    try{if(typeof _geocodeAddress==='function')results=await _geocodeAddress(val,5);}catch(_e){results=[];}
+    if(gen!==_placeAddrGen)return;                       // a newer keystroke owns the box
+    const b=document.getElementById('place-addr-sugg');
+    if(!b)return;                                        // modal closed mid-flight
+    _placeAddrResults=results.filter(r=>r&&isFinite(r.lat)&&isFinite(r.lon));
+    if(!_placeAddrResults.length){b.style.display='none';b.innerHTML='';return;}
+    b.innerHTML=_placeAddrResults.map((r,i)=>{
+      const main=escHtml(r.name||r.line1||'');
+      const sub=escHtml([r.name?r.line1:'',r.line2].filter(Boolean).join(', '));
+      return '<button type="button" onclick="_placePickAddr('+i+')" style="display:block;width:100%;text-align:left;padding:10px 12px;border:none;border-bottom:1px solid var(--border);background:none;cursor:pointer;font-family:inherit">'+
+        '<div style="font-size:13px;font-weight:700;color:var(--text)">'+main+'</div>'+
+        (sub?'<div style="font-size:11px;color:var(--text3);margin-top:1px">'+sub+'</div>':'')+
+      '</button>';
+    }).join('');
+    b.style.display='block';
+  },280);
+}
+function _placePickAddr(i){
+  const r=(_placeAddrResults||[])[i];
+  if(!r||!isFinite(r.lat)||!isFinite(r.lon))return;
+  const latEl=document.getElementById('place-lat'),lonEl=document.getElementById('place-lon');
+  if(latEl)latEl.value=r.lat;if(lonEl)lonEl.value=r.lon;
+  const addrEl=document.getElementById('place-addr');
+  if(addrEl)addrEl.value=[r.line1,r.line2].filter(Boolean).join(', ')||r.name||addrEl.value;
+  // The picked business name fills an empty Name field, and only an empty one:
+  // the contractor's own word for their supplier always wins.
+  const n=document.getElementById('place-name');
+  if(n&&!n.value.trim()&&r.name)n.value=r.name;
+  const note=document.getElementById('place-pin-note');
+  if(note)note.innerHTML=svgIcon('📍',{size:11})+' Pinned at '+Number(r.lat).toFixed(5)+', '+Number(r.lon).toFixed(5);
+  const box=document.getElementById('place-addr-sugg');
+  if(box){box.style.display='none';box.innerHTML='';}
+}
 function _savePlaceFromModal(id){
   const name=(document.getElementById('place-name')?.value||'').trim();
   const kind=document.getElementById('place-kind')?.value||'supply';
   const lat=parseFloat(document.getElementById('place-lat')?.value);
   const lon=parseFloat(document.getElementById('place-lon')?.value);
+  const addr=(document.getElementById('place-addr')?.value||'').trim();
   if(!name){showToast('Give it a name','⚠️');return;}
-  if(!isFinite(lat)||!isFinite(lon)){showToast('No coordinates for this location','⚠️');return;}
-  savePlace({id:id||undefined,name,kind,lat,lon,confirmedBy:id?undefined:'manual'});
+  if(!isFinite(lat)||!isFinite(lon)){showToast('Search the address to drop the pin first','⚠️');return;}
+  savePlace({id:id||undefined,name,kind,lat,lon,addr:addr||undefined,confirmedBy:id?undefined:'manual'});
   if(typeof dismissPlaceSuggestion==='function')dismissPlaceSuggestion(lat,lon);
   document.getElementById('place-modal')?.remove();
   showToast(name+' saved','📍');

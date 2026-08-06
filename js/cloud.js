@@ -7414,6 +7414,22 @@ function _renderAllPages(){
 // ── Inbound leads (onboarding form + QR intake) ───────────────────────────
 let _pendingInbound=[];
 const _processedInboundIds=new Set();
+// "Clear all data" companion for the lead inflow. inbound_leads is not in the
+// sync fabric (no soft-delete sweep reaches it), so without a hard delete here
+// the wiped account's QR/intake leads sat in the cloud and repopulated the
+// review queue on the next poll. Local queue and badge clear FIRST so the UI is
+// honest even if the network call fails; rows are deleted under BOTH ids the
+// loader queries by (auth uid legacy convention + accounts.id, see
+// _loadPendingInbound) and in every status, this is a purge, not a triage.
+async function _clearInboundLeadsCloud(){
+  _pendingInbound=[];_processedInboundIds.clear();
+  if(typeof _updateInboundBadge==='function')_updateInboundBadge();
+  if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  const ids=[_supaUser.id];
+  const _acctId=(typeof _account!=='undefined'&&_account&&_account.id)||null;
+  if(_acctId&&_acctId!==_supaUser.id)ids.push(_acctId);
+  try{await _supa.from('inbound_leads').delete().in('account_id',ids);}catch(_e){}
+}
 async function _loadPendingInbound(){
   if(!_supa||!_supaUser)return;
   // Snapshot which account this call belongs to, if a sign-out/sign-in happens

@@ -723,6 +723,122 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.afterName).toBe(1);
   });
 
+  test('Add-a-location with no pin offers an address search, not a dead end', async () => {
+    const out = await page.evaluate(() => {
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal();   // the real "+ Add" button path: no coordinates at all
+      return {
+        hasAddrField: !!document.getElementById('place-addr'),
+        hasSuggBox: !!document.getElementById('place-addr-sugg'),
+        hasHiddenLat: !!document.getElementById('place-lat'),
+        noteAsksForAddress: /Pick an address/.test(document.getElementById('place-pin-note')?.innerHTML || ''),
+        deadEndGone: !/No coordinates\. Add this from a repeat stop/.test(document.getElementById('place-modal').innerHTML),
+      };
+    });
+    expect(out.hasAddrField).toBe(true);
+    expect(out.hasSuggBox).toBe(true);
+    expect(out.hasHiddenLat).toBe(true);
+    expect(out.noteAsksForAddress).toBe(true);
+    expect(out.deadEndGone).toBe(true);
+  });
+
+  test('searching an address stamps the pin, autofills the name, and the place saves', async () => {
+    const out = await page.evaluate(async () => {
+      places.length = 0;
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal();
+      // Stub the geocoder: this spec is offline and the search pipeline
+      // (debounce → results → pick → hidden inputs) is what is under test,
+      // not Apple's database.
+      const orig = window._geocodeAddress;
+      window._geocodeAddress = async () => [
+        { name: "Ferguson Plumbing", line1: '2121 E Douglas Ave', line2: 'Wichita, KS, 67214', lat: 37.6851, lon: -97.3092 },
+        { name: '', line1: '500 S Broadway St', line2: 'Wichita, KS, 67202', lat: 37.68, lon: -97.336 },
+      ];
+      const addrEl = document.getElementById('place-addr');
+      addrEl.value = 'ferguson';
+      _placeAddrSearch(addrEl.value);
+      await new Promise(r => setTimeout(r, 400));   // past the 280ms debounce
+      const box = document.getElementById('place-addr-sugg');
+      const shown = box.style.display === 'block';
+      const nBtns = box.querySelectorAll('button').length;
+      // Pick the first suggestion through the REAL rendered button.
+      box.querySelector('button').click();
+      const lat = document.getElementById('place-lat').value;
+      const lon = document.getElementById('place-lon').value;
+      const name = document.getElementById('place-name').value;
+      const pinned = /Pinned at 37\.68510/.test(document.getElementById('place-pin-note').innerHTML);
+      const boxHidden = box.style.display === 'none';
+      _savePlaceFromModal(null);
+      window._geocodeAddress = orig;
+      return { shown, nBtns, lat, lon, name, pinned, boxHidden,
+               saved: places.length, savedAddr: places[0] && places[0].addr, savedLat: places[0] && places[0].lat };
+    });
+    expect(out.shown).toBe(true);
+    expect(out.nBtns).toBe(2);
+    expect(out.lat).toBe('37.6851');
+    expect(out.lon).toBe('-97.3092');
+    // The picked business name fills the empty Name field.
+    expect(out.name).toBe("Ferguson Plumbing");
+    expect(out.pinned).toBe(true);
+    expect(out.boxHidden).toBe(true);
+    expect(out.saved).toBe(1);
+    expect(out.savedAddr).toBe('2121 E Douglas Ave, Wichita, KS, 67214');
+    expect(out.savedLat).toBe(37.6851);
+  });
+
+  test('saving without picking an address refuses, then succeeds once picked', async () => {
+    const out = await page.evaluate(async () => {
+      places.length = 0;
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal();
+      document.getElementById('place-name').value = 'No Pin Yet';
+      _savePlaceFromModal(null);                      // no coordinates picked
+      const refusedCount = places.length;
+      const orig = window._geocodeAddress;
+      window._geocodeAddress = async () => [{ name: 'Ace', line1: '1 Main St', line2: 'Wichita, KS', lat: 37.7, lon: -97.3 }];
+      _placeAddrSearch('1 main');
+      await new Promise(r => setTimeout(r, 400));
+      document.getElementById('place-addr-sugg').querySelector('button').click();
+      _savePlaceFromModal(null);
+      window._geocodeAddress = orig;
+      return { refusedCount, savedCount: places.length };
+    });
+    expect(out.refusedCount).toBe(0);
+    expect(out.savedCount).toBe(1);
+  });
+
+  test('a typed name is never overwritten by the picked suggestion', async () => {
+    const out = await page.evaluate(async () => {
+      places.length = 0;
+      document.getElementById('place-modal')?.remove();
+      openPlaceModal();
+      document.getElementById('place-name').value = 'My Supplier';
+      const orig = window._geocodeAddress;
+      window._geocodeAddress = async () => [{ name: 'Ferguson Plumbing', line1: '2121 E Douglas', line2: 'Wichita, KS', lat: 37.6, lon: -97.3 }];
+      _placeAddrSearch('ferguson');
+      await new Promise(r => setTimeout(r, 400));
+      document.getElementById('place-addr-sugg').querySelector('button').click();
+      const name = document.getElementById('place-name').value;
+      document.getElementById('place-modal')?.remove();
+      window._geocodeAddress = orig;
+      return { name };
+    });
+    expect(out.name).toBe('My Supplier');
+  });
+
+  test('editing a place does not erase its provenance (undefined never overwrites)', async () => {
+    const out = await page.evaluate(() => {
+      places.length = 0;
+      const pl = savePlace({ name: 'Ferguson', kind: 'supply', lat: 1, lon: 2, confirmedBy: 'expense' });
+      // The edit modal's save path passes confirmedBy:undefined for existing rows.
+      savePlace({ id: pl.id, name: 'Ferguson Plumbing', kind: 'supply', lat: 1, lon: 2, confirmedBy: undefined });
+      return { name: places[0].name, src: places[0].confirmedBy };
+    });
+    expect(out.name).toBe('Ferguson Plumbing');
+    expect(out.src).toBe('expense');   // was silently wiped to undefined before the fix
+  });
+
   test('the Places tab is wired into setFleetTab', async () => {
     const out = await page.evaluate(() => {
       setFleetTab('places');

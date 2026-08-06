@@ -61,6 +61,13 @@ test.describe('Clear all data, every store wiped', () => {
       checksState = { foo: 'bar' };
       S.employees = [{ id: 16, name: 'Crew A' }];
       _setVehicles([{ id: 17, name: 'Van' }]);
+      // Both wipe escapees this guard exists to catch: places is a synced array
+      // that was simply missing from the wipe list, and the inbound QR/intake
+      // lead queue lives OUTSIDE the sync fabric entirely (its own cloud table
+      // + in-memory queue), so no sweep ever reached it.
+      places = [{ id: 18, name: 'Ferguson', kind: 'supply', lat: 1, lon: 2 }];
+      _pendingInbound = [{ id: 'lead-1', status: 'pending', name: 'QR Lead' }];
+      _processedInboundIds.add('lead-0');
 
       clearAllData();
       // clearAllData's confirmed callback is async (awaits the cloud-tracking clear);
@@ -80,6 +87,9 @@ test.describe('Clear all data, every store wiped', () => {
         // empty: leaving the legacy copy behind would let the one-time migration
         // lift the "cleared" trucks straight back on the next boot.
         vehicles: getVehicles().length, legacyVehicleBlob: (S.vehicles || []).length,
+        places: places.length,
+        pendingInbound: _pendingInbound.length,
+        processedInboundIds: _processedInboundIds.size,
       };
     });
 

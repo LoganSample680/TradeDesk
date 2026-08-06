@@ -975,7 +975,9 @@ function clearAllData(){
       // out (maintenance/events/photos/licenses/contracts/agreements were all
       // missing) means those records survive a "Clear all data" and resurface.
       _userDelete(()=>{
-        clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
+        // places is a synced array (td_places) like the rest: leaving it out let
+        // every saved location survive a "Clear all data" and keep fencing drives.
+        clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];places=[];checksState={};
         S.employees=[];_setVehicles([]);
         // Retire the pre-td_vehicles blob too. _setVehicles no longer touches
         // S.vehicles (the fleet is its own table now), so without this a "Clear
@@ -994,6 +996,10 @@ function clearAllData(){
       try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}
       if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(false);
       await _clearCrewTrackingCloud();
+      // Inbound QR/intake leads live in their own cloud table (inbound_leads),
+      // outside the sync fabric, so the wipe above never touched them: they
+      // re-surfaced in the review queue on the next 30s poll.
+      if(typeof _clearInboundLeadsCloud==='function')await _clearInboundLeadsCloud();
       renderDash();
       zAlert('All data cleared. Starting fresh!',{title:'Done'});
       goPg('pg-dash');
