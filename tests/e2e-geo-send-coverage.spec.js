@@ -1032,7 +1032,7 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_open');
     localStorage.removeItem('zp3_geo_manual'); localStorage.removeItem('zp3_geo_prune_day');
     _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoLastPingTs = 0; _geoPingBusy = false;
+    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoGapExitPending = null; _geoLastPingTs = 0; _geoPingBusy = false;
     window._isEmployee = false;
     window._supaUser = { id: 'geo-hard-user-1', email: 'g@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [] };
