@@ -397,6 +397,51 @@ Before removing any UI that wrote to storage (`S.*`, localStorage, Supabase):
 
 ---
 
+### 7.3 Reuse the Existing Pattern, Never Hand-Roll a Parallel One
+
+**Before building any new UI surface, sync store, or piece of logic, find the
+closest thing already built and match it exactly, don't invent a new one that
+happens to do something similar.**
+
+This app already has proven, load-bearing conventions for the recurring
+problems: `.zmodal-overlay`/`.zmodal` for a centered prompt, `_TD_TABLES`
+(js/cloud.js) for anything that has to persist and sync like every other
+account record, the setup-checklist chooser pattern for "pick one of two
+paths, then go straight to the right form." A new feature almost never needs
+a new pattern, it needs the existing one pointed at new data.
+
+**Concrete incident this rule exists to prevent (2026-08-06):** a "what do
+you want to schedule" chooser was built as a hand-rolled bottom sheet
+(`position:fixed;align-items:flex-end`) instead of the app's actual centered-
+modal convention (`.zmodal-overlay`, `align-items:center`, the same pair
+`openPlaceModal` uses). It shipped, the owner asked for it centered, the
+first fix only centered the TEXT inside the hand-rolled box, because the box
+itself was never touched, so it still read as pinned to the bottom. The real
+fix was to delete the hand-rolled shell and rebuild on `.zmodal-overlay`. Two
+review passes to arrive at what copying the existing pattern would have given
+for free on the first try.
+
+**Before writing new modal/prompt/persistence code, answer:**
+
+1. What existing surface does the SAME job (a prompt, a fork-in-two-paths
+   chooser, a synced data store, a form)? Name it.
+2. Does this new thing genuinely differ from it, or is it the same shape with
+   different content? If the same shape, use the existing pattern's actual
+   markup/classes/table registration, don't approximate it by hand from
+   memory of what it roughly looks like.
+3. If it does genuinely differ, say why in a comment, so the NEXT change
+   knows the divergence was deliberate and not a shortcut.
+
+This applies as much to data persistence as to UI: a new record type that
+needs to survive sign-out/sign-in and sync across devices belongs in
+`_TD_TABLES` (js/cloud.js) exactly like `td_bids`, `td_vehicles`, and
+`td_places` already do, one array entry (`{t, get, set, tx}`), not a
+one-off save path that happens to work today and quietly misses the sweep,
+the cache-restore blocks, or the account-switch reset that the shared array
+gets for free.
+
+---
+
 ## 8. CSS Transitions Standard
 
 **Every page navigation and panel reveal must use a CSS transition.**
