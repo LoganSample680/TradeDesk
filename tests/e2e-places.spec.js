@@ -936,10 +936,14 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.noteAsksToSearch).toBe(true);
     expect(out.deadEndGone).toBe(true);
     // Focus lands on the search box, not a Name field the contractor has no
-    // reason to type into before they've searched anything.
-    await page.waitForTimeout(120);
-    const focused = await page.evaluate(() => document.activeElement?.id);
-    expect(focused).toBe('place-addr');
+    // reason to type into before they've searched anything. The app focuses on
+    // an 80ms setTimeout (places.js openPlaceModal), so a single fixed-delay
+    // read races that timer under CI load (WebKit flaked exactly this way);
+    // poll for the same outcome instead of betting on scheduler timing.
+    await expect.poll(
+      () => page.evaluate(() => document.activeElement?.id || ''),
+      { timeout: 3000, message: 'focus lands on the address search box' }
+    ).toBe('place-addr');
   });
 
   test('searching an address stamps the pin, autofills the name, and the place saves', async () => {
