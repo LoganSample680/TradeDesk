@@ -1594,6 +1594,104 @@ test.describe('finance.js: exhaustive coverage', () => {
       expect(r.ok).toBe(true);
     });
 
+    // Owner-reported: the dashboard Schedule tile only ever offered a JOB
+    // (pulled from a won proposal) and dead-ended into a gate message the
+    // moment there wasn't one, with no way to book an estimate visit at all.
+    test.describe('type="schedule" now offers a chooser (estimate visit vs job)', () => {
+      test.afterEach(async () => {
+        await page.evaluate(() => {
+          document.getElementById('sched-type-chooser')?.remove();
+          document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+        });
+      });
+
+      test('tapping the tile shows both options, not the job list directly', async () => {
+        const r = await page.evaluate(() => {
+          quickAction('schedule');
+          const ov = document.getElementById('sched-type-chooser');
+          const text = ov ? ov.textContent : '';
+          return {
+            chooserShown: !!ov,
+            hasEstimateOption: /estimate visit/i.test(text),
+            hasJobOption: /pull from a won proposal/i.test(text),
+            // The old behavior (a job picker or a gate alert) must NOT appear
+            // before a choice is made.
+            noQuickPickerYet: !document.getElementById('qp-search'),
+          };
+        });
+        expect(r.chooserShown).toBe(true);
+        expect(r.hasEstimateOption).toBe(true);
+        expect(r.hasJobOption).toBe(true);
+        expect(r.noQuickPickerYet).toBe(true);
+      });
+
+      test('"Estimate visit" lands on pg-schedule with the Estimate tab active and Job tab still reachable', async () => {
+        const r = await page.evaluate(() => new Promise(resolve => {
+          goPg('pg-dash');
+          quickAction('schedule');
+          _scheduleEstimateQuick();
+          setTimeout(() => {
+            resolve({
+              onSchedulePage: document.getElementById('pg-schedule')?.classList.contains('active'),
+              estTabActive: document.getElementById('sched-tab-est')?.classList.contains('active'),
+              // schedFromDate (a different entry point) hides the Job tab
+              // entirely; this one must not, since there is no date in hand
+              // yet and the tap could have been a misfire.
+              jobTabStillVisible: document.getElementById('sched-tab-job')?.style.display !== 'none',
+            });
+          }, 250);
+        }));
+        expect(r.onSchedulePage).toBe(true);
+        expect(r.estTabActive).toBe(true);
+        expect(r.jobTabStillVisible).toBe(true);
+        await page.evaluate(() => goPg('pg-dash'));
+      });
+
+      test('"Job" runs the exact original picker, a won-unscheduled proposal is offered', async () => {
+        const r = await page.evaluate(() => {
+          // A bid of its own, deliberately with NO linked job: the shared
+          // fixture's Finance Test Alpha (67701) already has job 56601
+          // pointing at it via bid_id, which the SAME "already scheduled"
+          // check this function uses correctly treats as scheduled
+          // regardless of date, so it can't stand in for the won-and-
+          // untouched case this test needs.
+          const cid = Date.now() * 1000 + 881, bidId = Date.now() * 1000 + 882;
+          clients.push({ id: cid, name: 'Won No Job Yet', addr: '9 Untouched Ln' });
+          bids.push({ id: bidId, client_id: cid, amount: 4200, status: 'Closed Won', draft: false });
+          quickAction('schedule');
+          _scheduleJobQuick();
+          const picker = document.querySelector('.zmodal-overlay .zmodal');
+          const out = {
+            hasPicker: !!picker,
+            title: picker ? picker.textContent : '',
+            offersWonJob: picker ? /Won No Job Yet/.test(picker.innerHTML) : false,
+          };
+          clients = clients.filter(c => c.id !== cid);
+          bids = bids.filter(b => b.id !== bidId);
+          return out;
+        });
+        expect(r.hasPicker).toBe(true);
+        expect(r.title).toContain('Schedule Job');
+        expect(r.offersWonJob).toBe(true);
+      });
+
+      test('"Job" with nothing won and unscheduled still shows the original gate message, unchanged', async () => {
+        const r = await page.evaluate(() => {
+          const savedBids = bids.slice();
+          bids.length = 0;   // no won proposals at all
+          let gateMsg = null;
+          const origGate = window.showWorkflowGate;
+          window.showWorkflowGate = (msg) => { gateMsg = msg; };
+          quickAction('schedule');
+          _scheduleJobQuick();
+          window.showWorkflowGate = origGate;
+          bids.length = 0; savedBids.forEach(b => bids.push(b));
+          return { gateMsg };
+        });
+        expect(r.gateMsg).toBe('No signed jobs to schedule. Close a proposal first.');
+      });
+    });
+
     test('type="complete", does not throw', async () => {
       const r = await page.evaluate(() => {
         try { quickAction('complete'); return { ok: true }; }

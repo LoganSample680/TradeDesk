@@ -840,7 +840,6 @@ function quickAction(type){
   });
   const todayEstimates=jobs.filter(j=>j.eventType==='estimate'&&j.start===tk);
   const pendingBids=bids.filter(b=>b.status==='Pending');
-  const wonUnscheduled=bids.filter(b=>b.status==='Closed Won'&&!jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id&&j.eventType!=='estimate'&&j.start>=tk));
 
   if(type==='drive'){
     // Mileage requires a vehicle on record (IRS: every trip log names a vehicle).
@@ -875,21 +874,71 @@ function quickAction(type){
     });
     showQuickPicker('Start Proposal','Which client?',options,'estimate',true);
   } else if(type==='schedule'){
-    if(!wonUnscheduled.length){
-      if(!bids.some(b=>b.status==='Closed Won')){
-        showWorkflowGate('No signed jobs to schedule. Close a proposal first.','Start Proposal','function(){quickAction(\'estimate\');}');return;
-      }
-      showWorkflowGate('All signed jobs are already scheduled. Check your calendar.','View Calendar','function(){goPg(\'pg-cal\');}');return;
-    }
-    const options=[];
-    wonUnscheduled.slice(0,8).forEach(b=>{
-      const c=getClientById(b.client_id);
-      if(c)options.push({label:c.name,sub:fmt(b.amount)+', won proposal',clientId:b.client_id,bidId:b.id,icon:'✓'});
-    });
-    showQuickPicker('Schedule Job','Which job to schedule?',options,'schedule',false);
+    _scheduleTypeChooser();
   } else if(type==='complete'){
     openCompleteJobModal();
   }
+}
+
+// The dashboard's Schedule tile used to only ever offer a JOB, pulled from a
+// won proposal, and dead-ended into a gate message ("No signed jobs to
+// schedule" / "All signed jobs are already scheduled") the moment there
+// wasn't one, with no path at all to book an ESTIMATE VISIT, the thing a
+// contractor actually does most days. Owner-reported. A fork, same pattern as
+// the setup checklist's "Add your crew" chooser: ask once, then go straight
+// to the right form. Both land on the calendar either way, this only decides
+// which tab.
+function _scheduleTypeChooser(){
+  document.getElementById('sched-type-chooser')?.remove();
+  const ov=document.createElement('div');
+  ov.id='sched-type-chooser';
+  ov.style.cssText='position:fixed;inset:0;z-index:4000;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick=e=>{if(e.target===ov)ov.remove();};
+  const opt=(icon,title,sub,onclick)=>'<button onclick="'+onclick+'" style="display:flex;align-items:center;gap:12px;width:100%;text-align:left;padding:15px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:10px">'+
+    '<span style="width:36px;height:36px;flex-shrink:0;border-radius:9px;background:var(--bg);display:flex;align-items:center;justify-content:center;font-size:18px">'+svgIcon(icon,{size:18})+'</span>'+
+    '<span style="flex:1;min-width:0"><span style="display:block;font-size:14px;font-weight:700;color:var(--text)">'+title+'</span><span style="display:block;font-size:11px;color:var(--text3);margin-top:2px;line-height:1.4">'+sub+'</span></span>'+
+  '</button>';
+  ov.innerHTML='<div style="background:var(--bg);border-radius:var(--rl) var(--rl) 0 0;width:100%;max-width:520px;padding:18px 16px 24px;box-sizing:border-box">'+
+    '<div style="font-size:17px;font-weight:800;color:var(--text);margin-bottom:4px">What do you want to schedule?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px">Both land on your calendar.</div>'+
+    opt('📋','Estimate visit','Book a walkthrough with a client or lead.',"document.getElementById('sched-type-chooser').remove();_scheduleEstimateQuick()")+
+    opt('✓','Job','Pull from a won proposal and pick a start date.',"document.getElementById('sched-type-chooser').remove();_scheduleJobQuick()")+
+  '</div>';
+  document.body.appendChild(ov);
+}
+// General estimate-visit entry point, no client pre-picked: lands on the
+// Schedule page's Estimate tab (unlike schedFromDate, which is reached by
+// tapping an actual calendar date and hides the Job tab entirely, this comes
+// from the dashboard with no date in hand yet, so both tabs stay reachable in
+// case the tap was a misfire).
+function _scheduleEstimateQuick(){
+  schedType='estimate';
+  goPg('pg-schedule');
+  setTimeout(()=>{
+    const jobTab=document.getElementById('sched-tab-job');if(jobTab)jobTab.style.display='';
+    setSchedType('estimate',document.getElementById('sched-tab-est'));
+  },150);
+}
+// The original Schedule-tile behavior, unchanged, just reached one tap later
+// now that Estimate visit is offered alongside it. Recomputes wonUnscheduled
+// fresh here rather than reusing a value captured back when the tile was
+// tapped: the chooser sits in front of it now, and nothing should schedule
+// off a job list that is a user-decision-cycle stale.
+function _scheduleJobQuick(){
+  const tk=todayKey();
+  const wonUnscheduled=bids.filter(b=>b.status==='Closed Won'&&!jobs.find(j=>j.bid_id===b.id||j.client_id===b.client_id&&j.eventType!=='estimate'&&j.start>=tk));
+  if(!wonUnscheduled.length){
+    if(!bids.some(b=>b.status==='Closed Won')){
+      showWorkflowGate('No signed jobs to schedule. Close a proposal first.','Start Proposal','function(){quickAction(\'estimate\');}');return;
+    }
+    showWorkflowGate('All signed jobs are already scheduled. Check your calendar.','View Calendar','function(){goPg(\'pg-cal\');}');return;
+  }
+  const options=[];
+  wonUnscheduled.slice(0,8).forEach(b=>{
+    const c=getClientById(b.client_id);
+    if(c)options.push({label:c.name,sub:fmt(b.amount)+', won proposal',clientId:b.client_id,bidId:b.id,icon:'✓'});
+  });
+  showQuickPicker('Schedule Job','Which job to schedule?',options,'schedule',false);
 }
 
 function openCompleteJobModal(){
