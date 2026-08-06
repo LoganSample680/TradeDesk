@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.06.26.16';
+const APP_VERSION='08.06.26.17';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -6319,7 +6319,7 @@ async function _fetchProposalViews(){
         .limit(1500);
       if(_jte){
         const _byJob={};
-        _jte.forEach(r=>{if(!r.job_id)return;(_byJob[r.job_id]||(_byJob[r.job_id]=[])).push({arrivedAt:r.arrived_at,departedAt:r.departed_at||null,minutes:r.minutes||0,source:r.source||null,employeeName:_crewMemberName(r.employee_user_id)}));});
+        _jte.forEach(r=>{if(!r.job_id)return;(_byJob[r.job_id]||(_byJob[r.job_id]=[])).push({arrivedAt:r.arrived_at,departedAt:r.departed_at||null,minutes:r.minutes||0,source:r.source||null,employeeName:_crewMemberName(r.employee_user_id)});});
         _jobTimeEntriesByJob=_byJob;
       }
     }catch(_e){}
