@@ -2959,6 +2959,94 @@ test.describe('Employee dispatch and daily view', () => {
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+//  SIGN-IN PASSWORD VISIBILITY TOGGLE
+// ════════════════════════════════════════════════════════════════════════════
+// Owner report, live on the preview: "the eye is backwards." The icon and the
+// field's actual visibility disagreed at every step, because _eyeSvg's two
+// SVGs were swapped under the covers. The one control a person checks before
+// trusting the rest of the sign-in form was lying to them: masked-with-an-
+// open-eye reads as "already showing," which is the opposite of true.
+//
+// This has zero coverage before this test, and the earlier fix in this same
+// PR for the dispatch gap-card select was ALSO invisible to its own tests
+// because they called the handler function directly instead of clicking the
+// rendered element. Same shape of bug, so this drives the real DOM: renders
+// the actual sign-in overlay via supaShowLogin, clicks the actual button, and
+// reads the actual input.type and rendered SVG back off the page.
+test.describe('Sign-in password eye: icon matches what is actually on screen', () => {
+  let page;
+
+  test.beforeAll(async ({ browser }) => {
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, bypassCSP: true });
+    page = await ctx.newPage();
+    await mockAllExternal(page);
+    await page.goto('/');
+    await waitForAppBoot(page);
+  });
+  test.afterAll(async () => { await page.context().close(); });
+
+  // Reads state the same way a person would: what type is the field really,
+  // and does the visible glyph have the pupil (open eye) or the diagonal
+  // slash (eye-off). Not a string compare against SVG source, the actual
+  // rendered markup in the actual button.
+  const readState = () => page.evaluate(() => {
+    const inp = document.getElementById('supa-pass');
+    const btn = document.getElementById('supa-pass-eye');
+    return {
+      masked: inp ? inp.type === 'password' : null,
+      openEye: btn ? btn.innerHTML.includes('circle') : null,      // pupil = open eye
+      slashed: btn ? btn.innerHTML.includes('line') : null,        // diagonal = eye-off
+      ariaLabel: btn ? btn.getAttribute('aria-label') : null,
+    };
+  });
+
+  test('at rest: password masked, icon is the SLASHED eye (eye is OFF, matches reality)', async () => {
+    const rendered = await page.evaluate(() => {
+      if (typeof supaShowLogin !== 'function') return false;
+      supaShowLogin({ force: true });
+      return !!document.getElementById('supa-pass-eye');
+    });
+    expect(rendered, 'the sign-in overlay must actually render the toggle').toBe(true);
+    const s = await readState();
+    expect(s.masked).toBe(true);
+    expect(s.slashed, 'masked password must show the eye-OFF icon').toBe(true);
+    expect(s.openEye).toBe(false);
+    expect(s.ariaLabel).toBe('Show password');
+  });
+
+  test('clicking it: password becomes readable text, icon becomes the OPEN eye', async () => {
+    await page.click('#supa-pass-eye');
+    const s = await readState();
+    expect(s.masked, 'the field must actually switch to type=text').toBe(false);
+    expect(s.openEye, 'visible password must show the open eye').toBe(true);
+    expect(s.slashed).toBe(false);
+    expect(s.ariaLabel).toBe('Hide password');
+  });
+
+  test('clicking it again: masks the password and reverts to the slashed eye', async () => {
+    await page.click('#supa-pass-eye');
+    const s = await readState();
+    expect(s.masked).toBe(true);
+    expect(s.slashed).toBe(true);
+    expect(s.openEye).toBe(false);
+    expect(s.ariaLabel).toBe('Show password');
+  });
+
+  test('three clicks: state and icon never drift apart from each other', async () => {
+    // Guards the class of bug directly: the icon is a FUNCTION of the field's
+    // real type at every step, not a flag that can fall out of sync with it.
+    for (let i = 0; i < 3; i++) {
+      await page.click('#supa-pass-eye');
+      const s = await readState();
+      expect(s.openEye).toBe(!s.masked);
+      expect(s.slashed).toBe(s.masked);
+    }
+    await page.evaluate(() => { document.getElementById('supa-login-overlay')?.remove(); });
+    assertNoErrors(page, 'password eye toggle');
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 //  EMPLOYEE TASKS & VEHICLE PRE-FILL
 // ════════════════════════════════════════════════════════════════════════════
 

@@ -4758,18 +4758,30 @@ function _enterOfflineMode(){
   // Immediately probe for connection so re-auth fires without waiting for the 5s tick
   setTimeout(()=>_probeAndSync(),500);
 }
-function _eyeSvg(off){
-  return off
-    ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0112 19c-7 0-11-7-11-7a20.4 20.4 0 015.06-5.94M9.9 4.24A10.6 10.6 0 0112 4c7 0 11 7 11 7a20.5 20.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
-    : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>';
+// visible=true -> password IS currently shown as plain text -> draw the OPEN
+// eye (you can see it). visible=false -> password is masked -> draw the
+// SLASHED eye (you can't). This was previously named `off` and the two SVGs
+// were swapped, so the icon at rest (password masked, the state every visitor
+// sees first) was the OPEN eye and the icon after revealing was the SLASHED
+// one: backwards on the one control a person checks before trusting the rest
+// of the sign-in form. `visible` is deliberately unambiguous, since the
+// original name was exactly what made the inversion easy to write and hard
+// to spot on review.
+function _eyeSvg(visible){
+  return visible
+    ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>'
+    : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0112 19c-7 0-11-7-11-7a20.4 20.4 0 015.06-5.94M9.9 4.24A10.6 10.6 0 0112 4c7 0 11 7 11 7a20.5 20.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
 }
 function _pwToggle(inputId,btnId){
   const inp=document.getElementById(inputId),btn=document.getElementById(btnId);
   if(!inp||!btn)return;
-  const show=inp.type==='password';
-  inp.type=show?'text':'password';
-  btn.innerHTML=_eyeSvg(show);
-  btn.setAttribute('aria-label',show?'Hide password':'Show password');
+  // Toggle first, then derive everything from the NEW type. One source of
+  // truth: no separate "show" flag computed from the old state that then has
+  // to be remembered as pre- or post-flip.
+  inp.type=(inp.type==='password')?'text':'password';
+  const visible=inp.type!=='password';
+  btn.innerHTML=_eyeSvg(visible);
+  btn.setAttribute('aria-label',visible?'Hide password':'Show password');
 }
 function supaShowLogin(opts={}){
   if(!supaEnabled())return;
