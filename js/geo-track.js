@@ -99,6 +99,18 @@ let _geoPingBusy=false;    // re-entrancy guard: _geoOnPing awaits geocodes, ove
 let _geoGapHiddenAt=null;  // ISO of the last hidden/suspend moment with an entry open,
                            // the last VERIFIED on-site time if the next ping lands outside
 let _geoWakeLockObj=null;  // screen wake lock held while inside a job fence
+// A phone waking from sleep commonly returns ONE coarse fix (cell/wifi-based,
+// GPS not yet reacquired) before it settles, and that fix can easily read
+// outside a 300ft fence purely from error, not real movement (owner report,
+// 2026-08-06: "left job site" fired the moment the screen locked, not when
+// anyone actually drove off). A departure discovered while resolving a
+// background gap (_geoGapHiddenAt set) is never trusted off a single fix:
+// {jobId, at} of the first qualifying "looks gone" reading, waiting on a
+// second one to agree before the visit is actually treated as left.
+let _geoGapExitPending=null;
+// A fix worse than this can't be used to declare someone gone after a gap;
+// it's simply ignored and the entry stays open until a tighter fix arrives.
+const _GEO_GAP_EXIT_MAX_ACC_M=100;
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
@@ -191,10 +203,13 @@ function _geoWakeRelease(){try{if(_geoWakeLockObj)_geoWakeLockObj.release();}cat
 // ── Open-entry persistence, survive backgrounding AND app kills ──────────────
 // The open entry is snapshotted to the device whenever the app hides (and on every
 // arrival), so pocketing the phone or an app kill mid-shift never discards the
-// morning's arrival. The NEXT ping decides the hidden gap: still inside the same
+// morning's arrival. The NEXT pings decide the hidden gap: still inside the same
 // fence → one continuous visit (the hidden time counts, verified by both ends);
-// outside → the entry closes at the last VERIFIED on-site moment (hiddenAt) with
-// source 'geofence-gap', so unverified time is never claimed.
+// outside → a SECOND agreeing ping (see _geoGapExitPending) confirms it before
+// the entry closes, tagged source 'geofence-gap', stamped at that confirming
+// ping's own moment. A single fix, especially the first one back after sleep,
+// is never enough on its own (owner report 2026-08-06: one coarse wake-up fix
+// falsely closed real, still-on-site visits).
 const _GEO_OPEN_KEY='zp3_geo_open';
 function _geoPersistOpen(hiddenAt){
   try{
@@ -466,6 +481,10 @@ async function _geoOnPing(pos){
   const same=(!cur&&!prev)||!!(cur&&prev&&cur.k===prev.k&&cur.id===prev.id);
   const nowIso=new Date(nowMs).toISOString();
   if(same){
+    // Back to matching where we were: any unconfirmed "looks like they left"
+    // reading from a moment ago was wrong, drop it rather than let it confirm
+    // a later, unrelated exit against a stale timestamp.
+    _geoGapExitPending=null;
     if(cur&&cur.k==='job')_geoWakeAcquire();   // hidden-gap STAY: the unseen time counts
     if(!cur){
       // Still outside everything: accumulate the dwell that makes this a STOP.
@@ -476,12 +495,31 @@ async function _geoOnPing(pos){
       }
     }
   }else{
+    // A background-gap "departure" is never trusted off a single fix (see
+    // _geoGapExitPending above): the resolving reading must clear the accuracy
+    // floor AND be confirmed by a second qualifying ping before a job that was
+    // open when the phone went to sleep is treated as actually left. A shaky
+    // or lone reading just waits, entry stays open, nothing is written yet.
+    if(_geoGapHiddenAt&&prev&&prev.k==='job'&&(!cur||cur.k!=='job'||cur.id!==prev.id)){
+      const accOk=acc>0&&acc<=_GEO_GAP_EXIT_MAX_ACC_M;
+      const confirmed=accOk&&_geoGapExitPending&&_geoGapExitPending.jobId===prev.id;
+      if(!confirmed){
+        if(accOk)_geoGapExitPending={jobId:prev.id,at:nowIso};
+        return;
+      }
+      _geoGapExitPending=null;
+    }
     // ── 1. Close whatever contained us ──────────────────────────────────────
     if(prev){
-      // HIDDEN-GAP RESOLUTION (leave): backgrounded on site and this first ping
-      // back lands elsewhere, so they left at some unverified moment. Close at
-      // the last VERIFIED on-site time, tagged, never claiming unseen minutes.
-      if(prev.k==='job'&&_geoArrivedAt)await _geoCloseEntry(_geoCurrentJob,_geoGapHiddenAt||undefined,!!_geoGapHiddenAt);
+      // HIDDEN-GAP RESOLUTION (leave): backgrounded on site, and this now-
+      // CONFIRMED reading (gated above) is the first moment a departure was
+      // actually verified. That confirmation moment is the departure time,
+      // not the earlier hidden moment: a screen locking is not evidence
+      // anyone left, only a fix that clears the fence is (owner call,
+      // 2026-08-06, superseding the prior "close at the hidden moment"
+      // behavior). The 'geofence-gap' source tag still marks the row as
+      // gap-resolved rather than continuously observed.
+      if(prev.k==='job'&&_geoArrivedAt)await _geoCloseEntry(_geoCurrentJob,nowIso,!!_geoGapHiddenAt);
       else if(prev.k==='place'&&_geoPlaceArrivedAt)_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt);
       // prev.k==='shop' needs nothing here: the independent shop block above
       // owns that dwell, and only closes it when they actually leave the yard.
@@ -1045,7 +1083,7 @@ function stopGeoTracking(){
   if(_geoCurrentJob&&_geoArrivedAt)_geoCloseEntry(_geoCurrentJob);
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
-  _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;
+  _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;_geoGapExitPending=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoLastFenceLoc=null;_geoLegOrigin=null;
   // The job-coordinate cache goes too. It is the ONE piece of geofence state
@@ -1064,10 +1102,11 @@ function _geoTrackInit(){
   // Backgrounding mid-shift KEEPS the entry open (the old handler closed it, a
   // phone in a pocket all day logged only screen-on slivers, and any visit hidden
   // within 2 minutes of arrival was dropped entirely). Instead: snapshot the open
-  // state + the hidden moment; the first ping after return resolves the gap,
-  // still inside the fence ⇒ one continuous visit (hidden time counts, verified at
-  // both ends); outside ⇒ close at the hidden moment as 'geofence-gap' (unverified
-  // time is never claimed). stopGeoTracking / out-of-hours still close for real.
+  // state + the hidden moment; pings after return resolve the gap, still inside
+  // the fence ⇒ one continuous visit (hidden time counts, verified at both ends);
+  // outside needs a SECOND agreeing ping (never a lone fix, see
+  // _geoGapExitPending) before it closes as 'geofence-gap', stamped at that
+  // confirming ping's own moment. stopGeoTracking / out-of-hours still close for real.
   if(!window._geoVisBound){
     window._geoVisBound=true;
     document.addEventListener('visibilitychange',()=>{

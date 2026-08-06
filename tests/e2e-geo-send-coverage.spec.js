@@ -1101,7 +1101,14 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     await geoRestore();
   });
 
-  test('hidden gap, backgrounding persists the open entry; restore + outside ping closes AT the hidden moment as geofence-gap', async () => {
+  // Behavior intentionally changed (owner report, 2026-08-06): a phone waking from
+  // sleep commonly returns ONE coarse fix before GPS reacquires lock, and closing
+  // on that single fix falsely marked people as having left while they were still
+  // on site, backdated to the moment the screen locked. A gap-close now requires a
+  // SECOND good-accuracy ping to agree before it's treated as a real departure, and
+  // the timestamp written is the confirming ping's own time (the moment a departure
+  // was actually verified), never the earlier unverified hidden moment.
+  test('hidden gap, a single outside ping does NOT close (needs confirmation)', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       const jobId = 883001;
@@ -1112,26 +1119,81 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       const hidden = new Date(Date.now() - 10 * 60000).toISOString();
       _geoCurrentJob = jobId; _geoArrivedAt = arrived;
       _geoPersistOpen(hidden); // what the visibilitychange→hidden handler does
-      const persisted = JSON.parse(localStorage.getItem('zp3_geo_open') || 'null');
-      // Simulate an app kill: state wiped, then restored on next boot.
       _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
       _geoRestoreOpen();
-      const restored = { job: _geoCurrentJob, arrivedAt: _geoArrivedAt, gap: _geoGapHiddenAt };
-      // First post-gap ping lands far OUTSIDE the fence → gap-close.
+      // ONE post-gap ping lands far outside the fence: not enough to confirm.
       await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } });
       await new Promise(res => setTimeout(res, 50));
       const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
+      const out = { row, cur: _geoCurrentJob, gap: _geoGapHiddenAt, pending: _geoGapExitPending };
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
-      return { persisted: !!persisted, hiddenAt: persisted && persisted.hiddenAt, restored, row, cur: _geoCurrentJob };
+      return out;
     });
-    expect(r.persisted).toBe(true);
-    expect(String(r.restored.job)).toBe('883001');      // arrival survived the kill
-    expect(r.restored.gap).toBe(r.hiddenAt);            // gap marker restored
+    expect(r.row).toBeNull();                    // nothing written yet, unconfirmed
+    expect(String(r.cur)).toBe('883001');         // entry stays open
+    expect(r.gap).not.toBeNull();                 // still resolving the gap
+    expect(r.pending && String(r.pending.jobId)).toBe('883001'); // first candidate noted
+    await geoRestore();
+  });
+
+  test('hidden gap, a SECOND outside ping confirms it, closes at the confirming ping\'s own time, not the hidden moment', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883001;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      const arrived = new Date(Date.now() - 30 * 60000).toISOString();
+      const hidden = new Date(Date.now() - 10 * 60000).toISOString();
+      _geoCurrentJob = jobId; _geoArrivedAt = arrived;
+      _geoPersistOpen(hidden);
+      _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      _geoRestoreOpen();
+      await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } }); // 1st: pending
+      const beforeConfirm = new Date().toISOString();
+      await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } }); // 2nd: confirms
+      await new Promise(res => setTimeout(res, 50));
+      const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
+      const out = { row, cur: _geoCurrentJob, beforeConfirm, hiddenAt: hidden };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
     expect(r.row).not.toBeNull();
-    expect(r.row.source).toBe('geofence-gap');          // unverified time never claimed…
-    expect(r.row.departed_at).toBe(r.hiddenAt);         // …closed at the last VERIFIED moment
-    expect(r.row.minutes).toBe(20);                     // 30min open − 10min unverified gap
+    expect(r.row.source).toBe('geofence-gap');            // still tagged as gap-resolved
+    expect(r.row.departed_at).not.toBe(r.hiddenAt);        // …but NOT the unverified hidden moment
+    expect(r.row.departed_at >= r.beforeConfirm).toBe(true); // stamped at the confirming ping
+    expect(r.row.minutes).toBeGreaterThanOrEqual(29);      // ~30min open, confirmed almost immediately
+    expect(r.row.minutes).toBeLessThanOrEqual(31);
     expect(r.cur).toBeNull();
+    await geoRestore();
+  });
+
+  test('hidden gap, a low-accuracy ping never confirms a departure, however many arrive', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883001;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      const arrived = new Date(Date.now() - 30 * 60000).toISOString();
+      const hidden = new Date(Date.now() - 10 * 60000).toISOString();
+      _geoCurrentJob = jobId; _geoArrivedAt = arrived;
+      _geoPersistOpen(hidden);
+      _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      _geoRestoreOpen();
+      // Three low-accuracy fixes in a row, the classic "just woke up" cell/wifi fix.
+      for (let i = 0; i < 3; i++) {
+        await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 4000 } });
+      }
+      await new Promise(res => setTimeout(res, 50));
+      const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
+      const out = { row, cur: _geoCurrentJob, pending: _geoGapExitPending };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(r.row).toBeNull();
+    expect(String(r.cur)).toBe('883001');   // still open, no low-accuracy fix ever counted
+    expect(r.pending).toBeNull();           // never even set a candidate
     await geoRestore();
   });
 
