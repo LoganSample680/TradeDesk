@@ -780,11 +780,15 @@ test.describe('Places, drive attribution and the map', () => {
       const lat = document.getElementById('place-lat').value;
       const lon = document.getElementById('place-lon').value;
       const name = document.getElementById('place-name').value;
-      const pinned = /Pinned at 37\.68510/.test(document.getElementById('place-pin-note').innerHTML);
+      // The pin note shows the picked ADDRESS, never raw coordinates, a
+      // contractor recognises "2121 E Douglas Ave", not a lat/lon pair.
+      const pinNote = document.getElementById('place-pin-note').innerHTML;
+      const pinned = pinNote.includes('2121 E Douglas Ave');
+      const noRawCoords = !/\d{2}\.\d{4,}/.test(pinNote);
       const boxHidden = box.style.display === 'none';
       _savePlaceFromModal(null);
       window._geocodeAddress = orig;
-      return { shown, nBtns, lat, lon, name, pinned, boxHidden,
+      return { shown, nBtns, lat, lon, name, pinned, noRawCoords, boxHidden,
                saved: places.length, savedAddr: places[0] && places[0].addr, savedLat: places[0] && places[0].lat };
     });
     expect(out.shown).toBe(true);
@@ -794,6 +798,7 @@ test.describe('Places, drive attribution and the map', () => {
     // The picked business name fills the empty Name field.
     expect(out.name).toBe("Ferguson Plumbing");
     expect(out.pinned).toBe(true);
+    expect(out.noRawCoords, 'no raw lat/lon shown to the contractor').toBe(true);
     expect(out.boxHidden).toBe(true);
     expect(out.saved).toBe(1);
     expect(out.savedAddr).toBe('2121 E Douglas Ave, Wichita, KS, 67214');
@@ -850,6 +855,42 @@ test.describe('Places, drive attribution and the map', () => {
     });
     expect(out.name).toBe('Ferguson Plumbing');
     expect(out.src).toBe('expense');   // was silently wiped to undefined before the fix
+  });
+
+  test('opening a pinned place (edit, or a promoted stop) never shows raw coordinates', async () => {
+    const out = await page.evaluate(() => {
+      document.getElementById('place-modal')?.remove();
+      // A promoted repeat-stop: has a pin, has never had an address searched.
+      openPlaceModal(null, 37.81, -97.21);
+      const promotedNote = document.getElementById('place-pin-note').innerHTML;
+      document.getElementById('place-modal')?.remove();
+      // An existing place saved WITH an address (through the search flow).
+      places.length = 0;
+      const withAddr = savePlace({ name: 'Ferguson', kind: 'supply', lat: 1, lon: 2, addr: '2121 E Douglas Ave, Wichita, KS', confirmedBy: 'manual' });
+      openPlaceModal(withAddr.id);
+      const editNoteWithAddr = document.getElementById('place-pin-note').innerHTML;
+      document.getElementById('place-modal')?.remove();
+      // An older place saved with no address on record at all (pre-dates the
+      // search flow, e.g. lifted from an expense receipt's GPS stamp).
+      places.length = 0;
+      const noAddr = savePlace({ name: 'Old Supply Stop', kind: 'supply', lat: 3, lon: 4, confirmedBy: 'expense' });
+      openPlaceModal(noAddr.id);
+      const editNoteNoAddr = document.getElementById('place-pin-note').innerHTML;
+      document.getElementById('place-modal')?.remove();
+      const coordPattern = /\d{1,3}\.\d{3,}/;
+      return {
+        promotedHasCoords: coordPattern.test(promotedNote),
+        editWithAddrShowsAddr: editNoteWithAddr.includes('2121 E Douglas Ave'),
+        editWithAddrHasCoords: coordPattern.test(editNoteWithAddr),
+        editNoAddrHasCoords: coordPattern.test(editNoteNoAddr),
+        editNoAddrFallback: editNoteNoAddr.includes('Location pinned'),
+      };
+    });
+    expect(out.promotedHasCoords, 'a promoted stop with no address shows no raw lat/lon').toBe(false);
+    expect(out.editWithAddrShowsAddr, 'editing a place WITH a saved address shows that address').toBe(true);
+    expect(out.editWithAddrHasCoords).toBe(false);
+    expect(out.editNoAddrHasCoords, 'a place with no address on record still shows no raw lat/lon').toBe(false);
+    expect(out.editNoAddrFallback, 'falls back to a plain "Location pinned" confirmation').toBe(true);
   });
 
   test('the Places tab is wired into setFleetTab', async () => {

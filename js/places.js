@@ -559,7 +559,9 @@ function openPlaceModal(id,lat,lon){
     '<div style="font-size:10px;color:var(--text3);line-height:1.5;margin-bottom:14px">Mark somewhere as a Home office only if it qualifies as your principal place of business. It changes whether your first trip of the day is deductible, so check with your CPA.</div>'+
     '<input type="hidden" id="place-lat" value="'+(_lat!=null?_lat:'')+'"><input type="hidden" id="place-lon" value="'+(_lon!=null?_lon:'')+'">'+
     (_lat!=null
-      ? '<div id="place-pin-note" style="font-size:11px;color:var(--text3);margin-bottom:14px">'+svgIcon('📍',{size:11})+' Pinned at '+Number(_lat).toFixed(5)+', '+Number(_lon).toFixed(5)+'</div>'
+      // Raw lat/lon means nothing to a contractor, the address (when there is
+      // one) or a plain confirmation is what actually tells them where this is.
+      ? '<div id="place-pin-note" style="font-size:11px;color:var(--text3);margin-bottom:14px">'+svgIcon('📍',{size:11})+' '+escHtml((pl&&pl.addr)||'Location pinned')+'</div>'
       // No pin yet: the name field is BELOW the search on purpose, it fills in
       // once a result is picked and stays editable if the contractor wants
       // something other than the business's official name (e.g. "The Yard").
@@ -627,8 +629,10 @@ function _placePickAddr(i){
   // the contractor's own word for their supplier always wins.
   const n=document.getElementById('place-name');
   if(n&&!n.value.trim()&&r.name)n.value=r.name;
+  // The address just landed in place-addr above, reuse it: it's what the
+  // contractor searched for and recognises, raw lat/lon means nothing to them.
   const note=document.getElementById('place-pin-note');
-  if(note)note.innerHTML=svgIcon('📍',{size:11})+' Pinned at '+Number(r.lat).toFixed(5)+', '+Number(r.lon).toFixed(5);
+  if(note)note.innerHTML=svgIcon('📍',{size:11})+' '+escHtml((addrEl&&addrEl.value)||'Location pinned');
   const box=document.getElementById('place-addr-sugg');
   if(box){box.style.display='none';box.innerHTML='';}
 }
