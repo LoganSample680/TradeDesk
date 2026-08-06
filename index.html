@@ -2244,21 +2244,9 @@ body.dark .cal-cell.other{background:var(--cream)}
   <div class="fbar" style="margin-bottom:16px;padding-left:2px">
     <button type="button" class="fb active" id="ft-t-fleet" onclick="setFleetTab('fleet')"><span data-ico="🚗" data-ico-size="14"></span> Fleet</button>
     <button type="button" class="fb" id="ft-t-team" onclick="setFleetTab('team')"><span data-ico="👷" data-ico-size="14"></span> Team</button>
-    <button type="button" class="fb" id="ft-t-places" onclick="setFleetTab('places')"><span data-ico="📍" data-ico-size="14"></span> Places</button>
   </div>
   <div id="ft-fleet">
     <div id="fleet-vehicle-list"></div>
-  </div>
-  <div id="ft-places" style="display:none">
-    <div id="place-suggestions"></div>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Your locations</div>
-        <button class="btn btn-sm btn-p" onclick="openPlaceModal()">+ Add</button>
-      </div>
-      <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px">Your shop and the supply houses you use. Drive time between them logs itself, and time parked here stops counting as driving.</div>
-      <div id="place-list"></div>
-    </div>
   </div>
   <div id="ft-team" style="display:none">
     <div class="card">
@@ -2316,6 +2304,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     <button type="button" class="fb" id="tr-t-income" onclick="setTrTab('income',this)">Income</button>
     <button type="button" class="fb" id="tr-t-expenses" onclick="setTrTab('expenses',this)">Expenses</button>
     <button type="button" class="fb" id="tr-t-mileage" onclick="setTrTab('mileage',this)">Mileage</button>
+    <button type="button" class="fb" id="tr-t-places" onclick="setTrTab('places',this)"><span data-ico="📍" data-ico-size="14"></span> Places</button>
     <button type="button" class="fb" id="tr-t-jobs" onclick="setTrTab('jobs',this)">Jobs</button>
     <button type="button" class="fb" id="tr-t-map" onclick="setTrTab('map',this)">Map</button>
     <button type="button" class="fb" id="tr-t-hiring" onclick="setTrTab('hiring',this)"><span data-ico="👥" data-ico-size="14"></span> Hiring</button>
@@ -2356,6 +2345,17 @@ body.dark .cal-cell.other{background:var(--cream)}
     <div id="mil-table"></div>
     <div id="mil-summary-wrap"></div>
     <div id="tr-mile-mets"></div>
+  </div>
+  <div id="tr-places" style="display:none">
+    <div id="place-suggestions"></div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Your locations</div>
+        <button class="btn btn-sm btn-p" onclick="openPlaceModal()">+ Add</button>
+      </div>
+      <div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px">Your shop and the supply houses you use. Drive time between them logs itself, and time parked here stops counting as driving.</div>
+      <div id="place-list"></div>
+    </div>
   </div>
   <div id="tr-jobs" style="display:none">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">

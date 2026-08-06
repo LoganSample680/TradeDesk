@@ -1084,18 +1084,18 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.editNoAddrFallback, 'falls back to a plain "Location pinned" confirmation').toBe(true);
   });
 
-  test('the Places tab is wired into setFleetTab', async () => {
+  test('the Places tab is wired into setTrTab on Books', async () => {
     const out = await page.evaluate(() => {
-      setFleetTab('places');
+      setTrTab('places');
       return {
-        paneShown: document.getElementById('ft-places').style.display !== 'none',
-        tabActive: document.getElementById('ft-t-places').classList.contains('active'),
-        fleetHidden: document.getElementById('ft-fleet').style.display === 'none',
+        paneShown: document.getElementById('tr-places').style.display !== 'none',
+        tabActive: document.getElementById('tr-t-places').classList.contains('active'),
+        mileageHidden: document.getElementById('tr-mileage').style.display === 'none',
       };
     });
     expect(out.paneShown).toBe(true);
     expect(out.tabActive).toBe(true);
-    expect(out.fleetHidden).toBe(true);
+    expect(out.mileageHidden).toBe(true);
   });
 
   test('zero console errors across the places suite', async () => {

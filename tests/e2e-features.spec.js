@@ -1574,16 +1574,16 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
     expect(r.shownWithHomeOffice, 'a hand-added home office clears it').toBe(false);
   });
 
-  test('_setupTodoGo("places"): lands on Fleet & Team → Places with the Add modal open', async () => {
+  test('_setupTodoGo("places"): lands on Books → Places with the Add modal open', async () => {
     const r = await page.evaluate(() => new Promise((resolve) => {
       if (typeof _setupTodoGo !== 'function') return resolve({ skip: true });
       goPg('pg-dash');
       _setupTodoGo('places');
       setTimeout(() => {
         resolve({
-          onTeamPage: document.getElementById('pg-team')?.classList.contains('active'),
-          placesTabActive: document.getElementById('ft-t-places')?.classList.contains('active'),
-          placesPaneShown: document.getElementById('ft-places')?.style.display !== 'none',
+          onTrackerPage: document.getElementById('pg-tracker')?.classList.contains('active'),
+          placesTabActive: document.getElementById('tr-t-places')?.classList.contains('active'),
+          placesPaneShown: document.getElementById('tr-places')?.style.display !== 'none',
           modalOpen: !!document.getElementById('place-modal'),
           addrSearchReady: !!document.getElementById('place-addr'),
         });
@@ -1592,7 +1592,7 @@ test.describe('Dashboard collections, collect panel, followup, lien pipeline', (
       }, 300);
     }));
     if (r.skip) return;
-    expect(r.onTeamPage, 'lands on pg-team (Fleet & Team)').toBe(true);
+    expect(r.onTrackerPage, 'lands on pg-tracker (Books)').toBe(true);
     expect(r.placesTabActive, 'the Places tab is selected').toBe(true);
     expect(r.placesPaneShown, 'the Places pane is visible').toBe(true);
     expect(r.modalOpen, 'the Add-a-location modal is already open').toBe(true);

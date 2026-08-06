@@ -480,9 +480,9 @@ function _geoRenderFallback(body,pts){
     '</div>';
 }
 
-// ── The Places screen (Fleet & Team → Places) ────────────────────────────────
-// Owner-facing. Everything here is business configuration, so it lives beside
-// the fleet and the crew rather than in Books.
+// ── The Places screen (Books → Places) ────────────────────────────────────
+// Owner-facing. Lives beside Mileage since it exists to feed automatic drive
+// attribution and trip-purpose reporting, the same reason Mileage lives here.
 const _PLACE_KIND_ICON={shop:'🏠',supply:'🧰',home_office:'🏡',business_meeting:'🤝',other:'📍'};
 function _placeKindLabel(k){return PLACE_KINDS[k]||PLACE_KINDS.other;}
 

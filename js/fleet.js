@@ -31,7 +31,7 @@ let _fleetTabActive = 'fleet';
 
 function setFleetTab(tab) {
   _fleetTabActive = tab;
-  ['fleet','team','places'].forEach(t => {
+  ['fleet','team'].forEach(t => {
     const el = document.getElementById('ft-'+t);
     const b = document.getElementById('ft-t-'+t);
     if(el) el.style.display = t===tab ? '' : 'none';
@@ -43,7 +43,6 @@ function setFleetTab(tab) {
   if(addTeam)  addTeam.style.display  = tab==='team' ?'':'none';
   if(tab==='fleet') renderFleetVehicles();
   if(tab==='team' && typeof renderTeam === 'function') renderTeam();
-  if(tab==='places' && typeof renderPlaces === 'function') renderPlaces();
 }
 
 /* ── Main render ─────────────────────────────────────────────────────────────── */

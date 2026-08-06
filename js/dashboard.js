@@ -269,11 +269,11 @@ function _setupTodoGo(id){
   }
   if(id==='vehicle'){if(typeof openAddVehicleModal==='function')openAddVehicleModal();return;}
   if(id==='places'){
-    // Land on Fleet & Team → Places with the Add modal already open (address
+    // Land on Books → Places with the Add modal already open (address
     // search ready), the list and any repeat-stop suggestions sit behind it.
-    if(typeof goPg==='function')goPg('pg-team');
+    if(typeof goPg==='function')goPg('pg-tracker');
     setTimeout(()=>{
-      if(typeof setFleetTab==='function')setFleetTab('places');
+      if(typeof setTrTab==='function')setTrTab('places');
       if(typeof openPlaceModal==='function')openPlaceModal();
     },160);
     return;

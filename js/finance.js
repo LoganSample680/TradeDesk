@@ -1574,13 +1574,14 @@ function resetSched(){
 
 function setTrTab(tab,btn){
   trackerTab=tab;
-  ['income','expenses','mileage','jobs','summary','hiring','map'].forEach(t=>{
+  ['income','expenses','mileage','places','jobs','summary','hiring','map'].forEach(t=>{
     const el=document.getElementById('tr-'+t);if(el)el.style.display=t===tab?'block':'none';
     const tb=document.getElementById('tr-t-'+t);if(tb)tb.classList.toggle('active',t===tab);
   });
   if(tab==='income')renderIncome();
   if(tab==='expenses')renderExpenses();
   if(tab==='mileage')renderAllMileage();
+  if(tab==='places'&&typeof renderPlaces==='function')renderPlaces();
   if(tab==='jobs')renderJobsHistory();
   if(tab==='summary'){renderSummary();renderJobSummary();renderMonthlyPL();}
   if(tab==='hiring')renderHiringCalc();
