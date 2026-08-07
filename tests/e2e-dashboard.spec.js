@@ -1510,6 +1510,172 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     });
   });
 
+  // ── Location prompt (owner 2026-08-01: shop/supply-house work is real job
+  // labor with nowhere to attach; titled by the geo tag itself) ───────────────
+  test.describe('renderDash: location prompt', () => {
+    test('at the shop past the dwell floor: titled "At the shop", rows are tappable clock-ins, no dismiss', async () => {
+      const r = await page.evaluate(() => {
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _nearbyJob = null; _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        jobs.length = 0;
+        jobs.push({ id: 556001, name: 'Panel Build', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, display: el ? el.style.display : '', html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.display).toBe('block');
+      expect(r.html).toContain('At the shop');
+      expect(r.html).toContain('_locPromptClockIn(556001)');
+      expect(r.html).toContain('Panel Build');
+      // Owner 2026-08-01: "don't think we need the not now". Ignoring the card
+      // already costs nothing and clocking in replaces it.
+      expect(r.html).not.toContain('Not now');
+      // Each row carries the same green play glyph the job-site card's primary
+      // Clock in uses, so a row reads as a button rather than a list item.
+      expect(r.html).toContain('M7 5v14l11-7z');
+    });
+
+    test('at a saved place: titled with that place\'s own NAME, not a generic label', async () => {
+      const r = await page.evaluate(() => {
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice(), places: (typeof places !== 'undefined' ? places.slice() : []) };
+        _nearbyJob = null; _activeTimer = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+        jobs.length = 0;
+        jobs.push({ id: 556020, name: 'Rough-in', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        const pl = savePlace({ name: 'Ferguson Supply', kind: 'supply', lat: 41.5, lon: -97.5, confirmedBy: 'manual' });
+        _geoCurrentPlace = String(pl.id);
+        _geoPlaceArrivedAt = new Date(Date.now() - 6 * 60000).toISOString();
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, display: el ? el.style.display : '', html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt;
+          jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+          if (typeof places !== 'undefined') { places.length = 0; orig.places.forEach(p => places.push(p)); }
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.display).toBe('block');
+      // The contractor named it; use their name. A saved place can be a supply
+      // house, a dump, a rental yard or a home office, so a hardcoded "At the
+      // supply house" would be wrong as often as right.
+      expect(r.html).toContain('At Ferguson Supply');
+      expect(r.html).toContain('_locPromptClockIn(556020)');
+    });
+
+    test('under the 2-minute dwell floor, stays hidden, a drive-through for a part must not nag', async () => {
+      const r = await page.evaluate(() => {
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _nearbyJob = null; _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        jobs.length = 0;
+        jobs.push({ id: 556002, name: 'Panel Build 2', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 30000).toISOString();
+        try {
+          // A prior test in this file may have left the card visible; hiding it
+          // now animates (CLAUDE.md §8, tdNearbyOut fade), it's no longer an
+          // instant display:none. Start from a known-hidden state so this test
+          // proves the RENDER decision (never shown), not a leftover fade timer.
+          const _el0 = document.getElementById('dash-nearby');
+          if (_el0) { _el0.style.display = 'none'; _el0.style.animation = ''; }
+          if (typeof _nearbyHideTimer !== 'undefined' && _nearbyHideTimer) { clearTimeout(_nearbyHideTimer); _nearbyHideTimer = null; }
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, display: el ? el.style.display : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.display).not.toBe('block');
+    });
+
+    test('a nearby job site outranks the location prompt when somehow both are true', async () => {
+      const r = await page.evaluate(() => {
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        jobs.length = 0;
+        jobs.push({ id: 556003, name: 'Panel Build 3', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        _nearbyJob = { clientId: 556004, jobId: 556005, fallbackJobId: null, bidId: null, balance: 0, clientName: 'Priority Client', addr: '9 Priority Ave' };
+        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.html).toContain('Priority Client');
+      expect(r.html).not.toContain('At the shop');
+    });
+
+    test('an active clock outranks the location prompt', async () => {
+      const r = await page.evaluate(() => {
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _nearbyJob = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        jobs.length = 0;
+        jobs.push({ id: 556006, name: 'Panel Build 4', client_id: null, eventType: 'job', status: 'upcoming', start: todayKey(), days: 1 });
+        _activeTimer = { jobId: 556006, jobName: 'Panel Build 4', clientName: 'On the clock', scopeId: null, scopeLabel: null, startTime: Date.now() - 60000, timerInterval: null, entryId: 999 };
+        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
+        try {
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, html: el ? el.innerHTML : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          clearInterval(_activeTimer && _activeTimer.timerInterval);
+          _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.html).toContain('clockOut()');
+      expect(r.html).not.toContain('At the shop');
+    });
+
+    test('no eligible jobs, the whole card stays hidden rather than an empty shell', async () => {
+      const r = await page.evaluate(() => {
+        const orig = { nb: _nearbyJob, timer: _activeTimer, wasInShop: _geoWasInShop, shopAt: _geoShopArrivedAt, place: _geoCurrentPlace, placeAt: _geoPlaceArrivedAt, jobs: jobs.slice() };
+        _nearbyJob = null; _activeTimer = null; _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+        jobs.length = 0;
+        jobs.push({ id: 556008, name: 'Done Job', client_id: null, eventType: 'job', status: 'done', completion_date: todayKey(), start: todayKey(), days: 1 });
+        _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
+        try {
+          // See the '2-minute dwell floor' test above: hiding now animates
+          // (CLAUDE.md §8), so start from a known-hidden state rather than
+          // whatever a prior test in the file left the card showing.
+          const _el0 = document.getElementById('dash-nearby');
+          if (_el0) { _el0.style.display = 'none'; _el0.style.animation = ''; }
+          if (typeof _nearbyHideTimer !== 'undefined' && _nearbyHideTimer) { clearTimeout(_nearbyHideTimer); _nearbyHideTimer = null; }
+          renderDash();
+          const el = document.getElementById('dash-nearby');
+          return { ok: true, display: el ? el.style.display : '' };
+        } catch (e) { return { ok: false, err: e.message }; }
+        finally {
+          _nearbyJob = orig.nb; _activeTimer = orig.timer; _geoWasInShop = orig.wasInShop; _geoShopArrivedAt = orig.shopAt;
+          _geoCurrentPlace = orig.place; _geoPlaceArrivedAt = orig.placeAt; jobs.length = 0; orig.jobs.forEach(j => jobs.push(j));
+        }
+      });
+      expect(r.ok, r.err).toBe(true);
+      expect(r.display).not.toBe('block');
+    });
+  });
+
   test('renderDashCollect: no DOM element, returns gracefully', async () => {
     const r = await page.evaluate(() => {
       const el = document.getElementById('dash-collect');
@@ -2043,14 +2209,14 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     expect(r.hasOldBtn).toBe(false);
   });
 
-  test('_mmtNewLeads returns only brand-new clients with no bid and no estimate job', async () => {
+  test('_mmtNewLeads returns only brand-new clients with no bid and no UPCOMING estimate job', async () => {
     const r = await page.evaluate(() => {
       const cA = 780101, cB = 780102, cC = 780103;
       clients.unshift({ id: cA, name: 'NewLead Bare', addr: '1 Bare St', created: todayKey() });
       clients.unshift({ id: cB, name: 'NewLead HasBid', addr: '2 Bid St', created: todayKey() });
       clients.unshift({ id: cC, name: 'NewLead HasEstJob', addr: '3 Est St', created: todayKey() });
       bids.unshift({ id: 780201, client_id: cB, status: 'Pending', amount: 100, bid_date: todayKey() });
-      jobs.unshift({ id: 780301, client_id: cC, eventType: 'estimate', date: todayKey() });
+      jobs.unshift({ id: 780301, client_id: cC, eventType: 'estimate', start: todayKey() });
       const ids = _mmtNewLeads().map(c => c.id);
       bids = bids.filter(b => b.id !== 780201);
       jobs = jobs.filter(j => j.id !== 780301);
@@ -2059,7 +2225,33 @@ test.describe('dashboard.js: exhaustive coverage', () => {
     });
     expect(r.hasBare).toBe(true);
     expect(r.hasBid).toBe(false);
-    expect(r.hasEstJob).toBe(false);
+    expect(r.hasEstJob).toBe(false);   // visit is today (upcoming): still its own next step
+  });
+
+  // Regression (owner report, 2026-08-06): a lead's estimate visit happening (or its
+  // date just passing) permanently removed the "build a bid" task from Make Money
+  // Today, even though no bid was ever written, no way back in. The visit itself is
+  // no longer the next step once its date has passed, the proposal is, so the lead
+  // must return to the "ready to build" list, not disappear for good.
+  test('_mmtNewLeads: a PAST estimate visit with still no bid returns to the list, a canceled one always does', async () => {
+    const r = await page.evaluate(() => {
+      const cPast = 780104, cCanceled = 780105, cFuture = 780106;
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+      clients.unshift({ id: cPast, name: 'NewLead PastVisit', addr: '4 Past St', created: yesterday });
+      clients.unshift({ id: cCanceled, name: 'NewLead CanceledVisit', addr: '5 Canceled St', created: todayKey() });
+      clients.unshift({ id: cFuture, name: 'NewLead FutureVisit', addr: '6 Future St', created: todayKey() });
+      jobs.unshift({ id: 780302, client_id: cPast, eventType: 'estimate', start: yesterday, status: 'upcoming' });
+      jobs.unshift({ id: 780303, client_id: cCanceled, eventType: 'estimate', start: nextWeek, status: 'canceled' });
+      jobs.unshift({ id: 780304, client_id: cFuture, eventType: 'estimate', start: nextWeek, status: 'upcoming' });
+      const ids = _mmtNewLeads().map(c => c.id);
+      jobs = jobs.filter(j => ![780302, 780303, 780304].includes(j.id));
+      clients = clients.filter(c => ![cPast, cCanceled, cFuture].includes(c.id));
+      return { hasPast: ids.includes(cPast), hasCanceled: ids.includes(cCanceled), hasFuture: ids.includes(cFuture) };
+    });
+    expect(r.hasPast).toBe(true);       // visit happened, no bid written: build it now
+    expect(r.hasCanceled).toBe(true);   // canceled visit is no longer anyone's next step
+    expect(r.hasFuture).toBe(false);    // still upcoming: go to the visit first
   });
 
   test('_showNewLeadsPicker lists leads oldest-first (top) to newest (bottom)', async () => {

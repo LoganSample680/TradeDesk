@@ -116,10 +116,30 @@ function setTaxYear(yr){_taxPageYear=yr;const hd=document.getElementById('tx-dat
 // is capped at this amount, Medicare (2.9% SE / 1.45%+1.45% payroll) is not.
 // 2026 confirmed via SSA's official Oct 2025 COLA announcement (ssa.gov/news/en/cola/factsheets/2026.html):
 // was previously a stale copy of the 2025 figure. Unlike the income-tax brackets below,
-// this table is NOT yet wired into autoRefreshTaxBrackets()'s yearly auto-update, it's a
-// static table a developer edits each year until that's added.
+// this table is NOT wired into autoRefreshTaxBrackets()'s yearly auto-update, it's a
+// static table a developer edits each year until that's added. The SSA announces the
+// new base with the COLA each October, so it is knowable months before it applies, and
+// ssWageBaseIsCurrent() below fails the build once the table stops covering the year
+// the app is running in.
 const _SS_WAGE_BASE={2019:132900,2020:137700,2021:142800,2022:147000,2023:160200,2024:168600,2025:176100,2026:184500};
-function _getSsWageBase(yr){return _SS_WAGE_BASE[parseInt(yr)]||184500;}
+function _ssWageBaseLastYear(){return Math.max.apply(null,Object.keys(_SS_WAGE_BASE).map(Number));}
+// Does the table cover this year, or is it about to cap Social Security at last
+// year's figure? Asserted by the suite so a year the table has not reached is a
+// red build rather than a quiet under-estimate (owner, 2026-08-02).
+function ssWageBaseIsCurrent(yr){return !!_SS_WAGE_BASE[parseInt(yr||new Date().getFullYear())];}
+// The fallback follows the NEWEST year on file rather than a literal copy of it.
+// It read `||184500`, the 2026 figure written out a second time, so on 1 January
+// 2027 the cap would silently stay at 2026's number.
+//
+// A stale base is always too LOW, because it has risen every year for decades,
+// and too low understates the 12.4% Social Security half for anyone earning
+// above the cap. Nobody below it is affected at all; it only bites the good
+// years, and it bites them as a short quarterly payment, which is how an
+// under-estimate turns into an underpayment penalty rather than a surprise.
+function _getSsWageBase(yr){
+  const n=parseInt(yr);
+  return _SS_WAGE_BASE[n]||_SS_WAGE_BASE[_ssWageBaseLastYear()];
+}
 function _calcSeTax(netSelf,yr){
   const seBase=netSelf*0.9235;
   const ssBase=Math.min(seBase,_getSsWageBase(yr));
@@ -218,7 +238,12 @@ function calcTax(){
   const tIn=income.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0)
            +payments.filter(p=>p.amount!==0&&p.date&&p.date.startsWith(_taxYr)).reduce((s,p)=>s+p.amount,0);
   const _tExRaw=expenses.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+r.amount,0);
-  const tMi=mileage.filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+(r.miles||0),0);
+  // deductibleTrips, not the raw array. A crew member's own-car miles are owed to
+  // THEM at the IRS rate; they are not the business's vehicle deduction, and
+  // counting them here would cut the owner's taxable income by money they still
+  // have to pay out. _vehSchedC already narrows the same way, so this fallback
+  // (used when the vehicle engine has nothing to say) has to agree with it.
+  const tMi=deductibleTrips(mileage).filter(r=>r.date&&r.date.startsWith(_taxYr)).reduce((s,r)=>s+(r.miles||0),0);
   const _yrIrsRate=_getIrsRateForYear(_taxYr);
   // Vehicle deduction engine, enforces the IRS one-method-per-vehicle rule.
   // Mileage-method vehicles: miles deduct, their vehicle expenses don't (expAdjust).

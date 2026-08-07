@@ -2961,8 +2961,16 @@ test.describe('clients.js: exhaustive coverage', () => {
   // ═══════════════════════════════════════════════════════════════════════════
   test.describe('client-record audit timeline', () => {
     const AB = 96019001;
-    test('timeline shows lead/sent/opened/signed events with time + captured IP', async () => {
-      const r = await page.evaluate((bidId) => {
+
+    // Every case seeds its own client and bid. They used to share the first
+    // test's leftovers: only the first one built the fixture and the three after
+    // it just re-rendered whatever was still lying around. That holds right up
+    // until something clears the arrays between tests, and then they fail as a
+    // group with empty timelines and a blank certificate, which reads as a
+    // rendering bug rather than as the missing setup it is. A test that cannot
+    // run on its own is not really asserting what it claims to.
+    test.beforeEach(async () => {
+      await page.evaluate((bidId) => {
         clients = clients.filter(c => c.id !== 96019).concat([{ id: 96019, name: 'Audit Client', source: 'Referral', created: '2026-07-08T09:12:00Z' }]);
         bids = bids.filter(b => b.client_id !== 96019).concat([{
           id: bidId, client_id: 96019, client_name: 'Audit Client', status: 'Closed Won', amount: 6400,
@@ -2970,8 +2978,21 @@ test.describe('clients.js: exhaustive coverage', () => {
           signedName: 'Audit Client', paymentMethod: 'card', signIp: '73.202.114.9', signUa: 'iPhone Safari' }]);
         window._proposalViewsByBidClient = { [bidId]: '2026-07-11T19:08:00Z' };
         window._proposalViewsByBidClientIp = { [bidId]: { ip: '73.202.114.9', ua: 'iPhone Safari' } };
+        window._proposalAuditEventsByBid = {};
         window.currentClientId = 96019;
         window._cdTimelineOpen = true;
+        // #cd-timeline-mount lives on pg-client-detail, and two cases below read
+        // the rendered rows with innerText, which is EMPTY for anything on a page
+        // that is not active. They passed only because an earlier test happened
+        // to leave that page open. Activating it here makes the whole block
+        // independent of what ran before it.
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-client-detail')?.classList.add('active');
+      }, AB);
+    });
+
+    test('timeline shows lead/sent/opened/signed events with time + captured IP', async () => {
+      const r = await page.evaluate((bidId) => {
         renderCDTimeline();
         return document.getElementById('cd-timeline-mount').innerHTML;
       }, AB);
@@ -3338,6 +3359,172 @@ test.describe('clients.js: exhaustive coverage', () => {
         try { exportAuditReport(99999999); return true; } catch (e) { return false; }
       });
       expect(ok).toBe(true);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Geofence arrival/departure: verified on-site presence surfaces on the client
+  // Activity timeline (owner-reported gap, 2026-08-06: leaving the geofence had
+  // no timestamp anywhere a real person could see it). Sourced from
+  // _jobTimeEntriesByJob (js/cloud.js), fed by job_time_entries.
+  // ═══════════════════════════════════════════════════════════════════════════
+  test.describe('geofence arrival/departure on the client timeline', () => {
+    test.beforeEach(async () => {
+      await page.evaluate(() => {
+        document.querySelectorAll('.pg').forEach(p => p.classList.remove('active'));
+        document.getElementById('pg-client-detail')?.classList.add('active');
+      });
+    });
+
+    test('a closed geofence entry shows Arrived on site + Left job site with duration', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970701, jobId = 970702;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Onsite Client', created: '2026-08-01' }]);
+        bids = bids.filter(b => b.client_id !== cid);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: jobId, client_id: cid, name: 'Repaint', start: '2026-08-03', days: 1, value: 3000 }]);
+        window._jobTimeEntriesByJob = { [jobId]: [
+          { arrivedAt: '2026-08-03T13:00:00Z', departedAt: '2026-08-03T16:30:00Z', minutes: 210, source: 'geofence' }] };
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return document.getElementById('cd-timeline-mount').innerHTML;
+      });
+      expect(r).toContain('Arrived on site');
+      expect(r).toContain('Left job site');
+      expect(r).toContain('GPS geofence');
+      expect(r).toContain('3h 30m on site');
+    });
+
+    test('a manual clock-in/out entry is labeled Clocked in / clocked out, not GPS', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970703, jobId = 970704;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Manual Client', created: '2026-08-01' }]);
+        bids = bids.filter(b => b.client_id !== cid);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: jobId, client_id: cid, name: 'Service call', start: '2026-08-04', days: 1, value: 500 }]);
+        window._jobTimeEntriesByJob = { [jobId]: [
+          { arrivedAt: '2026-08-04T09:00:00Z', departedAt: '2026-08-04T10:00:00Z', minutes: 60, source: 'manual' }] };
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return document.getElementById('cd-timeline-mount').innerHTML;
+      });
+      expect(r).toContain('Clocked in');
+      expect(r).toContain('clocked out');
+      expect(r).not.toContain('GPS geofence');
+    });
+
+    test('a named crew member on a multi-crew job shows their name on both the arrival and departure row', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970711, jobId = 970712;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Crew Job Client', created: '2026-08-01' }]);
+        bids = bids.filter(b => b.client_id !== cid);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: jobId, client_id: cid, name: 'Two-person crew', start: '2026-08-09', days: 1, value: 4000 }]);
+        window._jobTimeEntriesByJob = { [jobId]: [
+          { arrivedAt: '2026-08-09T08:00:00Z', departedAt: '2026-08-09T16:00:00Z', minutes: 480, source: 'geofence', employeeName: 'Mike Torres' },
+          { arrivedAt: '2026-08-09T08:15:00Z', departedAt: '2026-08-09T15:45:00Z', minutes: 450, source: 'geofence', employeeName: 'Dana Cole' }] };
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return document.getElementById('cd-timeline-mount').innerHTML;
+      });
+      expect(r).toContain('Mike Torres Arrived on site');
+      expect(r).toContain('Mike Torres Left job site');
+      expect(r).toContain('Dana Cole Arrived on site');
+      expect(r).toContain('Dana Cole Left job site');
+    });
+
+    test('_crewMemberName resolves the owner by id and an employee from S.employees, with no throw on an unknown id', async () => {
+      const r = await page.evaluate(() => {
+        if (typeof _crewMemberName !== 'function') return { skip: true };
+        const cid = (typeof _contractorUserId !== 'undefined' && _contractorUserId) || (_supaUser && _supaUser.id) || 'owner-test-uid';
+        const origContractorId = window._contractorUserId, origEmployees = S.employees, origOwnerName = S.ownerName;
+        window._contractorUserId = cid;
+        S.ownerName = 'Pat Owner';
+        S.employees = [{ employee_user_id: 'emp-uid-1', name: 'Sam Crew' }];
+        const owner = _crewMemberName(cid);
+        const emp = _crewMemberName('emp-uid-1');
+        const unknown = _crewMemberName('nobody-here');
+        const empty = _crewMemberName(null);
+        window._contractorUserId = origContractorId; S.employees = origEmployees; S.ownerName = origOwnerName;
+        return { skip: false, owner, emp, unknown, empty };
+      });
+      if (r.skip) return;
+      expect(r.owner).toBe('Pat Owner');
+      expect(r.emp).toBe('Sam Crew');
+      expect(r.unknown).toBe('');
+      expect(r.empty).toBe('');
+    });
+
+    test('a still-open entry (no departedAt) shows arrival only, never "Left job site"', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970705, jobId = 970706;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Still Onsite', created: '2026-08-01' }]);
+        bids = bids.filter(b => b.client_id !== cid);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: jobId, client_id: cid, name: 'In progress', start: '2026-08-05', days: 1, value: 800 }]);
+        window._jobTimeEntriesByJob = { [jobId]: [
+          { arrivedAt: '2026-08-05T09:00:00Z', departedAt: null, minutes: 0, source: 'geofence' }] };
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        return document.getElementById('cd-timeline-mount').innerHTML;
+      });
+      expect(r).toContain('Arrived on site');
+      expect(r).not.toContain('Left job site');
+    });
+
+    test('multiple visits to the same job render every arrival/departure pair', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970707, jobId = 970708;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'Two Visit', created: '2026-08-01' }]);
+        bids = bids.filter(b => b.client_id !== cid);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: jobId, client_id: cid, name: 'Multi-day', start: '2026-08-06', days: 2, value: 2000 }]);
+        window._jobTimeEntriesByJob = { [jobId]: [
+          { arrivedAt: '2026-08-06T09:00:00Z', departedAt: '2026-08-06T12:00:00Z', minutes: 180, source: 'geofence' },
+          { arrivedAt: '2026-08-07T09:00:00Z', departedAt: '2026-08-07T11:00:00Z', minutes: 120, source: 'geofence' }] };
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        renderCDTimeline();
+        const mount = document.getElementById('cd-timeline-mount');
+        return {
+          html: mount.innerHTML,
+          arrivedCount: (mount.innerText.match(/Arrived on site/g) || []).length,
+          leftCount: (mount.innerText.match(/Left job site/g) || []).length,
+        };
+      });
+      expect(r.arrivedCount).toBe(2);
+      expect(r.leftCount).toBe(2);
+      expect(r.html).toContain('3h on site');
+      expect(r.html).toContain('2h on site');
+    });
+
+    test('no _jobTimeEntriesByJob data at all does not throw and leaves the rest of the timeline intact', async () => {
+      const r = await page.evaluate(() => {
+        const cid = 970709, jobId = 970710;
+        clients = clients.filter(c => c.id !== cid).concat([{ id: cid, name: 'No Geo Data', created: '2026-08-01' }]);
+        bids = bids.filter(b => b.client_id !== cid);
+        jobs = jobs.filter(j => j.client_id !== cid).concat([
+          { id: jobId, client_id: cid, name: 'Plain job', start: '2026-08-08', days: 1, value: 1200 }]);
+        window._jobTimeEntriesByJob = {};
+        window._proposalAuditEventsByBid = {};
+        window.currentClientId = cid;
+        window._cdTimelineOpen = true;
+        let threw = false;
+        try { renderCDTimeline(); } catch (e) { threw = true; }
+        return { threw, html: document.getElementById('cd-timeline-mount').innerHTML };
+      });
+      expect(r.threw).toBe(false);
+      expect(r.html).toContain('Job scheduled');
+      expect(r.html).not.toContain('Arrived on site');
     });
   });
 

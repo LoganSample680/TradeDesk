@@ -161,12 +161,15 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
     const result = await page.evaluate(() => {
       if (typeof _geoSetConsent !== 'function') return { skip: true };
       localStorage.removeItem('geo_owner_consent');
-      const origStart = window.startGeoTracking;
-      let started = false;
-      window.startGeoTracking = () => { started = true; };
-      try { _geoSetConsent(true, true); } catch (e) { /* swallow */ }
-      window.startGeoTracking = origStart;
-      return { flag: localStorage.getItem('geo_owner_consent'), started };
+      // Owner allow now routes through _geoRequestPermission (which asks the OS
+      // and only then starts tracking) instead of calling startGeoTracking
+      // directly, so that "turn it on" works after hours too.
+      const origReq = window._geoRequestPermission;
+      let asked = false;
+      window._geoRequestPermission = () => { asked = true; };
+      try { _geoSetConsent(true); } catch (e) { /* swallow */ }
+      window._geoRequestPermission = origReq;
+      return { flag: localStorage.getItem('geo_owner_consent'), started: asked };
     });
     if (!result.skip) {
       expect(result.flag).toBe('1');
@@ -181,7 +184,7 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
       const origStart = window.startGeoTracking;
       let started = false;
       window.startGeoTracking = () => { started = true; };
-      try { _geoSetConsent(false, true); } catch (e) { /* swallow */ }
+      try { _geoSetConsent(false); } catch (e) { /* swallow */ }
       window.startGeoTracking = origStart;
       return { flag: localStorage.getItem('geo_owner_consent'), started };
     });
@@ -191,43 +194,33 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
     }
   });
 
-  test('_geoSetConsent: employee ALLOW clears decline flag + sets location_consent + starts tracking', async () => {
+  // Crew consent moved OUT of _geoSetConsent: the employee branch wrote
+  // location_consent=true, an agreement the person never made. Crew now go
+  // through _geoNoticeSheet, which records location_ack_at only on a real tap
+  // (covered in e2e-geo-permission.spec.js). These assert the DELETION.
+  test('_geoSetConsent no longer has an employee branch that fabricates consent', async () => {
     const result = await page.evaluate(() => {
-      if (typeof _geoSetConsent !== 'function') return { skip: true };
-      localStorage.setItem('geo_consent_declined', '1');
-      const origEmp = window._employeeRecord;
-      const origStart = window.startGeoTracking;
-      let started = false;
-      window.startGeoTracking = () => { started = true; };
-      window._employeeRecord = { id: 'emp-consent-1', location_consent: false };
-      try { _geoSetConsent(true, false); } catch (e) { /* swallow */ }
-      const consent = window._employeeRecord && window._employeeRecord.location_consent;
-      window._employeeRecord = origEmp;
-      window.startGeoTracking = origStart;
-      return { declined: localStorage.getItem('geo_consent_declined'), consent, started };
+      const src = String(_geoSetConsent);
+      return {
+        arity: _geoSetConsent.length,
+        mentionsConsentCol: /location_consent/.test(src),
+        mentionsDeclineFlag: /geo_consent_declined/.test(src),
+      };
     });
-    if (!result.skip) {
-      expect(result.declined).toBe(null);   // decline flag cleared on allow
-      expect(result.consent).toBe(true);    // team_members consent flag set
-      expect(result.started).toBe(true);
-    }
+    expect(result.arity).toBe(1);                 // (yes) only; the isOwner arg is gone
+    expect(result.mentionsConsentCol).toBe(false); // never writes the column again
+    expect(result.mentionsDeclineFlag).toBe(false);
   });
 
-  test('_geoSetConsent: employee DENY persists geo_consent_declined="1" and does NOT start tracking', async () => {
-    const result = await page.evaluate(() => {
-      if (typeof _geoSetConsent !== 'function') return { skip: true };
-      localStorage.removeItem('geo_consent_declined');
-      const origStart = window.startGeoTracking;
-      let started = false;
-      window.startGeoTracking = () => { started = true; };
-      try { _geoSetConsent(false, false); } catch (e) { /* swallow */ }
-      window.startGeoTracking = origStart;
-      return { declined: localStorage.getItem('geo_consent_declined'), started };
-    });
-    if (!result.skip) {
-      expect(result.declined).toBe('1');
-      expect(result.started).toBe(false);
-    }
+  test('the employee consent overlay is gone, crew get the notice sheet instead', async () => {
+    const result = await page.evaluate(() => ({
+      promptArity: _geoConsentPrompt.length,          // owner-only now, no isOwner arg
+      hasNoticeSheet: typeof _geoNoticeSheet === 'function',
+      hasAck: typeof _geoRecordAck === 'function',
+    }));
+    expect(result.promptArity).toBe(0);
+    expect(result.hasNoticeSheet).toBe(true);
+    expect(result.hasAck).toBe(true);
   });
 
   test('_geoConsentPrompt: owner variant creates the consent overlay (no throw)', async () => {
@@ -235,7 +228,7 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
       if (typeof _geoConsentPrompt !== 'function') return { skip: true };
       document.getElementById('_geo-consent-ov')?.remove();
       try {
-        _geoConsentPrompt(true);
+        _geoConsentPrompt();
         const ov = document.getElementById('_geo-consent-ov');
         const had = !!ov;
         const hasAllowBtn = ov ? /Allow during work hours/.test(ov.innerHTML) : false;
@@ -273,8 +266,8 @@ test.describe('Geo consent, _geoSetConsent / _geoConsentPrompt persistence', () 
       if (typeof _geoConsentPrompt !== 'function') return { skip: true };
       document.getElementById('_geo-consent-ov')?.remove();
       try {
-        _geoConsentPrompt(true);
-        _geoConsentPrompt(true); // guard: early-return if overlay already exists
+        _geoConsentPrompt();
+        _geoConsentPrompt(); // guard: early-return if overlay already exists
         const count = document.querySelectorAll('#_geo-consent-ov').length;
         document.getElementById('_geo-consent-ov')?.remove();
         return { ok: true, count };
@@ -341,11 +334,23 @@ test.describe('Geo banner + ping, _geoPermissionBanner / _geoRequestPermission /
   test('_geoRequestPermission, runs without throwing (calls startGeoTracking, schedules re-render)', async () => {
     const result = await page.evaluate(() => {
       if (typeof _geoRequestPermission !== 'function') return { skip: true };
-      const origStart = window.startGeoTracking;
-      let started = false;
-      window.startGeoTracking = () => { started = true; };
-      try { _geoRequestPermission(); window.startGeoTracking = origStart; return { ok: true, started }; }
-      catch (e) { window.startGeoTracking = origStart; return { ok: false, error: e.message }; }
+      // It no longer calls startGeoTracking directly (that bailed outside
+      // business hours, which is what made the button dead at 7pm). It asks the
+      // geolocation API first and starts tracking only once permission lands.
+      const realGeo = navigator.geolocation;
+      let asked = false;
+      Object.defineProperty(navigator, 'geolocation', {
+        configurable: true,
+        value: { getCurrentPosition: (ok) => { asked = true; ok({ coords: { latitude: 1, longitude: 1 } }); } },
+      });
+      try {
+        _geoRequestPermission();
+        Object.defineProperty(navigator, 'geolocation', { configurable: true, value: realGeo });
+        return { ok: true, started: asked };
+      } catch (e) {
+        Object.defineProperty(navigator, 'geolocation', { configurable: true, value: realGeo });
+        return { ok: false, error: e.message };
+      }
     });
     if (!result.skip) {
       expect(result.ok).toBe(true);
@@ -1027,7 +1032,8 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     localStorage.removeItem('zp3_geo_queue'); localStorage.removeItem('zp3_geo_open');
     localStorage.removeItem('zp3_geo_manual'); localStorage.removeItem('zp3_geo_prune_day');
     _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
-    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoLastPingTs = 0; _geoPingBusy = false;
+    _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoGapExitPending = null;
+    _geoLastPingTs = 0; _geoPingBusy = false;
     window._isEmployee = false;
     window._supaUser = { id: 'geo-hard-user-1', email: 'g@t.com' };
     window.__rec = { upserts: [], inserts: [], deletes: [] };
@@ -1096,7 +1102,14 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     await geoRestore();
   });
 
-  test('hidden gap, backgrounding persists the open entry; restore + outside ping closes AT the hidden moment as geofence-gap', async () => {
+  // Behavior intentionally changed (owner report, 2026-08-06): a phone waking from
+  // sleep commonly returns ONE coarse fix before GPS reacquires lock, and closing
+  // on that single fix falsely marked people as having left while they were still
+  // on site, backdated to the moment the screen locked. A gap-close now requires a
+  // SECOND good-accuracy ping to agree before it's treated as a real departure, and
+  // the timestamp written is the confirming ping's own time (the moment a departure
+  // was actually verified), never the earlier unverified hidden moment.
+  test('hidden gap, a single outside ping does NOT close (needs confirmation)', async () => {
     await geoReset();
     const r = await page.evaluate(async () => {
       const jobId = 883001;
@@ -1107,26 +1120,81 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
       const hidden = new Date(Date.now() - 10 * 60000).toISOString();
       _geoCurrentJob = jobId; _geoArrivedAt = arrived;
       _geoPersistOpen(hidden); // what the visibilitychange→hidden handler does
-      const persisted = JSON.parse(localStorage.getItem('zp3_geo_open') || 'null');
-      // Simulate an app kill: state wiped, then restored on next boot.
       _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
       _geoRestoreOpen();
-      const restored = { job: _geoCurrentJob, arrivedAt: _geoArrivedAt, gap: _geoGapHiddenAt };
-      // First post-gap ping lands far OUTSIDE the fence → gap-close.
+      // ONE post-gap ping lands far outside the fence: not enough to confirm.
       await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } });
       await new Promise(res => setTimeout(res, 50));
       const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
+      const out = { row, cur: _geoCurrentJob, gap: _geoGapHiddenAt, pending: _geoGapExitPending };
       jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
-      return { persisted: !!persisted, hiddenAt: persisted && persisted.hiddenAt, restored, row, cur: _geoCurrentJob };
+      return out;
     });
-    expect(r.persisted).toBe(true);
-    expect(String(r.restored.job)).toBe('883001');      // arrival survived the kill
-    expect(r.restored.gap).toBe(r.hiddenAt);            // gap marker restored
+    expect(r.row).toBeNull();                    // nothing written yet, unconfirmed
+    expect(String(r.cur)).toBe('883001');         // entry stays open
+    expect(r.gap).not.toBeNull();                 // still resolving the gap
+    expect(r.pending && String(r.pending.jobId)).toBe('883001'); // first candidate noted
+    await geoRestore();
+  });
+
+  test('hidden gap, a SECOND outside ping confirms it, closes at the confirming ping\'s own time, not the hidden moment', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883001;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      const arrived = new Date(Date.now() - 30 * 60000).toISOString();
+      const hidden = new Date(Date.now() - 10 * 60000).toISOString();
+      _geoCurrentJob = jobId; _geoArrivedAt = arrived;
+      _geoPersistOpen(hidden);
+      _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      _geoRestoreOpen();
+      await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } }); // 1st: pending
+      const beforeConfirm = new Date().toISOString();
+      await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 8 } }); // 2nd: confirms
+      await new Promise(res => setTimeout(res, 50));
+      const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
+      const out = { row, cur: _geoCurrentJob, beforeConfirm, hiddenAt: hidden };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
     expect(r.row).not.toBeNull();
-    expect(r.row.source).toBe('geofence-gap');          // unverified time never claimed…
-    expect(r.row.departed_at).toBe(r.hiddenAt);         // …closed at the last VERIFIED moment
-    expect(r.row.minutes).toBe(20);                     // 30min open − 10min unverified gap
+    expect(r.row.source).toBe('geofence-gap');            // still tagged as gap-resolved
+    expect(r.row.departed_at).not.toBe(r.hiddenAt);        // …but NOT the unverified hidden moment
+    expect(r.row.departed_at >= r.beforeConfirm).toBe(true); // stamped at the confirming ping
+    expect(r.row.minutes).toBeGreaterThanOrEqual(29);      // ~30min open, confirmed almost immediately
+    expect(r.row.minutes).toBeLessThanOrEqual(31);
     expect(r.cur).toBeNull();
+    await geoRestore();
+  });
+
+  test('hidden gap, a low-accuracy ping never confirms a departure, however many arrive', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883001;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      const arrived = new Date(Date.now() - 30 * 60000).toISOString();
+      const hidden = new Date(Date.now() - 10 * 60000).toISOString();
+      _geoCurrentJob = jobId; _geoArrivedAt = arrived;
+      _geoPersistOpen(hidden);
+      _geoCurrentJob = null; _geoArrivedAt = null; _geoGapHiddenAt = null;
+      _geoRestoreOpen();
+      // Three low-accuracy fixes in a row, the classic "just woke up" cell/wifi fix.
+      for (let i = 0; i < 3; i++) {
+        await _geoOnPing({ coords: { latitude: 38.2, longitude: -98.0, accuracy: 4000 } });
+      }
+      await new Promise(res => setTimeout(res, 50));
+      const row = (window.__rec.upserts.find(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)) || {}).row || null;
+      const out = { row, cur: _geoCurrentJob, pending: _geoGapExitPending };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(r.row).toBeNull();
+    expect(String(r.cur)).toBe('883001');   // still open, no low-accuracy fix ever counted
+    expect(r.pending).toBeNull();           // never even set a candidate
     await geoRestore();
   });
 
@@ -1256,6 +1324,153 @@ test.describe('Geo hardening, offline queue + gap survival + bookends', () => {
     expect(r.second).toBe(1);
     expect(r.tbl).toBe('location_pings');
     expect(r.about90d).toBe(true);
+    await geoRestore();
+  });
+
+  // Regression (owner report, 2026-08-06): reopening the app after a drive left the
+  // ON SITE banner stale for however long watchPosition took to deliver, and its
+  // maximumAge:30000 means the first delivery can legally be a CACHED pre-sleep fix
+  // that still reads "on site". The foreground-return handler must actively request
+  // a FRESH fix (maximumAge:0) now, plus a follow-up so the two-fix gap-exit
+  // confirmation can settle within seconds.
+  test('wake nudge: foreground return requests a fresh maximumAge:0 fix and arms a follow-up', async () => {
+    await geoReset();
+    const r = await page.evaluate(() => {
+      const calls = [];
+      const origGeo = navigator.geolocation.getCurrentPosition;
+      navigator.geolocation.getCurrentPosition = (cb, err, opts) => { calls.push(opts || {}); };
+      const origWatch = _geoWatchId;
+      try {
+        _geoWatchId = 12345;                    // tracking running
+        _geoWakeNudge();
+        const afterRun = { count: calls.length, maxAge: calls[0] && calls[0].maximumAge, timerArmed: _geoNudgeTimer != null };
+        _geoWatchId = null;                     // tracking stopped → nudge must no-op
+        _geoWakeNudge();
+        const afterStopped = { count: calls.length };
+        return { afterRun, afterStopped };
+      } finally {
+        navigator.geolocation.getCurrentPosition = origGeo;
+        _geoWatchId = origWatch;
+        if (_geoNudgeTimer) { clearTimeout(_geoNudgeTimer); _geoNudgeTimer = null; }
+      }
+    });
+    expect(r.afterRun.count).toBe(1);
+    expect(r.afterRun.maxAge, 'cached pre-sleep fixes are not acceptable on wake').toBe(0);
+    expect(r.afterRun.timerArmed, 'a follow-up fix is scheduled for the two-fix confirmation').toBe(true);
+    expect(r.afterStopped.count, 'no tracking → no fix request').toBe(1);
+    await geoRestore();
+  });
+
+  test('wake nudge: visibilitychange to visible fires it through the real handler', async () => {
+    await geoReset();
+    const r = await page.evaluate(() => {
+      const calls = [];
+      const origGeo = navigator.geolocation.getCurrentPosition;
+      navigator.geolocation.getCurrentPosition = (cb, err, opts) => { calls.push(opts || {}); };
+      const origWatch = _geoWatchId;
+      try {
+        S.teamTracking = true;
+        if (typeof _geoTrackInit === 'function') _geoTrackInit();   // binds the handler (idempotent)
+        _geoWatchId = 12345;
+        try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); } catch (e) {}
+        document.dispatchEvent(new Event('visibilitychange'));
+        return { count: calls.length, maxAge: calls[0] && calls[0].maximumAge };
+      } finally {
+        navigator.geolocation.getCurrentPosition = origGeo;
+        _geoWatchId = origWatch;
+        if (_geoNudgeTimer) { clearTimeout(_geoNudgeTimer); _geoNudgeTimer = null; }
+      }
+    });
+    expect(r.count).toBeGreaterThanOrEqual(1);
+    expect(r.maxAge).toBe(0);
+    await geoRestore();
+  });
+
+  // Regression (owner report, 2026-08-06): "the mileage hits itself on all
+  // geofences the moment you cross without stopping". A single ping inside a
+  // job/shop/place fence used to end the drive and start a dwell instantly,
+  // splitting one continuous trip into a fragment per fence merely passed
+  // near. A fix reporting real driving speed is treated as still driving,
+  // whatever fence it happens to land inside; one WITHOUT a speed reading
+  // (the overwhelming majority of existing fixtures and plenty of real
+  // devices) behaves exactly as before, arrives immediately off one ping.
+  test('drive-by guard: a fix with driving speed inside a job fence is ignored, the drive stays open', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883101;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      _geoDriveStartedAt = new Date(Date.now() - 5 * 60000).toISOString(); // already mid-drive
+      // 20 m/s (~45mph) lands right on the job's coordinates, clearly still moving.
+      await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8, speed: 20 } });
+      await new Promise(res => setTimeout(res, 50));
+      const out = {
+        cur: _geoCurrentJob, arrivedAt: _geoArrivedAt, driveStillOpen: _geoDriveStartedAt != null,
+        wroteEntry: window.__rec.upserts.some(u => u.tbl === 'job_time_entries' && String(u.row.job_id) === String(jobId)),
+      };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(r.cur).toBeNull();                          // never treated as arrived
+    expect(r.arrivedAt).toBeNull();
+    expect(r.driveStillOpen, 'the original drive leg was never ended').toBe(true);
+    expect(r.wroteEntry).toBe(false);
+    await geoRestore();
+  });
+
+  test('drive-by guard: the SAME fix with no speed reading arrives immediately, unchanged from before', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883102;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      _geoDriveStartedAt = new Date(Date.now() - 5 * 60000).toISOString();
+      await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8 } }); // no speed field at all
+      await new Promise(res => setTimeout(res, 50));
+      const out = { cur: _geoCurrentJob, arrivedAt: _geoArrivedAt != null, driveClosed: _geoDriveStartedAt == null };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(String(r.cur)).toBe('883102');
+    expect(r.arrivedAt).toBe(true);
+    expect(r.driveClosed, 'a single ping still arrives immediately when speed is unreported').toBe(true);
+    await geoRestore();
+  });
+
+  test('drive-by guard: a fix just under the speed threshold still counts as arrived (walking/parking speed)', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      const jobId = 883103;
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      jobs.push({ id: jobId, lat: 37.6872, lon: -97.3301, start: new Date().toISOString().slice(0, 10), days: 1, status: 'upcoming', eventType: 'job' });
+      S.trackStart = '00:00'; S.trackEnd = '23:59'; S.officeLat = null; S.officeLon = null;
+      _geoDriveStartedAt = new Date(Date.now() - 5 * 60000).toISOString();
+      await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8, speed: 1.2 } }); // ~2.7mph
+      await new Promise(res => setTimeout(res, 50));
+      const out = { cur: _geoCurrentJob, arrivedAt: _geoArrivedAt != null };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(String(r.cur)).toBe('883103');
+    expect(r.arrivedAt).toBe(true);
+    await geoRestore();
+  });
+
+  test('drive-by guard: driving speed also holds off the independent shop-dwell timer, not just the drive leg', async () => {
+    await geoReset();
+    const r = await page.evaluate(async () => {
+      window.__origJobs = jobs.slice(); jobs.length = 0;
+      S.officeLat = 37.6872; S.officeLon = -97.3301;
+      S.trackStart = '00:00'; S.trackEnd = '23:59';
+      await _geoOnPing({ coords: { latitude: 37.6872, longitude: -97.3301, accuracy: 8, speed: 20 } });
+      const out = { wasInShop: _geoWasInShop, shopArrivedAt: _geoShopArrivedAt };
+      jobs.length = 0; window.__origJobs.forEach(j => jobs.push(j)); window.__origJobs = null;
+      return out;
+    });
+    expect(r.wasInShop).toBe(false);
+    expect(r.shopArrivedAt).toBeNull();
     await geoRestore();
   });
 

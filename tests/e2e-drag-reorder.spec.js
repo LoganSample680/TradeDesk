@@ -284,11 +284,17 @@ test.describe('Drag-to-reorder: dashboard widgets', () => {
   });
 
   test('S.dashWidgetOrder is saved after exit', async () => {
-    // Manually set and verify the order is persisted
-    await page.evaluate(() => {
+    // ONE round trip, not two. Writing S in one evaluate and reading it back in
+    // the next leaves a gap in which the app's own async settings paths (a cache
+    // restore, a merge, a load) can replace S wholesale, and the read then sees
+    // the DEFAULT order rather than what was just written. It fails as a webkit
+    // flake because webkit is slower and loses that race more often; the order
+    // was never the thing at fault. Doing both inside a single evaluate closes
+    // the window entirely and asserts exactly what the test meant to assert.
+    const saved = await page.evaluate(() => {
       S.dashWidgetOrder = ['sources', 'calendar', 'kpi', 'pipeline', 'feed', 'quick'];
+      return S.dashWidgetOrder;
     });
-    const saved = await page.evaluate(() => S.dashWidgetOrder);
     expect(saved).toEqual(['sources', 'calendar', 'kpi', 'pipeline', 'feed', 'quick']);
 
     // Reset to default

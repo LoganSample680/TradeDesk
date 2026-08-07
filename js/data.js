@@ -1,6 +1,6 @@
 // ── Submit guard, prevents double-tap on any button ─────────────────────
 let _submitting=false,_allowPhoneDupe=false;
-let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[],vehicles=[];
+let clients=[],bids=[],jobs=[],income=[],expenses=[],mileage=[],maintenance=[],checksState={},payments=[],liens=[],events=[],timeEntries=[],photos=[],licenses=[],contracts=[],agreements=[],vehicles=[],places=[];
 // Expose all data arrays and employee record on window so Playwright E2E tests can read/write them.
 // All are module-scoped `let` variables (not on window by default in non-module scripts).
 Object.defineProperty(window,'bids',{get:()=>bids,set:v=>{bids=v;},configurable:true});
@@ -15,6 +15,9 @@ Object.defineProperty(window,'maintenance',{get:()=>maintenance,set:v=>{maintena
 // it is now a per-record synced table so one device can never clobber another's
 // fleet edit, and each vehicle carries its own odometer readings (v.odo[year]).
 Object.defineProperty(window,'vehicles',{get:()=>vehicles,set:v=>{vehicles=v;},configurable:true});
+// Contractor-owned geocoded locations (shop, supply houses). Same per-record
+// synced-table treatment as the fleet, never a settings key.
+Object.defineProperty(window,'places',{get:()=>places,set:v=>{places=v;},configurable:true});
 Object.defineProperty(window,'liens',{get:()=>liens,set:v=>{liens=v;},configurable:true});
 Object.defineProperty(window,'timeEntries',{get:()=>timeEntries,set:v=>{timeEntries=v;},configurable:true});
 Object.defineProperty(window,'photos',{get:()=>photos,set:v=>{photos=v;},configurable:true});
@@ -110,7 +113,7 @@ let gps={active:false,startCoords:null,endCoords:null,startTime:null,clientId:nu
 let _activeTimer=null; // {jobId,jobName,clientName,startTime,timerInterval}
 
 
-let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.25,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:'',teamTracking:true,trackStart:'07:00',trackEnd:'18:00',geofenceFt:300,officeLat:0,officeLon:0,laborBurden:1.3,ownerPayType:'hourly',ownerPayRate:0};
+let S={bitlyKey:'',goalMonthly:0,laborRate:45,irsRate:.725,irsRateYear:2026,bracketYear:0,taxYear:2026,fedSingle:15000,fedMFJ:30000,fedMFS:15000,fedHOH:22500,b10:11925,b12:48475,b22:103350,b24:197300,b32:250525,b35:626350,ksLow:3.1,ksTop:33000,ksHigh:5.7,ksStdS:3500,ksStdM:8000,bname:'',bphone:'',blic:'Licensed & Insured',veh:'',margin:40,cov:350,mm:15,rWalls:1.30,rCeil:1.00,rTrim:3.25,rDoor:95,rWin:50,rExt:1.10,rDeck:1.00,suppliesRate:0.25,timeOff:[],employees:[],devices:[],subcontractors:[],logoData:'',brandColor:'',bwebsite:'',subdomain:'',stateRates:{},priceBook:{},baddr:'',bcity:'',bzip:'',poweredBy:true,customTerms:'',coTerms:'',serviceStates:[],salesTaxRate:0,salesTaxRateSource:'',teamTracking:true,geofenceFt:300,officeLat:0,officeLon:0,laborBurden:1.3,ownerPayType:'hourly',ownerPayRate:0};
 
 // ZJ's logo, SVG recreation for proposal header (dark-background safe: white Z, gray J, slash)
 // Only shown for ZJ's Painting account, other accounts see plain business name text.
@@ -198,11 +201,39 @@ let STD_DED={single:14600,mfj:29200,mfs:14600,hoh:21900};
 let KS_BRACKETS={single:[],mfj:[],mfs:[],hoh:[]};
 let KS_STD={single:3500,mfj:8000,mfs:4000,hoh:6000};
 // IRS published values, 7-year rolling history for historical tax reports
+// The last year the published figures actually cover. TAX_HISTORY is maintained
+// by hand, because there is no authoritative machine-readable IRS feed and a
+// confidently WRONG tax number is a worse failure than a visibly stale one.
+function _taxTableLastYear(){
+  return Math.max.apply(null,Object.keys(TAX_HISTORY).map(Number));
+}
+// Does the table actually cover this year, or is the app about to serve last
+// year's figures as though they were this year's? Asserted by the suite so the
+// answer is a red build in early January rather than a wrong deduction nobody
+// notices until April (owner, 2026-08-02).
+function taxRatesAreCurrent(yr){
+  const n=parseInt(yr||new Date().getFullYear());
+  return !!TAX_HISTORY[n];
+}
 function _getBracketsForYear(yr){
   const n=parseInt(yr);
   const thisYear=new Date().getFullYear();
-  if(n===thisYear)return{fedSingle:S.fedSingle||15000,fedMFJ:S.fedMFJ||30000,fedMFS:S.fedMFS||15000,fedHOH:S.fedHOH||22500,b10:S.b10||11925,b12:S.b12||48475,b22:S.b22||103350,b24:S.b24||197300,b32:S.b32||250525,b35:S.b35||626350,irsRate:S.irsRate||.725};
-  return TAX_HISTORY[n]||TAX_HISTORY[2025];
+  // The FALLBACK is the newest year on file, not a year somebody typed once.
+  // This used to read TAX_HISTORY[2025], which quietly aged worse every time the
+  // table was updated: by 2026 a request for a future year answered with figures
+  // two years stale while the correct ones sat in the same object.
+  const latest=TAX_HISTORY[_taxTableLastYear()];
+  if(n===thisYear){
+    // The current year's defaults come from the TABLE, not from literals copied
+    // beside them. They were duplicated here, so on 1 January the app served the
+    // previous year's numbers as the new year's with nothing to notice: one
+    // place to update now, and taxRatesAreCurrent says when it is overdue.
+    const d=TAX_HISTORY[n]||latest;
+    return{fedSingle:S.fedSingle||d.fedSingle,fedMFJ:S.fedMFJ||d.fedMFJ,fedMFS:S.fedMFS||d.fedMFS,fedHOH:S.fedHOH||d.fedHOH,
+           b10:S.b10||d.b10,b12:S.b12||d.b12,b22:S.b22||d.b22,b24:S.b24||d.b24,b32:S.b32||d.b32,b35:S.b35||d.b35,
+           irsRate:S.irsRate||d.irsRate};
+  }
+  return TAX_HISTORY[n]||latest;
 }
 function _getFedBracketsForYear(yr){
   const b=_getBracketsForYear(yr);
@@ -262,6 +293,7 @@ function saveAll(){if(_devSupportMode){_flushSaveNow();return;}if(_isEmployee){s
   localStorage.setItem('zp3_agreements',JSON.stringify(agreements));
   localStorage.setItem('zp3_maint',JSON.stringify(maintenance));
   localStorage.setItem('zp3_vehicles',JSON.stringify(vehicles));
+  localStorage.setItem('zp3_places',JSON.stringify(places));
   // Offline-pending: write synchronously so a force-quit can never outrun a timer.
   // Use the shared owner-stamped blob so this account's data can never be merged
   // into a different account on the next sign-in (cross-account-bleed guard).
@@ -294,6 +326,9 @@ function loadAll(){
     // records predating the id field get one now so they can ride the upload.
     maintenance.forEach((m,i)=>{if(!m.id)m.id=Date.now()+i;});
     vehicles=lp('zp3_vehicles',[]);
+    places=lp('zp3_places',[]);
+    places.forEach((pl,i)=>{if(!pl.id)pl.id=_newId()+i;}); // td_places is keyed by id
+
     // Same contract as maintenance above: td_vehicles is keyed by id, so any
     // record that predates the table (or arrived from the legacy S.vehicles
     // blob before _migrateVehiclesFromSettings ran) gets a stable one now.

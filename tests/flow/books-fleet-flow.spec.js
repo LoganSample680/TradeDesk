@@ -32,10 +32,16 @@ test.describe('books & fleet (UI-driven)', () => {
         await p.evaluate(() => { if (typeof openAddVehicleModal === 'function') openAddVehicleModal(); });
         await p.waitForSelector('#fv-name', { timeout: 10000 });
         const k = await type(p, '#fv-name', vehName);       // real key-by-key typing
+        // The plate is REQUIRED once the account holds more than one vehicle
+        // (fleet.js saveFleetVehicle). The dev account is never cleaned up, so it
+        // always holds several, and without this the save is correctly refused
+        // and the vehicle never appears. The feature landed in this PR without
+        // this live spec being updated for it.
+        const kp = await type(p, '#fv-plate', `KS-E2E-${stamp % 10000}`);
         await p.evaluate(() => { saveFleetVehicle(); });      // 1 tap, Add vehicle
         await p.waitForTimeout(600);
         await p.evaluate(async () => { if (typeof supaSaveToCloud === 'function') await supaSaveToCloud(); });
-        return k + 1;
+        return k + kp + 1;
       },
       rule: async (p) => {
         const r = await p.evaluate((nm) => {

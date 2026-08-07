@@ -9,6 +9,20 @@ name: Flow Tests (live Supabase)
 # (fully mocked). The specs SKIP cleanly when E2E_DEV_* secrets are absent.
 on:
   workflow_dispatch:
+    inputs:
+      spec:
+        description: >-
+          Optional Playwright grep-path filter (e.g. topeka-day). Runs ONLY the
+          matching spec files. Leave blank to run the whole live suite. Scoping a
+          dispatch to one spec is the cheap way to verify a single flow against
+          the preview without burning the whole suite's Supabase egress.
+        required: false
+        default: ''
+      project:
+        description: >-
+          Optional Playwright project filter (chromium | webkit). Blank runs both.
+        required: false
+        default: ''
   pull_request:
     types: [labeled]      # only fires the job below when the label is `run-flow`
   # NOTE: deliberately NO `push: [main]` and NO `schedule:` cron. A main-push trigger
@@ -80,7 +94,15 @@ jobs:
       # in prod (probe → pass with a 'pending migration merge' note), so the gate
       # never deadlocks on the very migration the PR is trying to land.
       - name: Run live flow tests
-        run: npx playwright test -c playwright.flow.config.js
+        env:
+          SPEC_FILTER: ${{ github.event.inputs.spec }}
+          PROJECT_FILTER: ${{ github.event.inputs.project }}
+        run: |
+          ARGS=""
+          if [ -n "$SPEC_FILTER" ]; then ARGS="$ARGS $SPEC_FILTER"; fi
+          if [ -n "$PROJECT_FILTER" ]; then ARGS="$ARGS --project=$PROJECT_FILTER"; fi
+          echo "playwright test -c playwright.flow.config.js$ARGS"
+          npx playwright test -c playwright.flow.config.js $ARGS
 
       - name: Upload flow report
         if: always()

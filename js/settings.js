@@ -790,7 +790,7 @@ function loadSettingsForm(){
   const bstateEl=document.getElementById('set-bstate-display');if(bstateEl)bstateEl.value=S.state||'KS';
   sf('set-sales-tax-rate',S.salesTaxRate||'');
   const powEl=document.getElementById('set-powered-by');if(powEl)powEl.checked=S.poweredBy!==false;
-  sf('set-track-start',S.trackStart||'07:00');sf('set-track-end',S.trackEnd||'18:00');sf('set-labor-burden',Math.round(((S.laborBurden||1.3)-1)*100));
+  sf('set-labor-burden',Math.round(((S.laborBurden||1.3)-1)*100));
   const _optEl=document.getElementById('set-owner-pay-type');if(_optEl)_optEl.value=S.ownerPayType||'hourly';sf('set-owner-pay-rate',S.ownerPayRate||'');
   const ctEl=document.getElementById('set-custom-terms');if(ctEl)ctEl.value=S.customTerms||'';
   const coEl=document.getElementById('set-co-terms');if(coEl)coEl.value=S.coTerms||'';
@@ -834,8 +834,6 @@ function saveSettings(){
     baddr:gs('set-baddr')||'',bcity:gs('set-bcity')||'',bzip:gs('set-bzip')||'',state:gs('set-bstate-display')||gs('set-state')||S.state||'',
     poweredBy:document.getElementById('set-powered-by')?.checked!==false,
     teamTracking:true, // crew tracking is always on, a condition of using TradeDesk
-    trackStart:gs('set-track-start')||'07:00',
-    trackEnd:gs('set-track-end')||'18:00',
     laborBurden:1+((parseFloat(v('set-labor-burden'))||0)/100),
     ownerPayType:gs('set-owner-pay-type')||'hourly',
     ownerPayRate:gf('set-owner-pay-rate')||0,
@@ -977,7 +975,9 @@ function clearAllData(){
       // out (maintenance/events/photos/licenses/contracts/agreements were all
       // missing) means those records survive a "Clear all data" and resurface.
       _userDelete(()=>{
-        clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];checksState={};
+        // places is a synced array (td_places) like the rest: leaving it out let
+        // every saved location survive a "Clear all data" and keep fencing drives.
+        clients=[];bids=[];jobs=[];income=[];expenses=[];mileage=[];maintenance=[];payments=[];liens=[];timeEntries=[];events=[];photos=[];licenses=[];contracts=[];agreements=[];places=[];checksState={};
         S.employees=[];_setVehicles([]);
         // Retire the pre-td_vehicles blob too. _setVehicles no longer touches
         // S.vehicles (the fleet is its own table now), so without this a "Clear
@@ -996,6 +996,10 @@ function clearAllData(){
       try{ if(typeof _flushSaveNow==='function') await _flushSaveNow(); }catch(_e){}
       if(typeof _setDeliberateWipe==='function')_setDeliberateWipe(false);
       await _clearCrewTrackingCloud();
+      // Inbound QR/intake leads live in their own cloud table (inbound_leads),
+      // outside the sync fabric, so the wipe above never touched them: they
+      // re-surfaced in the review queue on the next 30s poll.
+      if(typeof _clearInboundLeadsCloud==='function')await _clearInboundLeadsCloud();
       renderDash();
       zAlert('All data cleared. Starting fresh!',{title:'Done'});
       goPg('pg-dash');
@@ -1080,12 +1084,84 @@ function _setVehicles(vehs){
     const o=(typeof v==='string')?{name:v,nickname:''}:{...v};
     // A row with no id can never sync (td_vehicles is keyed by id) and would be
     // re-created as a duplicate on every save.
-    if(!o.id)o.id=Date.now()*1000+Math.floor(Math.random()*999)+i;
+    //
+    // _newId, not a random offset plus the loop index. That older form was
+    // `Date.now()*1000 + random(0..998) + i`, which puts the random draw and the
+    // index in ONE number space, so two id-less rows in the same call collide
+    // whenever their randoms happen to differ by exactly their index gap: about
+    // one call in a thousand. Since td_vehicles is keyed by id, the collision is
+    // not cosmetic, the second truck overwrites the first on the next sync and a
+    // vehicle disappears from the fleet along with everything hanging off it.
+    // Caught by CI shard 6 finally losing that coin flip. _newId keeps a
+    // monotonic sequence within a millisecond, so it cannot collide by
+    // construction, however many rows arrive at once.
+    if(!o.id)o.id=(typeof _newId==='function')?_newId():Date.now()*1000+i;
     return o;
   });
   vehicles.length=0;next.forEach(v=>vehicles.push(v));
 }
 function getVehicles(){return vehicles;}
+
+// ── The truck the owner drives, for automatic mileage ────────────────────────
+// Every mileage entry needs a vehicle on it (IRS), and an automatically logged
+// trip has nobody to ask. Employees already answer this each morning with the
+// shift-vehicle picker; the owner sets it once here instead, because they drive
+// the same truck almost every day and a daily tap for a fixed answer is exactly
+// the friction this product exists to remove.
+//
+// The single-vehicle case needs no setup at all: one truck IS the default. Sold
+// and down vehicles are skipped, so retiring a truck cannot leave new trips
+// silently attributed to something no longer on the road.
+function getDefaultVehicle(){
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  const usable=vehs.filter(v=>(v.status||'active')==='active');
+  if(S.defaultVehicleId){
+    const pick=usable.find(v=>String(v.id)===String(S.defaultVehicleId));
+    if(pick)return pick;
+  }
+  return usable.length===1?usable[0]:null;
+}
+// ── The vehicles a crew member may be handed ─────────────────────────────────
+// A fleet is not all crew trucks. An owner can easily have their own truck, a
+// spouse's car and one work van on the same Fleet page, and dispatch offering
+// all three is the app volunteering somebody else's keys.
+//
+// OFF by default, by owner decision (2026-08-01), taking the conservative side
+// of a real trade: nothing is ever offered because the app assumed it, at the
+// cost of dispatch staying quiet about trucks until at least one is ticked.
+// That silence is signposted on the board rather than left to look broken.
+//
+// The OWNER's own pickers are deliberately NOT filtered by this: they can drive
+// anything they own, and this flag is about what they hand to other people.
+// IS THIS TRUCK OFF THE ROAD ON THIS DAY. The fleet already keeps a dated
+// downtime log (start, and an end that is open while it is still in the shop);
+// nothing outside the fleet report ever read it. Dispatch has to, because
+// filling a crew member's usual truck without checking would deduct miles on a
+// vehicle sitting on a lift. A false deduction is worse than a blank one: a
+// blank claims nothing, a false one goes on the return.
+function _vehDownOn(v,day){
+  const d=day||todayKey();
+  if(!v)return false;
+  if((v.status||'active')!=='active')return true;
+  return (v.downtimeLog||[]).some(x=>{
+    if(!x||!x.start)return false;
+    return x.start<=d&&(!x.end||x.end>=d);   // no end yet = still down
+  });
+}
+// Vehicles a crew member may be handed ON A GIVEN DAY. Same list as before,
+// minus anything in the shop that day.
+function getCrewVehicles(day){
+  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  return vehs.filter(v=>(v.status||'active')==='active'&&v.crewDrivable&&!_vehDownOn(v,day));
+}
+function setDefaultVehicle(id){
+  S.defaultVehicleId=id?String(id):'';
+  S.settingsTs=Date.now();
+  saveAll();
+  if(typeof renderFleetVehicles==='function'&&document.getElementById('fleet-vehicle-list'))renderFleetVehicles();
+  const v=getDefaultVehicle();
+  if(typeof showToast==='function')showToast(v?('Auto-logged trips go to '+(v.nickname||v.name)):'Default vehicle cleared','🚛');
+}
 
 // The pre-td_vehicles odometer key: a slug of the vehicle NAME. Renaming a truck
 // changed its key and orphaned its own IRS readings (the app then re-prompted for
@@ -1221,6 +1297,20 @@ function getVehicleFullLabel(v){
   if(typeof v==='string')return v;
   const nick=v.nickname&&v.nickname.trim();
   return nick?nick+' ('+v.name+')':v.name||'';
+}
+// The label for CHOOSING a vehicle, as opposed to reading about one.
+//
+// Two white F-250s bought the same year are the same string in a list, and a
+// crew member picking the wrong one puts a day of miles (and the fuel and
+// service that hang off them) on the wrong truck. The plate is the identifier
+// already painted on the thing they are standing next to, so it goes on every
+// row the moment there is more than one vehicle to confuse.
+function getVehiclePickLabel(v){
+  if(!v)return '';
+  if(typeof v==='string')return v;
+  const base=[v.year,v.make,v.model].filter(Boolean).join(' ')||getVehicleLabel(v)||v.name||'Vehicle';
+  const plate=(v.plate||'').trim();
+  return plate?base+' · '+plate:base;
 }
 
 // ══════════════════════════════════════════════════════════════════

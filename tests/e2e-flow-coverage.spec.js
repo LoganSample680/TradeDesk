@@ -966,6 +966,100 @@ test.describe('Migration files: RLS auth.uid() cast compliance', () => {
   const path = require('path');
   const migrationsDir = path.join(__dirname, '..', 'supabase', 'migrations');
 
+  // Supabase derives a migration's VERSION from the leading digits of its
+  // filename, so two files sharing a date prefix both claim the same version and
+  // `supabase db push` dies with a schema_migrations primary-key violation. It
+  // fails at deploy time, long after review, on a step nobody watches.
+  test('no two migrations share a version prefix', () => {
+    if (!fs.existsSync(migrationsDir)) return;
+    const byVersion = {};
+    fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).forEach(f => {
+      const v = (f.match(/^(\d+)/) || [])[1];
+      if (!v) return;
+      (byVersion[v] = byVersion[v] || []).push(f);
+    });
+    const dupes = Object.entries(byVersion).filter(([, files]) => files.length > 1)
+      .map(([v, files]) => `${v}: ${files.join(', ')}`);
+    expect(dupes, `Migrations sharing a version prefix (supabase db push will fail):\n${dupes.join('\n')}`).toHaveLength(0);
+  });
+
+  // The RPC-recreation order is load-bearing and silently wrong when broken.
+  // get_account_delta is recreated wholesale by each migration that adds a synced
+  // table, so the LAST one applied wins. A new table whose migration sorts BEFORE
+  // an older one gets dropped from the sync payload on any from-migrations
+  // rebuild: it works on the hosted project (where it happened to be pushed last)
+  // and is missing everywhere else, which is the worst failure shape there is.
+  //
+  // Source of truth is js/cloud.js _TD_TABLES, the client's own fabric, because
+  // that is exactly the set the RPC has to cover. Tables outside it (td_ops, the
+  // benchmark tables, bid history, permission requests) sync by other means and
+  // are deliberately not in the payload.
+  test('the newest get_account_delta migration covers every _TD_TABLES entry', () => {
+    if (!fs.existsSync(migrationsDir)) return;
+    const cloudSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const block = cloudSrc.slice(cloudSrc.indexOf('_TD_TABLES=['));
+    const fabric = [...new Set((block.slice(0, block.indexOf(']')).match(/t:'(td_[a-z_]+)'/g) || [])
+      .map(m => m.replace(/t:'|'/g, '')))];
+    expect(fabric.length, 'parsed _TD_TABLES from js/cloud.js').toBeGreaterThan(5);
+
+    const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+    const recreators = files.filter(f =>
+      /create or replace function get_account_delta/i.test(fs.readFileSync(path.join(migrationsDir, f), 'utf8')));
+    if (!recreators.length) return;
+    const newest = recreators[recreators.length - 1];
+    const body = fs.readFileSync(path.join(migrationsDir, newest), 'utf8');
+    const missing = fabric.filter(t => !body.includes("'" + t + "'"));
+    expect(missing,
+      `${newest} is the last migration to recreate get_account_delta, so its copy wins. ` +
+      `These _TD_TABLES entries are absent from it and would not sync on a clean rebuild:\n${missing.join(', ')}`
+    ).toHaveLength(0);
+  });
+
+  // Every td_ table in the sync fabric is queried through ONE shared shape:
+  // get_account_delta and _lad_table both select id/data/updated_at/deleted_at/
+  // archived_at. A new table missing any of those columns does not fail at
+  // review or in the offline suite, it fails when the delta RPC is CREATED, i.e.
+  // during a deploy, with "column t.archived_at does not exist". td_places
+  // shipped without archived_at and did exactly that.
+  test('every synced td_ table has the columns the shared RPC shape selects', () => {
+    if (!fs.existsSync(migrationsDir)) return;
+    const REQUIRED = ['id', 'user_id', 'data', 'updated_at', 'deleted_at', 'archived_at'];
+    const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
+    const all = files.map(f => ({ f, c: fs.readFileSync(path.join(migrationsDir, f), 'utf8') }));
+
+    const cloudSrc = fs.readFileSync(path.join(__dirname, '..', 'js', 'cloud.js'), 'utf8');
+    const block = cloudSrc.slice(cloudSrc.indexOf('_TD_TABLES=['));
+    const fabric = [...new Set((block.slice(0, block.indexOf(']')).match(/t:'(td_[a-z_]+)'/g) || [])
+      .map(m => m.replace(/t:'|'/g, '')))];
+
+    const problems = [];
+    fabric.forEach(tbl => {
+      // Find the migration that CREATEs it explicitly (the core migration builds
+      // its set from a loop and is known-good, so an absent match is fine).
+      const owner = all.find(x => new RegExp('create table if not exists ' + tbl + '\\s*\\(', 'i').test(x.c));
+      if (!owner) return;
+      const body = owner.c.slice(owner.c.search(new RegExp('create table if not exists ' + tbl, 'i')));
+      const ddl = body.slice(0, body.indexOf(');') + 2);
+      // A column can arrive in ANY later migration, not just the creating one:
+      // archived_at was retrofitted across the board by the archival migration.
+      // Scanning only the creating file gave a false positive on td_agreements.
+      const alters = all.flatMap(x => x.c.match(new RegExp('alter table ' + tbl + '[^;]*;', 'gi')) || []);
+      // Some migrations alter every td_ table from a loop over an array literal.
+      const loops = all.filter(x => new RegExp("'" + tbl + "'").test(x.c) && /alter table %I|format\(/i.test(x.c))
+        .map(x => x.c).join(' ');
+      // Strip SQL comments first. A comment EXPLAINING why a column is required
+      // contains the column name, which made this guard pass on a table that was
+      // actually missing it. The auth.uid lint above skips comment lines for the
+      // same reason.
+      const seen = (ddl + alters.join(' ') + loops).replace(/--[^\n]*/g, ' ');
+      const missing = REQUIRED.filter(col => !new RegExp('\\b' + col + '\\b').test(seen));
+      if (missing.length) problems.push(`${owner.f} → ${tbl} missing: ${missing.join(', ')}`);
+    });
+    expect(problems,
+      `A synced table is missing columns the shared RPC shape selects. The delta RPC will fail to CREATE on deploy:\n${problems.join('\n')}`
+    ).toHaveLength(0);
+  });
+
   test('no migration contains uncast auth.uid() comparison (text = uuid bug)', () => {
     if (!fs.existsSync(migrationsDir)) return;
     const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql'));

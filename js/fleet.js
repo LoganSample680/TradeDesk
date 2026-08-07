@@ -83,7 +83,7 @@ function renderFleetVehicles() {
   const totalCost = vehs.reduce((s,v)=>s+(v.purchasePrice||0),0);
   const yr = new Date().getFullYear().toString();
   const ytdMiles = vehs.reduce((s,v)=>{
-    return s + mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
+    return s + deductibleTrips(mileage).filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                       .reduce((ss,t)=>ss+(t.miles||0),0);
   },0);
   const maintYTD = maintenance.filter(m=>(m.date||'').startsWith(yr))
@@ -105,7 +105,9 @@ function _fleetCard(v, idx) {
   const statusLabels = {active:'● Active',down:svgIcon('🔴',{size:12})+' Down',sold:svgIcon('📦',{size:12})+' Sold'};
   const statusColor = statusColors[status] || statusColors.active;
   const yr = new Date().getFullYear().toString();
-  const trips = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr));
+  // deductibleTrips: this feeds _fleetPnLCalc below, so a crew member's own-car
+  // miles reaching it would deduct against the company truck.
+  const trips = deductibleTrips(mileage).filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr));
   const ytdMi = Math.round(trips.reduce((s,t)=>s+(t.miles||0),0));
   const maint = maintenance.filter(m=>_vehLinkMatches(m,v));
   const lastMaint = maint.slice().sort((a,b)=>b.date>a.date?1:-1)[0];
@@ -122,6 +124,7 @@ function _fleetCard(v, idx) {
         <div style="font-size:16px;font-weight:800;color:var(--text);margin-bottom:1px">${escHtml(v.nickname||v.name||'')}</div>
         ${v.nickname?`<div style="font-size:11px;color:var(--text3)">${escHtml(v.name||'')}</div>`:''}
         <div style="font-size:11px;color:${statusColor};font-weight:700;margin-top:3px">${statusLabels[status]||statusLabels.active}</div>
+        ${_fleetDefaultPill(v, status)}
       </div>
       <button onclick="event.stopPropagation();openAddVehicleModal(${idx})" class="btn btn-sm" style="font-size:11px;padding:3px 8px;flex-shrink:0">Edit</button>
     </div>
@@ -149,6 +152,62 @@ function _fleetCard(v, idx) {
     </div>
     ${v.purchasePrice?`<div style="font-size:11px;color:var(--text3);margin-top:2px">Purchased: $${v.purchasePrice.toLocaleString()}${v.purchaseDate?' · '+_fleetFmtDate(v.purchaseDate):''}</div>`:''}
   </div>`;
+}
+
+/* ── "My truck": which vehicle automatic trips are logged against ───────────── */
+// Deliberately absent when there is only one active vehicle. With one truck the
+// answer is already unambiguous (getDefaultVehicle falls through to it), so a
+// control asking the contractor to confirm it would be pure noise on the screen
+// they see most. It appears the moment a second truck makes the question real.
+function _fleetDefaultPill(v, status) {
+  if(_isEmployee) return '';                 // crew answer this with the daily picker
+  if(status !== 'active') return '';         // never attribute new trips to a sold truck
+  const actives = getVehicles().filter(x=>(x.status||'active')==='active');
+  // ── One pill, two states, no exceptions ────────────────────────────────────
+  // Owner report (2026-08-01): these did not match and did not line up. Three
+  // reasons, all structural: the on state was inline-flex and the off state was
+  // a default-display button (different baselines), "My truck" carried a truck
+  // icon nobody else had (different width and height), and it was a <span>
+  // while its neighbours were <button>s (different box entirely).
+  //
+  // So ONE style string drives every pill and only the colours change with
+  // state. Fixed line-height and min-height mean an icon could never change a
+  // pill's height again, and the row is a flex container with a gap rather than
+  // margins on individual pills, which is what actually gets them in line.
+  const pillStyle = (on) =>
+    'display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;'+
+    'border-radius:999px;font-size:10px;line-height:1;font-family:inherit;white-space:nowrap;'+
+    (on ? 'font-weight:800;color:var(--blue);background:var(--blue-lt);border:1px solid var(--blue);'
+        : 'font-weight:700;color:var(--text3);background:none;border:1px solid var(--border2);');
+  const pill = (on, label, fn) => fn
+    ? `<button onclick="event.stopPropagation();${fn}" style="${pillStyle(on)}cursor:pointer">${label}</button>`
+    : `<span style="${pillStyle(on)}">${label}</span>`;
+  // The crew tag shows at ANY fleet size. A one-truck shop still has to say
+  // whether crew may drive it, because it is off by default and dispatch stays
+  // silent until something is ticked.
+  const pills = [pill(!!v.crewDrivable, v.crewDrivable ? 'Crew truck' : 'Crew can drive',
+                      `toggleCrewVehicle('${v.id}')`)];
+  // "My truck" is only a question once there are two. With one active vehicle
+  // getDefaultVehicle already falls through to it, so asking would be noise.
+  if(actives.length >= 2) {
+    const isDefault = String(S.defaultVehicleId||'') === String(v.id);
+    pills.push(isDefault
+      ? pill(true, 'My truck', '')                                   // already the answer, nothing to tap
+      : pill(false, 'Set as my truck', `setDefaultVehicle('${v.id}')`));
+  }
+  return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px">${pills.join('')}</div>`;
+}
+function toggleCrewVehicle(id){
+  const v = getVehicles().find(x => String(x.id) === String(id));
+  if(!v) return;
+  v.crewDrivable = !v.crewDrivable;
+  saveAll();
+  renderFleetVehicles();
+  if(typeof showToast === 'function') {
+    showToast(v.crewDrivable
+      ? (getVehicleLabel(v) || 'Vehicle') + ' can be dispatched to crew'
+      : (getVehicleLabel(v) || 'Vehicle') + ' is yours only', '🚛');
+  }
 }
 
 /* ── Due service alerts ──────────────────────────────────────────────────────── */
@@ -228,7 +287,12 @@ function _fleetPnLCalc(v, maintRecords, trips, year) {
     // personal share and understated the deduction vs the Schedule C engine
     // (_vehSchedC), which has always computed miles × rate. Aligned 2026-07-03 so
     // every surface shows the same, correct number. Maintenance is records-only here.
-    const irsDeduction = +(totalMiles * (S.irsRate||0.67)).toFixed(2);
+    // IRS(year), not S.irsRate. This function is handed the YEAR and was still
+    // pricing every year at whatever rate was last fetched, with a hardcoded
+    // 2024 fallback underneath it. Viewing 2024's fleet P&L showed 2024 miles at
+    // today's rate, which is the same defect fixed in IRS() and this is the one
+    // place that still had its own copy of it.
+    const irsDeduction = +(totalMiles * IRS(year)).toFixed(2);
     // "Real" cost per mile based on actual maintenance spend (for awareness, not deduction)
     const costPerMile = totalMiles > 0 ? +(maintCostYTD / totalMiles).toFixed(2) : 0;
     return {method:'mileage',totalMiles,irsDeduction,maintCostYTD,deductibleMaint:0,annualDeprec:0,totalDeduction:irsDeduction,totalCost:maintCostYTD,costPerMile,netPosition:irsDeduction};
@@ -270,7 +334,9 @@ function _vehSchedC(yr){
   const rate=(typeof _getIrsRateForYear==='function')?_getIrsRateForYear(yr):((S&&S.irsRate)||0.7);
   const out={yr,hasVehicles:false,perVehicle:[],mileDed:0,deductedMiles:0,excludedMiles:0,
              vehExpTotal:0,vehExpDed:0,expAdjust:0,excludedIds:[],untagged:0,untaggedTotal:0};
-  const trips=mileage.filter(r=>r.date&&r.date.startsWith(yr));
+  // Owner's vehicles only: crew driving their own cars is a reimbursement, and
+  // attributing those miles to a company truck would deduct them twice over.
+  const trips=(typeof deductibleTrips==='function'?deductibleTrips(mileage):mileage).filter(r=>r.date&&r.date.startsWith(yr));
   const vehExp=expenses.filter(e=>e.date&&e.date.startsWith(yr)&&_isVehicleExpense(e));
   const vehs=(typeof getVehicles==='function')?getVehicles():[];
   if(!vehs.length){
@@ -370,7 +436,11 @@ function _renderFleetDetailModal() {
   if(!box) return;
 
   const yr = new Date().getFullYear().toString();
-  const trips = mileage.filter(t=>t.vehicle===v.name);
+  // deductibleTrips first. A crew member's own-car miles are owed to THEM and
+  // are not this truck's deduction, so they must never reach a fleet P&L. Today
+  // the name match happens to exclude them; relying on that is relying on a
+  // coincidence, and this is a deduction.
+  const trips = deductibleTrips(mileage).filter(t=>t.vehicle===v.name);
   const maint = maintenance.filter(m=>_vehLinkMatches(m,v)).slice().sort((a,b)=>b.date>a.date?1:-1);
   const pnl = _fleetPnLCalc(v, maint, trips.filter(t=>(t.date||'').startsWith(yr)), yr);
   const downDays = _fleetDownDays(v, yr);
@@ -429,7 +499,7 @@ function setFleetDetailTab(tab) {
 function _fleetDetailOverviewHtml(v, pnl, maint, downDays, allDownDays, yr) {
   const due = _fleetDueAlerts(v, maint);
   const status = v.status || 'active';
-  const allTrips = mileage.filter(t=>t.vehicle===v.name);
+  const allTrips = deductibleTrips(mileage).filter(t=>t.vehicle===v.name);
   const lifetimeMi = Math.round(allTrips.reduce((s,t)=>s+(t.miles||0),0));
   const bizPct = v.bizUse||100;
 
@@ -593,7 +663,7 @@ function _fleetDetailPnLHtml(v, pnl, maint, trips) {
         <div style="border:1px solid var(--border);border-radius:var(--r);padding:12px;margin-bottom:12px">
           <div style="display:flex;align-items:center;margin-bottom:10px"><span style="font-size:13px;font-weight:800">${yr}</span>${methodBadge}</div>
           <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">Business miles</span><span style="font-size:12px;font-weight:600">${Math.round(p.totalMiles).toLocaleString()} mi</span></div>
-          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">IRS rate (${((S.irsRate||0.67)*100).toFixed(0)}¢/mi × ${v.bizUse||100}% biz)</span><span style="font-size:12px;font-weight:600;color:var(--green)">$${p.irsDeduction.toLocaleString()}</span></div>
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px"><span style="font-size:12px;color:var(--text3)">IRS rate (${(IRS(yr)*100).toFixed(0)}¢/mi × ${v.bizUse||100}% biz)</span><span style="font-size:12px;font-weight:600;color:var(--green)">$${p.irsDeduction.toLocaleString()}</span></div>
           <div style="border-top:1px solid var(--border);margin:6px 0"></div>
           <div style="background:var(--bg2);border-radius:var(--r);padding:8px 10px;margin-bottom:8px">
             <div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:3px">${svgIcon('📋',{size:11})} Maintenance, records only</div>
@@ -643,7 +713,10 @@ function _renderOdometerReport() {
   if(!v) return;
   const yr = String(_odoReportYear);
   const rec = _vehOdo(v, yr);
-  const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
+  // Business-use % is a DEDUCTION input: the actual-expense method multiplies
+  // this truck's costs by it. Somebody else's personal miles inflating it
+  // inflates the deduction.
+  const loggedMiles = deductibleTrips(mileage).filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                              .reduce((s,t)=>s+(t.miles||0),0);
   const startOdo = rec.start || 0;
   const endOdo = rec.end || 0;
@@ -722,7 +795,10 @@ function saveOdometerReport() {
   if(start>0) patch.start = start;
   if(end>0)   patch.end   = end;
   // Auto-calculate and save business use %
-  const loggedMiles = mileage.filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
+  // Business-use % is a DEDUCTION input: the actual-expense method multiplies
+  // this truck's costs by it. Somebody else's personal miles inflating it
+  // inflates the deduction.
+  const loggedMiles = deductibleTrips(mileage).filter(t=>t.vehicle===v.name&&(t.date||'').startsWith(yr))
                              .reduce((s,t)=>s+(t.miles||0),0);
   const totalDriven = end>start ? end-start : 0;
   if(totalDriven>0 && loggedMiles>0) {
@@ -774,6 +850,16 @@ function openAddVehicleModal(idx) {
         <div class="f"><label>VIN <span style="font-size:10px;color:var(--text3)">(17 chars)</span></label>
           <input id="fv-vin" placeholder="1FTFW1ET..." maxlength="17" value="${escHtml(v.vin||'')}" style="font-family:monospace;font-size:13px">
         </div>
+        <!-- Owner call (2026-08-01): a fleet is not all crew trucks. Off by
+             default, deliberately: nothing is ever offered to somebody else's
+             hands because the app assumed it. -->
+        <label style="display:flex;align-items:flex-start;gap:10px;padding:11px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;margin-top:2px">
+          <input type="checkbox" id="fv-crew" ${v.crewDrivable?'checked':''} style="margin-top:2px;accent-color:var(--blue);width:16px;height:16px;flex-shrink:0">
+          <span style="min-width:0">
+            <span style="display:block;font-size:13px;font-weight:700;color:var(--text)">Crew can drive this</span>
+            <span style="display:block;font-size:11px;color:var(--text3);line-height:1.45">Only vehicles ticked here are offered when you dispatch a crew member. Leave it off for anything only you drive.</span>
+          </span>
+        </label>
       </div>
       <div class="card" style="margin-bottom:12px">
         <div style="font-size:12px;font-weight:700;color:var(--text3);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Purchase info</div>
@@ -806,7 +892,7 @@ function openAddVehicleModal(idx) {
               <input type="radio" name="fv-deduct" value="mileage" style="margin-top:3px;accent-color:var(--blue);pointer-events:none;width:16px;height:16px" ${(v.deductionMethod||'mileage')==='mileage'?'checked':''}>
               <div>
                 <div style="font-size:13px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;line-height:1.3">Standard mileage rate</div>
-                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct ${((S.irsRate||0.67)*100).toFixed(0)}¢ per business mile. Simpler: no need to track every expense. Maintenance records are for your info only.</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:2px;text-transform:none;letter-spacing:0;line-height:1.4">Deduct ${(IRS()*100).toFixed(0)}¢ per business mile. Simpler: no need to track every expense. Maintenance records are for your info only.</div>
               </div>
             </div>
             <div onclick="this.querySelector('input').click()" style="display:grid;grid-template-columns:18px 1fr;align-items:start;column-gap:10px;padding:10px 12px;border:1.5px solid ${v.deductionMethod==='actual'?'var(--blue)':'var(--border2)'};border-radius:var(--r);cursor:pointer;background:${v.deductionMethod==='actual'?'rgba(45,93,168,.06)':'var(--bg2)'}">
@@ -852,6 +938,27 @@ function saveFleetVehicle() {
   const isEdit = _fleetEditIdx >= 0;
   const oldV = isEdit ? (vehs[_fleetEditIdx]||{}) : {};
 
+  // ── The plate is what makes two trucks tellable apart ──────────────────────
+  // Owner call (2026-08-01): once there are multiples, every vehicle needs a
+  // plate. Optional is fine for a one-truck shop, where "the truck" is
+  // unambiguous. It stops being fine the moment a crew member has to pick from
+  // a list, because two white F-250s bought the same year read as the SAME
+  // ENTRY on a phone screen, and picking the wrong one puts the day's miles,
+  // and the fuel and service costs that hang off them, on the wrong vehicle.
+  // The plate is the identifier already painted on the thing they are standing
+  // next to, which is why it beats a nickname nobody uses out loud.
+  //
+  // Counted over what the fleet will be AFTER this save, so adding a second
+  // vehicle is the moment the rule starts applying, not the third.
+  const plate = (document.getElementById('fv-plate')?document.getElementById('fv-plate').value:'').trim().toUpperCase();
+  const fleetAfter = isEdit ? vehs.length : vehs.length + 1;
+  if(fleetAfter > 1 && !plate) {
+    const el = document.getElementById('fv-plate');
+    if(el) { el.style.borderColor = '#A32D2D'; el.style.background = 'var(--red-lt)'; el.focus(); }
+    zAlert('Add the license plate. With more than one vehicle it is the only thing that tells them apart when your crew picks one.', {title:'Plate required'});
+    return;
+  }
+
   const deductEl = document.querySelector('input[name="fv-deduct"]:checked');
   const newV = {
     ...oldV,
@@ -862,7 +969,8 @@ function saveFleetVehicle() {
     name,
     nickname: (document.getElementById('fv-nick')?document.getElementById('fv-nick').value:'').trim(),
     color:    (document.getElementById('fv-color')?document.getElementById('fv-color').value:'').trim(),
-    plate:    (document.getElementById('fv-plate')?document.getElementById('fv-plate').value:'').trim().toUpperCase(),
+    plate,
+    crewDrivable: !!(document.getElementById('fv-crew') && document.getElementById('fv-crew').checked),
     vin:      (document.getElementById('fv-vin')?document.getElementById('fv-vin').value:'').trim().toUpperCase(),
     bizUse:   oldV.bizUse||100, // updated by year-end odometer report, not manual entry
     gvwr:     document.getElementById('fv-gvwr')?document.getElementById('fv-gvwr').value:'',

@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='07.30.26.1';
+const APP_VERSION='08.07.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -1218,6 +1218,7 @@ const _TD_TABLES=[
   {t:'td_agreements',  get:()=>agreements,  set:v=>{agreements.length=0;v.forEach(r=>agreements.push(r));}, tx:null},
   {t:'td_maintenance', get:()=>maintenance, set:v=>{maintenance.length=0;v.forEach(r=>maintenance.push(r));}, tx:null},
   {t:'td_vehicles',    get:()=>vehicles,    set:v=>{vehicles.length=0;v.forEach(r=>vehicles.push(r));},     tx:null},
+  {t:'td_places',      get:()=>places,      set:v=>{places.length=0;v.forEach(r=>places.push(r));},         tx:null},
   {t:'td_photos',      get:()=>photos,      set:v=>{photos.length=0;v.forEach(r=>photos.push(r));},
     tx:arr=>arr.filter(p=>p.storagePath||p.url).map(({id,url,storagePath,type,caption,client_id,client_name,job_id,job_name,uploadedAt})=>({id,url,storagePath:storagePath||'',type,caption,client_id,client_name,job_id,job_name,uploadedAt}))},
 ];
@@ -1422,6 +1423,11 @@ let _proposalViewsByBidHubIp={};       // bid_id → {ip, ua} the hub (client.ht
 // open + sign-flow step (hub_opened, proposal_opened, approved, signature_ready,
 // payment_viewed, method_selected, signed) with its own timestamp + captured IP.
 let _proposalAuditEventsByBid={};
+// Verified on-site presence for the client Activity timeline: job_id → [{arrivedAt,
+// departedAt, minutes, source}, …] newest-first. Sourced from job_time_entries, the
+// same geofence-close writes that feed the dispatch board's on-site status, just read
+// back further than dispatch's "today only" window so the full job history has it.
+let _jobTimeEntriesByJob={};
 // Expose on window so Playwright E2E tests can inject test data via page.evaluate()
 // (let declarations are not window properties in browser scripts)
 Object.defineProperty(window,'_proposalViewsByBidHubClient',{get:()=>_proposalViewsByBidHubClient,set:v=>{_proposalViewsByBidHubClient=v;},configurable:true});
@@ -1434,6 +1440,7 @@ Object.defineProperty(window,'_proposalViewsByBidStepAt',{get:()=>_proposalViews
 Object.defineProperty(window,'_proposalViewsByBidClientIp',{get:()=>_proposalViewsByBidClientIp,set:v=>{_proposalViewsByBidClientIp=v;},configurable:true});
 Object.defineProperty(window,'_proposalViewsByBidHubIp',{get:()=>_proposalViewsByBidHubIp,set:v=>{_proposalViewsByBidHubIp=v;},configurable:true});
 Object.defineProperty(window,'_proposalAuditEventsByBid',{get:()=>_proposalAuditEventsByBid,set:v=>{_proposalAuditEventsByBid=v;},configurable:true});
+Object.defineProperty(window,'_jobTimeEntriesByJob',{get:()=>_jobTimeEntriesByJob,set:v=>{_jobTimeEntriesByJob=v;},configurable:true});
 // true when data came from localStorage cache, not a live Supabase fetch.
 // supaSaveToCloud() checks this + runs a sanity guard to prevent pushing
 // incomplete in-memory state over real cloud data.
@@ -1780,6 +1787,7 @@ async function supaInit(){
           if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
           if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
           if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (no-session boot)');applySettings();_refillSettingsFormUnlessEditing();}
           _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -1831,6 +1839,11 @@ async function supaInit(){
           // Wipe the outgoing account's in-memory records so they can't be merged/pushed up.
           clients=[];bids=[];jobs=[];payments=[];income=[];expenses=[];mileage=[];liens=[];
           vehicles=[]; // fleet is a synced array (td_vehicles) now, not a settings key
+          places=[];   // same for geocoded locations (td_places)
+          // Crew caches are keyed by EMAIL, so without this the next account's
+          // roster renders the previous account's location status against any
+          // matching address. Reset the loaded flags too or they never refetch.
+          _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
           // Inbound-lead review queue lives OUTSIDE these arrays and was never cleared
           // here: the incoming account's Leads page kept rendering the outgoing
           // account's unreviewed QR/intake leads until its own poll happened to
@@ -1997,6 +2010,7 @@ async function supaInit(){
         if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (offline boot, session present)');applySettings();_refillSettingsFormUnlessEditing();}
         _mergeOfflinePendingToMemory(); // surface any records not yet pushed to cloud
@@ -2233,8 +2247,120 @@ function _copyInviteLink(link){
 }
 
 // ── Dispatch Board ───────────────────────────────────────────────────────────
+// ── What is actually happening out there, right now ─────────────────────────
+// Every competitor sells "real-time status from the field" and on every one of
+// them a technician has to TAP en route and arrived. Our geofence already knows:
+// arrivals and departures are logged with no tap at all. It was simply never
+// read back onto the board it belongs on.
+//
+//   • on site now  , a breadcrumb ping in the last 10 minutes carrying this job
+//   • arrived / left / total , closed geofence visits for today
+//
+// Drive and stop rows are excluded on purpose. They can carry a job_id (a leg
+// that ENDED at a job is attributed to it), and counting them as time on site
+// would put the drive there inside the visit.
+let _dispatchStatus={};        // jobId -> {onSite,first,last,mins,who}
+let _dispatchDay={};           // empId -> [{jobId,start,end}] for the timeline
+let _dispatchStatusAt=0;
+let _dispatchStatusBusy=false;
+const _DISPATCH_ONSITE_MS=10*60*1000;
+function _dispatchDayStartIso(){
+  const d=new Date();d.setHours(0,0,0,0);return d.toISOString();
+}
+async function _dispatchLoadStatus(force){
+  if(_dispatchStatusBusy)return;
+  if(!force&&Date.now()-_dispatchStatusAt<20000)return;   // one read per 20s, not per render
+  // No backend to ask, so KEEP what was last known rather than blanking it.
+  // Clearing here would wipe the board the moment a phone loses signal, which
+  // is exactly when a dispatcher most wants to see where everyone last was.
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supa||!_supaUser)return;
+  _dispatchStatusBusy=true;
+  try{
+    const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+    const since=_dispatchDayStartIso();
+    const [entRes,pingRes]=await Promise.all([
+      _supa.from('job_time_entries').select('job_id,employee_user_id,arrived_at,departed_at,minutes,source')
+        .eq('contractor_user_id',cid).gte('arrived_at',since),
+      _supa.from('location_pings').select('employee_user_id,job_id,ts')
+        .eq('contractor_user_id',cid).gte('ts',new Date(Date.now()-_DISPATCH_ONSITE_MS).toISOString()),
+    ]);
+    const ents=(entRes&&entRes.data)||[];
+    const pings=(pingRes&&pingRes.data)||[];
+    const st={},day={};
+    ents.forEach(r=>{
+      if(!r.job_id||!/^geofence/.test(r.source||''))return;
+      const k=String(r.job_id);
+      const s=st[k]||(st[k]={onSite:false,first:null,last:null,mins:0,who:''});
+      s.mins+=r.minutes||0;
+      if(!s.first||r.arrived_at<s.first)s.first=r.arrived_at;
+      if(r.departed_at&&(!s.last||r.departed_at>s.last))s.last=r.departed_at;
+      const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===String(r.employee_user_id));
+      if(emp){
+        if(!s.who)s.who=emp.name;
+        (day[emp.id]||(day[emp.id]=[])).push({jobId:k,start:r.arrived_at,end:r.departed_at||new Date().toISOString()});
+      }
+    });
+    pings.forEach(p=>{
+      if(!p.job_id)return;
+      const k=String(p.job_id);
+      const s=st[k]||(st[k]={onSite:false,first:null,last:null,mins:0,who:''});
+      s.onSite=true;
+      if(!s.who){
+        const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===String(p.employee_user_id));
+        if(emp)s.who=emp.name;
+      }
+    });
+    _dispatchStatus=st;_dispatchDay=day;_dispatchStatusAt=Date.now();
+  }catch(_e){}
+  _dispatchStatusBusy=false;
+}
+function _dispatchClock(iso){
+  // The try/catch here was doing nothing for the case it was written for.
+  // new Date('nonsense') does NOT throw: it produces an Invalid Date, and
+  // toLocaleTimeString on that returns the literal string "Invalid Date". So a
+  // missing or malformed timestamp (a crew phone writing a bad value, a field
+  // that never landed) printed the words "Invalid Date" onto the job card in
+  // the position where the crew reads an arrival time. Check the date is real
+  // instead of hoping it throws.
+  try{
+    if(!iso)return '';
+    const d=new Date(iso);
+    if(isNaN(d.getTime()))return '';
+    return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  }catch(_e){return '';}
+}
+function _dispatchDur(mins){
+  const m=Math.max(0,Math.round(mins||0));
+  return m>=60?(Math.floor(m/60)+'h'+(m%60?' '+(m%60)+'m':'')):(m+'m');
+}
+// The one line on a job card that says where that job actually stands today.
+// Absent when nothing has happened yet, rather than a row of dashes: an empty
+// state that says nothing is quieter than one that says "nothing".
+function _dispatchStatusLine(jobId){
+  const s=_dispatchStatus[String(jobId)];
+  if(!s||(!s.onSite&&!s.first))return '';
+  if(s.onSite)
+    return '<div style="display:flex;align-items:center;gap:5px;margin-top:5px;font-size:11px;font-weight:700;color:var(--green-mid)">'+
+      '<span style="width:7px;height:7px;border-radius:50%;background:var(--green-mid);flex-shrink:0"></span>'+
+      'On site now'+(s.who?' · '+escHtml(s.who):'')+(s.mins?' · '+_dispatchDur(s.mins)+' today':'')+'</div>';
+  return '<div style="margin-top:5px;font-size:11px;color:var(--text3)">'+
+    escHtml(_dispatchClock(s.first))+(s.last?' – '+escHtml(_dispatchClock(s.last)):'')+
+    (s.mins?' · '+_dispatchDur(s.mins):'')+'</div>';
+}
+
 function renderDispatch(){
   const el=document.getElementById('pg-dispatch');if(!el)return;
+  // Kicked, not awaited: the board paints immediately from whatever was last
+  // read and repaints when the network answers. A dispatch board that waits on
+  // Supabase before showing anything is a blank screen every morning.
+  //
+  // The repaint is gated on the read having actually produced something new.
+  // Repainting unconditionally would call this again, which would kick another
+  // load, which would repaint: a render loop that never lets the page settle.
+  const _stAt=_dispatchStatusAt;
+  _dispatchLoadStatus().then(()=>{
+    if(_dispatchStatusAt!==_stAt&&document.getElementById('pg-dispatch'))renderDispatch();
+  });
   const tk=todayKey();
   const emps=S.employees||[];
   // Today's active jobs: start<=today AND start+days-1>=today
@@ -2256,16 +2382,27 @@ function renderDispatch(){
     const assignBtn=empId
       ?'<button onclick="_dispatchUnassign('+j.id+')" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit;min-height:36px">Unassign</button>'
       :'<button onclick="_dispatchAssign('+j.id+')" style="font-size:11px;padding:5px 10px;border-radius:var(--r);border:none;background:var(--blue);color:#fff;cursor:pointer;font-family:inherit;min-height:36px">Assign →</button>';
-    const orderBtns='<div style="display:flex;gap:4px">'+
-      '<button onclick="_dispatchMoveUp('+j.id+(empId?',\''+empId+'\'':'')+',\''+empId+'\')" style="font-size:13px;width:30px;height:30px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer">↑</button>'+
-      '<button onclick="_dispatchMoveDown('+j.id+(empId?',\''+empId+'\'':'')+',\''+empId+'\')" style="font-size:13px;width:30px;height:30px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer">↓</button>'+
-      '</div>';
-    return '<div style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
-      '<div style="font-size:13px;font-weight:700;margin-bottom:3px">'+escHtml(c.name)+'</div>'+
-      (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+addr+'</div>':'')+
-      (note?'<div style="margin-bottom:6px">'+note+'</div>':'')+
-      '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px">'+
-        orderBtns+assignBtn+
+    // A GRIP, not two arrows. The arrows were unlabelled (nothing on screen said
+    // they reordered the day), and moving a job from fourth to first cost three
+    // taps each way. Every product in this category reorders by dragging, and it
+    // is the one control on this board that would read as dated in a demo.
+    //
+    // touch-action:none on the handle ONLY: the page must still scroll normally
+    // everywhere else, and a card you cannot scroll past is worse than arrows.
+    const grip=empId
+      ?'<div class="dsp-grip" data-job="'+j.id+'" title="Drag to reorder the day" style="touch-action:none;cursor:grab;padding:6px 8px;margin:-6px -4px -6px -8px;color:var(--text3);flex-shrink:0;line-height:0">'+
+         '<svg width="14" height="18" viewBox="0 0 14 18" fill="currentColor" aria-hidden="true"><circle cx="4" cy="4" r="1.6"/><circle cx="10" cy="4" r="1.6"/><circle cx="4" cy="9" r="1.6"/><circle cx="10" cy="9" r="1.6"/><circle cx="4" cy="14" r="1.6"/><circle cx="10" cy="14" r="1.6"/></svg></div>'
+      :'';
+    return '<div class="dsp-card" data-job="'+j.id+'" data-emp="'+(empId||'')+'" style="padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
+      '<div style="display:flex;align-items:flex-start;gap:8px">'+
+        grip+
+        '<div style="flex:1;min-width:0">'+
+          '<div style="font-size:13px;font-weight:700;margin-bottom:3px">'+escHtml(c.name)+'</div>'+
+          (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+addr+'</div>':'')+
+          (note?'<div style="margin-bottom:6px">'+note+'</div>':'')+
+          _dispatchStatusLine(j.id)+
+        '</div>'+
+        '<div style="flex-shrink:0">'+assignBtn+'</div>'+
       '</div>'+
     '</div>';
   }
@@ -2282,14 +2419,21 @@ function renderDispatch(){
     const optBtn=empJobs.length>=2
       ?'<button onclick="_dispatchOptimizeRoute(\''+emp.id+'\')" style="font-size:10px;font-weight:700;padding:3px 8px;border-radius:var(--r);border:1px solid var(--blue);background:var(--blue-lt);color:var(--blue);cursor:pointer;font-family:inherit">'+svgIcon('⚡')+' Optimize route</button>'
       :'';
-    return '<div style="min-width:200px;flex:1;max-width:320px">'+
+    // flex-basis, not min-width. A 200px minimum plus a gap overflows a 390px
+    // phone with two crew, so the board scrolled sideways and the second column
+    // was cut off mid-word (owner report 2026-08-01). A basis WRAPS instead:
+    // one full-width column per crew member on a phone, two or three abreast on
+    // a tablet or desktop, and nothing ever sits off the edge.
+    return '<div style="flex:1 1 240px;min-width:0;max-width:100%">'+
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:8px;padding:0 2px">'+
         '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+rc+'">'+escHtml(emp.name)+'</div>'+optBtn+
       '</div>'+
+      _dispatchTruckRow(emp)+
       (empJobs.length?empJobs.map(j=>_jobCard(j,emp.id)).join('')
         :'<div style="font-size:12px;color:var(--text3);padding:8px;background:var(--bg2);border:1px dashed var(--border);border-radius:var(--r)">No jobs assigned</div>')+
     '</div>';
   }).join('');
+  const tab=(id,label)=>'<button type="button" class="fb'+(_dispatchView===id?' active':'')+'" onclick="setDispatchView(\''+id+'\')">'+label+'</button>';
   el.innerHTML=
     '<div class="tbar"><div class="tbar-title">'+svgIcon('📋')+' Dispatch Board</div>'+
       '<div style="display:flex;gap:6px">'+
@@ -2297,28 +2441,232 @@ function renderDispatch(){
         '<button onclick="goPg(\'pg-jobs\')" style="font-size:12px;padding:6px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;cursor:pointer;font-family:inherit">← Jobs</button>'+
       '</div>'+
     '</div>'+
-    '<div style="padding:0 12px 12px">'+
+    '<div style="display:flex;gap:6px;flex-wrap:wrap;padding:0 12px 10px">'+tab('crew','By crew')+tab('timeline','Timeline')+'</div>'+
+    '<div id="_dispatch-body" style="padding:0 12px 12px">'+
+      _dispatchVehicleGapHtml()+
+      (_dispatchView==='timeline'?_dispatchTimelineHtml(emps,todayJobs):
       '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">Unassigned</div>'+
       '<div id="dispatch-unassigned" style="margin-bottom:20px">'+unassignedHtml+'</div>'+
       (emps.length
         ?'<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:8px">By Employee</div>'+
-          '<div style="display:flex;gap:12px;overflow-x:auto;padding-bottom:8px">'+empCols+'</div>'
-        :'<div style="font-size:13px;color:var(--text3);padding:12px 0">No employees added yet. Add team members in the Team tab.</div>')+
+          '<div style="display:flex;flex-wrap:wrap;gap:12px;padding-bottom:8px">'+empCols+'</div>'
+        :'<div style="font-size:13px;color:var(--text3);padding:12px 0">No employees added yet. Add team members in the Team tab.</div>'))+
     '</div>';
+  _initDispatchDrag();
+}
+let _dispatchView='crew';
+function setDispatchView(v){_dispatchView=(v==='timeline'?'timeline':'crew');renderDispatch();}
+
+// ── The day, by the clock ───────────────────────────────────────────────────
+// One strip per crew member across the working day, built from the times the
+// geofence actually recorded rather than from what somebody meant to happen.
+// The value is the SHAPE: who is full, who has a hole after lunch, who has not
+// started. That is the question a dispatch board gets asked at 10am.
+//
+// Deliberately not a drag-and-drop calendar grid. That is where ServiceTitan
+// gets complicated enough that people take a course to avoid creating conflicts
+// with it, and complexity is the thing their own users complain about.
+function _dispatchTimelineHtml(emps,todayJobs){
+  if(!emps.length)return '<div style="font-size:13px;color:var(--text3);padding:12px 0">No employees added yet. Add team members in the Team tab.</div>';
+  // The window is derived, not fixed at 7-6: a 5:30am start or an 8pm callout
+  // must not fall off the end of its own strip.
+  let lo=7,hi=18;
+  Object.values(_dispatchDay).forEach(segs=>(segs||[]).forEach(g=>{
+    const a=new Date(g.start),b=new Date(g.end);
+    if(!isNaN(a))lo=Math.min(lo,a.getHours());
+    if(!isNaN(b))hi=Math.max(hi,b.getHours()+1);
+  }));
+  lo=Math.max(0,lo);hi=Math.min(24,Math.max(hi,lo+4));
+  const span=(hi-lo)*60;
+  const pct=(d)=>{
+    const t=new Date(d);
+    if(isNaN(t))return null;
+    return Math.max(0,Math.min(100,((t.getHours()*60+t.getMinutes())-lo*60)/span*100));
+  };
+  const now=new Date();
+  const nowPct=pct(now);
+  const hourMarks=[];
+  for(let h=lo;h<=hi;h+=Math.max(1,Math.round((hi-lo)/5)))hourMarks.push(h);
+  const label=(h)=>(h%12===0?12:h%12)+(h<12?'a':'p');
+  const rows=emps.map(emp=>{
+    const segs=(_dispatchDay[emp.id]||[]).slice().sort((a,b)=>String(a.start).localeCompare(String(b.start)));
+    const mine=todayJobs.filter(j=>String(j.assignedTo)===String(emp.id));
+    const blocks=segs.map(g=>{
+      const a=pct(g.start),b=pct(g.end);
+      if(a==null||b==null)return '';
+      const j=jobs.find(x=>String(x.id)===String(g.jobId));
+      const c=j&&clients.find(x=>x.id===j.client_id);
+      const live=_dispatchStatus[String(g.jobId)]&&_dispatchStatus[String(g.jobId)].onSite;
+      return '<div class="dsp-block" title="'+escHtml((c&&c.name)||'Job')+' '+escHtml(_dispatchClock(g.start))+'" '+
+        'style="position:absolute;left:'+a.toFixed(2)+'%;width:'+Math.max(1.5,b-a).toFixed(2)+'%;top:3px;bottom:3px;'+
+        'border-radius:4px;background:'+(live?'var(--green-mid)':'var(--blue)')+';opacity:'+(live?'1':'.85')+'"></div>';
+    }).join('');
+    const logged=segs.reduce((n,g)=>n+Math.max(0,(new Date(g.end)-new Date(g.start))/60000),0);
+    return '<div class="dsp-row" style="margin-bottom:12px">'+
+      '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:4px">'+
+        '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:'+((ROLE_COLORS&&ROLE_COLORS[emp.role])||'var(--text2)')+'">'+escHtml(emp.name)+'</div>'+
+        '<div style="font-size:10px;color:var(--text3)">'+(segs.length?_dispatchDur(logged)+' on site':(mine.length?mine.length+' job'+(mine.length>1?'s':'')+', not started':'No jobs'))+'</div>'+
+      '</div>'+
+      '<div class="dsp-strip" style="position:relative;height:26px;background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden">'+
+        blocks+
+        (nowPct!=null?'<div class="dsp-now" style="position:absolute;left:'+nowPct.toFixed(2)+'%;top:0;bottom:0;width:2px;background:var(--red);opacity:.7"></div>':'')+
+      '</div>'+
+    '</div>';
+  }).join('');
+  return '<div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text3);margin-bottom:6px;padding:0 1px">'+
+      hourMarks.map(h=>'<span>'+label(h)+'</span>').join('')+
+    '</div>'+rows+
+    '<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:10px;color:var(--text3);margin-top:2px">'+
+      '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--green-mid);margin-right:4px"></span>On site now</span>'+
+      '<span><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:var(--blue);margin-right:4px"></span>Logged today</span>'+
+      '<span><span style="display:inline-block;width:2px;height:8px;background:var(--red);margin-right:4px"></span>Now</span>'+
+    '</div>';
+}
+// ── The truck row on each crew column of the dispatch board ──────────────────
+// It sits on the screen the owner already opens every morning to hand out the
+// day's work, because "who is taking which truck" is decided in the same breath
+// as "who is going where", by the same person, standing in the same yard.
+function _dispatchTruckRow(emp){
+  // No crew-drivable vehicle exists yet. The tag is off by default (owner
+  // decision), so this is the expected first state for every account and it has
+  // to read as a next step rather than as a broken control. Nothing to tap
+  // through to here: it says where to go and gets out of the way.
+  if(!(typeof getCrewVehicles==='function'?getCrewVehicles():[]).length){
+    const anyVeh=(typeof getVehicles==='function'?getVehicles():[]).some(v=>(v.status||'active')==='active');
+    if(!anyVeh)return '';   // no fleet at all: Fleet's own empty state covers it
+    return '<div style="display:flex;align-items:center;gap:6px;padding:7px 10px;margin-bottom:8px;border-radius:var(--r);border:1px dashed var(--border2);font-size:11px;color:var(--text3);line-height:1.4">'+
+      svgIcon('🚗',{size:12})+'<span style="flex:1;min-width:0">No crew vehicles yet. Tick <strong>Crew can drive this</strong> on a vehicle in Fleet.</span></div>';
+  }
+  const a=_truckDayFor(emp.id);
+  const label=_truckDayLabel(a);
+  const set=!!a;
+  return '<button onclick="_dispatchTruckPicker(\''+emp.id+'\')" style="display:flex;align-items:center;gap:6px;width:100%;text-align:left;padding:7px 10px;margin-bottom:8px;border-radius:var(--r);border:1px solid '+(set?'var(--border2)':'var(--border)')+';background:'+(set?'var(--bg2)':'none')+';cursor:pointer;font-family:inherit;font-size:12px;min-height:36px;color:'+(set?'var(--text)':'var(--text3)')+'">'+
+    svgIcon('🚗',{size:13})+'<span style="flex:1;min-width:0;font-weight:'+(set?'700':'500')+'">'+escHtml(label)+'</span>'+
+    '<span style="color:var(--text3);flex-shrink:0">›</span></button>';
+}
+function _truckDayLabel(a){
+  if(!a)return 'No truck assigned';
+  if(a.mode==='own')return 'Own vehicle';
+  if(a.mode==='rider'){
+    const d=(S.employees||[]).find(x=>String(x.id)===String(a.with));
+    return d?('Riding with '+d.name):'Riding along';
+  }
+  const v=(typeof getVehicles==='function'?getVehicles():[]).find(x=>String(x.id)===String(a.v));
+  return v?getVehiclePickLabel(v):'Truck';
+}
+// Which crew member is driving a given vehicle today, if anyone. This is the
+// whole one-driver-per-truck rule: it is enforced by the board never offering
+// a truck twice, not by asking people to remember.
+function _truckDriver(vehId,exceptEmpId){
+  return (S.employees||[]).find(e=>{
+    if(exceptEmpId!=null&&String(e.id)===String(exceptEmpId))return false;
+    const t=_truckDayFor(e.id);
+    return t&&t.mode==='truck'&&String(t.v)===String(vehId);
+  })||null;
+}
+// ── One row, in both truck pickers ───────────────────────────────────────────
+// Owner report (2026-08-01, screenshot): the icon drifted left and right down
+// the list and a long plate wrapped in the middle of itself ("KS 4RD-" / "982").
+// Both came from centring the row: with centred content the icon's position is
+// a function of the label's length, so no two rows line up, and the plate is
+// just more text on the same line waiting to break.
+//
+// So the row is a fixed icon gutter plus left-aligned text, and the plate gets
+// its own line underneath in smaller type. The icon now sits at the same x on
+// every row, the name reads as the name, and the plate cannot split. The modal
+// itself stays centred; it is the ROWS that are left-aligned, which is what
+// makes a list scannable.
+function _vehPickRow(o){
+  const sel=!!o.selected;
+  return '<button '+(o.on||'')+' style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border-radius:var(--r);border:1px solid '+(sel?'var(--blue)':'var(--border2)')+';background:'+(sel?'var(--blue-lt)':'var(--bg2)')+';cursor:pointer;font-family:inherit;margin-bottom:8px;min-height:48px;color:var(--text)">'+
+    '<span style="width:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text2)">'+svgIcon('\ud83d\ude97',{size:16})+'</span>'+
+    '<span style="flex:1;min-width:0">'+
+      '<span style="display:block;font-size:14px;font-weight:600;line-height:1.3">'+escHtml(o.title||'')+'</span>'+
+      (o.sub?'<span style="display:block;font-size:11px;font-weight:500;color:var(--text3);line-height:1.35;margin-top:2px">'+escHtml(o.sub)+'</span>':'')+
+    '</span>'+
+    (o.badge?'<span style="font-size:10px;font-weight:800;color:var(--blue);flex-shrink:0">'+escHtml(o.badge)+'</span>':'')+
+  '</button>';
+}
+// The name half of a vehicle, without the plate. getVehiclePickLabel keeps them
+// joined for single-line contexts (the board row, the assign sheet).
+function getVehiclePickName(v){
+  if(!v)return '';
+  if(typeof v==='string')return v;
+  return [v.year,v.make,v.model].filter(Boolean).join(' ')||
+         ((typeof getVehicleLabel==='function')?getVehicleLabel(v):'')||v.name||'Vehicle';
+}
+function _dispatchTruckPicker(empId){
+  const emp=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  if(!emp)return;
+  // Crew-drivable only. This picker hands somebody else the keys, so it can
+  // only ever show what the owner has said crew may drive.
+  const vehs=(typeof getCrewVehicles==='function')?getCrewVehicles():[];
+  const cur=_truckDayFor(empId);
+  const ov=document.createElement('div');ov.id='_truck-picker-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';box.style.textAlign='center';
+  const list=vehs.map(v=>{
+    const driver=_truckDriver(v.id,empId);
+    const sel=cur&&cur.mode==='truck'&&String(cur.v)===String(v.id);
+    // Already spoken for, so the only honest thing left to offer is the
+    // passenger seat. Assigning the same truck twice is the double-count.
+    if(driver)return _vehPickRow({
+      on:'onclick="_dispatchSetTruck(\''+empId+'\',\'rider\',\'\',\''+driver.id+'\')"',
+      title:getVehiclePickName(v),
+      sub:[(v.plate||'').trim(),'Riding with '+driver.name].filter(Boolean).join(' \u00b7 '),
+      selected:cur&&cur.mode==='rider'&&String(cur.with)===String(driver.id)});
+    return _vehPickRow({
+      on:'onclick="_dispatchSetTruck(\''+empId+'\',\'truck\',\''+v.id+'\')"',
+      title:getVehiclePickName(v),sub:(v.plate||'').trim(),selected:sel});
+  }).join('');
+  box.innerHTML='<div class="zmodal-title">What is '+escHtml(emp.name)+' driving today?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">One driver per truck. Anyone riding along is still paid for the drive, their miles just belong to the driver.</div>'+
+    (vehs.length?list:'<div style="font-size:13px;color:var(--text3);margin-bottom:12px">No active vehicles in Fleet yet.</div>')+
+    _vehPickRow({on:'onclick="_dispatchSetTruck(\''+empId+'\',\'own\')"',title:'Own vehicle',selected:!!(cur&&cur.mode==='own')})+
+    (cur?'<button onclick="_dispatchSetTruck(\''+empId+'\',\'\')" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit">Clear</button>':'');
+  ov.appendChild(box);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
+function _dispatchSetTruck(empId,mode,vehId,withId){
+  const e=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  if(!e)return;
+  if(mode)e.truckDay={day:todayKey(),mode,v:vehId||'',with:withId||''};
+  else delete e.truckDay;
+  S.settingsTs=Date.now();
+  saveAll();
+  document.getElementById('_truck-picker-ov')?.remove();
+  renderDispatch();
 }
 function _dispatchAssign(jobId){
   const emps=S.employees||[];
   if(!emps.length){zAlert('No employees added yet. Add team members in the Team tab first.');return;}
-  const tk=todayKey();
-  const ov=document.createElement('div');ov.className='zmodal-overlay';
-  const sheet=document.createElement('div');
-  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
-  sheet.innerHTML='<div style="font-size:15px;font-weight:800;margin-bottom:14px">Assign to Employee</div>'+
-    emps.map(e=>'<button onclick="_dispatchDoAssign('+jobId+',\''+e.id+'\');this.closest(\'.zmodal-overlay\').remove()" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+escHtml(e.name)+' <span style="font-size:11px;font-weight:400;color:var(--text3)">'+escHtml(e.role||'')+'</span></button>').join('')+
+  // Centred, on the shared .zmodal chrome, matching the truck prompt it hands
+  // off to (owner call 2026-08-01). It was the last bottom sheet in this flow,
+  // so assigning a job slid up from the bottom and the truck question that
+  // followed it appeared in the middle: two halves of one gesture arriving from
+  // different directions.
+  const ov=document.createElement('div');ov.id='_assign-ov';ov.className='zmodal-overlay';
+  const box=document.createElement('div');box.className='zmodal';box.style.textAlign='center';
+  // Each person carries their truck for the day, so the whole yard's allocation
+  // is readable WHILE assigning rather than after: who is already in what, and
+  // who still needs keys. Same row shape as the truck prompt, fixed icon gutter
+  // and all, so the two screens read as one flow.
+  const crewCount=(typeof getCrewVehicles==='function'?getCrewVehicles():[]).length;
+  box.innerHTML='<div class="zmodal-title">Assign to employee</div>'+
+    emps.map(e=>{
+      const t=_truckDayFor(e.id);
+      const sub=t?_truckDayLabel(t):(crewCount?'Needs a truck':'');
+      return '<button onclick="_dispatchDoAssign('+jobId+',\''+e.id+'\');this.closest(\'.zmodal-overlay\').remove()" style="display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;margin-bottom:8px;min-height:48px;color:var(--text)">'+
+        '<span style="width:22px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:var(--text2)">'+svgIcon('👤',{size:16})+'</span>'+
+        '<span style="flex:1;min-width:0">'+
+          '<span style="display:block;font-size:14px;font-weight:600;line-height:1.3">'+escHtml(e.name)+
+            (e.role?' <span style="font-size:11px;font-weight:400;color:var(--text3)">'+escHtml(e.role)+'</span>':'')+'</span>'+
+          (sub?'<span style="display:block;font-size:11px;font-weight:500;color:'+(t?'var(--text2)':'var(--text3)')+';line-height:1.35;margin-top:2px">'+escHtml(sub)+'</span>':'')+
+        '</span>'+
+      '</button>';
+    }).join('')+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:4px">Cancel</button>';
-  ov.appendChild(sheet);document.body.appendChild(ov);
+  ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
 }
 function _dispatchDoAssign(jobId,empId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
@@ -2342,6 +2690,22 @@ function _dispatchDoAssign(jobId,empId){
     }
   }
   saveAll();renderDispatch();showToast('Job assigned','📋');
+  // ── One dispatch, not two ────────────────────────────────────────────────
+  // Owner call (2026-08-01): "dispatch should be daily, truck covers all the
+  // jobs for that day, fold it that way."
+  //
+  // Handing someone their first job of the day is the same gesture as handing
+  // them the keys, so the truck question follows it instead of waiting to be
+  // remembered as a separate press. It fires ONCE per person per day: their
+  // second and third job find the answer already there, which is the whole
+  // point of the truck living on the day rather than on the job.
+  //
+  // Only when the question is real: crew tracking on, a fleet to choose from,
+  // and nobody has answered yet today.
+  if(!_truckDayFor(empId)&&S.teamTracking&&
+     (typeof getCrewVehicles==='function'?getCrewVehicles():[]).length){
+    setTimeout(()=>{try{_dispatchTruckPicker(empId);}catch(_e){}},260);
+  }
 }
 function _dispatchUnassign(jobId){
   const j=jobs.find(x=>x.id===jobId);if(!j)return;
@@ -2350,28 +2714,88 @@ function _dispatchUnassign(jobId){
     saveAll();renderDispatch();showToast('Job unassigned','↩️');
   },{title:'Unassign Job',yes:'Unassign',danger:false});
 }
-function _dispatchMoveUp(jobId,empId){
-  const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk)).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
-  const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<=0)return;
-  // Normalize to 0..n-1 in current sorted order BEFORE swapping (mirrors _dispatchMoveDown).
-  // Doing the forEach reindex AFTER the swap clobbered it, it overwrote dispatchOrder from
-  // the pre-swap array positions, so the up-arrow never actually moved the job up.
-  empJobs.forEach((j,i)=>{j.dispatchOrder=i;});
-  const temp=empJobs[idx-1].dispatchOrder;
-  empJobs[idx-1].dispatchOrder=empJobs[idx].dispatchOrder;
-  empJobs[idx].dispatchOrder=temp;
-  saveAll();renderDispatch();
+// ── Drag a job to move it in the day ────────────────────────────────────────
+// Replaces _dispatchMoveUp/_dispatchMoveDown, which are gone (CLAUDE.md §7:
+// deleted, not hidden). They wrote the same dispatchOrder this does; the
+// difference is that a grip says what it does and one gesture moves a job any
+// distance, where the arrows were unlabelled and cost a tap per position.
+//
+// Pointer events, so one implementation covers finger, stylus and mouse. The
+// dragged card is reordered IN PLACE in the DOM as the pointer crosses each
+// neighbour's midpoint, so what you see during the drag is the result.
+let _dspDrag=null;
+function _initDispatchDrag(){
+  const host=document.getElementById('pg-dispatch');
+  if(!host||host._dspBound)return;
+  host._dspBound=true;
+
+  host.addEventListener('pointerdown',e=>{
+    const grip=e.target.closest&&e.target.closest('.dsp-grip');
+    if(!grip)return;
+    const card=grip.closest('.dsp-card');
+    const list=card&&card.parentElement;
+    if(!card||!list)return;
+    e.preventDefault();
+    const r=card.getBoundingClientRect();
+    _dspDrag={card,list,empId:card.getAttribute('data-emp'),offY:e.clientY-r.top,moved:false};
+    try{grip.setPointerCapture(e.pointerId);}catch(_e){}
+    card.style.transition='none';
+    card.style.opacity='.9';
+    card.style.boxShadow='0 6px 20px rgba(0,0,0,.18)';
+    card.style.position='relative';
+    card.style.zIndex='5';
+    navigator.vibrate&&navigator.vibrate(20);
+  });
+
+  host.addEventListener('pointermove',e=>{
+    if(!_dspDrag)return;
+    e.preventDefault();
+    _dspDrag.moved=true;
+    const {card,list}=_dspDrag;
+    const cards=[...list.querySelectorAll(':scope > .dsp-card')];
+    const i=cards.indexOf(card);
+    const y=e.clientY;
+    // Swap past whichever neighbour's midpoint the pointer has crossed. One
+    // step per move keeps it stable when a card is taller than its neighbour.
+    const prev=cards[i-1],next=cards[i+1];
+    if(prev){
+      const pr=prev.getBoundingClientRect();
+      if(y<pr.top+pr.height/2){list.insertBefore(card,prev);return;}
+    }
+    if(next){
+      const nr=next.getBoundingClientRect();
+      if(y>nr.top+nr.height/2){list.insertBefore(next,card);return;}
+    }
+  });
+
+  const end=()=>{
+    if(!_dspDrag)return;
+    const {card,list,empId,moved}=_dspDrag;
+    _dspDrag=null;
+    card.style.opacity='';card.style.boxShadow='';card.style.zIndex='';
+    card.style.position='';card.style.transition='';
+    if(!moved)return;
+    // The DOM is the order now, so read it back rather than tracking indices.
+    const ids=[...list.querySelectorAll(':scope > .dsp-card')].map(c=>c.getAttribute('data-job'));
+    _dispatchSetOrder(ids,empId);
+  };
+  host.addEventListener('pointerup',end);
+  host.addEventListener('pointercancel',end);
 }
-function _dispatchMoveDown(jobId,empId){
-  const tk=todayKey();
-  const empJobs=jobs.filter(j=>String(j.assignedTo)===String(empId)&&_jobActiveOn(j,tk)).sort((a,b2)=>(a.dispatchOrder||0)-(b2.dispatchOrder||0));
-  const idx=empJobs.findIndex(j=>j.id===jobId);if(idx<0||idx>=empJobs.length-1)return;
-  empJobs.forEach((j,i)=>{j.dispatchOrder=i;});
-  const temp=empJobs[idx+1].dispatchOrder;
-  empJobs[idx+1].dispatchOrder=empJobs[idx].dispatchOrder;
-  empJobs[idx].dispatchOrder=temp;
-  saveAll();renderDispatch();
+// Writes the order the board is showing. Same field the arrows wrote and the
+// same field _dispatchOptimizeRoute writes, so a hand-tuned day and an
+// optimised one are the same kind of thing.
+function _dispatchSetOrder(jobIds,empId){
+  if(!Array.isArray(jobIds))return;
+  let n=0;
+  jobIds.forEach((id,i)=>{
+    const j=jobs.find(x=>String(x.id)===String(id));
+    if(!j)return;
+    if(empId&&String(j.assignedTo)!==String(empId))return;   // never reorder someone else's day
+    j.dispatchOrder=i;n++;
+  });
+  if(!n)return;
+  saveAll();
 }
 
 // ── Route optimization (office → ordered job sites, nearest-neighbor) ─────────
@@ -2424,6 +2848,18 @@ async function _dispatchOptimizeRoute(empId){
   showToast('Route optimized · ~'+miTxt+' mi from office','🗺');
 }
 
+// Resolves an employee_user_id to a display name from data already loaded
+// locally (S.employees, the synced team_members cache), no extra fetch. The
+// account owner isn't in S.employees (they're not their own team member row),
+// so their own uid is matched separately, the same fallback chain
+// _fetchCrewLabor (js/finance.js) uses for the owner's name on cost reports.
+function _crewMemberName(uid){
+  if(!uid)return'';
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||(_supaUser&&_supaUser.id);
+  if(cid&&String(uid)===String(cid))return S.ownerName||(typeof getOwnerName==='function'&&getOwnerName())||'Owner (me)';
+  const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===String(uid));
+  return (emp&&emp.name)||'';
+}
 // ── Crew live map (manager view of last-known location per employee) ──────────
 async function _renderCrewMap(){
   document.getElementById('_crew-map-ov')?.remove();
@@ -2451,8 +2887,7 @@ async function _renderCrewMap(){
   if(!keys.length){b.innerHTML='<div style="padding:8px 0">No location pings yet today. Crew appear here once they\'re on the clock with sharing enabled.</div>';return;}
   b.innerHTML=keys.map(uid=>{
     const r=latest[uid];
-    const emp=(S.employees||[]).find(e=>String(e.employee_user_id||'')===uid)||{};
-    const nm=escHtml(emp.name||'Crew member');
+    const nm=escHtml(_crewMemberName(uid)||'Crew member');
     const ago=_timeAgo(r.ts);
     const mapUrl='https://www.google.com/maps?q='+r.lat+','+r.lon;
     return '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px">'+
@@ -2463,42 +2898,280 @@ async function _renderCrewMap(){
 }
 
 // ── Vehicle-start-of-shift picker ────────────────────────────────────────────
+// Crew have always been asked this. Owners now are too when they run more than
+// one truck (owner call 2026-08-01: "for multiple vehicles I kind of like a
+// popup, which vehicle are you driving today?").
+//
+// It is the same sheet rather than a second one, because it answers the same
+// question, but the two roles are asked DIFFERENTLY on purpose:
+//
+//   • ONE ACTIVE VEHICLE, no owner is asked anything. There is nothing to ask,
+//     and getDefaultVehicle already falls through to the only truck. Asking
+//     would be a daily tap for a question with one possible answer.
+//   • The owner's usual truck (the Fleet "My truck" default) is listed FIRST
+//     and marked, so the normal day is one confirming tap rather than a hunt.
+//   • Dismissing costs the owner nothing: _autoTripVehicle falls back to that
+//     same default, so a day's trips are never stranded without a vehicle. For
+//     crew there is no default to fall back to, so dismissing means no mileage,
+//     which is the safe direction for somebody else's car.
+//   • No "personal vehicle" row for the owner. Their personal car's business
+//     miles ARE deductible, so the honest answer is that the vehicle belongs in
+//     Fleet (which is what Fleet is for, and what the app already tells them:
+//     the IRS wants a vehicle description on every trip). Offering "personal,
+//     no mileage logged" to an owner would quietly bin a real deduction.
 function _checkEmployeeVehiclePicker(){
-  if(!_isEmployee)return;
   const tk=todayKey();
   const key='emp_vehicle_'+tk;
   if(localStorage.getItem(key))return;
-  const vehs=(typeof getVehicles==='function')?getVehicles():[];
+  // Dispatch already answered it. Asking again would invite a crew member to
+  // contradict the person holding the keys, which is how a carpool ends up
+  // logged as three separate trucks.
+  if(_isEmployee&&_myTruckToday())return;
+  // Crew see only what they may drive; the owner sees their whole fleet,
+  // because the flag is about what gets handed out, not about what they own.
+  const vehs=_isEmployee
+    ?((typeof getCrewVehicles==='function')?getCrewVehicles():[])
+    :((typeof getVehicles==='function')?getVehicles():[]);
+  const active=vehs.filter(v=>(v.status||'active')==='active');
+  // Nothing a crew member may drive, so there is nothing to ask them.
+  if(_isEmployee&&!active.length)return;
+  if(!_isEmployee){
+    if(!S.teamTracking)return;      // nothing is being logged, so nothing to ask
+    if(active.length<2)return;      // one truck answers itself
+  }
+  const list=_isEmployee?vehs:active;
+  const defId=(!_isEmployee&&typeof getDefaultVehicle==='function')?((getDefaultVehicle()||{}).id||''):'';
+  // Usual truck first, so the common day is the top button.
+  const ordered=defId?list.slice().sort((a,b)=>(String(b.id)===String(defId)?1:0)-(String(a.id)===String(defId)?1:0)):list;
+  // Centred prompt, not a bottom sheet (owner call 2026-08-01). It uses the
+  // shared .zmodal chrome every other popup in the app uses, so it inherits the
+  // §8.4 entrance, the 360px cap, and the overlay's own scrolling when a big
+  // fleet makes the list taller than the screen.
   const ov=document.createElement('div');ov.id='_vehicle-picker-ov';ov.className='zmodal-overlay';
   const sheet=document.createElement('div');
-  sheet.style.cssText='position:fixed;bottom:0;left:0;right:0;background:var(--bg);border-radius:16px 16px 0 0;padding:20px 16px;box-shadow:0 -4px 24px rgba(0,0,0,.15);opacity:0;transform:translateY(16px);transition:opacity .22s cubic-bezier(.22,1,.36,1),transform .22s cubic-bezier(.22,1,.36,1)';
-  const vehList=vehs.map(v=>{
-    const label=[v.year,v.make,v.model].filter(Boolean).join(' ')||escHtml(v.name||v.id||'Vehicle');
-    return '<button onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(label)+'\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:600;margin-bottom:8px;min-height:44px">'+svgIcon('🚗')+' '+escHtml(label)+'</button>';
+  sheet.className='zmodal';
+  sheet.style.textAlign='center';
+  const vehList=ordered.map(v=>{
+    const isDef=defId&&String(v.id)===String(defId);
+    return _vehPickRow({
+      on:'onclick="_pickVehicle(\''+v.id+'\',\''+escHtml(getVehiclePickName(v))+'\')"',
+      title:getVehiclePickName(v),
+      sub:(v.plate||'').trim(),
+      badge:isDef?'USUAL':'',
+      selected:!!isDef});
   }).join('');
   sheet.innerHTML=
-    '<div style="font-size:15px;font-weight:800;margin-bottom:4px">Which vehicle are you in today?</div>'+
-    '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Drive time is only logged for company vehicles, personal vehicle trips stay private.</div>'+
+    '<div class="zmodal-title">Which vehicle are you '+(_isEmployee?'in':'driving')+' today?</div>'+
+    '<div style="font-size:12px;color:var(--text3);margin-bottom:16px;line-height:1.5">'+
+      (_isEmployee
+        ?'Drive time is only logged for company vehicles, personal vehicle trips stay private.'
+        :'Your drives log themselves all day. This just puts the miles on the right truck.')+
+    '</div>'+
     vehList+
-    '<button onclick="_pickVehicle(\'personal\',\'Personal vehicle\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚗')+' My personal vehicle, no mileage logged</button>'+
-    '<button onclick="_pickVehicle(\'none\',\'On foot\')" style="display:block;width:100%;text-align:left;padding:12px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);cursor:pointer;font-family:inherit;font-size:14px;font-weight:500;margin-bottom:8px;min-height:44px;color:var(--text2)">'+svgIcon('🚶')+' On foot / no vehicle</button>';
+    // Crew keep the personal-vehicle row. It is not an "I didn't drive" escape
+    // hatch, it is how they say these miles are theirs and not the company's.
+    (_isEmployee?_vehPickRow({on:'onclick="_pickVehicle(\'personal\',\'Personal vehicle\')"',
+       title:'My personal vehicle',sub:'No mileage logged'}):'');
   ov.appendChild(sheet);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
-  requestAnimationFrame(()=>{sheet.style.opacity='1';sheet.style.transform='translateY(0)';});
 }
 function _pickVehicle(vid,label){
   const tk=todayKey();
   localStorage.setItem('emp_vehicle_'+tk,vid);
   document.getElementById('_vehicle-picker-ov')?.remove();
-  const icon=vid==='none'?'🚶':'🚗';
-  showToast(vid==='personal'?'No mileage logged for personal vehicle':'Logged to '+label,icon);
+  showToast(vid==='personal'?'No mileage logged for personal vehicle':'Logged to '+label,'🚗');
   const vd=document.getElementById('_emp-vehicle-display');
-  if(vd)vd.textContent=vid==='none'?'':vid==='personal'?'🚗 Personal vehicle':'🚗 Driving: '+label;
+  if(vd)vd.textContent=vid==='personal'?'🚗 Personal vehicle':'🚗 Driving: '+label;
 }
-// Returns true when the employee's shift vehicle should have mileage tracked (company vehicle)
-function _isCompanyVehicleToday(){
+// ── Who is in which truck today ──────────────────────────────────────────────
+// Owner call (2026-08-01): dispatch assigns the truck, and the picker is the
+// fallback when dispatch did not.
+//
+// THE REASON IT HAS TO BE DISPATCH, and not just a nicety: three crew carpool
+// to a job in one truck. All three phones run the geofence and all three log
+// drive legs. If each one taps a truck in the picker, that single trip's miles
+// get deducted THREE TIMES. No crew member can prevent it, because none of them
+// knows what the other two tapped. Exactly one person knows three people are in
+// one truck, and it is whoever hands out the keys.
+//
+// So a truck has ONE driver per day. Everyone else in it is a rider: their
+// drive time still logs, because they are on the clock and being paid for the
+// ride, and their miles do not, because those miles already belong to the
+// driver's row.
+//
+// Stored as a single-day slot on the employee record rather than a new synced
+// table: it is overwritten each morning so it cannot grow, and it rides along
+// on the settings sync that already reaches every crew device, which means no
+// migration for something that is by nature ephemeral.
+//   truckDay = {day:'YYYY-MM-DD', mode:'truck'|'rider'|'own', v:<vehicleId>, with:<empId>}
+// ── The standing answer, and whether it still holds today ────────────────────
+// Owner (2026-08-03): "I want this to be easy and bulletproof and force easy
+// automated clean data."
+//
+// The chore this replaces: dispatch threw the vehicle answer away at midnight,
+// so the same question came back every morning forever. Nobody answers a
+// question forever, and an unanswered day used to invent a debt (it guessed
+// personal) and then, once that was fixed, silently lose one. Both are the same
+// mistake: treating a question nobody answered as an answer.
+//
+// So the answer is captured ONCE, when it is already known: at hire. Day to day
+// is an override, not a requirement.
+//
+// usualVehicle on the crew record is {mode:'truck',vehicleId} or {mode:'own'}.
+// Absent means nobody has said yet, which is a state the hire flow and the
+// one-time migration card exist to make unreachable.
+function _usualVehicleFor(empId){
+  if(empId==null)return null;
+  const e=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  const u=e&&e.usualVehicle;
+  if(!u||!u.mode)return null;
+  if(u.mode==='own')return {mode:'own'};
+  if(u.mode==='truck'&&u.vehicleId)return {mode:'truck',vehicleId:String(u.vehicleId)};
+  return null;
+}
+// WHAT IS THIS PERSON DRIVING TODAY, and if we cannot say, why not. The `reason`
+// is what the dispatch board needs in order to ask a useful question instead of
+// a blank one.
+//
+//   set          , an explicit answer for today, from the board or their phone
+//   usual        , their standing vehicle, confirmed on the road today
+//   usual-down   , their standing truck is in the shop. THIS is the case that
+//                  makes the whole feature safe rather than merely convenient.
+//   unset        , nobody has ever said. New hire, or pre-migration crew.
+function _crewVehicleForDay(empId,day){
+  const d=day||todayKey();
+  const t=_truckDayFor(empId);
+  if(t)return {mode:t.mode,vehicleId:t.vehicleId?String(t.vehicleId):null,reason:'set'};
+  const u=_usualVehicleFor(empId);
+  if(!u)return {mode:'none',vehicleId:null,reason:'unset'};
+  if(u.mode==='own')return {mode:'own',vehicleId:null,reason:'usual'};
+  const v=(typeof getVehicles==='function'?getVehicles():[]).find(x=>String(x.id)===u.vehicleId);
+  if(!v)return {mode:'none',vehicleId:null,reason:'unset'};      // truck deleted out from under it
+  if(typeof _vehDownOn==='function'&&_vehDownOn(v,d))
+    return {mode:'none',vehicleId:null,reason:'usual-down',downVehicleId:u.vehicleId,downVehicleName:v.name||''};
+  return {mode:'truck',vehicleId:u.vehicleId,reason:'usual'};
+}
+// Everyone dispatch cannot answer for today, with the reason, so the board can
+// ask the right question: "the F-250 is in the shop, what is Danny in?" rather
+// than an empty dropdown. Scheduled crew only: somebody not working today is
+// not a gap.
+function crewNeedingVehicleAnswer(day){
+  const d=day||todayKey();
+  const working=new Set();
+  (jobs||[]).forEach(j=>{
+    if(!j||j.status==='canceled'||j.assignedTo==null)return;
+    const span=parseInt(j.days)||1;
+    for(let i=0;i<span;i++){if(typeof addDays==='function'&&addDays(j.start,i)===d)working.add(String(j.assignedTo));}
+  });
+  return [...working].map(id=>{
+    const r=_crewVehicleForDay(id,d);
+    if(r.reason!=='usual-down'&&r.reason!=='unset')return null;
+    const e=(S.employees||[]).find(x=>String(x.id)===String(id));
+    // ONLY WHAT IS TRUE. With every crew-drivable truck in the shop there is no
+    // truck to offer, so the board must not pretend there is: their own vehicle
+    // or riding with somebody are the only honest answers left.
+    const free=(typeof getCrewVehicles==='function')?getCrewVehicles(d):[];
+    return {empId:String(id),name:(e&&e.name)||'Crew',reason:r.reason,
+            downVehicleName:r.downVehicleName||'',
+            options:free.length?['truck','own','rider']:['own','rider'],
+            offer:free.map(v=>({id:String(v.id),name:v.name||''}))};
+  }).filter(Boolean);
+}
+// Answer the standing question for somebody, from wherever it was asked.
+// '' clears it back to unset, which is a legitimate answer meaning "I do not
+// know yet" rather than a guess.
+function setUsualVehicle(empId,val){
+  const e=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  if(!e)return null;
+  if(!val)delete e.usualVehicle;
+  else if(val==='own')e.usualVehicle={mode:'own'};
+  else e.usualVehicle={mode:'truck',vehicleId:String(val)};
+  if(typeof _settingsChanged==='function')_settingsChanged();else saveAll();
+  if(document.getElementById('pg-dispatch'))renderDispatch();
+  return e.usualVehicle||null;
+}
+// ── The gap card ─────────────────────────────────────────────────────────────
+// Two jobs in one, because they are the same question:
+//
+//   • THE ONE-TIME MIGRATION. Crew who predate this feature have no standing
+//     answer. Their default cannot be guessed in either direction: defaulting
+//     to personal starts booking reimbursements for people who drive the
+//     company's trucks, defaulting to truck deducts miles on personal cars. So
+//     the app does not choose, it asks once, and until then those drives sit
+//     unattributed and claim nothing, which is the honest state.
+//   • THE DAILY EXCEPTION. Somebody whose usual truck is in the shop.
+//
+// Absent entirely when there is nothing to ask, which after the first answer is
+// most days.
+function _dispatchVehicleGapHtml(){
+  if(typeof crewNeedingVehicleAnswer!=='function')return '';
+  let gaps=[];
+  try{gaps=crewNeedingVehicleAnswer()||[];}catch(_e){return '';}
+  if(!gaps.length)return '';
+  const row=(g)=>{
+    const why=g.reason==='usual-down'
+      ? escHtml(g.downVehicleName||'Their usual truck')+' is in the shop'
+      : 'No usual vehicle set yet';
+    // Only what is true: with every crew truck down there is no truck option,
+    // so the list is built from what is actually free rather than from the fleet.
+    const opts='<option value="">Pick one</option>'+
+      g.offer.map(v=>'<option value="'+escHtml(v.id)+'">'+escHtml(v.name)+'</option>').join('')+
+      '<option value="own">Their own vehicle</option>';
+    return '<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">'+
+      '<div style="flex:1;min-width:0">'+
+        '<div style="font-size:13px;font-weight:700">'+escHtml(g.name)+'</div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+why+'</div>'+
+      '</div>'+
+      // Single quotes around the id, escHtml'd. JSON.stringify here emitted
+      // DOUBLE quotes inside a double-quoted onchange attribute, so the
+      // attribute terminated at the first quote and the handler was
+      // setUsualVehicle( , a syntax error: the select rendered fine and did
+      // NOTHING when answered. The tests passed because they called
+      // setUsualVehicle directly and asserted on the HTML as a string; the DOM
+      // wiring test added with this fix dispatches a real change event.
+      '<select onchange="setUsualVehicle(\''+escHtml(String(g.empId))+'\',this.value)" style="font-size:12px;padding:6px 8px;border-radius:var(--r);max-width:150px">'+opts+'</select>'+
+    '</div>';
+  };
+  return '<div style="background:#FFF8E7;border:1.5px solid #D4A017;border-radius:var(--rl);padding:12px 14px;margin-bottom:10px">'+
+    '<div style="font-size:12px;font-weight:700;color:#78350F;margin-bottom:2px">'+svgIcon('🚚',{size:12})+' '+gaps.length+' '+(gaps.length===1?'person needs':'people need')+' a vehicle</div>'+
+    '<div style="font-size:12px;color:var(--text2);line-height:1.5;margin-bottom:6px">Their driving today is recorded but counts for nobody until this is answered. Answer once and it fills in every day after.</div>'+
+    gaps.map(row).join('')+
+  '</div>';
+}
+function _truckDayFor(empId){
+  if(empId==null)return null;
+  const e=(S.employees||[]).find(x=>String(x.id)===String(empId));
+  const t=e&&e.truckDay;
+  return (t&&t.day===todayKey()&&t.mode)?t:null;   // yesterday's answer is not today's
+}
+// The signed-in crew member's own assignment, if dispatch made one.
+function _myTruckToday(){
+  const eid=(typeof _employeeRecord!=='undefined'&&_employeeRecord)?_employeeRecord.id:null;
+  return _truckDayFor(eid);
+}
+// What the person is riding in today: 'truck' | 'rider' | 'own' | 'none'.
+// One place decides it, so the mileage gate and the drive-leg label can never
+// disagree about the same day.
+function _shiftVehicleMode(){
+  const a=_myTruckToday();
+  if(a)return a.mode;
   const v=localStorage.getItem('emp_vehicle_'+todayKey());
-  return !!(v&&v!=='none'&&v!=='personal');
+  if(v)return v==='personal'?'own':'truck';
+  // No answer for today, so fall back to the STANDING one. This is what removes
+  // the daily chore: a crew member with a usual vehicle needs nobody to touch
+  // anything, and their miles attribute correctly on their own. It is checked
+  // against the shop each time, so a usual truck that is down does NOT quietly
+  // keep deducting.
+  const eid=(typeof _employeeRecord!=='undefined'&&_employeeRecord)?_employeeRecord.id:null;
+  if(eid!=null&&typeof _crewVehicleForDay==='function'){
+    const r=_crewVehicleForDay(eid);
+    if(r&&(r.reason==='usual'))return r.mode;
+  }
+  return 'none';
+}
+// Returns true when the shift vehicle should have mileage tracked (company vehicle)
+function _isCompanyVehicleToday(){
+  return _shiftVehicleMode()==='truck';
 }
 
 // ── Estimate access requests (owner side) ──────────────────────────────────
@@ -2581,6 +3254,10 @@ function renderTeam(){
   if(_canViewComp()&&supaEnabled()&&_supaUser&&!_teamCompLoaded){
     _teamCompLoaded=true;_loadTeamComp().then(()=>renderTeam());
   }
+  // Crew location status, same lazy-load-then-rerender shape as team comp above.
+  if(!_isEmployee&&S.teamTracking&&supaEnabled()&&_supaUser&&!_teamGeoLoaded){
+    _teamGeoLoaded=true;_loadTeamGeo().then(()=>renderTeam());
+  }
   const emps=S.employees||[];
   const empHtml=!emps.length
     ?'<div style="font-size:12px;color:var(--text3);padding:6px 0">No team members yet, just you. Add someone when you hire.</div>'
@@ -2603,6 +3280,15 @@ function renderTeam(){
         (e.phone?'<div style="font-size:11px;color:var(--text3);margin-top:4px">'+svgIcon('📞')+' '+escHtml(e.phone)+'</div>':'')+
         (e.email?'<div style="font-size:11px;color:var(--text3);margin-top:3px">'+svgIcon('📧')+' '+escHtml(e.email)+' <span style="font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;padding:1px 5px;border-radius:6px">Invite sent</span></div>':'')+
         '<div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.5">'+perms+'</div>'+
+        (function(){
+          // Owner-facing only, and never for the owner's own row (they see their
+          // own state on the dashboard checklist instead).
+          if(e.role==='owner')return '';
+          const g=_geoRosterStatus(e.email);
+          if(!g)return '';
+          return '<div style="display:flex;align-items:center;gap:5px;font-size:10px;margin-top:5px;color:'+g.tone+'">'+
+            '<span style="font-size:9px">'+svgIcon(g.dot,{size:9})+'</span><span>'+escHtml(g.label)+'</span></div>';
+        })()+
       '</div>';
     }).join('');
   if(el)el.innerHTML=_reqHtml+empHtml;
@@ -2731,6 +3417,71 @@ function _empEffectiveHourly(comp){
 function _empLoadedHourly(comp){
   return _empEffectiveHourly(comp)*(S.laborBurden||1.3);
 }
+// ── Crew location status for the roster ──────────────────────────────────────
+// Two sources, deliberately, because neither alone is trustworthy:
+//   • location_status  , what the device's permission API reported. Safari has
+//     historically not supported querying geolocation permission at all, so this
+//     is 'unsupported' (not a lie) on a chunk of real phones.
+//   • last ping        , whether breadcrumbs are actually arriving. This is the
+//     DEFINITIVE signal: if rows are landing, permission is granted no matter
+//     what the API claims. The owner's real question is "is tracking working for
+//     this person," and a recent ping answers it outright.
+// Freshness matters as much as state. An owner can never query a crew member's
+// live permission, only see what their device last said, so a stale 'granted'
+// renders GRAY (unknown), never green. A green light that lies is worse than an
+// honest "haven't heard from this phone."
+let _teamGeo={};
+let _teamGeoLoaded=false;
+const _GEO_FRESH_MS=36*3600*1000; // a phone that hasn't checked in for ~1.5 days is unknown, not OK
+async function _loadTeamGeo(){
+  if(!supaEnabled()||!_supaUser||_isEmployee)return;
+  const cid=_contractorUserId||_supaUser.id;
+  try{
+    const{data,error}=await _supa.from('team_members')
+      .select('email,employee_user_id,location_status,location_checked_at,location_device,location_ack_at').eq('contractor_user_id',cid);
+    if(error||!data)return;
+    const next={};
+    data.forEach(r=>{if(r.email)next[r.email.toLowerCase()]={
+      status:r.location_status||null,checkedAt:r.location_checked_at||null,
+      device:r.location_device||null,ackAt:r.location_ack_at||null,lastPing:null};});
+    // Ping recency, the signal that outranks the permission API.
+    try{
+      const since=new Date(Date.now()-_GEO_FRESH_MS).toISOString();
+      const{data:pings}=await _supa.from('location_pings')
+        .select('employee_user_id,ts').eq('contractor_user_id',cid).gte('ts',since)
+        .order('ts',{ascending:false}).limit(500);
+      const byUser={};
+      (pings||[]).forEach(p=>{if(p.employee_user_id&&!byUser[p.employee_user_id])byUser[p.employee_user_id]=p.ts;});
+      data.forEach(r=>{
+        const k=(r.email||'').toLowerCase();
+        if(k&&next[k]&&r.employee_user_id&&byUser[r.employee_user_id])next[k].lastPing=byUser[r.employee_user_id];
+      });
+    }catch(_e){}
+    _teamGeo=next;
+  }catch(_e){}
+}
+// Returns {dot,label,tone} or null when crew tracking is off for the account.
+function _geoRosterStatus(email){
+  if(!S.teamTracking)return null;
+  const g=_teamGeo[(email||'').toLowerCase()];
+  if(!g)return{dot:'⚪',label:'Not set up yet',tone:'var(--text3)'};
+  const pingAge=g.lastPing?Date.now()-new Date(g.lastPing).getTime():null;
+  // A ping inside the window is proof, regardless of what the permission API said.
+  if(pingAge!=null&&pingAge<_GEO_FRESH_MS)
+    return{dot:'🟢',label:'Tracking · last ping '+_timeAgo(g.lastPing),tone:'var(--green-mid,#16a34a)'};
+  if(g.status==='denied')
+    return{dot:'🔴',label:'Location off on their phone',tone:'#DC2626'};
+  if(!g.ackAt)
+    return{dot:'⚪',label:'Hasn’t opened the app yet',tone:'var(--text3)'};
+  const stale=!g.checkedAt||(Date.now()-new Date(g.checkedAt).getTime())>_GEO_FRESH_MS;
+  if(stale)
+    return{dot:'⚪',label:'No recent activity'+(g.checkedAt?' · '+_timeAgo(g.checkedAt):''),tone:'var(--text3)'};
+  if(g.status==='granted')
+    return{dot:'🟢',label:'Location on'+(g.device?' · '+g.device:''),tone:'var(--green-mid,#16a34a)'};
+  if(g.status==='unsupported')
+    return{dot:'⚪',label:'Can’t read status on this phone',tone:'var(--text3)'};
+  return{dot:'🔴',label:'Location not turned on',tone:'#DC2626'};
+}
 async function _loadTeamComp(){
   if(!supaEnabled()||!_supaUser||!_canViewComp())return;
   const cid=_contractorUserId||_supaUser.id;
@@ -2757,6 +3508,9 @@ function _employeeModalHTML(emp,idx){
   const _legacyMap={employee:'tech',estimator:'tech',foreman:'manager',painter:'tech'};
   const _eRole=_legacyMap[e.role]||e.role||'tech';
   const _eClass=e.classification||'';
+  // '' = nobody has said yet. 'own' = their own vehicle. Otherwise a vehicle id.
+  const _eUsual=(e.usualVehicle&&e.usualVehicle.mode==='own')?'own'
+               :(e.usualVehicle&&e.usualVehicle.vehicleId)?String(e.usualVehicle.vehicleId):'';
   const _eComp=_teamComp[(e.email||'').toLowerCase()]||{pay_type:'hourly',pay_rate:0};
   return '<div style="font-size:17px;font-weight:800;margin-bottom:'+(isNew?'4px':'14px')+'">'+(isNew?'Add W-2 Employee':'Edit '+escHtml(e.name||''))+'</div>'+
     (isNew?'<div style="font-size:12px;color:var(--text2);margin-bottom:14px;line-height:1.4">You control how, when, and where they work, you set the hours, direct the job, provide the tools. That\'s an employee.</div>':'')+
@@ -2781,6 +3535,21 @@ function _employeeModalHTML(emp,idx){
           _EMP_CLASSIFICATIONS.map(c=>'<option value="'+escHtml(c)+'"'+(c===_eClass?' selected':'')+'>'+escHtml(c||'- None -')+'</option>').join('')+
         '</select></div>'+
     '</div>'+
+    // ── Which vehicle, asked ONCE ────────────────────────────────────────────
+    // Asked here because this is the moment the answer is already known, and
+    // asking once at hire is what stops dispatch asking every morning forever.
+    // Hidden entirely when no vehicle is marked crew-drivable: there is nothing
+    // to choose between, so the answer is their own vehicle and the question is
+    // noise.
+    ((typeof getCrewVehicles==='function'&&getCrewVehicles().length)?
+      '<div class="f" style="margin-bottom:12px"><label>Usual vehicle</label>'+
+        '<select id="emp-usual-vehicle" style="font-size:14px;padding:10px">'+
+          '<option value=""'+(!_eUsual?' selected':'')+'>Not set yet</option>'+
+          '<option value="own"'+(_eUsual==='own'?' selected':'')+'>Their own vehicle</option>'+
+          getCrewVehicles().map(v=>'<option value="'+escHtml(String(v.id))+'"'+(_eUsual===String(v.id)?' selected':'')+'>'+escHtml(v.name||'Vehicle')+'</option>').join('')+
+        '</select>'+
+        '<div style="font-size:10px;color:var(--text3);margin-top:4px">Filled in for them every day. Change it on the dispatch board when a day is different, and we will ask if this one is in the shop.</div>'+
+      '</div>':'')+
     (_canViewComp()?
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">'+
         '<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Pay</div>'+
@@ -2863,7 +3632,23 @@ async function _saveEmployee(idx){
   const _canComp=_canViewComp();
   const _payType=_canComp?(document.getElementById('emp-pay-type')?.value||'hourly'):null;
   const _payRate=_canComp?_moneyVal('emp-pay-rate'):null;
-  const emp={id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms};
+  // START FROM THE EXISTING RECORD. This rebuilt the employee from the form
+  // alone, so every field the form does not show was dropped on save: editing
+  // somebody's phone number mid-morning silently wiped truckDay, their vehicle
+  // for the day, and would have wiped usualVehicle the moment it was added.
+  // Fields keep arriving on this record (truckDay, location_ack_*, usualVehicle),
+  // and a save that only knows about today's form will keep losing them.
+  const _prev=(!isNew&&S.employees[idx])?S.employees[idx]:{};
+  const _usualEl=document.getElementById('emp-usual-vehicle');
+  const _usualVal=_usualEl?_usualEl.value:'';
+  const emp=Object.assign({},_prev,{id:_empId,name,email,role:_empRole,classification:_empClass,phone:_empPhone,permissions:perms});
+  // The standing vehicle answer. '' means nobody has said yet, which the
+  // dispatch board reports as a gap rather than guessing.
+  if(_usualEl){
+    if(_usualVal==='own')emp.usualVehicle={mode:'own'};
+    else if(_usualVal)emp.usualVehicle={mode:'truck',vehicleId:_usualVal};
+    else delete emp.usualVehicle;
+  }
   if(!S.employees)S.employees=[];
   // Captured before the push so it reflects the roster as it was walking in,
   // picks the prompt's framing: first-ever hire gets full business setup,
@@ -3976,6 +4761,7 @@ function _enterOfflineMode(){
       if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
       if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
       if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cache restore)');applySettings();_refillSettingsFormUnlessEditing();}
     }catch(_ce){}
@@ -3988,6 +4774,31 @@ function _enterOfflineMode(){
   _showOfflineBanner();
   // Immediately probe for connection so re-auth fires without waiting for the 5s tick
   setTimeout(()=>_probeAndSync(),500);
+}
+// visible=true -> password IS currently shown as plain text -> draw the OPEN
+// eye (you can see it). visible=false -> password is masked -> draw the
+// SLASHED eye (you can't). This was previously named `off` and the two SVGs
+// were swapped, so the icon at rest (password masked, the state every visitor
+// sees first) was the OPEN eye and the icon after revealing was the SLASHED
+// one: backwards on the one control a person checks before trusting the rest
+// of the sign-in form. `visible` is deliberately unambiguous, since the
+// original name was exactly what made the inversion easy to write and hard
+// to spot on review.
+function _eyeSvg(visible){
+  return visible
+    ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>'
+    : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.94 10.94 0 0112 19c-7 0-11-7-11-7a20.4 20.4 0 015.06-5.94M9.9 4.24A10.6 10.6 0 0112 4c7 0 11 7 11 7a20.5 20.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+}
+function _pwToggle(inputId,btnId){
+  const inp=document.getElementById(inputId),btn=document.getElementById(btnId);
+  if(!inp||!btn)return;
+  // Toggle first, then derive everything from the NEW type. One source of
+  // truth: no separate "show" flag computed from the old state that then has
+  // to be remembered as pre- or post-flip.
+  inp.type=(inp.type==='password')?'text':'password';
+  const visible=inp.type!=='password';
+  btn.innerHTML=_eyeSvg(visible);
+  btn.setAttribute('aria-label',visible?'Hide password':'Show password');
 }
 function supaShowLogin(opts={}){
   if(!supaEnabled())return;
@@ -4121,7 +4932,11 @@ function supaShowLogin(opts={}){
                 '<div class="f" style="margin:2px 0 12px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Email</label>'+
                   '<input type="email" id="supa-email" placeholder="you@yourbusiness.com" '+_fldFocus+' style="'+_fld+'"></div>'+
                 '<div class="f" style="margin-bottom:8px"><label style="display:block;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Password</label>'+
-                  '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" '+_fldFocus+' style="'+_fld+'"></div>'+
+                  '<div style="position:relative">'+
+                    '<input type="password" id="supa-pass" placeholder="••••••••" onkeydown="if(event.key===\'Enter\')supaSignIn()" '+_fldFocus+' style="'+_fld+';padding-right:42px">'+
+                    '<button type="button" id="supa-pass-eye" onclick="_pwToggle(\'supa-pass\',\'supa-pass-eye\')" aria-label="Show password" style="position:absolute;right:4px;top:50%;transform:translateY(-50%);width:34px;height:34px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text3);border-radius:8px;padding:0" onmouseover="this.style.color=\'var(--text)\'" onmouseout="this.style.color=\'var(--text3)\'">'+_eyeSvg(false)+'</button>'+
+                  '</div>'+
+                '</div>'+
                 '<div style="text-align:right;margin-bottom:18px"><button onclick="supaForgotPassword()" style="border:none;background:none;color:var(--blue);font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;padding:0">Forgot password?</button></div>'+
                 '<button onclick="supaSignIn()" onmouseover="this.style.transform=\'translateY(-1px)\';this.style.boxShadow=\'0 6px 20px rgba(13,17,23,.28)\'" onmouseout="this.style.transform=\'none\';this.style.boxShadow=\'0 3px 12px rgba(13,17,23,.18)\'" style="width:100%;padding:15px;border-radius:11px;border:none;background:linear-gradient(180deg,#1c2431,#0D1117);color:#fff;font-size:16px;font-weight:700;cursor:pointer;font-family:inherit;box-shadow:0 3px 12px rgba(13,17,23,.18);letter-spacing:-.01em;transition:transform .15s,box-shadow .15s">Sign in</button>'+
               '</div>'+
@@ -4276,6 +5091,8 @@ function _wipeLocalAccountData(){
   // outgoing account's trucks stay in memory and render under the next login,
   // which is the exact cross-account bleed the S.vehicles reset below guarded.
   vehicles=[];
+  places=[];
+  _teamGeo={};_teamGeoLoaded=false;_teamComp={};_teamCompLoaded=false;
   // Inbound-lead review queue is account-scoped in-memory state that lived OUTSIDE
   // the arrays above, the next account's Leads page would keep rendering this
   // account's unreviewed QR/intake leads (and could even promote one into the
@@ -4467,7 +5284,7 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from, the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,ts:Date.now()});
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
@@ -4739,7 +5556,7 @@ function _paintCacheForDelta(uid){
   try{
     const cc=JSON.parse(localStorage.getItem('zp3_cloud_cache')||'null');
     if(!cc||cc._owner!==uid)return false;
-    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles};
+    const byKey={td_clients:cc.clients,td_bids:cc.bids,td_jobs:cc.jobs,td_income:cc.income,td_expenses:cc.expenses,td_mileage:cc.mileage,td_payments:cc.payments,td_liens:cc.liens,td_time_entries:cc.timeEntries,td_licenses:cc.licenses,td_events:cc.events,td_contracts:cc.contracts,td_agreements:cc.agreements,td_photos:cc.photos,td_maintenance:cc.maintenance,td_vehicles:cc.vehicles,td_places:cc.places};
     const _ptTs=Date.now();
     for(const{t,set}of _TD_TABLES){
       // A cache written by an OLDER app version has no key for a table added
@@ -4768,7 +5585,7 @@ function _writeLocalCache(){
   try{
     const _snap={_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,payments,income,
       expenses:expenses.map(({receipt_img,...r})=>r),
-      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,checksState,
+      mileage,liens,timeEntries,licenses,events,contracts,agreements,photos,maintenance,vehicles,places,checksState,
       settings:S,cached_at:new Date().toISOString()};
     localStorage.setItem('zp3_cloud_cache',JSON.stringify(_snap));
     // Delta sidecar: the server-updated_at cursor + known-cloud hashes, owner-scoped.
@@ -5489,6 +6306,23 @@ async function _fetchProposalViews(){
         _proposalAuditEventsByBid=_byBid;
       }
     }catch(_e){}
+    // Verified on-site presence (arrival/departure) for the client Activity timeline.
+    // Only geofence/manual entries carry a job_id; the place-linked rows (source:'place',
+    // job_id:null, a supply-house stop) don't belong to any one client and are skipped.
+    try{
+      const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+      const{data:_jte}=await _supa.from('job_time_entries')
+        .select('job_id,employee_user_id,arrived_at,departed_at,minutes,source')
+        .eq('contractor_user_id',cid)
+        .not('job_id','is',null)
+        .order('arrived_at',{ascending:false})
+        .limit(1500);
+      if(_jte){
+        const _byJob={};
+        _jte.forEach(r=>{if(!r.job_id)return;(_byJob[r.job_id]||(_byJob[r.job_id]=[])).push({arrivedAt:r.arrived_at,departedAt:r.departed_at||null,minutes:r.minutes||0,source:r.source||null,employeeName:_crewMemberName(r.employee_user_id)});});
+        _jobTimeEntriesByJob=_byJob;
+      }
+    }catch(_e){}
   }catch(e){}
 }
 // Sign-flow warmth badge, one line telling the contractor how far the client
@@ -6102,6 +6936,25 @@ async function supaLoadFromCloud({silent=false}={}){
           if(_n>0){_logSave('vehicle-links-backfilled',{count:_n});saveAll();}
         }
       }catch(_e){}
+      // Promote geo-stamped receipts into named supply houses. Same shape as the
+      // backfill above: runs after expenses are in memory, idempotent (a
+      // coordinate already inside a known place is skipped), so a boot with
+      // nothing to promote costs one pass.
+      try{
+        if(typeof detectPlacesFromExpenses==='function'){
+          const _p=detectPlacesFromExpenses();
+          if(_p>0){_logSave('places-detected',{count:_p});saveAll();}
+        }
+        // Same pass for the other thing a receipt decides: whether a stop that
+        // was passed through as a personal detour was really a crew lunch run.
+        // Here as well as on the expense save because the receipt may have been
+        // entered on another device, and this is the first moment those rows
+        // exist on this one.
+        if(typeof reviewDetourReceipts==='function'){
+          const _d=reviewDetourReceipts();
+          if(_d>0)_logSave('detours-restored',{count:_d});
+        }
+      }catch(_e){}
     }
 
     // If _mergeIncomingSettings detected local is newer than cloud it scheduled a
@@ -6353,6 +7206,7 @@ async function supaLoadFromCloud({silent=false}={}){
         if(_cd.contracts?.length)contracts=_cd.contracts;if(_cd.agreements?.length)agreements=_cd.agreements;if(_cd.photos?.length)photos=_cd.photos;
           if(_cd.maintenance?.length)maintenance=_cd.maintenance;
           if(_cd.vehicles?.length)vehicles=_cd.vehicles;
+          if(_cd.places?.length)places=_cd.places;   // geocoded locations: without these an offline boot has NO place fences
         if(_cd.checksState&&Object.keys(_cd.checksState).length)checksState=_cd.checksState;
         if(_cd.settings){_mergeIncomingSettings(_cd.settings,'zp3_cloud_cache (cloud load FAILED, fallback)');applySettings();_refillSettingsFormUnlessEditing();}
         _loadedFromCacheOnly=true;_supaCloudLoaded=true;
@@ -6452,6 +7306,7 @@ function _initRealtimeSubscriptions(uid){
     _supa.channel('sig-feed-'+_supaUser.id)
       .on('postgres_changes',{event:'*',schema:'public',table:'signed_proposals',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{checkNewSignatures('push');})
       .on('postgres_changes',{event:'*',schema:'public',table:'proposal_views',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
+      .on('postgres_changes',{event:'*',schema:'public',table:'job_time_entries',filter:'contractor_user_id=eq.'+_supaUser.id},()=>{_fetchProposalViews();})
       .subscribe(_sigFeedStatus);
   }catch(_sf){}
   try{
@@ -6594,6 +7449,22 @@ function _renderAllPages(){
 // ── Inbound leads (onboarding form + QR intake) ───────────────────────────
 let _pendingInbound=[];
 const _processedInboundIds=new Set();
+// "Clear all data" companion for the lead inflow. inbound_leads is not in the
+// sync fabric (no soft-delete sweep reaches it), so without a hard delete here
+// the wiped account's QR/intake leads sat in the cloud and repopulated the
+// review queue on the next poll. Local queue and badge clear FIRST so the UI is
+// honest even if the network call fails; rows are deleted under BOTH ids the
+// loader queries by (auth uid legacy convention + accounts.id, see
+// _loadPendingInbound) and in every status, this is a purge, not a triage.
+async function _clearInboundLeadsCloud(){
+  _pendingInbound=[];_processedInboundIds.clear();
+  if(typeof _updateInboundBadge==='function')_updateInboundBadge();
+  if(typeof supaEnabled!=='function'||!supaEnabled()||typeof _supa==='undefined'||!_supa||!_supaUser)return;
+  const ids=[_supaUser.id];
+  const _acctId=(typeof _account!=='undefined'&&_account&&_account.id)||null;
+  if(_acctId&&_acctId!==_supaUser.id)ids.push(_acctId);
+  try{await _supa.from('inbound_leads').delete().in('account_id',ids);}catch(_e){}
+}
 async function _loadPendingInbound(){
   if(!_supa||!_supaUser)return;
   // Snapshot which account this call belongs to, if a sign-out/sign-in happens

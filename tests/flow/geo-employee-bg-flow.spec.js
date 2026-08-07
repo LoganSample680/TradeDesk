@@ -10,8 +10,9 @@
 //   3. BREADCRUMB THROTTLE, the first ping writes a location_pings breadcrumb;
 //      a second ping within 60s is throttled (no duplicate write).
 //   4. BACKGROUNDING   : visibilitychange→hidden KEEPS the entry open (persisted
-//      to the device); the first post-gap ping resolves it, still inside ⇒ one
-//      continuous visit, outside ⇒ closed at the hidden moment as 'geofence-gap'.
+//      to the device); post-gap pings resolve it, still inside ⇒ one continuous
+//      visit; outside needs a SECOND agreeing ping to confirm before it closes
+//      as 'geofence-gap', stamped at that confirming ping's own time.
 //
 // Soft-skips if geo tables are absent. Session globals it flips (_isEmployee etc.)
 // are restored; in-memory jobs[] restored, never saved (CLAUDE.md §13.7).
@@ -101,7 +102,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       },
       rule: async (p) => {
         const r = await jobRows(p, jobB);
-        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         const leg = (r.rows || []).find(x => x.source === 'drive-personal');
         return { ok: !!leg, got: leg ? `source=${leg.source} minutes=${leg.minutes}` : `no drive-personal leg (rows=${JSON.stringify(r.rows)})` };
       },
@@ -135,14 +136,19 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
     // ── 4. BACKGROUNDING: the open entry SURVIVES a hidden gap; the next ping
     //       resolves it. (Behavior intentionally changed: the old handler closed on
     //       hidden, so a phone in a pocket all day logged only screen-on slivers and
-    //       any visit hidden within 2 min of arrival was dropped entirely. Now:
-    //       still-inside ⇒ continuous visit; outside ⇒ close at the last VERIFIED
-    //       on-site moment, tagged 'geofence-gap'.) ──
+    //       any visit hidden within 2 min of arrival was dropped entirely. Then
+    //       changed AGAIN, 2026-08-06: a single post-gap ping outside the fence used
+    //       to close it immediately, backdated to the hidden moment, but a phone
+    //       waking from sleep commonly returns one coarse fix before GPS reacquires
+    //       lock, so a real still-on-site visit could get falsely closed off one bad
+    //       fix. Now: still-inside ⇒ continuous visit; outside ⇒ a SECOND agreeing
+    //       ping is required before it's trusted, and the row is stamped at that
+    //       confirming ping's own time, not the earlier unverified hidden moment.) ──
     await step(page, {
-      label: 'backgrounding keeps the entry open; leaving during the gap closes at the hidden moment', page: 'geo', role: 'contractor',
+      label: 'backgrounding keeps the entry open; a confirmed departure closes at the moment it was verified', page: 'geo', role: 'contractor',
       suspect: 'geo-track.js visibilitychange persist + _geoOnPing hidden-gap resolution',
-      ruleText: 'hidden must NOT close the entry; a post-gap ping outside the fence must close it as geofence-gap AT the hidden timestamp',
-      expected: 'entry open through hidden; geofence-gap row with departed_at === hiddenAt',
+      ruleText: 'hidden must NOT close the entry; a post-gap ping outside the fence must not close alone, a SECOND agreeing ping must close it as geofence-gap AT that confirming ping\'s own timestamp',
+      expected: 'entry open through hidden; geofence-gap row with departed_at at the confirming ping\'s time, not the hidden timestamp',
       act: async (p) => {
         await p.evaluate(({ jobBg, A }) => {
           window.__origJobs = window.__origJobs || jobs.slice();
@@ -167,8 +173,12 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
           hiddenAt: (JSON.parse(localStorage.getItem('zp3_geo_open') || '{}')).hiddenAt || null,
         }));
         // Return to the foreground OUTSIDE the fence, the worker left during the gap.
+        // A gap-close now needs a SECOND agreeing ping before it's trusted (owner
+        // report, 2026-08-06: one coarse fix right on wake falsely closed real
+        // visits) — one ping alone is deliberately not enough here.
         await p.evaluate(() => { try { Object.defineProperty(document, 'hidden', { configurable: true, get: () => false }); } catch (e) {} document.dispatchEvent(new Event('visibilitychange')); });
-        await ping(p, 38.2000, -98.0000);            // far away → gap-close path
+        await ping(p, 38.2000, -98.0000);            // 1st outside ping: pending, not yet closed
+        await ping(p, 38.2000, -98.0000);            // 2nd outside ping: confirms → gap-close path
         await p.waitForTimeout(1500);                // let the durable queue drain
         p.__end = await p.evaluate(() => ({ cur: _geoCurrentJob, queueLeft: (JSON.parse(localStorage.getItem('zp3_geo_queue') || '[]')).length }));
         // Restore in-memory jobs after the whole test.
@@ -177,7 +187,7 @@ test.describe('geo employee path + lifecycle (UI-driven)', () => {
       },
       rule: async (p) => {
         const r = await jobRows(p, jobBg);
-        if (r.absent) return { ok: true, got: 'SKIP: job_time_entries not provisioned' };
+        if (r.absent) return { ok: false, got: 'MISSING: job_time_entries errored on a schema lookup, but it ships in a migration (20260617/20260619), so an absent table is a real failure, not an environment gap' };
         const mid = p.__mid || {}, end = p.__end || {};
         const gapRow = (r.rows || []).find(x => x.source === 'geofence-gap');
         const ok = mid.cur != null && mid.persisted === true    // hidden did NOT close/reset
