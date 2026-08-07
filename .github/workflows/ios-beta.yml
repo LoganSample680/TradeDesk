@@ -108,9 +108,15 @@ jobs:
           APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
         run: |
           IPA=$(ls build/ipa/*.ipa | head -1)
-          printf '{"key_id":"%s","issuer_id":"%s","key_filepath":"%s","in_house":false}' \
-            "$APPSTORE_KEY_ID" "$APPSTORE_ISSUER_ID" "$HOME/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8" \
-            > build/asc_key.json
+          # fastlane's api_key JSON wants the .p8 CONTENTS in a `key` field
+          # (build #4: "API key JSON is missing field(s): key"); python does the
+          # JSON escaping of the key's newlines correctly.
+          python3 -c "
+          import json, os
+          kid = os.environ['APPSTORE_KEY_ID']
+          key = open(os.path.expanduser('~/private_keys/AuthKey_' + kid + '.p8')).read()
+          json.dump({'key_id': kid, 'issuer_id': os.environ['APPSTORE_ISSUER_ID'], 'key': key, 'in_house': False}, open('build/asc_key.json', 'w'))
+          "
           fastlane pilot upload \
             --ipa "$IPA" \
             --api_key_path build/asc_key.json \
