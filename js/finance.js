@@ -3238,7 +3238,10 @@ function _bkRenderDays(tab,mo,rows,headers,rowFn,minWidth,totalColor,sumFn,fmtFn
   sumFn=sumFn||(r=>r.amount||0);fmtFn=fmtFn||fmt;opts=opts||{};
   const byDay={};
   rows.forEach(r=>{const d=(r.date||'').slice(0,10)||'unknown';(byDay[d]||(byDay[d]=[])).push(r);});
-  const days=Object.keys(byDay).sort((a,b)=>b.localeCompare(a));
+  // Every existing caller (Income/Expenses/Time log/Client timeline) reads
+  // newest-first, unchanged. opts.asc:true is additive, Time at Places is
+  // the only caller that wants oldest-to-newest.
+  const days=Object.keys(byDay).sort((a,b)=>opts.asc?a.localeCompare(b):b.localeCompare(a));
   return days.map(day=>{
     const dr=byDay[day];
     const dayTotal=dr.reduce((s,r)=>s+sumFn(r),0);

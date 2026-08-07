@@ -578,19 +578,41 @@ async function _ptrFetch(year){
   const lo=year+'-01-01T00:00:00Z',hi=(year+1)+'-01-01T00:00:00Z';
   try{
     const[pRes,sRes]=await Promise.all([
-      _supa.from('job_time_entries').select('employee_user_id,dest_place,minutes,arrived_at')
+      _supa.from('job_time_entries').select('employee_user_id,dest_place,minutes,arrived_at,departed_at')
         .eq('contractor_user_id',cid).eq('source','place').gte('arrived_at',lo).lt('arrived_at',hi),
-      _supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at')
+      _supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at,departed_at')
         .eq('contractor_user_id',cid).gte('arrived_at',lo).lt('arrived_at',hi),
     ]);
-    ((pRes&&pRes.data)||[]).forEach(r=>{if(r.dest_place)out.rows.push({place:r.dest_place,uid:r.employee_user_id||'',mins:r.minutes||0});});
-    ((sRes&&sRes.data)||[]).forEach(r=>{out.rows.push({place:_PTR_SHOP_KEY,uid:r.employee_user_id||'',mins:r.minutes||0});});
+    ((pRes&&pRes.data)||[]).forEach(r=>{if(r.dest_place)out.rows.push({place:r.dest_place,uid:r.employee_user_id||'',mins:r.minutes||0,arrivedAt:r.arrived_at,departedAt:r.departed_at,date:_ptrDateKey(r.arrived_at)});});
+    ((sRes&&sRes.data)||[]).forEach(r=>{out.rows.push({place:_PTR_SHOP_KEY,uid:r.employee_user_id||'',mins:r.minutes||0,arrivedAt:r.arrived_at,departedAt:r.departed_at,date:_ptrDateKey(r.arrived_at)});});
     out.ok=true;
   }catch(_e){}
   return out;
 }
+// Local calendar day the visit happened on, the same rule every other date
+// key in this app follows (never a UTC slice, which lands a late-evening
+// Central visit on tomorrow).
+function _ptrDateKey(iso){
+  try{const d=new Date(iso);return isNaN(d.getTime())?'':(typeof dateKey==='function'?dateKey(d):String(iso).slice(0,10));}
+  catch(_e){return String(iso||'').slice(0,10);}
+}
 function _ptrDur(mins){
   return (typeof _dispatchDur==='function')?_dispatchDur(mins):(Math.round((mins||0)/6)/10)+'h';
+}
+function _ptrClk(iso){
+  try{const d=new Date(iso);return isNaN(d.getTime())?'':d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}
+  catch(_e){return'';}
+}
+// One visit's row inside a day-accordion body (bodyFn for _bkRenderDays).
+function _ptrVisitRows(dayRows){
+  return dayRows.slice().sort((a,b)=>String(a.arrivedAt||'').localeCompare(b.arrivedAt||'')).map(r=>{
+    const nm=(typeof _crewMemberName==='function'&&_crewMemberName(r.uid))||'Crew member';
+    const clk=r.arrivedAt&&r.departedAt?_ptrClk(r.arrivedAt)+'–'+_ptrClk(r.departedAt):'';
+    return '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px dashed var(--border)">'+
+      '<span style="font-size:12px;font-weight:600;color:var(--text2)">'+escHtml(nm)+'</span>'+
+      '<span style="font-size:11px;color:var(--text3);font-variant-numeric:tabular-nums;white-space:nowrap">'+(clk?clk+' · ':'')+_ptrDur(r.mins)+'</span>'+
+    '</div>';
+  }).join('');
 }
 function _ptrSetYear(y){_ptrYear=y;renderPlaceTimeReport();}
 function _ptrToggle(i){
@@ -624,7 +646,7 @@ function _ptrPaint(el,yr,data){
     '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Time at places</div>'+
     '<select onchange="_ptrSetYear(parseInt(this.value))" style="font-size:12px;font-weight:700;padding:5px 9px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+yearOpts+'</select>'+
   '</div>'+
-  '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px">Verified hours from geofence arrivals and departures, by place. Tap a place for the per-person split.</div>';
+  '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px">Verified hours from geofence arrivals and departures, by place. Tap a place for the per-person split, by month and day, oldest to newest.</div>';
   const rows=(data&&data.rows)||[];
   if(!rows.length){
     el.innerHTML='<div class="card">'+head+'<div style="font-size:12px;color:var(--text3);padding:2px 0 4px">No tracked time for '+yr+' yet. Hours land here automatically once geofenced arrivals and departures are logged.</div></div>';
@@ -634,9 +656,10 @@ function _ptrPaint(el,yr,data){
   const people=new Set();
   let totalMins=0;
   rows.forEach(r=>{
-    const b=buckets[r.place]||(buckets[r.place]={mins:0,visits:0,people:{}});
+    const b=buckets[r.place]||(buckets[r.place]={mins:0,visits:0,people:{},rows:[]});
     b.mins+=r.mins;b.visits++;totalMins+=r.mins;
     b.people[r.uid]=(b.people[r.uid]||0)+r.mins;
+    b.rows.push(r);
     if(r.uid)people.add(r.uid);
   });
   _ptrKeys=Object.keys(buckets).sort((a,b)=>buckets[b].mins-buckets[a].mins);
@@ -656,6 +679,19 @@ function _ptrPaint(el,yr,data){
         '<span style="color:var(--text2);font-weight:600">'+escHtml(nm)+'</span>'+
         '<span style="font-weight:700;color:var(--text)">'+_ptrDur(b.people[uid])+'</span></div>';
     }).join('');
+    // Month → day breakdown, oldest to newest (owner call, 2026-08-07),
+    // reusing the SAME month/day accordion Income/Expenses/Time log use
+    // (_bkMonthAcc/_bkRenderDays), just with opts.asc for the one place that
+    // wants chronological-forward instead of newest-first.
+    const byMonth={};
+    b.rows.forEach(r=>{const mo=(r.date||'').slice(0,7)||'unknown';(byMonth[mo]||(byMonth[mo]=[])).push(r);});
+    const tabId='ptr'+i;
+    const monthsHtml=Object.keys(byMonth).sort((a,b2)=>a.localeCompare(b2)).map(mo=>{
+      const moRows=byMonth[mo];
+      const moMins=moRows.reduce((s,r)=>s+(r.mins||0),0);
+      const inner=(typeof _bkRenderDays==='function')?_bkRenderDays(tabId,mo,moRows,[],null,0,'var(--text3)',r=>r.mins||0,_ptrDur,{asc:true,bodyFn:_ptrVisitRows}):'';
+      return (typeof _bkMonthAcc==='function')?_bkMonthAcc(tabId,mo,_bkMonthLabel(mo),moRows.length+' visit'+(moRows.length!==1?'s':''),'<span style="font-weight:800;color:var(--text)">'+_ptrDur(moMins)+'</span>',inner,false):'';
+    }).join('');
     return '<div style="border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--bg2)">'+
       '<div onclick="_ptrToggle('+i+')" style="display:flex;align-items:center;gap:10px;padding:11px 12px;cursor:pointer">'+
         '<span style="width:28px;height:28px;border-radius:8px;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-shrink:0">'+svgIcon(icon,{size:16})+'</span>'+
@@ -666,7 +702,9 @@ function _ptrPaint(el,yr,data){
         '<span style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">'+_ptrDur(b.mins)+'</span>'+
         '<span style="color:var(--text3);display:inline-flex;transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>'+
       '</div>'+
-      (open?'<div class="td-acc-body td-acc-in"><div class="td-acc-inner" style="padding:0 12px 6px">'+ppl+'</div></div>':'')+
+      (open?'<div class="td-acc-body td-acc-in"><div class="td-acc-inner" style="padding:0 12px 10px">'+ppl+
+        '<div style="margin-top:10px">'+monthsHtml+'</div>'+
+      '</div></div>':'')+
     '</div>';
   }).join('');
   el.innerHTML='<div class="card">'+head+

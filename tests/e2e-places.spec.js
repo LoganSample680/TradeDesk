@@ -1181,6 +1181,53 @@ test.describe('Places, drive attribution and the map', () => {
       expect(r.expanded).toContain('td-acc-body');
       expect(r.expanded).toContain('td-acc-inner');
       expect(r.html).not.toContain('td-acc-body');      // no empty shell when collapsed
+      // Ferguson has a March visit and an April visit: the month breakdown
+      // must read oldest to newest (owner call, 2026-08-07), March first.
+      expect(r.expanded).toContain('March 2026');
+      expect(r.expanded).toContain('April 2026');
+      expect(r.expanded.indexOf('March 2026')).toBeLessThan(r.expanded.indexOf('April 2026'));
+      await restorePtr();
+    });
+
+    test('the per-place drawer breaks down by month and day, oldest to newest, with each visit\'s person and time', async () => {
+      await installPtrStub(
+        [
+          // Same place (Ace Supply), same month (June), two different days,
+          // to prove DAY ordering is also oldest-to-newest, not just months.
+          { employee_user_id: 'ptr-owner', dest_place: 'Ace Supply', minutes: 25, arrived_at: '2026-06-20T14:00:00Z', departed_at: '2026-06-20T14:25:00Z' },
+          { employee_user_id: 'emp-1', dest_place: 'Ace Supply', minutes: 40, arrived_at: '2026-06-05T09:00:00Z', departed_at: '2026-06-05T09:40:00Z' },
+          { employee_user_id: 'ptr-owner', dest_place: 'Ace Supply', minutes: 10, arrived_at: '2026-01-03T08:00:00Z', departed_at: '2026-01-03T08:10:00Z' },
+        ],
+        []
+      );
+      const r = await page.evaluate(async () => {
+        const origEmp = S.employees, origOwner = S.ownerName;
+        S.employees = [{ employee_user_id: 'emp-1', name: 'Mike Torres' }];
+        S.ownerName = 'Pat Owner';
+        try {
+          renderPlaceTimeReport();
+          await new Promise(res => setTimeout(res, 60));
+          _ptrToggle(0); // only one bucket: Ace Supply
+          await new Promise(res => setTimeout(res, 60));
+          return document.getElementById('place-time-report').innerHTML;
+        } finally { S.employees = origEmp; S.ownerName = origOwner; }
+      });
+      // Months: January before June.
+      expect(r).toContain('January 2026');
+      expect(r).toContain('June 2026');
+      expect(r.indexOf('January 2026')).toBeLessThan(r.indexOf('June 2026'));
+      // Days within June: the 5th before the 20th.
+      const juneIdx = r.indexOf('June 2026');
+      const iFifth = r.indexOf('06/05/2026', juneIdx);
+      const iTwentieth = r.indexOf('06/20/2026', juneIdx);
+      expect(iFifth).toBeGreaterThan(-1);
+      expect(iTwentieth).toBeGreaterThan(-1);
+      expect(iFifth).toBeLessThan(iTwentieth);
+      // Each visit names who and when.
+      expect(r).toContain('Mike Torres');
+      expect(r).toContain('Pat Owner');
+      expect(r).toContain('9:00a–9:40a');
+      expect(r).toContain('2:00p–2:25p');
       await restorePtr();
     });
 
