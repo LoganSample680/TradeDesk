@@ -265,26 +265,27 @@ test.describe('Automatic mileage from drive legs', () => {
           purpose: 'Job site', gps: true, created_at: new Date().toISOString() });
         renderAllMileage();
         const trip = document.querySelector('.mil-day-trip[data-lp-id="991002"]');
-        // .mil-day-trip-from/.mil-day-trip-to sit inside the flex:1 name
-        // wrapper, which is itself a child of the stop row that also holds
-        // the time div, two levels up from the name element.
-        const fromRow = trip?.querySelector('.mil-day-trip-from')?.parentElement?.parentElement;
-        const toRow = trip?.querySelector('.mil-day-trip-to')?.parentElement?.parentElement;
         const res = {
-          side: trip?.querySelector('.mil-trip-side')?.innerText || '',
-          fromRowText: fromRow?.innerText || '',
-          toRowText: toRow?.innerText || '',
+          // WHERE stays on the left, untouched by the clock/duration.
+          routeText: trip?.querySelector('.mil-day-trip-route')?.innerText || '',
+          // WHEN + HOW LONG live together in one right-aligned stats stack,
+          // not scattered beside each stop (that read as floating, disjointed
+          // text at a different position on every row).
+          mi: trip?.querySelector('.mil-trip-mi')?.innerText || '',
+          meta: trip?.querySelector('.mil-trip-meta')?.innerText || '',
         };
         mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
         return res;
       });
-      expect(out.side).toContain('1h 35m');   // wheel time beside the miles
-      // Departed/arrived sit inside the SAME stop-row as their own stop name
-      // (Shop / Miller Residence), not a single combined range line.
-      expect(out.fromRowText).toContain('Shop');
-      expect(out.fromRowText).toContain('9:12 AM');
-      expect(out.toRowText).toContain('Miller Residence');
-      expect(out.toRowText).toContain('10:47 AM');
+      expect(out.routeText).toContain('Shop');
+      expect(out.routeText).toContain('Miller Residence');
+      expect(out.routeText).not.toContain('9:12');   // no clock text bleeds into the route column
+      expect(out.routeText).not.toContain('10:47');
+      expect(out.mi).toContain('12.3 mi');
+      expect(out.meta).toContain('1h 35m');    // wheel time
+      expect(out.meta).toContain('9:12a');     // and the trip's real clock, compact format
+      expect(out.meta).toContain('10:47a');
+      expect(out.meta.indexOf('·')).toBeGreaterThan(-1);   // duration and clock on ONE grouped line
     });
   });
 

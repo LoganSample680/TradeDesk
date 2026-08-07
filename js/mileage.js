@@ -2093,33 +2093,39 @@ function _milRenderTripList(shown,yr){
       const needsClass=r.purpose?'':' needs';
       const tripNum=trips.length-i;
       // The trip's real clock (owner ask 2026-08-07): departed/arrived times
-      // off the geofence stamps, set right beside the stop each one belongs
-      // to (the pattern a route receipt already reads as: point, then when).
+      // off the geofence stamps. Kept off the route/address column entirely
+      // (a first pass put a time beside each stop and it read as scattered,
+      // floating text at a different position on every row) and grouped
+      // instead with the rest of the trip's NUMBERS, miles/duration/clock,
+      // in one tidy right-aligned stack. Left side stays purely WHERE, right
+      // side is everything else about the trip. Compact clock format (no
+      // space, lowercase am/pm) matches the ON SITE card's _fmtClk
+      // (dashboard.js), the app's one pattern for a short time string.
       // End falls back to start+wheel-time for rows written before endedIso
       // existed. Stale/manual rows show neither, their clock was never
       // observed.
-      const _tt=(iso)=>{try{const d=new Date(iso);return isNaN(d.getTime())?'':d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(_e){return'';}};
-      let departedAt='',arrivedAt='';
+      const _fmtClk=(t)=>{try{return new Date(t).toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'}).replace(/\s/g,'').replace('AM','a').replace('PM','p');}catch(_e){return'';}};
+      let clockLine='';
       if(r.startedIso&&(r.endedIso||r.mins>0)){
-        departedAt=_tt(r.startedIso);
-        arrivedAt=_tt(r.endedIso||new Date(Date.parse(r.startedIso)+(r.mins||0)*60000).toISOString());
-        if(!departedAt||!arrivedAt){departedAt='';arrivedAt='';}
+        const _s=_fmtClk(r.startedIso);
+        const _e=_fmtClk(r.endedIso||new Date(Date.parse(r.startedIso)+(r.mins||0)*60000).toISOString());
+        if(_s&&_e)clockLine=_s+'–'+_e;
       }
-      const _timeTag=(t)=>t?'<div style="font-size:11px;font-weight:700;color:var(--text3);font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0;padding-top:1px">'+t+'</div>':'';
-      const _stopRow=(html,t)=>'<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">'+
-        '<div style="flex:1;min-width:0">'+html+'</div>'+_timeTag(t)+'</div>';
+      const durTxt=r.mins>0?(typeof _dispatchDur==='function'?_dispatchDur(r.mins):r.mins+'m'):'';
+      const metaTxt=[durTxt,clockLine].filter(Boolean).join(' · ');
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
           '<div class="mil-route-addrs">'+
-            '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Trip '+tripNum+'</div>'+
-            _stopRow('<div class="mil-day-trip-from">'+fromHtml+'</div>',departedAt)+
-            _stopRow('<div class="mil-day-trip-to">'+toHtml+'</div>',arrivedAt)+
-            (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text3);font-weight:500">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
+            '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Trip '+tripNum+'</div>'+
+            '<div class="mil-day-trip-from">'+fromHtml+'</div>'+
+            '<div class="mil-day-trip-to">'+toHtml+'</div>'+
+            (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
           '</div>'+
         '</div>'+
         '<div class="mil-trip-side">'+
-          (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi'+(r.mins>0?' <span style="font-weight:700;color:var(--text-3);font-size:11px">· '+(typeof _dispatchDur==='function'?_dispatchDur(r.mins):r.mins+'m')+'</span>':'')+'</div>':'')+
+          (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
+          (metaTxt?'<div class="mil-trip-meta">'+metaTxt+'</div>':'')+
           '<button class="mil-trip-edit" onclick="openMileageEdit('+r.id+')">Edit</button>'+
         '</div>'+
       '</div>';
