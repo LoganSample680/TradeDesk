@@ -3570,5 +3570,109 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── The live DRIVING banner ─────────────────────────────────────────────────
+  // Owner ask (2026-08-07): the automatic system was fully silent while actually
+  // driving, the only live feedback belonged to the manual Start Drive flow. The
+  // dashboard now shows a DRIVING card, rolling straight-line miles plus live
+  // speed, whenever the fence machine has an open drive leg at driving speed.
+  // Display only: what LOGS is still the geocode-to-geocode route measurement,
+  // and these tests pin that the banner never changes it.
+  test.describe('the live DRIVING banner', () => {
+    const ROAD2 = { lat: ROAD.lat + 0.01, lon: ROAD.lon };   // ~0.7 straight-line miles on
+
+    const bannerDrive = (o) => page.evaluate(async (a) => {
+      const realUser = _supaUser, realRoute = _routeDistance, realWatch = _geoWatchId;
+      const realRenderDash = window.renderDash;
+      const renders = { n: 0 };
+      window.renderDash = function () { renders.n++; return realRenderDash.apply(this, arguments); };
+      _supaUser = { id: 'u-banner' };
+      window._routeDistance = _routeDistance = async () => ({ miles: 12.34, mins: 21 });
+      const before = mileage.length;
+      try {
+        __seedGeo();
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+        _geoLastFenceAt = null; _geoLegAtShop = false;
+        _geoHomeDwell = null; _geoWasAtHome = false;
+        _geoLastFenceLoc = null; _geoLegOrigin = null;
+        _geoDriveReset(); _geoDriveShown = false;
+        try { window._activeTimer = null; } catch (e) {}
+        try { window._nearbyJob = null; } catch (e) {}
+        try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+        _geoWatchId = 77;                       // the banner requires tracking to be running
+        goPg('pg-dash');
+        const ping = (c, spd) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8, speed: (spd === undefined ? null : spd) } });
+        const snap = () => {
+          const el = document.getElementById('dash-nearby');
+          return {
+            display: el ? el.style.display : '',
+            html: el ? el.innerHTML : '',
+            mi: document.getElementById('dash-drive-mi')?.textContent || '',
+            mph: document.getElementById('dash-drive-mph')?.textContent || '',
+            renders: renders.n,
+          };
+        };
+        const out = {};
+        await ping(a.shop);                     // parked in the shop fence
+        await ping(a.road, 15.2);               // pulls out, ~34mph
+        out.onRoad = snap();
+        if (a.tick) { await ping(a.road2, 13.4); out.afterTick = snap(); }
+        if (a.park) {
+          _geoDriveMovingAt = Date.now() - 200000;   // last driving-speed ping long gone
+          await ping(a.road2, 0);
+          await new Promise(r => setTimeout(r, 320)); // the .18s fade-out must finish
+          out.afterPark = snap();
+        }
+        if (a.arrive) {
+          const t = new Date(Date.now() - 20 * 60000).toISOString();
+          if (_geoDriveStartedAt) _geoDriveStartedAt = t;
+          if (_geoLastFenceAt) _geoLastFenceAt = t;
+          await ping(a.job, 0);
+          await new Promise(r => setTimeout(r, 320));
+          out.afterArrive = snap();
+          await new Promise(r => setTimeout(r, 30));  // the un-awaited route call resolves
+          out.rows = mileage.slice(0, Math.max(0, mileage.length - before));
+        }
+        return out;
+      } finally {
+        window.renderDash = realRenderDash;
+        _supaUser = realUser; _geoWatchId = realWatch;
+        window._routeDistance = _routeDistance = realRoute;
+        _geoDriveReset(); _geoDriveShown = false; _geoDriveStartedAt = null;
+      }
+    }, o);
+
+    test('appears at driving speed: DRIVING badge, origin fence, live speed', async () => {
+      const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB });
+      expect(r.onRoad.display).toBe('block');
+      expect(r.onRoad.html).toContain('DRIVING');
+      expect(r.onRoad.html).toContain('On the road');
+      expect(r.onRoad.html).toContain('From Shop');    // the fence machine's own origin
+      expect(r.onRoad.mph).toBe('34 mph');             // 15.2 m/s, the device's reading
+      expect(r.onRoad.mi).toBe('0.0 mi');              // trip just opened
+    });
+
+    test('miles and speed tick in place on later pings, without a re-render', async () => {
+      const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB, tick: true });
+      expect(r.afterTick.mi).toBe('0.7 mi');           // ~0.69 straight-line miles accumulated
+      expect(r.afterTick.mph).toBe('30 mph');          // 13.4 m/s
+      expect(r.afterTick.renders, 'same-road pings update text in place, never re-render the dashboard').toBe(r.onRoad.renders);
+    });
+
+    test('arriving at the job clears the banner, and the LOGGED trip still comes from the geocodes', async () => {
+      const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB, tick: true, arrive: true });
+      expect(r.afterArrive.display).toBe('none');      // faded out, matching the ON SITE card's exit
+      expect(r.rows.length).toBe(1);
+      expect(r.rows[0].miles, 'route measurement rounded to a tenth, never the banner\'s straight-line tally').toBe(12.3);
+    });
+
+    test('parked somewhere unknown, the banner fades once driving speed stops', async () => {
+      const r = await bannerDrive({ shop: SHOP, road: ROAD, road2: ROAD2, job: JOB, park: true });
+      expect(r.onRoad.display).toBe('block');
+      expect(r.afterPark.display).toBe('none');
+    });
+  });
+
   test('no console errors', async () => { await assertNoErrors(page); });
 });

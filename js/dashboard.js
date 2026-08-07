@@ -609,7 +609,11 @@ function renderDash(){
     if(_locPrompt&&(Date.now()-Date.parse(_locPrompt.at))<120000)_locPrompt=null;
     const _locPromptList=(_locPrompt&&typeof _locPromptJobs==='function')?_locPromptJobs().slice(0,5):[];
     const _showLocPrompt=!_onClock&&!_nearbyJob&&_locPromptList.length>0;
-    if(_onClock||_nearbyJob||_showLocPrompt){
+    // ON THE ROAD: the automatic system's first piece of live feedback (owner
+    // ask 2026-08-07). Reads the fence machine's own drive state, never
+    // re-derived: an open drive leg with recent driving speed.
+    const _driving=!_onClock&&(typeof _geoDriving==='function')&&_geoDriving();
+    if(_onClock||_driving||_nearbyJob||_showLocPrompt){
       if(!document.getElementById('_td-nearby-anim-style')){
         const _s=document.createElement('style');_s.id='_td-nearby-anim-style';
         // A radar-ping (concentric rings expanding from the pin) + a live status dot
@@ -617,7 +621,8 @@ function renderDash(){
         _s.textContent='@keyframes tdNearbyIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}'+
           '@keyframes tdNearbyOut{from{opacity:1;transform:translateY(0)}to{opacity:0;transform:translateY(6px)}}'+
           '@keyframes tdNearbyDot{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(.6)}}'+
-          '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}';
+          '@keyframes tdGeoPing{0%{transform:scale(.45);opacity:.85}80%{opacity:0}100%{transform:scale(1.18);opacity:0}}'+
+          '@keyframes tdDriveMove{0%{transform:translateX(-3px)}50%{transform:translateX(3px)}100%{transform:translateX(-3px)}}';
         document.head.appendChild(_s);
       }
       const _svgPin=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2"><path d="M12 21s-7-6.3-7-11a7 7 0 0114 0c0 4.7-7 11-7 11z"/><circle cx="12" cy="10" r="2.4"/></svg>';
@@ -655,6 +660,36 @@ function renderDash(){
         ocBtns.push('<button onclick="clockOut();setTimeout(function(){renderDash&&renderDash();},140)" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:none;background:#1B1612;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="13" height="13" fill="#fff"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>Clock out</button>');
         if(_cid)ocBtns.push('<button onclick="_nearbyStartWork('+_cid+')" style="flex:1;min-width:0;border-radius:12px;padding:13px 8px;font-size:13.5px;font-weight:800;font-family:inherit;border:1.5px solid #e2e4e8;background:#fff;color:#1B1612;display:flex;align-items:center;justify-content:center;gap:7px"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1B1612" stroke-width="2"><rect x="6" y="4" width="12" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Proposal</button>');
         _nearbyEl.innerHTML=_cardShell(_cardHead(_onClock.clientName||'On the clock',_cAddr,_extra)+_ocNoteBlock+'<div style="display:flex;gap:9px;padding:4px 14px 15px">'+ocBtns.join('')+'</div>');
+      } else if(_driving){
+        // DRIVING: the blue sibling of the green ON SITE card, same shell
+        // conventions (badge, title, stat tiles), recolored because "in
+        // motion" and "arrived" must never read as the same state. Numbers
+        // tick in place per ping (geo-track.js updates #dash-drive-mi/-mph/
+        // -min directly), a full re-render per fix would be wasted work.
+        const _org=(typeof _geoLegOrigin!=='undefined'&&_geoLegOrigin&&_geoLegOrigin.name)?_geoLegOrigin.name:'';
+        const _dMi=(typeof _geoDriveMiles!=='undefined')?_geoDriveMiles:0;
+        const _dMph=(typeof _geoDriveMph!=='undefined')?Math.round(_geoDriveMph):0;
+        const _dMin=(typeof _geoDriveStartedAt!=='undefined'&&_geoDriveStartedAt)?Math.max(0,Math.round((Date.now()-Date.parse(_geoDriveStartedAt))/60000)):0;
+        const _svgCar=(c,sz)=>'<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+c+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M5 17a2 2 0 01-2-2v-1.5a2 2 0 01.4-1.2l1.7-2.3A3 3 0 017.5 9h9a3 3 0 012.4 1.2l1.7 2.3a2 2 0 01.4 1.2V15a2 2 0 01-2 2M5 17a2 2 0 002 2h0a2 2 0 002-2M17 17a2 2 0 002 2h0a2 2 0 002-2M8 13h8"/></svg>';
+        const _dStat=(id,val,label)=>'<div style="flex:1;background:rgba(255,255,255,.6);border:1px solid rgba(29,78,216,.14);border-radius:12px;padding:9px 10px">'+
+          '<div id="'+id+'" style="font-size:16px;font-weight:800;color:#1B1612;font-variant-numeric:tabular-nums">'+val+'</div>'+
+          '<div style="font-size:9.5px;color:#1D4ED8;font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-top:1px">'+label+'</div></div>';
+        _nearbyEl.innerHTML='<div style="position:relative;border-radius:20px;overflow:hidden;border:1px solid rgba(29,78,216,.18);background:radial-gradient(120% 90% at 85% -10%,rgba(29,78,216,.14),transparent 55%),linear-gradient(180deg,#ffffff 0%,#f5f8ff 100%);box-shadow:0 10px 30px -12px rgba(29,78,216,.30),0 2px 8px rgba(0,0,0,.05)'+(_wasHidden?';animation:tdNearbyIn .22s cubic-bezier(.22,1,.36,1) both':'')+'">'+
+          '<div style="display:flex;align-items:center;gap:14px;padding:16px 16px 12px">'+
+            '<div style="position:relative;width:52px;height:52px;flex-shrink:0;display:flex;align-items:center;justify-content:center">'+
+              '<span style="position:relative;z-index:2;width:40px;height:40px;border-radius:50%;background:linear-gradient(160deg,#3B82F6,#1D4ED8);display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(29,78,216,.5)"><span style="display:inline-flex;animation:tdDriveMove 1.1s ease-in-out infinite">'+_svgCar('#fff',20)+'</span></span>'+
+            '</div>'+
+            '<div style="flex:1;min-width:0">'+
+              '<span style="display:inline-flex;align-items:center;gap:6px;background:#1D4ED8;color:#fff;font-size:10.5px;font-weight:800;letter-spacing:.06em;padding:4px 9px;border-radius:20px;margin-bottom:5px"><span style="width:6px;height:6px;border-radius:50%;background:#93C5FD;animation:tdNearbyDot 1.4s ease-in-out infinite"></span>DRIVING</span>'+
+              '<div style="font-size:18px;font-weight:800;letter-spacing:-.02em;line-height:1.15;color:#1B1612">On the road</div>'+
+              '<div style="font-size:13px;color:#1D4ED8;font-weight:600;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+(_org?'From '+escHtml(_org)+' · ':'')+'<span id="dash-drive-min">'+_dMin+' min</span></div>'+
+            '</div>'+
+          '</div>'+
+          '<div style="display:flex;gap:8px;padding:0 16px 16px">'+
+            _dStat('dash-drive-mi',_dMi.toFixed(1)+' mi','This trip')+
+            _dStat('dash-drive-mph',_dMph+' mph','Speed')+
+          '</div>'+
+        '</div>';
       } else if(_showLocPrompt){
         // Somewhere known, no job open: prefab at the yard and material pickup
         // at a supplier are both real job labor with nowhere to attach today.

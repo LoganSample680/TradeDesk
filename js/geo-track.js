@@ -131,6 +131,29 @@ const _GEO_GAP_EXIT_MAX_ACC_M=100;
 // (most existing fixtures and plenty of real devices), so nothing that used
 // to arrive correctly stops arriving.
 const _GEO_DRIVEBY_SPEED_MPS=3.6; // ~8mph
+// ── Live drive banner state (owner ask 2026-08-07) ──────────────────────────
+// The automatic system used to be fully silent while actually driving; the
+// only live feedback belonged to the manual Start Drive flow. These feed the
+// dashboard's DRIVING card: rolling straight-line miles ping to ping (free,
+// instant, no MapKit calls; the LOGGED trip still comes from the route calc
+// on arrival, so the two can differ slightly and that is fine), plus the
+// latest speed. Display state only, nothing here touches what gets logged.
+let _geoDriveMiles=0;     // straight-line miles accumulated across pings this leg
+let _geoDriveLastFix=null;// {lat,lng,atMs} last fix used for that accumulation
+let _geoDriveMph=0;       // latest speed reading, mph (device speed, else derived)
+let _geoDriveMovingAt=0;  // ms of the last ping at driving speed, banner visibility
+let _geoDriveShown=false; // was the banner on screen after the last ping
+// Accumulation floor: below this the fix is parking-lot jitter, not travel.
+const _GEO_DRIVE_ACCUM_FT=100;
+// The banner survives a red light but clears a couple minutes after parking
+// somewhere the fence machine doesn't recognize.
+const _GEO_DRIVE_SHOW_MS=150000;
+// The one visibility question the dashboard asks: tracking is running, a drive
+// leg is open, and the truck moved at driving speed recently.
+function _geoDriving(){
+  return !!(_geoWatchId!=null&&_geoDriveStartedAt&&(Date.now()-_geoDriveMovingAt)<_GEO_DRIVE_SHOW_MS);
+}
+function _geoDriveReset(){_geoDriveMiles=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;}
 
 // ── Offline-durable time-entry queue ──────────────────────────────────────────
 // Every arrival→departure record is written to the DEVICE first and drained to
@@ -402,6 +425,34 @@ async function _geoOnPing(pos){
   // Throttled breadcrumb (~60s)
   const nowMs=Date.now();
   if(nowMs-_geoLastPingTs>60000){_geoLastPingTs=nowMs;_geoWritePing(here,acc);}
+  // ── Live drive banner: rolling miles + speed ──────────────────────────────
+  // Runs BEFORE the fence machine so the fix that closes the leg still counts
+  // its last stretch of road. Straight-line ping to ping: display only, the
+  // logged trip is still measured geocode to geocode on arrival.
+  if(_geoDriveStartedAt){
+    if(_geoDriveLastFix){
+      const stepFt=_geoDistFt(here,_geoDriveLastFix);
+      const dtMs=nowMs-_geoDriveLastFix.atMs;
+      if(stepFt>_GEO_DRIVE_ACCUM_FT){
+        _geoDriveMiles+=stepFt/5280;
+        // Derived speed as the fallback: plenty of devices ping without a
+        // speed reading, and distance over time is honest for a 20-30s gap.
+        if(dtMs>3000)_geoDriveMph=(stepFt/5280)/(dtMs/3600000);
+        _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+      }else if(dtMs>45000){
+        // No real movement across a long gap IS a speed reading. Without it a
+        // device that never reports coords.speed kept the banner alive on the
+        // stale mph it had out on the road.
+        _geoDriveMph=(stepFt/5280)/(dtMs/3600000);
+        _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+      }
+    }else{
+      _geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+    }
+  }
+  // The device's own reading wins when present, it is current rather than a
+  // trailing average.
+  if(typeof pos.coords.speed==='number'&&pos.coords.speed>=0)_geoDriveMph=pos.coords.speed*2.23694;
   // ── Home-office activity sampling ─────────────────────────────────────────
   // Sampled per ping rather than driven by visibilitychange, because a web app
   // stops getting pings the moment it is backgrounded, which is exactly the
@@ -590,13 +641,17 @@ async function _geoOnPing(pos){
         else _geoDriveEntry(null,legStart,cur.name,null,legGap,curLoc,legStale);
       }
       _geoDriveStartedAt=null;
+      _geoDriveReset();
       _geoStopAnchor=null;
       _geoLegOrigin=null;
     }else{
       // Out on the road. Open at NOW rather than at the last on-site fix: we can
       // SEE they are gone, so the first moment we know they had left is the
       // conservative start.
-      if(!_geoDriveStartedAt){_geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;}
+      if(!_geoDriveStartedAt){
+        _geoDriveStartedAt=nowIso;_geoLegOrigin=_geoLastFenceLoc;
+        _geoDriveMiles=0;_geoDriveLastFix={lat:here.lat,lng:here.lng,atMs:nowMs};
+      }
       _geoStopAnchor={lat:here.lat,lng:here.lng,at:nowIso,lastAt:nowIso};
     }
     // ── 4. Commit the new state ─────────────────────────────────────────────
@@ -627,6 +682,30 @@ async function _geoOnPing(pos){
   // Whatever branch ran, THIS completed ping resolved any hidden gap, a stale
   // marker must never truncate a later, fully-visible close.
   _geoGapHiddenAt=null;
+  // Stamped AFTER the state machine, so the very ping that opens the drive
+  // (already at road speed) lights the banner rather than the one after it.
+  if(_geoDriveStartedAt&&_geoDriveMph*0.44704>=_GEO_DRIVEBY_SPEED_MPS)_geoDriveMovingAt=nowMs;
+  // ── Drive banner upkeep ───────────────────────────────────────────────────
+  // Visibility can change WITHOUT a fence transition (speed crossing the
+  // threshold a ping after leaving, or fading after parking somewhere
+  // unknown), so it gets its own render trigger. Between transitions the
+  // numbers tick in place, a full renderDash per ping would be wasted work.
+  if(typeof document!=='undefined'&&document.getElementById('pg-dash')?.classList.contains('active')){
+    const _drv=_geoDriving();
+    if(_drv!==_geoDriveShown){
+      _geoDriveShown=_drv;
+      if(typeof renderDash==='function')renderDash();
+    }else if(_drv){
+      const _miEl=document.getElementById('dash-drive-mi');
+      if(_miEl)_miEl.textContent=_geoDriveMiles.toFixed(1)+' mi';
+      const _mphEl=document.getElementById('dash-drive-mph');
+      if(_mphEl)_mphEl.textContent=Math.round(_geoDriveMph)+' mph';
+      const _minEl=document.getElementById('dash-drive-min');
+      if(_minEl)_minEl.textContent=Math.max(0,Math.round((nowMs-Date.parse(_geoDriveStartedAt))/60000))+' min';
+    }
+  }else{
+    _geoDriveShown=_geoDriving();
+  }
   }finally{_geoPingBusy=false;}
 }
 function _geoWritePing(here,acc){
@@ -774,6 +853,7 @@ function _geoCloseStop(a){
   stopLoc.prevOrigin=_geoLegOrigin||null;
   if(_geoDriveStartedAt)_geoDriveEntry(null,_geoDriveStartedAt,null,a.at,false,stopLoc);
   _geoDriveStartedAt=a.lastAt;
+  _geoDriveReset();   // the banner's "this trip" restarts with the leg out of the stop
   _geoLegOrigin=stopLoc;
   // Somewhere they park repeatedly is a candidate location in its own right,
   // which is how an un-named supply yard eventually gets offered to them.
@@ -1184,6 +1264,7 @@ function stopGeoTracking(){
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
   _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;_geoGapExitPending=null;
+  _geoDriveReset();_geoDriveShown=false;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoLastFenceLoc=null;_geoLegOrigin=null;
   // The job-coordinate cache goes too. It is the ONE piece of geofence state
