@@ -916,10 +916,12 @@ function crewMilesOwed(yr){
 // job (never a place's kind), kept as its own branch rather than folded into
 // the map below; 'Job site' and 'Estimate' purposes reach every trip that
 // needs them through that branch alone, PLACE_KINDS (js/places.js) never
-// offers those as a place type. 'Client Consult' and 'Payment Collection'
-// are still real, pickable purposes on a manually-logged trip (MILE_PURPOSES
-// is not scoped down), they just never arrive here automatically, a Place
-// carries no client_id to know WHICH client's consult or collection it was.
+// offers those as a place type. 'Client Consult' DOES arrive automatically
+// since client-address fences (2026-08-07): a 'client' destination carries
+// its clientId, which is exactly what a Place never had. 'Payment
+// Collection' remains manual-only (the geofence can't know money changed
+// hands), though it stays a real, pickable purpose (MILE_PURPOSES is not
+// scoped down).
 const _PLACE_KIND_TO_PURPOSE={
   shop:'Shop',
   supply:'Supply run',
@@ -929,6 +931,9 @@ const _PLACE_KIND_TO_PURPOSE={
 function _autoTripPurpose(to){
   const k=(to&&to.kind)||'';
   if(k==='job')return 'Job site';
+  // A spontaneous visit to a client with nothing scheduled: an estimate look,
+  // a drop-in. The trip binds to the client record via to.clientId.
+  if(k==='client')return 'Client Consult';
   return _PLACE_KIND_TO_PURPOSE[k]||'Other';
 }
 // Whoever is driving, today's answer wins over the standing one.

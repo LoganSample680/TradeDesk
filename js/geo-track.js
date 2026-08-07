@@ -61,6 +61,8 @@ let _geoLastFenceAt=null;
 // is the one case where the raw position IS the location.
 let _geoLastFenceLoc=null; // descriptor for the fence we are currently inside
 let _geoLegOrigin=null;    // descriptor for where the open drive leg began
+let _geoCurrentClient=null; // id of the client whose address fence we're inside (no job today)
+let _geoClientArrivedAt=null;// ISO arrival at that client, for the visit entry
 // ── Home-office dwell: presence is not work ─────────────────────────────────
 // Owner idea (2026-08-01) closing a real hole: a contractor whose shop is at
 // their house had the shop fence running all night. Measured, 14 hours of sleep
@@ -508,12 +510,14 @@ async function _geoOnPing(pos){
     if(ft<=_geoFenceFt()&&ft<bestFt){insideJob=j;bestFt=ft;}
   }
   let insideId=insideJob?insideJob.id:null;
+  const atClient=_geoClientAt(here);
+  let atClientId=atClient?String(atClient.id):null;
   // Drive-by guard: a fix reporting real driving speed inside a fence is
   // still moving, not parked, whatever the fence says (see
   // _GEO_DRIVEBY_SPEED_MPS above). Cleared here, before the independent shop
   // dwell block below AND before `cur`, so neither one is fooled by it.
-  if((insideId||inShop||atPlaceId)&&typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS){
-    insideId=null;inShop=false;atPlaceId=null;
+  if((insideId||inShop||atPlaceId||atClientId)&&typeof pos.coords.speed==='number'&&pos.coords.speed>=_GEO_DRIVEBY_SPEED_MPS){
+    insideId=null;inShop=false;atPlaceId=null;atClientId=null;
   }
   const nowIsoEarly=new Date(nowMs).toISOString();
   // ── Shop dwell, tracked on its own ────────────────────────────────────────
@@ -535,9 +539,13 @@ async function _geoOnPing(pos){
   // a trip that ends at a job belongs to that job even when the job happens to
   // sit inside the yard. SHOP outranks PLACE because the shop is often saved as
   // a place too, and a leg home should read "Shop".
+  // CLIENT is the weakest fence by construction: a client's address only
+  // decides the location when no job, shop, or saved place already has, so
+  // nothing that logged before client fences existed logs differently now.
   const cur=insideId?{k:'job',id:String(insideId),name:null}
            :inShop?{k:'shop',id:'shop',name:(atPlace&&atPlace.name)||'Shop'}
            :atPlaceId?{k:'place',id:atPlaceId,name:atPlace.name}
+           :atClientId?{k:'client',id:atClientId,name:atClient.name}
            :null;
   // The GEOCODE of whatever contains us, resolved while the fixtures that
   // produced `cur` are still in scope. Everything downstream measures distance
@@ -551,10 +559,12 @@ async function _geoOnPing(pos){
   const curLoc=!cur?null
     :cur.k==='job'?_geoLocOfJob(insideJob)
     :cur.k==='shop'?{lat:shopC.lat,lng:shopC.lng,name:'Shop',kind:'shop',addr:_geoShopAddr()}
-    :{lat:atPlace.lat,lng:atPlace.lon,name:atPlace.name||'Place',kind:atPlace.kind||'other',placeId:atPlaceId,addr:atPlace.addr||''};
+    :cur.k==='place'?{lat:atPlace.lat,lng:atPlace.lon,name:atPlace.name||'Place',kind:atPlace.kind||'other',placeId:atPlaceId,addr:atPlace.addr||''}
+    :{lat:atClient.lat,lng:atClient.lng,name:atClient.name||'Client',kind:'client',clientId:atClient.id,addr:atClient.addr||''};
   const prev=_geoCurrentJob?{k:'job',id:String(_geoCurrentJob)}
             :_geoLegAtShop?{k:'shop',id:'shop'}
             :_geoCurrentPlace?{k:'place',id:String(_geoCurrentPlace)}
+            :_geoCurrentClient?{k:'client',id:String(_geoCurrentClient)}
             :null;
   const same=(!cur&&!prev)||!!(cur&&prev&&cur.k===prev.k&&cur.id===prev.id);
   const nowIso=new Date(nowMs).toISOString();
@@ -599,6 +609,7 @@ async function _geoOnPing(pos){
       // gap-resolved rather than continuously observed.
       if(prev.k==='job'&&_geoArrivedAt)await _geoCloseEntry(_geoCurrentJob,nowIso,!!_geoGapHiddenAt);
       else if(prev.k==='place'&&_geoPlaceArrivedAt)_geoClosePlaceEntry(_geoCurrentPlace,_geoPlaceArrivedAt);
+      else if(prev.k==='client'&&_geoClientArrivedAt)_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt);
       // prev.k==='shop' needs nothing here: the independent shop block above
       // owns that dwell, and only closes it when they actually leave the yard.
     }else if(_geoStopAnchor){
@@ -660,6 +671,8 @@ async function _geoOnPing(pos){
     _geoLegAtShop=!!(cur&&cur.k==='shop');
     _geoCurrentPlace=(cur&&cur.k==='place')?cur.id:null;
     _geoPlaceArrivedAt=(cur&&cur.k==='place')?nowIso:null;
+    _geoCurrentClient=(cur&&cur.k==='client')?cur.id:null;
+    _geoClientArrivedAt=(cur&&cur.k==='client')?nowIso:null;
     if(cur&&cur.k==='job'){_geoPersistOpen();_geoWakeAcquire();}
     else{_geoClearOpen();_geoWakeRelease();}
     // The dashboard's "ON SITE" card (renderDash, js/dashboard.js) reads
@@ -813,6 +826,61 @@ function _geoClosePlaceEntry(placeId,arrivedAt){
     contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
     job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
     dest_place:(pl&&pl.name)||null,source:'place'
+  });
+}
+// ── Client-address fences (owner report 2026-08-07) ─────────────────────────
+// "Home office to John Doe logged nothing", with the app open the whole
+// drive: a spontaneous visit to a client with no job on today's calendar had
+// nowhere to ARRIVE. The fence machine only knew today's scheduled jobs, the
+// shop, and saved places, so the client's driveway read as an anonymous
+// roadside stop, and the detour collapse then folded it into the round trip
+// as personal wandering. Clients' addresses are already geocoded and cached
+// for the dashboard's nearby-job card (zp3_nearby_geo, js/jobs.js); the
+// fence machine reads that SAME cache, so arriving at any client is a real
+// destination whether or not work is scheduled.
+//
+// Cache-only on purpose: a ping handler must never burn a live geocode, and
+// checkNearbyJob is already the thing that warms the cache on dashboard
+// loads. A brand-new client's first visit can therefore still be missed
+// until the cache has seen their address once; that is the same warm-up the
+// nearby-job card has always had.
+// The parse is memoized briefly because watchPosition can tick at 1Hz while
+// driving and the cache blob only changes on a geocode backfill.
+let _geoClientCacheMemo=null,_geoClientCacheAt=0;
+function _geoClientAt(here){
+  if(typeof clients==='undefined'||!clients.length)return null;
+  const now=Date.now();
+  if(!_geoClientCacheMemo||now-_geoClientCacheAt>30000){
+    _geoClientCacheMemo=(typeof _nearbyGeoCache==='function')?_nearbyGeoCache():{};
+    _geoClientCacheAt=now;
+  }
+  let best=null,bestFt=Infinity;
+  for(const c of clients){
+    if(!c||!c.addr)continue;
+    const hit=_geoClientCacheMemo[c.id];
+    if(!hit||hit.addr!==c.addr)continue;
+    const ft=_geoDistFt(here,{lat:hit.lat,lng:hit.lon});
+    if(ft<=_geoFenceFt()&&ft<bestFt){
+      best={id:c.id,name:c.name||'Client',addr:c.addr||'',lat:hit.lat,lng:hit.lon};
+      bestFt=ft;
+    }
+  }
+  return best;
+}
+// The visit itself, closed on departure: same shape as a place visit (the
+// client's name is the destination), so it lands in the day's story and the
+// Time at Places report without a new table or source.
+function _geoCloseClientEntry(clientId,arrivedAt){
+  if(!arrivedAt)return;
+  const departed=new Date().toISOString();
+  const mins=Math.max(0,Math.round((Date.parse(departed)-Date.parse(arrivedAt))/60000));
+  if(mins<2)return;               // a pass-through, not a visit
+  if(!_supaUser)return;
+  const c=(typeof clients!=='undefined')?clients.find(x=>String(x.id)===String(clientId)):null;
+  _geoEnqueue('job_time_entries',{
+    contractor_user_id:_geoCid(),employee_user_id:_supaUser.id,
+    job_id:null,arrived_at:arrivedAt,departed_at:departed,minutes:mins,
+    dest_place:(c&&c.name)||null,source:'place'
   });
 }
 // A stop is only real once they LEAVE it, which is also the first moment it can
@@ -1262,9 +1330,11 @@ function stopGeoTracking(){
   if(_geoNudgeTimer){clearTimeout(_geoNudgeTimer);_geoNudgeTimer=null;}
   if(_geoCurrentJob&&_geoArrivedAt)_geoCloseEntry(_geoCurrentJob);
   if(_geoWasInShop&&_geoShopArrivedAt)_geoCloseShopEntry(_geoShopArrivedAt);
+  if(_geoCurrentClient&&_geoClientArrivedAt)_geoCloseClientEntry(_geoCurrentClient,_geoClientArrivedAt);
   _geoCurrentJob=null;_geoArrivedAt=null;
   _geoWasInShop=false;_geoShopArrivedAt=null;_geoDriveStartedAt=null;_geoGapHiddenAt=null;_geoGapExitPending=null;
   _geoDriveReset();_geoDriveShown=false;
+  _geoCurrentClient=null;_geoClientArrivedAt=null;_geoClientCacheMemo=null;
   _geoCurrentPlace=null;_geoPlaceArrivedAt=null;_geoStopAnchor=null;_geoLastFenceAt=null;_geoLegAtShop=false;_geoHomeDwell=null;_geoWasAtHome=false;
   _geoLastFenceLoc=null;_geoLegOrigin=null;
   // The job-coordinate cache goes too. It is the ONE piece of geofence state

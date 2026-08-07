@@ -31,6 +31,7 @@ const SUPPLY  = { lat: 38.1200, lon: -94.1200 };
 const HOMEOFF = { lat: 38.1800, lon: -94.1800 };
 const LUNCH   = { lat: 38.2400, lon: -94.2400 };
 const ROAD    = { lat: 38.5000, lon: -94.5000 };
+const CLIENT  = { lat: 38.3000, lon: -94.3000 };   // John Doe: a client with NO job today
 
 test.describe('Automatic mileage from drive legs', () => {
   let page;
@@ -3567,6 +3568,104 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.afterSameFence).toBe(0);
       expect(r.afterLeave, 'still zero, nobody is looking at the dashboard').toBe(0);
       await page.evaluate(() => { goPg('pg-dash'); });
+    });
+  });
+
+  // ── Client-address fences ───────────────────────────────────────────────────
+  // Owner report (2026-08-07): a spontaneous drive from the home office to a
+  // client, app open the whole way, logged NOTHING, because the fence machine
+  // only knew today's scheduled jobs, the shop, and saved places. The client's
+  // driveway read as an anonymous stop and the detour collapse folded the round
+  // trip into personal wandering. Clients' cached geocodes (zp3_nearby_geo, the
+  // nearby-job card's own cache) are now the weakest fence type, so any client
+  // visit is a real destination whether or not work is scheduled.
+  test.describe('client-address fences', () => {
+    const clientDrive = (o) => page.evaluate(async (a) => {
+      const realUser = _supaUser, realRoute = _routeDistance, realEnq = window._geoEnqueue;
+      const entries = [];
+      window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+      _supaUser = { id: 'u-client-fence' };
+      window._routeDistance = _routeDistance = async () => ({ miles: 12.34, mins: 21 });
+      const before = mileage.length;
+      try {
+        __seedGeo();
+        clients.push({ id: 7702, name: 'John Doe', addr: '77 Doe Ln, Topeka, KS' });
+        const geoCache = { 7702: { lat: a.client.lat, lon: a.client.lon, addr: '77 Doe Ln, Topeka, KS' } };
+        if (a.cacheMiller) geoCache[7701] = { lat: a.job.lat, lon: a.job.lon, addr: '400 Oak St' };
+        localStorage.setItem('zp3_nearby_geo', JSON.stringify(geoCache));
+        _geoClientCacheMemo = null;              // the memo must re-read the seeded cache
+        _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+        _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+        _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+        _geoLastFenceAt = null; _geoLegAtShop = false;
+        _geoHomeDwell = null; _geoWasAtHome = false;
+        _geoLastFenceLoc = null; _geoLegOrigin = null;
+        _geoCurrentClient = null; _geoClientArrivedAt = null;
+        try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+        const ping = (c) => _geoOnPing({ coords: { latitude: c.lat, longitude: c.lon, accuracy: 8 } });
+        const rewind = (m) => {
+          const t = new Date(Date.now() - m * 60000).toISOString();
+          if (_geoDriveStartedAt) _geoDriveStartedAt = t;
+          if (_geoLastFenceAt) _geoLastFenceAt = t;
+        };
+        await ping(a.from);
+        rewind(20);
+        await ping(a.to);
+        await new Promise(r => setTimeout(r, 30));
+        const out = { state: { client: _geoCurrentClient, job: _geoCurrentJob } };
+        if (a.returnHome) {
+          // Park in the driveway half an hour, then drive back: the visit entry
+          // and the return leg both need real elapsed time.
+          const back = new Date(Date.now() - 30 * 60000).toISOString();
+          _geoClientArrivedAt = back; _geoLastFenceAt = back;
+          await ping(a.from);
+          await new Promise(r => setTimeout(r, 30));
+        }
+        out.rows = mileage.slice(0, Math.max(0, mileage.length - before));
+        out.entries = entries;
+        return out;
+      } finally {
+        window._geoEnqueue = realEnq;
+        _supaUser = realUser;
+        window._routeDistance = _routeDistance = realRoute;
+        try { localStorage.removeItem('zp3_nearby_geo'); } catch (e) {}
+        _geoClientCacheMemo = null;
+        _geoCurrentClient = null; _geoClientArrivedAt = null;
+      }
+    }, o);
+
+    test('a client with NO job today is a real destination: named trip, Client Consult, bound to the client record', async () => {
+      const r = await clientDrive({ from: HOMEOFF, to: CLIENT, job: JOB, client: CLIENT });
+      expect(r.state.client).toBe('7702');
+      expect(r.rows.length).toBe(1);
+      expect(r.rows[0].from_name).toBe('Home Office');
+      expect(r.rows[0].to_name).toBe('John Doe');
+      expect(r.rows[0].purpose).toBe('Client Consult');
+      expect(r.rows[0].client_id).toBe(7702);
+      expect(r.rows[0].miles).toBe(12.3);
+    });
+
+    test('the round trip logs BOTH legs plus the visit itself, nothing collapses as a detour', async () => {
+      const r = await clientDrive({ from: HOMEOFF, to: CLIENT, job: JOB, client: CLIENT, returnHome: true });
+      expect(r.rows.length).toBe(2);
+      const outLeg = r.rows.find(m => m.to_name === 'John Doe');
+      const backLeg = r.rows.find(m => m.from_name === 'John Doe');
+      expect(outLeg, 'the leg out survives the return').toBeTruthy();
+      expect(backLeg, 'the return leg is measured FROM the client, not from home').toBeTruthy();
+      expect(backLeg.to_name).toBe('Home Office');
+      const visit = r.entries.find(e => e.tbl === 'job_time_entries' && e.row.source === 'place' && e.row.dest_place === 'John Doe');
+      expect(visit, 'the half hour in the driveway is a place-visit entry under the client\'s name').toBeTruthy();
+      expect(visit.row.minutes).toBeGreaterThanOrEqual(28);
+      expect(visit.row.job_id).toBe(null);
+    });
+
+    test('a scheduled job at the same address still wins: the fence stays a job, the purpose stays Job site', async () => {
+      const r = await clientDrive({ from: SHOP, to: JOB, job: JOB, client: CLIENT, cacheMiller: true });
+      expect(r.state.job, 'the job fence outranks the client fence at the same coordinates').toBe(9901);
+      expect(r.state.client).toBe(null);
+      expect(r.rows.length).toBe(1);
+      expect(r.rows[0].purpose).toBe('Job site');
+      expect(r.rows[0].to_name).toBe('Miller Residence');
     });
   });
 
