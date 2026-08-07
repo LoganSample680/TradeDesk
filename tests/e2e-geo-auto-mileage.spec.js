@@ -269,8 +269,10 @@ test.describe('Automatic mileage from drive legs', () => {
         return out;
       });
       expect(html).toContain('1h 35m');       // wheel time beside the miles
-      expect(html).toContain('9:12 AM');      // and the trip's real clock
-      expect(html).toContain('10:47 AM');
+      // Departed/arrived sit beside their OWN stop (Shop / Miller Residence),
+      // not a single combined range line.
+      expect(html).toMatch(/Shop[\s\S]{0,120}9:12\s?AM/);
+      expect(html).toMatch(/Miller Residence[\s\S]{0,160}10:47\s?AM/);
     });
   });
 

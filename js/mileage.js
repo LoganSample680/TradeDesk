@@ -2092,31 +2092,34 @@ function _milRenderTripList(shown,yr){
       const toHtml=_loc(toName,toAddr)||'<span style="color:var(--text-3);font-style:italic">End not recorded</span>';
       const needsClass=r.purpose?'':' needs';
       const tripNum=trips.length-i;
-      // The trip's real clock (owner ask 2026-08-07): departed and arrived
-      // times off the geofence stamps. End falls back to start+wheel-time for
-      // rows written before endedIso existed. Stale/manual rows show nothing,
-      // their clock was never observed.
+      // The trip's real clock (owner ask 2026-08-07): departed/arrived times
+      // off the geofence stamps, set right beside the stop each one belongs
+      // to (the pattern a route receipt already reads as: point, then when).
+      // End falls back to start+wheel-time for rows written before endedIso
+      // existed. Stale/manual rows show neither, their clock was never
+      // observed.
       const _tt=(iso)=>{try{const d=new Date(iso);return isNaN(d.getTime())?'':d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(_e){return'';}};
-      let timeLine='';
+      let departedAt='',arrivedAt='';
       if(r.startedIso&&(r.endedIso||r.mins>0)){
-        const _s=_tt(r.startedIso);
-        const _e=_tt(r.endedIso||new Date(Date.parse(r.startedIso)+(r.mins||0)*60000).toISOString());
-        if(_s&&_e)timeLine='<div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:2px">'+_s+' → '+_e+'</div>';
+        departedAt=_tt(r.startedIso);
+        arrivedAt=_tt(r.endedIso||new Date(Date.parse(r.startedIso)+(r.mins||0)*60000).toISOString());
+        if(!departedAt||!arrivedAt){departedAt='';arrivedAt='';}
       }
+      const _timeTag=(t)=>t?'<div style="font-size:11px;font-weight:700;color:var(--text3);font-variant-numeric:tabular-nums;white-space:nowrap;flex-shrink:0;padding-top:1px">'+t+'</div>':'';
+      const _stopRow=(html,t)=>'<div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px">'+
+        '<div style="flex:1;min-width:0">'+html+'</div>'+_timeTag(t)+'</div>';
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
           '<div class="mil-route-addrs">'+
-            '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Trip '+tripNum+'</div>'+
-            '<div class="mil-day-trip-from">'+fromHtml+'</div>'+
-            '<div class="mil-day-trip-to">'+toHtml+'</div>'+
-            timeLine+
-            (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
+            '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em">Trip '+tripNum+'</div>'+
+            _stopRow('<div class="mil-day-trip-from">'+fromHtml+'</div>',departedAt)+
+            _stopRow('<div class="mil-day-trip-to">'+toHtml+'</div>',arrivedAt)+
+            (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text3);font-weight:500">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
           '</div>'+
         '</div>'+
         '<div class="mil-trip-side">'+
-          (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
-          (r.mins>0?'<div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:1px">'+(typeof _dispatchDur==='function'?_dispatchDur(r.mins):r.mins+'m')+'</div>':'')+
+          (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi'+(r.mins>0?' <span style="font-weight:700;color:var(--text-3);font-size:11px">· '+(typeof _dispatchDur==='function'?_dispatchDur(r.mins):r.mins+'m')+'</span>':'')+'</div>':'')+
           '<button class="mil-trip-edit" onclick="openMileageEdit('+r.id+')">Edit</button>'+
         '</div>'+
       '</div>';
