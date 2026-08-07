@@ -1056,11 +1056,16 @@ body.dark .cal-cell.other{background:var(--cream)}
 .mil-route-addrs{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:6px}
 .mil-day-trip-from{font-size:13px;font-weight:700;color:var(--text);line-height:1.35}
 .mil-day-trip-to{font-size:12px;color:var(--text-2);font-weight:500;line-height:1.35}
-.mil-trip-side{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;align-self:center}
-.mil-trip-side .mil-trip-meta{margin-top:-2px}
+/* Edit is pinned to its own top-right corner (position:absolute, out of
+   flow); the stats group (.mil-trip-stats) is the only thing left in flow,
+   so justify-content:center centers IT alone against the card's full
+   stretched height, independent of where Edit sits. */
+.mil-trip-side{position:relative;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;flex-shrink:0;align-self:stretch;min-width:60px}
+.mil-trip-stats{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.mil-trip-stats .mil-trip-meta{margin-top:-2px}
 .mil-trip-mi{font-size:13px;font-weight:800;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:nowrap}
 .mil-trip-meta{font-size:11px;font-weight:600;color:var(--text3);font-variant-numeric:tabular-nums;white-space:nowrap}
-.mil-trip-edit{font-size:11px;font-weight:600;background:var(--cream);border:1px solid var(--line-2);border-radius:var(--r);padding:4px 10px;cursor:pointer;color:var(--text-2);white-space:nowrap}
+.mil-trip-edit{position:absolute;top:0;right:0;font-size:11px;font-weight:600;background:var(--cream);border:1px solid var(--line-2);border-radius:var(--r);padding:4px 10px;cursor:pointer;color:var(--text-2);white-space:nowrap}
 /* ── Mileage: purpose breakdown strip ── */
 .mil-purp-row{display:flex;flex-direction:column;gap:0;border-bottom:1px solid var(--line)}
 .mil-purp-chip{display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--line-2);font-size:13px;font-weight:600;color:var(--text)}

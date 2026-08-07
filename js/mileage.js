@@ -2124,12 +2124,16 @@ function _milRenderTripList(shown,yr){
           '</div>'+
         '</div>'+
         '<div class="mil-trip-side">'+
-          // Miles + duration/time are the stack that centers on the card's Y
-          // axis (owner call, 2026-08-07: no Edit leading it); Edit sits
-          // below as the corner action, out of the centered group.
-          (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
-          (metaTxt?'<div class="mil-trip-meta">'+metaTxt+'</div>':'')+
+          // Edit is pinned to its OWN top-right corner (position:absolute,
+          // out of flow, index.html); miles/duration/time are a separate
+          // group that centers independently on the card's Y axis via
+          // .mil-trip-side's justify-content:center, unaffected by where
+          // Edit sits (owner call, 2026-08-07).
           '<button class="mil-trip-edit" onclick="openMileageEdit('+r.id+')">Edit</button>'+
+          '<div class="mil-trip-stats">'+
+            (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
+            (metaTxt?'<div class="mil-trip-meta">'+metaTxt+'</div>':'')+
+          '</div>'+
         '</div>'+
       '</div>';
     }).join('');
