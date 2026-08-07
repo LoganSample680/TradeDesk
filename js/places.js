@@ -666,7 +666,7 @@ function _ptrPaint(el,yr,data){
         '<span style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">'+_ptrDur(b.mins)+'</span>'+
         '<span style="color:var(--text3);display:inline-flex;transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>'+
       '</div>'+
-      (open?'<div style="padding:0 12px 6px">'+ppl+'</div>':'')+
+      (open?'<div class="td-acc-body td-acc-in"><div class="td-acc-inner" style="padding:0 12px 6px">'+ppl+'</div></div>':'')+
     '</div>';
   }).join('');
   el.innerHTML='<div class="card">'+head+

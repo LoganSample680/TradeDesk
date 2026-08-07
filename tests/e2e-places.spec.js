@@ -1175,6 +1175,12 @@ test.describe('Places, drive attribution and the map', () => {
       expect(r.html).not.toContain('Mike Torres');      // collapsed by default
       expect(r.expanded).toContain('Mike Torres');      // per-person split on expand
       expect(r.expanded).toContain('Pat Owner');
+      // The drawer uses THE shared accordion reveal (td-acc-body/td-acc-inner,
+      // index.html), the same one Notes/Timeline/Lifecycle use, never a
+      // hand-rolled per-accordion animation (CLAUDE.md §7.3, owner call).
+      expect(r.expanded).toContain('td-acc-body');
+      expect(r.expanded).toContain('td-acc-inner');
+      expect(r.html).not.toContain('td-acc-body');      // no empty shell when collapsed
       await restorePtr();
     });
 
