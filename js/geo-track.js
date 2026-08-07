@@ -153,7 +153,8 @@ const _GEO_DRIVE_SHOW_MS=150000;
 // The one visibility question the dashboard asks: tracking is running, a drive
 // leg is open, and the truck moved at driving speed recently.
 function _geoDriving(){
-  return !!(_geoWatchId!=null&&_geoDriveStartedAt&&(Date.now()-_geoDriveMovingAt)<_GEO_DRIVE_SHOW_MS);
+  const _tracking=_geoWatchId!=null||(typeof _geoNativeWatcherId!=='undefined'&&_geoNativeWatcherId!=null);
+  return !!(_tracking&&_geoDriveStartedAt&&(Date.now()-_geoDriveMovingAt)<_GEO_DRIVE_SHOW_MS);
 }
 function _geoDriveReset(){_geoDriveMiles=0;_geoDriveLastFix=null;_geoDriveMph=0;_geoDriveMovingAt=0;}
 
@@ -1307,25 +1308,76 @@ function _geoRecordAck(){
 // can settle within seconds of reopening the app instead of minutes.
 let _geoNudgeTimer=null;
 function _geoWakeNudge(){
-  if(_geoWatchId==null)return;              // tracking not running, nothing to resolve
+  if(_geoWatchId==null&&_geoNativeWatcherId==null)return; // tracking not running, nothing to resolve
   if(!navigator.geolocation)return;
   const fresh=()=>{try{navigator.geolocation.getCurrentPosition(_geoOnPing,()=>{},{enableHighAccuracy:true,maximumAge:0,timeout:15000});}catch(_e){}};
   fresh();
   if(_geoNudgeTimer)clearTimeout(_geoNudgeTimer);
   _geoNudgeTimer=setTimeout(()=>{
     _geoNudgeTimer=null;
-    if(!document.hidden&&_geoWatchId!=null)fresh();
+    if(!document.hidden&&(_geoWatchId!=null||_geoNativeWatcherId!=null))fresh();
   },8000);
+}
+// ── Native-shell bridge (Capacitor) ───────────────────────────────────────────
+// The one thing a web app can never have is GPS while backgrounded or locked,
+// and it is the one input this whole engine is missing (owner, 2026-08-07:
+// automatic background drives for the people who can run their town without
+// nav). When the app runs inside a Capacitor shell with the free
+// @capacitor-community/background-geolocation plugin, its background watcher
+// keeps delivering fixes with the screen off; every fix is shaped into the
+// SAME position object watchPosition delivers and fed to _geoOnPing, so the
+// entire fence machine (arrive/depart, time on site, drive legs, mileage)
+// works in the background with zero logic changes. In a plain browser none of
+// this exists and the web watcher below runs exactly as before.
+let _geoNativeWatcherId=null;  // the plugin's watcher handle while active
+let _geoNativeStarting=false;  // addWatcher is async; never double-add
+function _geoNativePlugin(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return null;
+    if(typeof cap.registerPlugin==='function')return cap.registerPlugin('BackgroundGeolocation');
+    return (cap.Plugins&&cap.Plugins.BackgroundGeolocation)||null;
+  }catch(_e){return null;}
 }
 // ── Start / stop ───────────────────────────────────────────────────────────────
 function startGeoTracking(){
-  if(_geoWatchId!=null)return;
+  if(_geoWatchId!=null||_geoNativeWatcherId!=null||_geoNativeStarting)return;
+  const BG=_geoNativePlugin();
+  if(BG&&typeof BG.addWatcher==='function'){
+    // Native shell: the background watcher also fires in the foreground, so it
+    // fully replaces the web watcher rather than doubling it up.
+    _geoNativeStarting=true;
+    try{
+      Promise.resolve(BG.addWatcher({
+        backgroundMessage:'Logging work drives and time on site.',
+        backgroundTitle:'TradeDesk tracking is on',
+        requestPermissions:true,stale:false,distanceFilter:25
+      },(loc,err)=>{
+        if(err||!loc)return;
+        // Returned so a caller that CAN await the ping does (tests); the
+        // plugin itself ignores the return value.
+        return _geoOnPing({coords:{
+          latitude:loc.latitude,longitude:loc.longitude,
+          accuracy:loc.accuracy||0,
+          speed:(typeof loc.speed==='number'?loc.speed:null)
+        }});
+      })).then(id=>{_geoNativeStarting=false;_geoNativeWatcherId=id||null;},
+               ()=>{_geoNativeStarting=false;});
+      return;
+    }catch(_e){_geoNativeStarting=false;}
+  }
   if(!navigator.geolocation)return;
   try{
     _geoWatchId=navigator.geolocation.watchPosition(_geoOnPing,()=>{},{enableHighAccuracy:true,maximumAge:30000,timeout:20000});
   }catch(_e){}
 }
 function stopGeoTracking(){
+  if(_geoNativeWatcherId!=null){
+    const BG=_geoNativePlugin();
+    try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
+    _geoNativeWatcherId=null;
+  }
+  _geoNativeStarting=false;
   if(_geoWatchId!=null){try{navigator.geolocation.clearWatch(_geoWatchId);}catch(_e){}_geoWatchId=null;}
   if(_geoNudgeTimer){clearTimeout(_geoNudgeTimer);_geoNudgeTimer=null;}
   if(_geoCurrentJob&&_geoArrivedAt)_geoCloseEntry(_geoCurrentJob);

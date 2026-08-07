@@ -3669,6 +3669,105 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── The Capacitor native-shell bridge ───────────────────────────────────────
+  // Owner direction (2026-08-07): the free path to background drives is the
+  // Capacitor shell + @capacitor-community/background-geolocation. The bridge's
+  // whole job is to shape the plugin's background fixes into the same position
+  // object watchPosition delivers and feed _geoOnPing, so the entire engine
+  // (arrive/depart, time on site, drive legs, mileage) works with the screen
+  // locked and ZERO logic changes. In a plain browser the bridge must be inert.
+  test.describe('the Capacitor native-shell bridge', () => {
+    test('inside the shell: the background watcher replaces the web watcher, and a locked-screen drive still logs', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realUser = _supaUser, realRoute = _routeDistance;
+        const realGeoWatch = navigator.geolocation.watchPosition;
+        const added = [];
+        let removed = null, webWatchCalls = 0;
+        navigator.geolocation.watchPosition = () => { webWatchCalls++; return 424242; };
+        _supaUser = { id: 'u-native' };
+        window._routeDistance = _routeDistance = async () => ({ miles: 12.34, mins: 21 });
+        const before = mileage.length;
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null; _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLegAtShop = false;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          _geoLastFenceLoc = null; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          try { localStorage.removeItem('zp3_place_stops'); localStorage.removeItem('zp3_place_day_anchor'); } catch (e) {}
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (name) => name === 'BackgroundGeolocation' ? {
+              addWatcher: (opts, cb) => { added.push({ opts, cb }); return Promise.resolve('w-1'); },
+              removeWatcher: (o) => { removed = o; return Promise.resolve(); },
+            } : null,
+          };
+          startGeoTracking();
+          await new Promise(r2 => setTimeout(r2, 10));
+          const out = {
+            watcherAdded: added.length,
+            watcherId: _geoNativeWatcherId,
+            webWatcherStarted: webWatchCalls,
+            background: !!(added[0] && added[0].opts && added[0].opts.backgroundMessage),
+          };
+          // The phone is in a pocket, screen locked: the ONLY fixes are the
+          // plugin's. One at the shop, one at the job twenty minutes later.
+          const cb = added[0].cb;
+          await cb({ latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 });
+          const t = new Date(Date.now() - 20 * 60000).toISOString();
+          if (_geoLastFenceAt) _geoLastFenceAt = t;
+          await cb({ latitude: a.job.lat, longitude: a.job.lon, accuracy: 8, speed: 0 });
+          await new Promise(r2 => setTimeout(r2, 30));
+          out.rows = mileage.slice(0, Math.max(0, mileage.length - before)).map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles }));
+          stopGeoTracking();
+          out.removed = removed;
+          out.clearedId = _geoNativeWatcherId;
+          return out;
+        } finally {
+          navigator.geolocation.watchPosition = realGeoWatch;
+          window.Capacitor = realCap;
+          _supaUser = realUser;
+          window._routeDistance = _routeDistance = realRoute;
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+        }
+      }, { shop: SHOP, job: JOB });
+      expect(r.watcherAdded).toBe(1);
+      expect(r.watcherId).toBe('w-1');
+      expect(r.webWatcherStarted, 'the web watcher must not double up inside the shell').toBe(0);
+      expect(r.background, 'the watcher is a BACKGROUND watcher, message and title present').toBe(true);
+      expect(r.rows.length, 'a locked-screen drive still logs its measured trip').toBe(1);
+      expect(r.rows[0].from).toBe('Shop');
+      expect(r.rows[0].to).toBe('Miller Residence');
+      expect(r.rows[0].miles).toBe(12.3);
+      expect(r.removed && r.removed.id, 'stopGeoTracking removes the plugin watcher').toBe('w-1');
+      expect(r.clearedId).toBe(null);
+    });
+
+    test('in a plain browser the bridge is inert: the web watcher runs exactly as before', async () => {
+      const r = await page.evaluate(() => {
+        const realCap = window.Capacitor, realGeoWatch = navigator.geolocation.watchPosition;
+        let webWatchCalls = 0;
+        navigator.geolocation.watchPosition = () => { webWatchCalls++; return 1234; };
+        try {
+          window.Capacitor = undefined;
+          _geoWatchId = null; _geoNativeWatcherId = null; _geoNativeStarting = false;
+          startGeoTracking();
+          return { webWatchCalls, watchId: _geoWatchId, nativeId: _geoNativeWatcherId };
+        } finally {
+          navigator.geolocation.watchPosition = realGeoWatch;
+          window.Capacitor = realCap;
+          _geoWatchId = null; _geoNativeWatcherId = null;
+        }
+      });
+      expect(r.webWatchCalls).toBe(1);
+      expect(r.watchId).toBe(1234);
+      expect(r.nativeId).toBe(null);
+    });
+  });
+
   // ── The live DRIVING banner ─────────────────────────────────────────────────
   // Owner ask (2026-08-07): the automatic system was fully silent while actually
   // driving, the only live feedback belonged to the manual Start Drive flow. The
