@@ -2677,6 +2677,10 @@ test.describe('Automatic mileage from drive legs', () => {
           rows: rows.map(m => ({ from: m.from_name, to: m.to_name, miles: m.miles, date: m.date })),
           timeEntries: queued.filter(q => q.tbl === 'job_time_entries').map(q => q.row.minutes),
           today: todayKey(),
+          // The local day the leg STARTED. Equals `today` except when CI runs
+          // inside the first h hours after local midnight, where a real leg
+          // legitimately started yesterday.
+          startDay: dateKey(new Date(Date.now() - h.hours * 3600000)),
         };
       } finally {
         _supaUser = realUser; window._routeDistance = _routeDistance = realRoute;
@@ -2699,7 +2703,12 @@ test.describe('Automatic mileage from drive legs', () => {
       // "drop the hours" from quietly becoming "never log hours".
       const out = await overnightLeg(20 / 60);
       expect(out.rows.length).toBe(1);
-      expect(out.rows[0].date).toBe(out.today);
+      // Dated by when the drive STARTED, which is `today` for 23h40m of every
+      // day but legitimately yesterday when CI runs just after local midnight
+      // (assertion used to pin `today` and failed exactly there, 2026-08-07
+      // run at 00:0x UTC). The 14h stale case above still pins `today`: a
+      // stale leg is deliberately stamped at the moment we SAW them.
+      expect(out.rows[0].date).toBe(out.startDay);
       expect(out.timeEntries.length).toBe(1);
       expect(out.timeEntries[0]).toBeGreaterThanOrEqual(19);
       expect(out.timeEntries[0]).toBeLessThanOrEqual(21);
