@@ -577,6 +577,10 @@ function autoLogDriveTrip(opts){
     client_id:to.clientId||null,
     client_name:to.clientId&&typeof getClientById==='function'?((getClientById(to.clientId)||{}).name||''):'',
     notes:'',gps:true,legKey,
+    // Wheel time for the leg (owner ask 2026-08-07: the log should say how
+    // long the drive took, not just how far). Absent on stale legs, where no
+    // duration was observed, and on manual rows, where none was measured.
+    mins:(opts.mins>0?Math.round(opts.mins):undefined),
     // The employee's own car. Owed to THEM, never the owner's deduction, and
     // deductibleTrips is what enforces that everywhere it matters.
     reimbursable:(opts.reimbursable?true:undefined),
@@ -2097,6 +2101,7 @@ function _milRenderTripList(shown,yr){
         '</div>'+
         '<div class="mil-trip-side">'+
           (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
+          (r.mins>0?'<div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:1px">'+(typeof _dispatchDur==='function'?_dispatchDur(r.mins):r.mins+'m')+'</div>':'')+
           '<button class="mil-trip-edit" onclick="openMileageEdit('+r.id+')">Edit</button>'+
         '</div>'+
       '</div>';

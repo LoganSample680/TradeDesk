@@ -584,6 +584,7 @@ async function _geoOnPing(pos){
     }
     // ── 3. Enter the new one ────────────────────────────────────────────────
     if(cur){
+      _geoCollapseDetours();   // unreceipted anonymous stops between here and the last real endpoint are detours
       if(legStart){
         if(cur.k==='job')_geoDriveEntry(cur.id,legStart,null,null,legGap,curLoc,legStale);
         else _geoDriveEntry(null,legStart,cur.name,null,legGap,curLoc,legStale);
@@ -800,6 +801,50 @@ function _geoPassThroughStop(stopLoc){
   _geoLegOrigin=stopLoc.prevOrigin||null;
   return true;
 }
+// Personal wandering must not fragment the deductible chain (owner report,
+// 2026-08-07: Home Depot → Jefferson's → PetSmart → home logged
+// "Home Depot -> Stop" as a deductible trip and never finished the leg home).
+// _autoNameStopTrip already collapses a stop Apple NAMES as food; this closes
+// the other half of the same rule: on reaching the next REAL fence, any
+// intervening stop that is still anonymous ("Stop", no tenant answer) and has
+// no same-day receipt at its pin is a detour, not a destination. Its inbound
+// row comes off the log, breadcrumbed onto the surviving row exactly like the
+// named-personal path (so reviewDetourReceipts can still rebuild it), and the
+// leg being written now measures from the last real endpoint: the row reads
+// "Home Depot -> Home Office" at direct miles, per the owner's CPA rule that
+// only the direct miles between two business points are deductible.
+//
+// The chain BREAKS (stops collapsing) at: a stop Apple named (a real tenant,
+// business until proven otherwise), a receipted stop (proven business), or a
+// likely-home stop (home ends a day's chain whatever else is true). Honest
+// limit: an unnamed collapsed stop whose receipt gets typed in days later can
+// only be matched by the receipt's own geo-stamp, since there is no vendor
+// name on the crumb to match against.
+function _geoCollapseDetours(){
+  try{
+    if(typeof mileage==='undefined')return;
+    let guard=8,changed=false;
+    while(guard-->0&&_geoLegOrigin&&_geoLegOrigin.kind==='stop'&&_geoLegOrigin.prevOrigin){
+      const stop=_geoLegOrigin;
+      if(stop.likelyHome)break;
+      if(stop.name&&stop.name!=='Stop')break;
+      const idx=mileage.findIndex(m=>m&&m.gps&&m.toCoord&&
+        Math.abs(m.toCoord.lat-stop.lat)<=1e-5&&Math.abs(m.toCoord.lng-stop.lng)<=1e-5);
+      const inbound=idx>=0?mileage[idx]:null;
+      const day=(inbound&&inbound.date)||todayKey();
+      if(typeof expenseForStop==='function'&&expenseForStop({lat:stop.lat,lng:stop.lng,name:stop.name,day}))break;
+      if(idx>=0)mileage.splice(idx,1);
+      const back=stop.prevOrigin;
+      back.passedThrough={stop:{lat:stop.lat,lng:stop.lng,name:stop.name||'Stop',addr:'',kind:'stop'},
+                          day,leg:inbound||undefined,origin:back};
+      // The dropped sub-leg's wheel time rides onto the surviving direct row.
+      if(inbound&&inbound.mins)back.extraDriveMins=(back.extraDriveMins||0)+inbound.mins;
+      _geoLegOrigin=back;
+      changed=true;
+    }
+    if(changed&&typeof saveAll==='function')saveAll();
+  }catch(_e){}
+}
 // `endedIso` closes the leg at an earlier verified moment than now: the moment
 // they parked, when the stop that follows is not driving.
 function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stale){
@@ -846,7 +891,12 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   }
   // Dated to the ARRIVAL for a stale leg: the day we actually saw them, never
   // the day the phone last happened to report a fence.
-  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh);
+  // Wheel time for the row (owner ask 2026-08-07: surface the drive's time on
+  // the log): this leg's minutes plus any minutes carried off collapsed-detour
+  // sub-legs. A stale leg claims none, same rule as the time entry above.
+  let driveMins=stale?0:mins;
+  if(!stale&&_geoLegOrigin&&_geoLegOrigin.extraDriveMins){driveMins+=_geoLegOrigin.extraDriveMins;delete _geoLegOrigin.extraDriveMins;}
+  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins);
 }
 
 // ── Automatic mileage: the leg we just timed, measured ───────────────────────
@@ -866,7 +916,7 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
 // The row is written IMMEDIATELY at zero miles and filled in afterwards, the
 // same shape the manual trip log already uses. A dead spot at arrival is the
 // normal case on a rural site and must never cost the contractor the trip.
-function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
+function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins){
   try{
     if(typeof autoLogDriveTrip!=='function')return;
     if(!from||!to||from.lat==null||to.lat==null)return;
@@ -932,7 +982,7 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh){
     // morning commute into a company deduction on the strength of a checkbox
     // the owner ticked about their own spare room.
     if(from.likelyHome&&!(S.homeOffice&&!_isEmployee))return;
-    autoLogDriveTrip({from,to,legKey,startedIso,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown});
+    autoLogDriveTrip({from,to,legKey,startedIso,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown,mins:driveMins});
   }catch(_e){}
 }
 

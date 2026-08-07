@@ -214,18 +214,58 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(calls[0].f.lat).toBeCloseTo(38.0, 4);   // still the shop geocode
     });
 
-    test('a stop in the middle splits into two measured trips', async () => {
-      // Job -> lunch -> supply house. The parked minutes belong to neither leg,
-      // and both drives are real deductible trips.
-      const { rows, calls } = await drive({ from: JOB, to: SUPPLY, dwellStop: true });
-      expect(rows.length).toBe(2);
-      expect(calls.length).toBe(2);
-      const froms = calls.map(c => Math.round(c.f.lat * 100) / 100);
-      const tos = calls.map(c => Math.round(c.t.lat * 100) / 100);
-      expect(froms).toContain(38.06);    // inbound started at the job
-      expect(tos).toContain(38.24);      // inbound ended at the kerb
-      expect(froms).toContain(38.24);    // outbound started from the same kerb
+    // Behavior intentionally changed (owner report, 2026-08-07): an anonymous
+    // stop used to terminate the leg and produce a deductible "-> Stop" row,
+    // which is how a real errand day logged "Home Depot -> Stop" for a
+    // restaurant and inflated the deduction. An unnamed, unreceipted stop is
+    // now a detour: its inbound row collapses (breadcrumbed, reversible by
+    // receipt) and the surviving row runs endpoint to endpoint at direct
+    // miles, per the CPA rule already documented on _geoCloseStop.
+    test('an anonymous unreceipted stop in the middle collapses into ONE direct endpoint-to-endpoint trip', async () => {
+      const { rows } = await drive({ from: JOB, to: SUPPLY, dwellStop: true });
+      expect(rows.length, 'the detour must not split the deductible trip').toBe(1);
+      const t = rows[0];
+      expect(t.from_name).toBe('Miller Residence');   // the JOB endpoint, not the kerb
+      expect(t.to_name).toBe('Ace Supply');
+      expect(t.to_name).not.toBe('Stop');
+      // The dropped sub-leg rides along as the breadcrumb that makes this
+      // reversible when a receipt for the stop turns up later.
+      expect(t.passedThrough && t.passedThrough.stop).toBeTruthy();
+      expect(t.passedThrough.stop.lat).toBeCloseTo(38.24, 2);
+      // Wheel time surfaces on the row and sums BOTH sub-legs (~20 + ~20 min).
+      expect(t.mins).toBeGreaterThanOrEqual(38);
+      expect(t.mins).toBeLessThanOrEqual(42);
+    });
+
+    test('the same stop WITH a same-day receipt at its pin stays a real destination, two trips', async () => {
+      await page.evaluate((LUNCH) => {
+        window.__origExpenses = expenses.slice();
+        expenses.push({ id: 991001, vendor: 'Ace Lunch Counter', amount: 42, cat: 'meals',
+          date: todayKey(), lat: LUNCH.lat, lon: LUNCH.lon, geoAcc: 10, geoAt: new Date().toISOString() });
+      }, LUNCH);
+      const { rows } = await drive({ from: JOB, to: SUPPLY, dwellStop: true });
+      await page.evaluate(() => { expenses.length = 0; window.__origExpenses.forEach(e => expenses.push(e)); window.__origExpenses = null; });
+      expect(rows.length, 'a receipted stop is proven business, the split stands').toBe(2);
+      const tos = rows.map(r => Math.round((r.toCoord?.lat || 0) * 100) / 100);
+      expect(tos).toContain(38.24);      // inbound ended at the receipted stop
       expect(tos).toContain(38.12);      // outbound ended at the supply house
+    });
+
+    test('drive time surfaces on the mileage row and renders in the log', async () => {
+      const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true });
+      expect(rows[0].mins, 'the ~20-minute leg carries its wheel time').toBeGreaterThanOrEqual(19);
+      expect(rows[0].mins).toBeLessThanOrEqual(21);
+      const html = await page.evaluate(() => {
+        window.__origMileage = mileage.slice();
+        mileage.length = 0;
+        mileage.push({ id: 991002, date: todayKey(), from_name: 'Shop', to_name: 'Miller Residence',
+          miles: 12.3, mins: 95, purpose: 'Job site', gps: true, created_at: new Date().toISOString() });
+        renderAllMileage();
+        const out = document.getElementById('mil-table')?.innerHTML || '';
+        mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
+        return out;
+      });
+      expect(html).toContain('1h 35m');   // duration shown beside the miles
     });
   });
 
