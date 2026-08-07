@@ -503,6 +503,7 @@ function _migrateShopToPlaces(){
 function renderPlaces(){
   _migrateShopToPlaces();
   _renderPlaceSuggestions();
+  renderPlaceTimeReport();
   const el=document.getElementById('place-list');
   if(!el)return;
   const rows=(places||[]).slice().sort((a,b)=>
@@ -550,6 +551,129 @@ function _renderPlaceSuggestions(){
         '<button onclick="dismissPlaceSuggestion('+s.lat+','+s.lon+');renderPlaces()" style="padding:9px 12px;border-radius:var(--r);border:1px solid var(--border2);background:none;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;color:var(--text3)">Not work</button>'+
       '</div>'+
     '</div>').join('');
+}
+
+// ── Time at places: yearly verified hours per place, per person ──────────────
+// Owner ask (2026-08-06): "how can we grab total time spent at each place
+// under books for the year and by individual?" Reads the SAME rows the
+// geofence closers already write, place dwells in job_time_entries
+// (source 'place', named by dest_place) and yard time in shop_time_entries,
+// so this is a report over existing data, no new tables, no new writers.
+// Manager-gated like the crew map (§9.5): field crew without the team
+// permission see nothing here.
+let _ptrYear=null;        // selected year, defaults to the current one
+let _ptrCache={};         // year -> {t, rows, ok} (20s TTL, renderPlaces re-fires often)
+let _ptrBusy=false;
+let _ptrOpen={};          // bucket key -> expanded?
+let _ptrKeys=[];          // index -> bucket key, so onclick never quotes a user-typed name
+const _PTR_SHOP_KEY=' shop'; // can't collide with a real dest_place name
+function _ptrCanView(){
+  try{return !_isEmployee||!!(_employeeRecord&&_employeeRecord.permissions&&_employeeRecord.permissions.team);}
+  catch(_e){return true;}
+}
+async function _ptrFetch(year){
+  const out={rows:[],ok:false};
+  if(typeof supaEnabled!=='function'||!supaEnabled()||!_supa||!_supaUser)return out;
+  const cid=(typeof _contractorUserId!=='undefined'&&_contractorUserId)||_supaUser.id;
+  const lo=year+'-01-01T00:00:00Z',hi=(year+1)+'-01-01T00:00:00Z';
+  try{
+    const[pRes,sRes]=await Promise.all([
+      _supa.from('job_time_entries').select('employee_user_id,dest_place,minutes,arrived_at')
+        .eq('contractor_user_id',cid).eq('source','place').gte('arrived_at',lo).lt('arrived_at',hi),
+      _supa.from('shop_time_entries').select('employee_user_id,minutes,arrived_at')
+        .eq('contractor_user_id',cid).gte('arrived_at',lo).lt('arrived_at',hi),
+    ]);
+    ((pRes&&pRes.data)||[]).forEach(r=>{if(r.dest_place)out.rows.push({place:r.dest_place,uid:r.employee_user_id||'',mins:r.minutes||0});});
+    ((sRes&&sRes.data)||[]).forEach(r=>{out.rows.push({place:_PTR_SHOP_KEY,uid:r.employee_user_id||'',mins:r.minutes||0});});
+    out.ok=true;
+  }catch(_e){}
+  return out;
+}
+function _ptrDur(mins){
+  return (typeof _dispatchDur==='function')?_dispatchDur(mins):(Math.round((mins||0)/6)/10)+'h';
+}
+function _ptrSetYear(y){_ptrYear=y;renderPlaceTimeReport();}
+function _ptrToggle(i){
+  const k=_ptrKeys[i];
+  if(k==null)return;
+  _ptrOpen[k]=!_ptrOpen[k];
+  renderPlaceTimeReport();
+}
+function renderPlaceTimeReport(){
+  const el=document.getElementById('place-time-report');
+  if(!el)return;
+  if(!_ptrCanView()){el.innerHTML='';return;}
+  const yr=_ptrYear||new Date().getFullYear();
+  const hit=_ptrCache[yr];
+  if(hit&&(Date.now()-hit.t)<20000){_ptrPaint(el,yr,hit);return;}
+  if(!hit)el.innerHTML='<div class="card"><div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Time at places</div><div style="font-size:12px;color:var(--text3)">Loading tracked hours…</div></div>';
+  else _ptrPaint(el,yr,hit); // stale cache paints instantly, refresh lands behind it
+  if(_ptrBusy)return;
+  _ptrBusy=true;
+  _ptrFetch(yr).then(res=>{
+    _ptrBusy=false;
+    _ptrCache[yr]={t:Date.now(),rows:res.rows,ok:res.ok};
+    const cur=document.getElementById('place-time-report');
+    if(cur)_ptrPaint(cur,_ptrYear||new Date().getFullYear(),_ptrCache[yr]);
+  }).catch(()=>{_ptrBusy=false;});
+}
+function _ptrPaint(el,yr,data){
+  const now=new Date().getFullYear();
+  const yearOpts=[now,now-1,now-2].map(y=>'<option value="'+y+'"'+(y===yr?' selected':'')+'>'+y+'</option>').join('');
+  const head='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Time at places</div>'+
+    '<select onchange="_ptrSetYear(parseInt(this.value))" style="font-size:12px;font-weight:700;padding:5px 9px;border-radius:var(--r);border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:inherit">'+yearOpts+'</select>'+
+  '</div>'+
+  '<div style="font-size:11px;color:var(--text3);line-height:1.5;margin-bottom:10px">Verified hours from geofence arrivals and departures, by place. Tap a place for the per-person split.</div>';
+  const rows=(data&&data.rows)||[];
+  if(!rows.length){
+    el.innerHTML='<div class="card">'+head+'<div style="font-size:12px;color:var(--text3);padding:2px 0 4px">No tracked time for '+yr+' yet. Hours land here automatically once geofenced arrivals and departures are logged.</div></div>';
+    return;
+  }
+  const buckets={};
+  const people=new Set();
+  let totalMins=0;
+  rows.forEach(r=>{
+    const b=buckets[r.place]||(buckets[r.place]={mins:0,visits:0,people:{}});
+    b.mins+=r.mins;b.visits++;totalMins+=r.mins;
+    b.people[r.uid]=(b.people[r.uid]||0)+r.mins;
+    if(r.uid)people.add(r.uid);
+  });
+  _ptrKeys=Object.keys(buckets).sort((a,b)=>buckets[b].mins-buckets[a].mins);
+  const stat=(v,l)=>'<div style="flex:1;background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:10px 12px">'+
+    '<div style="font-size:20px;font-weight:800;color:var(--text)">'+v+'</div>'+
+    '<div style="font-size:10.5px;color:var(--text3);font-weight:700;text-transform:uppercase;letter-spacing:.04em">'+l+'</div></div>';
+  const body=_ptrKeys.map((k,i)=>{
+    const b=buckets[k];
+    const isShop=k===_PTR_SHOP_KEY;
+    const label=isShop?'Shop':k;
+    const saved=isShop?null:(places||[]).find(p=>p.name===k);
+    const icon=isShop?'🏠':(_PLACE_KIND_ICON[saved&&saved.kind]||'📍');
+    const open=!!_ptrOpen[k];
+    const ppl=Object.keys(b.people).sort((a,b2)=>b.people[b2]-b.people[a]).map(uid=>{
+      const nm=(typeof _crewMemberName==='function'&&_crewMemberName(uid))||'Crew member';
+      return '<div style="display:flex;justify-content:space-between;padding:7px 0 7px 34px;font-size:12.5px;border-top:1px dashed var(--border)">'+
+        '<span style="color:var(--text2);font-weight:600">'+escHtml(nm)+'</span>'+
+        '<span style="font-weight:700;color:var(--text)">'+_ptrDur(b.people[uid])+'</span></div>';
+    }).join('');
+    return '<div style="border:1px solid var(--border);border-radius:12px;margin-bottom:8px;overflow:hidden;background:var(--bg2)">'+
+      '<div onclick="_ptrToggle('+i+')" style="display:flex;align-items:center;gap:10px;padding:11px 12px;cursor:pointer">'+
+        '<span style="width:28px;height:28px;border-radius:8px;background:var(--bg);display:flex;align-items:center;justify-content:center;flex-shrink:0">'+svgIcon(icon,{size:16})+'</span>'+
+        '<span style="flex:1;min-width:0">'+
+          '<span style="display:block;font-size:13.5px;font-weight:700;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escHtml(label)+'</span>'+
+          '<span style="display:block;font-size:11px;color:var(--text3);margin-top:1px">'+b.visits+' visit'+(b.visits!==1?'s':'')+'</span>'+
+        '</span>'+
+        '<span style="font-size:15px;font-weight:800;color:var(--text);white-space:nowrap">'+_ptrDur(b.mins)+'</span>'+
+        '<span style="color:var(--text3);display:inline-flex;transform:rotate('+(open?180:0)+'deg);transition:transform .15s"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>'+
+      '</div>'+
+      (open?'<div style="padding:0 12px 6px">'+ppl+'</div>':'')+
+    '</div>';
+  }).join('');
+  el.innerHTML='<div class="card">'+head+
+    '<div style="display:flex;gap:8px;margin-bottom:12px">'+
+      stat(_ptrDur(totalMins),'Total '+yr)+
+      (function(){const pc=people.size||1;return stat(String(pc),pc===1?'Person tracked':'People tracked');})()+
+    '</div>'+body+'</div>';
 }
 
 // Live toggle for the Type field: the home-office tax disclaimer is only

@@ -1102,6 +1102,153 @@ test.describe('Places, drive attribution and the map', () => {
     expect(out.mileageHidden).toBe(true);
   });
 
+  // ── Time at places: yearly verified hours per place, per person ────────────
+  // Reads job_time_entries (source 'place', named by dest_place) and
+  // shop_time_entries, grouped per place with an expandable per-person split.
+  test.describe('Time at places report', () => {
+    // Thenable query stub for both tables, recording the filter args so the
+    // year-window test can assert the exact date bounds sent to the backend.
+    const installPtrStub = (placeRows, shopRows) => page.evaluate(({ placeRows, shopRows }) => {
+      window.__ptrCalls = [];
+      window.__origSupaPtr = window.__origSupaPtr || window._supa;
+      window.__origSupaEnabled = window.__origSupaEnabled || window.supaEnabled;
+      window.__origSupaUserPtr = window.__origSupaUserPtr || window._supaUser;
+      window.supaEnabled = () => true;
+      window._supaUser = { id: 'ptr-owner' };
+      const mk = (tbl) => {
+        const q = { _eq: {}, _gte: null, _lt: null };
+        q.select = () => q;
+        q.eq = (c, v) => { q._eq[c] = v; return q; };
+        q.gte = (c, v) => { q._gte = v; return q; };
+        q.lt = (c, v) => { q._lt = v; return q; };
+        q.then = (resolve) => {
+          window.__ptrCalls.push({ tbl, eq: q._eq, gte: q._gte, lt: q._lt });
+          resolve({ data: tbl === 'job_time_entries' ? placeRows : shopRows, error: null });
+        };
+        return q;
+      };
+      window._supa = { ...window.__origSupaPtr, from: (tbl) => (tbl === 'job_time_entries' || tbl === 'shop_time_entries') ? mk(tbl) : window.__origSupaPtr.from(tbl) };
+      _ptrCache = {}; _ptrOpen = {}; _ptrYear = null; _ptrBusy = false;
+    }, { placeRows, shopRows });
+    const restorePtr = () => page.evaluate(() => {
+      if (window.__origSupaPtr) window._supa = window.__origSupaPtr;
+      if (window.__origSupaEnabled) window.supaEnabled = window.__origSupaEnabled;
+      window._supaUser = window.__origSupaUserPtr || null;
+      _ptrCache = {}; _ptrOpen = {}; _ptrYear = null;
+    });
+
+    test('groups by place with a Shop bucket, formats hours, and counts people', async () => {
+      await installPtrStub(
+        [
+          { employee_user_id: 'emp-1', dest_place: 'Ferguson Supply', minutes: 60, arrived_at: '2026-03-02T14:00:00Z' },
+          { employee_user_id: 'ptr-owner', dest_place: 'Ferguson Supply', minutes: 30, arrived_at: '2026-04-08T09:00:00Z' },
+          { employee_user_id: 'ptr-owner', dest_place: 'Home Office', minutes: 120, arrived_at: '2026-05-01T08:00:00Z' },
+        ],
+        [
+          { employee_user_id: 'ptr-owner', minutes: 45, arrived_at: '2026-02-11T07:00:00Z' },
+          { employee_user_id: 'emp-1', minutes: 15, arrived_at: '2026-02-12T07:00:00Z' },
+        ]
+      );
+      const r = await page.evaluate(async () => {
+        const origEmp = S.employees, origOwner = S.ownerName;
+        S.employees = [{ employee_user_id: 'emp-1', name: 'Mike Torres' }];
+        S.ownerName = 'Pat Owner';
+        try {
+          renderPlaceTimeReport();
+          await new Promise(res => setTimeout(res, 60));
+          const html = document.getElementById('place-time-report').innerHTML;
+          // Buckets sort by minutes desc: Home Office 120, Ferguson 90, Shop 60.
+          _ptrToggle(1); // expand Ferguson
+          await new Promise(res => setTimeout(res, 60));
+          const expanded = document.getElementById('place-time-report').innerHTML;
+          return { html, expanded };
+        } finally { S.employees = origEmp; S.ownerName = origOwner; }
+      });
+      expect(r.html).toContain('Time at places');
+      expect(r.html).toContain('Ferguson Supply');
+      expect(r.html).toContain('Home Office');
+      expect(r.html).toContain('Shop');                 // shop_time_entries bucket
+      expect(r.html).toContain('1h 30m');               // Ferguson 60+30
+      expect(r.html).toContain('2h');                   // Home Office
+      expect(r.html).toContain('4h 30m');               // total 270 mins
+      expect(r.html).toContain('People tracked');       // two distinct uids
+      expect(r.html).not.toContain('Mike Torres');      // collapsed by default
+      expect(r.expanded).toContain('Mike Torres');      // per-person split on expand
+      expect(r.expanded).toContain('Pat Owner');
+      await restorePtr();
+    });
+
+    test('queries exactly the selected year, and the year picker refetches', async () => {
+      await installPtrStub([], []);
+      const r = await page.evaluate(async () => {
+        const yr = new Date().getFullYear();
+        renderPlaceTimeReport();
+        await new Promise(res => setTimeout(res, 60));
+        const first = window.__ptrCalls.slice();
+        _ptrSetYear(yr - 1);
+        await new Promise(res => setTimeout(res, 60));
+        return { yr, first, all: window.__ptrCalls };
+      });
+      const jte = r.first.find(c => c.tbl === 'job_time_entries');
+      expect(jte.eq.source, 'only place-dwell rows, never job visits').toBe('place');
+      expect(jte.eq.contractor_user_id).toBe('ptr-owner');
+      expect(jte.gte).toBe(r.yr + '-01-01T00:00:00Z');
+      expect(jte.lt).toBe((r.yr + 1) + '-01-01T00:00:00Z');
+      const prev = r.all.find(c => c.tbl === 'job_time_entries' && c.gte === (r.yr - 1) + '-01-01T00:00:00Z');
+      expect(prev, 'picking last year queries last year\'s window').toBeTruthy();
+      expect(prev.lt).toBe(r.yr + '-01-01T00:00:00Z');
+      await restorePtr();
+    });
+
+    test('no tracked rows renders the empty state, not a broken card', async () => {
+      await installPtrStub([], []);
+      const r = await page.evaluate(async () => {
+        renderPlaceTimeReport();
+        await new Promise(res => setTimeout(res, 60));
+        return document.getElementById('place-time-report').innerHTML;
+      });
+      expect(r).toContain('No tracked time for');
+      await restorePtr();
+    });
+
+    test('field crew without the team permission see no report at all (manager-gated, §9.5)', async () => {
+      await installPtrStub(
+        [{ employee_user_id: 'emp-1', dest_place: 'Ferguson Supply', minutes: 60, arrived_at: '2026-03-02T14:00:00Z' }], []
+      );
+      const r = await page.evaluate(async () => {
+        const orig = { emp: window._isEmployee, rec: window._employeeRecord };
+        try {
+          window._isEmployee = true; window._employeeRecord = { permissions: {} };
+          renderPlaceTimeReport();
+          await new Promise(res => setTimeout(res, 60));
+          const gated = document.getElementById('place-time-report').innerHTML;
+          window._employeeRecord = { permissions: { team: true } };
+          _ptrCache = {};
+          renderPlaceTimeReport();
+          await new Promise(res => setTimeout(res, 60));
+          const managed = document.getElementById('place-time-report').innerHTML;
+          return { gated, managed };
+        } finally { window._isEmployee = orig.emp; window._employeeRecord = orig.rec; }
+      });
+      expect(r.gated).toBe('');
+      expect(r.managed).toContain('Time at places');
+      await restorePtr();
+    });
+
+    test('renderPlaces drives the report, the mount lives inside the Books Places pane', async () => {
+      await installPtrStub([], []);
+      const r = await page.evaluate(async () => {
+        renderPlaces();
+        await new Promise(res => setTimeout(res, 60));
+        const el = document.getElementById('place-time-report');
+        return { inPane: !!el && !!el.closest('#tr-places'), rendered: (el?.innerHTML || '').includes('Time at places') };
+      });
+      expect(r.inPane).toBe(true);
+      expect(r.rendered).toBe(true);
+      await restorePtr();
+    });
+  });
+
   test('zero console errors across the places suite', async () => {
     assertNoErrors(page, 'places, drive attribution and map');
   });
