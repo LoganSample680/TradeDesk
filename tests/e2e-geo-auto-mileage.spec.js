@@ -255,7 +255,7 @@ test.describe('Automatic mileage from drive legs', () => {
       const { rows } = await drive({ from: SHOP, to: JOB, viaRoad: true });
       expect(rows[0].mins, 'the ~20-minute leg carries its wheel time').toBeGreaterThanOrEqual(19);
       expect(rows[0].mins).toBeLessThanOrEqual(21);
-      const html = await page.evaluate(() => {
+      const out = await page.evaluate(() => {
         window.__origMileage = mileage.slice();
         mileage.length = 0;
         const start = new Date(); start.setHours(9, 12, 0, 0);
@@ -264,15 +264,27 @@ test.describe('Automatic mileage from drive legs', () => {
           miles: 12.3, mins: 95, startedIso: start.toISOString(), endedIso: end.toISOString(),
           purpose: 'Job site', gps: true, created_at: new Date().toISOString() });
         renderAllMileage();
-        const out = document.getElementById('mil-table')?.innerHTML || '';
+        const trip = document.querySelector('.mil-day-trip[data-lp-id="991002"]');
+        // .mil-day-trip-from/.mil-day-trip-to sit inside the flex:1 name
+        // wrapper, which is itself a child of the stop row that also holds
+        // the time div, two levels up from the name element.
+        const fromRow = trip?.querySelector('.mil-day-trip-from')?.parentElement?.parentElement;
+        const toRow = trip?.querySelector('.mil-day-trip-to')?.parentElement?.parentElement;
+        const res = {
+          side: trip?.querySelector('.mil-trip-side')?.innerText || '',
+          fromRowText: fromRow?.innerText || '',
+          toRowText: toRow?.innerText || '',
+        };
         mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
-        return out;
+        return res;
       });
-      expect(html).toContain('1h 35m');       // wheel time beside the miles
-      // Departed/arrived sit beside their OWN stop (Shop / Miller Residence),
-      // not a single combined range line.
-      expect(html).toMatch(/Shop[\s\S]{0,120}9:12\s?AM/);
-      expect(html).toMatch(/Miller Residence[\s\S]{0,160}10:47\s?AM/);
+      expect(out.side).toContain('1h 35m');   // wheel time beside the miles
+      // Departed/arrived sit inside the SAME stop-row as their own stop name
+      // (Shop / Miller Residence), not a single combined range line.
+      expect(out.fromRowText).toContain('Shop');
+      expect(out.fromRowText).toContain('9:12 AM');
+      expect(out.toRowText).toContain('Miller Residence');
+      expect(out.toRowText).toContain('10:47 AM');
     });
   });
 
