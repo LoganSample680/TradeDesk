@@ -581,6 +581,9 @@ function autoLogDriveTrip(opts){
     // long the drive took, not just how far). Absent on stale legs, where no
     // duration was observed, and on manual rows, where none was measured.
     mins:(opts.mins>0?Math.round(opts.mins):undefined),
+    // The trip's real clock: startedIso already exists below (End Drive needs
+    // it), endedIso is the verified arrival. Both absent on stale legs.
+    endedIso:opts.endedIso||undefined,
     // The employee's own car. Owed to THEM, never the owner's deduction, and
     // deductibleTrips is what enforces that everywhere it matters.
     reimbursable:(opts.reimbursable?true:undefined),
@@ -2089,6 +2092,17 @@ function _milRenderTripList(shown,yr){
       const toHtml=_loc(toName,toAddr)||'<span style="color:var(--text-3);font-style:italic">End not recorded</span>';
       const needsClass=r.purpose?'':' needs';
       const tripNum=trips.length-i;
+      // The trip's real clock (owner ask 2026-08-07): departed and arrived
+      // times off the geofence stamps. End falls back to start+wheel-time for
+      // rows written before endedIso existed. Stale/manual rows show nothing,
+      // their clock was never observed.
+      const _tt=(iso)=>{try{const d=new Date(iso);return isNaN(d.getTime())?'':d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});}catch(_e){return'';}};
+      let timeLine='';
+      if(r.startedIso&&(r.endedIso||r.mins>0)){
+        const _s=_tt(r.startedIso);
+        const _e=_tt(r.endedIso||new Date(Date.parse(r.startedIso)+(r.mins||0)*60000).toISOString());
+        if(_s&&_e)timeLine='<div style="font-size:11px;color:var(--text3);font-weight:600;margin-top:2px">'+_s+' → '+_e+'</div>';
+      }
       return '<div class="mil-day-trip'+needsClass+'" data-lp-id="'+r.id+'" data-lp-type="mileage" data-lp-label="'+escHtml((r.from_name||r.from||'Start')+' → '+(r.to_name||r.to||'End')+' · '+(r.miles||0).toFixed(1)+' mi')+'">'+
         '<div class="mil-day-trip-route">'+
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
@@ -2096,6 +2110,7 @@ function _milRenderTripList(shown,yr){
             '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Trip '+tripNum+'</div>'+
             '<div class="mil-day-trip-from">'+fromHtml+'</div>'+
             '<div class="mil-day-trip-to">'+toHtml+'</div>'+
+            timeLine+
             (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
           '</div>'+
         '</div>'+

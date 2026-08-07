@@ -896,7 +896,9 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   // sub-legs. A stale leg claims none, same rule as the time entry above.
   let driveMins=stale?0:mins;
   if(!stale&&_geoLegOrigin&&_geoLegOrigin.extraDriveMins){driveMins+=_geoLegOrigin.extraDriveMins;delete _geoLegOrigin.extraDriveMins;}
-  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins);
+  // The arrival stamp rides along so the row can show WHEN the trip ran, not
+  // just how long: a stale leg passes nothing, its clock times are fiction.
+  _geoAutoMileage(_geoLegOrigin,destLoc,legKey,stale?arrived:driveStartedAt,companyVeh,driveMins,stale?null:arrived);
 }
 
 // ── Automatic mileage: the leg we just timed, measured ───────────────────────
@@ -916,7 +918,7 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
 // The row is written IMMEDIATELY at zero miles and filled in afterwards, the
 // same shape the manual trip log already uses. A dead spot at arrival is the
 // normal case on a rural site and must never cost the contractor the trip.
-function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins){
+function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins,endedIso){
   try{
     if(typeof autoLogDriveTrip!=='function')return;
     if(!from||!to||from.lat==null||to.lat==null)return;
@@ -982,7 +984,7 @@ function _geoAutoMileage(from,to,legKey,startedIso,companyVeh,driveMins){
     // morning commute into a company deduction on the strength of a checkbox
     // the owner ticked about their own spare room.
     if(from.likelyHome&&!(S.homeOffice&&!_isEmployee))return;
-    autoLogDriveTrip({from,to,legKey,startedIso,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown,mins:driveMins});
+    autoLogDriveTrip({from,to,legKey,startedIso,endedIso:endedIso||undefined,reimbursable:unknown?undefined:reimbursable,vehicleUnknown:unknown,mins:driveMins});
   }catch(_e){}
 }
 

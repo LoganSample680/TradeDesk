@@ -258,14 +258,19 @@ test.describe('Automatic mileage from drive legs', () => {
       const html = await page.evaluate(() => {
         window.__origMileage = mileage.slice();
         mileage.length = 0;
+        const start = new Date(); start.setHours(9, 12, 0, 0);
+        const end = new Date(); end.setHours(10, 47, 0, 0);
         mileage.push({ id: 991002, date: todayKey(), from_name: 'Shop', to_name: 'Miller Residence',
-          miles: 12.3, mins: 95, purpose: 'Job site', gps: true, created_at: new Date().toISOString() });
+          miles: 12.3, mins: 95, startedIso: start.toISOString(), endedIso: end.toISOString(),
+          purpose: 'Job site', gps: true, created_at: new Date().toISOString() });
         renderAllMileage();
         const out = document.getElementById('mil-table')?.innerHTML || '';
         mileage.length = 0; window.__origMileage.forEach(m => mileage.push(m)); window.__origMileage = null;
         return out;
       });
-      expect(html).toContain('1h 35m');   // duration shown beside the miles
+      expect(html).toContain('1h 35m');       // wheel time beside the miles
+      expect(html).toContain('9:12 AM');      // and the trip's real clock
+      expect(html).toContain('10:47 AM');
     });
   });
 
