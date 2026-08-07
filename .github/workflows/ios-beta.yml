@@ -1,0 +1,115 @@
+# TradeDesk Beta -> TestFlight
+#
+# Builds the Capacitor shell (native/) on GitHub's free macOS runner and
+# uploads it to TestFlight. No Mac required anywhere: signing uses Xcode's
+# cloud-managed automatic signing driven by an App Store Connect API key.
+#
+# Manual trigger only (workflow_dispatch): shell builds are rare and deliberate.
+# Day-to-day app changes ship through the web deploy, the shell just loads the
+# UAT URL (native/capacitor.config.json server.url) and never needs rebuilding
+# for them.
+#
+# Required repo secrets:
+#   APPSTORE_API_KEY     full contents of the .p8 App Store Connect API key
+#   APPSTORE_KEY_ID      the key's Key ID
+#   APPSTORE_ISSUER_ID   the account's Issuer ID
+#   APPLE_TEAM_ID        the developer Team ID (developer.apple.com -> Membership)
+name: iOS Beta (TestFlight)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-upload:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: native
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Capacitor
+        run: npm install
+
+      - name: Generate the iOS project (fresh every build, nothing checked in)
+        run: npx cap add ios
+
+      - name: Sync config and plugins into the iOS project
+        run: npx cap sync ios
+
+      - name: Configure Info.plist (background location + consent copy)
+        run: |
+          PLIST=ios/App/App/Info.plist
+          /usr/libexec/PlistBuddy -c "Add :NSLocationWhenInUseUsageDescription string 'TradeDesk logs your work drives and time on site for your business records.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSLocationWhenInUseUsageDescription 'TradeDesk logs your work drives and time on site for your business records.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :NSLocationAlwaysAndWhenInUseUsageDescription string 'Choose Always so drives and job-site time keep logging while your phone is in your pocket. Tracking follows your business-hours and consent settings.'" "$PLIST" || \
+            /usr/libexec/PlistBuddy -c "Set :NSLocationAlwaysAndWhenInUseUsageDescription 'Choose Always so drives and job-site time keep logging while your phone is in your pocket. Tracking follows your business-hours and consent settings.'" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Print" "$PLIST"
+
+      - name: Write the App Store Connect API key
+        env:
+          APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+        run: |
+          mkdir -p ~/private_keys
+          printf '%s' "$APPSTORE_API_KEY" > ~/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8
+
+      - name: Archive (cloud-managed automatic signing)
+        run: |
+          xcodebuild -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath build/App.xcarchive \
+            archive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APPSTORE_KEY_ID }}.p8 \
+            -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }} \
+            DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
+            CODE_SIGN_STYLE=Automatic
+
+      - name: Export the signed IPA
+        run: |
+          cat > build/export.plist <<'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>TEAM_ID_PLACEHOLDER</string>
+          </dict>
+          </plist>
+          EOF
+          /usr/libexec/PlistBuddy -c "Set :teamID ${{ secrets.APPLE_TEAM_ID }}" build/export.plist
+          xcodebuild -exportArchive \
+            -archivePath build/App.xcarchive \
+            -exportPath build/ipa \
+            -exportOptionsPlist build/export.plist \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath ~/private_keys/AuthKey_${{ secrets.APPSTORE_KEY_ID }}.p8 \
+            -authenticationKeyID ${{ secrets.APPSTORE_KEY_ID }} \
+            -authenticationKeyIssuerID ${{ secrets.APPSTORE_ISSUER_ID }}
+          ls -la build/ipa
+
+      - name: Upload to TestFlight
+        env:
+          APPSTORE_KEY_ID: ${{ secrets.APPSTORE_KEY_ID }}
+          APPSTORE_ISSUER_ID: ${{ secrets.APPSTORE_ISSUER_ID }}
+        run: |
+          IPA=$(ls build/ipa/*.ipa | head -1)
+          printf '{"key_id":"%s","issuer_id":"%s","key_filepath":"%s","in_house":false}' \
+            "$APPSTORE_KEY_ID" "$APPSTORE_ISSUER_ID" "$HOME/private_keys/AuthKey_${APPSTORE_KEY_ID}.p8" \
+            > build/asc_key.json
+          fastlane pilot upload \
+            --ipa "$IPA" \
+            --api_key_path build/asc_key.json \
+            --skip_waiting_for_build_processing true
