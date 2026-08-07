@@ -2118,7 +2118,13 @@ function _milRenderTripList(shown,yr){
           '<div class="mil-route-spine"><div class="mil-route-pin-s"></div><div class="mil-route-spine-line"></div><div class="mil-route-pin-e"></div></div>'+
           '<div class="mil-route-addrs">'+
             '<div style="font-size:10px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px">Trip '+tripNum+'</div>'+
+            // The green dot vs. red pin distinction is a map convention
+            // (origin = dot, destination = pin/marker), and it wasn't
+            // landing on its own (owner: built it, couldn't recall which
+            // was which). Explicit labels beat a remembered convention.
+            '<div style="font-size:9px;font-weight:800;color:var(--c-green);text-transform:uppercase;letter-spacing:.04em">From</div>'+
             '<div class="mil-day-trip-from">'+fromHtml+'</div>'+
+            '<div style="font-size:9px;font-weight:800;color:#dc2626;text-transform:uppercase;letter-spacing:.04em;margin-top:2px">To</div>'+
             '<div class="mil-day-trip-to">'+toHtml+'</div>'+
             (_hasMultiDriver&&r.logged_by_name?'<div style="font-size:10px;color:var(--text3);font-weight:500;margin-top:2px">Driver: '+escHtml(r.logged_by_name)+'</div>':'')+
           '</div>'+
