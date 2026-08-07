@@ -20,6 +20,22 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const DEV_EMAIL = process.env.E2E_DEV_EMAIL || '';
+// ── Owner mandate (2026-08-07): the owner's personal login is OFF LIMITS ────
+// logansample97@gmail.com is reserved for the owner's real-life manual
+// testing. Flow tests must NEVER authenticate as it again, whatever the E2E_*
+// secrets happen to say: a misconfigured secret fails loudly right here
+// instead of quietly seeding test rows into the owner's real books. Point
+// E2E_DEV_* / E2E_DEV2_* at the dedicated TradeDesk test login instead.
+const FORBIDDEN_TEST_EMAILS = ['logansample97@gmail.com'];
+function assertAllowedTestAccount(email) {
+  const e = String(email || '').trim().toLowerCase();
+  if (FORBIDDEN_TEST_EMAILS.includes(e)) {
+    throw new Error(
+      'FLOW TESTS FORBIDDEN for ' + e + ': this is the owner\'s personal account. ' +
+      'Update the E2E_DEV_* / E2E_DEV2_* GitHub secrets to the dedicated TradeDesk test login.'
+    );
+  }
+}
 // ── ACCOUNT-PER-BROWSER SPLIT (cloud mode) ──────────────────────────────────
 // The full suite runs chromium + webkit in parallel; with BOTH browsers cold-
 // signing into the same shared Dev A account, they contend for the same rows
@@ -209,6 +225,10 @@ async function signIn(page, acctOverride) {
   const _cloud = _acct ? null : cloudAccountFor(pageBrowserName(page));
   const _email = _acct ? _acct.email : _cloud.email;
   const _password = _acct ? _acct.password : _cloud.password;
+  // Every flow-test authentication funnels through here, so this single check
+  // makes the personal-account ban unbypassable regardless of which pool or
+  // override produced the credentials.
+  assertAllowedTestAccount(_email);
   // 'domcontentloaded', NOT the default 'load': the app's login form is interactive at
   // DOMContentLoaded, but 'load' blocks on every external resource, notably the Apple
   // MapKit CDN script, so waiting for it makes every test's boot slower and, on a busy

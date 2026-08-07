@@ -1,0 +1,12 @@
+{
+  "appId": "com.tradedesk.beta",
+  "appName": "TradeDesk Beta",
+  "webDir": "www",
+  "server": {
+    "url": "https://uat.tradedesk-cyp.pages.dev",
+    "allowNavigation": ["uat.tradedesk-cyp.pages.dev"]
+  },
+  "ios": {
+    "contentInset": "automatic"
+  }
+}
