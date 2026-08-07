@@ -62,6 +62,23 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$PLIST"
           /usr/libexec/PlistBuddy -c "Print" "$PLIST"
 
+      - name: App icon from the repo's PWA icon
+        # The generated project ships Capacitor's placeholder icon (owner:
+        # "where's our TradeDesk logo?"). Refill every slot in the appiconset
+        # from icons/icon-512.png at each slot's own size; the jpeg round-trip
+        # flattens alpha, which App Store icons must not carry.
+        run: |
+          ICONSET=ios/App/App/Assets.xcassets/AppIcon.appiconset
+          ls "$ICONSET"
+          sips -z 1024 1024 ../icons/icon-512.png --out /tmp/icon-rgba.png
+          sips -s format jpeg /tmp/icon-rgba.png --out /tmp/icon-flat.jpg
+          sips -s format png /tmp/icon-flat.jpg --out /tmp/icon-1024.png
+          for f in "$ICONSET"/*.png; do
+            w=$(sips -g pixelWidth "$f" | awk '/pixelWidth/{print $2}')
+            h=$(sips -g pixelHeight "$f" | awk '/pixelHeight/{print $2}')
+            sips -z "$h" "$w" /tmp/icon-1024.png --out "$f"
+          done
+
       - name: Write the App Store Connect API key
         env:
           APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
@@ -84,6 +101,7 @@ jobs:
             -archivePath build/App.xcarchive \
             archive \
             DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }} \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
 
