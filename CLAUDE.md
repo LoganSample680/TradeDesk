@@ -271,6 +271,27 @@ All development work goes on branch: `claude/review-app-ux-flow-mRafw`
 
 Never commit or push to any other branch without explicit user permission.
 
+### 3.1 The `uat` Branch: Stable UAT Environment (owner-established 2026-08-07)
+
+`uat` is a permanent environment-pointer branch, NOT a review branch. Its only
+job is giving Cloudflare Pages a stable alias that never changes with dev
+branch names: `https://uat.tradedesk-cyp.pages.dev`. The TestFlight beta shell
+points at this URL, so it must stay alive and stably named forever.
+
+- **Rolling to UAT** (only when the owner asks): fast-forward `uat` to the dev
+  branch tip, add one empty deploy commit WITHOUT `[CF-Pages-Skip]` so
+  Cloudflare builds, push. `git checkout -B uat <dev-branch> && git commit
+  --allow-empty -m "UAT deploy" && git push -u origin uat --force-with-lease`.
+- **Never open a PR from `uat`**, and never develop on it. All work stays on
+  the dev branch; `uat` only ever receives what the dev branch already has.
+- Production is untouched by any of this: `main` still only moves via approved
+  PR merge (§14.1.1), and the UAT roll is a separate, explicit owner ask.
+- One shared Supabase serves dev/UAT/production (owner decision 2026-08-07):
+  data written from any environment is live for all of them instantly; only
+  CODE is gated by the merge to `main`. Therefore migrations must stay
+  additive (never rename/drop what production code still reads), and new code
+  must never rewrite existing records into shapes production can't read.
+
 ---
 
 ## 4. Branch Protection (One-Time Setup by Repo Owner)
