@@ -50,6 +50,9 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :NSLocationAlwaysAndWhenInUseUsageDescription 'Choose Always so drives and job-site time keep logging while your phone is in your pocket. Tracking follows your business-hours and consent settings.'" "$PLIST"
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes array" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Add :UIBackgroundModes:0 string location" "$PLIST" || true
+          # Standard HTTPS only: answers TestFlight's export-compliance question
+          # permanently so builds never sit in "Missing Compliance".
+          /usr/libexec/PlistBuddy -c "Add :ITSAppUsesNonExemptEncryption bool false" "$PLIST" || true
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${{ github.run_number }}" "$PLIST"
           /usr/libexec/PlistBuddy -c "Print" "$PLIST"
 
