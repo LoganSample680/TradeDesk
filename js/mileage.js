@@ -2124,9 +2124,13 @@ function _milRenderTripList(shown,yr){
           '</div>'+
         '</div>'+
         '<div class="mil-trip-side">'+
+          // Edit in the corner as its own action, not stacked in line with
+          // the trip's numbers (owner call, 2026-08-07): the stats read as
+          // one block underneath it instead of competing with a button for
+          // the same vertical space.
+          '<button class="mil-trip-edit" onclick="openMileageEdit('+r.id+')">Edit</button>'+
           (r.miles?'<div class="mil-trip-mi">'+(+r.miles).toFixed(1)+' mi</div>':'')+
           (metaTxt?'<div class="mil-trip-meta">'+metaTxt+'</div>':'')+
-          '<button class="mil-trip-edit" onclick="openMileageEdit('+r.id+')">Edit</button>'+
         '</div>'+
       '</div>';
     }).join('');
