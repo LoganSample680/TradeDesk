@@ -1,0 +1,7 @@
+# Everything generated per-build on the CI macOS runner. Nothing generated is
+# checked in: the workflow runs `npx cap add ios` fresh each build, so the repo
+# never drifts from what Capacitor generates.
+node_modules/
+ios/
+build/
+package-lock.json
