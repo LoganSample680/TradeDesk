@@ -18,6 +18,12 @@ name: iOS Beta (TestFlight)
 
 on:
   workflow_dispatch:
+  schedule:
+    # TestFlight builds hard-expire after 90 days (Apple rule, no opt-out).
+    # A fresh build on the 1st of every month keeps the beta permanently
+    # alive with 2 months of margin; the internal group auto-distributes,
+    # so testers just see an update, never an expiry.
+    - cron: '0 9 1 * *'
 
 jobs:
   build-upload:
