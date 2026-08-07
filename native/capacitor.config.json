@@ -7,6 +7,6 @@
     "allowNavigation": ["uat.tradedesk-cyp.pages.dev"]
   },
   "ios": {
-    "contentInset": "automatic"
+    "contentInset": "never"
   }
 }
