@@ -330,3 +330,71 @@ if (typeof document !== 'undefined' && document.addEventListener) {
 }
 
 // ── Supabase cloud sync ───────────────────────────────────────────────
+
+// ── Native-shell popup shim ──────────────────────────────────────────────────
+// WKWebView has NO popup windows: every window.open in the shell returns null,
+// which read as "pop-ups blocked" across all 23 document call sites (audit
+// report, invoices, lien docs, PDF exports; owner report 2026-08-08). Same
+// medicine as the geolocation shim: fix the primitive once instead of chasing
+// call sites. In the shell, window.open becomes a full-screen in-app viewer:
+//   • blank/_blank + document.write (the report pattern) renders into an
+//     overlay iframe with Close and Print, the fake window object supports
+//     exactly what the callers use (document.open/write/close, focus, print,
+//     close).
+//   • a same-origin URL loads in the same viewer.
+//   • a cross-origin URL navigates the main frame, which Capacitor's
+//     allowNavigation policy kicks out to the system browser.
+// Browser/PWA untouched: installs only when Capacitor reports native.
+function _tdShellDocOverlay(){
+  const ov=document.createElement('div');
+  ov.style.cssText='position:fixed;inset:0;z-index:100000;background:#fff;display:flex;flex-direction:column;animation:td-pg-enter .2s cubic-bezier(.22,1,.36,1) both';
+  const bar=document.createElement('div');
+  bar.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;padding-top:calc(10px + env(safe-area-inset-top,0px));background:var(--ink,#1B1612);color:#fff;flex-shrink:0';
+  const frame=document.createElement('iframe');
+  frame.style.cssText='flex:1;border:none;width:100%;background:#fff';
+  const fake={closed:false,location:{}};
+  const closeBtn=document.createElement('button');
+  closeBtn.textContent='Close';
+  closeBtn.style.cssText='font-size:14px;font-weight:700;color:#fff;background:rgba(255,255,255,.14);border:none;border-radius:8px;padding:8px 14px;font-family:inherit;cursor:pointer';
+  closeBtn.onclick=()=>{ov.remove();fake.closed=true;};
+  const printBtn=document.createElement('button');
+  printBtn.textContent='Print / Save';
+  printBtn.style.cssText='font-size:14px;font-weight:700;color:var(--ink,#1B1612);background:#fff;border:none;border-radius:8px;padding:8px 14px;font-family:inherit;cursor:pointer';
+  printBtn.onclick=()=>{try{frame.contentWindow.print();}catch(_e){}};
+  bar.appendChild(closeBtn);bar.appendChild(printBtn);
+  ov.appendChild(bar);ov.appendChild(frame);
+  document.body.appendChild(ov);
+  fake.document={
+    open:function(){try{frame.contentDocument.open();}catch(_e){}},
+    write:function(h){try{frame.contentDocument.write(h);}catch(_e){}},
+    close:function(){try{frame.contentDocument.close();}catch(_e){}}
+  };
+  fake.focus=function(){};
+  fake.print=function(){try{frame.contentWindow.print();}catch(_e){}};
+  fake.close=function(){ov.remove();fake.closed=true;};
+  fake._frame=frame;fake._overlay=ov;
+  return fake;
+}
+function _tdInstallShellWindowOpen(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return false;
+    window.open=function(url){
+      try{
+        if(!url||url==='about:blank'){return _tdShellDocOverlay();}
+        const u=new URL(url,location.href);
+        if(u.origin===location.origin){
+          const v=_tdShellDocOverlay();
+          v._frame.src=u.href;
+          return v;
+        }
+        // Cross-origin: Capacitor's allowNavigation policy sends this to the
+        // system browser. A truthy stub keeps the caller's !win checks quiet.
+        location.href=u.href;
+        return {closed:false,focus:function(){},close:function(){},print:function(){},document:{open:function(){},write:function(){},close:function(){}}};
+      }catch(_e){return _tdShellDocOverlay();}
+    };
+    return true;
+  }catch(_e){return false;}
+}
+_tdInstallShellWindowOpen();

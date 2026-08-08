@@ -5537,6 +5537,54 @@ test.describe('Proposals photo, hub, contract, and form functions', () => {
     expect(r.switched).toContain('td-pg-enter');
   });
 
+  // Owner report (2026-08-08): the audit report (and every other popup
+  // document, 23 call sites) showed "Allow pop-ups" inside the shell,
+  // because WKWebView has no popup windows: window.open returns null. The
+  // shell shim turns window.open into an in-app viewer; these drive it the
+  // way the audit-report code does.
+  test('shell popup shim: document.write popups render in an in-app viewer, same-origin URLs load in it', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realOpen = window.open;
+      try {
+        window.Capacitor = { isNativePlatform: () => true };
+        const installed = _tdInstallShellWindowOpen();
+        // The audit-report pattern: blank open + document.write + print.
+        const w = window.open('', '_blank');
+        const gotWindow = !!w;
+        w.document.open(); w.document.write('<html><body><h1>AUDIT-TEST-BODY</h1></body></html>'); w.document.close();
+        const frameText = w._frame.contentDocument.body.textContent;
+        const overlayInDom = document.body.contains(w._overlay);
+        w.close();
+        const overlayGone = !document.body.contains(w._overlay);
+        // Same-origin URL: loads inside the viewer, never navigates the app.
+        const w2 = window.open('/sign.html?x=1');
+        const iframeSrc = w2._frame.src;
+        w2.close();
+        return { installed, gotWindow, frameText, overlayInDom, overlayGone, iframeSrc, appStillHere: !!document.getElementById('pg-dash') };
+      } finally { window.Capacitor = realCap; window.open = realOpen; }
+    });
+    expect(r.installed).toBe(true);
+    expect(r.gotWindow, 'callers never see null, the "Allow pop-ups" branch is dead in the shell').toBe(true);
+    expect(r.frameText).toBe('AUDIT-TEST-BODY');
+    expect(r.overlayInDom).toBe(true);
+    expect(r.overlayGone).toBe(true);
+    expect(r.iframeSrc).toContain('/sign.html');
+    expect(r.appStillHere).toBe(true);
+  });
+
+  test('shell popup shim never installs in a plain browser', async () => {
+    const r = await page.evaluate(() => {
+      const realCap = window.Capacitor, realOpen = window.open;
+      try {
+        window.Capacitor = undefined;
+        const installed = _tdInstallShellWindowOpen();
+        return { installed, untouched: window.open === realOpen };
+      } finally { window.Capacitor = realCap; window.open = realOpen; }
+    });
+    expect(r.installed).toBe(false);
+    expect(r.untouched).toBe(true);
+  });
+
   test('renderCalGrid: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof renderCalGrid !== 'function') return { skip: true };
