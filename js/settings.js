@@ -1672,8 +1672,47 @@ function obStepAccount(el){
     obBtn('Continue','obNextAccount()');
 }
 function _obShowTos(e){if(e)e.preventDefault();if(typeof zAlert==='function')zAlert('TradeDesk is an organizational tool for running your trade business, proposals, jobs, payments, mileage, and tax summaries. It is NOT tax, legal, or financial advice: consult a qualified professional for those. You are responsible for authorization to store client data. Data is stored securely via Supabase; keep your own backups of critical records. Provided "as is" with no warranty.',{title:'Terms of Service'});}
+// ── Native Sign in with Apple (shell only) ──────────────────────────────────
+// The browser OAuth redirect leaves the WebView for appleid.apple.com and
+// never comes back to the app (owner report 2026-08-07: "routed to website").
+// In the shell, Apple's own native sheet signs in without ever leaving:
+// ASAuthorization via @capacitor-community/apple-sign-in hands back an
+// identity token, and Supabase accepts it directly through signInWithIdToken.
+// Apple requires this native flow for App Store apps anyway (guideline 4.8).
+// Nonce dance per Apple's spec: Apple gets the SHA-256, Supabase gets the raw.
+async function _obNativeApple(){
+  const cap=window.Capacitor;
+  const AppleP=(typeof cap.registerPlugin==='function')?cap.registerPlugin('SignInWithApple'):(cap.Plugins&&cap.Plugins.SignInWithApple);
+  if(!AppleP||typeof AppleP.authorize!=='function')return false;   // plugin absent: this shell build predates it
+  const raw=(crypto.randomUUID()+crypto.randomUUID()).replace(/-/g,'');
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(raw));
+  const hashed=Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  const res=await AppleP.authorize({
+    clientId:'app.tradedesk.beta',
+    redirectURI:location.origin,
+    scopes:'email name',
+    nonce:hashed
+  });
+  const token=res&&res.response&&res.response.identityToken;
+  if(!token)throw new Error('no identity token');
+  const{error}=await _supa.auth.signInWithIdToken({provider:'apple',token,nonce:raw});
+  if(error)throw error;
+  return true;
+}
 function _obOAuth(provider){
   try{
+    // Shell + Apple: the native sheet, never the browser redirect.
+    const _cap=window.Capacitor;
+    if(provider==='apple'&&_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
+      _obNativeApple().then(handled=>{
+        if(handled===false){if(typeof showToast==='function')showToast('Update TradeDesk Beta in TestFlight for Apple sign-in, or use email','⚠️',5000);}
+      }).catch(e=>{
+        // User-cancelled sheets land here too; stay quiet for those.
+        const msg=String(e&&(e.message||e.errorMessage)||'');
+        if(!/cancel|1001/i.test(msg)&&typeof showToast==='function')showToast('Apple sign-in didn\'t go through, use email for now','⚠️',5000);
+      });
+      return;
+    }
     if(typeof _supa==='undefined'||!_supa||!_supa.auth||!_supa.auth.signInWithOAuth){if(typeof showToast==='function')showToast(provider.charAt(0).toUpperCase()+provider.slice(1)+' sign-in isn\'t available yet','⚠️');return;}
     // Mark this as an OAuth round-trip. The client is built detectSessionInUrl:false
     // (so recovery / magic links aren't auto-consumed), so supaInit() completes the
