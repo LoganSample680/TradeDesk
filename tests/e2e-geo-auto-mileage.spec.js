@@ -3796,6 +3796,36 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.watched, 'cleared watchers stop receiving, the last delivery before clearWatch sticks').toBe(41.3);
     });
 
+    // Owner report (2026-08-08): "Turn on location" never cleared even with
+    // the watcher running. The checklist's permission read asked the
+    // WebView's per-origin permission, which the shim deliberately never
+    // grants. In the shell, permission truth IS the plugin watcher.
+    test('inside the shell, _geoReadPermission reports off the native watcher, not the WebView origin', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const savedConsent = localStorage.getItem('geo_owner_consent');
+        try {
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => null };
+          _geoNativeWatcherId = 'w-live';
+          const running = await _geoReadPermission();
+          _geoNativeWatcherId = null;
+          localStorage.setItem('geo_owner_consent', 'declined');
+          const declined = await _geoReadPermission();
+          localStorage.removeItem('geo_owner_consent');
+          const fresh = await _geoReadPermission();
+          return { running, declined, fresh };
+        } finally {
+          window.Capacitor = realCap;
+          _geoNativeWatcherId = null;
+          if (savedConsent === null) localStorage.removeItem('geo_owner_consent');
+          else localStorage.setItem('geo_owner_consent', savedConsent);
+        }
+      });
+      expect(r.running, 'a delivering watcher IS granted, the checklist item clears').toBe('granted');
+      expect(r.declined).toBe('denied');
+      expect(r.fresh).toBe('prompt');
+    });
+
     test('in a plain browser the shim never installs: the real geolocation API is untouched', async () => {
       const r = await page.evaluate(() => {
         const realGet = navigator.geolocation.getCurrentPosition;

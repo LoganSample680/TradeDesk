@@ -1573,9 +1573,20 @@ function resetSched(){
 }
 
 function setTrTab(tab,btn){
+  const _switching=trackerTab!==tab;
   trackerTab=tab;
   ['income','expenses','mileage','places','jobs','summary','hiring','map'].forEach(t=>{
-    const el=document.getElementById('tr-'+t);if(el)el.style.display=t===tab?'block':'none';
+    const el=document.getElementById('tr-'+t);
+    if(el){
+      const _show=t===tab;
+      el.style.display=_show?'block':'none';
+      // §8 inline-panel standard: a tab switch is a reveal, never a hard cut.
+      // Restart the animation via reflow so rapid tab-hopping still fades.
+      if(_show&&_switching){
+        el.style.animation='none';void el.offsetWidth;
+        el.style.animation='td-pg-enter .18s cubic-bezier(.22,1,.36,1) both';
+      }
+    }
     const tb=document.getElementById('tr-t-'+t);if(tb)tb.classList.toggle('active',t===tab);
   });
   if(tab==='income')renderIncome();

@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.08.26.2';
+const APP_VERSION='08.08.26.3';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -4891,7 +4891,9 @@ function supaShowLogin(opts={}){
         const _fld='font-size:15px;padding:12px 14px;border-radius:10px;border:1.5px solid #e3e6eb;background:#f7f8fa;color:var(--text);width:100%;box-sizing:border-box;outline:none;font-family:inherit;transition:border-color .15s,box-shadow .15s,background .15s';
         const _social=(prov,label,bg,fg,bd,icon)=>'<button onclick="_obOAuth(\''+prov+'\')" onmouseover="this.style.filter=\'brightness(.97)\'" onmouseout="this.style.filter=\'none\'" style="display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px;border-radius:10px;border:'+bd+';background:'+bg+';color:'+fg+';font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;margin-bottom:10px;transition:filter .15s">'+icon+'<span>'+label+'</span></button>';
         const _bullets=[[svgIcon('📋',{size:15,color:'#fff'}),'Estimates & proposals in minutes'],[svgIcon('💰',{size:15,color:'#fff'}),'Get paid on the spot'],[svgIcon('📍',{size:15,color:'#fff'}),'Mileage, crew & taxes tracked'],[svgIcon('📊',{size:15,color:'#fff'}),'Your whole business, one place']];
-        return '<div style="display:flex;min-height:100vh;min-height:100dvh">'+
+        // The whole login screen enters on the standard page fade (§8): it
+        // used to hard-appear the moment the boot overlay lifted.
+        return '<div style="display:flex;min-height:100vh;min-height:100dvh;animation:td-pg-enter .3s cubic-bezier(.22,1,.36,1) both">'+
           // Left brand panel (desktop only), gradient + soft glow for depth
           '<div id="login-left" style="position:relative;overflow:hidden;width:360px;flex-shrink:0;background:linear-gradient(160deg,#111826 0%,#0D1117 60%,#080a0f 100%);padding:48px 38px;flex-direction:column;justify-content:space-between">'+
             '<div style="position:absolute;top:-120px;right:-120px;width:340px;height:340px;background:radial-gradient(circle,rgba(37,99,235,.28),transparent 70%);pointer-events:none"></div>'+

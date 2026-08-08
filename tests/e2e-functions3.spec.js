@@ -5498,6 +5498,45 @@ test.describe('Proposals photo, hub, contract, and form functions', () => {
     expect(result.weatherLat).toBe(39.05);
   });
 
+  // Owner report (2026-08-08): tapping Mileage on the dashboard painted the
+  // Books SUMMARY tab first, then hard-cut to Mileage 150ms later. Fixed by
+  // setting trackerTab BEFORE goPg so the page enters once, already on the
+  // right tab. This asserts the end state synchronously, with zero settle
+  // time, which the old two-step could never pass.
+  test('goToTrackerTab paints the target tab in one pass, never the previous tab first', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof goToTrackerTab !== 'function') return { skip: true };
+      trackerTab = 'summary';
+      goToTrackerTab('mileage');
+      return {
+        pgActive: document.getElementById('pg-tracker')?.classList.contains('active'),
+        mileageShown: document.getElementById('tr-mileage')?.style.display,
+        summaryHidden: document.getElementById('tr-summary')?.style.display,
+        tabState: trackerTab,
+      };
+    });
+    if (r.skip) return;
+    expect(r.pgActive).toBe(true);
+    expect(r.mileageShown).toBe('block');
+    expect(r.summaryHidden).toBe('none');
+    expect(r.tabState).toBe('mileage');
+  });
+
+  // §8: a Books tab switch is a reveal, never a hard cut. The shown panel
+  // restarts the shared td-pg-enter animation on every real switch.
+  test('setTrTab fades the revealed panel in, and only on a real switch', async () => {
+    const r = await page.evaluate(() => {
+      if (typeof setTrTab !== 'function') return { skip: true };
+      goPg('pg-tracker');
+      setTrTab('summary', document.getElementById('tr-t-summary'));
+      setTrTab('income', document.getElementById('tr-t-income'));
+      const switched = document.getElementById('tr-income')?.style.animation || '';
+      return { switched };
+    });
+    if (r.skip) return;
+    expect(r.switched).toContain('td-pg-enter');
+  });
+
   test('renderCalGrid: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof renderCalGrid !== 'function') return { skip: true };

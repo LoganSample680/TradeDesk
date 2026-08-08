@@ -1258,6 +1258,18 @@ function _stampGeo(rec,done){
 // render, and it is a heartbeat: without location_checked_at a member who
 // revoked permission last week would show green forever.
 async function _geoReadPermission(){
+  // Native shell: the WebView's per-origin permission is meaningless here,
+  // the geolocation shim intentionally never grants it (owner report
+  // 2026-08-08: "Turn on location" never cleared even with the watcher
+  // running). The truth is the plugin watcher itself: delivering = granted.
+  try{
+    const _cap=window.Capacitor;
+    if(_cap&&typeof _cap.isNativePlatform==='function'&&_cap.isNativePlatform()){
+      if(_geoNativeWatcherId!=null)return 'granted';
+      if(localStorage.getItem('geo_owner_consent')==='declined')return 'denied';
+      return 'prompt';
+    }
+  }catch(_e){}
   if(!navigator.geolocation)return 'unsupported';
   try{
     if(navigator.permissions&&navigator.permissions.query){
@@ -1449,7 +1461,13 @@ function startGeoTracking(){
           accuracy:loc.accuracy||0,
           speed:(typeof loc.speed==='number'?loc.speed:null)
         }});
-      })).then(id=>{_geoNativeStarting=false;_geoNativeWatcherId=id||null;_geoNativeDiag('addWatcher RESOLVED, id='+id);},
+      })).then(id=>{
+        _geoNativeStarting=false;_geoNativeWatcherId=id||null;
+        _geoNativeDiag('addWatcher RESOLVED, id='+id);
+        // The watcher running IS the shell's 'granted' state: refresh the
+        // dashboard's permission cache so "Turn on location" clears itself.
+        try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
+      },
                (e)=>{_geoNativeStarting=false;_geoNativeDiag('addWatcher REJECTED: '+(e&&(e.message||JSON.stringify(e))));});
       return;
     }catch(_e){_geoNativeStarting=false;_geoNativeDiag('addWatcher THREW: '+(_e&&_e.message));}

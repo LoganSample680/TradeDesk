@@ -1206,8 +1206,14 @@ function markFUAbandoned(bidId,cid){
 }
 function tdPrint(){if(window._tdNativePrint){window._tdNativePrint();return;}window.print();}
 function goToTrackerTab(tab){
+  // Set the tab BEFORE navigating: goPg('pg-tracker') renders the page via
+  // renderTrackerTab(), which paints whatever trackerTab currently holds.
+  // The old goPg-then-setTimeout order painted the PREVIOUS tab first, then
+  // hard-cut to the target 150ms later (owner report 2026-08-08: "loads
+  // summary first then hard cuts over to mileage"). Now the page enters
+  // once, already on the right tab, under the standard page fade.
+  trackerTab=tab;
   goPg('pg-tracker');
-  setTimeout(()=>setTrTab(tab,document.getElementById('tr-t-'+tab)),150);
 }
 function goToExpenses(){goToTrackerTab('expenses');}
 function showWorkflowGate(msg,btnLabel,btnAction){
