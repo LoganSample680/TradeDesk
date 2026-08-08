@@ -1339,10 +1339,24 @@ function _geoNativePlugin(){
     return (cap.Plugins&&cap.Plugins.BackgroundGeolocation)||null;
   }catch(_e){return null;}
 }
+// TEMPORARY diagnostic (owner report 2026-08-07: still seeing the plain
+// website location prompt in the shell, no shop geofence). There's no Mac
+// to attach a debugger to the device, so this surfaces the actual runtime
+// state as an on-screen toast instead of a console log nobody can read.
+// Remove once the native watcher is confirmed working from a real device.
+function _geoNativeDiag(msg){
+  try{
+    if(!(window.Capacitor&&typeof window.Capacitor.isNativePlatform==='function'&&window.Capacitor.isNativePlatform()))return;
+    if(typeof showToast==='function')showToast('[geo diag] '+msg,'🛠',9000);
+  }catch(_e){}
+}
 // ── Start / stop ───────────────────────────────────────────────────────────────
 function startGeoTracking(){
   if(_geoWatchId!=null||_geoNativeWatcherId!=null||_geoNativeStarting)return;
+  const _cap=window.Capacitor;
+  _geoNativeDiag('Capacitor='+(typeof _cap)+' native='+(_cap&&typeof _cap.isNativePlatform==='function'?_cap.isNativePlatform():'n/a')+' registerPlugin='+(_cap?typeof _cap.registerPlugin:'n/a')+' Plugins.BG='+(_cap&&_cap.Plugins?typeof _cap.Plugins.BackgroundGeolocation:'n/a'));
   const BG=_geoNativePlugin();
+  _geoNativeDiag('BG='+(BG?'found':'NULL')+' addWatcher='+(BG?typeof BG.addWatcher:'n/a'));
   if(BG&&typeof BG.addWatcher==='function'){
     // Native shell: the background watcher also fires in the foreground, so it
     // fully replaces the web watcher rather than doubling it up.
@@ -1353,7 +1367,8 @@ function startGeoTracking(){
         backgroundTitle:'TradeDesk tracking is on',
         requestPermissions:true,stale:false,distanceFilter:25
       },(loc,err)=>{
-        if(err||!loc)return;
+        if(err){_geoNativeDiag('watcher callback ERROR: '+(err.message||JSON.stringify(err)));return;}
+        if(!loc)return;
         // Returned so a caller that CAN await the ping does (tests); the
         // plugin itself ignores the return value.
         return _geoOnPing({coords:{
@@ -1361,11 +1376,12 @@ function startGeoTracking(){
           accuracy:loc.accuracy||0,
           speed:(typeof loc.speed==='number'?loc.speed:null)
         }});
-      })).then(id=>{_geoNativeStarting=false;_geoNativeWatcherId=id||null;},
-               ()=>{_geoNativeStarting=false;});
+      })).then(id=>{_geoNativeStarting=false;_geoNativeWatcherId=id||null;_geoNativeDiag('addWatcher RESOLVED, id='+id);},
+               (e)=>{_geoNativeStarting=false;_geoNativeDiag('addWatcher REJECTED: '+(e&&(e.message||JSON.stringify(e))));});
       return;
-    }catch(_e){_geoNativeStarting=false;}
+    }catch(_e){_geoNativeStarting=false;_geoNativeDiag('addWatcher THREW: '+(_e&&_e.message));}
   }
+  _geoNativeDiag('FALLING BACK to plain web watchPosition (no background)');
   if(!navigator.geolocation)return;
   try{
     _geoWatchId=navigator.geolocation.watchPosition(_geoOnPing,()=>{},{enableHighAccuracy:true,maximumAge:30000,timeout:20000});
