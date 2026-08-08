@@ -3746,6 +3746,70 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.clearedId).toBe(null);
     });
 
+    // Owner report (2026-08-08): even with the plugin running, WKWebView
+    // popped its per-WEBSITE location prompt because features like weather
+    // and the nearby-job card still called the web geolocation API. In the
+    // shell that API is now shimmed to serve from the plugin's fix stream,
+    // so the website prompt is impossible and every caller gets native-grade
+    // fixes. These tests drive the shim exactly as the app would.
+    test('inside the shell, the geolocation shim serves web-API calls from the plugin stream', async () => {
+      const r = await page.evaluate(async () => {
+        const realCap = window.Capacitor;
+        const realGet = navigator.geolocation.getCurrentPosition;
+        const realWatch = navigator.geolocation.watchPosition;
+        const realClear = navigator.geolocation.clearWatch;
+        try {
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => null };
+          _geoLastNativeFix = null; _geoFixWaiters = []; _geoShimWatchers = {};
+          const installed = _geoInstallGeoShim();
+          // A plugin fix arrives on the stream...
+          _geoShimDeliver(_geoShimPos({ latitude: 39.1, longitude: -95.7, accuracy: 5, speed: 2 }));
+          // ...and a web-API caller (weather, nearby card) gets it instantly,
+          // with zero real-API involvement.
+          const got = await new Promise((res, rej) => {
+            navigator.geolocation.getCurrentPosition(p => res(p), e => rej(e));
+          });
+          // A waiter parked BEFORE any fix resolves when the next fix lands.
+          _geoLastNativeFix = null;
+          const waited = new Promise(res => navigator.geolocation.getCurrentPosition(p => res(p.coords.latitude)));
+          _geoShimDeliver(_geoShimPos({ latitude: 40.2, longitude: -96.1, accuracy: 8 }));
+          const waitedLat = await waited;
+          // watchPosition subscribers ride the same stream.
+          let watched = null;
+          const wid = navigator.geolocation.watchPosition(p => { watched = p.coords.latitude; });
+          _geoShimDeliver(_geoShimPos({ latitude: 41.3, longitude: -97.2, accuracy: 8 }));
+          navigator.geolocation.clearWatch(wid);
+          _geoShimDeliver(_geoShimPos({ latitude: 42.4, longitude: -98.3, accuracy: 8 }));
+          return { installed, gotLat: got.coords.latitude, gotSpeed: got.coords.speed, waitedLat, watched };
+        } finally {
+          window.Capacitor = realCap;
+          navigator.geolocation.getCurrentPosition = realGet;
+          navigator.geolocation.watchPosition = realWatch;
+          navigator.geolocation.clearWatch = realClear;
+          _geoLastNativeFix = null; _geoFixWaiters = []; _geoShimWatchers = {};
+        }
+      });
+      expect(r.installed).toBe(true);
+      expect(r.gotLat).toBe(39.1);
+      expect(r.gotSpeed).toBe(2);
+      expect(r.waitedLat, 'a caller waiting before any fix resolves on the next plugin fix').toBe(40.2);
+      expect(r.watched, 'cleared watchers stop receiving, the last delivery before clearWatch sticks').toBe(41.3);
+    });
+
+    test('in a plain browser the shim never installs: the real geolocation API is untouched', async () => {
+      const r = await page.evaluate(() => {
+        const realGet = navigator.geolocation.getCurrentPosition;
+        const realCap = window.Capacitor;
+        try {
+          window.Capacitor = undefined;
+          const installed = _geoInstallGeoShim();
+          return { installed, untouched: navigator.geolocation.getCurrentPosition === realGet };
+        } finally { window.Capacitor = realCap; }
+      });
+      expect(r.installed).toBe(false);
+      expect(r.untouched).toBe(true);
+    });
+
     test('in a plain browser the bridge is inert: the web watcher runs exactly as before', async () => {
       const r = await page.evaluate(() => {
         const realCap = window.Capacitor, realGeoWatch = navigator.geolocation.watchPosition;

@@ -1350,6 +1350,75 @@ function _geoNativeDiag(msg){
     if(typeof showToast==='function')showToast('[geo diag] '+msg,'🛠',9000);
   }catch(_e){}
 }
+// ── Native geolocation shim: the plugin is the ONLY GPS source in the shell ──
+// Any web-API call (navigator.geolocation.*) inside WKWebView pops Apple's
+// per-WEBSITE prompt ("uat...pages.dev would like to use your location") even
+// when the app already holds OS permission (owner report 2026-08-08,
+// screenshot). Several legit features ask the web API for a position
+// (weather, the nearby-job card, trip start addresses), so rather than chase
+// every call site forever, the web API itself is replaced with a shim served
+// from the plugin's fix stream: same callback shapes, zero website prompts,
+// and every caller inherits native-grade fixes for free. Browser/PWA:
+// untouched, the shim only installs inside the shell.
+let _geoLastNativeFix=null;   // last position object delivered by the plugin
+let _geoFixWaiters=[];        // pending getCurrentPosition callbacks
+let _geoShimWatchers={};      // synthetic watchPosition subscribers
+let _geoShimWatchSeq=1;
+function _geoShimPos(loc){
+  return {coords:{latitude:loc.latitude,longitude:loc.longitude,
+                  accuracy:loc.accuracy||0,
+                  speed:(typeof loc.speed==='number'?loc.speed:null),
+                  heading:null,altitude:null,altitudeAccuracy:null},
+          timestamp:(loc.time||Date.now()),__at:Date.now()};
+}
+function _geoShimDeliver(pos){
+  _geoLastNativeFix=pos;
+  const w=_geoFixWaiters;_geoFixWaiters=[];
+  w.forEach(x=>{try{clearTimeout(x.t);x.ok(pos);}catch(_e){}});
+  Object.keys(_geoShimWatchers).forEach(id=>{try{_geoShimWatchers[id](pos);}catch(_e){}});
+}
+function _geoInstallGeoShim(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return false;
+    if(!navigator.geolocation)return false;
+    navigator.geolocation.getCurrentPosition=function(ok,err,opts){
+      try{
+        // A recent plugin fix answers instantly, and generously: for the
+        // callers that live here (weather, nearby card, trip address), a
+        // two-minute-old fix is truth.
+        if(_geoLastNativeFix&&(Date.now()-_geoLastNativeFix.__at)<=Math.max((opts&&opts.maximumAge)||0,120000)){ok(_geoLastNativeFix);return;}
+        const waiter={ok,t:null};
+        waiter.t=setTimeout(()=>{
+          _geoFixWaiters=_geoFixWaiters.filter(x=>x!==waiter);
+          if(typeof err==='function')err({code:3,message:'no native fix available'});
+        },(opts&&opts.timeout)||20000);
+        _geoFixWaiters.push(waiter);
+        // Main tracking not running (consent pending/declined): a silent
+        // one-shot plugin watcher, requestPermissions:false so this path can
+        // never itself become a prompt of any kind.
+        if(_geoNativeWatcherId==null&&!_geoNativeStarting){
+          const BG=_geoNativePlugin();
+          if(BG&&typeof BG.addWatcher==='function'){
+            let oneId=null,done=false;
+            Promise.resolve(BG.addWatcher({requestPermissions:false,stale:true},(loc)=>{
+              if(loc&&!done){done=true;_geoShimDeliver(_geoShimPos(loc));}
+              if(oneId){try{BG.removeWatcher({id:oneId});}catch(_e){}oneId=null;}
+            })).then(id=>{oneId=id;if(done&&oneId){try{BG.removeWatcher({id:oneId});}catch(_e){}oneId=null;}},()=>{});
+          }
+        }
+      }catch(_e){if(typeof err==='function')err({code:2,message:String(_e&&_e.message||_e)});}
+    };
+    navigator.geolocation.watchPosition=function(ok){
+      const id=_geoShimWatchSeq++;
+      _geoShimWatchers[id]=ok;
+      if(_geoLastNativeFix){try{ok(_geoLastNativeFix);}catch(_e){}}
+      return id;
+    };
+    navigator.geolocation.clearWatch=function(id){delete _geoShimWatchers[id];};
+    return true;
+  }catch(_e){return false;}
+}
 // ── Start / stop ───────────────────────────────────────────────────────────────
 function startGeoTracking(){
   if(_geoWatchId!=null||_geoNativeWatcherId!=null||_geoNativeStarting)return;
@@ -1369,6 +1438,10 @@ function startGeoTracking(){
       },(loc,err)=>{
         if(err){_geoNativeDiag('watcher callback ERROR: '+(err.message||JSON.stringify(err)));return;}
         if(!loc)return;
+        // Every plugin fix also feeds the geolocation shim, so weather, the
+        // nearby-job card, and trip addresses ride the same stream without
+        // ever touching the web API (and its per-website prompt).
+        _geoShimDeliver(_geoShimPos(loc));
         // Returned so a caller that CAN await the ping does (tests); the
         // plugin itself ignores the return value.
         return _geoOnPing({coords:{
@@ -1541,3 +1614,9 @@ function _geoSetConsent(yes){
   _geoRequestPermission();
   if(typeof showToast==='function')showToast('Tracking your time on jobs during work hours','📍');
 }
+
+// Installed at load, before any boot timer can touch the web geolocation API:
+// the Capacitor bridge script is injected ahead of page scripts, so
+// isNativePlatform is answerable by the time this file parses. No-op in every
+// browser and PWA.
+_geoInstallGeoShim();
