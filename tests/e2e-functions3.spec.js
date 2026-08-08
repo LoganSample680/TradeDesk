@@ -5457,6 +5457,47 @@ test.describe('Proposals photo, hub, contract, and form functions', () => {
     if (!result.skip) expect(result.ok).toBe(true);
   });
 
+  // Owner report 2026-08-07: inside the Capacitor shell, this weather-only
+  // auto-ask (js/cloud.js boot sequence) fired its own in-app "Allow
+  // location access?" modal BEFORE the tracking-consent flow's real,
+  // Always-capable OS prompt (geo-track.js startGeoTracking). iOS resolves
+  // location authorization on the FIRST ask and never re-offers a richer
+  // dialog later, so this modal-then-plain-getCurrentPosition permanently
+  // capped the app at When-In-Use and the owner never got Always. Fixed by
+  // gating the auto-ask off entirely inside the shell (geoIfGranted, silent
+  // by design, still lets weather piggyback once ANY permission already
+  // exists, with zero extra prompt).
+  test('inside the native shell, geoIfGranted never auto-prompts, and silently populates once already granted', async () => {
+    const result = await page.evaluate(() => new Promise(resolve => {
+      const realCap = window.Capacitor, realGet = navigator.geolocation.getCurrentPosition;
+      const calls = [];
+      navigator.geolocation.getCurrentPosition = (success) => { calls.push(1); if (success) success({ coords: { latitude: 39.05, longitude: -95.6 } }); };
+      window.Capacitor = { isNativePlatform: () => true };
+      const savedLat = S.weatherLat, savedLon = S.weatherLon, savedGranted = S.locationGranted;
+      try {
+        // Not yet granted: silent no-op, no OS call, no in-app modal.
+        S.locationGranted = false;
+        geoIfGranted(() => {});
+        const noPromptCalls = calls.length;
+        const modalShown = !!document.getElementById('loc-allow-btn');
+        // Already granted: silently piggybacks to populate weather.
+        S.locationGranted = true;
+        geoIfGranted(pos => {
+          S.weatherLat = pos.coords.latitude; S.weatherLon = pos.coords.longitude;
+          resolve({ noPromptCalls, modalShown, grantedCalls: calls.length, weatherLat: S.weatherLat });
+        });
+        setTimeout(() => resolve({ noPromptCalls, modalShown, grantedCalls: calls.length, weatherLat: S.weatherLat }), 400);
+      } finally {
+        window.Capacitor = realCap; navigator.geolocation.getCurrentPosition = realGet;
+        S.weatherLat = savedLat; S.weatherLon = savedLon; S.locationGranted = savedGranted;
+      }
+    }));
+    expect(result.noPromptCalls, 'not-yet-granted must never touch the OS geolocation API').toBe(0);
+    expect(result.modalShown, 'no in-app "Allow location access?" modal auto-fires in the shell').toBe(false);
+    expect(result.grantedCalls, 'already-granted DOES silently populate (weather still works)').toBeGreaterThanOrEqual(1);
+    expect(result.weatherLat).toBe(39.05);
+  });
+
   test('renderCalGrid: calls without throwing', async () => {
     const result = await page.evaluate(async () => {
       if (typeof renderCalGrid !== 'function') return { skip: true };

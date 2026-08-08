@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.07.26.14';
+const APP_VERSION='08.07.26.15';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // _realtimeSubscribed flips true when subscription is INITIATED; _tdRealtimeReady
@@ -7158,7 +7158,34 @@ async function supaLoadFromCloud({silent=false}={}){
       // Cross-tab signal: sign.html writes zp3_sig_notify after a successful cash/check save.
       // This fires immediately in the contractor's open TradeDesk tab, no polling delay.
       window.addEventListener('storage',e=>{if(e.key==='zp3_sig_notify'&&e.newValue)checkNewSignatures();});
-      setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
+      // Inside the native shell, the ONE location ask a user should ever see
+      // is the tracking-consent flow's Always-capable request (geo-track.js
+      // startGeoTracking, via the background-geolocation plugin). This
+      // weather grab uses a plain browser getCurrentPosition, which iOS
+      // resolves to the lesser When-In-Use tier, and once resolved, iOS
+      // never re-offers Always on a later ask, only its own occasional
+      // upgrade nag (owner report 2026-08-07: "the PWA location thing"
+      // firing, this auto-timer's own in-app Allow modal, beat tracking's
+      // real prompt to the punch and permanently capped it). Weather still
+      // works once ANY authorization exists (tracking's ask resolves that),
+      // it just no longer races to ask first. Browser/PWA unaffected.
+      const _inNativeShell=!!(window.Capacitor&&typeof window.Capacitor.isNativePlatform==='function'&&window.Capacitor.isNativePlatform());
+      if(_inNativeShell){
+        // Weather still gets to populate, it just never independently asks:
+        // geoIfGranted (js/utils.js) only reads a position when the OS
+        // permission is ALREADY granted, so once tracking consent resolves
+        // Always (on this boot or a prior one), weather silently piggybacks
+        // off it with zero extra prompt.
+        setTimeout(()=>{
+          if(typeof geoIfGranted==='function')geoIfGranted(pos=>{
+            S.weatherLat=Math.round(pos.coords.latitude*10000)/10000;
+            S.weatherLon=Math.round(pos.coords.longitude*10000)/10000;
+            S.locationGranted=true;S.settingsTs=Date.now();saveAll();
+          });
+        },1200);
+      }else{
+        setTimeout(()=>requestLocationPermission(()=>{},()=>{}),1200);
+      }
       // Was 4000ms, checkNearbyJob's cache-first rewrite (js/jobs.js) makes the
       // common case (client book already geocoded from a prior day) resolve
       // near-instantly, so this only needs to trail the location-permission
