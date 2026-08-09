@@ -2,6 +2,7 @@ import Foundation
 import Capacitor
 import UIKit
 import CoreLocation
+import QuickLook
 #if canImport(RoomPlan)
 import RoomPlan
 import ARKit
@@ -16,7 +17,12 @@ import ARKit
 //
 // Everything captured returns to JS as JSON when the modal closes:
 //   { rooms: [<CapturedRoom JSON>], labels: ["Kitchen", ...],
-//     photos: [{path, cam:[16 floats], room:<index>}], headingDeg: <number> }
+//     stories: [1, 1, 2, ...], photos: [{path, cam:[16 floats], room:<index>}],
+//     headingDeg: <number>, usdz: <path, when export succeeded> }
+// The Floor chip stamps each room with the floor the user SAID they were on
+// (deterministic, unlike RoomPlan's own story field, which is unreliable in
+// merged captures); the USDZ is the whole capture exported parametric, the
+// file viewUsdz() hands to Quick Look for the 3D/AR walkaround.
 // JS owns all math, drawing, and business rules (CLAUDE.md 3.2): wall footage,
 // floor plans, outlet spacing, load calcs, and the client-hub product are all
 // web-side, tunable forever without another build.
@@ -26,8 +32,29 @@ public class TdScanPlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "TdScan"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "isSupported", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "startScan", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "startScan", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "viewUsdz", returnType: CAPPluginReturnPromise)
     ]
+    private var usdzPreview: TdUsdzPreview?
+
+    // Quick Look on a USDZ gives the free native 3D orbit + AR placement.
+    // Dumb by design: present a file, nothing else. The Safari rel="ar"
+    // anchor trick does not work inside WKWebView (WebKit bug 239135), so
+    // this tiny method is the only way the shell gets AR.
+    @objc func viewUsdz(_ call: CAPPluginCall) {
+        guard let path = call.getString("path"), FileManager.default.fileExists(atPath: path) else {
+            call.reject("no such file")
+            return
+        }
+        DispatchQueue.main.async {
+            let ql = QLPreviewController()
+            let ds = TdUsdzPreview(url: URL(fileURLWithPath: path))
+            self.usdzPreview = ds
+            ql.dataSource = ds
+            self.bridge?.viewController?.present(ql, animated: true)
+            call.resolve()
+        }
+    }
 
     @objc func isSupported(_ call: CAPPluginCall) {
         #if canImport(RoomPlan)
@@ -66,6 +93,15 @@ public class TdScanPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 
+// Retained by the plugin while Quick Look is up; QLPreviewController keeps
+// only a weak reference to its data source.
+class TdUsdzPreview: NSObject, QLPreviewControllerDataSource {
+    let url: URL
+    init(url: URL) { self.url = url }
+    func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+    func previewController(_ controller: QLPreviewController, previewItemAt index: Int) -> QLPreviewItem { url as NSURL }
+}
+
 #if canImport(RoomPlan)
 @available(iOS 17.0, *)
 class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
@@ -77,13 +113,18 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     private let builder = RoomBuilder(options: [.beautifyObjects])
     private var rooms: [CapturedRoom] = []
     private var roomLabels: [String] = []
+    private var roomStories: [Int] = []
     private var photos: [[String: Any]] = []
     private var labelIndex = 0
+    private var currentStory = 1
     private var finishing = false
     private var headingDeg: Double = -1
+    private var lastGeomCount = 0
     private let locMgr = CLLocationManager()
+    private let tickGen = UIImpactFeedbackGenerator(style: .light)
 
     private let chip = UIButton(type: .system)
+    private let floorBtn = UIButton(type: .system)
     private let doneRoomBtn = UIButton(type: .system)
     private let finishBtn = UIButton(type: .system)
     private let cancelBtn = UIButton(type: .system)
@@ -112,6 +153,8 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         captureView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         captureView.captureSession.delegate = self
         view.insertSubview(captureView, at: 0)
+        lastGeomCount = 0
+        tickGen.prepare()
         captureView.captureSession.run(configuration: RoomCaptureSession.Configuration())
     }
 
@@ -130,13 +173,14 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         roomLabels = []
         labelIndex = 0
         styled(chip, labels.first ?? "Room", bg: UIColor(white: 0, alpha: 0.55))
+        styled(floorBtn, "Floor 1", bg: UIColor(white: 0, alpha: 0.55))
         styled(cancelBtn, "Cancel", bg: UIColor(white: 0, alpha: 0.55))
         styled(doneRoomBtn, "Done room", bg: UIColor(red: 0.09, green: 0.37, blue: 0.65, alpha: 1))
         styled(finishBtn, "Finish", bg: UIColor(red: 0.13, green: 0.55, blue: 0.28, alpha: 1))
         styled(shutterBtn, "📷", bg: UIColor(white: 0, alpha: 0.55))
         shutterBtn.titleLabel?.font = .systemFont(ofSize: 24)
 
-        hint.text = "Walk the room edges. Tap the label to name this room."
+        hint.text = "Walk the room edges. Tap the label to name this room. Tap Floor when you head upstairs."
         hint.textColor = .white
         hint.font = .systemFont(ofSize: 12, weight: .medium)
         hint.textAlignment = .center
@@ -145,6 +189,8 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         view.addSubview(hint)
 
         chip.addTarget(self, action: #selector(cycleLabel), for: .touchUpInside)
+        floorBtn.addTarget(self, action: #selector(floorTapped), for: .touchUpInside)
+        floorBtn.addGestureRecognizer(UILongPressGestureRecognizer(target: self, action: #selector(floorHeld(_:))))
         cancelBtn.addTarget(self, action: #selector(cancelTapped), for: .touchUpInside)
         doneRoomBtn.addTarget(self, action: #selector(doneRoomTapped), for: .touchUpInside)
         finishBtn.addTarget(self, action: #selector(finishTapped), for: .touchUpInside)
@@ -156,6 +202,8 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             cancelBtn.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 14),
             chip.topAnchor.constraint(equalTo: g.topAnchor, constant: 10),
             chip.centerXAnchor.constraint(equalTo: g.centerXAnchor),
+            floorBtn.topAnchor.constraint(equalTo: g.topAnchor, constant: 10),
+            floorBtn.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -14),
             hint.topAnchor.constraint(equalTo: chip.bottomAnchor, constant: 8),
             hint.leadingAnchor.constraint(equalTo: g.leadingAnchor, constant: 20),
             hint.trailingAnchor.constraint(equalTo: g.trailingAnchor, constant: -20),
@@ -171,6 +219,21 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
     @objc private func cycleLabel() {
         labelIndex = (labelIndex + 1) % max(labels.count, 1)
         chip.setTitle(labels[labelIndex], for: .normal)
+    }
+
+    // Tap = up a floor, long-press = back down. Deterministic on purpose:
+    // the user SAYS which floor they are on, we never guess from stairs.
+    @objc private func floorTapped() {
+        currentStory = min(currentStory + 1, 9)
+        floorBtn.setTitle("Floor \(currentStory)", for: .normal)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+    }
+
+    @objc private func floorHeld(_ g: UILongPressGestureRecognizer) {
+        guard g.state == .began else { return }
+        currentStory = max(currentStory - 1, 1)
+        floorBtn.setTitle("Floor \(currentStory)", for: .normal)
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
 
     @objc private func shutterTapped() {
@@ -213,6 +276,17 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         dismiss(animated: true) { [weak self] in self?.onDone?(nil) }
     }
 
+    // A light haptic tick each time a wall/door/window/opening locks in:
+    // feel-the-scan feedback with the phone held up. Capability only, every
+    // number JS shows is still computed web-side from the final geometry.
+    public func captureSession(_ session: RoomCaptureSession, didUpdate room: CapturedRoom) {
+        let n = room.walls.count + room.doors.count + room.windows.count + room.openings.count
+        if n > lastGeomCount {
+            lastGeomCount = n
+            DispatchQueue.main.async { self.tickGen.impactOccurred(); self.tickGen.prepare() }
+        }
+    }
+
     // RoomCaptureSessionDelegate: the stopped session hands over raw data;
     // RoomBuilder turns it into the parametric CapturedRoom.
     public func captureSession(_ session: RoomCaptureSession, didEndWith data: CapturedRoomData, error: Error?) {
@@ -222,6 +296,7 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
             if error == nil, let room = try? await self.builder.capturedRoom(from: data) {
                 self.rooms.append(room)
                 self.roomLabels.append(self.labels[self.labelIndex])
+                self.roomStories.append(self.currentStory)
             }
             await MainActor.run {
                 if wasFinishing || self.rooms.isEmpty {
@@ -243,13 +318,35 @@ class TdScanViewController: UIViewController, RoomCaptureSessionDelegate {
         for r in rooms {
             if let d = try? enc.encode(r), let s = String(data: d, encoding: .utf8) { roomJson.append(s) }
         }
-        let result: [String: Any] = [
-            "rooms": roomJson,
-            "labels": roomLabels,
-            "photos": photos,
-            "headingDeg": headingDeg
-        ]
-        dismiss(animated: true) { [weak self] in self?.onDone?(result) }
+        Task { [weak self] in
+            guard let self = self else { return }
+            // Parametric USDZ of the whole capture: the 3D dollhouse / AR
+            // file. Rooms shared one ARSession, so StructureBuilder merges
+            // them into one model; a failed export just omits the file, the
+            // 2D product never depends on it.
+            var usdzPath: String? = nil
+            if !self.rooms.isEmpty {
+                let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                let url = dir.appendingPathComponent("td_scan_\(Int(Date().timeIntervalSince1970 * 1000)).usdz")
+                if let structure = try? await StructureBuilder(options: [.beautifyObjects]).capturedStructure(from: self.rooms) {
+                    do { try structure.export(to: url, exportOptions: .parametric); usdzPath = url.path } catch {}
+                }
+                if usdzPath == nil, self.rooms.count == 1 {
+                    do { try self.rooms[0].export(to: url, exportOptions: .parametric); usdzPath = url.path } catch {}
+                }
+            }
+            await MainActor.run {
+                var result: [String: Any] = [
+                    "rooms": roomJson,
+                    "labels": self.roomLabels,
+                    "stories": self.roomStories,
+                    "photos": self.photos,
+                    "headingDeg": self.headingDeg
+                ]
+                if let p = usdzPath { result["usdz"] = p }
+                self.dismiss(animated: true) { self.onDone?(result) }
+            }
+        }
     }
 }
 #endif

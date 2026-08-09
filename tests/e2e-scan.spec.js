@@ -206,6 +206,142 @@ test.describe('TdScan web half', () => {
     expect(r.started).toBe(null);
   });
 
+  // Build #12 batch: the capture screen's Floor chip stamps each room with the
+  // floor the user SAID they were on, and the plugin exports a parametric USDZ
+  // for the Quick Look 3D/AR walkaround. The web half must carry both.
+  test('stories and the USDZ path ride the capture result into the saved scan', async () => {
+    const r = await page.evaluate(async (raw) => {
+      const realCap = window.Capacitor;
+      const before = scans.length;
+      try {
+        localStorage.setItem('td_scan_preflight', '1');
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (n) => n === 'TdScan' ? {
+            isSupported: () => Promise.resolve({ supported: true }),
+            startScan: () => Promise.resolve({
+              rooms: [raw, raw], labels: ['Kitchen', 'Bedroom'], stories: [1, 2],
+              photos: [], headingDeg: 90, usdz: '/docs/td_scan_1.usdz',
+            }),
+          } : null,
+        };
+        const sc = await startRoomScan({ clientId: 42 });
+        const out = {
+          saved: !!sc,
+          story1: sc && sc.rooms[0].story, story2: sc && sc.rooms[1].story,
+          usdz: sc && sc.usdz,
+          stories: sc ? _scanStories(sc) : null,
+        };
+        scans.length = before; saveAll();
+        return out;
+      } finally { window.Capacitor = realCap; }
+    }, fabricatedRoom());
+    expect(r.saved).toBe(true);
+    expect(r.story1, 'first room stamped with its floor').toBe(1);
+    expect(r.story2, 'second room stamped with its floor').toBe(2);
+    expect(r.usdz).toBe('/docs/td_scan_1.usdz');
+    expect(r.stories).toEqual([1, 2]);
+  });
+
+  test('the pre-flight checklist gates the first capture only, and cancelling it never starts the scan', async () => {
+    const r = await page.evaluate(async (raw) => {
+      const realCap = window.Capacitor;
+      const before = scans.length;
+      let scanCalls = 0;
+      try {
+        localStorage.removeItem('td_scan_preflight');
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (n) => n === 'TdScan' ? {
+            startScan: () => { scanCalls++; return Promise.resolve({ rooms: [raw], labels: ['Room'], stories: [1], photos: [], headingDeg: -1 }); },
+          } : null,
+        };
+        // First capture: the checklist appears and the plugin must NOT have
+        // been called yet.
+        const p1 = startRoomScan({ clientId: 42 });
+        await new Promise(r2 => setTimeout(r2, 30));
+        const modalShown = !!document.getElementById('_scan-pre-ov');
+        const heldBeforeGo = scanCalls === 0;
+        document.getElementById('_scan-pre-go')?.click();
+        const sc1 = await p1;
+        // Second capture: seen once, never again.
+        const p2 = startRoomScan({ clientId: 42 });
+        await new Promise(r2 => setTimeout(r2, 30));
+        const modalAgain = !!document.getElementById('_scan-pre-ov');
+        const sc2 = await p2;
+        scans.length = before; saveAll();
+        return { modalShown, heldBeforeGo, started1: !!sc1, modalAgain, started2: !!sc2, scanCalls };
+      } finally {
+        window.Capacitor = realCap;
+        document.getElementById('_scan-pre-ov')?.remove();
+        localStorage.setItem('td_scan_preflight', '1');
+      }
+    }, fabricatedRoom());
+    expect(r.modalShown, 'first scan opens the checklist').toBe(true);
+    expect(r.heldBeforeGo, 'the plugin waits for Got it').toBe(true);
+    expect(r.started1).toBe(true);
+    expect(r.modalAgain, 'seen once, never nags again').toBe(false);
+    expect(r.started2).toBe(true);
+    expect(r.scanCalls).toBe(2);
+  });
+
+  test('a multi-floor scan gets Floor tabs and draws one floor at a time; single-floor scans get none', async () => {
+    const r = await page.evaluate((raw) => {
+      const before = scans.length;
+      try {
+        const r1 = _scanParseRoom(raw, 'Kitchen'); r1.story = 1;
+        const r2 = _scanParseRoom(raw, 'Bedroom'); r2.story = 2;
+        const sc = saveScan({ id: 'sc-floors', clientId: null, name: 'Two story', createdAt: new Date().toISOString(), rooms: [r1, r2], photos: [], price: null, purchasedAt: null });
+        _scanViewStory = null; _scanViewLens = 'plan';
+        openScanViewer(sc.id);
+        let ov = document.getElementById('_scan-view-ov');
+        const html1 = ov ? ov.innerHTML : '';
+        const floor1Only = /Kitchen/.test(html1) && !/Bedroom/.test(html1);
+        _scanSetStory(sc.id, 2);
+        ov = document.getElementById('_scan-view-ov');
+        const html2 = ov ? ov.innerHTML : '';
+        const floor2Only = /Bedroom/.test(html2) && !/Kitchen/.test(html2);
+        document.getElementById('_scan-view-ov')?.remove();
+        // Single-floor control: no Floor tabs at all.
+        const single = saveScan({ id: 'sc-flat', clientId: null, name: 'Flat', createdAt: new Date().toISOString(), rooms: [_scanParseRoom(raw, 'Studio')], photos: [], price: null, purchasedAt: null });
+        _scanViewStory = null;
+        openScanViewer(single.id);
+        const html3 = document.getElementById('_scan-view-ov')?.innerHTML || '';
+        const noTabs = !/>Floor 1</.test(html3);
+        document.getElementById('_scan-view-ov')?.remove();
+        return { hasTabs: />Floor 1</.test(html1) && />Floor 2</.test(html1), floor1Only, floor2Only, noTabs };
+      } finally { scans.length = before; saveAll(); _scanViewStory = null; }
+    }, fabricatedRoom());
+    expect(r.hasTabs, 'two stories, two tabs').toBe(true);
+    expect(r.floor1Only, 'floor 1 draws only floor 1').toBe(true);
+    expect(r.floor2Only, 'floor 2 draws only floor 2').toBe(true);
+    expect(r.noTabs, 'a flat scan shows no floor tabs').toBe(true);
+  });
+
+  test('the 3D viewer hands the USDZ to the plugin in the shell and stays inert in a browser', async () => {
+    const r = await page.evaluate((raw) => {
+      const realCap = window.Capacitor;
+      const before = scans.length;
+      const viewed = [];
+      try {
+        const sc = saveScan({ id: 'sc-usdz', clientId: null, name: 'AR', createdAt: new Date().toISOString(), rooms: [_scanParseRoom(raw, 'Room')], photos: [], usdz: '/docs/model.usdz', price: null, purchasedAt: null });
+        // Browser: no plugin, no throw, no call.
+        window.Capacitor = undefined;
+        let browserOk = true;
+        try { _scanViewUsdz(sc.id); } catch (e) { browserOk = false; }
+        // Shell: the path goes straight to Quick Look.
+        window.Capacitor = {
+          isNativePlatform: () => true,
+          registerPlugin: (n) => n === 'TdScan' ? { viewUsdz: (o) => { viewed.push(o.path); return Promise.resolve(); } } : null,
+        };
+        _scanViewUsdz(sc.id);
+        return { browserOk, viewed };
+      } finally { window.Capacitor = realCap; scans.length = before; saveAll(); }
+    }, fabricatedRoom());
+    expect(r.browserOk).toBe(true);
+    expect(r.viewed).toEqual(['/docs/model.usdz']);
+  });
+
   test('hub snapshot gate: a locked scan ships NO geometry, an unlocked one ships the plan', async () => {
     const r = await page.evaluate((raw) => {
       const savedBids = bids.slice(), savedClients = clients.slice();

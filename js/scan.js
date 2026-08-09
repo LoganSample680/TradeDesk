@@ -263,7 +263,9 @@ function _scanHvacNumbers(room,opts){
 function _scanPlanSvg(sc,opts){
   const o=opts||{};
   const lens=o.lens||'plan';
-  const rooms=(sc.rooms||[]);
+  // story filters to one floor (multi-floor scans draw per-floor plans);
+  // absent means everything, which is also every pre-multi-floor scan.
+  const rooms=(sc.rooms||[]).filter(r=>!o.story||Math.max(1,+r.story||1)===o.story);
   if(!rooms.length)return '<svg viewBox="0 0 100 40"><text x="50" y="22" text-anchor="middle" font-size="8" fill="var(--text3,#6a6963)">No rooms captured</text></svg>';
   // Bounds across all rooms.
   let minX=1e9,minZ=1e9,maxX=-1e9,maxZ=-1e9;
@@ -354,9 +356,35 @@ async function scanIsSupported(){
   if(!P||typeof P.isSupported!=='function')return false;
   try{const r=await P.isSupported();return !!(r&&r.supported);}catch(_e){return false;}
 }
+// Five-second pre-flight, once per device: every scanner app buries the same
+// three failure conditions in help docs people read AFTER a ruined scan
+// (research 2026-08-09: doors open first, lights on, mirrors and glass lie to
+// LiDAR). Surface them once, before the first capture ever starts.
+function _scanPreflight(){
+  try{if(localStorage.getItem('td_scan_preflight')==='1')return Promise.resolve(true);}catch(_e){}
+  return new Promise(res=>{
+    document.getElementById('_scan-pre-ov')?.remove();
+    const ov=document.createElement('div');ov.id='_scan-pre-ov';ov.className='zmodal-overlay';
+    const m=document.createElement('div');m.className='zmodal';
+    const row=(icon,txt)=>'<div style="display:flex;align-items:center;gap:10px;padding:8px 0;font-size:13px"><span style="font-size:18px">'+icon+'</span><span>'+txt+'</span></div>';
+    m.innerHTML=
+      '<div class="zmodal-title">Before you scan</div>'+
+      row('🚪','Open every door first, closed doors split the plan.')+
+      row('💡','Lights on. LiDAR needs a lit room.')+
+      row('🪞','Big mirrors and glass can fool the scan, expect to tidy those walls.')+
+      '<button id="_scan-pre-go" class="btn btn-p" style="width:100%;margin-top:14px;padding:13px;font-weight:800">Got it, start scanning</button>';
+    ov.appendChild(m);document.body.appendChild(ov);
+    document.getElementById('_scan-pre-go').onclick=()=>{
+      try{localStorage.setItem('td_scan_preflight','1');}catch(_e){}
+      ov.remove();res(true);
+    };
+    ov.addEventListener('click',e=>{if(e.target===ov){ov.remove();res(false);}});
+  });
+}
 async function startRoomScan(ctx){
   const P=_scanPlugin();
   if(!P){if(typeof showToast==='function')showToast('Scanning needs the TradeDesk iPhone app','📐');return null;}
+  if(!(await _scanPreflight()))return null;
   let res=null;
   try{res=await P.startScan({labels:_SCAN_LABELS});}catch(_e){return null;}
   if(!res||!Array.isArray(res.rooms)||!res.rooms.length){
@@ -366,7 +394,9 @@ async function startRoomScan(ctx){
   const rooms=[];
   res.rooms.forEach((raw,i)=>{
     const r=_scanParseRoom(raw,(res.labels||[])[i]);
-    if(r)rooms.push(r);
+    // The floor the user SAID they were on (the capture screen's Floor chip);
+    // 1 when absent so pre-multi-floor scans stay single-story.
+    if(r){r.story=Math.max(1,parseInt((res.stories||[])[i],10)||1);rooms.push(r);}
   });
   if(!rooms.length){if(typeof showToast==='function')showToast('Could not read the scan geometry','📐');return null;}
   const sc=saveScan({
@@ -377,22 +407,46 @@ async function startRoomScan(ctx){
     headingDeg:(typeof res.headingDeg==='number'?res.headingDeg:null),
     rooms,
     // Photos stay device-local paths in v1 (the client deliverable excludes
-    // them by design); cam pose rides along for the pinned walkthrough.
+    // them by design); cam pose rides along for the pinned walkthrough. The
+    // USDZ is device-local too: the 3D/AR file Quick Look opens on this phone.
     photos:(res.photos||[]).map(p=>({path:p.path,cam:p.cam,room:p.room})),
+    usdz:(typeof res.usdz==='string'&&res.usdz)||null,
     price:(typeof S!=='undefined'&&S.scanDefaultPrice)||null,
     purchasedAt:null
   });
   if(typeof showToast==='function')showToast('Floor plan saved: '+rooms.length+' room'+(rooms.length>1?'s':''),'📐');
   return sc;
 }
+// Quick Look 3D/AR walkaround of the captured model (shell only, and only on
+// the device that captured it, the USDZ never leaves the phone).
+function _scanViewUsdz(id){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  const P=_scanPlugin();
+  if(!sc||!sc.usdz||!P||typeof P.viewUsdz!=='function'){
+    if(typeof showToast==='function')showToast('3D view lives on the phone that scanned it','📐');
+    return;
+  }
+  Promise.resolve(P.viewUsdz({path:sc.usdz})).catch(()=>{
+    if(typeof showToast==='function')showToast('Could not open the 3D model','📐');
+  });
+}
+// Distinct floors in a scan, ascending; single-story scans return [1].
+function _scanStories(sc){
+  const s=[...new Set((sc.rooms||[]).map(r=>Math.max(1,+r.story||1)))].sort((a,b)=>a-b);
+  return s.length?s:[1];
+}
 
 // ── Viewer ───────────────────────────────────────────────────────────────────
 let _scanViewLens=null;
+let _scanViewStory=null;
 function openScanViewer(id){
   const sc=getScans().find(x=>String(x.id)===String(id));
   if(!sc)return;
   _scanViewLens=_scanViewLens||_scanDefaultLens();
   const lens=_scanViewLens;
+  const stories=_scanStories(sc);
+  if(!stories.includes(_scanViewStory))_scanViewStory=stories[0];
+  const story=_scanViewStory;
   document.getElementById('_scan-view-ov')?.remove();
   const totalSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
   const totalWallSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.wallM2,0)));
@@ -427,6 +481,7 @@ function openScanViewer(id){
     const unlocked=scanUnlocked(sc);
     body='<div style="font-size:12px;color:var(--text2)">'+(sc.rooms||[]).length+' rooms · '+totalWallSqFt+' wall sq ft · '+totalSqFt+' sq ft floor'+((sc.photos||[]).length?' · '+(sc.photos||[]).length+' photos':'')+'</div>'+
       '<div style="font-size:11px;color:var(--text3);margin-top:6px">Hub status: '+(unlocked?'unlocked, client sees the full plan':'locked, client sees a blurred teaser'+(sc.price!=null?' at $'+sc.price:''))+'</div>'+
+      (sc.usdz&&_scanPlugin()?'<button class="btn" style="width:100%;margin-top:10px;padding:12px;font-weight:700" onclick="_scanViewUsdz(\''+sc.id+'\')">View in 3D · walk it in AR</button>':'')+
       '<div style="display:flex;gap:8px;margin-top:12px">'+
         '<button class="btn btn-p" style="flex:1;padding:12px" onclick="_scanSellSheet(\''+sc.id+'\')">'+(sc.purchasedAt?'Plan purchased ✓':'Sell floor plan')+'</button>'+
         (sc.price!=null&&!sc.purchasedAt?'<button class="btn" style="padding:12px" onclick="_scanMarkPurchased(\''+sc.id+'\')">Mark paid</button>':'')+
@@ -442,12 +497,24 @@ function openScanViewer(id){
     '<div style="display:flex;gap:6px;margin-bottom:10px">'+
       tabs.map(([k,t])=>'<button onclick="_scanSetLens(\''+sc.id+'\',\''+k+'\')" class="btn btn-sm" style="flex:1;padding:8px;font-size:12px;'+(lens===k?'background:var(--blue);color:#fff;border-color:var(--blue)':'')+'">'+t+'</button>').join('')+
     '</div>'+
-    '<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;background:var(--bg2)">'+_scanPlanSvg(sc,{lens,scanId:sc.id,photos:(lens==='plan'?sc.photos:null)})+'</div>'+
+    // Floor switcher only when the scan actually spans floors, one plan per
+    // floor (the deterministic per-floor pattern; no cross-floor 3D guessing).
+    (stories.length>1?'<div style="display:flex;gap:6px;margin-bottom:10px">'+
+      stories.map(st=>'<button onclick="_scanSetStory(\''+sc.id+'\','+st+')" class="btn btn-sm" style="flex:1;padding:7px;font-size:11px;font-weight:700;'+(story===st?'background:var(--text);color:var(--bg);border-color:var(--text)':'')+'">Floor '+st+'</button>').join('')+
+    '</div>':'')+
+    '<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;background:var(--bg2)">'+
+      _scanPlanSvg(sc,{lens,scanId:sc.id,story:(stories.length>1?story:null),
+        photos:(lens==='plan'?(sc.photos||[]).filter(p=>{
+          if(stories.length<2)return true;
+          const r=(sc.rooms||[])[p.room];return r&&Math.max(1,+r.story||1)===story;
+        }):null)})+
+    '</div>'+
     body;
   ov.appendChild(m);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 function _scanSetLens(id,lens){_scanViewLens=lens;openScanViewer(id);}
+function _scanSetStory(id,st){_scanViewStory=Math.max(1,+st||1);openScanViewer(id);}
 function _scanToggleSubtract(id,on){
   const sc=getScans().find(x=>String(x.id)===String(id));
   if(sc){sc._paintSubtract=!!on;saveScan(sc);openScanViewer(id);}
