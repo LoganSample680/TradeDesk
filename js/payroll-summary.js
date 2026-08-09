@@ -194,7 +194,7 @@ async function renderPayrollSummary(){
     el.innerHTML=controlsHTML+'<div style="font-size:12px;color:var(--text3);padding:12px">No W-2 employees yet, add one on the Team page to run payroll.</div>';
     return;
   }
-  el.innerHTML=controlsHTML+'<div style="font-size:12px;color:var(--text3);padding:12px">Loading hours…</div>';
+  el.innerHTML=controlsHTML+'<div style="padding:12px">'+_tdSkelRows(4,12)+'</div>';
   if(_paySummaryBusy)return;
   _paySummaryBusy=true;
   let result;

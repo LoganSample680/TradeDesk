@@ -195,7 +195,9 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
    holes. Backwards `both` fill keeps each card invisible until its turn. */
 #pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:td-card-cascade .72s cubic-bezier(.33,1,.68,1) both;will-change:opacity,transform}
 @media (prefers-reduced-motion:reduce){#pg-dash.boot-cascade>.tbar,#pg-dash.boot-cascade #dash-widget-root>.td-dw{animation:none}}
-#pg-cal.active{animation:td-pg-enter 5s cubic-bezier(.22,1,.36,1) both}
+/* pg-cal enters at the standard .2s now. Its old 5s slow fade existed only to
+   hide the grid holding for the async weather fetch; the grid paints instantly
+   with td-skel weather chips and repaints once when weather lands (§8.3). */
 #pg-leads,#pg-jobs,#pg-money{padding-top:8px}
 .drive-active .pg{padding-top:70px}
 .clock-active .pg{padding-top:70px}
@@ -247,13 +249,16 @@ body.td-pressing,body.td-pressing *{user-select:none!important;-webkit-user-sele
 .met:nth-child(5){animation-delay:80ms}.met:nth-child(6){animation-delay:100ms}
 /* Sign-in skeletons (§8.4): pulsing placeholders inside the same .met tiles
    until the first cloud load lands, so the dashboard never flashes $0. */
-/* Shimmer skeleton: a light band sweeps left to right across the gray
-   placeholder until real data pops in (owner ask 2026-08-09). The band is
-   var(--bg) blended into var(--border), so it reads correctly in both themes. */
+/* Shimmer skeleton, THE app-wide loading treatment (owner mandate 2026-08-09):
+   anything that loads async shows these sweeping placeholders, never a
+   "Loading..." string, never a second stacked reveal animation on top. A light
+   band sweeps left to right across the gray bar until real data pops in. The
+   band is var(--bg) blended into var(--border), correct in both themes.
+   Use class td-skel (plus _tdSkelRows() in utils.js for list shapes). */
 @keyframes td-skel{0%{background-position:100% 0}100%{background-position:0 0}}
-.met-skel-lbl,.met-skel-bar{background:linear-gradient(90deg,var(--border) 30%,var(--bg) 50%,var(--border) 70%);background-size:400% 100%;animation:td-skel 1.3s ease infinite}
+.td-skel,.met-skel-lbl,.met-skel-bar{background:linear-gradient(90deg,var(--border) 30%,var(--bg) 50%,var(--border) 70%);background-size:400% 100%;animation:td-skel 1.3s ease infinite;border-radius:6px}
 .met-skel-lbl{height:10px;width:60%;border-radius:4px;margin-bottom:10px}
-.met-skel-bar{height:22px;width:80%;border-radius:6px}
+.met-skel-bar{height:22px;width:80%}
 .met:hover{box-shadow:var(--shadow-hover)}
 .met-l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .met-v{font-family:var(--font-display);font-size:22px;font-weight:900;line-height:1;letter-spacing:-.7px;color:var(--text);overflow:hidden;white-space:nowrap}
@@ -3014,7 +3019,7 @@ body.dark .cal-cell.other{background:var(--cream)}
           <div><div style="font-size:15px;font-weight:800">Connected services</div><div style="font-size:11px;color:var(--text3)">at a glance</div></div>
         </div>
         <div id="integrations-list">
-          <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">Loading…</div>
+          <div style="padding:14px 16px"><div class="td-skel" style="height:12px;width:88%;margin:10px 0"></div><div class="td-skel" style="height:12px;width:72%;margin:10px 0"></div><div class="td-skel" style="height:12px;width:56%;margin:10px 0"></div></div>
         </div>
       </div>
       <!-- How you get paid, always visible; controls which options a client sees at signing -->
@@ -3136,7 +3141,7 @@ body.dark .cal-cell.other{background:var(--cream)}
     </div>
     <div style="padding:16px">
       <div id="set-cloud-status-ui" style="margin-bottom:16px">
-        <div style="font-size:12px;color:var(--text3);padding:8px 0">Loading sync status…</div>
+        <div style="padding:8px 0"><div class="td-skel" style="height:12px;width:80%;margin:8px 0"></div><div class="td-skel" style="height:12px;width:60%;margin:8px 0"></div></div>
       </div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-p" onclick="if(supaEnabled())supaSignOut()" style="width:100%;padding:13px">Sign out of cloud sync</button>

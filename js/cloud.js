@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.08.26.12';
+const APP_VERSION='08.08.26.13';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2878,7 +2878,7 @@ async function _renderCrewMap(){
   const box=document.createElement('div');box.className='zmodal';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('📍')+' Crew locations</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Last-known position during today\'s business hours.</div>'+
-    '<div id="_crew-map-body" style="font-size:13px;color:var(--text3)">Loading…</div>'+
+    '<div id="_crew-map-body" style="font-size:13px;color:var(--text3)">'+_tdSkelRows(3,12)+'</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});

@@ -1712,7 +1712,7 @@ async function viewReceipt(expId){
   ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px';
   ov.onclick=e=>{if(e.target===ov)ov.remove();};
   ov.className='rcpt-ov';
-  ov.innerHTML='<div style="color:#fff;font-size:13px;opacity:.6">Loading…</div>';
+  ov.innerHTML='<div class="td-skel" style="width:72vw;height:44vh;border-radius:10px"></div>';
   document.body.appendChild(ov);
   // Resolve all keys to URLs
   const srcs=[];
@@ -2642,7 +2642,7 @@ async function _openJobProfit(){
   const box=document.createElement('div');box.className='zmodal';box.style.maxWidth='460px';
   box.innerHTML='<div style="font-size:17px;font-weight:800;margin-bottom:4px">'+svgIcon('💰',{size:18})+' Job Profit</div>'+
     '<div style="font-size:12px;color:var(--text3);margin-bottom:14px">Revenue minus materials and labor cost (wage + '+Math.round(((S.laborBurden||1.3)-1)*100)+'% overhead) from tracked crew time on site.</div>'+
-    '<div id="_job-pl-body" style="font-size:13px;color:var(--text3);max-height:60vh;overflow-y:auto">Loading…</div>'+
+    '<div id="_job-pl-body" style="font-size:13px;color:var(--text3);max-height:60vh;overflow-y:auto">'+_tdSkelRows(5,12)+'</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2794,7 +2794,7 @@ async function _openCrewCost(){
       _ccBtn('quarter')+'This quarter</button>'+
       _ccBtn('ytd')+'Year to date</button>'+
     '</div>'+
-    '<div id="_crew-cost-body" style="font-size:13px;color:var(--text3);max-height:56vh;overflow-y:auto">Loading…</div>'+
+    '<div id="_crew-cost-body" style="font-size:13px;color:var(--text3);max-height:56vh;overflow-y:auto">'+_tdSkelRows(5,12)+'</div>'+
     '<button onclick="this.closest(\'.zmodal-overlay\').remove()" style="width:100%;padding:10px;border-radius:var(--r);border:none;background:none;color:var(--text3);font-size:13px;cursor:pointer;font-family:inherit;margin-top:10px">Close</button>';
   ov.appendChild(box);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
@@ -2803,7 +2803,7 @@ async function _openCrewCost(){
 async function _crewCostRender(range){
   const body=document.getElementById('_crew-cost-body');if(!body)return;
   ['today','week','month','quarter','ytd'].forEach(r=>{const b=document.getElementById('_cc-'+r);if(b){const on=r===range;b.style.background=on?'var(--blue)':'var(--bg2)';b.style.color=on?'#fff':'var(--text)';b.style.borderColor=on?'var(--blue)':'var(--border2)';}});
-  body.textContent='Loading…';
+  body.innerHTML=_tdSkelRows(5,12);
   const todayStr=_ctDateStr(new Date());
   const [yr,mo]=todayStr.split('-').map(Number);
   let sinceStr,label;

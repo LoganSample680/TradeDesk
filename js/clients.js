@@ -2380,7 +2380,7 @@ function _cpOpen(bidId,view){
         const choices=prop.colorChoices||[];if(!choices.length)return;const cd=document.createElement('div');cd.style.cssText='background:#EFF6FF;border:1.5px solid #BFDBFE;border-radius:10px;padding:14px 16px;margin-bottom:16px';cd.innerHTML='<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#1E40AF;margin-bottom:10px">'+svgIcon('🎨')+' Client Color Selections</div>'+choices.map(ch=>'<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #DBEAFE;font-size:13px"><span style="font-weight:600;color:#1E3A5F">'+escHtml(ch.room)+'</span><span style="color:#1E40AF;font-weight:700">'+escHtml(ch.colorName)+(ch.swCode?' <span style="font-size:11px;opacity:.7">('+escHtml(ch.swCode)+')</span>':'')+'</span></div>').join('');propPane.insertBefore(cd,propPane.firstChild);}catch(e){}});}).catch(()=>{});
     }
   }else if(_cpStorageKey&&typeof _supa!=='undefined'){
-    propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px">Loading proposal…</div>';
+    propPane.innerHTML='<div style="padding:24px 16px">'+_tdSkelRows(4,13)+'</div>';
     _supa.storage.from('proposals').download(_cpStorageKey).then(({data,error})=>{
       if(error||!data){propPane.innerHTML='<div style="padding:40px;text-align:center;color:var(--text3);font-style:italic">Could not load proposal.</div>';return;}
       data.text().then(txt=>{try{

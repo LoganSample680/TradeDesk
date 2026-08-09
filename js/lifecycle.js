@@ -484,7 +484,7 @@ function _lcGapCallout(worst){
 // mountId - element to render into.
 async function renderLifecycleFunnel(mountId){
   const el=document.getElementById(mountId);if(!el)return;
-  if(!el.innerHTML)el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:10px 2px">Loading your numbers…</div>';
+  if(!el.innerHTML)el.innerHTML='<div style="padding:10px 2px">'+_tdSkelRows(3,11)+'</div>';
   let mine=null,bench={stage:{},source:{},trade:{}};
   try{
     const r=await Promise.all([_lcFetchMine(),_lcFetchBench()]);

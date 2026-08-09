@@ -44,6 +44,94 @@ test.describe('Dashboard filter and pipeline functions', () => {
     expect(r.realAfter, 'real KPI tiles back once the load resolved').toBeGreaterThanOrEqual(6);
   });
 
+  // Owner mandate (2026-08-09): shimmer skeletons are THE loading treatment.
+  // The calendar was the worst offender: renderCalGrid awaited the weather
+  // fetch before painting anything, and pg-cal's 5s page fade existed only to
+  // hide that. These pin the fix: instant paint, shimmer chips in the weather
+  // slots, one repaint when weather lands, and the 5s fade gone for good.
+  test('calendar grid paints instantly with shimmer weather chips, no fetch-blocking, no 5s fade', async () => {
+    const r = await page.evaluate(async () => {
+      const realCache = _weatherCache, realTime = _weatherCacheTime;
+      const realLat = S.weatherLat, realLon = S.weatherLon;
+      const realFetch = window.fetchWeather;
+      try {
+        S.weatherLat = 39.0; S.weatherLon = -95.0;
+        _weatherCache = null; _weatherCacheTime = 0;
+        goPg('pg-cal');
+        let resolveFetch;
+        const gate = new Promise(res => { resolveFetch = res; });
+        window.fetchWeather = async () => { await gate; return {}; };
+        const t0 = performance.now();
+        await renderCalGrid();
+        const paintMs = performance.now() - t0;
+        const chips = document.querySelectorAll('#cal-grid .td-skel').length;
+        const cells = document.querySelectorAll('#cal-grid .cal-cell:not(.other)').length;
+        resolveFetch();
+        const anim = getComputedStyle(document.getElementById('pg-cal')).animationDuration;
+        return { paintMs, chips, cells, anim };
+      } finally {
+        _weatherCache = realCache; _weatherCacheTime = realTime;
+        S.weatherLat = realLat; S.weatherLon = realLon;
+        window.fetchWeather = realFetch;
+        goPg('pg-dash');
+      }
+    });
+    expect(r.paintMs, 'the grid paints without waiting on the weather fetch').toBeLessThan(1500);
+    expect(r.chips, 'every current-month cell shows a shimmer chip while weather is out').toBe(r.cells);
+    expect(r.anim, 'the 5s masking fade is gone, standard entrance only').not.toBe('5s');
+  });
+
+  test('cached weather renders icons with zero shimmer chips and zero refetch', async () => {
+    const r = await page.evaluate(async () => {
+      const realCache = _weatherCache, realTime = _weatherCacheTime;
+      const realLat = S.weatherLat, realLon = S.weatherLon;
+      const realFetch = window.fetchWeather;
+      let fetches = 0;
+      try {
+        S.weatherLat = 39.0; S.weatherLon = -95.0;
+        const map = {};
+        const d = new Date();
+        for (let i = 0; i < 45; i++) {
+          const k = dateKey(new Date(d.getFullYear(), d.getMonth(), 1 + i - 7));
+          map[k] = { icon: '☀️', label: 'Sunny', rain: false, hi: 75, lo: 55, precip: 0 };
+        }
+        _weatherCache = map; _weatherCacheTime = Date.now();
+        window.fetchWeather = async () => { fetches++; return map; };
+        goPg('pg-cal');
+        await renderCalGrid();
+        return {
+          fetches,
+          chips: document.querySelectorAll('#cal-grid .td-skel').length,
+          hasIcons: document.getElementById('cal-grid').innerHTML.includes('☀️'),
+        };
+      } finally {
+        _weatherCache = realCache; _weatherCacheTime = realTime;
+        S.weatherLat = realLat; S.weatherLon = realLon;
+        window.fetchWeather = realFetch;
+        goPg('pg-dash');
+      }
+    });
+    expect(r.fetches, 'fresh cache means no fetch at all').toBe(0);
+    expect(r.chips).toBe(0);
+    expect(r.hasIcons).toBe(true);
+  });
+
+  test('the shared shimmer utility exists and every placeholder rides it', async () => {
+    const r = await page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.className = 'td-skel';
+      document.body.appendChild(probe);
+      const cs = getComputedStyle(probe);
+      const out = { anim: cs.animationName, bgSize: cs.backgroundSize };
+      probe.remove();
+      out.rows = typeof _tdSkelRows === 'function' ? _tdSkelRows(3) : '';
+      return out;
+    });
+    expect(r.anim).toBe('td-skel');
+    expect(r.bgSize).toBe('400% 100%');
+    expect((r.rows.match(/td-skel/g) || []).length, '_tdSkelRows emits the shared class').toBe(3);
+  });
+
   test('setDashFeedFilter: changes feed filter without throwing', async () => {
     const result = await page.evaluate(() => {
       if (typeof setDashFeedFilter !== 'function') return { skip: true };

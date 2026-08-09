@@ -856,8 +856,25 @@ async function renderCalGrid(){
   }
   // Validation: drop any cell whose year is outside plausible range
   const validCells=cells.filter(({d})=>d.getFullYear()>=2020&&d.getFullYear()<=2099);
-  // Fetch weather (cached: won't block render on repeat calls)
-  const weather=await fetchWeather()||{};
+  // Weather NEVER blocks the paint (owner mandate 2026-08-09: no double
+  // waterfall). The old code awaited fetchWeather here, holding the entire
+  // grid hostage to a 4-5s network call, and pg-cal's 5s page fade existed
+  // only to hide that. Now: paint instantly with whatever is cached, shimmer
+  // the weather slot while a fetch is out, and repaint ONCE when it lands.
+  const _wxFresh=typeof _weatherCache!=='undefined'&&_weatherCache&&(Date.now()-_weatherCacheTime)<1800000;
+  const weather=(typeof _weatherCache!=='undefined'&&_weatherCache)||{};
+  const wxPending=!_wxFresh&&!!(S.weatherLat&&S.weatherLon);
+  if(wxPending){
+    Promise.resolve(fetchWeather()).then(w=>{
+      // Repaint only when a FRESH map actually landed and the calendar is
+      // still the page on screen. The freshness check is the loop guard: an
+      // in-flight fetch hands back the stale cache immediately, and repainting
+      // on that would kick another fetch forever. A failed fetch leaves cells
+      // weatherless, the same outcome as before.
+      const fresh=w&&Object.keys(w).length&&_weatherCache&&(Date.now()-_weatherCacheTime)<1800000;
+      if(fresh&&document.getElementById('pg-cal')?.classList.contains('active'))renderCalGrid();
+    },()=>{});
+  }
   validCells.forEach(({d,other})=>{
     const key=dateKey(d),isToday=key===tk,dj=getJobsOnDay(key);
     const wx=!other?weather[key]:null;
@@ -870,7 +887,8 @@ async function renderCalGrid(){
     html+='<div class="'+cls+'"'+(clickable?' onclick="expandCalDay(\''+key+'\')" style="cursor:pointer"':'')+'>'+
       '<div style="display:flex;justify-content:space-between;align-items:center">'+
         '<div class="cdn">'+d.getDate()+'</div>'+
-        (wx?'<div style="font-size:13px;line-height:1" title="'+wx.label+' · '+wx.hi+'°/'+wx.lo+'°F'+'">'+wx.icon+'</div>':'') +
+        (wx?'<div style="font-size:13px;line-height:1" title="'+wx.label+' · '+wx.hi+'°/'+wx.lo+'°F'+'">'+wx.icon+'</div>'
+           :(wxPending&&!other?'<div class="td-skel" style="width:14px;height:12px"></div>':'')) +
       '</div>'+
       (wx?'<div style="font-size:9px;color:'+(wx.rain?'#A32D2D':'var(--text3)')+';font-weight:600;margin-bottom:1px;line-height:1">'+wx.hi+'°/'+wx.lo+'°'+(wx.precip>20?' · '+wx.precip+'%':'')+'</div>':'')+
       dj.map(({job,isBuf})=>{

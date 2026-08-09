@@ -2648,7 +2648,7 @@ function openBidDetail(bidId,view){
       }).catch(()=>{});
     }
   }else if(storageKey&&typeof _supa!=='undefined'){
-    propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px">Loading proposal…</div>';
+    propPane.innerHTML='<div style="padding:24px 16px">'+_tdSkelRows(4,13)+'</div>';
     _supa.storage.from('proposals').download(storageKey).then(({data,error})=>{
       if(error||!data){propPane.innerHTML='<div style="padding:40px 16px;text-align:center;color:var(--text3);font-size:13px;font-style:italic">Could not load proposal from storage.</div>';return;}
       data.text().then(txt=>{

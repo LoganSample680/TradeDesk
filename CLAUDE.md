@@ -538,10 +538,13 @@ Some pages require a longer entrance than the global `.2s` default:
 | Page | Duration | Reason |
 |------|----------|--------|
 | `#pg-dash` | `.5s` `td-dash-enter` (scale) | Boot overlay reveal, must feel polished |
-| `#pg-cal` | `5s` `td-pg-enter` | Weather fetch is async (can take 4–5s); slow fade ensures data lands before the page is fully visible |
 
-**Rule:** Only add a per-page override when there is a concrete reason (async
-data load, elevated visual importance). Do not slow down pages arbitrarily.
+**Rule:** Only add a per-page override when there is a concrete reason
+(elevated visual importance). Do not slow down pages arbitrarily. A slow fade
+is NEVER the answer to async data (owner mandate 2026-08-09): pg-cal's old 5s
+fade existed only to hide the grid awaiting the weather fetch; the fix was to
+paint instantly with shimmer skeletons in the async slots and repaint once
+when data lands. Waiting content gets a skeleton, never a slowed page.
 
 ---
 
@@ -553,7 +556,7 @@ data load, elevated visual importance). Do not slow down pages arbitrarily.
 | Modal / bottom sheet | Fade + slide-up: `opacity 0→1, translateY 16px→0`, duration `.22s` |
 | Inline panel / card expansion | `max-height` or `opacity` transition, duration `.18s` |
 | Toast / snackbar | Already handled by existing toast util |
-| Skeleton loaders | Fade out on data arrival: `opacity 1→0`, duration `.15s` |
+| Skeleton loaders | The `.td-skel` shimmer (index.html) + `_tdSkelRows()` (utils.js): a light band sweeping left to right. MANDATORY for every async-loading surface (owner 2026-08-09), never a "Loading..." string, never a spinner, and exactly ONE swap to real content, no stacked reveals |
 
 **Easing standard:** `cubic-bezier(.22, 1, .36, 1)` for entrances (spring-like,
 snappy). `ease` for exits and fades. Never use `linear` for UI motion.

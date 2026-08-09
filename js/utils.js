@@ -398,3 +398,17 @@ function _tdInstallShellWindowOpen(){
   }catch(_e){return false;}
 }
 _tdInstallShellWindowOpen();
+
+// ── Shimmer skeleton rows (§8.4) ──────────────────────────────────────────────
+// The app-wide loading treatment: any async surface renders these instead of a
+// "Loading..." string, and real content replaces them in ONE swap when data
+// lands, never a second stacked reveal. Widths vary so a list of them reads
+// like content, not stripes.
+function _tdSkelRows(n,h){
+  let out='';
+  const count=n||3,ht=h||12;
+  for(let i=0;i<count;i++){
+    out+='<div class="td-skel" style="height:'+ht+'px;width:'+(88-(i%3)*16)+'%;margin:10px 0"></div>';
+  }
+  return out;
+}
