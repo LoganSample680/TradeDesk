@@ -1965,6 +1965,25 @@ test.describe('finance.js: exhaustive coverage', () => {
       expect(r.hasSearch).toBe(true);
     });
 
+    // Owner report (2026-08-09): opening Start Proposal auto-focused the
+    // search field, which slides the phone keyboard up over the suggestion
+    // list. The picker must open calm: search present, nothing focused.
+    test('the search field is never auto-focused on open', async () => {
+      const r = await page.evaluate(async () => {
+        try {
+          document.querySelectorAll('.zmodal-overlay').forEach(el => el.remove());
+          showQuickPicker('Start Proposal', 'Which client?', [], 'estimate', true);
+          // The old bug focused on a 100ms timer, so wait past it.
+          await new Promise(r2 => setTimeout(r2, 200));
+          const si = document.getElementById('qp-search');
+          return { ok: true, hasSearch: !!si, focused: document.activeElement === si };
+        } catch (e) { return { ok: false, err: e.message }; }
+      });
+      expect(r.ok).toBe(true);
+      expect(r.hasSearch).toBe(true);
+      expect(r.focused, 'no auto-focus, no surprise keyboard').toBe(false);
+    });
+
     test('suggestions array with items, renders suggestion buttons', async () => {
       const r = await page.evaluate(() => {
         const suggestions = [

@@ -1054,7 +1054,10 @@ function showQuickPicker(title,subtitle,suggestions,actionType,allowNew){
   overlay.appendChild(box);
   document.body.appendChild(overlay);
   overlay.addEventListener('click',e=>{if(e.target===overlay)overlay.remove();});
-  setTimeout(()=>{const si=document.getElementById('qp-search');if(si)si.focus();},100);
+  // No auto-focus on the search field (owner 2026-08-09): on a phone, focusing
+  // it slides the keyboard up over the suggestion list the moment the picker
+  // opens. The common path is tapping a suggested client; search is one tap
+  // away for whoever actually wants it.
 }
 
 function onQPSearch(el){
