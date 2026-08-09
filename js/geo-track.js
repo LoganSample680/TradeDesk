@@ -1683,6 +1683,7 @@ function _geoEnterParkMode(spot){
         try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
         _geoForgetWatcher(_geoNativeWatcherId);
         _geoNativeWatcherId=null;
+        if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
       }
     },(err)=>{
       // A failed attempt must never die silently (it did, and the arrow sat
@@ -1738,6 +1739,10 @@ function _geoDiagPanel(){
 // zero minutes and drops under the 2-minute floor.
 async function _geoTdEvent(ev,replay){
   if(!ev||typeof ev!=='object')return;
+  // The shadow engine (js/geo-shadow.js) sees the SAME raw event, so any
+  // difference in what the two engines conclude is genuinely the engine and
+  // not the sensor. It can only ever write to its own local journal.
+  if(!replay&&typeof shadowIngest==='function'){try{shadowIngest(ev);}catch(_e){}}
   const hasFix=typeof ev.lat==='number'&&typeof ev.lng==='number';
   if(!replay&&_geoParkModeOn){
     const out=ev.type==='regionExit'||
@@ -1842,6 +1847,10 @@ function startGeoTracking(){
       })).then(id=>{
         _geoNativeStarting=false;_geoNativeWatcherId=id||null;
         _geoRememberWatcher(_geoNativeWatcherId);
+        // The live engine owns the radio from here; the clock that measures
+        // its cost starts with it (js/geo-shadow.js).
+        if(typeof _shadowLiveGpsStart==='function')_shadowLiveGpsStart();
+        if(typeof startShadowEngine==='function'){try{startShadowEngine();}catch(_e){}}
         _geoParkNote('watcher-on',String(id||''));
         // The watcher running IS the shell's 'granted' state: refresh the
         // dashboard's permission cache so "Turn on location" clears itself.
@@ -1871,6 +1880,7 @@ function stopGeoTracking(){
     _geoForgetWatcher(_geoNativeWatcherId);
     _geoNativeWatcherId=null;
   }
+  if(typeof _shadowLiveGpsStop==='function')_shadowLiveGpsStop();
   _geoNativeStarting=false;
   if(_geoWatchId!=null){try{navigator.geolocation.clearWatch(_geoWatchId);}catch(_e){}_geoWatchId=null;}
   if(_geoNudgeTimer){clearTimeout(_geoNudgeTimer);_geoNudgeTimer=null;}
@@ -2031,5 +2041,7 @@ try{
   if(_dCap&&typeof _dCap.isNativePlatform==='function'&&_dCap.isNativePlatform()){
     const _dBtn=document.getElementById('set-geo-diag-btn');
     if(_dBtn)_dBtn.style.display='';
+    const _sBtn=document.getElementById('set-geo-shadow-btn');
+    if(_sBtn)_sBtn.style.display='';
   }
 }catch(_e){}
