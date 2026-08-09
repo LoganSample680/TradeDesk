@@ -7,8 +7,10 @@
 // manager asks, that one phone wakes, takes one fix, and goes back to sleep.
 //
 // These tests defend the two things that make it safe to ship:
-//   1. It is never covert. No consent, no coordinates, and the crew member is
-//      told every single time it happens.
+//   1. Consent gates it. A phone whose owner never accepted the tracking notice
+//      returns a reason, never coordinates. The consent is standing, given once
+//      before anything was logged, so an individual check is silent on the crew
+//      phone (owner call 2026-08-09) and journaled rather than announced.
 //   2. It never lies to the manager. A phone that did not answer is reported
 //      as a phone that did not answer, never as a location.
 const { test, expect, mockAllExternal, waitForAppBoot, assertNoErrors } = require('./helpers');
@@ -86,12 +88,21 @@ test.describe('push to locate', () => {
     expect(ack.reqId, 'the answer is matched to the question, not the newest one').toBe('r1');
   });
 
-  test('the crew member is told every time, by name', async () => {
+  // Owner call (2026-08-09): a Locate must not interrupt the crew member. The
+  // consent that covers it was given once, when they accepted the tracking
+  // notice before anything was ever logged; an individual check is not a fresh
+  // decision they get asked about, and no competitor's map notifies the tech
+  // either. The record below is the audit trail, not a notification.
+  test('a locate is silent on the crew phone: no toast, no banner', async () => {
     await bus();
-    await ask({ uid: 'crew-uid-1', reqId: 'r2', by: 'boss-uid', byName: 'Dana' });
-    const toasts = await page.evaluate(() => window.__toasts);
-    expect(toasts.some(t => /Dana/.test(t) && /location/i.test(t)),
-      'a location check the crew member cannot see is surveillance').toBe(true);
+    const ack = await ask({ uid: 'crew-uid-1', reqId: 'r2', by: 'boss-uid', byName: 'Dana' });
+    const r = await page.evaluate(() => ({
+      toasts: window.__toasts.length,
+      overlays: document.querySelectorAll('.zmodal-overlay').length,
+    }));
+    expect(ack.ok, 'it still answers').toBe(true);
+    expect(r.toasts, 'nothing is put on the crew member\'s screen').toBe(0);
+    expect(r.overlays).toBe(0);
   });
 
   test('a phone addressed to somebody else says nothing at all', async () => {
@@ -128,7 +139,7 @@ test.describe('push to locate', () => {
     expect(ack.reason, 'awake-but-blind is different information from asleep').toBe('no-fix');
   });
 
-  test('every ask is journaled on the device it was asked of', async () => {
+  test('every ask is journaled on the device it was asked of, silently', async () => {
     await bus();
     await ask({ uid: 'crew-uid-1', reqId: 'r8', by: 'boss-uid', byName: 'Dana' });
     await bus({ consent: 'declined' });

@@ -17,17 +17,26 @@
 // answers the same question by burning the battery all day on the 99% of
 // minutes nobody asks about. This costs roughly one burst per question.
 //
-// NOT COVERT. Three things hold:
-//   1. The crew phone only answers if that person has already accepted the
-//      tracking notice (the same consent gate the engine itself uses). No
-//      consent, no coordinates, and the manager is told plainly that sharing
-//      is off rather than being left to guess.
-//   2. The crew member SEES it happen: a toast naming who asked, every time.
-//   3. Every request and answer is journaled on the crew device
-//      (td_crew_locate_log) and listed in Location diagnostics, so there is a
-//      record of who checked and when rather than just a toast that vanishes.
-//      A crew-facing history screen is the natural next step; the record it
-//      would read already exists.
+// CONSENT IS STANDING, NOT PER-CHECK (owner call 2026-08-09: "I don't want the
+// crew member to know, location matters for managers and business owners").
+// A crew member accepts the tracking notice before a single coordinate is ever
+// logged (_geoNoticeSheet, js/geo-track.js), and that acceptance is what covers
+// every later look. An individual Locate does NOT interrupt them: no toast, no
+// banner, nothing on their screen. That matches how every competitor works, a
+// manager opening Housecall Pro's or Jobber's map does not ping the tech, and
+// it keeps the feature useful for the person paying for it.
+//
+// What still holds, and must keep holding:
+//   1. The phone only answers if that person accepted the notice (the same gate
+//      the engine itself uses). No consent, no coordinates, and the manager is
+//      told plainly that sharing is off rather than left to guess.
+//   2. Every request and answer is journaled on the device
+//      (td_crew_locate_log). It is a quiet record, not a notification: nobody
+//      is interrupted by it, and it is there if a check is ever disputed.
+//   3. Written notice at hire is the piece that actually carries legal weight
+//      (Connecticut and Delaware require it for electronic monitoring, and the
+//      employment-agreement work in CLAUDE.md 9.6 is where it gets signed).
+//      Removing the per-check toast changes none of that.
 //
 // STAGE 1 (this file) rides Supabase Realtime, so it needs no Apple
 // credentials and no migration, and it reaches any phone whose WebView is
@@ -143,8 +152,8 @@ async function _crewLocateRespond(req){
     _crewLocateLog({at:new Date().toISOString(),by:req.byName||'A manager',answered:false,reason:gate});
     return;
   }
-  // Told, every single time, before the coordinates go anywhere.
-  try{ if(typeof showToast==='function')showToast((req.byName||'Your manager')+' checked your location','📍'); }catch(_e){}
+  // Silent by design (see the consent note at the top of this file): the ask is
+  // journaled below, but nothing is put on this person's screen.
   const fix=await _crewLocateFix();
   if(!fix){
     reply.ok=false;reply.reason='no-fix';

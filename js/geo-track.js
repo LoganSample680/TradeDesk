@@ -1756,16 +1756,18 @@ function _geoDiagPanel(){
     '<div style="max-height:32vh;overflow-y:auto;font-size:11px;font-family:ui-monospace,monospace;line-height:1.6">'+
       (_geoParkLog.length?_geoParkLog.slice().reverse().map(r=>'<div>'+escHtml(r.t)+' '+escHtml(r.ev)+(r.x?' · '+escHtml(r.x):'')+'</div>').join(''):'<div style="color:var(--text3)">Nothing yet.</div>')+
     '</div>'+
-    // Who asked this phone where it was. Push to locate is on-demand by design,
-    // so the record of every ask is the thing that keeps it from being covert.
-    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">Location checks</div>'+
+    // A quiet record of every Locate this phone answered. Nobody is notified
+    // when one happens (owner call 2026-08-09), so this exists for support and
+    // for the case where a check is ever disputed, not as a crew-facing feed.
+    // The panel itself is developer-gated, so it is not something crew browse.
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">Locate requests</div>'+
     '<div style="max-height:20vh;overflow-y:auto;font-size:11px;line-height:1.6">'+
       (_geoLocateHistory().length
         ?_geoLocateHistory().slice().reverse().map(r=>{
             let when='';try{when=new Date(r.at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}catch(_e){when=String(r.at||'');}
             return '<div>'+escHtml(when)+' · '+escHtml(r.by||'A manager')+' · '+escHtml(r.answered?'shared':'not shared ('+(r.reason||'')+')')+'</div>';
           }).join('')
-        :'<div style="color:var(--text3)">Nobody has checked your location.</div>')+
+        :'<div style="color:var(--text3)">None.</div>')+
     '</div>'+
     '<button class="btn btn-p" style="width:100%;margin-top:14px;padding:12px" onclick="document.getElementById(\'_geo-diag-ov\').remove()">Close</button>';
   ov.appendChild(m);document.body.appendChild(ov);
