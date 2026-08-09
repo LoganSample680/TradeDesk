@@ -292,8 +292,50 @@ function _scanPlanSvg(sc,opts){
       });
     }
   });
+  // Photo pins: each shot taken during the scan knows exactly where the
+  // camera stood (the pose rides along from the plugin), so the walkthrough
+  // is literally ON the plan: tap a pin, see that spot.
+  if(o.photos&&o.scanId){
+    o.photos.forEach((p,i)=>{
+      const cam=p&&p.cam;
+      if(!cam||cam.length<16)return;
+      const cx=px(cam[12]),cz=pz(cam[14]);
+      s+='<g onclick="_scanOpenPhoto(\''+o.scanId+'\','+i+')" style="cursor:pointer">'+
+         '<circle cx="'+cx+'" cy="'+cz+'" r="2.2" fill="#185FA5" stroke="#fff" stroke-width="0.5"/>'+
+         '<text x="'+cx+'" y="'+(+cz+1.1)+'" font-size="2.6" fill="#fff" text-anchor="middle">'+(i+1)+'</text></g>';
+    });
+  }
   s+='</svg>';
   return s;
+}
+// ── Photo walkthrough ────────────────────────────────────────────────────────
+// Photos are device-local files (the client deliverable excludes them by
+// design); the shell serves them through Capacitor's file bridge.
+function _scanPhotoSrc(p){
+  try{
+    const cap=window.Capacitor;
+    if(cap&&typeof cap.convertFileSrc==='function')return cap.convertFileSrc(p.path);
+  }catch(_e){}
+  return p.path;
+}
+function _scanOpenPhoto(id,idx){
+  const sc=getScans().find(x=>String(x.id)===String(id));
+  if(!sc||!(sc.photos||[]).length)return;
+  const n=sc.photos.length;
+  const i=((idx%n)+n)%n;
+  document.getElementById('_scan-photo-ov')?.remove();
+  const ov=document.createElement('div');ov.id='_scan-photo-ov';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
+  ov.innerHTML=
+    '<img src="'+_scanPhotoSrc(sc.photos[i]).replace(/"/g,'&quot;')+'" style="max-width:94vw;max-height:74vh;border-radius:10px;object-fit:contain" alt="Scan photo '+(i+1)+'">'+
+    '<div style="display:flex;align-items:center;gap:18px">'+
+      '<button onclick="_scanOpenPhoto(\''+id+'\','+(i-1)+')" style="border:none;background:rgba(255,255,255,.16);color:#fff;font-size:20px;width:44px;height:44px;border-radius:22px;cursor:pointer">‹</button>'+
+      '<div style="color:#fff;font-size:13px;font-weight:700">'+(i+1)+' of '+n+'</div>'+
+      '<button onclick="_scanOpenPhoto(\''+id+'\','+(i+1)+')" style="border:none;background:rgba(255,255,255,.16);color:#fff;font-size:20px;width:44px;height:44px;border-radius:22px;cursor:pointer">›</button>'+
+    '</div>'+
+    '<button onclick="document.getElementById(\'_scan-photo-ov\').remove()" style="position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;border:none;background:rgba(255,255,255,.16);color:#fff;font-size:18px;width:40px;height:40px;border-radius:20px;cursor:pointer">✕</button>';
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+  document.body.appendChild(ov);
 }
 
 // ── Capture flow ─────────────────────────────────────────────────────────────
@@ -397,7 +439,7 @@ function openScanViewer(id){
     '<div style="display:flex;gap:6px;margin-bottom:10px">'+
       tabs.map(([k,t])=>'<button onclick="_scanSetLens(\''+sc.id+'\',\''+k+'\')" class="btn btn-sm" style="flex:1;padding:8px;font-size:12px;'+(lens===k?'background:var(--blue);color:#fff;border-color:var(--blue)':'')+'">'+t+'</button>').join('')+
     '</div>'+
-    '<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;background:var(--bg2)">'+_scanPlanSvg(sc,{lens})+'</div>'+
+    '<div style="border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:12px;background:var(--bg2)">'+_scanPlanSvg(sc,{lens,scanId:sc.id,photos:(lens==='plan'?sc.photos:null)})+'</div>'+
     body;
   ov.appendChild(m);document.body.appendChild(ov);
   ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});

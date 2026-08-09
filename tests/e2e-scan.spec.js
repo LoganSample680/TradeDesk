@@ -278,6 +278,38 @@ test.describe('TdScan web half', () => {
     expect(r.unit).toBe('sq ft');
   });
 
+  test('photo pins land on the plan where the camera stood, and the walkthrough steps through them', async () => {
+    const r = await page.evaluate((raw) => {
+      try {
+        const cam = (x, z) => { const m = new Array(16).fill(0); m[0] = 1; m[5] = 1; m[10] = 1; m[15] = 1; m[12] = x; m[14] = z; return m; };
+        saveScan({ id: 'scan-photo-1', clientId: null, name: 'Photo scan',
+          rooms: [_scanParseRoom(raw, 'Kitchen')],
+          photos: [{ path: '/tmp/p1.jpg', cam: cam(0.5, 0.5), room: 0 }, { path: '/tmp/p2.jpg', cam: cam(-0.5, -0.5), room: 0 }] });
+        const sc = getScans().find(s => s.id === 'scan-photo-1');
+        const svg = _scanPlanSvg(sc, { lens: 'plan', scanId: sc.id, photos: sc.photos });
+        const noPins = _scanPlanSvg(sc, { lens: 'plan' });
+        _scanOpenPhoto('scan-photo-1', 0);
+        const ov = document.getElementById('_scan-photo-ov');
+        const first = ov && ov.innerHTML;
+        _scanOpenPhoto('scan-photo-1', -1);   // wraps to the last photo
+        const wrapped = document.getElementById('_scan-photo-ov').innerHTML;
+        document.getElementById('_scan-photo-ov')?.remove();
+        return {
+          pins: (svg.match(/_scanOpenPhoto/g) || []).length,
+          noPins: (noPins.match(/_scanOpenPhoto/g) || []).length,
+          firstCounter: /1 of 2/.test(first), firstSrc: /p1\.jpg/.test(first),
+          wrappedCounter: /2 of 2/.test(wrapped), wrappedSrc: /p2\.jpg/.test(wrapped),
+        };
+      } finally { deleteScan('scan-photo-1'); document.getElementById('_scan-photo-ov')?.remove(); }
+    }, fabricatedRoom());
+    expect(r.pins, 'one tappable pin per photo').toBe(2);
+    expect(r.noPins, 'no pins unless the viewer passes photos').toBe(0);
+    expect(r.firstCounter).toBe(true);
+    expect(r.firstSrc).toBe(true);
+    expect(r.wrappedCounter, 'stepping back from the first wraps to the last').toBe(true);
+    expect(r.wrappedSrc).toBe(true);
+  });
+
   test('no console errors across the scan suite', async () => { await assertNoErrors(page); });
 });
 
