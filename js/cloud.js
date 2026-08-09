@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.09.26.5';
+const APP_VERSION='08.09.26.6';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -5303,7 +5303,7 @@ window.addEventListener('online',()=>{try{const k=_userLayoutCacheKey();if(k&&lo
 function _offlinePendingBlob(){
   // Owner falls back to _loadedDataOwner so a blob written while offline (no _supaUser)
   // is still tagged with the account it came from, the next sign-in checks this.
-  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,ts:Date.now()});
+  return JSON.stringify({_owner:(_supaUser&&_supaUser.id)||_loadedDataOwner||null,clients,bids,jobs,income,expenses:expenses.map(({receipt_img,...r})=>r),mileage,payments,liens,licenses,events:events.slice(-600),contracts,agreements,photos:photos.filter(p=>p.storagePath||p.url),timeEntries:timeEntries.slice(-500),maintenance,vehicles,places,scans,ts:Date.now()});
 }
 // Read offline-pending, discarding (and clearing) any blob owned by a different
 // account than the one now signed in. Returns null when nothing usable remains.
