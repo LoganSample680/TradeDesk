@@ -1564,9 +1564,20 @@ function openLogTripModal(opts){
       '<button type="button" onclick="calculateAndShowRoute()" style="background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;cursor:pointer;padding:0">↺ Recalculate</button>'+
     '</div>'+
     '<input type="hidden" id="lm-map-app" value="">'+
+    // NAVIGATE AFTER SAVING. In the app, TradeDesk drives it: full-screen
+    // turn-by-turn on Apple Maps tiles without leaving the app, which is the
+    // only version where arrival can close the drive by itself (js/drive.js).
+    // It gets its own full-width row rather than a fourth chip, because four
+    // across is unreadable at 390px and because it is the default here.
+    // Apple/Google/None stay exactly as they were for anyone who prefers them,
+    // and in a browser the TradeDesk row is simply absent, so that case looks
+    // and behaves precisely as it did before.
     (!opts.editId?
       '<div class="f" style="margin-bottom:14px">'+
-        '<label style="margin-bottom:6px;display:block">Open in maps after saving <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
+        '<label style="margin-bottom:6px;display:block">Navigate after saving <span style="font-weight:400;font-size:10px;color:var(--text3)">(optional)</span></label>'+
+        ((typeof driveCapable==='function'&&driveCapable())
+          ?'<button type="button" id="lm-map-td" onclick="_selectTripMapApp(\'td\')" class="btn" style="width:100%;font-size:13px;font-weight:700;min-height:44px;margin-bottom:8px">'+svgIcon('🚚',{size:14})+' Drive it in TradeDesk</button>'
+          :'')+
         '<div style="display:flex;gap:8px">'+
           '<button type="button" id="lm-map-apple" onclick="_selectTripMapApp(\'apple\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Apple Maps</button>'+
           '<button type="button" id="lm-map-google" onclick="_selectTripMapApp(\'google\')" class="btn" style="flex:1;font-size:13px;font-weight:600;min-height:42px"> Google Maps</button>'+
@@ -1586,7 +1597,10 @@ function openLogTripModal(opts){
   // Auto-select map app based on device (skip in edit mode)
   if(!opts.editId){
     const _ua=navigator.userAgent||'';
-    const _defMap=/iPhone|iPad|iPod/i.test(_ua)?'apple':/Android/i.test(_ua)?'google':'';
+    // In the app, our own drive is the default: it is the only one that keeps
+    // the trip, the arrival and the job together. Everywhere else, unchanged.
+    const _defMap=(typeof driveCapable==='function'&&driveCapable())?'td'
+      :/iPhone|iPad|iPod/i.test(_ua)?'apple':/Android/i.test(_ua)?'google':'';
     if(_defMap)setTimeout(()=>_selectTripMapApp(_defMap),50);
     // Auto-grab GPS for starting location if not pre-filled
     if(!opts.fromAddress)setTimeout(()=>grabMyLocation(false),300);
@@ -1697,7 +1711,7 @@ function openTripInMaps(which,from,to){
   }
 }
 function _selectTripMapApp(which){
-  ['apple','google','none'].forEach(k=>{
+  ['td','apple','google','none'].forEach(k=>{
     const btn=document.getElementById('lm-map-'+k);if(!btn)return;
     const active=(which===k)||(which===''&&k==='none');
     btn.style.background=active?'var(--blue)':'';
@@ -1729,7 +1743,23 @@ function saveLoggedTrip(){
   saveAll();
   closeTopModal();
   showToast('Trip saved, calculating mileage…','🚗');
-  if(mapApp&&to){
+  if(mapApp==='td'&&to){
+    // Our own drive: the app stays alive, so saveAll's debounce is in no
+    // danger and there is nothing to flush. Coordinates first from whatever
+    // the route calculation already resolved, and only geocoded if the
+    // destination was typed and never looked up.
+    (async()=>{
+      try{
+        let tc=_lmCoords.to;
+        if(!tc&&typeof _resolveCoords==='function')tc=await _resolveCoords(to);
+        if(tc&&tc.lat!=null&&typeof startDriveTo==='function'){
+          await startDriveTo({lat:tc.lat,lng:tc.lng,label:to});
+        }else if(typeof showToast==='function'){
+          showToast('Trip saved. Could not find that address to drive to.','⚠');
+        }
+      }catch(_e){}
+    })();
+  }else if(mapApp&&to){
     // iOS will suspend the PWA when we hand off to Apple/Google Maps, the 2s
     // debounce in saveAll() dies before firing. Push to Supabase NOW so the
     // in-flight fetch survives the app switch.

@@ -223,7 +223,37 @@ function _driveEnd(arrived){
   if(!arrived&&typeof showToast==='function')showToast('Drive ended','🚚');
 }
 
-// ── Start a drive ────────────────────────────────────────────────────────────
+// ── Start a drive to a coordinate ────────────────────────────────────────────
+// The real entry point. Takes {lat,lng,label,jobId}, because not every drive
+// starts from a job: the Log a trip sheet drives to whatever address was typed
+// into it, and that has no job id at all. jobId is optional and only decides
+// whether arrival opens a job afterwards.
+async function startDriveTo(dest){
+  if(!dest||dest.lat==null||dest.lng==null){
+    if(typeof showToast==='function')showToast('No address to drive to','⚠');
+    return false;
+  }
+  const label=dest.label||'Your stop';
+  const Nav=_drivePlugin();
+  if(!Nav){
+    // Browser or PWA: no plugin, so hand off rather than fake it.
+    window.open('https://maps.apple.com/?daddr='+dest.lat+','+dest.lng,'_blank');
+    return false;
+  }
+  _driveBindEvents();
+  _driveActive={jobId:dest.jobId||null,label,destLat:dest.lat,destLng:dest.lng,
+                startedAt:Date.now(),arrived:false};
+  _driveSpokenStep=-1;_driveSpokenNear=-1;_driveOffCount=0;
+  try{
+    await Nav.start({lat:dest.lat,lng:dest.lng,label});
+    return true;
+  }catch(_e){
+    _driveActive=null;
+    window.open('https://maps.apple.com/?daddr='+dest.lat+','+dest.lng,'_blank');
+    return false;
+  }
+}
+
 // Takes a job or estimate appointment id. Geocodes the address once and caches
 // it on the record, exactly like the route optimizer and the day map already
 // do, so the second drive to the same site costs nothing.
@@ -232,27 +262,12 @@ async function startDrive(jobId){
   if(!job){if(typeof showToast==='function')showToast('That job is gone','⚠');return;}
   const cl=(typeof clients!=='undefined')?clients.find(c=>c.id===job.client_id):null;
   const dest=await _driveDestCoords(job,cl);
-  const label=(cl&&cl.name)||job.name||'Your stop';
   if(!dest){
     if(typeof showToast==='function')showToast('No address on this job yet','⚠');
     return;
   }
-  const lat=dest.lat,lng=dest.lng;
-  const Nav=_drivePlugin();
-  if(!Nav){
-    // Browser or PWA: no plugin, so hand off rather than fake it.
-    window.open('https://maps.apple.com/?daddr='+lat+','+lng,'_blank');
-    return;
-  }
-  _driveBindEvents();
-  _driveActive={jobId:job.id,label,destLat:lat,destLng:lng,startedAt:Date.now(),arrived:false};
-  _driveSpokenStep=-1;_driveSpokenNear=-1;_driveOffCount=0;
-  try{
-    await Nav.start({lat,lng,label});
-  }catch(_e){
-    _driveActive=null;
-    window.open('https://maps.apple.com/?daddr='+lat+','+lng,'_blank');
-  }
+  return startDriveTo({lat:dest.lat,lng:dest.lng,
+                       label:(cl&&cl.name)||job.name||'Your stop',jobId:job.id});
 }
 
 // The button. Reads "Drive" in the app and "Directions" in a browser, because

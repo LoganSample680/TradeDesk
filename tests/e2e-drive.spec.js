@@ -300,5 +300,104 @@ test.describe('drive', () => {
     expect(r.quickAction).toMatch(/Log miles/);
   });
 
+  // The Log a trip sheet is where a lot of drives actually start: the
+  // contractor is recording the trip anyway, and the next thing they do is
+  // drive it. Its "open in maps" chooser used to only offer a handoff.
+  const openTripSheet = async (native) => page.evaluate((isNative) => {
+    document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+    const realCap = window.Capacitor;
+    window.__realCap = realCap;
+    window.Capacitor = isNative ? {
+      isNativePlatform: () => true,
+      registerPlugin: (n) => n === 'TdNav' ? {
+        addListener() {}, speak: () => Promise.resolve({}), stop: () => Promise.resolve({}),
+        recalculate: () => Promise.resolve({}),
+        start: (o) => { (window.__started = window.__started || []).push(o); return Promise.resolve({}); },
+      } : null,
+    } : undefined;
+    window.__started = [];
+    openDriveModal({});
+  }, native);
+
+  test('in the app the trip sheet offers our own drive, and defaults to it', async () => {
+    await openTripSheet(true);
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(() => ({
+      row: (document.getElementById('lm-map-td') || {}).textContent || '',
+      selected: (document.getElementById('lm-map-app') || {}).value,
+      label: [...document.querySelectorAll('label')].map(l => l.textContent).find(t => /after saving/i.test(t)) || '',
+      apple: !!document.getElementById('lm-map-apple'),
+      google: !!document.getElementById('lm-map-google'),
+    }));
+    expect(r.row).toMatch(/Drive it in TradeDesk/);
+    expect(r.selected, 'ours is the default in the app').toBe('td');
+    expect(r.label, 'the section is no longer only about other apps').toMatch(/Navigate after saving/i);
+    expect(r.apple && r.google, 'anyone who prefers Apple or Google keeps them').toBe(true);
+  });
+
+  test('the four choices are exclusive', async () => {
+    await openTripSheet(true);
+    await page.waitForTimeout(150);
+    const r = await page.evaluate(() => {
+      _selectTripMapApp('apple');
+      const a = { td: document.getElementById('lm-map-td').style.background,
+                  apple: document.getElementById('lm-map-apple').style.background };
+      _selectTripMapApp('td');
+      const b = { td: document.getElementById('lm-map-td').style.background,
+                  apple: document.getElementById('lm-map-apple').style.background };
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      window.Capacitor = window.__realCap;
+      return { a, b };
+    });
+    expect(r.a.td, 'picking Apple clears ours').toBe('');
+    expect(r.a.apple).not.toBe('');
+    expect(r.b.apple, 'picking ours clears Apple').toBe('');
+    expect(r.b.td).not.toBe('');
+  });
+
+  test('saving the trip starts the drive in-app, with no handoff', async () => {
+    await openTripSheet(true);
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(async () => {
+      const opened = [];
+      const realOpen = window.open;
+      const realResolve = window._resolveCoords;
+      window.open = (u) => { opened.push(u); return null; };
+      window._resolveCoords = async () => ({ lat: 41.532, lng: -88.095 });
+      try {
+        document.getElementById('lm-to').value = '12 Oak St, Joliet IL';
+        const sel = document.getElementById('lm-trip-type-sel');
+        const first = [...sel.querySelectorAll('option')].map(o => o.value).filter(Boolean)[0];
+        sel.value = first;
+        document.getElementById('lm-purpose').value = first;
+        saveLoggedTrip();
+        await new Promise(res => setTimeout(res, 400));
+        return { started: window.__started, opened };
+      } finally {
+        window.open = realOpen; window._resolveCoords = realResolve;
+        window.Capacitor = window.__realCap;
+        document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      }
+    });
+    expect(r.started.length, 'the drive begins where the trip was logged').toBe(1);
+    expect(r.started[0].lat).toBeCloseTo(41.532, 3);
+    expect(r.opened, 'nothing leaves the app').toEqual([]);
+  });
+
+  test('a browser sees the trip sheet exactly as it was', async () => {
+    await openTripSheet(false);
+    await page.waitForTimeout(200);
+    const r = await page.evaluate(() => {
+      const out = { td: !!document.getElementById('lm-map-td'),
+                    apple: !!document.getElementById('lm-map-apple'),
+                    none: !!document.getElementById('lm-map-none') };
+      document.querySelectorAll('.zmodal-overlay').forEach(e => e.remove());
+      window.Capacitor = window.__realCap;
+      return out;
+    });
+    expect(r.td, 'no option that cannot work here').toBe(false);
+    expect(r.apple && r.none, 'and the old chooser is untouched').toBe(true);
+  });
+
   test('no console errors across drive', async () => { await assertNoErrors(page); });
 });
