@@ -44,6 +44,39 @@ test.describe('Dashboard filter and pipeline functions', () => {
     expect(r.realAfter, 'real KPI tiles back once the load resolved').toBeGreaterThanOrEqual(6);
   });
 
+  // Owner report (2026-08-09): "every time I sign in I get a two waterfall
+  // stutter on total load." Sign-in renders the dashboard several times before
+  // the cloud lands (goPg in, the load's own render, the caller's goPg), and
+  // each render rewrote identical skeleton markup, restarting the CSS shimmer
+  // from frame zero. Two visible jumps backwards, then the real numbers. The
+  // skeleton is painted ONCE now, and the flag clears before the post-load
+  // render so that paint is the real one: exactly one swap (§8.4).
+  test('sign-in paints the skeleton once and swaps once, however many renders fire', async () => {
+    const r = await page.evaluate(() => {
+      const realAwait = _dashAwaitingCloud, realLoaded = _supaCloudLoaded;
+      const seq = [];
+      const snap = () => {
+        const el = document.getElementById('dash-kpi');
+        const skel = el && el.querySelector('.met-skel-bar');
+        return { skel: !!skel, node: skel || null };
+      };
+      try {
+        _dashAwaitingCloud = true; _supaCloudLoaded = false;
+        renderDash();
+        const first = snap();
+        seq.push(first.skel ? 'skeleton' : 'real');
+        renderDash(); renderDash();          // the redundant sign-in renders
+        const after = snap();
+        _dashAwaitingCloud = false; _supaCloudLoaded = true;
+        renderDash();
+        seq.push(snap().skel ? 'skeleton' : 'real');
+        return { seq, rebuilt: after.node !== first.node };
+      } finally { _dashAwaitingCloud = realAwait; _supaCloudLoaded = realLoaded; renderDash(); }
+    });
+    expect(r.seq, 'one skeleton, one swap, nothing in between').toEqual(['skeleton', 'real']);
+    expect(r.rebuilt, 'a repeat render must not rebuild the shimmer nodes').toBe(false);
+  });
+
   // Owner report (2026-08-09, second sighting): skeletons shimmering forever
   // in the shell with nothing arriving. A stalled cloud load left
   // _dashAwaitingCloud set with no path back. The watchdog caps the promise:

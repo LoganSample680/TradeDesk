@@ -4168,17 +4168,25 @@ test.describe('Automatic mileage from drive legs', () => {
           const text = ov ? ov.textContent : '';
           const opened = !!ov;
           ov && ov.remove();
+          // The buttons live under Settings → Developer now (owner
+          // 2026-08-09), revealed as one group and only inside the app.
+          const grp = document.getElementById('dev-geo-tools');
           const btn = document.getElementById('set-geo-diag-btn');
+          const shadowBtn = document.getElementById('set-geo-shadow-btn');
           return {
             opened,
             hasState: /Park mode/.test(text) && /GPS watcher/.test(text),
-            btnHiddenInBrowser: btn ? btn.style.display === 'none' : null,
+            grpHiddenInBrowser: grp ? grp.style.display === 'none' : null,
+            underDev: !!(btn && btn.closest('#setd-dev')) && !!(shadowBtn && shadowBtn.closest('#setd-dev')),
+            notUnderCloud: !(btn && btn.closest('#setd-cloud')),
           };
         } finally { window.Capacitor = realCap; }
       });
       expect(r.opened).toBe(true);
       expect(r.hasState).toBe(true);
-      expect(r.btnHiddenInBrowser, 'no diagnostics button outside the shell').toBe(true);
+      expect(r.grpHiddenInBrowser, 'no location engine tools outside the shell').toBe(true);
+      expect(r.underDev, 'both tools sit under Settings → Developer').toBe(true);
+      expect(r.notUnderCloud, 'and no longer beside Cloud sync').toBe(true);
     });
 
     // Owner report (2026-08-09, second sighting): arrow still on after four

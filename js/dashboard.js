@@ -483,9 +483,18 @@ function renderDash(){
     // on bare !_supaCloudLoaded, so an environment where no load is coming
     // (mocked tests, a brand-new account) renders real tiles, never an
     // endless shimmer.
-    kpiEl.innerHTML='<div class="mets">'+
-      Array.from({length:6}).map(()=>'<div class="met"><div class="met-skel-lbl"></div><div class="met-skel-bar"></div></div>').join('')+
-    '</div>';
+    // IDEMPOTENT (owner report 2026-08-09: "two waterfall stutter on load").
+    // Sign-in renders the dashboard several times before the cloud lands:
+    // goPg on the way in, supaLoadFromCloud's own render, then the caller's
+    // goPg. Rewriting identical skeleton markup each time restarts the CSS
+    // shimmer from frame zero, so the wave visibly jumped backwards twice
+    // before the real numbers arrived. Painting it once means one continuous
+    // sweep and exactly one swap to content (§8.4).
+    if(!kpiEl.querySelector('.met-skel-bar')){
+      kpiEl.innerHTML='<div class="mets">'+
+        Array.from({length:6}).map(()=>'<div class="met"><div class="met-skel-lbl"></div><div class="met-skel-bar"></div></div>').join('')+
+      '</div>';
+    }
   } else if(kpiEl){
     const pBids=bids.filter(b=>b.status==='Pending');
     const prevTax=showTrends?estimateTax(Math.max(0,prevInc-prevExp-Math.round(prevMi*IRS(yr-1)))):0;

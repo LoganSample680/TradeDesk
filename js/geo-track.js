@@ -2039,9 +2039,11 @@ _geoInstallGeoShim();
 try{
   const _dCap=window.Capacitor;
   if(_dCap&&typeof _dCap.isNativePlatform==='function'&&_dCap.isNativePlatform()){
-    const _dBtn=document.getElementById('set-geo-diag-btn');
-    if(_dBtn)_dBtn.style.display='';
-    const _sBtn=document.getElementById('set-geo-shadow-btn');
-    if(_sBtn)_sBtn.style.display='';
+    // One group, revealed as a unit under Settings → Developer (owner
+    // 2026-08-09: these belong with the dev tools, not next to Cloud sync).
+    // The Developer row itself is already gated to dev accounts, so this is
+    // the second gate: they only mean anything where the engines run.
+    const _grp=document.getElementById('dev-geo-tools');
+    if(_grp)_grp.style.display='';
   }
 }catch(_e){}
