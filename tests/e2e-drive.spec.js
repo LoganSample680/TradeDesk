@@ -46,6 +46,10 @@ test.describe('drive', () => {
         recalculate: (o) => { calls.recalculate.push(o); return Promise.resolve({ recalculating: true }); },
       } : null,
     };
+    // driveCapable() is a cached answer to isAvailable(), not just "is there a
+    // plugin object", because Capacitor hands back a proxy even when the native
+    // half is missing from the installed build. Ask it now so the stub counts.
+    await _driveCapRefresh();
     try { return await (new Function('a', 'return (' + b + ')(a)'))(a); }
     finally { window.Capacitor = realCap; }
   }, [body.toString(), arg]);
@@ -312,11 +316,12 @@ test.describe('drive', () => {
       registerPlugin: (n) => n === 'TdNav' ? {
         addListener() {}, speak: () => Promise.resolve({}), stop: () => Promise.resolve({}),
         recalculate: () => Promise.resolve({}),
+        isAvailable: () => Promise.resolve({ available: true }),
         start: (o) => { (window.__started = window.__started || []).push(o); return Promise.resolve({}); },
       } : null,
     } : undefined;
     window.__started = [];
-    openDriveModal({});
+    return _driveCapRefresh().then(() => { openDriveModal({}); });
   }, native);
 
   test('in the app the trip sheet offers our own drive, and defaults to it', async () => {
@@ -397,6 +402,42 @@ test.describe('drive', () => {
     });
     expect(r.td, 'no option that cannot work here').toBe(false);
     expect(r.apple && r.none, 'and the old chooser is untouched').toBe(true);
+  });
+
+  // Capacitor.registerPlugin returns a proxy whether or not the native half is
+  // in the installed build. A phone still on an older TestFlight build would
+  // otherwise call the button Drive and fail on the first tap.
+  test('a build without the native drive says Directions, not Drive', async () => {
+    await seedJob();
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const opened = [];
+      const realOpen = window.open;
+      window.open = (u) => { opened.push(u); return null; };
+      window.Capacitor = {
+        isNativePlatform: () => true,
+        // Exactly what an older build does: the proxy exists, the method does not.
+        registerPlugin: () => ({
+          isAvailable: () => Promise.reject(new Error('not implemented')),
+          start: () => Promise.reject(new Error('not implemented')),
+        }),
+      };
+      try {
+        const probed = await _driveCapRefresh();
+        const capable = driveCapable();
+        const label = driveButtonHtml('7001');
+        await startDrive('7001');
+        return { probed, capable, label, opened };
+      } finally {
+        window.open = realOpen; window.Capacitor = realCap;
+        try { localStorage.removeItem('td_nav_capable'); } catch (e) {}
+      }
+    });
+    expect(r.probed, 'the probe answers honestly').toBe(false);
+    expect(r.capable).toBe(false);
+    expect(r.label, 'and the button promises only what that build can do').toMatch(/Directions/);
+    expect(r.opened.length, 'the tap still gets them there, via Maps').toBe(1);
+    expect(r.opened[0]).toMatch(/maps\.apple\.com/);
   });
 
   test('no console errors across drive', async () => { await assertNoErrors(page); });

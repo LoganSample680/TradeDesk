@@ -59,7 +59,40 @@ function _drivePlugin(){
     return (cap.Plugins&&cap.Plugins.TdNav)||null;
   }catch(_e){return null;}
 }
-function driveCapable(){ return !!_drivePlugin(); }
+// ── Is the native drive actually THERE ───────────────────────────────────────
+// Capacitor.registerPlugin hands back a proxy whether or not the native half
+// exists in the installed build, so "the plugin object is truthy" proves
+// nothing. A phone still running an older TestFlight build would call the drive
+// Drive, then fail on the first tap. So we ask it, once, and cache the answer,
+// exactly the shape _scanCapable and _rcptNativeCapable already use.
+//
+// Cached in localStorage because the answer only changes when the app itself is
+// replaced: without that, the very first render of every launch would say
+// Directions and then flip to Drive a beat later.
+let _driveCapCache=null;   // true | false | null (not asked yet)
+try{
+  const _c=localStorage.getItem('td_nav_capable');
+  if(_c==='1')_driveCapCache=true;else if(_c==='0')_driveCapCache=false;
+}catch(_e){}
+function driveCapable(){
+  if(!_drivePlugin())return false;   // browser or PWA: no native drive at all
+  return _driveCapCache===true;
+}
+async function _driveCapRefresh(){
+  const Nav=_drivePlugin();
+  if(!Nav||typeof Nav.isAvailable!=='function'){_driveCapCache=false;}
+  else{
+    try{const r=await Nav.isAvailable();_driveCapCache=!!(r&&r.available);}
+    catch(_e){_driveCapCache=false;}   // older build: the method is not implemented
+  }
+  try{localStorage.setItem('td_nav_capable',_driveCapCache?'1':'0');}catch(_e){}
+  return _driveCapCache;
+}
+// Asked once per launch, off the critical path. An older build answers false
+// and every Drive button quietly reads Directions instead of breaking on tap.
+if(typeof window!=='undefined'){
+  setTimeout(()=>{try{if(_drivePlugin())_driveCapRefresh();}catch(_e){}},1200);
+}
 
 function _driveMiles(m){ return (m||0)/1609.34; }
 function _driveFeet(m){ return (m||0)*3.28084; }
@@ -235,8 +268,11 @@ async function startDriveTo(dest){
   }
   const label=dest.label||'Your stop';
   const Nav=_drivePlugin();
-  if(!Nav){
-    // Browser or PWA: no plugin, so hand off rather than fake it.
+  // driveCapable(), not just "is there a plugin object": an app build without
+  // the native half still hands back a proxy, and this is the difference
+  // between handing off cleanly and failing on the first tap.
+  if(!Nav||!driveCapable()){
+    // Browser, PWA, or a build that predates TdNav: hand off rather than fake it.
     window.open('https://maps.apple.com/?daddr='+dest.lat+','+dest.lng,'_blank');
     return false;
   }
