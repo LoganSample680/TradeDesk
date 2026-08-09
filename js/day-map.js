@@ -159,7 +159,13 @@ function renderDayMap(){
       'Nothing to map today. Jobs and estimate appointments show up here once they have an address, and crew appear once they are sharing location.'+
       '</div>';
   }else if(typeof tdMapRender==='function'){
+    // Apple tiles only on Apple hardware: this screen is dispatch plus crew
+    // locations, which Apple's licence puts off limits on non-Apple hardware
+    // (see tdAppleHardware in js/places.js). Everywhere else the plot renders,
+    // which uses none of Apple's data.
+    const allowKit=(typeof tdAppleHardware==='function')?tdAppleHardware():false;
     tdMapRender({body:mapBody,pts,style:_DAY_MAP_STYLE,st:_dayMapSt,hostId:'_day-map-canvas',height:300,
+      allowKit,
       hint:'Tap a pin for details, then the arrow for directions.'});
   }
   // Said once, outside the map, so it survives the tiles-or-fallback split.

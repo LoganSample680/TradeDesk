@@ -407,9 +407,37 @@ function tdMapDestroy(st){
   st.obj=null;st.host=null;
 }
 function tdMapRender(o){
-  if(_geoMapKitReady()){tdMapRenderKit(o);return;}
+  if(o.allowKit!==false&&_geoMapKitReady()){tdMapRenderKit(o);return;}
   tdMapDestroy(o.st);
   tdMapRenderFallback(o);
+}
+
+// ── Apple's licence line, in code ────────────────────────────────────────────
+// The Apple Developer Program License Agreement says MapKit JS "may not be used
+// in your website and/or application running on non-Apple hardware for the
+// following commercial purposes: fleet management (including dispatch), asset
+// tracking, enterprise route optimization". A crew-location map IS all three of
+// those, so on an Android phone or a Windows desktop it must not draw Apple
+// tiles. Inside the iOS shell, and in Safari or Chrome on Apple hardware, it is
+// squarely allowed.
+//
+// Callers pass allowKit:tdAppleHardware() for anything fleet-shaped. The
+// fallback plot then renders instead, which uses none of Apple's data, so the
+// screen still works everywhere, it just stops using tiles it is not licensed
+// to use there. The Places territory map is business history rather than fleet
+// management and is not gated.
+//
+// iPadOS 13+ reports itself as Macintosh, which lands on the allowed side
+// either way, and anything unrecognised falls to the plot, which is the safe
+// direction to be wrong in.
+function tdAppleHardware(){
+  try{
+    const cap=window.Capacitor;
+    if(cap&&typeof cap.isNativePlatform==='function'&&cap.isNativePlatform()){
+      return !(typeof cap.getPlatform==='function'&&cap.getPlatform()==='android');
+    }
+    return /iPhone|iPad|iPod|Macintosh|Mac OS X/.test(navigator.userAgent||'');
+  }catch(_e){return false;}
 }
 
 // ── Real tiles ───────────────────────────────────────────────────────────────

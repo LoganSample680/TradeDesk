@@ -194,5 +194,44 @@ test.describe('dispatch day map', () => {
     expect(r.shared).toBe(true);
   });
 
+  // Apple's Developer Program License Agreement: MapKit JS "may not be used in
+  // your website and/or application running on non-Apple hardware for the
+  // following commercial purposes: fleet management (including dispatch), asset
+  // tracking, enterprise route optimization". This screen is all three. On an
+  // Android phone or a Windows desktop it therefore falls back to our own plot,
+  // which uses none of Apple's data, rather than drawing tiles we are not
+  // licensed to draw there.
+  test('Apple tiles are refused on non-Apple hardware, and the plot takes over', async () => {
+    await seed();
+    const r = await page.evaluate(async () => {
+      const realCap = window.Capacitor;
+      const ua = navigator.userAgent;
+      let kitAsked = 0;
+      const realKitReady = window._geoMapKitReady;
+      window._geoMapKitReady = () => { kitAsked++; return true; };
+      Object.defineProperty(navigator, 'userAgent',
+        { value: 'Mozilla/5.0 (Linux; Android 14; Pixel 8)', configurable: true });
+      window.Capacitor = undefined;
+      try {
+        const android = tdAppleHardware();
+        setDispatchView('map');
+        await new Promise(res => setTimeout(res, 250));
+        const usedTiles = !!document.getElementById('_day-map-canvas');
+        const plotted = (document.getElementById('_day-map-body').innerHTML.match(/maps\?q=/g) || []).length;
+        Object.defineProperty(navigator, 'userAgent', { value: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0)', configurable: true });
+        const apple = tdAppleHardware();
+        return { android, apple, usedTiles, plotted };
+      } finally {
+        Object.defineProperty(navigator, 'userAgent', { value: ua, configurable: true });
+        window.Capacitor = realCap;
+        window._geoMapKitReady = realKitReady;
+      }
+    });
+    expect(r.android, 'an Android phone is not Apple hardware').toBe(false);
+    expect(r.apple, 'an iPhone is').toBe(true);
+    expect(r.usedTiles, 'no Apple tiles on hardware the licence excludes').toBe(false);
+    expect(r.plotted, 'the screen still works, on our own plot').toBeGreaterThan(0);
+  });
+
   test('no console errors across the day map', async () => { await assertNoErrors(page); });
 });
