@@ -501,6 +501,53 @@ async function scanIsSupported(){
   if(!P||typeof P.isSupported!=='function')return false;
   try{const r=await P.isSupported();return !!(r&&r.supported);}catch(_e){return false;}
 }
+// ── Device capability gate ───────────────────────────────────────────────────
+// RoomCaptureSession.isSupported is the ONLY truth here: it wants a real LiDAR
+// sensor and iOS 17, so nothing hardcodes a model table that would rot with
+// every September keynote. The answer cannot change for a given device, so it
+// resolves once and is remembered: the chooser paints synchronously and cannot
+// await a plugin round trip.
+let _scanCapCache=null;   // true | false | null (not asked yet)
+try{
+  const _c=localStorage.getItem('td_scan_capable');
+  if(_c==='1')_scanCapCache=true;else if(_c==='0')_scanCapCache=false;
+}catch(_e){}
+function _scanCapable(){
+  if(!_scanPlugin())return false;      // browser or PWA: no scanner at all
+  return _scanCapCache===true;
+}
+async function _scanCapRefresh(){
+  if(!_scanPlugin()){_scanCapCache=false;return false;}
+  const ok=await scanIsSupported();
+  _scanCapCache=ok;
+  try{localStorage.setItem('td_scan_capable',ok?'1':'0');}catch(_e){}
+  return ok;
+}
+// Why the scan estimate is greyed out, and what to do about it. The model list
+// is the ONLY place a device roster appears, and it is copy for humans, never
+// a capability check.
+function _scanWhyNoLidar(){
+  if(document.getElementById('_scan-why-ov'))return;
+  const inShell=!!_scanPlugin();
+  const ov=document.createElement('div');ov.id='_scan-why-ov';ov.className='zmodal-overlay';ov.style.zIndex='9300';
+  const m=document.createElement('div');m.className='zmodal';
+  m.innerHTML=
+    '<div class="zmodal-title">Scanning needs a Pro iPhone</div>'+
+    '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">'+
+      (inShell
+        ?'This iPhone doesn\'t have the LiDAR sensor, so it can\'t measure rooms. Everything else in TradeDesk works exactly the same.'
+        :'Room scanning lives in the TradeDesk iPhone app, on a Pro model with LiDAR.')+
+    '</div>'+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin-bottom:6px">Phones that can scan</div>'+
+    '<div style="font-size:13px;color:var(--text2);line-height:1.6;margin-bottom:12px">'+
+      'Every <strong>Pro</strong> iPhone since the iPhone 12 Pro: 12 Pro, 13 Pro, 14 Pro, 15 Pro, 16 Pro, 17 Pro, and every Pro Max. '+
+      'iPad Pro from 2020 on also works.<br><span style="color:var(--text3)">Standard, Plus, mini, and e models don\'t have LiDAR, and neither does iPad Air.</span>'+
+    '</div>'+
+    '<div style="font-size:12px;color:var(--text3);line-height:1.55;margin-bottom:14px">You can still build any estimate by hand, price it, and send it. Scanning only replaces the measuring.</div>'+
+    '<button class="btn btn-p" style="width:100%;padding:12px" onclick="document.getElementById(\'_scan-why-ov\').remove()">Got it</button>';
+  ov.appendChild(m);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
+}
 // Five-second pre-flight, once per device: every scanner app buries the same
 // three failure conditions in help docs people read AFTER a ruined scan
 // (research 2026-08-09: doors open first, lights on, mirrors and glass lie to
@@ -728,9 +775,9 @@ function _renderCDScans(){
   el.innerHTML='<div class="card" style="padding:14px 16px">'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:'+(list.length?'8px':'0')+'">'+
       '<div style="font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3)">Floor plans</div>'+
-      (shell
+      (shell&&_scanCapable()
         ?'<button class="btn btn-sm btn-p" style="padding:7px 12px;font-size:12px" onclick="_scanStartForClient()">'+ (typeof svgIcon==='function'?svgIcon('📐',{size:13}):'')+' Scan rooms</button>'
-        :'<span style="font-size:10px;color:var(--text3)">Scan with the iPhone app (Pro/LiDAR)</span>')+
+        :'<button class="btn btn-sm" style="padding:7px 12px;font-size:12px;opacity:.6" onclick="_scanWhyNoLidar()">Scan rooms · needs a Pro iPhone</button>')+
     '</div>'+
     list.map(s=>{
       const wsqft=Math.round(_scanSqFt((s.rooms||[]).reduce((t,r)=>t+r.wallM2,0)));
@@ -744,11 +791,11 @@ function _renderCDScans(){
 }
 async function _scanStartForClient(){
   const cid=(typeof currentClientId!=='undefined')?currentClientId:null;
-  const supported=await scanIsSupported();
-  if(!supported){
-    if(typeof showToast==='function')showToast('Scanning needs an iPhone Pro (LiDAR) on iOS 17+','📐');
-    return;
-  }
+  const supported=await _scanCapRefresh();
+  if(!supported){_scanWhyNoLidar();return;}
   const sc=await startRoomScan({clientId:cid});
   if(sc){_renderCDScans();openScanViewer(sc.id);}
 }
+// Ask the device once, at load, so every surface that gates on LiDAR can paint
+// synchronously from here on. Silent no-op outside the shell.
+try{if(_scanPlugin())_scanCapRefresh().catch(()=>{});}catch(_e){}

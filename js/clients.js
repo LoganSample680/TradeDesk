@@ -457,15 +457,21 @@ function _showEstimateStylePicker(c,overrideAddr){
   const ov=document.createElement('div');
   ov.id='_style-pick-ov';
   ov.style.cssText='position:fixed;inset:0;z-index:9000;background:var(--bg2);overflow-y:auto;opacity:0;transform:translateY(22px);transition:opacity .38s ease,transform .42s cubic-bezier(.22,.8,.2,1)';
-  const card=(id,tone,icon,eyebrow,title,sub,bullets)=>{
+  // Scanning is hardware, not a setting: a phone without LiDAR can never do it,
+  // so the card is greyed rather than failing on tap, and it explains itself
+  // (owner 2026-08-09). _scanCapable() answers synchronously off a cached
+  // RoomPlan capability probe, never a hardcoded model list.
+  const scanLocked=(typeof _scanCapable!=='function')||!_scanCapable();
+  const card=(id,tone,icon,eyebrow,title,sub,bullets,locked)=>{
     const bul=bullets.map(b=>'<li><span>'+svgIcon('✓')+'</span>'+b+'</li>').join('');
-    return `<button class="chooser-card chooser-${tone}" onclick="_pickEstStyle('${id}')">
-      <div class="chooser-card-eyebrow">${eyebrow}</div>
+    const act=locked?'_scanWhyNoLidar()':`_pickEstStyle('${id}')`;
+    return `<button class="chooser-card chooser-${tone}" onclick="${act}"${locked?' style="opacity:.55;filter:grayscale(1)"':''}>
+      <div class="chooser-card-eyebrow"${locked?' style="color:var(--text3)"':''}>${locked?'Needs a Pro iPhone':eyebrow}</div>
       <div class="chooser-card-icon">${icon}</div>
       <div class="chooser-card-title">${title}</div>
-      <div class="chooser-card-sub">${sub}</div>
+      <div class="chooser-card-sub">${locked?'This phone has no LiDAR sensor to measure with':sub}</div>
       <ul class="chooser-card-bullets">${bul}</ul>
-      <div class="chooser-card-cta">Start →</div>
+      <div class="chooser-card-cta">${locked?'Which iPhones? →':'Start →'}</div>
     </button>`;
   };
   ov.innerHTML=
@@ -479,7 +485,7 @@ function _showEstimateStylePicker(c,overrideAddr){
       '</div>'+
       '<div class="chooser-grid">'+
         card('scan','blue',svgIcon('📐',{size:36}),'Measured by LiDAR','Scan Estimate','Built from the rooms you scanned, nothing typed',
-          ['Every quantity measured, not guessed','Per-surface rates price rooms instantly','High ceilings auto-flagged from the scan','The proposal shows their floor plan'])+
+          ['Every quantity measured, not guessed','Per-surface rates price rooms instantly','High ceilings auto-flagged from the scan','The proposal shows their floor plan'],scanLocked)+
         card('freeform','green',svgIcon('🧩',{size:36}),'A la carte','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
         card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
@@ -498,7 +504,16 @@ function _pickEstStyle(style){
   // instead of flashing to the dashboard behind it.
   if(style==='tm'){openTMEstimate(c);}
   else if(style==='freeform'){openFreeFormEstimate(c);}
-  else if(style==='scan'){if(typeof openScanEstimate==='function')openScanEstimate(c);}
+  else if(style==='scan'){
+    // Belt and braces: the card is greyed out on a phone that cannot scan, but
+    // this is the one entry point, so it refuses there too rather than opening
+    // a builder with nothing to build from.
+    if(typeof _scanCapable==='function'&&!_scanCapable()){
+      if(typeof _scanWhyNoLidar==='function')_scanWhyNoLidar();
+      return;
+    }
+    if(typeof openScanEstimate==='function')openScanEstimate(c);
+  }
 }
 
 function _doOpenEstimate(c,_overrideAddr,_forceTrade){
