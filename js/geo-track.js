@@ -283,7 +283,15 @@ function _geoRestoreOpen(){
     if(_geoCurrentJob||_geoArrivedAt)return; // live state wins, never clobber a running session
     _geoCurrentJob=s.job;_geoArrivedAt=s.arrivedAt;
     _geoWasInShop=!!s.wasInShop;_geoShopArrivedAt=s.shopArrivedAt;
-    _geoDriveStartedAt=s.driveStartedAt;
+    // A restored open DRIVE gets a freshness cap (owner report 2026-08-09: a
+    // junk 2-minute fence-bounce leg was open when the phone locked, iOS
+    // killed the app while parked, and the next launch an hour later
+    // resurrected 'driving since 10:49' and billed a whole fictional trip
+    // across the dead time). A drive suspended for a few minutes mid-journey
+    // is real and survives; one that has been 'open' longer than 30 minutes
+    // of app-death is a story, and the fence machine's own gap inference
+    // handles any real miles with the stale rules it already has.
+    _geoDriveStartedAt=((Date.parse(s.hiddenAt||0)||0)>=Date.now()-30*60000)?s.driveStartedAt:null;
     // Job and place come back through their own vars; only the shop leg flag
     // needs seeding, or a session restored at the yard loses its next leg.
     _geoLegAtShop=!!s.wasInShop&&!s.job;
@@ -1064,6 +1072,19 @@ function _geoDriveEntry(jobId,driveStartedAt,destPlace,endedIso,gap,destLoc,stal
   if(!driveStartedAt)return;
   const arrived=endedIso||new Date().toISOString();
   const mins=Math.max(0,Math.round((Date.parse(arrived)-Date.parse(driveStartedAt))/60000));
+  // FENCE-BOUNCE GUARD (owner report 2026-08-09: two 2-minute "FBC to FBC
+  // trips" from GPS jitter at one church). A leg that starts and ends at the
+  // SAME location with almost no movement observed is a fix that wobbled
+  // across the fence line, not a drive: no time entry, no mileage row. A
+  // real out-and-back loop from the same door survives on the moved-miles
+  // test; the rolling straight-line accumulator is reset per leg.
+  if(destLoc&&_geoLegOrigin&&!stale){
+    const sameId=(destLoc.placeId&&destLoc.placeId===_geoLegOrigin.placeId)||
+                 (destLoc.clientId&&destLoc.clientId===_geoLegOrigin.clientId)||
+                 (destLoc.jobId&&destLoc.jobId===_geoLegOrigin.jobId);
+    const sameSpot=sameId||(_geoLegOrigin.lat!=null&&_geoDistFt(destLoc,{lat:_geoLegOrigin.lat,lng:_geoLegOrigin.lng})<400);
+    if(sameSpot&&_geoDriveMiles<0.3)return;
+  }
   // `stale` = the departure could not be inferred (the phone was asleep across
   // the gap, see _GEO_MAX_INFERRED_LEG_MS). The two halves of a leg are split
   // deliberately here: the DISTANCE is measured geocode to geocode and is real

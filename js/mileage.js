@@ -550,6 +550,22 @@ function autoLogDriveTrip(opts){
   // Idempotent on the leg key: the drive leg and this trip carry the same one,
   // so a retried or replayed leg can never bill the same miles twice.
   if(mileage.some(m=>m.legKey===legKey))return null;
+  // ONE PHONE, ONE DRIVE AT A TIME (owner report 2026-08-09: a resurrected
+  // stale leg billed Shop to FBC a second time over a window the log already
+  // covered). The leg key only dedupes retries of the SAME close; a leg
+  // re-derived after an app kill mints a fresh key, so the physical rule is
+  // the backstop: an automatic trip whose time window overlaps any existing
+  // GPS trip's window is a reconstruction of time already accounted for,
+  // never a second real drive.
+  if(startedIso){
+    const ns=Date.parse(startedIso),ne=Date.parse(opts.endedIso||startedIso);
+    const clash=mileage.some(m=>{
+      if(!m.gps||!m.startedIso)return false;
+      const ms=Date.parse(m.startedIso),me=Date.parse(m.endedIso||m.startedIso);
+      return ns<me&&ms<ne&&(ne-ns>60000||me-ms>60000);
+    });
+    if(clash)return null;
+  }
   // ONE DRIVE, ONE ROW, and the AUTOMATIC one is the row worth keeping. It runs
   // geocode to geocode over the whole journey and Apple measures it; a manual
   // entry is a number typed from memory over however much of the drive they

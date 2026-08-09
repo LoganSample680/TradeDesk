@@ -4425,6 +4425,108 @@ test.describe('Automatic mileage from drive legs', () => {
     });
   });
 
+  // ── Phantom legs (owner report 2026-08-09) ──────────────────────────────────
+  // One real Shop→FBC drive produced four rows: two 2-minute "FBC to FBC"
+  // trips (GPS jitter bouncing across the fence line), and a duplicate
+  // Shop→FBC leg spanning 10:49a-11:56a, built when iOS killed the app with a
+  // junk bounce-leg still open, the next launch resurrected 'driving since
+  // 10:49' from the persisted blob, and the fresh leg key slipped past the
+  // retry dedupe. Three layers now stop the whole class.
+  test.describe('phantom legs', () => {
+    test('a fence bounce (out and straight back, same spot, no real movement) logs nothing', async () => {
+      const r = await page.evaluate(async () => {
+        const realUser = _supaUser, realEnq = window._geoEnqueue, realRoute = _routeDistance;
+        const entries = [];
+        const mileBefore = mileage.length;
+        _supaUser = { id: 'u-bounce' };
+        window._geoEnqueue = (tbl, row) => { entries.push({ tbl, row }); };
+        window._routeDistance = _routeDistance = async () => ({ miles: 0, mins: 0 });
+        try {
+          __seedGeo();
+          const t0 = Date.now();
+          _geoCurrentJob = null; _geoArrivedAt = null;
+          _geoWasInShop = true; _geoShopArrivedAt = new Date(t0 - 20 * 60000).toISOString();
+          _geoLegAtShop = true; _geoDriveStartedAt = null; _geoDriveReset();
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoLastFenceAt = new Date(t0 - 4 * 60000).toISOString();
+          _geoLastFenceLoc = { lat: S.officeLat, lng: S.officeLon, name: 'Shop', kind: 'shop' };
+          _geoHomeDwell = null; _geoWasAtHome = false; _geoLegOrigin = null; _geoGapHiddenAt = null;
+          // Jitter: one fix ~500ft outside the fence, next fix back inside.
+          await _geoOnPing({ coords: { latitude: S.officeLat + 0.0014, longitude: S.officeLon, accuracy: 8 }, __tdTs: t0 - 3 * 60000 });
+          await _geoOnPing({ coords: { latitude: S.officeLat, longitude: S.officeLon, accuracy: 8 }, __tdTs: t0 });
+          await new Promise(r2 => setTimeout(r2, 30));
+          return {
+            newTrips: mileage.length - mileBefore,
+            driveEntries: entries.filter(e => e.tbl === 'job_time_entries' && /^drive/.test(e.row.source)).length,
+          };
+        } finally {
+          _supaUser = realUser; window._geoEnqueue = realEnq; window._routeDistance = _routeDistance = realRoute;
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoLegOrigin = null;
+          mileage.length = mileBefore;
+        }
+      });
+      expect(r.newTrips, 'no mileage row for a fence bounce').toBe(0);
+      expect(r.driveEntries, 'no drive time entry for a fence bounce').toBe(0);
+    });
+
+    test('a drive left open across a long app-death is not resurrected; a short suspension survives', async () => {
+      const r = await page.evaluate(() => {
+        const realUser = _supaUser;
+        _supaUser = { id: 'u-resur' };
+        try {
+          // Killed for 40 minutes with a junk leg open: the story dies.
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false; _geoShopArrivedAt = null;
+          _geoDriveStartedAt = new Date(Date.now() - 67 * 60000).toISOString();
+          _geoPersistOpen(new Date(Date.now() - 40 * 60000).toISOString());
+          _geoDriveStartedAt = null; _geoGapHiddenAt = null;
+          _geoRestoreOpen();
+          const staleRestored = _geoDriveStartedAt;
+          _geoClearOpen();
+          // Suspended 10 minutes mid-journey: the real drive survives.
+          const freshStart = new Date(Date.now() - 15 * 60000).toISOString();
+          _geoDriveStartedAt = freshStart;
+          _geoPersistOpen(new Date(Date.now() - 10 * 60000).toISOString());
+          _geoDriveStartedAt = null; _geoGapHiddenAt = null;
+          _geoRestoreOpen();
+          const freshRestored = _geoDriveStartedAt;
+          _geoClearOpen();
+          return { staleRestored, freshRestored, freshStart };
+        } finally {
+          _supaUser = realUser; _geoDriveStartedAt = null; _geoGapHiddenAt = null; _geoClearOpen();
+        }
+      });
+      expect(r.staleRestored, 'an hour-dead "open drive" is a story, not a restore').toBe(null);
+      expect(r.freshRestored, 'a briefly-suspended real drive still survives').toBe(r.freshStart);
+    });
+
+    test('one phone cannot run two drives at once: an auto trip overlapping a logged trip is refused', async () => {
+      const r = await page.evaluate(async () => {
+        const realRoute = _routeDistance;
+        window._routeDistance = _routeDistance = async () => ({ miles: 5.4, mins: 11 });
+        const before = mileage.length;
+        try {
+          const t = m => new Date(Date.now() - m * 60000).toISOString();
+          mileage.push({ id: 991, gps: true, legKey: 'k-real', from_name: 'FBC', to_name: 'FBC', startedIso: t(120), endedIso: t(118), miles: 0, date: todayKey() });
+          const dup = autoLogDriveTrip({ from: { name: 'Shop', lat: 39.0, lng: -95.7 }, to: { name: 'FBC', lat: 39.02, lng: -95.68 }, legKey: 'k-dup', startedIso: t(120), endedIso: t(53) });
+          const dupCount = mileage.filter(m => m.legKey === 'k-dup').length;
+          const ok = autoLogDriveTrip({ from: { name: 'Shop', lat: 39.0, lng: -95.7 }, to: { name: 'FBC', lat: 39.02, lng: -95.68 }, legKey: 'k-ok', startedIso: t(50), endedIso: t(40) });
+          await new Promise(r2 => setTimeout(r2, 30));
+          const okCount = mileage.filter(m => m.legKey === 'k-ok').length;
+          return { dupNull: dup === null, dupCount, okCount };
+        } finally {
+          window._routeDistance = _routeDistance = realRoute;
+          mileage.length = before; saveAll();
+        }
+      });
+      expect(r.dupNull, 'the overlapping reconstruction is refused').toBe(true);
+      expect(r.dupCount).toBe(0);
+      expect(r.okCount, 'a later, non-overlapping real trip still logs').toBe(1);
+    });
+  });
+
   // ── The live DRIVING banner ─────────────────────────────────────────────────
   // Owner ask (2026-08-07): the automatic system was fully silent while actually
   // driving, the only live feedback belonged to the manual Start Drive flow. The
