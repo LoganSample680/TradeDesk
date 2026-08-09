@@ -478,6 +478,8 @@ function _showEstimateStylePicker(c,overrideAddr){
         '<button class="btn btn-ghost" onclick="_closeStylePicker()">Cancel</button>'+
       '</div>'+
       '<div class="chooser-grid">'+
+        card('scan','blue',svgIcon('📐',{size:36}),'Measured by LiDAR','Scan Estimate','Built from the rooms you scanned, nothing typed',
+          ['Every quantity measured, not guessed','Per-surface rates price rooms instantly','High ceilings auto-flagged from the scan','The proposal shows their floor plan'])+
         card('freeform','green',svgIcon('🧩',{size:36}),'A la carte','Build Your Own','List every service with its own price',
           ['Price each service individually','Mix labor, materials &amp; add-ons','Deposit collected upfront','Easy to upsell extras'])+
         card('tm','amber',svgIcon('⏱️',{size:36}),'Unknown scope','Time &amp; Materials','Flexible billing when you can\'t lock in a price',
@@ -496,6 +498,7 @@ function _pickEstStyle(style){
   // instead of flashing to the dashboard behind it.
   if(style==='tm'){openTMEstimate(c);}
   else if(style==='freeform'){openFreeFormEstimate(c);}
+  else if(style==='scan'){if(typeof openScanEstimate==='function')openScanEstimate(c);}
 }
 
 function _doOpenEstimate(c,_overrideAddr,_forceTrade){

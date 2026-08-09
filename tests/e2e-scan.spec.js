@@ -341,6 +341,98 @@ test.describe('TdScan web half', () => {
     expect(r.wrappedSrc).toBe(true);
   });
 
+  test('Scan Estimate: standalone builder prices rooms from measured surfaces, bakes multipliers, stamps scanId', async () => {
+    const r = await page.evaluate((raw) => {
+      const savedClients = clients.slice(), savedRates = S.scanRates, savedTrade = S.trade;
+      try {
+        S.trade = 'Painting';
+        clients.length = 0; clients.push({ id: 801, name: 'Builder Client' });
+        const room = _scanParseRoom(raw, 'Kitchen');
+        saveScan({ id: 'scan-se-1', clientId: 801, rooms: [room], name: 'SE scan' });
+        S.scanRates = { wall: 2, ceiling: 1, trimLf: 0, door: 0, window: 0 };
+        openScanEstimate(clients[0]);
+        const ov = document.getElementById('_se-ov');
+        const opened = !!ov;
+        // Walls on by default at $2: 352 x 2 = 704. Add the ceiling: +120.
+        const t1 = _seTotal();
+        _seToggleSurf(0, 'ceiling');
+        const t2 = _seTotal();
+        // Heavy prep bakes +15% into the RATE, so qty x rate stays honest.
+        _seToggleMult(0, 'prep');
+        const t3 = _seTotal();
+        const autoHigh = _seState.rooms[0].mults.highCeil;   // 8 ft: NOT auto-flagged
+        _seCreateProposal();
+        const seeded = { lines: _geiLines.length, firstRate: _geiLines[0].rate, scanId: _geiScanId, builderGone: !document.getElementById('_se-ov') };
+        deleteScan('scan-se-1');
+        return { opened, t1, t2, t3, autoHigh, seeded };
+      } finally {
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        S.scanRates = savedRates; S.trade = savedTrade;
+        window._scanEstimateSeed = null; _geiLines = []; _geiScanId = null; _seState = null;
+        document.getElementById('_se-ov')?.remove();
+        goPg('pg-dash');
+      }
+    }, fabricatedRoom());
+    expect(r.opened).toBe(true);
+    expect(r.t1).toBe(704);
+    expect(r.t2).toBe(824);
+    expect(r.t3, '+15% prep on both surfaces').toBeCloseTo(947.6, 0);
+    expect(r.autoHigh, '8 ft ceilings are not high ceilings').toBe(false);
+    expect(r.seeded.lines).toBe(2);
+    expect(r.seeded.firstRate, 'the multiplier is baked into the line rate').toBeCloseTo(2.3, 5);
+    expect(r.seeded.scanId, 'the bid will carry the scan for the proposal plan embed').toBe('scan-se-1');
+    expect(r.seeded.builderGone).toBe(true);
+  });
+
+  test('Scan Estimate: a measured 10 ft room auto-flags high ceilings; electricians bill by device count', async () => {
+    const r = await page.evaluate((raw) => {
+      const savedClients = clients.slice(), savedTrade = S.trade, savedER = S.scanElecRates;
+      try {
+        clients.length = 0; clients.push({ id: 802, name: 'Elec Client' });
+        const room = _scanParseRoom(raw, 'Kitchen');
+        room.hM = 3.05;   // a measured 10 ft ceiling
+        saveScan({ id: 'scan-se-2', clientId: 802, rooms: [room], name: 'Tall scan' });
+        S.trade = 'Electrical';
+        S.scanElecRates = { outlet: 100, sw: 80, gfci: 150 };
+        openScanEstimate(clients[0]);
+        const autoHigh = _seState.rooms[0].mults.highCeil;
+        _seToggleMult(0, 'highCeil');           // turn it OFF for clean device math
+        const total = _seTotal();               // 5 outlets x100 + 1 switch x80 + GFCI 150 = 730
+        _seCreateProposal();
+        const kinds = _geiLines.map(l => l.desc);
+        deleteScan('scan-se-2');
+        return { autoHigh, total, lines: _geiLines.length, kinds };
+      } finally {
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        S.trade = savedTrade; S.scanElecRates = savedER;
+        window._scanEstimateSeed = null; _geiLines = []; _geiScanId = null; _seState = null;
+        document.getElementById('_se-ov')?.remove();
+        goPg('pg-dash');
+      }
+    }, fabricatedRoom());
+    expect(r.autoHigh, 'a MEASURED 10 ft ceiling arrives pre-flagged').toBe(true);
+    expect(r.total).toBe(730);
+    expect(r.lines).toBe(3);
+    expect(r.kinds.join(' ')).toContain('receptacles');
+    expect(r.kinds.join(' ')).toContain('GFCI');
+  });
+
+  test('the estimate-type chooser leads with Scan Estimate', async () => {
+    const r = await page.evaluate(() => {
+      try {
+        _showEstimateStylePicker({ id: 901, name: 'Chooser Client' });
+        const ov = document.getElementById('_style-pick-ov');
+        const html = ov ? ov.innerHTML : '';
+        return {
+          hasScanCard: /Scan Estimate/.test(html) && /Measured by LiDAR/.test(html),
+          scanFirst: html.indexOf('Scan Estimate') < html.indexOf('Build Your Own'),
+        };
+      } finally { document.getElementById('_style-pick-ov')?.remove(); window._stylePickState = null; }
+    });
+    expect(r.hasScanCard).toBe(true);
+    expect(r.scanFirst, 'the flagship type leads the chooser').toBe(true);
+  });
+
   test('no console errors across the scan suite', async () => { await assertNoErrors(page); });
 });
 
