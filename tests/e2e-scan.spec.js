@@ -562,14 +562,23 @@ test.describe('TdScan web half', () => {
       const svg = _scanPlanSvg({ rooms: [room], headingDeg: 40 }, { lens: 'plan' });
       return {
         poche: /<line[^>]*stroke-width="1\.[0-9]+"[^>]*stroke-linecap="square"/.test(svg) || /stroke-linecap="square"/.test(svg),
-        swingArc: /<path d="M [\d. ]+A [\d. ]+/.test(svg) && /stroke-dasharray/.test(svg),
+        // Owner review (2026-08-09 vs reference plans): the arc is SOLID (the
+        // old dashed assertion is gone with the dashes), and the sweep flag
+        // for the fabricated room's south-wall door must be 1, the value that
+        // bows the arc INTO the room. The old constant-cross bug emitted 0
+        // here, drawing the swing through the wall.
+        swingArc: /<path d="M [\d. ]+A [\d. ]+ 0 0 1 /.test(svg) && !/stroke-dasharray/.test(svg),
+        // Triple-line window: both wall faces redrawn across the opening plus
+        // jamb caps (the 0.35 family), so a window reads as a window.
+        windowLines: (svg.match(/stroke-width="0\.35"/g) || []).length >= 4,
         northArrow: /rotate\(40\)/.test(svg) && />N</.test(svg),
         stillHasLabel: /Kitchen/.test(svg) && /352 wall sq ft/.test(svg),
         dims: /12'0"/.test(svg),
       };
     }, fabricatedRoom());
     expect(r.poche, 'walls render as solid poché with closed corners').toBe(true);
-    expect(r.swingArc, 'doors get the quarter-circle swing arc').toBe(true);
+    expect(r.swingArc, 'the door swing bows into the room, solid arc').toBe(true);
+    expect(r.windowLines, 'windows draw the triple-line convention, never a bare gap').toBe(true);
     expect(r.northArrow, 'a captured heading draws the north arrow').toBe(true);
     expect(r.stillHasLabel).toBe(true);
     expect(r.dims, 'wall dimensions annotate the plan').toBe(true);

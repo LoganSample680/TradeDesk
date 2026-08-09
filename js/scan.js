@@ -322,21 +322,31 @@ function _scanPlanSvg(sc,opts){
         const d0=Math.max(0,Math.min(w.len-d.w,d.off-d.w/2)),d1=d0+d.w;
         punch(d0,d1);
         // Hinge at d0: thin leaf into the room + quarter swing arc back to d1.
+        // The sweep flag must put the arc's CENTER at the hinge so it bows
+        // INTO the room (owner review 2026-08-09 vs reference plans: the old
+        // ux*nz-uz*nx collapses to a constant, so walls whose normal was not
+        // flipped drew the arc bowing through the wall). nx*uz-nz*ux carries
+        // the side the room-facing normal actually took.
         const[hx,hz]=at(d0),[ex,ez]=[hx+nx*d.w,hz+nz*d.w],[tx,tz]=at(d1);
         const rw=(d.w*k).toFixed(2);
-        s+='<line x1="'+px(hx)+'" y1="'+pz(hz)+'" x2="'+px(ex)+'" y2="'+pz(ez)+'" stroke="'+ink+'" stroke-width="0.28"/>';
-        s+='<path d="M '+px(ex)+' '+pz(ez)+' A '+rw+' '+rw+' 0 0 '+((ux*nz-uz*nx)>0?1:0)+' '+px(tx)+' '+pz(tz)+'" fill="none" stroke="'+ink+'" stroke-width="0.22" stroke-dasharray="0.7 0.5"/>';
+        s+='<line x1="'+px(hx)+'" y1="'+pz(hz)+'" x2="'+px(ex)+'" y2="'+pz(ez)+'" stroke="'+ink+'" stroke-width="0.3"/>';
+        s+='<path d="M '+px(ex)+' '+pz(ez)+' A '+rw+' '+rw+' 0 0 '+((nx*uz-nz*ux)>0?1:0)+' '+px(tx)+' '+pz(tz)+'" fill="none" stroke="'+ink+'" stroke-width="0.2"/>';
       });
       (w.windows||[]).forEach(win=>{
         if(typeof win.off!=='number'||!win.w)return;
         const d0=Math.max(0,Math.min(w.len-win.w,win.off-win.w/2)),d1=d0+win.w;
         punch(d0,d1);
-        // Glazing line + jamb caps across the wall thickness.
+        // The classic triple-line window (owner review 2026-08-09 vs
+        // reference plans: a bare gap with one hairline read as nothing):
+        // both wall faces redrawn across the opening, the center glazing
+        // line, and jamb caps closing the ends.
         const[a1,b1]=at(d0),[a2,b2]=at(d1);
-        const hx2=nx*(th/k)/2,hz2=nz*(th/k)/2;
-        s+='<line x1="'+px(a1)+'" y1="'+pz(b1)+'" x2="'+px(a2)+'" y2="'+pz(b2)+'" stroke="'+ink+'" stroke-width="0.3"/>';
+        const ox=nx*(th/k)/2,oz=nz*(th/k)/2;
+        [-1,0,1].forEach(f=>{
+          s+='<line x1="'+px(a1+ox*f)+'" y1="'+pz(b1+oz*f)+'" x2="'+px(a2+ox*f)+'" y2="'+pz(b2+oz*f)+'" stroke="'+ink+'" stroke-width="'+(f===0?'0.28':'0.35')+'"/>';
+        });
         [[a1,b1],[a2,b2]].forEach(([qx,qz])=>{
-          s+='<line x1="'+px(qx-hx2)+'" y1="'+pz(qz-hz2)+'" x2="'+px(qx+hx2)+'" y2="'+pz(qz+hz2)+'" stroke="'+ink+'" stroke-width="0.3"/>';
+          s+='<line x1="'+px(qx-ox)+'" y1="'+pz(qz-oz)+'" x2="'+px(qx+ox)+'" y2="'+pz(qz+oz)+'" stroke="'+ink+'" stroke-width="0.35"/>';
         });
       });
     });
