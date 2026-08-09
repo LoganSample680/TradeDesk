@@ -278,6 +278,37 @@ test.describe('TdScan web half', () => {
     expect(r.unit).toBe('sq ft');
   });
 
+  test('the scan rate auto-prices rooms: 352 sq ft at $2.50 bills $880 the moment they load', async () => {
+    const r = await page.evaluate((raw) => {
+      const savedClients = clients.slice(), savedRate = S.scanRateSqFt;
+      try {
+        clients.length = 0; clients.push({ id: 711, name: 'Rate Client' });
+        const room = _scanParseRoom(raw, 'Kitchen');
+        const n = _scanPaintNumbers(room, false);
+        S.scanRateSqFt = 2.5;
+        window._scanEstimateSeed = { scanId: 'sr', clientId: 711,
+          rooms: [{ name: 'Kitchen', wallSqFt: n.wallSqFt, ceilHt: n.ceilHt, doors: 0, windows: 0 }] };
+        openGenericEstimate(clients[0]);
+        const priced = { rate: _geiLines[0].rate, total: _geiLines[0].total };
+        // No rate set: quantity measured, price left to the contractor.
+        S.scanRateSqFt = 0;
+        window._scanEstimateSeed = { scanId: 'sr2', clientId: 711,
+          rooms: [{ name: 'Kitchen', wallSqFt: n.wallSqFt, ceilHt: n.ceilHt, doors: 0, windows: 0 }] };
+        openGenericEstimate(clients[0]);
+        const unpriced = { rate: _geiLines[0].rate, total: _geiLines[0].total };
+        return { priced, unpriced };
+      } finally {
+        clients.length = 0; savedClients.forEach(c => clients.push(c));
+        S.scanRateSqFt = savedRate; window._scanEstimateSeed = null; _geiLines = [];
+        goPg('pg-dash');
+      }
+    }, fabricatedRoom());
+    expect(r.priced.rate).toBe(2.5);
+    expect(r.priced.total).toBe(880);
+    expect(r.unpriced.rate, 'no rate set leaves pricing to the contractor').toBe(0);
+    expect(r.unpriced.total).toBe(0);
+  });
+
   test('photo pins land on the plan where the camera stood, and the walkthrough steps through them', async () => {
     const r = await page.evaluate((raw) => {
       try {

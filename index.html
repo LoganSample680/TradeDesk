@@ -3041,9 +3041,13 @@ body.dark .cal-cell.other{background:var(--cream)}
               <input type="checkbox" id="set-allow-pay-later" style="width:18px;height:18px;margin-top:1px;accent-color:var(--blue);flex-shrink:0">
               <div><div style="font-size:13px;font-weight:700">Allow pay later</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Client signs now, no money due at signing, settles up any way before the job's done.</div></div>
             </label>
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-bottom:1px solid var(--border)">
               <div><div style="font-size:13px;font-weight:700">Floor plan price</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Default when selling a scanned floor plan standalone. Adjustable per scan.</div></div>
               <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span style="font-size:13px;color:var(--text2)">$</span><input type="number" id="set-scan-price" min="0" step="1" style="width:72px;padding:9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit"></div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0">
+              <div><div style="font-size:13px;font-weight:700">Scan rate per wall sq ft</div><div style="font-size:11px;color:var(--text3);margin-top:2px">Auto-prices scanned rooms when they load into an estimate: room total = measured wall footage times this. Leave 0 to price each room by hand.</div></div>
+              <div style="display:flex;align-items:center;gap:4px;flex-shrink:0"><span style="font-size:13px;color:var(--text2)">$</span><input type="number" id="set-scan-rate" min="0" step="0.05" style="width:72px;padding:9px;border:1px solid var(--border2);border-radius:8px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit"></div>
             </div>
           </div>
         </div>

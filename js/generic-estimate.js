@@ -505,11 +505,18 @@ function openGenericEstimate(c,bidId,_tradePick,opts){
   // into another client's estimate.
   if(window._scanEstimateSeed&&!bidId&&c&&String(window._scanEstimateSeed.clientId)===String(c.id)){
     const seed=window._scanEstimateSeed;window._scanEstimateSeed=null;
+    // Billing: room total = measured wall footage x the contractor's per-sq-ft
+    // rate (Settings). Rate unset = rooms load with the quantity measured and
+    // the price theirs to type, exactly like any hand-entered line.
+    const _scanRate=Math.max(0,+(S.scanRateSqFt||0));
     _geiLines=(seed.rooms||[]).map(r=>({
       desc:(r.name||'Room')+' · '+(r.wallSqFt||0)+' wall sq ft, '+(r.ceilHt||'')+' ceilings'+(r.doors||r.windows?' ('+(r.doors||0)+' doors, '+(r.windows||0)+' windows)':''),
-      qty:r.wallSqFt||1,unit:'sq ft',rate:0,total:0,notes:'Measured by LiDAR scan',_byoSection:'Interior'
+      qty:r.wallSqFt||1,unit:'sq ft',rate:_scanRate,total:Math.round((r.wallSqFt||1)*_scanRate*100)/100,notes:'Measured by LiDAR scan',_byoSection:'Interior'
     }));
-    if(_geiLines.length&&typeof showToast==='function')showToast(_geiLines.length+' scanned room'+(_geiLines.length>1?'s':'')+' loaded into this estimate','📐');
+    if(_geiLines.length&&typeof showToast==='function'){
+      const priced=_scanRate>0;
+      showToast(_geiLines.length+' scanned room'+(_geiLines.length>1?'s':'')+(priced?' priced at $'+_scanRate+'/sq ft':' loaded, set your rate per room'),'📐');
+    }
   }
   _tmCrewCount=1;_tmRatePerMan=0;_tmEstHours=0;_tmBillingCycle='weekly';_tmCapAction='Stop & get re-approval';
   document.getElementById('gei-cart-bar')?.remove();
