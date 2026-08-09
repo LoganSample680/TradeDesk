@@ -270,8 +270,28 @@ function _gpuDestroy(){
   Object.assign(_gpu,{dev:null,pipe:null,uniformBuf:null,edgeBuf:null,readBuf:null,tw:0,th:0});
 }
 
+// The live TurboScan-style scanner ships in the APP ONLY (owner 2026-08-09).
+// It needs a camera stream held open for continuous edge detection, and mobile
+// browsers grant that inconsistently: Safari refuses it outright unless the
+// page is a top-level user gesture, and a half-working live viewfinder is a
+// worse experience than the plain camera. The shell is also the one place we
+// know NSCameraUsageDescription is present, because the build declares it.
+// Everywhere else keeps the OS camera plus the manual corner editor, which is
+// the same pipeline minus the live preview.
+function _rcptLiveCapable(){
+  try{
+    const cap=window.Capacitor;
+    if(!cap||typeof cap.isNativePlatform!=='function'||!cap.isNativePlatform())return false;
+    return !!(navigator.mediaDevices&&typeof navigator.mediaDevices.getUserMedia==='function');
+  }catch(_e){return false;}
+}
 function _showReceiptScanner(fileOrNull,callback){
   if(fileOrNull){_loadAndBuildScanUI(fileOrNull,callback);return;}
+  // Live viewfinder: auto edge detection, hold-steady coaching, tap to shoot,
+  // then perspective-corrected and contrast-stretched on the way out.
+  // _openLiveScanner falls back to this same file path by itself if the
+  // camera is refused at runtime, so there is no dead end.
+  if(_rcptLiveCapable()){_openLiveScanner(callback);return;}
   const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.capture='environment';inp.style.display='none';
   inp.onchange=()=>{const f=inp.files[0];inp.remove();if(f)_loadAndBuildScanUI(f,callback);};
   document.body.appendChild(inp);inp.click();
@@ -299,17 +319,17 @@ async function _openLiveScanner(callback){
 
   const cancelBtn=document.createElement('button');
   cancelBtn.id='ls-cancel';
-  cancelBtn.style.cssText='position:absolute;top:calc(env(safe-area-inset-top,0px)+14px);left:16px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;z-index:3';
+  cancelBtn.style.cssText='position:absolute;top:calc(env(safe-area-inset-top, 0px) + 14px);left:16px;background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.3);color:#fff;padding:8px 18px;border-radius:20px;font-size:14px;font-weight:600;cursor:pointer;font-family:inherit;z-index:3';
   cancelBtn.innerHTML=svgIcon('✕',{size:14})+' Cancel';
   ov.appendChild(cancelBtn);
 
   const hint=document.createElement('div');
-  hint.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+120px);left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.9);pointer-events:none;z-index:3;transition:color .3s';
+  hint.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom, 0px) + 120px);left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;text-shadow:0 1px 6px rgba(0,0,0,.9);pointer-events:none;z-index:3;transition:color .3s';
   hint.textContent='Point camera at receipt';
   ov.appendChild(hint);
 
   const shutterWrap=document.createElement('div');
-  shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom,0px)+20px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:3';
+  shutterWrap.style.cssText='position:absolute;bottom:calc(env(safe-area-inset-bottom, 0px) + 20px);left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:10px;z-index:3';
   shutterWrap.innerHTML=
     '<div id="ls-ready-label" style="background:rgba(0,0,0,.55);color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:20px;opacity:0;transition:opacity .3s">'+svgIcon('✓',{size:12})+' Receipt detected, tap to capture</div>'+
     '<button id="ls-shutter" style="width:76px;height:76px;border-radius:50%;background:#fff;border:5px solid rgba(255,255,255,.4);cursor:pointer;box-shadow:0 4px 28px rgba(0,0,0,.6);display:block;transition:transform .1s,background .2s"></button>';
