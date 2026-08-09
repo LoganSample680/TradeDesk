@@ -435,7 +435,6 @@ function renderDash(){
     const jobCards=myDayJobs.map(j=>{
       const c=clients.find(x=>x.id===j.client_id)||{name:j.clientName||j.name||'Job'};
       const addr=j.addr||c.addr||'';
-      const mapsUrl=addr?'https://maps.apple.com/?daddr='+encodeURIComponent(addr):'';
       const st=(j.empStatus||{})[empId]||null;
       const statusLabel=_empStatusLabel(st);
       const statusColor=_empStatusColor(st);
@@ -456,7 +455,15 @@ function renderDash(){
         '<div style="font-size:14px;font-weight:700;margin-bottom:4px">'+escHtml(c.name)+'</div>'+
         (addr?'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">'+
           '<div style="font-size:12px;color:var(--text2);flex:1">'+escHtml(addr)+'</div>'+
-          (mapsUrl?'<a href="'+mapsUrl+'" style="font-size:11px;font-weight:700;color:var(--blue);text-decoration:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue)">'+svgIcon('🗺',{size:12})+' Navigate</a>':'')+
+          // Was a bare Apple Maps link that bounced the crew out of the app.
+          // Now the same tap starts turn-by-turn INSIDE TradeDesk (js/drive.js),
+          // which is what lets arrival end the drive and open this job by
+          // itself. Outside the shell driveButtonHtml still hands off to Apple
+          // Maps and relabels itself Directions, so nothing is lost in a
+          // browser: one control, two honest behaviours, never both at once.
+          (addr&&typeof driveButtonHtml==='function'
+            ?driveButtonHtml(j.id,'font-size:11px;font-weight:700;color:var(--blue);background:none;white-space:nowrap;min-height:36px;display:flex;align-items:center;gap:4px;padding:4px 8px;border-radius:var(--r);border:1px solid var(--blue);cursor:pointer;font-family:inherit')
+            :'')+
         '</div>':'')+
         _jobFieldNote(j,{editable:true})+
         '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">'+

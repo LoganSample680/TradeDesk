@@ -271,5 +271,34 @@ test.describe('drive', () => {
     expect(href).toBe(null);
   });
 
+  // The dashboard is where a crew member actually starts a drive: it is their
+  // home screen and the job is right there. This replaced a bare Apple Maps
+  // link that bounced them out of the app.
+  test('the crew day card starts the drive in-app, not in Apple Maps', async () => {
+    const r = await page.evaluate(() => {
+      window._isEmployee = true;
+      window._employeeRecord = { id: 'e1', name: 'Mike Alvarez', role: 'tech', permissions: {} };
+      const tk = todayKey();
+      jobs.length = 0; clients.length = 0;
+      clients.push({ id: 501, name: 'Dana Ramirez', addr: '12 Oak St' });
+      jobs.push({ id: 7001, name: 'Kitchen repaint', client_id: 501, addr: '12 Oak St',
+                  start: tk, end: tk, allowWeekend: true, days: 1, status: 'active', assignedTo: 'e1' });
+      goPg('pg-dash');
+      renderDash();
+      const html = document.body.innerHTML;
+      return {
+        drives: document.querySelectorAll('[onclick^="startDrive"]').length,
+        oldLink: /Navigate<\/a>/.test(html),
+        // One word, one meaning: the mileage quick action no longer also says
+        // "Drive" now that Drive means navigation.
+        quickAction: (document.getElementById('qa-drive-btn') || {}).textContent || '',
+      };
+    });
+    expect(r.drives, 'the job on their home screen is drivable').toBeGreaterThan(0);
+    expect(r.oldLink, 'the old handoff link is deleted, not left beside it').toBe(false);
+    expect(r.quickAction).not.toMatch(/^\s*Drive\s*$/);
+    expect(r.quickAction).toMatch(/Log miles/);
+  });
+
   test('no console errors across drive', async () => { await assertNoErrors(page); });
 });

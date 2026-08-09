@@ -1390,7 +1390,11 @@ body.dark .cal-cell.other{background:var(--cream)}
             <span class="qa-ico"><span data-ico="👤" data-ico-size="24"></span></span><span>New lead</span>
           </button>
           <button class="qa" id="qa-drive-btn" style="--qa-tint:linear-gradient(155deg,#3D74C6 0%,#24508F 100%);--qa-glow:rgba(45,93,168,.35)" onclick="quickAction('drive')">
-            <span class="qa-ico"><span data-ico="🚗" data-ico-size="24"></span></span><span>Drive</span>
+            <!-- "Log miles", not "Drive": Drive now means turn-by-turn navigation
+                 on the job cards above (js/drive.js), and this button records a
+                 mileage trip. Two controls on one screen sharing a word is the
+                 kind of thing a contractor mis-taps once and stops trusting. -->
+            <span class="qa-ico"><span data-ico="🚗" data-ico-size="24"></span></span><span>Log miles</span>
           </button>
           <button class="qa" id="qa-estimate-btn" style="--qa-tint:linear-gradient(155deg,#8B5CF6 0%,#6D28D9 100%);--qa-glow:rgba(109,40,217,.35)" onclick="quickAction('estimate')">
             <span class="qa-ico"><span data-ico="📋" data-ico-size="24"></span></span><span>Proposal</span>
