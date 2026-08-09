@@ -182,7 +182,7 @@ test.describe('TdScan web half', () => {
       return {
         hasPolygon: /<polygon/.test(plain),
         hasLabel: /Kitchen/.test(plain),
-        hasSqFt: /120 sq ft/.test(plain),
+        hasSqFt: /352 wall sq ft/.test(plain),
         plainCircles: (plain.match(/<circle/g) || []).length,
         elecCircles: (elec.match(/<circle/g) || []).length,
       };

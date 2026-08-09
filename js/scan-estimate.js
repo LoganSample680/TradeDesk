@@ -140,7 +140,7 @@ function _seRender(){
         '<label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:800;cursor:pointer"><input type="checkbox" '+(st.on?'checked':'')+' onchange="_seToggleRoom('+i+')" style="width:17px;height:17px;accent-color:var(--blue)">'+escHtml(r.label)+'</label>'+
         '<div style="font-size:13px;font-weight:800;color:var(--blue)">'+(st.on&&roomTotal?('$'+roomTotal.toLocaleString('en-US',{maximumFractionDigits:0})):'')+'</div>'+
       '</div>'+
-      '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">'+Math.round(_scanSqFt(r.floorM2))+' sq ft floor · '+_scanFtIn(r.hM)+' ceilings · '+(r.doorN||0)+' doors · '+(r.winN||0)+' windows</div>'+
+      '<div style="font-size:11px;color:var(--text3);margin-bottom:8px">'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft · '+Math.round(_scanSqFt(r.floorM2))+' floor · '+_scanFtIn(r.hM)+' ceilings · '+(r.doorN||0)+' doors · '+(r.winN||0)+' windows</div>'+
       elecLine+
       (st.on?('<div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px">'+surfChips+'</div>'+
               '<div style="display:flex;flex-wrap:wrap;gap:5px">'+multChips+'</div>'):'')+

@@ -285,7 +285,9 @@ function _scanPlanSvg(sc,opts){
     const cx=(r.poly||[]).reduce((t,p)=>t+p[0],0)/((r.poly||[]).length||1);
     const cz=(r.poly||[]).reduce((t,p)=>t+p[1],0)/((r.poly||[]).length||1);
     s+='<text x="'+px(cx)+'" y="'+(+pz(cz)-1.6)+'" font-size="3.2" font-weight="700" fill="var(--text,#1a1a18)" text-anchor="middle">'+escHtml(r.label||'Room')+'</text>';
-    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2,#5f5e5a)" text-anchor="middle">'+Math.round(_scanSqFt(r.floorM2))+' sq ft</text>';
+    // Wall square feet leads (owner call 2026-08-09): it is the number the
+    // billing runs on. Floor sq ft stays in the takeoff lists.
+    s+='<text x="'+px(cx)+'" y="'+(+pz(cz)+2.2)+'" font-size="2.8" fill="var(--text2,#5f5e5a)" text-anchor="middle">'+Math.round(_scanSqFt(r.wallM2))+' wall sq ft</text>';
     if(lens==='electrical'){
       _scanOutletPlan(r).forEach(m=>{
         s+='<circle cx="'+px(m.x)+'" cy="'+pz(m.z)+'" r="1.1" fill="#D97706" stroke="#fff" stroke-width="0.3"/>';
@@ -393,6 +395,7 @@ function openScanViewer(id){
   const lens=_scanViewLens;
   document.getElementById('_scan-view-ov')?.remove();
   const totalSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
+  const totalWallSqFt=Math.round(_scanSqFt((sc.rooms||[]).reduce((t,r)=>t+r.wallM2,0)));
   const tabs=[['plan','Plan'],['paint','Paint'],['electrical','Electrical'],['hvac','HVAC']];
   let body='';
   if(lens==='paint'){
@@ -422,7 +425,7 @@ function openScanViewer(id){
       '<div style="font-size:11px;color:var(--text3);margin-top:10px;line-height:1.5">Sizing estimate from scanned geometry + measured infiltration. <strong>Not for permit submission</strong>, permit-grade Manual J reports typically require ACCA-approved software. A blower door number beats any preset, and new-construction code already requires one (3 to 5 ACH50 by climate zone).</div>';
   }else{
     const unlocked=scanUnlocked(sc);
-    body='<div style="font-size:12px;color:var(--text2)">'+(sc.rooms||[]).length+' rooms · '+totalSqFt+' sq ft total'+((sc.photos||[]).length?' · '+(sc.photos||[]).length+' photos':'')+'</div>'+
+    body='<div style="font-size:12px;color:var(--text2)">'+(sc.rooms||[]).length+' rooms · '+totalWallSqFt+' wall sq ft · '+totalSqFt+' sq ft floor'+((sc.photos||[]).length?' · '+(sc.photos||[]).length+' photos':'')+'</div>'+
       '<div style="font-size:11px;color:var(--text3);margin-top:6px">Hub status: '+(unlocked?'unlocked, client sees the full plan':'locked, client sees a blurred teaser'+(sc.price!=null?' at $'+sc.price:''))+'</div>'+
       '<div style="display:flex;gap:8px;margin-top:12px">'+
         '<button class="btn btn-p" style="flex:1;padding:12px" onclick="_scanSellSheet(\''+sc.id+'\')">'+(sc.purchasedAt?'Plan purchased ✓':'Sell floor plan')+'</button>'+
@@ -511,11 +514,11 @@ function _renderCDScans(){
         :'<span style="font-size:10px;color:var(--text3)">Scan with the iPhone app (Pro/LiDAR)</span>')+
     '</div>'+
     list.map(s=>{
-      const sqft=Math.round(_scanSqFt((s.rooms||[]).reduce((t,r)=>t+r.floorM2,0)));
+      const wsqft=Math.round(_scanSqFt((s.rooms||[]).reduce((t,r)=>t+r.wallM2,0)));
       const unlocked=scanUnlocked(s);
       return '<div onclick="openScanViewer(\''+s.id+'\')" style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid var(--border);cursor:pointer">'+
         '<div><div style="font-size:13px;font-weight:700">'+escHtml(s.name||'Floor plan')+'</div>'+
-        '<div style="font-size:11px;color:var(--text3)">'+(s.rooms||[]).length+' rooms · '+sqft+' sq ft'+(s.price!=null?' · $'+s.price:'')+'</div></div>'+
+        '<div style="font-size:11px;color:var(--text3)">'+(s.rooms||[]).length+' rooms · '+wsqft+' wall sq ft'+(s.price!=null?' · $'+s.price:'')+'</div></div>'+
         '<span class="bdg '+(unlocked?'bdg-active':'bdg-upcoming')+'">'+(unlocked?'Unlocked':'Locked')+'</span></div>';
     }).join('')+
   '</div>';
