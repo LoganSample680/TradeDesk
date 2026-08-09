@@ -4071,6 +4071,116 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.arrivedAt, 'arrival is stamped when it happened, not when it replayed').toBe(r.expectArrive);
     });
 
+    // Owner report (2026-08-09): 30 minutes parked at home, arrow still on.
+    // Root cause: park entry hung entirely on a setTimeout, and WKWebView
+    // suspends JS timers with the screen locked. Now any ping whose dwell has
+    // already passed the threshold parks immediately, and a failed park
+    // attempt journals the reason and re-arms instead of dying silently.
+    test('a ping after the dwell threshold parks immediately, no timer needed', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realUser = _supaUser;
+        const parked = [], removed = [];
+        _supaUser = { id: 'u-dwell' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null;
+          _geoWasInShop = true; _geoShopArrivedAt = new Date(Date.now() - 5 * 60000).toISOString();
+          _geoDriveStartedAt = null;
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null; _geoStopAnchor = null;
+          _geoLegAtShop = true;
+          _geoLastFenceAt = new Date(Date.now() - 60000).toISOString();
+          _geoLastFenceLoc = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          _geoHomeDwell = null; _geoWasAtHome = false; _geoLegOrigin = null;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoWatchId = null; _geoNativeWatcherId = 'w-1'; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          _geoFenceEnteredAtMs = Date.now() - 5 * 60000;   // been here five minutes
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (name) => name === 'BackgroundGeolocation' ? {
+              removeWatcher: (o) => { removed.push(o); return Promise.resolve(); },
+            } : name === 'TdGeo' ? {
+              startParked: (o) => { parked.push(o); return Promise.resolve({ armed: 1 }); },
+              stopAll: () => Promise.resolve(),
+            } : null,
+          };
+          // The screen was locked the whole time: no timer ever fired. This
+          // single jitter ping is the only signal, and it must be enough.
+          await _geoOnPing({ coords: { latitude: a.shop.lat, longitude: a.shop.lon, accuracy: 8, speed: 0 } });
+          await new Promise(r2 => setTimeout(r2, 10));
+          return { parkedCalls: parked.length, parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id, watcher: _geoNativeWatcherId };
+        } finally {
+          window.Capacitor = realCap; _supaUser = realUser;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoFenceEnteredAtMs = null;
+          _geoWasInShop = false; _geoShopArrivedAt = null; _geoLegAtShop = false;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoStopAnchor = null;
+        }
+      }, { shop: SHOP });
+      expect(r.parkedCalls, 'the over-threshold ping parks on the spot').toBe(1);
+      expect(r.parkOn).toBe(true);
+      expect(r.removedId).toBe('w-1');
+      expect(r.watcher).toBe(null);
+    });
+
+    test('a failed park attempt journals the reason and re-arms, never dies silently', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor;
+        const realLog = _geoParkLog.slice();
+        try {
+          _geoParkLog.length = 0;
+          _geoNativeWatcherId = 'w-1'; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          _geoLastFenceLoc = { lat: a.shop.lat, lng: a.shop.lon, name: 'Shop', kind: 'shop' };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (name) => name === 'TdGeo' ? {
+              startParked: () => Promise.reject(new Error('not implemented on ios')),
+            } : null,
+          };
+          _geoEnterParkMode();
+          await new Promise(r2 => setTimeout(r2, 20));
+          return {
+            parkOn: _geoParkModeOn,
+            retryArmed: _geoParkTimer != null,
+            failLogged: _geoParkLog.some(x => x.ev === 'park-fail' && /not implemented/.test(x.x)),
+          };
+        } finally {
+          window.Capacitor = realCap;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = null; _geoLastFenceLoc = null;
+          _geoParkLog.length = 0; realLog.forEach(x => _geoParkLog.push(x));
+        }
+      }, { shop: SHOP });
+      expect(r.parkOn).toBe(false);
+      expect(r.retryArmed, 'the countdown re-arms for another try').toBe(true);
+      expect(r.failLogged, 'the reason lands in the on-device journal').toBe(true);
+    });
+
+    test('the diagnostics panel opens with live state and the journal; its button stays hidden in a plain browser', async () => {
+      const r = await page.evaluate(() => {
+        const realCap = window.Capacitor;
+        try {
+          window.Capacitor = { isNativePlatform: () => true, registerPlugin: () => ({}) };
+          _geoDiagPanel();
+          const ov = document.getElementById('_geo-diag-ov');
+          const text = ov ? ov.textContent : '';
+          const opened = !!ov;
+          ov && ov.remove();
+          const btn = document.getElementById('set-geo-diag-btn');
+          return {
+            opened,
+            hasState: /Park mode/.test(text) && /GPS watcher/.test(text),
+            btnHiddenInBrowser: btn ? btn.style.display === 'none' : null,
+          };
+        } finally { window.Capacitor = realCap; }
+      });
+      expect(r.opened).toBe(true);
+      expect(r.hasState).toBe(true);
+      expect(r.btnHiddenInBrowser, 'no diagnostics button outside the shell').toBe(true);
+    });
+
     test('in a plain browser park mode does not exist', async () => {
       const r = await page.evaluate(() => {
         const realCap = window.Capacitor;

@@ -682,6 +682,9 @@ async function _geoOnPing(pos){
     _geoPlaceArrivedAt=(cur&&cur.k==='place')?nowIso:null;
     _geoCurrentClient=(cur&&cur.k==='client')?cur.id:null;
     _geoClientArrivedAt=(cur&&cur.k==='client')?nowIso:null;
+    // The park dwell clock starts at the moment THIS fence was entered; a
+    // shop-to-job hop must not inherit the shop's dwell.
+    _geoFenceEnteredAtMs=cur?nowMs:null;
     if(cur&&cur.k==='job'){_geoPersistOpen();_geoWakeAcquire();}
     else{_geoClearOpen();_geoWakeRelease();}
     // The dashboard's "ON SITE" card (renderDash, js/dashboard.js) reads
@@ -702,10 +705,21 @@ async function _geoOnPing(pos){
   // departure evidence a single-ping transition ever has.
   if(cur){_geoLastFenceAt=nowIso;_geoLastFenceLoc=curLoc;}
   // ── TdGeo duty cycle ──────────────────────────────────────────────────────
-  // Settled inside a fence and not driving: start the countdown to GPS-off
-  // (no-op outside the shell). Anywhere else, the countdown dies.
-  if(cur&&!_geoDriveStartedAt&&typeof _geoArmParkTimer==='function')_geoArmParkTimer();
-  else if(typeof _geoClearParkTimer==='function')_geoClearParkTimer();
+  // Settled inside a fence and not driving: head toward GPS-off (no-op
+  // outside the shell). The countdown timer alone is NOT trusted: WKWebView
+  // suspends JS timers with the screen locked, which is exactly when parking
+  // matters (owner report 2026-08-09: 30 minutes at home, arrow still on).
+  // So any ping that shows the dwell has ALREADY passed the threshold parks
+  // right now; the timer only covers the screen-on case where it fires on
+  // the dot. Anywhere else, the countdown and the dwell clock die.
+  if(cur&&!_geoDriveStartedAt){
+    if(!_geoFenceEnteredAtMs)_geoFenceEnteredAtMs=nowMs;
+    if(!_geoParkModeOn&&(nowMs-_geoFenceEnteredAtMs)>=_GEO_PARK_AFTER_MS)_geoEnterParkMode();
+    else _geoArmParkTimer();
+  }else{
+    _geoFenceEnteredAtMs=null;
+    _geoClearParkTimer();
+  }
   // Whatever branch ran, THIS completed ping resolved any hidden gap, a stale
   // marker must never truncate a later, fully-visible close.
   _geoGapHiddenAt=null;
@@ -1452,9 +1466,23 @@ function _geoInstallGeoShim(){
 // event that fired while the WebView was asleep or dead is buffered to disk
 // and replayed into the fence machine (with its ORIGINAL timestamp) on the
 // next boot, so a drive that started with the app killed still logs.
-let _geoParkTimer=null;    // countdown from fence entry to GPS-off
-let _geoParkModeOn=false;  // TdGeo regions armed, continuous watcher removed
+let _geoParkTimer=null;         // countdown from fence entry to GPS-off
+let _geoParkModeOn=false;       // TdGeo regions armed, continuous watcher removed
+let _geoFenceEnteredAtMs=null;  // when the CURRENT fence was entered (dwell clock)
 const _GEO_PARK_AFTER_MS=4*60*1000;  // parked this long inside a fence => GPS off
+// Owner-readable diagnostics (owner report 2026-08-09: "30 minutes and still
+// got that blue arrow", with zero visibility into why). Every park-mode
+// transition and failure is journaled here, persisted, and readable on-device
+// through _geoDiagPanel(), so the next report comes with the reason attached.
+let _geoParkLog=[];
+try{_geoParkLog=JSON.parse(localStorage.getItem('td_geo_park_log')||'[]')||[];}catch(_e){}
+function _geoParkNote(ev,extra){
+  try{
+    _geoParkLog.push({t:new Date().toISOString().slice(5,19),ev:ev,x:extra?String(extra).slice(0,140):''});
+    if(_geoParkLog.length>30)_geoParkLog.splice(0,_geoParkLog.length-30);
+    localStorage.setItem('td_geo_park_log',JSON.stringify(_geoParkLog));
+  }catch(_e){}
+}
 function _geoTdPlugin(){
   try{
     const cap=window.Capacitor;
@@ -1478,29 +1506,64 @@ function _geoEnterParkMode(){
   if(!Td||typeof Td.startParked!=='function')return;
   // Only duty-cycle a watcher that is actually running, and only when we know
   // which fence we are parked in.
-  if(_geoNativeWatcherId==null&&!_geoNativeStarting)return;
-  if(!_geoLastFenceLoc)return;
+  if(_geoNativeWatcherId==null&&!_geoNativeStarting){_geoParkNote('park-skip','no watcher');return;}
+  if(!_geoLastFenceLoc){_geoParkNote('park-skip','no fence loc');return;}
   // The region is the fence plus slack: region monitoring is coarser than GPS
   // (cell/wifi assisted), and an exit that fires a little late is fine, the
   // re-armed watcher's first fix re-runs the fence machine with real truth.
   const radiusM=_geoFenceFt()*0.3048+60;
+  _geoParkNote('park-try',_geoLastFenceLoc.name||'');
   Promise.resolve(Td.startParked({regions:[{id:'fence',lat:_geoLastFenceLoc.lat,lng:_geoLastFenceLoc.lng,radius:radiusM}]}))
-    .then(()=>{
+    .then((r)=>{
       _geoParkModeOn=true;
+      _geoParkNote('park-on','armed='+((r&&r.armed)!=null?r.armed:'?'));
       if(_geoNativeWatcherId!=null){
         const BG=_geoNativePlugin();
         try{if(BG&&typeof BG.removeWatcher==='function')BG.removeWatcher({id:_geoNativeWatcherId});}catch(_e){}
         _geoNativeWatcherId=null;
       }
-    },()=>{});
+    },(err)=>{
+      // A failed attempt must never die silently (it did, and the arrow sat
+      // there all evening): journal the reason and retry on the countdown.
+      _geoParkNote('park-fail',(err&&(err.message||err.code))||err);
+      _geoArmParkTimer();
+    });
 }
 function _geoExitParkMode(){
   _geoClearParkTimer();
   if(!_geoParkModeOn)return;
   _geoParkModeOn=false;
+  _geoParkNote('park-exit');
   const Td=_geoTdPlugin();
   try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}
   startGeoTracking();
+}
+// On-device diagnostics: state + the park journal, in a standard zmodal.
+// Reachable from Settings (the button unhides only inside the shell).
+function _geoDiagPanel(){
+  if(document.getElementById('_geo-diag-ov'))return;
+  const dwellMin=_geoFenceEnteredAtMs?Math.round((Date.now()-_geoFenceEnteredAtMs)/60000):null;
+  const state=[
+    ['Shell',(_geoTdPlugin()?'yes':'no')],
+    ['GPS watcher',_geoNativeWatcherId!=null?String(_geoNativeWatcherId):'off'],
+    ['Park mode',_geoParkModeOn?'ON (GPS off)':'off'],
+    ['Park countdown',_geoParkTimer?'running':'idle'],
+    ['In fence',_geoLastFenceLoc?((_geoLastFenceLoc.name||_geoLastFenceLoc.kind||'yes')+(dwellMin!=null?' · '+dwellMin+' min':'')):'no'],
+    ['Consent',localStorage.getItem('geo_owner_consent')||'unset'],
+    ['OS denied',localStorage.getItem('td_geo_os_denied')==='1'?'yes':'no'],
+  ];
+  const ov=document.createElement('div');ov.id='_geo-diag-ov';ov.className='zmodal-overlay';
+  const m=document.createElement('div');m.className='zmodal';
+  m.innerHTML=
+    '<div style="font-size:16px;font-weight:800;margin-bottom:10px">Location diagnostics</div>'+
+    state.map(([k,v])=>'<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--text3)">'+k+'</span><span style="font-weight:600">'+escHtml(String(v))+'</span></div>').join('')+
+    '<div style="font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--text3);margin:12px 0 4px">Recent events</div>'+
+    '<div style="max-height:32vh;overflow-y:auto;font-size:11px;font-family:ui-monospace,monospace;line-height:1.6">'+
+      (_geoParkLog.length?_geoParkLog.slice().reverse().map(r=>'<div>'+escHtml(r.t)+' '+escHtml(r.ev)+(r.x?' · '+escHtml(r.x):'')+'</div>').join(''):'<div style="color:var(--text3)">Nothing yet.</div>')+
+    '</div>'+
+    '<button class="btn btn-p" style="width:100%;margin-top:14px;padding:12px" onclick="document.getElementById(\'_geo-diag-ov\').remove()">Close</button>';
+  ov.appendChild(m);document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{if(e.target===ov)ov.remove();});
 }
 // A native event, live (listener) or replayed (drainBuffer). Replayed events
 // carry __tdTs so the fence machine clocks them at the moment they actually
@@ -1579,11 +1642,12 @@ function startGeoTracking(){
         }});
       })).then(id=>{
         _geoNativeStarting=false;_geoNativeWatcherId=id||null;
+        _geoParkNote('watcher-on',String(id||''));
         // The watcher running IS the shell's 'granted' state: refresh the
         // dashboard's permission cache so "Turn on location" clears itself.
         try{if(typeof _geoRefreshPermCache==='function')_geoRefreshPermCache();}catch(_e){}
       },
-               ()=>{_geoNativeStarting=false;});
+               (e)=>{_geoNativeStarting=false;_geoParkNote('watcher-fail',(e&&e.message)||e);});
       return;
     }catch(_e){_geoNativeStarting=false;}
   }
@@ -1598,6 +1662,7 @@ function stopGeoTracking(){
   // woken by the previous account's fence.
   _geoClearParkTimer();
   _geoParkModeOn=false;
+  _geoFenceEnteredAtMs=null;
   {const Td=_geoTdPlugin();try{if(Td&&typeof Td.stopAll==='function')Td.stopAll();}catch(_e){}}
   if(_geoNativeWatcherId!=null){
     const BG=_geoNativePlugin();
@@ -1758,3 +1823,11 @@ function _geoSetConsent(yes){
 // isNativePlatform is answerable by the time this file parses. No-op in every
 // browser and PWA.
 _geoInstallGeoShim();
+// The Settings diagnostics button exists only where park mode does: the shell.
+try{
+  const _dCap=window.Capacitor;
+  if(_dCap&&typeof _dCap.isNativePlatform==='function'&&_dCap.isNativePlatform()){
+    const _dBtn=document.getElementById('set-geo-diag-btn');
+    if(_dBtn)_dBtn.style.display='';
+  }
+}catch(_e){}

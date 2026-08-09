@@ -3146,6 +3146,7 @@ body.dark .cal-cell.other{background:var(--cream)}
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-p" onclick="if(supaEnabled())supaSignOut()" style="width:100%;padding:13px">Sign out of cloud sync</button>
         <button id="location-settings-btn" class="btn" onclick="resetLocationPermission()" style="width:100%;padding:13px;font-size:13px"><span data-ico="📍" data-ico-size="14"></span> Location access</button>
+        <button id="set-geo-diag-btn" class="btn" onclick="_geoDiagPanel()" style="display:none;width:100%;padding:13px;font-size:13px"><span data-ico="🧭" data-ico-size="14"></span> Location diagnostics</button>
         <button class="btn" onclick="resetSettings()" style="width:100%;padding:13px;font-size:13px">Reset all settings to defaults</button>
       </div>
     </div>
