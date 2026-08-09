@@ -4181,6 +4181,62 @@ test.describe('Automatic mileage from drive legs', () => {
       expect(r.btnHiddenInBrowser, 'no diagnostics button outside the shell').toBe(true);
     });
 
+    // Owner report (2026-08-09, second sighting): arrow still on after four
+    // minutes parked OUTSIDE every fence. Park mode only covered fences;
+    // an anonymous stop (lunch, a supply run, a lead's driveway) ran
+    // continuous GPS forever. Now the stop anchor's own dwell parks too.
+    test('four minutes parked at an anonymous stop parks GPS, even mid-drive-leg', async () => {
+      const r = await page.evaluate(async (a) => {
+        const realCap = window.Capacitor, realUser = _supaUser;
+        const parked = [], removed = [];
+        _supaUser = { id: 'u-stop' };
+        try {
+          __seedGeo();
+          _geoCurrentJob = null; _geoArrivedAt = null; _geoWasInShop = false;
+          _geoShopArrivedAt = null;
+          _geoDriveStartedAt = new Date(Date.now() - 25 * 60000).toISOString();  // out on the road
+          _geoCurrentPlace = null; _geoPlaceArrivedAt = null;
+          _geoLegAtShop = false; _geoLastFenceAt = new Date(Date.now() - 25 * 60000).toISOString();
+          _geoLastFenceLoc = null; _geoLegOrigin = null;
+          _geoHomeDwell = null; _geoWasAtHome = false;
+          _geoCurrentClient = null; _geoClientArrivedAt = null;
+          _geoWatchId = null; _geoNativeWatcherId = 'w-1'; _geoNativeStarting = false;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = true;
+          _geoFenceEnteredAtMs = null;
+          // Sitting at ROAD for five minutes already: the anchor carries the dwell.
+          _geoStopAnchor = { lat: a.road.lat, lng: a.road.lon,
+            at: new Date(Date.now() - 5 * 60000).toISOString(),
+            lastAt: new Date(Date.now() - 30000).toISOString() };
+          window.Capacitor = {
+            isNativePlatform: () => true,
+            registerPlugin: (n) => n === 'BackgroundGeolocation' ? {
+              removeWatcher: (o) => { removed.push(o); return Promise.resolve(); },
+            } : n === 'TdGeo' ? {
+              startParked: (o) => { parked.push(o); return Promise.resolve({ armed: 1 }); },
+              stopAll: () => Promise.resolve(),
+            } : null,
+          };
+          await _geoOnPing({ coords: { latitude: a.road.lat, longitude: a.road.lon, accuracy: 8, speed: 0 } });
+          await new Promise(r2 => setTimeout(r2, 10));
+          return {
+            parkedCalls: parked.length,
+            region: parked[0] && parked[0].regions && parked[0].regions[0],
+            parkOn: _geoParkModeOn, removedId: removed[0] && removed[0].id,
+          };
+        } finally {
+          window.Capacitor = realCap; _supaUser = realUser;
+          _geoParkModeOn = false; _geoClearParkTimer(); window._geoTdBound = undefined;
+          _geoNativeWatcherId = null; _geoNativeStarting = false; _geoWatchId = null;
+          _geoDriveStartedAt = null; _geoDriveReset(); _geoStopAnchor = null;
+          _geoLastFenceAt = null; _geoLastFenceLoc = null; _geoFenceEnteredAtMs = null;
+        }
+      }, { road: ROAD });
+      expect(r.parkedCalls, 'the over-dwell stop parks on the spot').toBe(1);
+      expect(r.region && r.region.lat).toBeCloseTo(ROAD.lat, 4);
+      expect(r.parkOn).toBe(true);
+      expect(r.removedId).toBe('w-1');
+    });
+
     test('in a plain browser park mode does not exist', async () => {
       const r = await page.evaluate(() => {
         const realCap = window.Capacitor;

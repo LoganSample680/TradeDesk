@@ -705,20 +705,34 @@ async function _geoOnPing(pos){
   // departure evidence a single-ping transition ever has.
   if(cur){_geoLastFenceAt=nowIso;_geoLastFenceLoc=curLoc;}
   // ── TdGeo duty cycle ──────────────────────────────────────────────────────
-  // Settled inside a fence and not driving: head toward GPS-off (no-op
-  // outside the shell). The countdown timer alone is NOT trusted: WKWebView
-  // suspends JS timers with the screen locked, which is exactly when parking
-  // matters (owner report 2026-08-09: 30 minutes at home, arrow still on).
-  // So any ping that shows the dwell has ALREADY passed the threshold parks
-  // right now; the timer only covers the screen-on case where it fires on
-  // the dot. Anywhere else, the countdown and the dwell clock die.
-  if(cur&&!_geoDriveStartedAt){
-    if(!_geoFenceEnteredAtMs)_geoFenceEnteredAtMs=nowMs;
-    if(!_geoParkModeOn&&(nowMs-_geoFenceEnteredAtMs)>=_GEO_PARK_AFTER_MS)_geoEnterParkMode();
-    else _geoArmParkTimer();
-  }else{
-    _geoFenceEnteredAtMs=null;
-    _geoClearParkTimer();
+  // Two parked shapes, both head toward GPS-off (no-op outside the shell):
+  // settled inside a FENCE and not driving, or settled at an anonymous STOP
+  // outside every fence (lunch, a supply run, a lead's driveway, the case
+  // the owner actually hit with the arrow still on after 4 minutes). The
+  // countdown timer alone is NOT trusted: WKWebView suspends JS timers with
+  // the screen locked, so any ping that shows the dwell has ALREADY passed
+  // the threshold parks right now; the timer covers the screen-on case.
+  // Driving (or anything else) kills the countdown and the dwell clock.
+  {
+    let _parkSpot=null,_parkDwellStart=null;
+    if(cur&&!_geoDriveStartedAt){
+      if(!_geoFenceEnteredAtMs)_geoFenceEnteredAtMs=nowMs;
+      _parkSpot=_geoLastFenceLoc;_parkDwellStart=_geoFenceEnteredAtMs;
+    }else if(!cur&&_geoStopAnchor){
+      // The stop anchor's own birth time is the dwell clock: it resets itself
+      // whenever they move beyond the stop radius, so no separate bookkeeping.
+      _geoFenceEnteredAtMs=null;
+      _parkSpot={lat:_geoStopAnchor.lat,lng:_geoStopAnchor.lng,name:'stop'};
+      _parkDwellStart=Date.parse(_geoStopAnchor.at)||null;
+    }else{
+      _geoFenceEnteredAtMs=null;
+    }
+    if(_parkSpot&&_parkDwellStart){
+      if(!_geoParkModeOn&&(nowMs-_parkDwellStart)>=_GEO_PARK_AFTER_MS)_geoEnterParkMode(_parkSpot);
+      else _geoArmParkTimer(_parkSpot);
+    }else{
+      _geoClearParkTimer();
+    }
   }
   // Whatever branch ran, THIS completed ping resolved any hidden gap, a stale
   // marker must never truncate a later, fully-visible close.
@@ -1491,29 +1505,33 @@ function _geoTdPlugin(){
     return (cap.Plugins&&cap.Plugins.TdGeo)||null;
   }catch(_e){return null;}
 }
-function _geoArmParkTimer(){
+let _geoParkSpot=null;   // where to center the region when the countdown fires
+function _geoArmParkTimer(spot){
+  if(spot)_geoParkSpot=spot;
   if(_geoParkTimer||_geoParkModeOn)return;
   if(!_geoTdPlugin())return;             // browser/PWA: park mode does not exist
-  _geoParkTimer=setTimeout(_geoEnterParkMode,_GEO_PARK_AFTER_MS);
+  _geoParkTimer=setTimeout(()=>_geoEnterParkMode(_geoParkSpot),_GEO_PARK_AFTER_MS);
 }
 function _geoClearParkTimer(){
   if(_geoParkTimer){clearTimeout(_geoParkTimer);_geoParkTimer=null;}
 }
-function _geoEnterParkMode(){
+function _geoEnterParkMode(spot){
   _geoClearParkTimer();
   if(_geoParkModeOn)return;
   const Td=_geoTdPlugin();
   if(!Td||typeof Td.startParked!=='function')return;
   // Only duty-cycle a watcher that is actually running, and only when we know
-  // which fence we are parked in.
+  // where we are parked: a fence, or (owner report 2026-08-09, arrow still on
+  // after 4 minutes parked outside every fence) the anonymous STOP anchor.
   if(_geoNativeWatcherId==null&&!_geoNativeStarting){_geoParkNote('park-skip','no watcher');return;}
-  if(!_geoLastFenceLoc){_geoParkNote('park-skip','no fence loc');return;}
+  const _at=spot||_geoLastFenceLoc;
+  if(!_at){_geoParkNote('park-skip','no park spot');return;}
   // The region is the fence plus slack: region monitoring is coarser than GPS
   // (cell/wifi assisted), and an exit that fires a little late is fine, the
   // re-armed watcher's first fix re-runs the fence machine with real truth.
   const radiusM=_geoFenceFt()*0.3048+60;
-  _geoParkNote('park-try',_geoLastFenceLoc.name||'');
-  Promise.resolve(Td.startParked({regions:[{id:'fence',lat:_geoLastFenceLoc.lat,lng:_geoLastFenceLoc.lng,radius:radiusM}]}))
+  _geoParkNote('park-try',_at.name||'stop');
+  Promise.resolve(Td.startParked({regions:[{id:'fence',lat:_at.lat,lng:_at.lng,radius:radiusM}]}))
     .then((r)=>{
       _geoParkModeOn=true;
       _geoParkNote('park-on','armed='+((r&&r.armed)!=null?r.armed:'?'));
