@@ -536,7 +536,7 @@ const _supaMode=(()=>{try{return localStorage.getItem('zp3_supa_mode');}catch(_e
 // `let` so the supaInit auto-fallback can flip it to the proxy before the client is built.
 let SUPA_URL = (_supaMode==='proxy') ? _SUPA_PROXY_URL : _SUPA_DIRECT_URL;
 const SUPA_KEY = 'sb_publishable_kaahEa5tFydocUuYi8plHg_K78HPyvJ';
-const APP_VERSION='08.09.26.34';
+const APP_VERSION='08.09.26.35';
 let _supa=null,_supaUser=null,_syncTimer=null,_syncStatus='local',_supaCloudLoaded=false,_lastLocalSaveAt=0;
 let _syncBroadcastChannel=null,_realtimeSubscribed=false,_loadInProgress=false,_activeLoadPromise=null,_broadcastReloadTimer=null,_broadcastPending=false,_reconcileTimer=null,_writeCacheTimer=null,_rtRenderTimer=null;
 // True only for the window between an in-tab sign-in landing on the dashboard
@@ -2433,6 +2433,15 @@ function renderDispatch(){
           (addr?'<div style="font-size:11px;color:var(--text3);margin-bottom:4px">'+addr+'</div>':'')+
           (note?'<div style="margin-bottom:6px">'+note+'</div>':'')+
           _dispatchStatusLine(j.id)+
+          // Drive is the point of a dispatch card: the next thing anybody does
+          // with it is go there. In the app it opens turn-by-turn inside
+          // TradeDesk (js/drive.js); in a browser it is the Apple Maps handoff
+          // it has always been, and the label says which so the button never
+          // promises something it cannot do.
+          '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">'+
+            (typeof driveButtonHtml==='function'?driveButtonHtml(j.id):'')+
+            (c.phone?'<button onclick="driveTextEta(\''+j.id+'\')" style="font-size:12px;font-weight:700;background:none;color:var(--text2);border:1px solid var(--border2);border-radius:var(--r);padding:7px 12px;cursor:pointer;font-family:inherit">'+svgIcon('💬')+' Text ETA</button>':'')+
+          '</div>'+
         '</div>'+
         '<div style="flex-shrink:0">'+assignBtn+'</div>'+
       '</div>'+

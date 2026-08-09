@@ -10,6 +10,7 @@
     "@capacitor/ios": "^7.0.0",
     "td-doc": "file:./td-doc",
     "td-geo": "file:./td-geo",
+    "td-nav": "file:./td-nav",
     "td-scan": "file:./td-scan"
   },
   "devDependencies": {

@@ -1,0 +1,9 @@
+{
+  "name": "td-nav",
+  "version": "1.0.0",
+  "private": true,
+  "description": "TradeDesk turn-by-turn drive. Thin MapKit wrapper: a native full-screen MKMapView follows the driver with a tilted camera, MKDirections supplies the route and its steps, and the plugin reports progress. Every decision (when to announce, when a deviation counts as off route, what the customer is told) lives in js/drive.js per CLAUDE.md 3.2.",
+  "main": "index.js",
+  "capacitor": { "ios": { "src": "ios" } },
+  "files": ["index.js", "ios/", "TdNav.podspec"]
+}
